@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="docker-compose.dcproj">
+    <Build />
+  </Project>
+  <Project Path="OboxSteam.API/OboxSteam.API.csproj" />
+  <Project Path="OboxSteam.Application/OboxSteam.Application.csproj" Id="01e2d7f1-f8a0-43cc-808e-1ec798ad8dca" />
+  <Project Path="OboxSteam.Domain/OboxSteam.Domain.csproj" Id="fb287795-28ca-44c8-a7ab-ede8d4a121b0" />
+  <Project Path="OboxSteam.Infrastructure/OboxSteam.Infrastructure.csproj" Id="0a7b58d5-63c4-4b86-a33c-b0e447bf4dd7" />
+</Solution>

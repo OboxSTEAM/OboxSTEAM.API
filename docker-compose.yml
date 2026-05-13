@@ -1,0 +1,102 @@
+services:
+  oboxsteam.api:
+    image: ${DOCKER_REGISTRY-}oboxsteamapi
+    container_name: oboxsteam-api
+    build:
+      context: .
+      dockerfile: OboxSteam.API/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      oboxsteam.database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=oboxsteam.database;Port=5432;Database=OboxSteam_db;Username=postgres;Password=postgres
+      - ConnectionStrings__Redis=oboxsteam-redis:6379,abortConnect=false
+      - JWT__SecretKey=OboxSteam_SECRETKEY_SIEUCAPBAOMAT_VAYMACHUADU16KYTU
+      - JWT__Issuer=OboxSteam
+      - JWT__Audience=OboxSteamUsers
+      - RESEND_APITOKEN=re_TGc8Auq8_MqN19Bvves78Q4joa9UmmkKr
+      - RESEND_FROM=noreply@oboxsteam.com
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_HOST=http://localhost:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    ports:
+      - "5000:5000"
+    networks:
+      - oboxsteam-network
+
+  oboxsteam.database:
+    image: postgres:15
+    container_name: oboxsteam-database
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: OboxSteam_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d OboxSteam_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - oboxsteam-network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: oboxsteam-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - oboxsteam-network
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: oboxsteam-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - oboxsteam-network
+
+volumes:
+  pgdata:
+  redis-data:
+  minio-data:
+
+networks:
+  oboxsteam-network:
+    driver: bridge
