@@ -73,7 +73,7 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
         return result;
     }
 
-    public async Task<bool> SoftRemove(TEntity entity)
+    public Task<bool> SoftRemove(TEntity entity)
     {
         entity.IsDeleted = true;
         entity.DeletedAt = _timeService.GetCurrentTime().ToUniversalTime();
@@ -81,10 +81,10 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
         entity.UpdatedAt = _timeService.GetCurrentTime().ToUniversalTime();
 
         _dbSet.Update(entity);
-        return true;
+        return Task.FromResult(true);
     }
 
-    public async Task<bool> SoftRemoveRange(List<TEntity> entities)
+    public Task<bool> SoftRemoveRange(List<TEntity> entities)
     {
         foreach (var entity in entities)
         {
@@ -95,7 +95,7 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
         }
 
         _dbSet.UpdateRange(entities);
-        return true;
+        return Task.FromResult(true);
     }
 
     public async Task<bool> SoftRemoveRangeById(List<Guid> entitiesId)
@@ -114,15 +114,15 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
         return true;
     }
 
-    public async Task<bool> Update(TEntity entity)
+    public Task<bool> Update(TEntity entity)
     {
         entity.UpdatedAt = _timeService.GetCurrentTime().ToUniversalTime();
         entity.UpdatedBy = _claimsService.GetCurrentUserId;
         _dbSet.Update(entity);
-        return true;
+        return Task.FromResult(true);
     }
 
-    public async Task<bool> UpdateRange(List<TEntity> entities)
+    public Task<bool> UpdateRange(List<TEntity> entities)
     {
         foreach (var entity in entities)
         {
@@ -131,7 +131,7 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
         }
 
         _dbSet.UpdateRange(entities);
-        return true;
+        return Task.FromResult(true);
     }
 
     public IQueryable<TEntity> GetQueryable()
@@ -174,17 +174,17 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
         }
     }
 
-    public async Task<bool> HardRemoveRange(List<TEntity> entities)
+    public Task<bool> HardRemoveRange(List<TEntity> entities)
     {
         try
         {
             if (entities.Any())
             {
                 _dbSet.RemoveRange(entities);
-                return true;
+                return Task.FromResult(true);
             }
 
-            return false;
+            return Task.FromResult(false);
         }
         catch (Exception ex)
         {

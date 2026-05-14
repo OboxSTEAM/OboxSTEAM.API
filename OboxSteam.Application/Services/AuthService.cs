@@ -48,10 +48,12 @@ public class AuthService : IAuthService
 
         var user = new User
         {
+            Code = $"USR-{Guid.NewGuid().ToString("N")[..6].ToUpper()}",
             Email = registrationDto.Email,
-            Username = registrationDto.Username,
+            FullName = registrationDto.FullName,
+            Phone = registrationDto.Phone,
             PasswordHash = hashedPassword,
-            Gender = registrationDto.Gender ?? false,
+            Role = RoleType.Student,
             IsEmailVerified = false
         };
 
@@ -67,11 +69,13 @@ public class AuthService : IAuthService
         return new UserDto
         {
             Id = user.Id,
-            Username = user.Username,
+            Code = user.Code,
+            FullName = user.FullName,
             Email = user.Email,
             AvatarUrl = user.AvatarUrl,
-            Gender = user.Gender,
-            PaymentQrCodeUrl = user.PaymentQrCodeUrl,
+            Phone = user.Phone,
+            Role = user.Role,
+            Status = user.Status,
             IsEmailVerified = user.IsEmailVerified,
             CreatedAt = user.CreatedAt
         };
@@ -206,7 +210,7 @@ public class AuthService : IAuthService
         await _emailService.SendRegistrationSuccessEmailAsync(new EmailRequestDto
         {
             To = user.Email,
-            UserName = user.Username
+            UserName = user.FullName
         });
 
         _logger.LogInformation("User {Email} verified and activated.", email);
@@ -241,7 +245,7 @@ public class AuthService : IAuthService
         await _emailService.SendPasswordChangeSuccessAsync(new EmailRequestDto
         {
             To = user.Email,
-            UserName = user.Username
+            UserName = user.FullName
         });
 
         _logger.LogInformation("Password reset successful for {Email}.", email);
@@ -275,7 +279,7 @@ public class AuthService : IAuthService
         {
             To = user.Email,
             Otp = otpToken.Code,
-            UserName = user.Username
+            UserName = user.FullName
         };
 
         if (purpose == OtpPurpose.Register)

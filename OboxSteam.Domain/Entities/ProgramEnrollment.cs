@@ -1,0 +1,28 @@
+using OboxSteam.Domain.Enums;
+
+namespace OboxSteam.Domain.Entities;
+
+public class ProgramEnrollment : BaseEntity
+{
+    public Guid StudentId { get; set; }
+    public User Student { get; set; } = null!;
+
+    public Guid ProgramId { get; set; }
+    public Program Program { get; set; } = null!;
+
+    public EnrollmentStatus Status { get; set; } = EnrollmentStatus.Active;
+
+    public decimal ProgressPercent { get; set; }
+
+    /// <summary>Time the student bought/registered.</summary>
+    public DateTime? EnrolledAt { get; set; }
+
+    /// <summary>Time the student viewed first material.</summary>
+    public DateTime? StartedAt { get; set; }
+
+    /// <summary>Time the student finished all requirements.</summary>
+    public DateTime? CompletedAt { get; set; }
+
+    // Navigation
+    public ICollection<Payment> Payments { get; set; } = new List<Payment>();
+}

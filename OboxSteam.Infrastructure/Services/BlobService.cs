@@ -8,7 +8,7 @@ namespace OboxSteam.Infrastructure.Services;
 
 public class BlobService : IBlobService
 {
-    private readonly string _bucketName = "OboxSteam-bucket";
+    private readonly string _bucketName = "oboxsteam-bucket";
     private readonly ILogger<BlobService> _logger;
     private readonly IMinioClient _minioClient;
 

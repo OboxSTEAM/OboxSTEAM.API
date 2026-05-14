@@ -12,9 +12,10 @@ public class UserRegistrationDto
     [MinLength(6, ErrorMessage = "Password must be at least 6 characters long")]
     public string Password { get; set; } = null!;
 
-    [Required(ErrorMessage = "Username is required")]
-    [MinLength(3, ErrorMessage = "Username must be at least 3 characters long")]
-    public string Username { get; set; } = null!;
+    [Required(ErrorMessage = "Full name is required")]
+    [MinLength(2, ErrorMessage = "Full name must be at least 2 characters long")]
+    public string FullName { get; set; } = null!;
 
-    public bool? Gender { get; set; }
+    [MaxLength(20)]
+    public string? Phone { get; set; }
 }

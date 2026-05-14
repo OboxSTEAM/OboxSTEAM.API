@@ -10,8 +10,53 @@ public class OboxSteamDbContext : DbContext
     {
     }
 
+    // ── 1. Core Users & Roles ──
     public DbSet<User> Users { get; set; }
     public DbSet<OtpStorage> OtpStorages { get; set; }
+    public DbSet<ParentStudent> ParentStudents { get; set; }
+
+    // ── 2. VIP Experts & PR Board ──
+    public DbSet<Expert> Experts { get; set; }
+
+    // ── 3. Student Academic Profile ──
+    public DbSet<StudentProfile> StudentProfiles { get; set; }
+    public DbSet<StudentSkill> StudentSkills { get; set; }
+    public DbSet<StandardizedTest> StandardizedTests { get; set; }
+
+    // ── 4. LMS Hierarchy ──
+    public DbSet<Program> Programs { get; set; }
+    public DbSet<ProgramBoard> ProgramBoards { get; set; }
+    public DbSet<Module> Modules { get; set; }
+    public DbSet<Course> Courses { get; set; }
+    public DbSet<Activity> Activities { get; set; }
+    public DbSet<Material> Materials { get; set; }
+
+    // ── 5. Enrollments & Tracking ──
+    public DbSet<ProgramEnrollment> ProgramEnrollments { get; set; }
+    public DbSet<ModuleEnrollment> ModuleEnrollments { get; set; }
+    public DbSet<CourseEnrollment> CourseEnrollments { get; set; }
+    public DbSet<ActivityBooking> ActivityBookings { get; set; }
+
+    // ── 6. Assessments & Submissions ──
+    public DbSet<Assignment> Assignments { get; set; }
+    public DbSet<QuizQuestion> QuizQuestions { get; set; }
+    public DbSet<QuizOption> QuizOptions { get; set; }
+    public DbSet<Submission> Submissions { get; set; }
+    public DbSet<SubmissionEvidence> SubmissionEvidences { get; set; }
+
+    // ── 7. Certificates & Portfolio ──
+    public DbSet<Certificate> Certificates { get; set; }
+    public DbSet<Portfolio> Portfolios { get; set; }
+    public DbSet<PortfolioCustomItem> PortfolioCustomItems { get; set; }
+
+    // ── 8. AI Engine & Media ──
+    public DbSet<FaceEmbedding> FaceEmbeddings { get; set; }
+    public DbSet<MediaAsset> MediaAssets { get; set; }
+    public DbSet<MediaTag> MediaTags { get; set; }
+    public DbSet<HighlightVideo> HighlightVideos { get; set; }
+
+    // ── 9. Payments ──
+    public DbSet<Payment> Payments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -21,15 +66,219 @@ public class OboxSteamDbContext : DbContext
         // This makes the data human-readable and prevents silent bugs when enum values are reordered.
         modelBuilder.UseStringForEnums();
 
-        // Global query filter for soft delete
+        // =============================================
+        // GLOBAL QUERY FILTERS (Soft Delete)
+        // =============================================
         modelBuilder.Entity<User>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<OtpStorage>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Expert>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<StudentSkill>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<StandardizedTest>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Program>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Module>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Course>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Activity>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Material>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramEnrollment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ModuleEnrollment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CourseEnrollment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ActivityBooking>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Assignment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuizQuestion>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuizOption>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Submission>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Certificate>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Portfolio>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<PortfolioCustomItem>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<FaceEmbedding>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<MediaAsset>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<HighlightVideo>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Payment>().HasQueryFilter(e => !e.IsDeleted);
 
-        // Configure User entity
+        // =============================================
+        // 1. USER
+        // =============================================
         modelBuilder.Entity<User>(entity =>
         {
+            entity.HasIndex(e => e.Code).IsUnique();
             entity.HasIndex(e => e.Email).IsUnique();
-            entity.HasIndex(e => e.Username).IsUnique();
+        });
+
+        // =============================================
+        // PARENT-STUDENT (Composite Key Join Table)
+        // =============================================
+        modelBuilder.Entity<ParentStudent>(entity =>
+        {
+            entity.HasKey(ps => new { ps.ParentId, ps.StudentId });
+
+            entity.HasOne(ps => ps.Parent)
+                .WithMany(u => u.ParentRelations)
+                .HasForeignKey(ps => ps.ParentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ps => ps.Student)
+                .WithMany(u => u.StudentRelations)
+                .HasForeignKey(ps => ps.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // 2. EXPERT (1:1 optional with User)
+        // =============================================
+        modelBuilder.Entity<Expert>(entity =>
+        {
+            entity.HasIndex(e => e.Code).IsUnique();
+
+            entity.HasOne(e => e.User)
+                .WithOne(u => u.Expert)
+                .HasForeignKey<Expert>(e => e.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // 3. STUDENT PROFILE (1:1 with User, shared PK)
+        // =============================================
+        modelBuilder.Entity<StudentProfile>(entity =>
+        {
+            entity.HasOne(sp => sp.Student)
+                .WithOne(u => u.StudentProfile)
+                .HasForeignKey<StudentProfile>(sp => sp.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
+        // 4. PROGRAM BOARD (Unique: program + expert)
+        // =============================================
+        modelBuilder.Entity<ProgramBoard>(entity =>
+        {
+            entity.HasIndex(pb => new { pb.ProgramId, pb.ExpertId }).IsUnique();
+        });
+
+        // =============================================
+        // MODULE (Self-referencing prerequisite)
+        // =============================================
+        modelBuilder.Entity<Module>(entity =>
+        {
+            entity.HasIndex(m => m.Code).IsUnique();
+
+            entity.HasOne(m => m.PrerequisiteModule)
+                .WithMany()
+                .HasForeignKey(m => m.PrerequisiteModuleId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // COURSE
+        // =============================================
+        modelBuilder.Entity<Course>(entity =>
+        {
+            entity.HasIndex(c => c.Code).IsUnique();
+
+            entity.HasOne(c => c.Mentor)
+                .WithMany()
+                .HasForeignKey(c => c.MentorId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // ACTIVITY
+        // =============================================
+        modelBuilder.Entity<Activity>(entity =>
+        {
+            entity.HasIndex(a => a.Code).IsUnique();
+        });
+
+        // =============================================
+        // ACTIVITY BOOKING (Unique: student + activity)
+        // =============================================
+        modelBuilder.Entity<ActivityBooking>(entity =>
+        {
+            entity.HasIndex(ab => new { ab.StudentId, ab.ActivityId }).IsUnique();
+        });
+
+        // =============================================
+        // ASSIGNMENT
+        // =============================================
+        modelBuilder.Entity<Assignment>(entity =>
+        {
+            entity.HasIndex(a => a.Code).IsUnique();
+        });
+
+        // =============================================
+        // SUBMISSION
+        // =============================================
+        modelBuilder.Entity<Submission>(entity =>
+        {
+            entity.HasIndex(s => s.Code).IsUnique();
+
+            entity.HasOne(s => s.Verifier)
+                .WithMany()
+                .HasForeignKey(s => s.VerifiedBy)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(s => s.Student)
+                .WithMany()
+                .HasForeignKey(s => s.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // SUBMISSION EVIDENCE (Composite Key Join Table)
+        // =============================================
+        modelBuilder.Entity<SubmissionEvidence>(entity =>
+        {
+            entity.HasKey(se => new { se.SubmissionId, se.MediaId });
+        });
+
+        // =============================================
+        // CERTIFICATE
+        // =============================================
+        modelBuilder.Entity<Certificate>(entity =>
+        {
+            entity.HasIndex(c => c.Code).IsUnique();
+        });
+
+        // =============================================
+        // PORTFOLIO (Self-referencing parent, unique subdomain)
+        // =============================================
+        modelBuilder.Entity<Portfolio>(entity =>
+        {
+            entity.HasIndex(p => p.Code).IsUnique();
+            entity.HasIndex(p => p.Subdomain).IsUnique();
+
+            entity.HasOne(p => p.ParentPortfolio)
+                .WithMany()
+                .HasForeignKey(p => p.ParentPortfolioId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // FACE EMBEDDING (1:1 with User)
+        // =============================================
+        modelBuilder.Entity<FaceEmbedding>(entity =>
+        {
+            entity.HasIndex(fe => fe.AwsFaceId).IsUnique();
+
+            entity.HasOne(fe => fe.Student)
+                .WithOne(u => u.FaceEmbedding)
+                .HasForeignKey<FaceEmbedding>(fe => fe.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
+        // MEDIA TAG (Composite Key Join Table)
+        // =============================================
+        modelBuilder.Entity<MediaTag>(entity =>
+        {
+            entity.HasKey(mt => new { mt.MediaId, mt.StudentId });
+        });
+
+        // =============================================
+        // PAYMENT (Unique code)
+        // =============================================
+        modelBuilder.Entity<Payment>(entity =>
+        {
+            entity.HasIndex(p => p.Code).IsUnique();
         });
     }
 }

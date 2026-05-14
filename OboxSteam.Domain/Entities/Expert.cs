@@ -1,0 +1,36 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace OboxSteam.Domain.Entities;
+
+/// <summary>
+/// VIP Experts & PR Board — may or may not have an OBOX login (user_id nullable).
+/// </summary>
+public class Expert : BaseEntity
+{
+    [MaxLength(50)]
+    public string Code { get; set; } = null!; // e.g., EXP-001
+
+    /// <summary>Null if external expert (no login).</summary>
+    public Guid? UserId { get; set; }
+    public User? User { get; set; }
+
+    [MaxLength(255)]
+    public string FullName { get; set; } = null!;
+
+    [MaxLength(255)]
+    public string? Title { get; set; } // e.g., Professor of Robotics, PhD in AI
+
+    [MaxLength(255)]
+    public string? Organization { get; set; }
+
+    public string? Bio { get; set; }
+
+    public string? AvatarUrl { get; set; }
+
+    public string? LinkedInUrl { get; set; }
+
+    public string? Achievements { get; set; }
+
+    // Navigation
+    public ICollection<ProgramBoard> ProgramBoards { get; set; } = new List<ProgramBoard>();
+}
