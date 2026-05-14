@@ -35,6 +35,7 @@ public class UnitOfWork : IUnitOfWork
     }
     public IGenericRepository<User> Users => Repository<User>();
     public IGenericRepository<OtpStorage> OtpStorages => Repository<OtpStorage>();
+    public IGenericRepository<FaceEmbedding> FaceEmbeddings => Repository<FaceEmbedding>();
 
 
     public async Task<int> SaveChangesAsync()

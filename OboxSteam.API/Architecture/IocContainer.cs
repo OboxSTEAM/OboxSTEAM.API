@@ -1,3 +1,4 @@
+using Amazon.Rekognition;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -47,6 +48,7 @@ public static class IocContainer
         services.SetupMinIO();
         services.SetupRedis();
         services.SetupReSendService();
+        services.SetupAwsRekognition();
 
         return services;
     }
@@ -135,6 +137,18 @@ public static class IocContainer
         services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
+        return services;
+    }
+
+    public static IServiceCollection SetupAwsRekognition(this IServiceCollection services)
+    {
+        services.AddSingleton<IAmazonRekognition>(_ =>
+            new AmazonRekognitionClient(
+                Environment.GetEnvironmentVariable("AWS_ACCESS_KEY"),
+                Environment.GetEnvironmentVariable("AWS_SECRET_KEY"),
+                Amazon.RegionEndpoint.APSoutheast1)); // Singapore - gần VN nhất
+
         return services;
     }
 

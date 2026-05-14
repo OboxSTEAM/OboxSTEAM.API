@@ -14,18 +14,23 @@ services:
       minio:
         condition: service_healthy
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Host=oboxsteam.database;Port=5432;Database=OboxSteam_db;Username=postgres;Password=postgres
-      - ConnectionStrings__Redis=oboxsteam-redis:6379,abortConnect=false
-      - JWT__SecretKey=OboxSteam_SECRETKEY_SIEUCAPBAOMAT_VAYMACHUADU16KYTU
-      - JWT__Issuer=OboxSteam
-      - JWT__Audience=OboxSteamUsers
-      - RESEND_APITOKEN=re_TGc8Auq8_MqN19Bvves78Q4joa9UmmkKr
-      - RESEND_FROM=noreply@oboxsteam.com
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_HOST=http://localhost:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ConnectionStrings__DefaultConnection=${CONNECTION_STRING}
+      - ConnectionStrings__Redis=${REDIS_CONNECTION}
+      - JWT__SecretKey=${JWT_SECRET_KEY}
+      - JWT__Issuer=${JWT_ISSUER}
+      - JWT__Audience=${JWT_AUDIENCE}
+      - RESEND_APITOKEN=${RESEND_APITOKEN}
+      - RESEND_FROM=${RESEND_FROM}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_HOST=${MINIO_HOST}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
+      - AWS_SECRET_KEY=${AWS_SECRET_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - CORS_ALLOWED_ORIGIN=${CORS_ALLOWED_ORIGIN}
+      - APP_BASE_URL=${APP_BASE_URL}
     ports:
       - "5000:5000"
     networks:
@@ -36,15 +41,15 @@ services:
     container_name: oboxsteam-database
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: OboxSteam_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d OboxSteam_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -79,8 +84,8 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data
