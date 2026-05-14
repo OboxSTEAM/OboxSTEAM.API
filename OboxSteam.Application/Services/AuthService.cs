@@ -94,7 +94,7 @@ public class AuthService : IAuthService
         if (!new PasswordHasher().VerifyPassword(loginDto.Password!, user.PasswordHash))
             throw ErrorHelper.Unauthorized("Incorrect password.");
 
-        if (user.IsDeleted)
+        if (user.Status == AccountStatus.Locked)
             throw ErrorHelper.Forbidden("Your account has been disabled. Please contact support.");
 
         if (!user.IsEmailVerified)
