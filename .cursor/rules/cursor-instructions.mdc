@@ -1,0 +1,38 @@
+---
+description: Repository-wide workflow, language policy, and development practices
+alwaysApply: true
+---
+
+# Project Instructions
+
+## Language Policy
+
+All instructions and prompts in this repository must be written in English. This applies to:
+
+- All rule and instruction files in `.cursor/rules/`
+- All documentation and code comments intended for contributors
+
+## Development Code Generation
+
+When working with C# code, follow these instructions very carefully.
+
+It is **EXTREMELY important** that you follow the instructions in the rule files very carefully.
+
+### Workflow Implementation
+
+**IMPORTANT:** Always follow these steps when implementing new features:
+
+1. Consult any relevant instruction/rule files and start by listing which rule files have been used to guide the implementation (e.g. `Rules used: [coding-style-csharp.mdc, follow-up-question.mdc]`).
+
+2. Always run `dotnet test` or `dotnet build` to verify that all tests pass before committing your changes. Don't ask to run the tests, just do it. If you are not sure how to run the tests, ask for help. You can also use `dotnet watch test` to run the tests automatically when you change the code.
+
+3. Don't create `.md` files after implementing a feature.
+
+4. When the task is completed, summarize what has been done and never use emoji in chat — always go straight to the point.
+
+5. Fix any compiler warnings and errors before going to the next step.
+
+## Related Rules
+
+- C# style and API patterns: `coding-style-csharp.mdc` (applies to `**/*.cs`)
+- Confidence gate before changes: `follow-up-question.mdc`
