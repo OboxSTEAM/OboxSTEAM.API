@@ -135,6 +135,8 @@ public static class IocContainer
         services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<ISeedService, SeedService>();
+        services.AddScoped<IAccountService, AccountService>();
         return services;
     }
 
@@ -248,11 +250,20 @@ public static class IocContainer
 
         services.AddAuthorization(options =>
         {
-            options.AddPolicy("LeaderPolicy", policy =>
-                policy.RequireRole("Leader"));
+            options.AddPolicy("SuperAdminPolicy", policy =>
+                policy.RequireRole("SuperAdmin"));
 
-            options.AddPolicy("MemberPolicy", policy =>
-                policy.RequireRole("Member"));
+            options.AddPolicy("ManagerPolicy", policy =>
+                policy.RequireRole("Manager"));
+
+            options.AddPolicy("MentorPolicy", policy =>
+                policy.RequireRole("Mentor"));
+
+            options.AddPolicy("ParentPolicy", policy =>
+                policy.RequireRole("Parent"));
+
+            options.AddPolicy("StudentPolicy", policy =>
+                policy.RequireRole("Student")); 
         });
 
         return services;

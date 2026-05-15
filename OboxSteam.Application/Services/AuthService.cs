@@ -82,7 +82,7 @@ public class AuthService : IAuthService
     }
 
     /// <summary>Login a user and return JWT access and refresh token.</summary>
-    public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto loginDto)
+    public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto loginDto, IConfiguration configuration)
     {
         _logger.LogInformation("Login attempt for {Email}", loginDto.Email);
 
@@ -94,7 +94,7 @@ public class AuthService : IAuthService
         if (!new PasswordHasher().VerifyPassword(loginDto.Password!, user.PasswordHash))
             throw ErrorHelper.Unauthorized("Incorrect password.");
 
-        if (user.IsDeleted)
+        if (user.Status == AccountStatus.Locked)
             throw ErrorHelper.Forbidden("Your account has been disabled. Please contact support.");
 
         if (!user.IsEmailVerified)
@@ -106,7 +106,7 @@ public class AuthService : IAuthService
             user.Id,
             user.Email,
             "User",
-            _configuration,
+            configuration,
             TimeSpan.FromMinutes(30));
 
         var refreshToken = TokenTools.GenerateRefreshToken();
@@ -152,7 +152,7 @@ public class AuthService : IAuthService
     }
 
     /// <summary>Refresh the access token using the refresh token.</summary>
-    public async Task<LoginResponseDto?> RefreshTokenAsync(TokenRefreshRequestDto refreshTokenDto)
+    public async Task<LoginResponseDto?> RefreshTokenAsync(TokenRefreshRequestDto refreshTokenDto, IConfiguration configuration)
     {
         if (string.IsNullOrWhiteSpace(refreshTokenDto.RefreshToken))
             throw ErrorHelper.BadRequest("Refresh token is required.");
@@ -173,7 +173,7 @@ public class AuthService : IAuthService
             user.Id,
             user.Email,
             "User",
-            _configuration,
+            configuration,
             TimeSpan.FromHours(1));
 
         var newRefreshToken = TokenTools.GenerateRefreshToken();
