@@ -7,10 +7,10 @@ using Minio;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
-using OboxSteam.Infrastructure.Services;
 using OboxSteam.Infrastructure;
 using OboxSteam.Infrastructure.Commons;
 using OboxSteam.Infrastructure.Persistence;
+using OboxSteam.Infrastructure.Services;
 using Resend;
 using StackExchange.Redis;
 using System.Text;
@@ -68,7 +68,7 @@ public static class IocContainer
 
     public static IServiceCollection SetupMinIO(this IServiceCollection services)
     {
-        var endpoint  = Environment.GetEnvironmentVariable("MINIO_ENDPOINT")  ?? "localhost:9001";
+        var endpoint = Environment.GetEnvironmentVariable("MINIO_ENDPOINT") ?? "localhost:9001";
         var accessKey = Environment.GetEnvironmentVariable("MINIO_ACCESS_KEY") ?? "minioadmin";
         var secretKey = Environment.GetEnvironmentVariable("MINIO_SECRET_KEY") ?? "minioadmin";
 
@@ -137,6 +137,9 @@ public static class IocContainer
         services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<ISeedService, SeedService>();
+        services.AddScoped<IAccountService, AccountService>();
+        services.AddScoped<IProgramService, ProgramService>();
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
         return services;
     }
@@ -262,11 +265,20 @@ public static class IocContainer
 
         services.AddAuthorization(options =>
         {
-            options.AddPolicy("LeaderPolicy", policy =>
-                policy.RequireRole("Leader"));
+            options.AddPolicy("SuperAdminPolicy", policy =>
+                policy.RequireRole("SuperAdmin"));
 
-            options.AddPolicy("MemberPolicy", policy =>
-                policy.RequireRole("Member"));
+            options.AddPolicy("ManagerPolicy", policy =>
+                policy.RequireRole("Manager"));
+
+            options.AddPolicy("MentorPolicy", policy =>
+                policy.RequireRole("Mentor"));
+
+            options.AddPolicy("ParentPolicy", policy =>
+                policy.RequireRole("Parent"));
+
+            options.AddPolicy("StudentPolicy", policy =>
+                policy.RequireRole("Student"));
         });
 
         return services;

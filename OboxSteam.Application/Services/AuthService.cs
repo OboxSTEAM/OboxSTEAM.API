@@ -17,20 +17,17 @@ public class AuthService : IAuthService
     private readonly ILogger<AuthService> _logger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
-    private readonly IConfiguration _configuration;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IEmailService emailService,
         ILogger<AuthService> logger,
-        IClaimsService claimsService,
-        IConfiguration configuration)
+        IClaimsService claimsService)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
         _logger = logger;
         _claimsService = claimsService;
-        _configuration = configuration;
     }
 
     /// <summary>Register a new user.</summary>
@@ -82,7 +79,7 @@ public class AuthService : IAuthService
     }
 
     /// <summary>Login a user and return JWT access and refresh token.</summary>
-    public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto loginDto)
+    public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto loginDto, IConfiguration configuration)
     {
         _logger.LogInformation("Login attempt for {Email}", loginDto.Email);
 
@@ -94,7 +91,7 @@ public class AuthService : IAuthService
         if (!new PasswordHasher().VerifyPassword(loginDto.Password!, user.PasswordHash))
             throw ErrorHelper.Unauthorized("Incorrect password.");
 
-        if (user.IsDeleted)
+        if (user.Status == AccountStatus.Locked)
             throw ErrorHelper.Forbidden("Your account has been disabled. Please contact support.");
 
         if (!user.IsEmailVerified)
@@ -105,8 +102,8 @@ public class AuthService : IAuthService
         var accessToken = JwtUtils.GenerateJwtToken(
             user.Id,
             user.Email,
-            "User",
-            _configuration,
+            user.Role.ToString(),
+            configuration,
             TimeSpan.FromMinutes(30));
 
         var refreshToken = TokenTools.GenerateRefreshToken();
@@ -152,7 +149,7 @@ public class AuthService : IAuthService
     }
 
     /// <summary>Refresh the access token using the refresh token.</summary>
-    public async Task<LoginResponseDto?> RefreshTokenAsync(TokenRefreshRequestDto refreshTokenDto)
+    public async Task<LoginResponseDto?> RefreshTokenAsync(TokenRefreshRequestDto refreshTokenDto, IConfiguration configuration)
     {
         if (string.IsNullOrWhiteSpace(refreshTokenDto.RefreshToken))
             throw ErrorHelper.BadRequest("Refresh token is required.");
@@ -172,8 +169,8 @@ public class AuthService : IAuthService
         var newAccessToken = JwtUtils.GenerateJwtToken(
             user.Id,
             user.Email,
-            "User",
-            _configuration,
+            user.Role.ToString(),
+            configuration,
             TimeSpan.FromHours(1));
 
         var newRefreshToken = TokenTools.GenerateRefreshToken();
@@ -222,9 +219,9 @@ public class AuthService : IAuthService
     {
         return otpPurpose switch
         {
-            OtpPurpose.Register        => await SendRegisterOtpAsync(email),
-            OtpPurpose.ForgotPassword  => await SendForgotPasswordOtpAsync(email),
-            _                          => throw ErrorHelper.BadRequest("Invalid OTP type.")
+            OtpPurpose.Register => await SendRegisterOtpAsync(email),
+            OtpPurpose.ForgotPassword => await SendForgotPasswordOtpAsync(email),
+            _ => throw ErrorHelper.BadRequest("Invalid OTP type.")
         };
     }
 
