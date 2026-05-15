@@ -9,6 +9,7 @@ public interface IUnitOfWork : IDisposable
 
     IGenericRepository<User> Users { get; }
     IGenericRepository<OtpStorage> OtpStorages { get; }
+    IGenericRepository<Program> Program { get; }
 
     Task<int> SaveChangesAsync();
 }
