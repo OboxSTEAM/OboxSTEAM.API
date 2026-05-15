@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using Minio;
+using Amazon.S3;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
@@ -45,7 +45,7 @@ public static class IocContainer
         // Add JWT Authentication
         services.SetupJwt(configuration);
         // 3rd party services
-        services.SetupMinIO();
+        services.SetupAwsS3();
         services.SetupRedis();
         services.SetupReSendService();
         services.SetupAwsRekognition();
@@ -66,18 +66,19 @@ public static class IocContainer
         return services;
     }
 
-    public static IServiceCollection SetupMinIO(this IServiceCollection services)
+    public static IServiceCollection SetupAwsS3(this IServiceCollection services)
     {
-        var endpoint = Environment.GetEnvironmentVariable("MINIO_ENDPOINT") ?? "localhost:9001";
-        var accessKey = Environment.GetEnvironmentVariable("MINIO_ACCESS_KEY") ?? "minioadmin";
-        var secretKey = Environment.GetEnvironmentVariable("MINIO_SECRET_KEY") ?? "minioadmin";
+        var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY")
+            ?? throw new InvalidOperationException("AWS_ACCESS_KEY not found in environment variables.");
+        var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_KEY")
+            ?? throw new InvalidOperationException("AWS_SECRET_KEY not found in environment variables.");
+        var region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
 
-        services.AddSingleton<IMinioClient>(_ =>
-            new MinioClient()
-                .WithEndpoint(endpoint)
-                .WithCredentials(accessKey, secretKey)
-                .WithSSL(false)
-                .Build());
+        services.AddSingleton<IAmazonS3>(_ =>
+            new AmazonS3Client(
+                accessKey,
+                secretKey,
+                Amazon.RegionEndpoint.GetBySystemName(region)));
 
         return services;
     }
@@ -146,11 +147,13 @@ public static class IocContainer
 
     public static IServiceCollection SetupAwsRekognition(this IServiceCollection services)
     {
+        var region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
+
         services.AddSingleton<IAmazonRekognition>(_ =>
             new AmazonRekognitionClient(
                 Environment.GetEnvironmentVariable("AWS_ACCESS_KEY"),
                 Environment.GetEnvironmentVariable("AWS_SECRET_KEY"),
-                Amazon.RegionEndpoint.APSoutheast1)); // Singapore - gần VN nhất
+                Amazon.RegionEndpoint.GetBySystemName(region)));
 
         return services;
     }

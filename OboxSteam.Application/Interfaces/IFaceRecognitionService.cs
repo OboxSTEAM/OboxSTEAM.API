@@ -6,7 +6,10 @@ namespace OboxSteam.Application.Interfaces;
 /// </summary>
 public interface IFaceRecognitionService
 {
-    /// <summary>Đăng ký khuôn mặt user vào collection khi upload avatar.</summary>
+    /// <summary>
+    /// Đăng ký khuôn mặt user vào collection khi upload avatar.
+    /// Does NOT call SaveChangesAsync — caller must commit the UnitOfWork.
+    /// </summary>
     Task<string> IndexFaceAsync(Guid userId, Stream imageStream);
 
     /// <summary>Tìm users match trong một ảnh upload lên.</summary>

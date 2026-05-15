@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.DTOs.UserDTO;
 using OboxSteam.Application.Interfaces;
@@ -73,6 +73,26 @@ namespace OboxSteam.API.Controllers
         {
             var result = await _accountService.UpdateUserProfileAsync(updateUserDto);
             return Ok(ApiResult<UserDto>.Success(result!, "200", "Profile updated successfully."));
+        }
+
+        /// <summary>
+        /// Upload avatar for the current authenticated user.
+        /// </summary>
+        /// <param name="file">Image file (jpg, jpeg, png, gif). Max 5 MB.</param>
+        /// <returns>Updated user profile with new avatar URL.</returns>
+        [HttpPost("me/avatar")]
+        [SwaggerOperation(
+            Summary = "Upload user avatar",
+            Description = "Uploads a new avatar image for the currently authenticated user. Replaces the existing avatar if one exists."
+        )]
+        [ProducesResponseType(typeof(ApiResult<UserDto>), 200)]
+        [ProducesResponseType(typeof(ApiResult<UserDto>), 400)]
+        [ProducesResponseType(typeof(ApiResult<UserDto>), 401)]
+        [ProducesResponseType(typeof(ApiResult<UserDto>), 404)]
+        public async Task<IActionResult> UploadAvatar(IFormFile file)
+        {
+            var result = await _accountService.UploadAvatarAsync(file);
+            return Ok(ApiResult<UserDto>.Success(result!, "200", "Avatar uploaded successfully."));
         }
     }
 }

@@ -108,13 +108,13 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Check MinIO bucket exists
-app.Logger.LogInformation("Checking MinIO bucket...");
+// Check S3 bucket exists
+app.Logger.LogInformation("Checking S3 bucket...");
 using (var scope = app.Services.CreateScope())
 {
     var blob = scope.ServiceProvider.GetRequiredService<IBlobService>();
     await blob.EnsureBucketExistsAsync();
-    app.Logger.LogInformation("MinIO bucket ready");
+    app.Logger.LogInformation("S3 bucket ready");
 }
 
 app.UseCors("AllowFrontend");
