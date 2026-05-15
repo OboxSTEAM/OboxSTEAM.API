@@ -18,7 +18,6 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.4" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
-    <PackageReference Include="Minio" Version="7.0.0" />
     <PackageReference Include="Resend" Version="0.4.0" />
     <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.1.2" />

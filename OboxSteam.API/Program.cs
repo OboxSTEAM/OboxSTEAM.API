@@ -6,6 +6,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+EnvFileLoader.LoadFromSolutionRoot();
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configuration
@@ -86,15 +88,6 @@ catch (Exception e)
 {
     app.Logger.LogCritical(e, "CRITICAL: Failed to apply database migrations. Application cannot start.");
     throw; // Stop application if migrations fail
-}
-
-// Check MinIO bucket exists
-app.Logger.LogInformation("Checking MinIO bucket...");
-using (var scope = app.Services.CreateScope())
-{
-    var blob = scope.ServiceProvider.GetRequiredService<IBlobService>();
-    await blob.EnsureBucketExistsAsync();
-    app.Logger.LogInformation("MinIO bucket ready");
 }
 
 app.UseCors("AllowFrontend");
