@@ -33,7 +33,7 @@ public class ProgramService : IProgramService
         {
             _logger.LogInformation("[GetProgramByIdAsync] Fetching program with Id: {Id}", id);
 
-            var program = await _unitOfWork.Program.GetByIdAsync(id, p => p.Modules);
+            var program = await _unitOfWork.Programs.GetByIdAsync(id, p => p.Modules);
 
             if (program == null || program.IsDeleted)
             {
@@ -93,7 +93,7 @@ public class ProgramService : IProgramService
         {
             _logger.LogInformation("[GetProgramByNameAsync] Fetching program with name: {Name}", name);
 
-            var program = await _unitOfWork.Program.FirstOrDefaultAsync(
+            var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
                 p => p.Name.ToLower() == name.ToLower() && !p.IsDeleted,
                 p => p.Modules);
 
@@ -167,7 +167,7 @@ public class ProgramService : IProgramService
                 "[GetAllProgramAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
                 page, pageSize, search);
 
-            var query = _unitOfWork.Program
+            var query = _unitOfWork.Programs
                 .GetQueryable()
                 .Where(p => !p.IsDeleted);
 
@@ -286,7 +286,7 @@ public class ProgramService : IProgramService
         try
         {
             // Kiểm tra trùng Code
-            var existing = await _unitOfWork.Program.FirstOrDefaultAsync(
+            var existing = await _unitOfWork.Programs.FirstOrDefaultAsync(
                 p => p.Code.ToLower() == programCreateDto.Code.ToLower() && !p.IsDeleted);
 
             if (existing != null)
@@ -309,7 +309,7 @@ public class ProgramService : IProgramService
                 Price = programCreateDto.Price,
             };
 
-            await _unitOfWork.Program.AddAsync(program);
+            await _unitOfWork.Programs.AddAsync(program);
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation("[AddProgramAsync] Program '{Code}' added successfully with Id {Id}.",
@@ -353,7 +353,7 @@ public class ProgramService : IProgramService
         {
             _logger.LogInformation("[UpdateProgramAsync] Attempting to update program with Id: {Id}", id);
 
-            var program = await _unitOfWork.Program.GetByIdAsync(id, p => p.Modules);
+            var program = await _unitOfWork.Programs.GetByIdAsync(id, p => p.Modules);
 
             if (program == null || program.IsDeleted)
             {
@@ -365,7 +365,7 @@ public class ProgramService : IProgramService
             if (!string.IsNullOrWhiteSpace(programUpdateDto.Code) &&
                 !program.Code.Equals(programUpdateDto.Code, StringComparison.OrdinalIgnoreCase))
             {
-                var duplicate = await _unitOfWork.Program.FirstOrDefaultAsync(
+                var duplicate = await _unitOfWork.Programs.FirstOrDefaultAsync(
                     p => p.Code.ToLower() == programUpdateDto.Code.ToLower() &&
                          !p.IsDeleted &&
                          p.Id != id);
@@ -477,7 +477,7 @@ public class ProgramService : IProgramService
                 };
             }
 
-            await _unitOfWork.Program.Update(program);
+            await _unitOfWork.Programs.Update(program);
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation("[UpdateProgramAsync] Program Id {Id} updated successfully.", id);
@@ -533,7 +533,7 @@ public class ProgramService : IProgramService
         {
             _logger.LogInformation("[DeleteProgramAsync] Attempting to soft-delete program Id: {Id}", id);
 
-            var program = await _unitOfWork.Program.GetByIdAsync(id);
+            var program = await _unitOfWork.Programs.GetByIdAsync(id);
 
             if (program == null || program.IsDeleted)
             {
@@ -541,7 +541,7 @@ public class ProgramService : IProgramService
                 throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
             }
 
-            await _unitOfWork.Program.SoftRemove(program);
+            await _unitOfWork.Programs.SoftRemove(program);
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation("[DeleteProgramAsync] Program Id {Id} soft-deleted successfully.", id);

@@ -17,20 +17,17 @@ public class AuthService : IAuthService
     private readonly ILogger<AuthService> _logger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
-    private readonly IConfiguration _configuration;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IEmailService emailService,
         ILogger<AuthService> logger,
-        IClaimsService claimsService,
-        IConfiguration configuration)
+        IClaimsService claimsService)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
         _logger = logger;
         _claimsService = claimsService;
-        _configuration = configuration;
     }
 
     /// <summary>Register a new user.</summary>
@@ -105,7 +102,7 @@ public class AuthService : IAuthService
         var accessToken = JwtUtils.GenerateJwtToken(
             user.Id,
             user.Email,
-            "User",
+            user.Role.ToString(),
             configuration,
             TimeSpan.FromMinutes(30));
 
@@ -172,7 +169,7 @@ public class AuthService : IAuthService
         var newAccessToken = JwtUtils.GenerateJwtToken(
             user.Id,
             user.Email,
-            "User",
+            user.Role.ToString(),
             configuration,
             TimeSpan.FromHours(1));
 
@@ -222,9 +219,9 @@ public class AuthService : IAuthService
     {
         return otpPurpose switch
         {
-            OtpPurpose.Register        => await SendRegisterOtpAsync(email),
-            OtpPurpose.ForgotPassword  => await SendForgotPasswordOtpAsync(email),
-            _                          => throw ErrorHelper.BadRequest("Invalid OTP type.")
+            OtpPurpose.Register => await SendRegisterOtpAsync(email),
+            OtpPurpose.ForgotPassword => await SendForgotPasswordOtpAsync(email),
+            _ => throw ErrorHelper.BadRequest("Invalid OTP type.")
         };
     }
 

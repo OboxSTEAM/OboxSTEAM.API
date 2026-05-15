@@ -35,7 +35,29 @@ public class UnitOfWork : IUnitOfWork
     }
     public IGenericRepository<User> Users => Repository<User>();
     public IGenericRepository<OtpStorage> OtpStorages => Repository<OtpStorage>();
-    public IGenericRepository<Program> Program => Repository<Program>();
+    public IGenericRepository<Program> Programs => Repository<Program>();
+    public IGenericRepository<ProgramEnrollment> ProgramEnrollments => Repository<ProgramEnrollment>();
+    public IGenericRepository<Course> Courses => Repository<Course>();
+    public IGenericRepository<CourseEnrollment> CourseEnrollments => Repository<CourseEnrollment>();
+    public IGenericRepository<Module> Modules => Repository<Module>();
+    public IGenericRepository<ModuleEnrollment> ModuleEnrollments => Repository<ModuleEnrollment>();
+    public IGenericRepository<Material> Materials => Repository<Material>();
+    public IGenericRepository<Assignment> Assignments => Repository<Assignment>();
+    public IGenericRepository<Submission> Submissions => Repository<Submission>();
+    public IGenericRepository<QuizQuestion> QuizQuestions => Repository<QuizQuestion>();
+    public IGenericRepository<QuizOption> QuizOptions => Repository<QuizOption>();
+    public IGenericRepository<Activity> Activities => Repository<Activity>();
+    public IGenericRepository<ActivityBooking> ActivityBookings => Repository<ActivityBooking>();
+    public IGenericRepository<Expert> Experts => Repository<Expert>();
+    public IGenericRepository<Certificate> Certificates => Repository<Certificate>();
+    public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();
+    public IGenericRepository<HighlightVideo> HighlightVideos => Repository<HighlightVideo>();
+    public IGenericRepository<FaceEmbedding> FaceEmbeddings => Repository<FaceEmbedding>();
+    public IGenericRepository<Portfolio> Portfolios => Repository<Portfolio>();
+    public IGenericRepository<PortfolioCustomItem> PortfolioCustomItems => Repository<PortfolioCustomItem>();
+    public IGenericRepository<StudentSkill> StudentSkills => Repository<StudentSkill>();
+    public IGenericRepository<StandardizedTest> StandardizedTests => Repository<StandardizedTest>();
+    public IGenericRepository<Payment> Payments => Repository<Payment>();
 
 
     public async Task<int> SaveChangesAsync()

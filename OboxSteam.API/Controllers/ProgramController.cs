@@ -138,7 +138,7 @@ public class ProgramController : ControllerBase
             var result = await _programService.AddProgramAsync(dto);
 
             return CreatedAtAction(
-                nameof(GetProgramByIdAsync),
+                "GetProgramById",
                 new { id = result.Id },
                 ApiResult<ProgramResponseDto>.Success(result, "201", "Program created successfully."));
         }
