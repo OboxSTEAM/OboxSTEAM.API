@@ -2,14 +2,17 @@
 applyTo: '**/*.cs'
 ---
 
-# Coding Style
+# Coding Style (C#)
+
+Follow the official Microsoft .NET C# coding conventions: https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
 
 ## General Guidelines
-- Follow the official Microsoft .NET C# coding conventions: https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
+
 - Prefer clarity and readability over brevity.
 - Use consistent formatting and naming throughout the codebase.
 
 ## Naming Conventions
+
 - Use `PascalCase` for class, method, and property names.
 - Use `camelCase` for local variables and method parameters.
 - Use `ALL_CAPS` for constants.
@@ -17,12 +20,14 @@ applyTo: '**/*.cs'
 - Use meaningful, descriptive names; avoid abbreviations.
 
 ## Formatting
+
 - Use 4 spaces for indentation (no tabs).
 - Use file-scoped namespaces to simplify structure and improve readability.
 - Add a blank line between method definitions.
 - Place opening braces on a new line for methods, properties, and types (unless using file-scoped namespaces, then follow the file-scoped style).
 
 ### Example: File-Scoped Namespaces
+
 ```csharp
 // Before
 namespace MyNamespace
@@ -32,6 +37,7 @@ namespace MyNamespace
         // ...existing code...
     }
 }
+
 // After
 namespace MyNamespace;
 
@@ -40,19 +46,23 @@ public class ExampleClass
     // ...existing code...
 }
 ```
+
 - All new files must use file-scoped namespaces. Refactor existing files during updates or maintenance.
 
 ## Variable Declaration
+
 - Use `var` for local variable declarations when the type is obvious.
 - Prefer explicit types if it improves clarity.
 
 ### Example
+
 ```csharp
 // Before
 int x = 1;
 double y = 2.0;
 string z = "Hello";
 ProductBacklogItem item = new ProductBacklogItem("Test", "Test", 1, 1, 1);
+
 // After
 var x = 1;
 var y = 2.0;
@@ -61,20 +71,25 @@ var item = new ProductBacklogItem("Test", "Test", 1, 1, 1);
 ```
 
 ## Sealed Classes
+
 - Make classes `sealed` by default. If a class needs to be inherited, mark it as `virtual` explicitly.
 
 ## Use Nameof with Exceptions
+
 - When throwing exceptions, use `nameof` to refer to the parameter name instead of hardcoding it.
 
 ### Example
+
 ```csharp
 // Before
 throw new ArgumentNullException("parameterName");
+
 // After
 throw new ArgumentNullException(nameof(parameterName));
 ```
 
 ## Code Structure
+
 - One type per file (class, interface, enum, etc.).
 - Organize files by feature/domain when possible.
 - Group using directives at the top of the file, outside the namespace.
@@ -82,17 +97,74 @@ throw new ArgumentNullException(nameof(parameterName));
 - Use partial classes only when necessary (e.g., for code generation).
 
 ## Comments & Documentation
+
 - Use XML documentation comments (`///`) for public APIs.
 - Write comments to explain why, not what, when necessary.
 - Remove commented-out code before committing.
 
 ## Null Checks & Exceptions
+
 - Use guard clauses for argument validation.
 - Use `nameof` for parameter names in exceptions.
 
 ## Modern C# Features
+
 - Use pattern matching and expression-bodied members where appropriate.
 - Prefer object and collection initializers.
 
-# References
+## Project Structure
+
+- Always follow the existing project structure and naming conventions.
+- Do not introduce new patterns or layers unless explicitly requested.
+
+## Error Handling
+
+- No try-catch blocks — propagate exceptions upward using `throw`.
+- Use `ErrorHelper` to throw standardized exceptions:
+  - `ErrorHelper.NotFound(...)`
+  - `ErrorHelper.Conflict(...)`
+- Use `ILogger<>` `_loggerService` for logging errors and warnings where appropriate.
+
+## Mapping
+
+- No mapper libraries (AutoMapper, Mapster, etc.).
+- Map manually using `new Dto { Property = entity.Property, ... }` inline, or via a private static method within the same class.
+- No separate mapper classes or files.
+
+## Unhappy Path Coverage
+
+- Always validate and handle all unhappy cases before proceeding with the happy path:
+  - Null or missing inputs
+  - Entity not found
+  - Duplicate or conflicting data
+  - Unauthorized or forbidden access
+  - Invalid state transitions
+- Validate as early as possible — fail fast.
+
+## Controller Conventions
+
+- Controller action methods must still be `async Task<IActionResult>` but the method name must NOT have the `Async` suffix.
+
+**CORRECT:**
+
+```csharp
+public async Task<IActionResult> CreateActivity([FromBody] CreateActivityRequest request)
+{
+    var result = await _service.CreateActivity(request);
+    return CreatedAtAction(nameof(GetActivityById), new { id = result.Id }, result);
+}
+```
+
+**INCORRECT:**
+
+```csharp
+public async Task<IActionResult> CreateActivityAsync([FromBody] CreateActivityRequest request)
+{
+    var result = await _service.CreateActivityAsync(request);
+    return CreatedAtAction(nameof(GetActivityById), new { id = result.Id }, result);
+}
+```
+
+## References
+
 - Adhere to Microsoft's [coding conventions](https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions).

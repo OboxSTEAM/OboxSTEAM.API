@@ -31,7 +31,7 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<Pagination<ProgramResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
-    public async Task<IActionResult> GetAllProgramsAsync(
+    public async Task<IActionResult> GetAllPrograms(
         [FromQuery, SwaggerParameter(Description = "Search by name or code (optional)")] string? search = null,
         [FromQuery, SwaggerParameter(Description = "Sort by field: name, code, level, rating, price, createdAt (optional)")] string? sortBy = null,
         [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
@@ -43,23 +43,14 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
         [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null)
     {
-        try
-        {
-            if (page < 1 || pageSize < 1)
-                return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+        if (page < 1 || pageSize < 1)
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
 
-            var result = await _programService.GetAllProgramAsync(
-                search, sortBy, isDescending, page, pageSize,
-                code, level, rating, skillsGained, status);
+        var result = await _programService.GetAllProgramAsync(
+            search, sortBy, isDescending, page, pageSize,
+            code, level, rating, skillsGained, status);
 
-            return Ok(ApiResult<Pagination<ProgramResponseDto>>.Success(result, "200", "Programs retrieved successfully."));
-        }
-        catch (Exception ex)
-        {
-            var statusCode = ExceptionUtils.ExtractStatusCode(ex);
-            var errorResponse = ExceptionUtils.CreateErrorResponse<object>(ex);
-            return StatusCode(statusCode, errorResponse);
-        }
+        return Ok(ApiResult<Pagination<ProgramResponseDto>>.Success(result, "200", "Programs retrieved successfully."));
     }
 
     // =========================================================================
@@ -73,19 +64,10 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<ProgramResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
-    public async Task<IActionResult> GetProgramByIdAsync([FromRoute] Guid id)
+    public async Task<IActionResult> GetProgramById([FromRoute] Guid id)
     {
-        try
-        {
-            var result = await _programService.GetProgramByIdAsync(id);
-            return Ok(ApiResult<ProgramResponseDto>.Success(result, "200", "Program retrieved successfully."));
-        }
-        catch (Exception ex)
-        {
-            var statusCode = ExceptionUtils.ExtractStatusCode(ex);
-            var errorResponse = ExceptionUtils.CreateErrorResponse<object>(ex);
-            return StatusCode(statusCode, errorResponse);
-        }
+        var result = await _programService.GetProgramByIdAsync(id);
+        return Ok(ApiResult<ProgramResponseDto>.Success(result, "200", "Program retrieved successfully."));
     }
 
     // =========================================================================
@@ -99,20 +81,11 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<ProgramResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
-    public async Task<IActionResult> GetProgramByNameAsync(
+    public async Task<IActionResult> GetProgramByName(
         [FromRoute, SwaggerParameter(Description = "The program name to search for")] string name)
     {
-        try
-        {
-            var result = await _programService.GetProgramByNameAsync(name);
-            return Ok(ApiResult<ProgramResponseDto>.Success(result, "200", "Program retrieved successfully."));
-        }
-        catch (Exception ex)
-        {
-            var statusCode = ExceptionUtils.ExtractStatusCode(ex);
-            var errorResponse = ExceptionUtils.CreateErrorResponse<object>(ex);
-            return StatusCode(statusCode, errorResponse);
-        }
+        var result = await _programService.GetProgramByNameAsync(name);
+        return Ok(ApiResult<ProgramResponseDto>.Success(result, "200", "Program retrieved successfully."));
     }
 
     // =========================================================================
@@ -130,24 +103,15 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
-    public async Task<IActionResult> AddProgramAsync(
+    public async Task<IActionResult> AddProgram(
         [FromBody, SwaggerParameter("New program data to be created")] ProgramCreateDto dto)
     {
-        try
-        {
-            var result = await _programService.AddProgramAsync(dto);
+        var result = await _programService.AddProgramAsync(dto);
 
-            return CreatedAtAction(
-                "GetProgramById",
-                new { id = result.Id },
-                ApiResult<ProgramResponseDto>.Success(result, "201", "Program created successfully."));
-        }
-        catch (Exception ex)
-        {
-            var statusCode = ExceptionUtils.ExtractStatusCode(ex);
-            var errorResponse = ExceptionUtils.CreateErrorResponse<object>(ex);
-            return StatusCode(statusCode, errorResponse);
-        }
+        return CreatedAtAction(
+            nameof(GetProgramById),
+            new { id = result.Id },
+            ApiResult<ProgramResponseDto>.Success(result, "201", "Program created successfully."));
     }
 
     // =========================================================================
@@ -166,24 +130,15 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
-    public async Task<IActionResult> UpdateProgramAsync(
+    public async Task<IActionResult> UpdateProgram(
         [FromRoute] Guid id,
         [FromBody, SwaggerParameter("Updated program data")] ProgramUpdateDto dto)
     {
-        try
-        {
-            if (dto == null)
-                return BadRequest(ApiResult<object>.Failure("400", "Program update data is required."));
+        if (dto == null)
+            return BadRequest(ApiResult<object>.Failure("400", "Program update data is required."));
 
-            var result = await _programService.UpdateProgramAsync(id, dto);
-            return Ok(ApiResult<ProgramResponseDto>.Success(result, "200", "Program updated successfully."));
-        }
-        catch (Exception ex)
-        {
-            var statusCode = ExceptionUtils.ExtractStatusCode(ex);
-            var errorResponse = ExceptionUtils.CreateErrorResponse<object>(ex);
-            return StatusCode(statusCode, errorResponse);
-        }
+        var result = await _programService.UpdateProgramAsync(id, dto);
+        return Ok(ApiResult<ProgramResponseDto>.Success(result, "200", "Program updated successfully."));
     }
 
     // =========================================================================
@@ -200,22 +155,13 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
-    public async Task<IActionResult> DeleteProgramAsync([FromRoute] Guid id)
+    public async Task<IActionResult> DeleteProgram([FromRoute] Guid id)
     {
-        try
-        {
-            var result = await _programService.DeleteProgramAsync(id);
+        var result = await _programService.DeleteProgramAsync(id);
 
-            if (!result)
-                return NotFound(ApiResult<object>.Failure("404", $"Program with ID '{id}' not found."));
+        if (!result)
+            return NotFound(ApiResult<object>.Failure("404", $"Program with ID '{id}' not found."));
 
-            return Ok(ApiResult<bool>.Success(result, "200", "Program deleted successfully."));
-        }
-        catch (Exception ex)
-        {
-            var statusCode = ExceptionUtils.ExtractStatusCode(ex);
-            var errorResponse = ExceptionUtils.CreateErrorResponse<object>(ex);
-            return StatusCode(statusCode, errorResponse);
-        }
+        return Ok(ApiResult<bool>.Success(result, "200", "Program deleted successfully."));
     }
 }

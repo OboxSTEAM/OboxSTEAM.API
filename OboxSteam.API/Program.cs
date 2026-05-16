@@ -8,6 +8,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+EnvFileLoader.LoadFromSolutionRoot();
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configuration

@@ -9,26 +9,20 @@ services:
     depends_on:
       oboxsteam.database:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-
+      # redis:
+      #   condition: service_healthy
     environment:
       - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
-      - ConnectionStrings__DefaultConnection=${CONNECTION_STRING}
-      - ConnectionStrings__Redis=${REDIS_CONNECTION}
-      - JWT__SecretKey=${JWT_SECRET_KEY}
-      - JWT__Issuer=${JWT_ISSUER}
-      - JWT__Audience=${JWT_AUDIENCE}
+      - ConnectionStrings__DefaultConnection=${ConnectionStrings__DefaultConnection}
+      # - ConnectionStrings__Redis=oboxsteam-redis:6379,abortConnect=false
+      - JWT__SecretKey=${JWT__SecretKey}
+      - JWT__Issuer=${JWT__Issuer}
+      - JWT__Audience=${JWT__Audience}
       - RESEND_APITOKEN=${RESEND_APITOKEN}
       - RESEND_FROM=${RESEND_FROM}
-      - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
-      - AWS_SECRET_KEY=${AWS_SECRET_KEY}
-      - AWS_REGION=${AWS_REGION}
-      - AWS_S3_BUCKET=${AWS_S3_BUCKET}
-      - CORS_ALLOWED_ORIGIN=${CORS_ALLOWED_ORIGIN}
       - APP_BASE_URL=${APP_BASE_URL}
     ports:
-      - "5000:5000"
+      - "${API_PORT}:5000"
     networks:
       - oboxsteam-network
 
@@ -52,29 +46,29 @@ services:
     networks:
       - oboxsteam-network
 
-  redis:
-    image: redis:7.2-alpine
-    container_name: oboxsteam-redis
-    restart: unless-stopped
-    ports:
-      - "6380:6379"
-    command: >
-      redis-server
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    networks:
-      - oboxsteam-network
+  # redis:
+  #   image: redis:7.2-alpine
+  #   container_name: oboxsteam-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6380:6379"
+  #   command: >
+  #     redis-server
+  #     --maxmemory 512mb
+  #     --maxmemory-policy allkeys-lru
+  #   volumes:
+  #     - redis-data:/data
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 10
+  #   networks:
+  #     - oboxsteam-network
 
 volumes:
   pgdata:
-  redis-data:
+  # redis-data:
 
 networks:
   oboxsteam-network:

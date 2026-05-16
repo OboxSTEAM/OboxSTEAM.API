@@ -12,7 +12,6 @@ using OboxSteam.Infrastructure.Commons;
 using OboxSteam.Infrastructure.Persistence;
 using OboxSteam.Infrastructure.Services;
 using Resend;
-using StackExchange.Redis;
 using System.Text;
 
 namespace OboxSteam.API.Architecture;
@@ -44,6 +43,7 @@ public static class IocContainer
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
+        
         // 3rd party services
         services.SetupAwsS3();
         services.SetupRedis();
@@ -53,14 +53,17 @@ public static class IocContainer
         return services;
     }
 
-    public static IServiceCollection SetupReSendService(this IServiceCollection services)
+    public static IServiceCollection SetupReSendService(this IServiceCollection services, IConfiguration configuration)
     {
+        var apiToken = configuration["RESEND_APITOKEN"];
+        if (string.IsNullOrWhiteSpace(apiToken))
+        {
+            throw new InvalidOperationException("RESEND_APITOKEN is not configured.");
+        }
+
         services.AddOptions();
         services.AddHttpClient<ResendClient>();
-        services.Configure<ResendClientOptions>(o =>
-        {
-            o.ApiToken = Environment.GetEnvironmentVariable("RESEND_APITOKEN")!;
-        });
+        services.Configure<ResendClientOptions>(o => o.ApiToken = apiToken);
         services.AddTransient<IResend, ResendClient>();
 
         return services;
@@ -90,13 +93,13 @@ public static class IocContainer
         if (string.IsNullOrWhiteSpace(redisConnectionString))
             throw new InvalidOperationException("Redis connection string not found in environment variables.");
 
-        services.AddSingleton<IConnectionMultiplexer>(sp =>
-            ConnectionMultiplexer.Connect(redisConnectionString));
+    //     services.AddSingleton<IConnectionMultiplexer>(sp =>
+    //         ConnectionMultiplexer.Connect(redisConnectionString));
 
-        services.AddScoped<IRedisService, RedisService>();
+    //     services.AddScoped<IRedisService, RedisService>();
 
-        return services;
-    }
+    //     return services;
+    // }
 
     private static IConfiguration GetConfiguration()
     {
@@ -135,7 +138,6 @@ public static class IocContainer
 
     public static IServiceCollection SetupBusinessServicesLayer(this IServiceCollection services)
     {
-        services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ISeedService, SeedService>();

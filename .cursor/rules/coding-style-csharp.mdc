@@ -118,7 +118,6 @@ throw new ArgumentNullException(nameof(parameterName));
 
 - Always follow the existing project structure and naming conventions.
 - Do not introduce new patterns or layers unless explicitly requested.
-- Do not modify, create, or delete files under `.vscode/` — that folder is for Visual Studio / VS Code IDE configuration only. Leave it untouched unless the user explicitly asks to change IDE settings.
 
 ## Error Handling
 

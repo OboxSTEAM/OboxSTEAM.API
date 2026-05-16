@@ -13,6 +13,9 @@ namespace OboxSteam.Application.Services;
 
 public class AuthService : IAuthService
 {
+    private static readonly TimeSpan RegisterOtpLifetime = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ForgotPasswordOtpLifetime = TimeSpan.FromMinutes(15);
+
     private readonly IEmailService _emailService;
     private readonly ILogger<AuthService> _logger;
     private readonly IUnitOfWork _unitOfWork;
@@ -259,7 +262,20 @@ public class AuthService : IAuthService
 
     private async Task GenerateAndSendOtpAsync(User user, OtpPurpose purpose)
     {
-        var otpToken = OtpGenerator.GenerateToken(6, TimeSpan.FromMinutes(10));
+        var lifetime = purpose == OtpPurpose.ForgotPassword
+            ? ForgotPasswordOtpLifetime
+            : RegisterOtpLifetime;
+
+        var previousOtps = await _unitOfWork.OtpStorages.GetAllAsync(o =>
+            o.Target == user.Email && o.Purpose == purpose && !o.IsUsed);
+
+        foreach (var previousOtp in previousOtps)
+        {
+            previousOtp.IsUsed = true;
+            await _unitOfWork.OtpStorages.Update(previousOtp);
+        }
+
+        var otpToken = OtpGenerator.GenerateToken(6, lifetime);
         var otp = new OtpStorage
         {
             Target = user.Email,
