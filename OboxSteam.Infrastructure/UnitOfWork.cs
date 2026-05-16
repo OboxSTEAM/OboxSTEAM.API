@@ -51,6 +51,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Expert> Experts => Repository<Expert>();
     public IGenericRepository<Certificate> Certificates => Repository<Certificate>();
     public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();
+    public IGenericRepository<MediaTag> MediaTags => Repository<MediaTag>();
     public IGenericRepository<HighlightVideo> HighlightVideos => Repository<HighlightVideo>();
     public IGenericRepository<FaceEmbedding> FaceEmbeddings => Repository<FaceEmbedding>();
     public IGenericRepository<Portfolio> Portfolios => Repository<Portfolio>();
