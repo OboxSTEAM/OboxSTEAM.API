@@ -2,7 +2,7 @@ using OboxSteam.Application.Interfaces;
 using StackExchange.Redis;
 using System.Text.Json;
 
-namespace OboxSteam.Infrastructure.Commons;
+namespace OboxSteam.Infrastructure.Services;
 
 public class RedisService : IRedisService
 {

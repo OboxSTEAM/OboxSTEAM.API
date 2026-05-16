@@ -6,9 +6,8 @@ namespace OboxSteam.Domain.Entities;
 /// Join table linking Programs to Experts for the advisory/certification board.
 /// Composite key: (ProgramId, ExpertId)
 /// </summary>
-public class ProgramBoard
+public class ProgramBoard : BaseEntity
 {
-    public Guid Id { get; set; }
 
     public Guid ProgramId { get; set; }
     public Program Program { get; set; } = null!;

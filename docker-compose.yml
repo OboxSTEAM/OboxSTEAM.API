@@ -21,6 +21,10 @@ services:
       - RESEND_APITOKEN=${RESEND_APITOKEN}
       - RESEND_FROM=${RESEND_FROM}
       - APP_BASE_URL=${APP_BASE_URL}
+      - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
+      - AWS_SECRET_KEY=${AWS_SECRET_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET}
     ports:
       - "${API_PORT}:5000"
     networks:

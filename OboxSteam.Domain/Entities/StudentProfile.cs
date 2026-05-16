@@ -6,9 +6,8 @@ namespace OboxSteam.Domain.Entities;
 /// Student academic profile — 1:1 with User (student).
 /// Uses StudentId as both PK and FK.
 /// </summary>
-public class StudentProfile
+public class StudentProfile : BaseEntity
 {
-    [Key]
     public Guid StudentId { get; set; }
     public User Student { get; set; } = null!;
 

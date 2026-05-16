@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Utils;
 using Resend;
 
 namespace OboxSteam.Infrastructure.Services;
@@ -157,8 +158,8 @@ public class EmailService : IEmailService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send email to {To} — Subject: {Subject}", to, subject);
-            throw new InvalidOperationException(
-                $"Failed to send email. Verify Resend configuration and domain. Error: {ex.Message}", ex);
+            throw ErrorHelper.Internal(
+                $"Failed to send email. Verify Resend configuration and domain. Error: {ex.Message}");
         }
     }
 
