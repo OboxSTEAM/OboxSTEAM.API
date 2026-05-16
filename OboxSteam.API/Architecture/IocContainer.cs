@@ -1,9 +1,9 @@
 using Amazon.Rekognition;
+using Amazon.S3;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using Amazon.S3;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
@@ -34,6 +34,9 @@ public static class IocContainer
         // Add Infrastructure services
         services.AddScoped<ICurrentTime, CurrentTime>();
         services.AddScoped<IClaimsService, ClaimsService>();
+        services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
+        services.AddScoped<IBlobService, BlobService>();
+        services.AddScoped<IEmailService, EmailService>();
 
         // Add Unit of Work (repositories are lazy-loaded inside)
         services.AddScoped<OboxSteam.Domain.Interfaces.IUnitOfWork, UnitOfWork>();
@@ -43,11 +46,11 @@ public static class IocContainer
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
-        
+
         // 3rd party services
         services.SetupAwsS3();
-        services.SetupRedis();
-        services.SetupReSendService();
+        //services.SetupRedis();
+        services.SetupReSendService(configuration);
         services.SetupAwsRekognition();
 
         return services;
@@ -86,20 +89,20 @@ public static class IocContainer
         return services;
     }
 
-    public static IServiceCollection SetupRedis(this IServiceCollection services)
-    {
-        var redisConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Redis");
+    //public static IServiceCollection SetupRedis(this IServiceCollection services)
+    //{
+    //    var redisConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Redis");
 
-        if (string.IsNullOrWhiteSpace(redisConnectionString))
-            throw new InvalidOperationException("Redis connection string not found in environment variables.");
+    //    if (string.IsNullOrWhiteSpace(redisConnectionString))
+    //        throw new InvalidOperationException("Redis connection string not found in environment variables.");
 
-    //     services.AddSingleton<IConnectionMultiplexer>(sp =>
-    //         ConnectionMultiplexer.Connect(redisConnectionString));
+    //    services.AddSingleton<IConnectionMultiplexer>(sp =>
+    //        ConnectionMultiplexer.Connect(redisConnectionString));
 
-    //     services.AddScoped<IRedisService, RedisService>();
+    //    services.AddScoped<IRedisService, RedisService>();
 
-    //     return services;
-    // }
+    //    return services;
+    //}
 
     private static IConfiguration GetConfiguration()
     {
@@ -138,12 +141,11 @@ public static class IocContainer
 
     public static IServiceCollection SetupBusinessServicesLayer(this IServiceCollection services)
     {
-        services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ISeedService, SeedService>();
         services.AddScoped<IAccountService, AccountService>();
         services.AddScoped<IProgramService, ProgramService>();
-        services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
+        services.AddScoped<IModuleService, ModuleService>();
         return services;
     }
 

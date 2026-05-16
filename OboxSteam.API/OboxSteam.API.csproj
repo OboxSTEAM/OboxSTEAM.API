@@ -26,8 +26,8 @@
 
   <ItemGroup>
     <!-- Application: controllers/services depend on Application interfaces -->
-    <ProjectReference Include="..\OboxSteam.Application\OboxSteam.Application.csproj" />
     <!-- Infrastructure: explicit reference so IocContainer can wire DI -->
+    <ProjectReference Include="..\OboxSteam.Application\OboxSteam.Application.csproj" />
     <ProjectReference Include="..\OboxSteam.Infrastructure\OboxSteam.Infrastructure.csproj" />
   </ItemGroup>
 
