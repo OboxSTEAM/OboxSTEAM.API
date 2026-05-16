@@ -41,4 +41,17 @@ public class User : BaseEntity
     public ICollection<StandardizedTest> StandardizedTests { get; set; } = new List<StandardizedTest>();
     public Expert? Expert { get; set; }
     public FaceEmbedding? FaceEmbedding { get; set; }
+    public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
+    public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
+    public ICollection<Submission> VerifiedSubmissions { get; set; } = new List<Submission>();
+    public ICollection<ActivityBooking> ActivityBookings { get; set; } = new List<ActivityBooking>();
+    public ICollection<CourseEnrollment> CourseEnrollments { get; set; } = new List<CourseEnrollment>();
+    public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();
+    public ICollection<ProgramEnrollment> ProgramEnrollments { get; set; } = new List<ProgramEnrollment>();
+    public ICollection<Payment> Payments { get; set; } = new List<Payment>();
+    public ICollection<Portfolio> Portfolios { get; set; } = new List<Portfolio>();
+    public ICollection<HighlightVideo> HighlightVideos { get; set; } = new List<HighlightVideo>();
+    public ICollection<MediaAsset> UploadedMediaAssets { get; set; } = new List<MediaAsset>();
+    public ICollection<MediaTag> MediaTags { get; set; } = new List<MediaTag>();
+    public ICollection<Course> MentoredCourses { get; set; } = new List<Course>();
 }

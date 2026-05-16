@@ -2,6 +2,7 @@ using Amazon.Rekognition;
 using Amazon.Rekognition.Model;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Interfaces;
 
@@ -43,7 +44,7 @@ public class FaceRecognitionService : IFaceRecognitionService
         if (faceRecord is null)
         {
             _logger.LogWarning("No face detected in image for UserId: {UserId}", userId);
-            throw new InvalidOperationException("No face detected in image.");
+            throw ErrorHelper.BadRequest("No face detected in image. Please upload a clear photo of your face.");
         }
 
         var faceId = faceRecord.Face.FaceId;

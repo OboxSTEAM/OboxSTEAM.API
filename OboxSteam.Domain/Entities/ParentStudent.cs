@@ -4,7 +4,7 @@ namespace OboxSteam.Domain.Entities;
 /// Join table for Parent-Student many-to-many relationship.
 /// Composite key: (ParentId, StudentId)
 /// </summary>
-public class ParentStudent
+public class ParentStudent : BaseEntity
 {
     public Guid ParentId { get; set; }
     public User Parent { get; set; } = null!;

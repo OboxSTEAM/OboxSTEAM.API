@@ -4,7 +4,7 @@ namespace OboxSteam.Domain.Entities;
 /// AI face detection results linking media to identified students.
 /// Composite key: (MediaId, StudentId)
 /// </summary>
-public class MediaTag
+public class MediaTag : BaseEntity
 {
     public Guid MediaId { get; set; }
     public MediaAsset Media { get; set; } = null!;

@@ -187,18 +187,9 @@ public class AccountService : IAccountService
         var avatarUrl = await _blobService.GetPreviewUrlAsync($"avatars/{fileName}");
         user.AvatarUrl = avatarUrl;
 
-        // Index face in AWS Rekognition for face recognition
-        try
-        {
-            await using var faceStream = file.OpenReadStream();
-            await _faceRecognitionService.IndexFaceAsync(userId, faceStream);
-            _loggerService.LogInformation("Face indexed in Rekognition for user {UserId}", userId);
-        }
-        catch (Exception ex)
-        {
-            _loggerService.LogWarning(ex, "Failed to index face for user {UserId}. Avatar was uploaded successfully.", userId);
-            // Don't throw — avatar upload succeeded, face indexing is supplementary
-        }
+        await using var faceStream = file.OpenReadStream();
+        await _faceRecognitionService.IndexFaceAsync(userId, faceStream);
+        _loggerService.LogInformation("Face indexed in Rekognition for user {UserId}", userId);
 
         await _unitOfWork.Users.Update(user);
         await _unitOfWork.SaveChangesAsync();

@@ -338,6 +338,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid?>("UpdatedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
@@ -346,6 +349,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("MentorId");
 
                     b.HasIndex("ModuleId");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("Courses");
                 });
@@ -693,8 +698,32 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<decimal>("ConfidenceScore")
                         .HasColumnType("numeric");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsVerified")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
 
                     b.HasKey("MediaId", "StudentId");
 
@@ -893,6 +922,30 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("StudentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
                         .HasColumnType("uuid");
 
                     b.HasKey("ParentId", "StudentId");
@@ -1193,8 +1246,23 @@ namespace OboxSteam.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("ExpertId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("ProgramId")
                         .HasColumnType("uuid");
@@ -1202,6 +1270,12 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<string>("RoleInBoard")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -1425,9 +1499,21 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("CurrentSchool")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
 
                     b.Property<decimal?>("GpaOverall")
                         .HasColumnType("numeric");
@@ -1438,8 +1524,14 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<int?>("GradeLevel")
                         .HasColumnType("integer");
 
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
                     b.Property<int?>("IntendedYear")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("PersonalStatement")
                         .HasColumnType("text");
@@ -1447,6 +1539,12 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<string>("TargetCountry")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
 
                     b.HasKey("StudentId");
 
@@ -1585,6 +1683,30 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid>("MediaId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
                     b.HasKey("SubmissionId", "MediaId");
 
                     b.HasIndex("MediaId");
@@ -1692,7 +1814,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("ActivityBookings")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1730,7 +1852,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasForeignKey("ProgramId");
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("Certificates")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1756,6 +1878,10 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("OboxSteam.Domain.Entities.User", null)
+                        .WithMany("MentoredCourses")
+                        .HasForeignKey("UserId");
+
                     b.Navigation("Mentor");
 
                     b.Navigation("Module");
@@ -1770,7 +1896,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("CourseEnrollments")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1810,7 +1936,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("HighlightVideos")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1844,7 +1970,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasForeignKey("ActivityId");
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Uploader")
-                        .WithMany()
+                        .WithMany("UploadedMediaAssets")
                         .HasForeignKey("UploaderId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1863,7 +1989,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("MediaTags")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1900,7 +2026,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("ModuleEnrollments")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1940,7 +2066,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasForeignKey("ProgramEnrollmentId");
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("Payments")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1960,7 +2086,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("Portfolios")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2009,7 +2135,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("ProgramEnrollments")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2083,13 +2209,13 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany()
+                        .WithMany("Submissions")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Verifier")
-                        .WithMany()
+                        .WithMany("VerifiedSubmissions")
                         .HasForeignKey("VerifiedBy")
                         .OnDelete(DeleteBehavior.SetNull);
 
@@ -2209,11 +2335,31 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.User", b =>
                 {
+                    b.Navigation("ActivityBookings");
+
+                    b.Navigation("Certificates");
+
+                    b.Navigation("CourseEnrollments");
+
                     b.Navigation("Expert");
 
                     b.Navigation("FaceEmbedding");
 
+                    b.Navigation("HighlightVideos");
+
+                    b.Navigation("MediaTags");
+
+                    b.Navigation("MentoredCourses");
+
+                    b.Navigation("ModuleEnrollments");
+
                     b.Navigation("ParentRelations");
+
+                    b.Navigation("Payments");
+
+                    b.Navigation("Portfolios");
+
+                    b.Navigation("ProgramEnrollments");
 
                     b.Navigation("StandardizedTests");
 
@@ -2222,6 +2368,12 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("StudentRelations");
 
                     b.Navigation("StudentSkills");
+
+                    b.Navigation("Submissions");
+
+                    b.Navigation("UploadedMediaAssets");
+
+                    b.Navigation("VerifiedSubmissions");
                 });
 #pragma warning restore 612, 618
         }
