@@ -377,67 +377,7 @@ public class ProgramService : IProgramService
                 }
             }
 
-            bool isUpdated = false;
-
-            if (!string.IsNullOrWhiteSpace(programUpdateDto.Code) && program.Code != programUpdateDto.Code)
-            {
-                program.Code = programUpdateDto.Code;
-                isUpdated = true;
-            }
-
-            if (!string.IsNullOrWhiteSpace(programUpdateDto.Name) && program.Name != programUpdateDto.Name)
-            {
-                program.Name = programUpdateDto.Name;
-                isUpdated = true;
-            }
-
-            if (programUpdateDto.SeriesName != null && program.SeriesName != programUpdateDto.SeriesName)
-            {
-                program.SeriesName = programUpdateDto.SeriesName;
-                isUpdated = true;
-            }
-
-            if (programUpdateDto.Description != null && program.Description != programUpdateDto.Description)
-            {
-                program.Description = programUpdateDto.Description;
-                isUpdated = true;
-            }
-
-            if (programUpdateDto.Level.HasValue && program.Level != programUpdateDto.Level.Value)
-            {
-                program.Level = programUpdateDto.Level.Value;
-                isUpdated = true;
-            }
-
-            if (programUpdateDto.EstimatedDuration != null && program.EstimatedDuration != programUpdateDto.EstimatedDuration)
-            {
-                program.EstimatedDuration = programUpdateDto.EstimatedDuration;
-                isUpdated = true;
-            }
-
-            if (programUpdateDto.SkillsGained != null && program.SkillsGained != programUpdateDto.SkillsGained)
-            {
-                program.SkillsGained = programUpdateDto.SkillsGained;
-                isUpdated = true;
-            }
-
-            if (programUpdateDto.ThumbnailUrl != null && program.ThumbnailUrl != programUpdateDto.ThumbnailUrl)
-            {
-                program.ThumbnailUrl = programUpdateDto.ThumbnailUrl;
-                isUpdated = true;
-            }
-
-            if (programUpdateDto.Status != null && program.Status != programUpdateDto.Status)
-            {
-                program.Status = programUpdateDto.Status;
-                isUpdated = true;
-            }
-
-            if (programUpdateDto.Price.HasValue && program.Price != programUpdateDto.Price)
-            {
-                program.Price = programUpdateDto.Price;
-                isUpdated = true;
-            }
+            var isUpdated = UpdateHelper.ApplyUpdates(program, programUpdateDto);
 
             if (!isUpdated)
             {
