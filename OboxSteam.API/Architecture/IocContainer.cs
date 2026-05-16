@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using Minio;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
@@ -11,7 +10,6 @@ using OboxSteam.Infrastructure.Commons;
 using OboxSteam.Infrastructure.Persistence;
 using OboxSteam.Infrastructure.Services;
 using Resend;
-using StackExchange.Redis;
 using System.Text;
 
 namespace OboxSteam.API.Architecture;
@@ -43,57 +41,43 @@ public static class IocContainer
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
+        
         // 3rd party services
-        services.SetupMinIO();
-        services.SetupRedis();
-        services.SetupReSendService();
+        services.SetupReSendService(configuration);
 
         return services;
     }
 
-    public static IServiceCollection SetupReSendService(this IServiceCollection services)
+    public static IServiceCollection SetupReSendService(this IServiceCollection services, IConfiguration configuration)
     {
+        var apiToken = configuration["RESEND_APITOKEN"];
+        if (string.IsNullOrWhiteSpace(apiToken))
+        {
+            throw new InvalidOperationException("RESEND_APITOKEN is not configured.");
+        }
+
         services.AddOptions();
         services.AddHttpClient<ResendClient>();
-        services.Configure<ResendClientOptions>(o =>
-        {
-            o.ApiToken = Environment.GetEnvironmentVariable("RESEND_APITOKEN")!;
-        });
+        services.Configure<ResendClientOptions>(o => o.ApiToken = apiToken);
         services.AddTransient<IResend, ResendClient>();
 
         return services;
     }
 
-    public static IServiceCollection SetupMinIO(this IServiceCollection services)
-    {
-        var endpoint = Environment.GetEnvironmentVariable("MINIO_ENDPOINT") ?? "localhost:9001";
-        var accessKey = Environment.GetEnvironmentVariable("MINIO_ACCESS_KEY") ?? "minioadmin";
-        var secretKey = Environment.GetEnvironmentVariable("MINIO_SECRET_KEY") ?? "minioadmin";
+    // public static IServiceCollection SetupRedis(this IServiceCollection services)
+    // {
+    //     var redisConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Redis");
 
-        services.AddSingleton<IMinioClient>(_ =>
-            new MinioClient()
-                .WithEndpoint(endpoint)
-                .WithCredentials(accessKey, secretKey)
-                .WithSSL(false)
-                .Build());
+    //     if (string.IsNullOrWhiteSpace(redisConnectionString))
+    //         throw new InvalidOperationException("Redis connection string not found in environment variables.");
 
-        return services;
-    }
+    //     services.AddSingleton<IConnectionMultiplexer>(sp =>
+    //         ConnectionMultiplexer.Connect(redisConnectionString));
 
-    public static IServiceCollection SetupRedis(this IServiceCollection services)
-    {
-        var redisConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Redis");
+    //     services.AddScoped<IRedisService, RedisService>();
 
-        if (string.IsNullOrWhiteSpace(redisConnectionString))
-            throw new InvalidOperationException("Redis connection string not found in environment variables.");
-
-        services.AddSingleton<IConnectionMultiplexer>(sp =>
-            ConnectionMultiplexer.Connect(redisConnectionString));
-
-        services.AddScoped<IRedisService, RedisService>();
-
-        return services;
-    }
+    //     return services;
+    // }
 
     private static IConfiguration GetConfiguration()
     {
@@ -132,7 +116,6 @@ public static class IocContainer
 
     public static IServiceCollection SetupBusinessServicesLayer(this IServiceCollection services)
     {
-        services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ISeedService, SeedService>();

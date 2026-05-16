@@ -1,5 +1,7 @@
 ---
-applyTo: '**/*.cs'
+description: C# coding style, architecture conventions, and API patterns for this project
+globs: **/*.cs
+alwaysApply: false
 ---
 
 # Coding Style (C#)
