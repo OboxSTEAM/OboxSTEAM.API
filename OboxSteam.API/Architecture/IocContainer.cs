@@ -1,3 +1,5 @@
+using Amazon.Rekognition;
+using Amazon.S3;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -32,6 +34,9 @@ public static class IocContainer
         // Add Infrastructure services
         services.AddScoped<ICurrentTime, CurrentTime>();
         services.AddScoped<IClaimsService, ClaimsService>();
+        services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
+        services.AddScoped<IBlobService, BlobService>();
+        services.AddScoped<IEmailService, EmailService>();
 
         // Add Unit of Work (repositories are lazy-loaded inside)
         services.AddScoped<OboxSteam.Domain.Interfaces.IUnitOfWork, UnitOfWork>();
@@ -41,9 +46,12 @@ public static class IocContainer
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
-        
+
         // 3rd party services
+        services.SetupAwsS3();
+        //services.SetupRedis();
         services.SetupReSendService(configuration);
+        services.SetupAwsRekognition();
 
         return services;
     }
@@ -64,20 +72,37 @@ public static class IocContainer
         return services;
     }
 
-    // public static IServiceCollection SetupRedis(this IServiceCollection services)
-    // {
-    //     var redisConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Redis");
+    public static IServiceCollection SetupAwsS3(this IServiceCollection services)
+    {
+        var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY")
+            ?? throw new InvalidOperationException("AWS_ACCESS_KEY not found in environment variables.");
+        var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_KEY")
+            ?? throw new InvalidOperationException("AWS_SECRET_KEY not found in environment variables.");
+        var region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
 
-    //     if (string.IsNullOrWhiteSpace(redisConnectionString))
-    //         throw new InvalidOperationException("Redis connection string not found in environment variables.");
+        services.AddSingleton<IAmazonS3>(_ =>
+            new AmazonS3Client(
+                accessKey,
+                secretKey,
+                Amazon.RegionEndpoint.GetBySystemName(region)));
 
-    //     services.AddSingleton<IConnectionMultiplexer>(sp =>
-    //         ConnectionMultiplexer.Connect(redisConnectionString));
+        return services;
+    }
 
-    //     services.AddScoped<IRedisService, RedisService>();
+    //public static IServiceCollection SetupRedis(this IServiceCollection services)
+    //{
+    //    var redisConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Redis");
 
-    //     return services;
-    // }
+    //    if (string.IsNullOrWhiteSpace(redisConnectionString))
+    //        throw new InvalidOperationException("Redis connection string not found in environment variables.");
+
+    //    services.AddSingleton<IConnectionMultiplexer>(sp =>
+    //        ConnectionMultiplexer.Connect(redisConnectionString));
+
+    //    services.AddScoped<IRedisService, RedisService>();
+
+    //    return services;
+    //}
 
     private static IConfiguration GetConfiguration()
     {
@@ -116,13 +141,25 @@ public static class IocContainer
 
     public static IServiceCollection SetupBusinessServicesLayer(this IServiceCollection services)
     {
-        services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ISeedService, SeedService>();
         services.AddScoped<IAccountService, AccountService>();
         services.AddScoped<IProgramService, ProgramService>();
         services.AddScoped<IModuleService, ModuleService>();
         services.AddScoped<IExpertService, ExpertService>();
+        return services;
+    }
+
+    public static IServiceCollection SetupAwsRekognition(this IServiceCollection services)
+    {
+        var region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
+
+        services.AddSingleton<IAmazonRekognition>(_ =>
+            new AmazonRekognitionClient(
+                Environment.GetEnvironmentVariable("AWS_ACCESS_KEY"),
+                Environment.GetEnvironmentVariable("AWS_SECRET_KEY"),
+                Amazon.RegionEndpoint.GetBySystemName(region)));
+
         return services;
     }
 

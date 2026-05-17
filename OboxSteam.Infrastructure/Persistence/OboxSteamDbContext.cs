@@ -140,6 +140,8 @@ public class OboxSteamDbContext : DbContext
         // =============================================
         modelBuilder.Entity<StudentProfile>(entity =>
         {
+            entity.HasKey(sp => sp.StudentId);
+
             entity.HasOne(sp => sp.Student)
                 .WithOne(u => u.StudentProfile)
                 .HasForeignKey<StudentProfile>(sp => sp.StudentId)
@@ -212,12 +214,12 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(s => s.Code).IsUnique();
 
             entity.HasOne(s => s.Verifier)
-                .WithMany()
+                .WithMany(u => u.VerifiedSubmissions)
                 .HasForeignKey(s => s.VerifiedBy)
                 .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasOne(s => s.Student)
-                .WithMany()
+                .WithMany(u => u.Submissions)
                 .HasForeignKey(s => s.StudentId)
                 .OnDelete(DeleteBehavior.Restrict);
         });

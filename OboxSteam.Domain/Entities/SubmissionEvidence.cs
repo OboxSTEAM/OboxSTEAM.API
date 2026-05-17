@@ -4,7 +4,7 @@ namespace OboxSteam.Domain.Entities;
 /// Join table linking Submissions to MediaAssets as evidence.
 /// Composite key: (SubmissionId, MediaId)
 /// </summary>
-public class SubmissionEvidence
+public class SubmissionEvidence : BaseEntity
 {
     public Guid SubmissionId { get; set; }
     public Submission Submission { get; set; } = null!;

@@ -1,3 +1,5 @@
+using Amazon.Rekognition;
+using Amazon.Rekognition.Model;
 using OboxSteam.API.Architecture;
 using OboxSteam.API.Middlewares;
 using OboxSteam.Application.Interfaces;
@@ -88,6 +90,33 @@ catch (Exception e)
 {
     app.Logger.LogCritical(e, "CRITICAL: Failed to apply database migrations. Application cannot start.");
     throw; // Stop application if migrations fail
+}
+using (var scope = app.Services.CreateScope())
+{
+    var rekognition = scope.ServiceProvider
+        .GetRequiredService<IAmazonRekognition>();
+
+    try
+    {
+        await rekognition.CreateCollectionAsync(new CreateCollectionRequest
+        {
+            CollectionId = "oboxsteam-faces"
+        });
+        app.Logger.LogInformation("Rekognition collection created.");
+    }
+    catch (ResourceAlreadyExistsException)
+    {
+        app.Logger.LogInformation("Rekognition collection already exists.");
+    }
+}
+
+// Check S3 bucket exists
+app.Logger.LogInformation("Checking S3 bucket...");
+using (var scope = app.Services.CreateScope())
+{
+    var blob = scope.ServiceProvider.GetRequiredService<IBlobService>();
+    await blob.EnsureBucketExistsAsync();
+    app.Logger.LogInformation("S3 bucket ready");
 }
 
 app.UseCors("AllowFrontend");

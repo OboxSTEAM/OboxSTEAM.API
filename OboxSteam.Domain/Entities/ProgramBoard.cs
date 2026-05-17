@@ -8,6 +8,7 @@ namespace OboxSteam.Domain.Entities;
 /// </summary>
 public class ProgramBoard : BaseEntity
 {
+
     public Guid ProgramId { get; set; }
     public Program Program { get; set; } = null!;
 
