@@ -241,6 +241,25 @@ public class ExpertService : IExpertService
             }
         }
 
+        var distinctAssignments = expertCreateDto.Programs
+            .GroupBy(a => a.ProgramId)
+            .Select(g => g.First())
+            .ToList();
+
+        if (distinctAssignments.Any())
+        {
+            var programIds = distinctAssignments.Select(a => a.ProgramId).ToList();
+            var programs = await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id));
+
+            if (programs.Count != programIds.Count)
+            {
+                var existingIds = programs.Select(p => p.Id).ToHashSet();
+                var missingId = programIds.First(pid => !existingIds.Contains(pid));
+                _logger.LogWarning("[AddExpertAsync] Program '{ProgramId}' not found.", missingId);
+                throw ErrorHelper.NotFound($"Program with id '{missingId}' not found.");
+            }
+        }
+
         var expert = new Expert
         {
             Code = expertCreateDto.Code,
@@ -257,13 +276,27 @@ public class ExpertService : IExpertService
         await _unitOfWork.Experts.AddAsync(expert);
         await _unitOfWork.SaveChangesAsync();
 
+        if (distinctAssignments.Any())
+        {
+            var programBoards = distinctAssignments.Select(assignment => new ProgramBoard
+            {
+                Id = Guid.NewGuid(),
+                ExpertId = expert.Id,
+                ProgramId = assignment.ProgramId,
+                RoleInBoard = assignment.RoleInBoard
+            }).ToList();
+
+            await _unitOfWork.ProgramBoards.AddRangeAsync(programBoards);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
         _logger.LogInformation("[AddExpertAsync] Expert '{Code}' added successfully with Id {Id}.",
             expert.Code, expert.Id);
 
         return await GetExpertByIdAsync(expert.Id);
     }
 
-    public async Task<ExpertProgramSummaryDto> AddProgramToExpertAsync(Guid expertId, Guid programId)
+    public async Task<ExpertProgramSummaryDto> AddProgramToExpertAsync(Guid expertId, Guid programId, AddProgramToExpertDto? dto = null)
     {
         _logger.LogInformation("[AddProgramToExpertAsync] Adding program {ProgramId} to expert {ExpertId}.", programId, expertId);
 
@@ -295,7 +328,7 @@ public class ExpertService : IExpertService
             Id = Guid.NewGuid(),
             ExpertId = expertId,
             ProgramId = programId,
-            RoleInBoard = null
+            RoleInBoard = dto?.RoleInBoard
         };
 
         await _unitOfWork.ProgramBoards.AddAsync(programBoard);

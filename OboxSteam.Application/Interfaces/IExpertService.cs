@@ -14,7 +14,7 @@ public interface IExpertService
         int pageSize,
         string? code = null);
     Task<ExpertResponseDto> AddExpertAsync(ExpertCreateDto expertCreateDto);
-    Task<ExpertProgramSummaryDto> AddProgramToExpertAsync(Guid expertId, Guid programId);
+    Task<ExpertProgramSummaryDto> AddProgramToExpertAsync(Guid expertId, Guid programId, AddProgramToExpertDto? dto = null);
     Task<ExpertResponseDto> UpdateExpertAsync(Guid id, ExpertUpdateDto expertUpdateDto);
     Task<ExpertProgramSummaryDto> UpdateProgramOfExpertAsync(Guid expertId, Guid programId);
     Task<bool> DeleteExpertAsync(Guid id);
