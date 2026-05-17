@@ -96,16 +96,19 @@ public class ExpertController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Manager")]
     [SwaggerOperation(
         Summary = "Add program to expert",
-        Description = "Assigns a program to an expert. Requires SuperAdmin or Manager role.")]
+        Description = "Assigns a program to an expert. Optional request body may include RoleInBoard. Requires SuperAdmin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ExpertProgramSummaryDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> AddProgramToExpert([FromRoute] Guid expertId, [FromRoute] Guid programId)
+    public async Task<IActionResult> AddProgramToExpert(
+        [FromRoute] Guid expertId,
+        [FromRoute] Guid programId,
+        [FromBody, SwaggerParameter("Optional role in program board")] AddProgramToExpertDto? dto = null)
     {
-        var result = await _expertService.AddProgramToExpertAsync(expertId, programId);
+        var result = await _expertService.AddProgramToExpertAsync(expertId, programId, dto);
 
         return CreatedAtAction(
             nameof(GetExpertById),
