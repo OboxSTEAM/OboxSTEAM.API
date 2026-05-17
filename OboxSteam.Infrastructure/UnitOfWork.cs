@@ -3,7 +3,6 @@ using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Interfaces;
 using OboxSteam.Infrastructure.Persistence;
 using OboxSteam.Infrastructure.Repositories;
-
 namespace OboxSteam.Infrastructure;
 
 public class UnitOfWork : IUnitOfWork
@@ -58,6 +57,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<StudentSkill> StudentSkills => Repository<StudentSkill>();
     public IGenericRepository<StandardizedTest> StandardizedTests => Repository<StandardizedTest>();
     public IGenericRepository<Payment> Payments => Repository<Payment>();
+    public IGenericRepository<ProgramBoard> ProgramBoards => Repository<ProgramBoard>();
 
 
     public async Task<int> SaveChangesAsync()

@@ -36,6 +36,7 @@ public class ModuleController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
         [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
         [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
+        [FromQuery, SwaggerParameter(Description = "Filter by module code (optional)")] string? code = null,
         [FromQuery, SwaggerParameter(Description = "Filter by module type (optional)")] ModuleType? moduleType = null)
     {
         if (page < 1 || pageSize < 1)
@@ -44,7 +45,7 @@ public class ModuleController : ControllerBase
         }
 
         var result = await _moduleService.GetAllModulesAsync(
-            search, sortBy, isDescending, page, pageSize, moduleType);
+            search, sortBy, isDescending, page, pageSize, code, moduleType);
 
         return Ok(ApiResult<Pagination<ModuleResponseDto>>.Success(result, "200", "Modules retrieved successfully."));
     }
