@@ -19,6 +19,10 @@ public class ExpertService : IExpertService
         _logger = logger;
     }
 
+    /// <summary>Treats empty GUID as null — external experts do not require a system user link.</summary>
+    private static Guid? NormalizeOptionalUserId(Guid? userId) =>
+        userId is { } id && id != Guid.Empty ? id : null;
+
 
     public async Task<ExpertProgramSummaryDto> UpdateProgramOfExpertAsync(Guid expertId, Guid programId)
     {
@@ -212,8 +216,10 @@ public class ExpertService : IExpertService
 
     public async Task<ExpertResponseDto> AddExpertAsync(ExpertCreateDto expertCreateDto)
     {
-        _logger.LogInformation("[AddExpertAsync] Start adding expert: {Name} (Code: {Code})",
-            expertCreateDto.FullName, expertCreateDto.Code);
+        var userId = NormalizeOptionalUserId(expertCreateDto.UserId);
+
+        _logger.LogInformation("[AddExpertAsync] Start adding expert: {Name} (Code: {Code}, LinkedUser: {UserId})",
+            expertCreateDto.FullName, expertCreateDto.Code, userId);
 
         var existing = await _unitOfWork.Experts.FirstOrDefaultAsync(
             e => e.Code.ToLower() == expertCreateDto.Code.ToLower() && !e.IsDeleted);
@@ -224,24 +230,27 @@ public class ExpertService : IExpertService
             throw ErrorHelper.Conflict($"Expert with code '{expertCreateDto.Code}' already exists.");
         }
 
-        if (expertCreateDto.UserId.HasValue)
+        if (userId.HasValue)
         {
-            var existingUserExpert = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.UserId == expertCreateDto.UserId);
+            var existingUserExpert = await _unitOfWork.Experts.FirstOrDefaultAsync(
+                e => e.UserId == userId && !e.IsDeleted);
+
             if (existingUserExpert != null)
             {
-                _logger.LogWarning("[AddExpertAsync] User '{UserId}' already linked to an expert.", expertCreateDto.UserId);
-                throw ErrorHelper.Conflict($"User '{expertCreateDto.UserId}' is already linked to an expert.");
+                _logger.LogWarning("[AddExpertAsync] User '{UserId}' already linked to an expert.", userId);
+                throw ErrorHelper.Conflict($"User '{userId}' is already linked to an expert.");
             }
 
-            var userExists = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == expertCreateDto.UserId);
+            var userExists = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == userId);
             if (userExists == null)
             {
-                _logger.LogWarning("[AddExpertAsync] User '{UserId}' not found.", expertCreateDto.UserId);
-                throw ErrorHelper.NotFound($"User with id '{expertCreateDto.UserId}' not found.");
+                _logger.LogWarning("[AddExpertAsync] User '{UserId}' not found.", userId);
+                throw ErrorHelper.NotFound($"User with id '{userId}' not found.");
             }
         }
 
-        var distinctAssignments = expertCreateDto.Programs
+        var distinctAssignments = (expertCreateDto.Programs ?? [])
+            .Where(a => a.ProgramId != Guid.Empty)
             .GroupBy(a => a.ProgramId)
             .Select(g => g.First())
             .ToList();
@@ -262,8 +271,9 @@ public class ExpertService : IExpertService
 
         var expert = new Expert
         {
+            Id = Guid.NewGuid(),
             Code = expertCreateDto.Code,
-            UserId = expertCreateDto.UserId,
+            UserId = userId,
             FullName = expertCreateDto.FullName,
             Title = expertCreateDto.Title,
             Organization = expertCreateDto.Organization,
@@ -372,22 +382,28 @@ public class ExpertService : IExpertService
             }
         }
 
-        if (expertUpdateDto.UserId.HasValue && expert.UserId != expertUpdateDto.UserId)
+        var normalizedUserId = NormalizeOptionalUserId(expertUpdateDto.UserId);
+
+        if (normalizedUserId.HasValue && expert.UserId != normalizedUserId)
         {
-            var existingUserExpert = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.UserId == expertUpdateDto.UserId);
+            var existingUserExpert = await _unitOfWork.Experts.FirstOrDefaultAsync(
+                e => e.UserId == normalizedUserId && !e.IsDeleted);
+
             if (existingUserExpert != null && existingUserExpert.Id != id)
             {
-                _logger.LogWarning("[UpdateExpertAsync] User '{UserId}' already linked to an expert.", expertUpdateDto.UserId);
-                throw ErrorHelper.Conflict($"User '{expertUpdateDto.UserId}' is already linked to an expert.");
+                _logger.LogWarning("[UpdateExpertAsync] User '{UserId}' already linked to an expert.", normalizedUserId);
+                throw ErrorHelper.Conflict($"User '{normalizedUserId}' is already linked to an expert.");
             }
 
-            var userExists = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == expertUpdateDto.UserId);
+            var userExists = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == normalizedUserId);
             if (userExists == null)
             {
-                _logger.LogWarning("[UpdateExpertAsync] User '{UserId}' not found.", expertUpdateDto.UserId);
-                throw ErrorHelper.NotFound($"User with id '{expertUpdateDto.UserId}' not found.");
+                _logger.LogWarning("[UpdateExpertAsync] User '{UserId}' not found.", normalizedUserId);
+                throw ErrorHelper.NotFound($"User with id '{normalizedUserId}' not found.");
             }
         }
+
+        expertUpdateDto.UserId = normalizedUserId;
 
         var isUpdated = UpdateHelper.ApplyUpdates(expert, expertUpdateDto);
 
