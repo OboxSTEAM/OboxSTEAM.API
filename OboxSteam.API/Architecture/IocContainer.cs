@@ -122,6 +122,7 @@ public static class IocContainer
         services.AddScoped<IAccountService, AccountService>();
         services.AddScoped<IProgramService, ProgramService>();
         services.AddScoped<IModuleService, ModuleService>();
+        services.AddScoped<IExpertService, ExpertService>();
         return services;
     }
 

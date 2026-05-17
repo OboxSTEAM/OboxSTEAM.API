@@ -20,6 +20,8 @@ public class ModuleService : IModuleService
         _logger = logger;
     }
 
+
+
     // =========================================================================
     // GET BY ID
     // =========================================================================
@@ -115,6 +117,7 @@ public class ModuleService : IModuleService
         bool isDescending,
         int page,
         int pageSize,
+        string? code,
         ModuleType? moduleType)
     {
         try
@@ -133,6 +136,11 @@ public class ModuleService : IModuleService
                 query = query.Where(m =>
                     m.Name.ToLower().Contains(lowerSearch) ||
                     m.Code.ToLower().Contains(lowerSearch));
+            }
+
+            if (!string.IsNullOrWhiteSpace(code))
+            {
+                query = query.Where(m => m.Code.ToLower().Contains(code.ToLower()));
             }
 
             if (moduleType.HasValue)

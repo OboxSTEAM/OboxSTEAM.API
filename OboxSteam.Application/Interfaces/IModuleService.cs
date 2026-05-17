@@ -14,6 +14,7 @@ namespace OboxSteam.Application.Interfaces
             bool isDescending,
             int page,
             int pageSize,
+            string? code,
             ModuleType? moduleType);
 
         Task<ModuleResponseDto> AddModuleAsync(ModuleCreateDto moduleCreateDto);

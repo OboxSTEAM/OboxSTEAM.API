@@ -59,7 +59,7 @@ public class ProgramService : IProgramService
                 Price = program.Price,
                 CreatedAt = program.CreatedAt,
                 UpdatedAt = program.UpdatedAt,
-                Modules = program.Modules?.Select(m => new ModuleResponseDto
+                Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModuleResponseDto
                 {
                     Id = m.Id,
                     Code = m.Code,
@@ -121,7 +121,7 @@ public class ProgramService : IProgramService
                 Price = program.Price,
                 CreatedAt = program.CreatedAt,
                 UpdatedAt = program.UpdatedAt,
-                Modules = program.Modules?.Select(m => new ModuleResponseDto
+                Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModuleResponseDto
                 {
                     Id = m.Id,
                     Code = m.Code,
@@ -226,7 +226,7 @@ public class ProgramService : IProgramService
 
             var modulesByProgramId = modules
                 .GroupBy(module => module.ProgramId)
-                .ToDictionary(group => group.Key, group => group.ToList());
+                .ToDictionary(group => group.Key, group => group.OrderBy(m => m.ModuleOrder).ToList());
 
             var dtos = items.Select(program => new ProgramResponseDto
             {

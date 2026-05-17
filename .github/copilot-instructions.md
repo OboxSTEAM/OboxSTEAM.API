@@ -12,6 +12,10 @@ When working with C# code, follow these instructions very carefully.
 
 It is **EXTREMELY important that you follow the instructions in the rule files very carefully.**
 
+### Repository usage
+- Use the existing GenericRepository and IGenericRepository for repository needs.
+- Do not create additional repository implementations or new repository interfaces; reuse the existing GenericRepository/IGenericRepository.
+
 ### Workflow implementation
 
 **IMPORTANT:** Always follow these steps when implementing new features:

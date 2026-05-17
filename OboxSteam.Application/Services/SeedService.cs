@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
-using OboxSteam.Application.Utils;
 
 namespace OboxSteam.Application.Services
 {
@@ -115,6 +115,58 @@ namespace OboxSteam.Application.Services
                 _loggerService.LogInformation("Users already exist, skipping user seeding");
             }
 
+            _loggerService.LogInformation("Starting seed experts");
+            var existingExperts = await _unitOfWork.Experts.GetAllAsync();
+
+            if (!existingExperts.Any())
+            {
+                var mentorUser = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
+
+                var experts = new List<Expert>
+                {
+                    new Expert
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "EXP-001",
+                        UserId = mentorUser?.Id,
+                        FullName = "Dr. Linh Tran",
+                        Title = "Senior Robotics Mentor",
+                        Organization = "OboxSTEAM",
+                        Bio = "Robotics mentor with a focus on hands-on learning and STEM outreach.",
+                        AvatarUrl = null,
+                        LinkedInUrl = null,
+                        Achievements = "National STEM Educator Award",
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
+                    new Expert
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "EXP-002",
+                        UserId = null,
+                        FullName = "Prof. Minh Hoang",
+                        Title = "Visiting STEAM Advisor",
+                        Organization = "STEAM Research Lab",
+                        Bio = "Advisor for STEAM curriculum design and experiential learning.",
+                        AvatarUrl = null,
+                        LinkedInUrl = null,
+                        Achievements = "Published 20+ STEAM research papers",
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    }
+                };
+
+                await _unitOfWork.Experts.AddRangeAsync(experts);
+                await _unitOfWork.SaveChangesAsync();
+                _loggerService.LogInformation("Finished seed experts");
+            }
+            else
+            {
+                _loggerService.LogInformation("Experts already exist, skipping expert seeding");
+            }
+
             _loggerService.LogInformation("Starting seed programs");
             var existingPrograms = await _unitOfWork.Programs.GetAllAsync();
 
@@ -192,9 +244,14 @@ namespace OboxSteam.Application.Services
             if (!existingModules.Any())
             {
                 var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+                var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
+                var programSteam = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-STEAM-01");
+
+                var modules = new List<Module>();
+
                 if (programRobotics != null)
                 {
-                    var modules = new List<Module>
+                    modules.AddRange(new List<Module>
                     {
                         new Module
                         {
@@ -209,15 +266,130 @@ namespace OboxSteam.Application.Services
                             RetakeFee = 5.00m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-ROBOTICS-02",
+                            ProgramId = programRobotics.Id,
+                            Name = "Sensors and Movement",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            PrerequisiteModuleId = null,
+                            IsMandatory = true,
+                            Price = 24.99m,
+                            RetakeFee = 6.00m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-ROBOTICS-03",
+                            ProgramId = programRobotics.Id,
+                            Name = "Build and Test Challenge",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = true,
+                            Price = 29.99m,
+                            RetakeFee = 7.50m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
                         }
-                    };
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-ROBOTICS not found. Skipping robotics module seeding.");
+                }
+
+                if (programWebDev != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-WEBDEV-01",
+                            ProgramId = programWebDev.Id,
+                            Name = "HTML & CSS Foundations",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 29.99m,
+                            RetakeFee = 7.00m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-WEBDEV-02",
+                            ProgramId = programWebDev.Id,
+                            Name = "JavaScript Basics",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 34.99m,
+                            RetakeFee = 8.00m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-WEBDEV not found. Skipping web development module seeding.");
+                }
+
+                if (programSteam != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-STEAM-01",
+                            ProgramId = programSteam.Id,
+                            Name = "STEAM Lab Kickoff",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 21.99m,
+                            RetakeFee = 5.50m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-STEAM-02",
+                            ProgramId = programSteam.Id,
+                            Name = "Creative Prototyping",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 24.99m,
+                            RetakeFee = 6.00m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-STEAM-01 not found. Skipping STEAM module seeding.");
+                }
+
+                if (modules.Count > 0)
+                {
                     await _unitOfWork.Modules.AddRangeAsync(modules);
                     await _unitOfWork.SaveChangesAsync();
                     _loggerService.LogInformation("Finished seed modules");
                 }
                 else
                 {
-                    _loggerService.LogWarning("Program PRG-ROBOTICS not found. Skipping module seeding.");
+                    _loggerService.LogWarning("No modules seeded because required programs were not found.");
                 }
             }
             else
@@ -332,8 +504,9 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.Modules.HardRemove(x => true);
             await _unitOfWork.Programs.HardRemove(x => true);
             await _unitOfWork.Users.HardRemove(x => true);
+            await _unitOfWork.Experts.HardRemove(x => true);
             await _unitOfWork.SaveChangesAsync();
-           
+
             _loggerService.LogInformation("Finished clear all data");
         }
     }
