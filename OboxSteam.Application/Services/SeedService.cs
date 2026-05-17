@@ -93,7 +93,7 @@ namespace OboxSteam.Application.Services
                     {
                         Id = Guid.NewGuid(),
                         Code = "STD-001",
-                        Email = "student@oboxsteam.com",
+                        Email = "student1@oboxsteam.com",
                         PasswordHash = new PasswordHasher().HashPassword("Student@123")!,
                         FullName = "Bob Student",
                         Phone = "0123456785",
@@ -103,7 +103,22 @@ namespace OboxSteam.Application.Services
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
-                    }
+                    },
+                    new User
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "STD-002",
+                        Email = "student2@oboxsteam.com",
+                        PasswordHash = new PasswordHasher().HashPassword("Student@123")!,
+                        FullName = "John Student",
+                        Phone = "0123456784",
+                        Role = RoleType.Student,
+                        Status = AccountStatus.Active,
+                        IsEmailVerified = true,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
                 };
 
                 await _unitOfWork.Users.AddRangeAsync(users);
@@ -331,6 +346,7 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.Courses.HardRemove(x => true);
             await _unitOfWork.Modules.HardRemove(x => true);
             await _unitOfWork.Programs.HardRemove(x => true);
+            await _unitOfWork.ParentStudents.HardRemove(x => true);
             await _unitOfWork.Users.HardRemove(x => true);
             await _unitOfWork.SaveChangesAsync();
            
