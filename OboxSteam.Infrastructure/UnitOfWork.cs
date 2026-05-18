@@ -58,8 +58,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<StandardizedTest> StandardizedTests => Repository<StandardizedTest>();
     public IGenericRepository<Payment> Payments => Repository<Payment>();
     public IGenericRepository<ProgramBoard> ProgramBoards => Repository<ProgramBoard>();
-
-
+    public IGenericRepository<ParentStudent> ParentStudents => Repository<ParentStudent>();
     public async Task<int> SaveChangesAsync()
     {
         return await _dbContext.SaveChangesAsync();

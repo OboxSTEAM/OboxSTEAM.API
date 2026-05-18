@@ -11,4 +11,6 @@ public class ParentStudent : BaseEntity
 
     public Guid StudentId { get; set; }
     public User Student { get; set; } = null!;
+
+    public bool IsVerified { get; set; } = false;
 }

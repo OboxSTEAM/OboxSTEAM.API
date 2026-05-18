@@ -356,4 +356,56 @@ public class EmailService : IEmailService
 
         await SendEmailAsync(request.To, "Password Changed — OboxSTEAM", BuildEmailShell("Security Update", body));
     }
+
+    public async Task SendMagicLinkEmailAsync(ActionEmailRequestDto request)
+    {
+        var body = $@"
+<h1 style=""margin:0 0 12px;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:28px;font-weight:800;color:{ColorCharcoal};line-height:1.2;"">
+  Parent Access Granted
+</h1>
+<p style=""margin:0 0 28px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:15px;color:{ColorMuted};line-height:1.7;"">
+  You have been invited to track your child's progress on OboxSTEAM. Click the link below to securely log in without a password. This link expires in 24 hours.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""background-color:{ColorSurface};border:1px solid {ColorBorder};border-radius:16px;margin-bottom:20px;"">
+  <tr>
+    <td style=""padding:28px 32px;text-align:center;"">
+      <a href=""{request.Link}"" style=""display:inline-block;background-color:{ColorCyan};color:#ffffff;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:15px;font-weight:700;padding:14px 44px;border-radius:10px;text-decoration:none;box-shadow:0 4px 14px rgba(79,195,247,0.30);"">
+        Log In Instantly
+      </a>
+    </td>
+  </tr>
+</table>
+<p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};text-align:center;line-height:1.6;"">
+  If you did not expect this, you can safely ignore this email.
+</p>";
+
+        await SendEmailAsync(request.To, "Your Magic Login Link — OboxSTEAM", BuildEmailShell("Magic Link", body));
+    }
+
+
+    public async Task SendApproveLinkEmailAsync(ActionEmailRequestDto request)
+    {
+        var body = $@"
+<h1 style=""margin:0 0 12px;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:28px;font-weight:800;color:{ColorCharcoal};line-height:1.2;"">
+  Student Link Request
+</h1>
+<p style=""margin:0 0 28px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:15px;color:{ColorMuted};line-height:1.7;"">
+  A student is requesting to link with your account on OboxSTEAM. Please approve this request by clicking the button below. This link expires in 24 hours.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""background-color:{ColorSurface};border:1px solid {ColorBorder};border-radius:16px;margin-bottom:20px;"">
+  <tr>
+    <td style=""padding:28px 32px;text-align:center;"">
+      <a href=""{request.Link}"" style=""display:inline-block;background-color:{ColorGreen};color:#ffffff;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:15px;font-weight:700;padding:14px 44px;border-radius:10px;text-decoration:none;box-shadow:0 4px 14px rgba(124,179,66,0.30);"">
+        Approve Request
+      </a>
+    </td>
+  </tr>
+</table>
+<p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};text-align:center;line-height:1.6;"">
+  If you do not recognize this request, you can safely ignore this email.
+</p>";
+
+        await SendEmailAsync(request.To, "Action Required: Link Request — OboxSTEAM", BuildEmailShell("Action Required", body));
+    }
+
 }
