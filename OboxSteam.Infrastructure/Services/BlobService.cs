@@ -132,16 +132,19 @@ public class BlobService : IBlobService
 
         var contentType = GetContentType(fileName);
 
-        var putRequest = new PutObjectRequest
+        _logger.LogInformation("Uploading '{Object}' (type={ContentType})...", objectKey, contentType);
+
+        using var transferUtility = new Amazon.S3.Transfer.TransferUtility(_s3Client);
+        var uploadRequest = new Amazon.S3.Transfer.TransferUtilityUploadRequest
         {
             BucketName = _bucketName,
             Key = objectKey,
             InputStream = fileStream,
-            ContentType = contentType
+            ContentType = contentType,
+            PartSize = 6 * 1024 * 1024 // upload từng chunk 6MB
         };
 
-        _logger.LogInformation("Uploading '{Object}' (type={ContentType})...", objectKey, contentType);
-        await _s3Client.PutObjectAsync(putRequest, cancellationToken);
+        await transferUtility.UploadAsync(uploadRequest, cancellationToken);
         _logger.LogInformation("Upload completed: {Object}", objectKey);
     }
 

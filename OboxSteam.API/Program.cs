@@ -12,6 +12,18 @@ EnvFileLoader.LoadFromSolutionRoot();
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 3L * 1024 * 1024 * 1024; // 3GB
+});
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 3L * 1024 * 1024 * 1024; // 3GB
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
+    options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(30);
+});
+
 // Configuration
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)

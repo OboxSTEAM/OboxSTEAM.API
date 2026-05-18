@@ -24,6 +24,8 @@ namespace OboxSteam.API.Controllers
         /// Images are tagged synchronously; videos start an async Rekognition job.
         /// </summary>
         [HttpPost("upload")]
+        [RequestSizeLimit(3L * 1024 * 1024 * 1024)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 3L * 1024 * 1024 * 1024)]
         [SwaggerOperation(
             Summary = "Upload media to activity",
             Description = "Uploads an image (.jpg, .jpeg, .png) or video (.mp4, .mov) to an activity. " +
@@ -52,25 +54,6 @@ namespace OboxSteam.API.Controllers
         {
             var result = await _mediaService.GetMediaByActivityAsync(activityId);
             return Ok(ApiResult<List<MediaAssetDto>>.Success(result, "200", "Media retrieved successfully."));
-        }
-
-        /// <summary>
-        /// Process face tags for a video that has completed Rekognition analysis.
-        /// Call this after uploading a video to retrieve face recognition results.
-        /// </summary>
-        [HttpPost("{mediaId:guid}/process-tags")]
-        [SwaggerOperation(
-            Summary = "Process video face tags",
-            Description = "Polls the Rekognition Video job for a previously uploaded video and creates MediaTag records " +
-                          "for each recognized face. Returns 400 if the job is still in progress."
-        )]
-        [ProducesResponseType(typeof(ApiResult<MediaAssetDto>), 200)]
-        [ProducesResponseType(typeof(ApiResult<object>), 400)]
-        [ProducesResponseType(typeof(ApiResult<object>), 404)]
-        public async Task<IActionResult> ProcessVideoTags([FromRoute] Guid mediaId)
-        {
-            var result = await _mediaService.ProcessVideoTagsAsync(mediaId);
-            return Ok(ApiResult<MediaAssetDto>.Success(result, "200", "Video face tags processed successfully."));
         }
 
         /// <summary>

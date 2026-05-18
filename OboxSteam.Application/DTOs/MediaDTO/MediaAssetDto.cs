@@ -1,3 +1,5 @@
+using OboxSteam.Domain.Enums;
+
 namespace OboxSteam.Application.DTOs.MediaDTO;
 
 public class MediaAssetDto
@@ -8,6 +10,7 @@ public class MediaAssetDto
     public string? FileUrl { get; set; }
     public string? FileType { get; set; }
     public string? RekognitionJobId { get; set; }
+    public VideoProcessingStatus VideoStatus { get; set; }
     public DateTime? UploadedAt { get; set; }
     public List<MediaTagDto> Tags { get; set; } = new();
 }

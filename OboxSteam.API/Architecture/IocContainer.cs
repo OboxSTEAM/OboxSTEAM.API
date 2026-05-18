@@ -1,3 +1,4 @@
+
 using Amazon.Rekognition;
 using Amazon.S3;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -11,6 +12,7 @@ using OboxSteam.Infrastructure;
 using OboxSteam.Infrastructure.Commons;
 using OboxSteam.Infrastructure.Persistence;
 using OboxSteam.Infrastructure.Services;
+using OboxSteam.Infrastructure.BackgroundServices;
 using Resend;
 using System.Text;
 
@@ -37,12 +39,17 @@ public static class IocContainer
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
         services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IEmailService, EmailService>();
+        services.AddScoped<IVideoConverterService, VideoConverterService>();
 
         // Add Unit of Work (repositories are lazy-loaded inside)
         services.AddScoped<OboxSteam.Domain.Interfaces.IUnitOfWork, UnitOfWork>();
 
         // Add business services
         services.SetupBusinessServicesLayer();
+
+        // Add Background Services
+        services.AddSingleton<VideoProcessingChannel>();
+        services.AddHostedService<VideoTagProcessingWorker>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
@@ -162,6 +169,8 @@ public static class IocContainer
 
         return services;
     }
+
+
 
     private static IServiceCollection SetupSwagger(this IServiceCollection services)
     {
