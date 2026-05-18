@@ -37,7 +37,7 @@ public static class IocContainer
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
         services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IEmailService, EmailService>();
-        services.AddScoped<IParentService, ParentService>();
+
 
         // Add Unit of Work (repositories are lazy-loaded inside)
         services.AddScoped<OboxSteam.Domain.Interfaces.IUnitOfWork, UnitOfWork>();
@@ -148,6 +148,7 @@ public static class IocContainer
         services.AddScoped<IProgramService, ProgramService>();
         services.AddScoped<IModuleService, ModuleService>();
         services.AddScoped<IExpertService, ExpertService>();
+        services.AddScoped<IParentService, ParentService>();
         return services;
     }
 
