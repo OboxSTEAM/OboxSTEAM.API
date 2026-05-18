@@ -36,7 +36,7 @@ public class FaceRecognitionService : IFaceRecognitionService
             CollectionId = CollectionId,
             Image = new Image { Bytes = new MemoryStream(await ReadStreamAsync(imageStream)) },
             MaxFaces = 1,
-            QualityFilter = QualityFilter.AUTO, // Tự lọc ảnh mờ/tối/chất lượng thấp
+            QualityFilter = QualityFilter.AUTO,
             ExternalImageId = userId.ToString()
         });
 
@@ -50,7 +50,6 @@ public class FaceRecognitionService : IFaceRecognitionService
         var faceId = faceRecord.Face.FaceId;
         _logger.LogInformation("Face indexed with FaceId: {FaceId} for UserId: {UserId}", faceId, userId);
 
-        // Lưu mapping vào DB thông qua FaceEmbedding entity
         var existing = await _unitOfWork.FaceEmbeddings
             .FirstOrDefaultAsync(f => f.StudentId == userId);
 
@@ -70,25 +69,40 @@ public class FaceRecognitionService : IFaceRecognitionService
             });
         }
 
-        // NOTE: SaveChangesAsync is NOT called here — the caller is responsible
-        // for committing, so that all related changes (avatar URL + face embedding)
-        // are saved atomically in a single transaction.
         _logger.LogInformation("IndexFaceAsync completed for UserId: {UserId}, FaceId: {FaceId} (pending save)", userId, faceId);
         return faceId;
     }
 
     /// <inheritdoc />
-    public async Task<List<FaceMatchResult>> SearchFacesAsync(Stream imageStream, float minConfidence = 90f)
+    /// <remarks>
+    /// Nhận s3Bucket + s3Key thay vì Stream để tránh giới hạn 5MB của Rekognition Image.Bytes.
+    /// Rekognition đọc ảnh trực tiếp từ S3, hỗ trợ ảnh tối đa 15MB.
+    /// </remarks>
+    public async Task<List<FaceMatchResult>> SearchFacesAsync(string s3Bucket, string s3Key, float minConfidence = 90f)
     {
-        _logger.LogInformation("SearchFacesAsync started with MinConfidence: {MinConfidence}", minConfidence);
+        _logger.LogInformation("SearchFacesAsync started. Bucket={Bucket}, Key={Key}, MinConfidence={MinConfidence}",
+            s3Bucket, s3Key, minConfidence);
 
         var response = await _rekognition.SearchFacesByImageAsync(new SearchFacesByImageRequest
         {
             CollectionId = CollectionId,
-            Image = new Image { Bytes = new MemoryStream(await ReadStreamAsync(imageStream)) },
+            Image = new Image
+            {
+                S3Object = new Amazon.Rekognition.Model.S3Object
+                {
+                    Bucket = s3Bucket,
+                    Name = s3Key
+                }
+            },
             FaceMatchThreshold = minConfidence,
             MaxFaces = 10
         });
+
+        if (response.FaceMatches == null || !response.FaceMatches.Any())
+        {
+            _logger.LogInformation("SearchFacesAsync found no matches.");
+            throw ErrorHelper.BadRequest("No matching face found. Please ensure your face is registered and the photo is clear.");
+        }
 
         var results = response.FaceMatches
             .Where(m => Guid.TryParse(m.Face.ExternalImageId, out _))
@@ -116,12 +130,77 @@ public class FaceRecognitionService : IFaceRecognitionService
         _logger.LogInformation("DeleteFaceAsync completed for FaceId: {FaceId}", faceId);
     }
 
+    /// <inheritdoc />
+    public async Task<string> StartVideoFaceSearchAsync(string s3Bucket, string s3Key, float minConfidence = 90f)
+    {
+        _logger.LogInformation("StartVideoFaceSearchAsync: Bucket={Bucket}, Key={Key}", s3Bucket, s3Key);
+
+        await EnsureCollectionExistsAsync();
+
+        var response = await _rekognition.StartFaceSearchAsync(new StartFaceSearchRequest
+        {
+            CollectionId = CollectionId,
+            Video = new Video
+            {
+                S3Object = new Amazon.Rekognition.Model.S3Object
+                {
+                    Bucket = s3Bucket,
+                    Name = s3Key
+                }
+            },
+            FaceMatchThreshold = minConfidence
+        });
+
+        _logger.LogInformation("Video face search started. JobId: {JobId}", response.JobId);
+        return response.JobId;
+    }
+
+    /// <inheritdoc />
+    public async Task<VideoFaceSearchResult?> GetVideoFaceSearchResultsAsync(string jobId)
+    {
+        _logger.LogInformation("GetVideoFaceSearchResultsAsync: JobId={JobId}", jobId);
+
+        var response = await _rekognition.GetFaceSearchAsync(new GetFaceSearchRequest
+        {
+            JobId = jobId
+        });
+
+        if (response.JobStatus == VideoJobStatus.IN_PROGRESS)
+        {
+            _logger.LogInformation("Video job {JobId} still in progress.", jobId);
+            return null;
+        }
+
+        if (response.JobStatus == VideoJobStatus.FAILED)
+        {
+            _logger.LogError("Video job {JobId} failed: {StatusMessage}", jobId, response.StatusMessage);
+            return new VideoFaceSearchResult("FAILED", new List<FaceMatchResult>());
+        }
+
+        var allMatches = new Dictionary<Guid, FaceMatchResult>();
+
+        foreach (var person in response.Persons)
+        {
+            if (person.FaceMatches == null) continue;
+
+            foreach (var match in person.FaceMatches)
+            {
+                if (!Guid.TryParse(match.Face.ExternalImageId, out var userId))
+                    continue;
+
+                if (!allMatches.ContainsKey(userId) || match.Similarity > allMatches[userId].Confidence)
+                {
+                    allMatches[userId] = new FaceMatchResult(userId, match.Face.FaceId, match.Similarity);
+                }
+            }
+        }
+
+        _logger.LogInformation("Video job {JobId} completed with {Count} unique face(s).", jobId, allMatches.Count);
+        return new VideoFaceSearchResult("SUCCEEDED", allMatches.Values.ToList());
+    }
+
     // ── Helpers ──────────────────────────────────────
 
-    /// <summary>
-    /// Tạo collection nếu chưa tồn tại. Dùng static flag để chỉ gọi AWS API 1 lần
-    /// trong lifetime của application.
-    /// </summary>
     private async Task EnsureCollectionExistsAsync()
     {
         if (_collectionEnsured) return;
@@ -149,4 +228,3 @@ public class FaceRecognitionService : IFaceRecognitionService
         return ms.ToArray();
     }
 }
-

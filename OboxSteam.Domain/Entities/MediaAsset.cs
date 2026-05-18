@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Domain.Entities;
 
@@ -17,6 +18,9 @@ public class MediaAsset : BaseEntity
 
     [MaxLength(255)]
     public string? RekognitionJobId { get; set; }
+
+    /// <summary>Tracks the background processing lifecycle for video assets.</summary>
+    public VideoProcessingStatus VideoStatus { get; set; } = VideoProcessingStatus.None;
 
     public DateTime? UploadedAt { get; set; }
 

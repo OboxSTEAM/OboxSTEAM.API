@@ -177,6 +177,10 @@ public class AccountService : IAccountService
             await _blobService.DeleteFileAsync(user.AvatarUrl);
         }
 
+        await using var faceStream = file.OpenReadStream();
+        await _faceRecognitionService.IndexFaceAsync(userId, faceStream);
+        _loggerService.LogInformation("Face indexed in Rekognition for user {UserId}", userId);
+
         // Generate unique file name: avatars/{userId}_{timestamp}{ext}
         var fileName = $"{userId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
 
@@ -186,10 +190,6 @@ public class AccountService : IAccountService
         // Get the preview URL and save to user
         var avatarUrl = await _blobService.GetPreviewUrlAsync($"avatars/{fileName}");
         user.AvatarUrl = avatarUrl;
-
-        await using var faceStream = file.OpenReadStream();
-        await _faceRecognitionService.IndexFaceAsync(userId, faceStream);
-        _loggerService.LogInformation("Face indexed in Rekognition for user {UserId}", userId);
 
         await _unitOfWork.Users.Update(user);
         await _unitOfWork.SaveChangesAsync();

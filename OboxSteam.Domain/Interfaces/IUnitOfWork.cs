@@ -25,6 +25,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Expert> Experts { get; }
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }
+    IGenericRepository<MediaTag> MediaTags { get; }
     IGenericRepository<HighlightVideo> HighlightVideos { get; }
     IGenericRepository<FaceEmbedding> FaceEmbeddings { get; }
     IGenericRepository<Portfolio> Portfolios { get; }
