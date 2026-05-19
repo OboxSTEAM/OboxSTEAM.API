@@ -41,6 +41,7 @@ public static class IocContainer
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IVideoConverterService, VideoConverterService>();
 
+
         // Add Unit of Work (repositories are lazy-loaded inside)
         services.AddScoped<OboxSteam.Domain.Interfaces.IUnitOfWork, UnitOfWork>();
 
@@ -155,6 +156,7 @@ public static class IocContainer
         services.AddScoped<IModuleService, ModuleService>();
         services.AddScoped<IMediaService, MediaService>();
         services.AddScoped<IExpertService, ExpertService>();
+        services.AddScoped<IParentService, ParentService>();
         return services;
     }
 

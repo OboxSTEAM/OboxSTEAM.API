@@ -34,5 +34,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<StandardizedTest> StandardizedTests { get; }
     IGenericRepository<Payment> Payments { get; }
     IGenericRepository<ProgramBoard> ProgramBoards { get; }
+    IGenericRepository<ParentStudent> ParentStudents { get; }
+
     Task<int> SaveChangesAsync();
 }
