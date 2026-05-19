@@ -10,4 +10,5 @@ public interface IParentService
     Task<LoginResponseDto> MagicLoginAsync(MagicLoginDto dto, IConfiguration configuration);
     Task<bool> CompleteProfileAsync(CompleteProfileDto dto);
     Task<bool> ApproveLinkAsync(ApproveLinkDto dto, IConfiguration configuration);
+    Task<List<ParentStudentRelationDto>> GetParentStudentRelationsAsync();
 }

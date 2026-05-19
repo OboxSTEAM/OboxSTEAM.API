@@ -51,4 +51,12 @@ public class ParentController : ControllerBase
         var result = await _parentService.ApproveLinkAsync(dto, _configuration);
         return Ok(ApiResult<object>.Success(result, "200", "Student association approved successfully."));
     }
+
+    [HttpGet("links")]
+    [Authorize(Roles = "Student,Parent")]
+    public async Task<IActionResult> GetParentStudentRelations()
+    {
+        var result = await _parentService.GetParentStudentRelationsAsync();
+        return Ok(ApiResult<List<ParentStudentRelationDto>>.Success(result, "200", "Retrieved associated accounts successfully."));
+    }
 }
