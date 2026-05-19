@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Infrastructure.Persistence;
 using System.Linq.Expressions;
@@ -170,7 +171,7 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
         }
         catch (Exception ex)
         {
-            throw new Exception($"Error while performing hard remove: {ex.Message}");
+            throw ErrorHelper.Internal($"Error while performing hard remove: {ex.Message}");
         }
     }
 
@@ -188,7 +189,7 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
         }
         catch (Exception ex)
         {
-            throw new Exception($"Error while performing hard remove range: {ex.Message}");
+            throw ErrorHelper.Internal($"Error while performing hard remove range: {ex.Message}");
         }
     }
 }
