@@ -12,8 +12,8 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    [Migration("20260517164829_AddVideoStatusToMediaAsset")]
-    partial class AddVideoStatusToMediaAsset
+    [Migration("20260519062445_InitDB")]
+    partial class InitDB
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -947,6 +947,9 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsVerified")
                         .HasColumnType("boolean");
 
                     b.Property<DateTime?>("UpdatedAt")

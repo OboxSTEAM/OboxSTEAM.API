@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace OboxSteam.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitDb : Migration
+    public partial class InitDB : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -231,6 +231,7 @@ namespace OboxSteam.Infrastructure.Migrations
                 {
                     ParentId = table.Column<Guid>(type: "uuid", nullable: false),
                     StudentId = table.Column<Guid>(type: "uuid", nullable: false),
+                    IsVerified = table.Column<bool>(type: "boolean", nullable: false),
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -839,6 +840,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     FileUrl = table.Column<string>(type: "text", nullable: true),
                     FileType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
                     RekognitionJobId = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    VideoStatus = table.Column<string>(type: "text", nullable: false),
                     UploadedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
