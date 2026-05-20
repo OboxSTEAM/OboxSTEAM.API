@@ -50,4 +50,4 @@ jobs:
                     # Khởi động lại duy nhất container api
                     docker compose up -d oboxsteam.api
                     docker image prune -af
-                    docker logs --tail 20 oboxsteam-api
+                    docker logs --tail 20 obox-backend
