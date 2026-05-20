@@ -1,18 +1,47 @@
 namespace OboxSteam.Application.Interfaces;
 
 /// <summary>
-/// Transcodes a video file to H.264/AAC MP4 using local FFmpeg,
-/// then uploads the result directly to S3.
+/// Submits and polls AWS MediaConvert transcoding jobs.
+/// All transcoding runs in the cloud — no local FFmpeg required.
 /// </summary>
 public interface IVideoConverterService
 {
     /// <summary>
-    /// Transcodes the file at <paramref name="inputLocalPath"/> via FFmpeg and
-    /// uploads the result to <paramref name="outputS3Key"/> in S3.
-    /// Cleans up all temp files on completion or failure.
+    /// Submits an AWS MediaConvert job to transcode the video at
+    /// <paramref name="inputS3Key"/> to H.264/AAC MP4 and write the
+    /// output to <paramref name="outputDestinationPrefix"/> in the same S3 bucket.
+    /// Returns immediately with the MediaConvert Job ID (non-blocking).
     /// </summary>
-    /// <param name="inputLocalPath">Absolute local path of the source video (e.g. "/tmp/upload_xxx/video.mp4").</param>
-    /// <param name="outputS3Key">Desired S3 object key for the transcoded output (e.g. "media/video.mp4").</param>
-    /// <returns>The final S3 key of the transcoded file.</returns>
-    Task<string> ConvertToH264Async(string inputLocalPath, string outputS3Key);
+    /// <param name="inputS3Key">S3 object key of the raw source video (e.g. "raw/video.mov").</param>
+    /// <param name="outputDestinationPrefix">S3 prefix for the output file (e.g. "media/").</param>
+    /// <returns>The MediaConvert Job ID.</returns>
+    Task<string> SubmitTranscodeJobAsync(string inputS3Key, string outputDestinationPrefix);
+
+    /// <summary>
+    /// Polls the status of a previously submitted MediaConvert job.
+    /// </summary>
+    /// <param name="jobId">The MediaConvert Job ID returned by <see cref="SubmitTranscodeJobAsync"/>.</param>
+    /// <returns>
+    /// <see cref="MediaConvertJobStatus.Complete"/> when the job succeeded,
+    /// <see cref="MediaConvertJobStatus.InProgress"/> when still running,
+    /// <see cref="MediaConvertJobStatus.Error"/> when the job failed.
+    /// </returns>
+    Task<MediaConvertJobStatus> GetJobStatusAsync(string jobId);
+
+    /// <summary>
+    /// Retrieves the S3 key of the transcoded output file for a completed MediaConvert job.
+    /// The key is relative to the bucket root (e.g. "media/activityId_123.mp4").
+    /// </summary>
+    /// <param name="jobId">The MediaConvert Job ID (must be in COMPLETE status).</param>
+    Task<string> GetOutputS3KeyAsync(string jobId);
+}
+
+/// <summary>
+/// Represents the current state of an AWS MediaConvert transcoding job.
+/// </summary>
+public enum MediaConvertJobStatus
+{
+    InProgress,
+    Complete,
+    Error
 }

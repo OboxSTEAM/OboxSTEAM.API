@@ -1,4 +1,5 @@
 
+using Amazon.MediaConvert;
 using Amazon.Rekognition;
 using Amazon.S3;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -60,6 +61,7 @@ public static class IocContainer
         //services.SetupRedis();
         services.SetupReSendService(configuration);
         services.SetupAwsRekognition();
+        services.SetupAwsMediaConvert();
 
         return services;
     }
@@ -169,6 +171,27 @@ public static class IocContainer
                 Environment.GetEnvironmentVariable("AWS_ACCESS_KEY"),
                 Environment.GetEnvironmentVariable("AWS_SECRET_KEY"),
                 Amazon.RegionEndpoint.GetBySystemName(region)));
+
+        return services;
+    }
+
+    public static IServiceCollection SetupAwsMediaConvert(this IServiceCollection services)
+    {
+        var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY")
+            ?? throw new InvalidOperationException("AWS_ACCESS_KEY not found in environment variables.");
+        var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_KEY")
+            ?? throw new InvalidOperationException("AWS_SECRET_KEY not found in environment variables.");
+        var endpoint  = Environment.GetEnvironmentVariable("AWS_MEDIACONVERT_ENDPOINT")
+            ?? throw new InvalidOperationException("AWS_MEDIACONVERT_ENDPOINT not found in environment variables.");
+
+        services.AddSingleton<IAmazonMediaConvert>(_ =>
+            new AmazonMediaConvertClient(
+                accessKey,
+                secretKey,
+                new AmazonMediaConvertConfig
+                {
+                    ServiceURL = endpoint
+                }));
 
         return services;
     }

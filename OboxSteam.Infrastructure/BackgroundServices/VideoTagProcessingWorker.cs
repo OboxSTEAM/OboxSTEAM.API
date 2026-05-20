@@ -10,9 +10,13 @@ namespace OboxSteam.Infrastructure.BackgroundServices;
 
 public class VideoTagProcessingWorker : BackgroundService
 {
+    // MediaConvert polling: 40 × 15 s = 10 minutes maximum wait for transcoding
+    private const int MediaConvertMaxAttempts  = 40;
+
     // Rekognition polling: 40 × 15 s = 10 minutes maximum wait
-    private const int RekognitionMaxAttempts = 40;
-    private static readonly TimeSpan RekognitionPollInterval = TimeSpan.FromSeconds(15);
+    private const int RekognitionMaxAttempts   = 40;
+
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
 
     private readonly VideoProcessingChannel _channel;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -23,9 +27,9 @@ public class VideoTagProcessingWorker : BackgroundService
         IServiceScopeFactory scopeFactory,
         ILogger<VideoTagProcessingWorker> logger)
     {
-        _channel = channel;
+        _channel      = channel;
         _scopeFactory = scopeFactory;
-        _logger = logger;
+        _logger       = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -50,7 +54,7 @@ public class VideoTagProcessingWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unhandled error processing video tags for MediaId: {MediaId}", mediaId);
+                _logger.LogError(ex, "Unhandled error processing video for MediaId: {MediaId}", mediaId);
             }
         }
     }
@@ -61,8 +65,8 @@ public class VideoTagProcessingWorker : BackgroundService
     {
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            using var scope    = _scopeFactory.CreateScope();
+            var unitOfWork     = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             // Recover videos that are mid-flight: still transcoding OR waiting for Rekognition.
             var pendingMedia = await unitOfWork.MediaAssets.GetAllAsync(m =>
@@ -72,23 +76,9 @@ public class VideoTagProcessingWorker : BackgroundService
 
             foreach (var media in pendingMedia)
             {
-                // For Transcoding jobs, the /tmp file must still exist.
-                // If the container restarted, the file is gone — mark as Failed immediately.
-                if (media.VideoStatus == VideoProcessingStatus.Transcoding)
-                {
-                    var tmpPath = media.RekognitionJobId;
-                    if (string.IsNullOrEmpty(tmpPath) || !File.Exists(tmpPath))
-                    {
-                        _logger.LogWarning(
-                            "Temp file missing for MediaId={MediaId} (container likely restarted). Marking as Failed.",
-                            media.Id);
-                        media.VideoStatus      = VideoProcessingStatus.Failed;
-                        media.RekognitionJobId = null;
-                        await unitOfWork.SaveChangesAsync();
-                        continue;
-                    }
-                }
-
+                // For Transcoding jobs, the raw video is on S3 (durable).
+                // Unlike the old FFmpeg flow, we no longer depend on a local /tmp file,
+                // so all Transcoding jobs can be safely re-enqueued regardless of crash.
                 _logger.LogInformation(
                     "Recovering pending video job: MediaId={MediaId}, VideoStatus={Status}",
                     media.Id, media.VideoStatus);
@@ -105,29 +95,81 @@ public class VideoTagProcessingWorker : BackgroundService
 
     /// <summary>
     /// Full pipeline for one video:
-    ///   1. FFmpeg transcode (blocking — handled inside StartVideoTranscodeAsync)
-    ///   2. Rekognition face-search polling (up to 10 min)
+    ///   1. Submit AWS MediaConvert job (non-blocking)
+    ///   2. Poll MediaConvert job status (up to 10 min)
+    ///   3. Poll Rekognition face-search (up to 10 min)
     /// </summary>
     private async Task ProcessMediaAsync(IMediaService mediaService, Guid mediaId, CancellationToken ct)
     {
         _logger.LogInformation("ProcessMediaAsync started for MediaId: {MediaId}", mediaId);
 
-        // ── Phase 1: Transcode ────────────────────────────────────────────────
-        // This call blocks until MediaConvert completes (or throws on failure).
-        // After it returns, VideoStatus = PendingTagging and the Rekognition job is running.
+        // ── Phase 1a: Submit MediaConvert job (fast, non-blocking) ────────────
         try
         {
             await mediaService.StartVideoTranscodeAsync(mediaId);
         }
         catch (Exception ex)
         {
-            // StartVideoTranscodeAsync already set VideoStatus = Failed and cleaned up /tmp.
-            _logger.LogError(ex, "Transcoding failed for MediaId: {MediaId}. Aborting.", mediaId);
+            // StartVideoTranscodeAsync already set VideoStatus = Failed.
+            _logger.LogError(ex, "MediaConvert job submission failed for MediaId: {MediaId}. Aborting.", mediaId);
             return;
         }
 
+        // ── Phase 1b: Poll MediaConvert until transcoding completes ───────────
+        var transcodeCompleted = await PollMediaConvertAsync(mediaService, mediaId, ct);
+        if (!transcodeCompleted)
+            return; // failure already logged and status set to Failed
+
         // ── Phase 2: Poll Rekognition ─────────────────────────────────────────
         await RetryRekognitionAsync(mediaService, mediaId, ct);
+    }
+
+    /// <summary>
+    /// Polls MediaConvert every 15 seconds, up to 40 attempts (10 minutes).
+    /// Returns true when transcoding is complete (and Rekognition job has been started).
+    /// Returns false if all attempts are exhausted or the job fails.
+    /// </summary>
+    private async Task<bool> PollMediaConvertAsync(
+        IMediaService mediaService, Guid mediaId, CancellationToken ct)
+    {
+        for (int attempt = 1; attempt <= MediaConvertMaxAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(PollInterval, ct);
+
+            bool isDone;
+            try
+            {
+                isDone = await mediaService.TryCompleteTranscodeAsync(mediaId);
+            }
+            catch (Exception ex)
+            {
+                // TryCompleteTranscodeAsync throws on ERROR status (VideoStatus already set to Failed).
+                _logger.LogError(ex, "MediaConvert job FAILED for MediaId: {MediaId}", mediaId);
+                return false;
+            }
+
+            if (isDone)
+            {
+                _logger.LogInformation(
+                    "MediaConvert transcoding completed for MediaId: {MediaId}", mediaId);
+                return true;
+            }
+
+            _logger.LogInformation(
+                "MediaConvert poll attempt {Attempt}/{Max}: still in progress for MediaId: {MediaId}",
+                attempt, MediaConvertMaxAttempts, mediaId);
+        }
+
+        // All attempts exhausted
+        _logger.LogWarning(
+            "Gave up waiting for MediaConvert after {Max} attempts ({Minutes} min) for MediaId: {MediaId}. Marking as Failed.",
+            MediaConvertMaxAttempts,
+            MediaConvertMaxAttempts * PollInterval.TotalMinutes,
+            mediaId);
+
+        await MarkAsFailedAsync(mediaId);
+        return false;
     }
 
     /// <summary>
@@ -139,8 +181,7 @@ public class VideoTagProcessingWorker : BackgroundService
         for (int attempt = 1; attempt <= RekognitionMaxAttempts; attempt++)
         {
             ct.ThrowIfCancellationRequested();
-
-            await Task.Delay(RekognitionPollInterval, ct);
+            await Task.Delay(PollInterval, ct);
 
             bool isDone;
             try
@@ -157,7 +198,8 @@ public class VideoTagProcessingWorker : BackgroundService
 
             if (isDone)
             {
-                _logger.LogInformation("Video tags processed successfully for MediaId: {MediaId}", mediaId);
+                _logger.LogInformation(
+                    "Video tags processed successfully for MediaId: {MediaId}", mediaId);
                 return;
             }
 
@@ -169,7 +211,9 @@ public class VideoTagProcessingWorker : BackgroundService
         // All attempts exhausted — mark as Failed so recovery doesn't re-enqueue it.
         _logger.LogWarning(
             "Gave up waiting for Rekognition after {Max} attempts ({Minutes} min) for MediaId: {MediaId}. Marking as Failed.",
-            RekognitionMaxAttempts, RekognitionMaxAttempts * RekognitionPollInterval.TotalMinutes, mediaId);
+            RekognitionMaxAttempts,
+            RekognitionMaxAttempts * PollInterval.TotalMinutes,
+            mediaId);
 
         await MarkAsFailedAsync(mediaId);
     }
@@ -178,8 +222,8 @@ public class VideoTagProcessingWorker : BackgroundService
     {
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            using var scope  = _scopeFactory.CreateScope();
+            var unitOfWork   = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             var media = await unitOfWork.MediaAssets.GetByIdAsync(mediaId);
             if (media != null)

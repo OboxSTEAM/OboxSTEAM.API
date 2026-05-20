@@ -20,10 +20,18 @@ public interface IMediaService
 
     /// <summary>
     /// Được gọi bởi VideoTagProcessingWorker.
-    /// Thực hiện: MediaConvert transcode → xóa raw S3 → start Rekognition job.
-    /// Cập nhật VideoStatus = PendingTagging sau khi hoàn tất.
+    /// Submit MediaConvert job (non-blocking): đọc raw S3 key từ DB, gửi job lên MediaConvert,
+    /// lưu MC job ID vào DB, giữ VideoStatus = Transcoding.
     /// </summary>
     Task StartVideoTranscodeAsync(Guid mediaId);
+
+    /// <summary>
+    /// Poll trạng thái MediaConvert job.
+    /// - Trả về <c>true</c> khi job COMPLETE (đã lấy URL, start Rekognition, VideoStatus = PendingTagging).
+    /// - Trả về <c>false</c> khi job vẫn đang chạy (IN_PROGRESS/SUBMITTED).
+    /// - Ném exception khi job ERROR.
+    /// </summary>
+    Task<bool> TryCompleteTranscodeAsync(Guid mediaId);
 
     /// <summary>
     /// Xử lý kết quả face-search cho video (poll Rekognition job).
