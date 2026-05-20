@@ -1,5 +1,5 @@
 services:
-  oboxsteam.api:
+  obox-backend:
     image: ${DOCKER_REGISTRY-}oboxsteamapi
     container_name: obox-backend
     build:

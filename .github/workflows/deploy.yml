@@ -45,9 +45,9 @@ jobs:
                     echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             
                     # Kéo image api mới về
-                    docker compose pull oboxsteam.api
+                    docker compose pull obox-backend
             
                     # Khởi động lại duy nhất container api
-                    docker compose up -d oboxsteam.api
+                    docker compose up -d obox-backend
                     docker image prune -af
                     docker logs --tail 20 obox-backend
