@@ -40,26 +40,14 @@ jobs:
                   key: ${{ secrets.VPS_SSH_KEY }}
                   port: 22
                   script: |
-                      set -e # Thêm chốt chặn bảo vệ: Lỗi bước nào là dừng luôn bước đó để dễ debug
-
-                      # 1. Di chuyển vào thư mục chứa Backend trên VPS
-                      cd /root/apps/oboxsteam/oboxsteam-be
-
-                      # 2. Đăng nhập DockerHub trên VPS để có quyền kéo image về (nếu repo ở chế độ private)
-                      echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-
-                      # 3. Kéo duy nhất Image Backend mới đã được build sẵn từ DockerHub về VPS
-                      echo "Pulling latest Obox Backend Docker image..."
-                      docker compose pull oboxsteam.api
-
-                      # 4. Khởi động lại container API và Database bằng Image mới
-                      echo "Restarting Obox Backend containers..."
-                      docker compose up -d
-
-                      # 5. Dọn dẹp triệt để các Image cũ/bị rác để giải phóng ổ cứng
-                      echo "Cleaning up old images..."
-                      docker image prune -af 
-
-                      # 6. Kiểm tra log của container để chắc chắn kết nối DB và AWS ổn định
-                      echo "Checking logs for errors..."
-                      docker logs --tail 20 oboxsteam-api
+                    set -e
+                    cd /root/apps/oboxsteam/oboxsteam-be
+                    echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            
+                    # Kéo image api mới về
+                    docker compose pull oboxsteam.api
+            
+                    # Khởi động lại duy nhất container api
+                    docker compose up -d oboxsteam.api
+                    docker image prune -af
+                    docker logs --tail 20 oboxsteam-api
