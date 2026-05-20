@@ -43,7 +43,7 @@ jobs:
                       set -e # Thêm chốt chặn bảo vệ: Lỗi bước nào là dừng luôn bước đó để dễ debug
 
                       # 1. Di chuyển vào thư mục chứa Backend trên VPS
-                      cd /home/ubuntu/projects/oboxsteam-be
+                      cd /root/apps/oboxsteam/oboxsteam-be
 
                       # 2. Đăng nhập DockerHub trên VPS để có quyền kéo image về (nếu repo ở chế độ private)
                       echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
