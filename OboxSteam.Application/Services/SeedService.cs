@@ -416,32 +416,190 @@ namespace OboxSteam.Application.Services
             var existingCourses = await _unitOfWork.Courses.GetAllAsync();
             if (!existingCourses.Any())
             {
-                var moduleRobotics1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01");
                 var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
 
-                if (moduleRobotics1 != null && mentor != null)
+                var moduleRobotics1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01");
+                var moduleRobotics2 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-02");
+                var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
+                var moduleWebDev1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-01");
+                var moduleWebDev2 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-02");
+                var moduleSteam1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-STEAM-01");
+                var moduleSteam2 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-STEAM-02");
+
+                if (mentor == null)
                 {
-                    var courses = new List<Course>
-                    {
-                        new Course
-                        {
-                            Id = Guid.NewGuid(),
-                            Code = "CRS-ROBOTICS-01",
-                            ModuleId = moduleRobotics1.Id,
-                            MentorId = mentor.Id,
-                            Name = "Robotics 101 - Cohort A",
-                            Description = "First cohort for the basics of robotics",
-                            CreatedAt = DateTime.UtcNow,
-                            CreatedBy = Guid.Empty
-                        }
-                    };
-                    await _unitOfWork.Courses.AddRangeAsync(courses);
-                    await _unitOfWork.SaveChangesAsync();
-                    _loggerService.LogInformation("Finished seed courses");
+                    _loggerService.LogWarning("Mentor MNT-001 not found. Skipping course seeding.");
                 }
                 else
                 {
-                    _loggerService.LogWarning("Required module or mentor not found. Skipping course seeding.");
+                    var courses = new List<Course>();
+                    var seedTime = DateTime.UtcNow;
+
+                    if (moduleRobotics1 != null)
+                    {
+                        courses.AddRange(new List<Course>
+                        {
+                            new Course
+                            {
+                                Id = Guid.NewGuid(),
+                                Code = "CRS-ROBOTICS-01",
+                                ModuleId = moduleRobotics1.Id,
+                                MentorId = mentor.Id,
+                                Name = "Robotics 101 - Cohort A",
+                                Description = "First cohort for the basics of robotics and block-based programming.",
+                                CreatedAt = seedTime,
+                                CreatedBy = Guid.Empty,
+                                IsDeleted = false
+                            },
+                            new Course
+                            {
+                                Id = Guid.NewGuid(),
+                                Code = "CRS-ROBOTICS-02",
+                                ModuleId = moduleRobotics1.Id,
+                                MentorId = mentor.Id,
+                                Name = "Robotics 101 - Cohort B",
+                                Description = "Second cohort covering robotics fundamentals with hands-on exercises.",
+                                CreatedAt = seedTime,
+                                CreatedBy = Guid.Empty,
+                                IsDeleted = false
+                            }
+                        });
+                    }
+                    else
+                    {
+                        _loggerService.LogWarning("Module MOD-ROBOTICS-01 not found. Skipping robotics basics course seeding.");
+                    }
+
+                    if (moduleRobotics2 != null)
+                    {
+                        courses.Add(new Course
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "CRS-ROBOTICS-03",
+                            ModuleId = moduleRobotics2.Id,
+                            MentorId = mentor.Id,
+                            Name = "Sensors and Movement - Spring 2026",
+                            Description = "Experiential course on sensors, motors, and robot movement patterns.",
+                            CreatedAt = seedTime,
+                            CreatedBy = Guid.Empty,
+                            IsDeleted = false
+                        });
+                    }
+                    else
+                    {
+                        _loggerService.LogWarning("Module MOD-ROBOTICS-02 not found. Skipping sensors course seeding.");
+                    }
+
+                    if (moduleRobotics3 != null)
+                    {
+                        courses.Add(new Course
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "CRS-ROBOTICS-04",
+                            ModuleId = moduleRobotics3.Id,
+                            MentorId = mentor.Id,
+                            Name = "Build and Test Challenge - Team Alpha",
+                            Description = "Research module cohort focused on designing, building, and testing a robot prototype.",
+                            CreatedAt = seedTime,
+                            CreatedBy = Guid.Empty,
+                            IsDeleted = false
+                        });
+                    }
+                    else
+                    {
+                        _loggerService.LogWarning("Module MOD-ROBOTICS-03 not found. Skipping build challenge course seeding.");
+                    }
+
+                    if (moduleWebDev1 != null)
+                    {
+                        courses.Add(new Course
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "CRS-WEBDEV-01",
+                            ModuleId = moduleWebDev1.Id,
+                            MentorId = mentor.Id,
+                            Name = "HTML & CSS - Evening Class",
+                            Description = "Evening cohort for HTML structure, semantic markup, and responsive CSS layouts.",
+                            CreatedAt = seedTime,
+                            CreatedBy = Guid.Empty,
+                            IsDeleted = false
+                        });
+                    }
+                    else
+                    {
+                        _loggerService.LogWarning("Module MOD-WEBDEV-01 not found. Skipping web foundations course seeding.");
+                    }
+
+                    if (moduleWebDev2 != null)
+                    {
+                        courses.Add(new Course
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "CRS-WEBDEV-02",
+                            ModuleId = moduleWebDev2.Id,
+                            MentorId = mentor.Id,
+                            Name = "JavaScript Basics - Weekend Bootcamp",
+                            Description = "Weekend intensive on variables, DOM manipulation, and simple interactive pages.",
+                            CreatedAt = seedTime,
+                            CreatedBy = Guid.Empty,
+                            IsDeleted = false
+                        });
+                    }
+                    else
+                    {
+                        _loggerService.LogWarning("Module MOD-WEBDEV-02 not found. Skipping JavaScript course seeding.");
+                    }
+
+                    if (moduleSteam1 != null)
+                    {
+                        courses.Add(new Course
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "CRS-STEAM-01",
+                            ModuleId = moduleSteam1.Id,
+                            MentorId = mentor.Id,
+                            Name = "STEAM Lab Kickoff - Cohort 1",
+                            Description = "Introductory STEAM lab exploring interdisciplinary project-based learning.",
+                            CreatedAt = seedTime,
+                            CreatedBy = Guid.Empty,
+                            IsDeleted = false
+                        });
+                    }
+                    else
+                    {
+                        _loggerService.LogWarning("Module MOD-STEAM-01 not found. Skipping STEAM kickoff course seeding.");
+                    }
+
+                    if (moduleSteam2 != null)
+                    {
+                        courses.Add(new Course
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "CRS-STEAM-02",
+                            ModuleId = moduleSteam2.Id,
+                            MentorId = mentor.Id,
+                            Name = "Creative Prototyping - Workshop A",
+                            Description = "Hands-on workshop for rapid prototyping with recycled materials and simple circuits.",
+                            CreatedAt = seedTime,
+                            CreatedBy = Guid.Empty,
+                            IsDeleted = false
+                        });
+                    }
+                    else
+                    {
+                        _loggerService.LogWarning("Module MOD-STEAM-02 not found. Skipping creative prototyping course seeding.");
+                    }
+
+                    if (courses.Count > 0)
+                    {
+                        await _unitOfWork.Courses.AddRangeAsync(courses);
+                        await _unitOfWork.SaveChangesAsync();
+                        _loggerService.LogInformation("Finished seed courses — {Count} course(s) created.", courses.Count);
+                    }
+                    else
+                    {
+                        _loggerService.LogWarning("No courses seeded because required modules were not found.");
+                    }
                 }
             }
             else
