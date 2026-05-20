@@ -1,7 +1,7 @@
 services:
   oboxsteam.api:
     image: ${DOCKER_REGISTRY-}oboxsteamapi
-    container_name: oboxsteam-api
+    container_name: obox-backend
     build:
       context: .
       dockerfile: OboxSteam.API/Dockerfile
