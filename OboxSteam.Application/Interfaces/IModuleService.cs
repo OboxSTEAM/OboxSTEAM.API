@@ -2,25 +2,25 @@
 using OboxSteam.Application.DTOs.ModuleDTO;
 using OboxSteam.Domain.Enums;
 
-namespace OboxSteam.Application.Interfaces
-{
-    public interface IModuleService
-    {
-        Task<ModuleResponseDto> GetModuleByIdAsync(Guid id);
-        Task<ModuleResponseDto> GetModuleByNameAsync(string name);
-        Task<Pagination<ModuleResponseDto>> GetAllModulesAsync(
-            string? search,
-            string? sortBy,
-            bool isDescending,
-            int page,
-            int pageSize,
-            string? code,
-            ModuleType? moduleType);
+namespace OboxSteam.Application.Interfaces;
 
-        Task<ModuleResponseDto> AddModuleAsync(ModuleCreateDto moduleCreateDto);
+public interface IModuleService
+ {
+    Task<ModuleResponseDto> GetModuleByIdAsync(Guid id);
+    Task<ModuleResponseDto> GetModuleByNameAsync(string name);
+    Task<Pagination<ModuleResponseDto>> GetAllModulesAsync(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        int page,
+        int pageSize,
+        string? code,
+        ModuleType? moduleType);
 
-        Task<ModuleResponseDto> UpdateModuleAsync(Guid id, ModuleUpdateDto moduleUpdateDto);
+    Task<ModuleResponseDto> AddModuleAsync(ModuleCreateDto moduleCreateDto);
 
-        Task<bool> DeleteModuleAsync(Guid id);
-    }
-}
+    Task<ModuleResponseDto> UpdateModuleAsync(Guid id, ModuleUpdateDto moduleUpdateDto);
+
+    Task<bool> DeleteModuleAsync(Guid id);
+ }
+
