@@ -11,6 +11,8 @@ public class BlobService : IBlobService
     private readonly string _region;
     private readonly ILogger<BlobService> _logger;
     private readonly IAmazonS3 _s3Client;
+    private readonly Amazon.S3.Transfer.TransferUtility _transferUtility;
+    private static bool _bucketInitialized = false;
 
     /// <summary>
     /// IAmazonS3 is injected via DI (registered as singleton in IocContainer).
@@ -22,6 +24,7 @@ public class BlobService : IBlobService
         _logger = logger;
         _bucketName = Environment.GetEnvironmentVariable("AWS_S3_BUCKET") ?? "oboxsteam-bucket";
         _region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
+        _transferUtility = new Amazon.S3.Transfer.TransferUtility(_s3Client);
     }
 
     /// <summary>
@@ -29,6 +32,9 @@ public class BlobService : IBlobService
     /// </summary>
     public async Task EnsureBucketExistsAsync(CancellationToken cancellationToken = default)
     {
+        if (_bucketInitialized)
+            return;
+
         try
         {
             var buckets = await _s3Client.ListBucketsAsync(cancellationToken);
@@ -51,6 +57,7 @@ public class BlobService : IBlobService
 
             // Always ensure public-read policy is applied
             await SetPublicReadPolicyAsync(cancellationToken);
+            _bucketInitialized = true;
         }
         catch (AmazonS3Exception s3Ex)
         {
@@ -134,7 +141,6 @@ public class BlobService : IBlobService
 
         _logger.LogInformation("Uploading '{Object}' (type={ContentType})...", objectKey, contentType);
 
-        using var transferUtility = new Amazon.S3.Transfer.TransferUtility(_s3Client);
         var uploadRequest = new Amazon.S3.Transfer.TransferUtilityUploadRequest
         {
             BucketName = _bucketName,
@@ -144,7 +150,7 @@ public class BlobService : IBlobService
             PartSize = 6 * 1024 * 1024 // upload từng chunk 6MB
         };
 
-        await transferUtility.UploadAsync(uploadRequest, cancellationToken);
+        await _transferUtility.UploadAsync(uploadRequest, cancellationToken);
         _logger.LogInformation("Upload completed: {Object}", objectKey);
     }
 
@@ -226,17 +232,43 @@ public class BlobService : IBlobService
         }
     }
 
+    /// <summary>Deletes an S3 object directly by its bucket-relative key.</summary>
+    public async Task DeleteByKeyAsync(string s3Key, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(s3Key))
+        {
+            _logger.LogWarning("DeleteByKeyAsync called with null or empty key.");
+            return;
+        }
+
+        try
+        {
+            _logger.LogInformation("Deleting S3 object by key: {Key}", s3Key);
+            await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
+            {
+                BucketName = _bucketName,
+                Key = s3Key
+            }, cancellationToken);
+            _logger.LogInformation("S3 object deleted: {Key}", s3Key);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting S3 object by key: {Key}", s3Key);
+            // Non-fatal — same policy as DeleteFileAsync
+        }
+    }
+
     private string GetContentType(string fileName)
     {
         var ext = Path.GetExtension(fileName)?.ToLowerInvariant();
         return ext switch
         {
             ".jpg" or ".jpeg" => "image/jpeg",
-            ".png"            => "image/png",
-            ".gif"            => "image/gif",
-            ".pdf"            => "application/pdf",
-            ".mp4"            => "video/mp4",
-            _                 => "application/octet-stream"
+            ".png" => "image/png",
+            ".gif" => "image/gif",
+            ".pdf" => "application/pdf",
+            ".mp4" => "video/mp4",
+            _ => "application/octet-stream"
         };
     }
 }

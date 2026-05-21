@@ -24,9 +24,25 @@ public class GlobalExceptionMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "An unhandled exception occurred.");
+            LogException(ex);
             await HandleExceptionAsync(context, ex);
         }
+    }
+
+    /// <summary>
+    /// Business exceptions (4xx) just Warning — behavior, not system error.
+    /// Server errors (5xx) log Error with full stack trace.
+    /// </summary>
+    private void LogException(Exception ex)
+    {
+        var isClientError = ex is AppException appEx && appEx.StatusCode < 500
+                            || ex is KeyNotFoundException
+                            || ex is ArgumentException;
+
+        if (isClientError)
+            _logger.LogWarning("{ExceptionType}: {Message}", ex.GetType().Name, ex.Message);
+        else
+            _logger.LogError(ex, "An unhandled server error occurred.");
     }
 
     private static Task HandleExceptionAsync(HttpContext context, Exception exception)
@@ -37,11 +53,11 @@ public class GlobalExceptionMiddleware
         // Fall back to BCL exception types for backward compatibility
         var statusCode = exception switch
         {
-            AppException appEx               => appEx.StatusCode,
-            KeyNotFoundException             => StatusCodes.Status404NotFound,
-            ArgumentException                => StatusCodes.Status400BadRequest,
-            UnauthorizedAccessException      => StatusCodes.Status401Unauthorized,
-            _                                => StatusCodes.Status500InternalServerError
+            AppException appEx => appEx.StatusCode,
+            KeyNotFoundException => StatusCodes.Status404NotFound,
+            ArgumentException => StatusCodes.Status400BadRequest,
+            UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
+            _ => StatusCodes.Status500InternalServerError
         };
 
         context.Response.StatusCode = statusCode;

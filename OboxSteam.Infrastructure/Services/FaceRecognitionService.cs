@@ -11,7 +11,11 @@ namespace OboxSteam.Infrastructure.Services;
 public class FaceRecognitionService : IFaceRecognitionService
 {
     private const string CollectionId = "oboxsteam-faces";
-    private static bool _collectionEnsured;
+
+    // Double-check lock to safely initialize the Rekognition collection once,
+    // even under concurrent requests.
+    private static volatile bool _collectionEnsured;
+    private static readonly SemaphoreSlim _collectionInitLock = new(1, 1);
 
     private readonly IAmazonRekognition _rekognition;
     private readonly ILogger<FaceRecognitionService> _logger;
@@ -203,22 +207,34 @@ public class FaceRecognitionService : IFaceRecognitionService
 
     private async Task EnsureCollectionExistsAsync()
     {
+        // Fast path — no lock needed once initialized.
         if (_collectionEnsured) return;
 
+        await _collectionInitLock.WaitAsync();
         try
         {
-            await _rekognition.CreateCollectionAsync(new CreateCollectionRequest
-            {
-                CollectionId = CollectionId
-            });
-            _logger.LogInformation("Rekognition collection '{CollectionId}' created.", CollectionId);
-        }
-        catch (ResourceAlreadyExistsException)
-        {
-            _logger.LogDebug("Rekognition collection '{CollectionId}' already exists.", CollectionId);
-        }
+            // Double-check inside the lock in case another thread just finished.
+            if (_collectionEnsured) return;
 
-        _collectionEnsured = true;
+            try
+            {
+                await _rekognition.CreateCollectionAsync(new CreateCollectionRequest
+                {
+                    CollectionId = CollectionId
+                });
+                _logger.LogInformation("Rekognition collection '{CollectionId}' created.", CollectionId);
+            }
+            catch (ResourceAlreadyExistsException)
+            {
+                _logger.LogDebug("Rekognition collection '{CollectionId}' already exists.", CollectionId);
+            }
+
+            _collectionEnsured = true;
+        }
+        finally
+        {
+            _collectionInitLock.Release();
+        }
     }
 
     private static async Task<byte[]> ReadStreamAsync(Stream stream)

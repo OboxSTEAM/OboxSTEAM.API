@@ -49,5 +49,12 @@ public interface IMediaService
     /// Soft-delete media + xóa file trên S3.
     /// </summary>
     Task DeleteMediaAsync(Guid mediaId);
+
+    /// <summary>
+    /// Trả về <c>true</c> nếu media đang ở trạng thái <see cref="Domain.Enums.VideoProcessingStatus.PendingTagging"/>
+    /// (Rekognition job đã được submit, đang chờ kết quả).
+    /// Dùng bởi <c>VideoTagProcessingWorker</c> để phát hiện recovery case khi server restart.
+    /// </summary>
+    Task<bool> IsAwaitingTaggingAsync(Guid mediaId);
 }
 

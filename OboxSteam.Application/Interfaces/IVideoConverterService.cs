@@ -34,6 +34,14 @@ public interface IVideoConverterService
     /// </summary>
     /// <param name="jobId">The MediaConvert Job ID (must be in COMPLETE status).</param>
     Task<string> GetOutputS3KeyAsync(string jobId);
+
+    /// <summary>
+    /// Retrieves the S3 key of the raw input video for a MediaConvert job.
+    /// Used to clean up the raw source file after transcoding completes.
+    /// The key is relative to the bucket root (e.g. "raw/activityId_123.mov").
+    /// </summary>
+    /// <param name="jobId">The MediaConvert Job ID.</param>
+    Task<string> GetInputS3KeyAsync(string jobId);
 }
 
 /// <summary>

@@ -103,24 +103,25 @@ public class VideoTagProcessingWorker : BackgroundService
     {
         _logger.LogInformation("ProcessMediaAsync started for MediaId: {MediaId}", mediaId);
 
-        // ── Phase 1a: Submit MediaConvert job (fast, non-blocking) ────────────
-        try
+        // Chỉ chạy transcode pipeline nếu video chưa qua giai đoạn này.
+        // PendingTagging jobs (recovered sau crash) bỏ qua thẳng xuống Rekognition poll.
+        if (!await mediaService.IsAwaitingTaggingAsync(mediaId))
         {
-            await mediaService.StartVideoTranscodeAsync(mediaId);
-        }
-        catch (Exception ex)
-        {
-            // StartVideoTranscodeAsync already set VideoStatus = Failed.
-            _logger.LogError(ex, "MediaConvert job submission failed for MediaId: {MediaId}. Aborting.", mediaId);
-            return;
+            try
+            {
+                await mediaService.StartVideoTranscodeAsync(mediaId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "MediaConvert job submission failed for MediaId: {MediaId}. Aborting.", mediaId);
+                return;
+            }
+
+            if (!await PollMediaConvertAsync(mediaService, mediaId, ct))
+                return;
         }
 
-        // ── Phase 1b: Poll MediaConvert until transcoding completes ───────────
-        var transcodeCompleted = await PollMediaConvertAsync(mediaService, mediaId, ct);
-        if (!transcodeCompleted)
-            return; // failure already logged and status set to Failed
-
-        // ── Phase 2: Poll Rekognition ─────────────────────────────────────────
+        // Poll Rekognition — chạy cho cả normal flow lẫn PendingTagging recovery.
         await RetryRekognitionAsync(mediaService, mediaId, ct);
     }
 
@@ -135,7 +136,6 @@ public class VideoTagProcessingWorker : BackgroundService
         for (int attempt = 1; attempt <= MediaConvertMaxAttempts; attempt++)
         {
             ct.ThrowIfCancellationRequested();
-            await Task.Delay(PollInterval, ct);
 
             bool isDone;
             try
@@ -159,6 +159,9 @@ public class VideoTagProcessingWorker : BackgroundService
             _logger.LogInformation(
                 "MediaConvert poll attempt {Attempt}/{Max}: still in progress for MediaId: {MediaId}",
                 attempt, MediaConvertMaxAttempts, mediaId);
+
+            // Delay AFTER each unsuccessful check, not before the first check.
+            await Task.Delay(PollInterval, ct);
         }
 
         // All attempts exhausted
@@ -181,7 +184,6 @@ public class VideoTagProcessingWorker : BackgroundService
         for (int attempt = 1; attempt <= RekognitionMaxAttempts; attempt++)
         {
             ct.ThrowIfCancellationRequested();
-            await Task.Delay(PollInterval, ct);
 
             bool isDone;
             try
@@ -206,6 +208,9 @@ public class VideoTagProcessingWorker : BackgroundService
             _logger.LogInformation(
                 "Rekognition poll attempt {Attempt}/{Max}: still in progress for MediaId: {MediaId}",
                 attempt, RekognitionMaxAttempts, mediaId);
+
+            // Delay AFTER each unsuccessful check, not before the first check.
+            await Task.Delay(PollInterval, ct);
         }
 
         // All attempts exhausted — mark as Failed so recovery doesn't re-enqueue it.

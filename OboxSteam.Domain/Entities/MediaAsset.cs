@@ -17,7 +17,16 @@ public class MediaAsset : BaseEntity
     public string? FileType { get; set; }
 
     [MaxLength(255)]
-    public string? RekognitionJobId { get; set; }
+    /// <summary>
+    /// Multi-purpose pipeline reference for video assets. Holds different values depending on <see cref="VideoStatus"/>:
+    /// <list type="bullet">
+    ///   <item><c>"raw:{s3key}"</c> — raw S3 key, waiting for MediaConvert submission</item>
+    ///   <item><c>"mc:{jobId}"</c> — MediaConvert job ID, transcoding in progress</item>
+    ///   <item><c>"{rekJobId}"</c> — Rekognition job ID, face-search in progress</item>
+    /// </list>
+    /// Always <c>null</c> for image assets.
+    /// </summary>
+    public string? VideoJobRef { get; set; }
 
     /// <summary>Tracks the background processing lifecycle for video assets.</summary>
     public VideoProcessingStatus VideoStatus { get; set; } = VideoProcessingStatus.None;

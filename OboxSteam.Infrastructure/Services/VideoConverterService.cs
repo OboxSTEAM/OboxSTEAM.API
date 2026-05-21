@@ -80,9 +80,9 @@ public class VideoConverterService : IVideoConverterService
                         {
                             new Output
                             {
-                                // NameModifier must be at least 1 char; using "_hls" would rename but
-                                // a single space " " is the minimal valid value that keeps the base name.
-                                NameModifier      = " ",
+                                // "_conv" suffix keeps the base name readable and avoids
+                                // space-encoded (%20) characters in the output S3 key/URL.
+                                NameModifier      = "_conv",
                                 VideoDescription  = new VideoDescription
                                 {
                                     CodecSettings = new VideoCodecSettings
@@ -204,6 +204,26 @@ public class VideoConverterService : IVideoConverterService
         var s3Key = outputUri[s3Prefix.Length..];
         _logger.LogInformation(
             "Resolved output S3 key for job {JobId}: {S3Key}", jobId, s3Key);
+        return s3Key;
+    }
+
+    /// <inheritdoc />
+    public async Task<string> GetInputS3KeyAsync(string jobId)
+    {
+        var bucket   = RequireEnv(EnvS3Bucket);
+        var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });
+
+        // inputUri = "s3://bucket/raw/activityId_timestamp.mov"
+        var inputUri  = response.Job.Settings.Inputs.First().FileInput;
+        var s3Prefix  = $"s3://{bucket}/";
+
+        if (!inputUri.StartsWith(s3Prefix, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"Unexpected input URI format for job {jobId}: '{inputUri}'");
+
+        var s3Key = inputUri[s3Prefix.Length..];
+        _logger.LogInformation(
+            "Resolved input S3 key for job {JobId}: {S3Key}", jobId, s3Key);
         return s3Key;
     }
 

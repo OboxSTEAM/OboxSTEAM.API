@@ -21,15 +21,15 @@ public class MediaService : IMediaService
     private const long MaxImageSize = 10 * 1024 * 1024;  // 10 MB
     private const long MaxVideoSize = 3L * 1024 * 1024 * 1024;  // 3 GB
     private const string MediaFolder = "media";
-    private const string RawFolder   = "raw";
-    private const string S3Bucket    = "oboxsteam-bucket";
+    private const string RawFolder = "raw";
+    private const string S3Bucket = "oboxsteam-bucket";
 
-    // Prefixes stored temporarily in RekognitionJobId to distinguish pipeline stages:
+    // Prefixes stored temporarily in VideoJobRef to distinguish pipeline stages:
     // "raw:{s3key}"  → raw video uploaded to S3, MediaConvert job not yet submitted
     // "mc:{jobId}"   → MediaConvert job submitted, waiting for completion
     // (plain)        → real Rekognition job ID (VideoStatus = PendingTagging)
     private const string RawPrefix = "raw:";
-    private const string McPrefix  = "mc:";
+    private const string McPrefix = "mc:";
 
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
@@ -85,9 +85,10 @@ public class MediaService : IMediaService
         var fileName = $"{activityId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
 
         // ── Handle upload ─────────────────────────────────────────────────────
-        string? fileUrl       = null;
+        string? fileUrl = null;
         string? videoLocalPath = null;          // set only for video uploads
         var tags = new List<MediaTag>();
+        List<FaceMatchResult> prevalidatedMatches = new(); // image only: faces found before DB write
 
         if (isImage)
         {
@@ -95,6 +96,22 @@ public class MediaService : IMediaService
             await using var uploadStream = file.OpenReadStream();
             await _blobService.UploadFileAsync(fileName, uploadStream, MediaFolder);
             fileUrl = await _blobService.GetPreviewUrlAsync(path);
+
+            // ── Pre-validate faces BEFORE saving to DB ────────────────────────
+            // This keeps the DB clean: if no face is found, we delete the S3 file
+            // and reject the request without leaving any orphaned MediaAsset row.
+            try
+            {
+                prevalidatedMatches = await _faceRecognitionService.SearchFacesAsync(S3Bucket, path);
+            }
+            catch
+            {
+                _logger.LogWarning("No recognizable face found in uploaded image. Removing S3 object: {Path}", path);
+                await _blobService.DeleteByKeyAsync(path);
+                throw ErrorHelper.BadRequest(
+                    "No recognizable face found in the uploaded image. " +
+                    "Please upload a clear photo where a registered student's face is visible.");
+            }
         }
         else // isVideo — upload raw to S3; worker submits MediaConvert job
         {
@@ -106,14 +123,15 @@ public class MediaService : IMediaService
         }
 
         // ── Save MediaAsset ───────────────────────────────────────────────────
+        // For images: only reached if face pre-validation passed above.
         var media = new MediaAsset
         {
-            UploaderId  = userId,
-            ActivityId  = activityId,
-            FileUrl     = fileUrl,   // null for video until transcoding done
-            FileType    = isImage ? "image" : "video",
+            UploaderId = userId,
+            ActivityId = activityId,
+            FileUrl = fileUrl,   // null for video until transcoding done
+            FileType = isImage ? "image" : "video",
             VideoStatus = isVideo ? VideoProcessingStatus.Transcoding : VideoProcessingStatus.None,
-            UploadedAt  = DateTime.UtcNow
+            UploadedAt = DateTime.UtcNow
         };
 
         await _unitOfWork.MediaAssets.AddAsync(media);
@@ -122,13 +140,13 @@ public class MediaService : IMediaService
         // ── Face Tagging ──────────────────────────────────────────────────────
         if (isImage)
         {
-            var path = $"{MediaFolder}/{fileName}";
-            tags = await TagImageFacesAsync(media.Id, S3Bucket, path);
+            // Reuse the matches already fetched during pre-validation — no second Rekognition call.
+            tags = await SaveFaceTagsAsync(media.Id, prevalidatedMatches);
         }
         else // isVideo — enqueue for background processing
         {
             // Store raw S3 key (prefixed) so the worker can locate the source video.
-            media.RekognitionJobId = $"{RawPrefix}{videoLocalPath}";
+            media.VideoJobRef = $"{RawPrefix}{videoLocalPath}";
             await _unitOfWork.SaveChangesAsync();
 
             await _videoChannel.Writer.WriteAsync(media.Id);
@@ -147,34 +165,45 @@ public class MediaService : IMediaService
         var mediaList = await _unitOfWork.MediaAssets
             .GetAllAsync(m => m.ActivityId == activityId && !m.IsDeleted, m => m.MediaTags);
 
+        // Batch-fetch all referenced students in a single query to avoid N+1.
+        var allStudentIds = mediaList
+            .SelectMany(m => m.MediaTags)
+            .Select(t => t.StudentId)
+            .Distinct()
+            .ToList();
+
+        var studentMap = allStudentIds.Count > 0
+            ? (await _unitOfWork.Users.GetAllAsync(u => allStudentIds.Contains(u.Id)))
+              .ToDictionary(u => u.Id)
+            : new Dictionary<Guid, User>();
+
         var result = new List<MediaAssetDto>();
 
         foreach (var media in mediaList)
         {
-            var tagDtos = new List<MediaTagDto>();
-            foreach (var tag in media.MediaTags)
+            var tagDtos = media.MediaTags.Select(tag =>
             {
-                var student = await _unitOfWork.Users.GetByIdAsync(tag.StudentId);
-                tagDtos.Add(new MediaTagDto
+                studentMap.TryGetValue(tag.StudentId, out var student);
+                return new MediaTagDto
                 {
-                    StudentId       = tag.StudentId,
-                    StudentName     = student?.FullName,
+                    StudentId = tag.StudentId,
+                    StudentName = student?.FullName,
                     ConfidenceScore = tag.ConfidenceScore,
-                    IsVerified      = tag.IsVerified
-                });
-            }
+                    IsVerified = tag.IsVerified
+                };
+            }).ToList();
 
             result.Add(new MediaAssetDto
             {
-                Id               = media.Id,
-                UploaderId       = media.UploaderId,
-                ActivityId       = media.ActivityId,
-                FileUrl          = media.FileUrl,
-                FileType         = media.FileType,
-                RekognitionJobId = media.RekognitionJobId,
-                VideoStatus      = media.VideoStatus,
-                UploadedAt       = media.UploadedAt,
-                Tags             = tagDtos
+                Id = media.Id,
+                UploaderId = media.UploaderId,
+                ActivityId = media.ActivityId,
+                FileUrl = media.FileUrl,
+                FileType = media.FileType,
+                VideoJobRef = media.VideoJobRef,
+                VideoStatus = media.VideoStatus,
+                UploadedAt = media.UploadedAt,
+                Tags = tagDtos
             });
         }
 
@@ -184,7 +213,7 @@ public class MediaService : IMediaService
     /// <inheritdoc />
     /// Submits a MediaConvert job (non-blocking). After this returns, VideoStatus
     /// is still <see cref="VideoProcessingStatus.Transcoding"/> and
-    /// <c>RekognitionJobId</c> holds the MC job ID prefixed with "mc:".
+    /// <c>VideoJobRef</c> holds the MC job ID prefixed with "mc:".
     public async Task StartVideoTranscodeAsync(Guid mediaId)
     {
         _logger.LogInformation("StartVideoTranscodeAsync: MediaId={MediaId}", mediaId);
@@ -202,9 +231,9 @@ public class MediaService : IMediaService
             return;
         }
 
-        var stored = media.RekognitionJobId
+        var stored = media.VideoJobRef
             ?? throw new InvalidOperationException(
-                $"MediaId={mediaId} has no value stored in RekognitionJobId.");
+                $"MediaId={mediaId} has no value stored in VideoJobRef.");
 
         // If a MC job was already submitted (e.g. recovery after crash), skip re-submission.
         if (stored.StartsWith(McPrefix, StringComparison.Ordinal))
@@ -217,7 +246,7 @@ public class MediaService : IMediaService
 
         if (!stored.StartsWith(RawPrefix, StringComparison.Ordinal))
             throw new InvalidOperationException(
-                $"MediaId={mediaId}: unexpected value in RekognitionJobId: '{stored}'.");
+                $"MediaId={mediaId}: unexpected value in VideoJobRef: '{stored}'.");
 
         var rawS3Key = stored[RawPrefix.Length..]; // strip "raw:" prefix
 
@@ -232,7 +261,7 @@ public class MediaService : IMediaService
                 rawS3Key, $"{MediaFolder}/");
 
             // ── Persist MC job ID so the worker can poll it ───────────────────
-            media.RekognitionJobId = $"{McPrefix}{mcJobId}";
+            media.VideoJobRef = $"{McPrefix}{mcJobId}";
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation(
@@ -268,10 +297,10 @@ public class MediaService : IMediaService
             return false;
         }
 
-        var stored = media.RekognitionJobId ?? string.Empty;
+        var stored = media.VideoJobRef ?? string.Empty;
         if (!stored.StartsWith(McPrefix, StringComparison.Ordinal))
             throw new InvalidOperationException(
-                $"MediaId={mediaId}: expected 'mc:' prefix in RekognitionJobId, got: '{stored}'.");
+                $"MediaId={mediaId}: expected 'mc:' prefix in VideoJobRef, got: '{stored}'.");
 
         var mcJobId = stored[McPrefix.Length..]; // strip "mc:"
 
@@ -304,17 +333,6 @@ public class MediaService : IMediaService
 
         try
         {
-            // Derive the output S3 key: media/{baseName}.mp4
-            // MediaConvert preserves the input base name, changes extension to .mp4
-            // Raw key format: "raw/{activityId}_{timestamp}.{originalExt}"
-            // We need to get the raw S3 key from DB history — but we already replaced it with mc:.
-            // Instead, compute from the fileName stored in the job or derive from media record.
-            // Strategy: find the output file by listing S3 or use a deterministic key.
-            // Since UploadMediaAsync uses fileName = "{activityId}_{timestamp}{ext}",
-            // the output key = "media/{activityId}_{timestamp}.mp4".
-            // We can't recover the original raw key here. Instead, list objects or
-            // use the MediaConvert job output path which we set to "media/".
-            // Simplest: query the MC job for its output file list.
             var outputS3Key = await ResolveMediaConvertOutputKeyAsync(mcJobId);
 
             // ── Build public URL ──────────────────────────────────────────────
@@ -328,14 +346,33 @@ public class MediaService : IMediaService
                 S3Bucket, outputS3Key);
 
             // ── Persist state transition ──────────────────────────────────────
-            media.FileUrl          = fileUrl;
-            media.RekognitionJobId = rekJobId;   // now holds the real Rekognition job ID
-            media.VideoStatus      = VideoProcessingStatus.PendingTagging;
+            media.FileUrl = fileUrl;
+            media.VideoJobRef = rekJobId;   // now holds the real Rekognition job ID
+            media.VideoStatus = VideoProcessingStatus.PendingTagging;
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation(
                 "Rekognition job started: {RekJobId} for MediaId={MediaId}",
                 rekJobId, mediaId);
+
+            // ── Delete raw source file from S3 (no longer needed) ─────────────
+            // The transcoded output is in media/; keeping raw/ wastes storage.
+            // Failure to delete is logged but non-fatal.
+            try
+            {
+                var rawS3Key = await _videoConverterService.GetInputS3KeyAsync(mcJobId);
+                _logger.LogInformation(
+                    "Deleting raw S3 file after transcode. Key={RawKey}, MediaId={MediaId}",
+                    rawS3Key, mediaId);
+                await _blobService.DeleteByKeyAsync(rawS3Key);
+            }
+            catch (Exception cleanupEx)
+            {
+                _logger.LogWarning(cleanupEx,
+                    "Failed to delete raw S3 file for MediaId={MediaId}. Manual cleanup may be needed.",
+                    mediaId);
+            }
+
             return true;
         }
         catch (Exception ex)
@@ -343,7 +380,7 @@ public class MediaService : IMediaService
             _logger.LogError(ex, "TryCompleteTranscodeAsync post-processing failed for MediaId={MediaId}", mediaId);
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
-            throw;
+            throw ErrorHelper.Internal("Video processing failed after transcoding. Please try again later.");
         }
     }
 
@@ -356,11 +393,11 @@ public class MediaService : IMediaService
         if (media == null || media.IsDeleted)
             throw ErrorHelper.NotFound("Media not found.");
 
-        // Guard: must be in PendingTagging state — not Transcoding (where RekognitionJobId is a /tmp path)
+        // Guard: must be in PendingTagging state — not Transcoding (where VideoJobRef is a /tmp path)
         if (media.VideoStatus != VideoProcessingStatus.PendingTagging)
             throw ErrorHelper.BadRequest("Video is not ready for tag processing yet.");
 
-        if (string.IsNullOrEmpty(media.RekognitionJobId))
+        if (string.IsNullOrEmpty(media.VideoJobRef))
             throw ErrorHelper.BadRequest("This media has no pending Rekognition video job.");
 
         var (success, newTags) = await DoProcessVideoTagsAsync(media);
@@ -380,7 +417,7 @@ public class MediaService : IMediaService
         if (media == null || media.IsDeleted) return false;
         // Only poll Rekognition once transcoding is done and a real job ID is stored
         if (media.VideoStatus != VideoProcessingStatus.PendingTagging) return false;
-        if (string.IsNullOrEmpty(media.RekognitionJobId)) return false;
+        if (string.IsNullOrEmpty(media.VideoJobRef)) return false;
 
         var (success, _) = await DoProcessVideoTagsAsync(media);
         return success;
@@ -406,6 +443,16 @@ public class MediaService : IMediaService
         _logger.LogInformation("Media deleted: {MediaId}", mediaId);
     }
 
+    /// <inheritdoc />
+    public async Task<bool> IsAwaitingTaggingAsync(Guid mediaId)
+    {
+        var media = await _unitOfWork.MediaAssets.GetByIdAsync(mediaId);
+        return media != null
+               && !media.IsDeleted
+               && media.VideoStatus == VideoProcessingStatus.PendingTagging
+               && !string.IsNullOrEmpty(media.VideoJobRef);
+    }
+
     // ── Private Helpers ───────────────────────────────────────────────────────
 
     /// <summary>
@@ -415,19 +462,6 @@ public class MediaService : IMediaService
     /// </summary>
     private async Task<string> ResolveMediaConvertOutputKeyAsync(string mcJobId)
     {
-        // The VideoConverterService sets output destination to "s3://bucket/media/".
-        // MediaConvert names the file: {inputBaseName}{nameModifier}.mp4
-        // Since NameModifier is "", output = {inputBaseName}.mp4
-        // We retrieve this from the job's output file metadata.
-        // As a fallback we re-query the job via IVideoConverterService — but here
-        // we resolve it directly from the job details stored in the MC response.
-        // Because we don't have direct access to the MC client here (it's in Infrastructure),
-        // we use the deterministic naming convention MediaConvert follows.
-        //
-        // Note: if the input was "raw/abc_123.mov", MediaConvert outputs "media/abc_123.mp4".
-        // We cannot reconstruct the input base name here unless we stored it.
-        // Solution: the worker passes mcJobId to IVideoConverterService.GetOutputKeyAsync.
-        // For now, we delegate to the infrastructure service.
         return await _videoConverterService.GetOutputS3KeyAsync(mcJobId);
     }
 
@@ -439,7 +473,7 @@ public class MediaService : IMediaService
     /// </summary>
     private async Task<(bool Done, List<MediaTag> NewTags)> DoProcessVideoTagsAsync(MediaAsset media)
     {
-        var result = await _faceRecognitionService.GetVideoFaceSearchResultsAsync(media.RekognitionJobId!);
+        var result = await _faceRecognitionService.GetVideoFaceSearchResultsAsync(media.VideoJobRef!);
 
         if (result == null)
             return (false, new List<MediaTag>()); // still IN_PROGRESS
@@ -447,7 +481,7 @@ public class MediaService : IMediaService
         if (result.JobStatus == "FAILED")
         {
             _logger.LogWarning("Rekognition job FAILED for MediaId: {MediaId}, JobId: {JobId}",
-                media.Id, media.RekognitionJobId);
+                media.Id, media.VideoJobRef);
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
             throw ErrorHelper.Internal("Video face recognition job failed.");
@@ -470,10 +504,10 @@ public class MediaService : IMediaService
 
             var tag = new MediaTag
             {
-                MediaId         = media.Id,
-                StudentId       = match.UserId,
+                MediaId = media.Id,
+                StudentId = match.UserId,
                 ConfidenceScore = (decimal)match.Confidence,
-                IsVerified      = true
+                IsVerified = true
             };
             await _unitOfWork.MediaTags.AddAsync(tag);
             newTags.Add(tag);
@@ -487,11 +521,13 @@ public class MediaService : IMediaService
         return (true, newTags);
     }
 
-    private async Task<List<MediaTag>> TagImageFacesAsync(Guid mediaId, string s3Bucket, string s3Key)
+    /// <summary>
+    /// Persists <see cref="MediaTag"/> rows from already-fetched Rekognition matches.
+    /// Called for images after face pre-validation in <see cref="UploadMediaAsync"/>.
+    /// </summary>
+    private async Task<List<MediaTag>> SaveFaceTagsAsync(Guid mediaId, List<FaceMatchResult> matches)
     {
         var tags = new List<MediaTag>();
-
-        var matches = await _faceRecognitionService.SearchFacesAsync(s3Bucket, s3Key);
 
         foreach (var match in matches)
         {
@@ -505,57 +541,60 @@ public class MediaService : IMediaService
 
             var tag = new MediaTag
             {
-                MediaId         = mediaId,
-                StudentId       = match.UserId,
+                MediaId = mediaId,
+                StudentId = match.UserId,
                 ConfidenceScore = (decimal)match.Confidence,
-                IsVerified      = true
+                IsVerified = true
             };
             await _unitOfWork.MediaTags.AddAsync(tag);
             tags.Add(tag);
         }
 
         _logger.LogInformation("Image face-tagged: {Count} match(es) for Media: {MediaId}", tags.Count, mediaId);
-
         await _unitOfWork.SaveChangesAsync();
-
         return tags;
     }
 
     private async Task<MediaAssetDto> MapToDto(MediaAsset media, ICollection<MediaTag>? tags = null)
     {
         var tagDtos = new List<MediaTagDto>();
-        if (tags != null)
+        if (tags != null && tags.Count > 0)
         {
+            // Batch-fetch all students in one query to avoid N+1.
+            var studentIds = tags.Select(t => t.StudentId).Distinct().ToList();
+            var studentMap = (await _unitOfWork.Users.GetAllAsync(u => studentIds.Contains(u.Id)))
+                .ToDictionary(u => u.Id);
+
             foreach (var t in tags)
             {
-                var student = await _unitOfWork.Users.GetByIdAsync(t.StudentId);
+                studentMap.TryGetValue(t.StudentId, out var student);
                 tagDtos.Add(new MediaTagDto
                 {
-                    StudentId       = t.StudentId,
-                    StudentName     = student?.FullName,
+                    StudentId = t.StudentId,
+                    StudentName = student?.FullName,
                     ConfidenceScore = t.ConfidenceScore,
-                    IsVerified      = t.IsVerified
+                    IsVerified = t.IsVerified
                 });
             }
         }
 
-        // Hide the internal /tmp path that's temporarily stored in RekognitionJobId during transcoding.
+        // Hide the internal /tmp path that's temporarily stored in VideoJobRef during transcoding.
         // Clients should only see a real Rekognition job ID (once transcoding completes).
-        var rekognitionJobId = media.VideoStatus == VideoProcessingStatus.Transcoding
+        var VideoJobRef = media.VideoStatus == VideoProcessingStatus.Transcoding
             ? null
-            : media.RekognitionJobId;
+            : media.VideoJobRef;
 
         return new MediaAssetDto
         {
-            Id               = media.Id,
-            UploaderId       = media.UploaderId,
-            ActivityId       = media.ActivityId,
-            FileUrl          = media.FileUrl,
-            FileType         = media.FileType,
-            RekognitionJobId = rekognitionJobId,
-            VideoStatus      = media.VideoStatus,
-            UploadedAt       = media.UploadedAt,
-            Tags             = tagDtos
+            Id = media.Id,
+            UploaderId = media.UploaderId,
+            ActivityId = media.ActivityId,
+            FileUrl = media.FileUrl,
+            FileType = media.FileType,
+            VideoJobRef = VideoJobRef,
+            VideoStatus = media.VideoStatus,
+            UploadedAt = media.UploadedAt,
+            Tags = tagDtos
         };
     }
 }
