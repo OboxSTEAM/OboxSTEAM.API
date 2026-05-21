@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.ActivityDTO;
 using OboxSteam.Application.DTOs.CourseDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
@@ -100,7 +101,7 @@ public class CourseService : ICourseService
     {
         _logger.LogInformation("[GetCourseByIdAsync] Fetching course with Id: {Id}", courseId);
 
-        var course = await _unitOfWork.Courses.GetByIdAsync(courseId);
+        var course = await _unitOfWork.Courses.GetByIdAsync(courseId, c => c.Activities);
 
         if (course == null || course.IsDeleted)
         {
@@ -109,7 +110,38 @@ public class CourseService : ICourseService
         }
 
         _logger.LogInformation("[GetCourseByIdAsync] Course with Id {Id} retrieved successfully.", courseId);
-        return MapToResponseDto(course);
+        return new CourseResponseDto
+        {
+            Id = course.Id,
+            Code = course.Code,
+            ModuleId = course.ModuleId,
+            MentorId = course.MentorId,
+            Name = course.Name,
+            Description = course.Description,
+            CreatedAt = course.CreatedAt,
+            UpdatedAt = course.UpdatedAt,
+            Activities = course.Activities?
+                .Where(a => !a.IsDeleted)
+                .OrderBy(a => a.ActivityOrder)
+                .Select(a => new ActivitiesResponseDto
+                {
+                    Id = a.Id,
+                    Code = a.Code,
+                    CourseId = a.CourseId,
+                    Name = a.Name,
+                    ActivityType = a.ActivityType,
+                    Description = a.Description,
+                    ActivityOrder = a.ActivityOrder,
+                    Location = a.Location,
+                    StartTime = a.StartTime,
+                    EndTime = a.EndTime,
+                    MaxCapacity = a.MaxCapacity,
+                    RequireQrCheckin = a.RequireQrCheckin,
+                    RequireMediaEvidence = a.RequireMediaEvidence,
+                    CreatedAt = a.CreatedAt,
+                    UpdatedAt = a.UpdatedAt,
+                }).ToList() ?? new(),
+        };
     }
 
     // =========================================================================
@@ -126,7 +158,8 @@ public class CourseService : ICourseService
         _logger.LogInformation("[GetCourseByNameAsync] Fetching course with name: {Name}", courseName);
 
         var course = await _unitOfWork.Courses.FirstOrDefaultAsync(
-            c => c.Name.ToLower() == courseName.ToLower() && !c.IsDeleted);
+            c => c.Name.ToLower() == courseName.ToLower() && !c.IsDeleted,
+            c => c.Activities);
 
         if (course == null)
         {
@@ -135,7 +168,38 @@ public class CourseService : ICourseService
         }
 
         _logger.LogInformation("[GetCourseByNameAsync] Course '{Name}' retrieved successfully.", courseName);
-        return MapToResponseDto(course);
+        return new CourseResponseDto
+        {
+            Id = course.Id,
+            Code = course.Code,
+            ModuleId = course.ModuleId,
+            MentorId = course.MentorId,
+            Name = course.Name,
+            Description = course.Description,
+            CreatedAt = course.CreatedAt,
+            UpdatedAt = course.UpdatedAt,
+            Activities = course.Activities?
+                .Where(a => !a.IsDeleted)
+                .OrderBy(a => a.ActivityOrder)
+                .Select(a => new ActivitiesResponseDto
+                {
+                    Id = a.Id,
+                    Code = a.Code,
+                    CourseId = a.CourseId,
+                    Name = a.Name,
+                    ActivityType = a.ActivityType,
+                    Description = a.Description,
+                    ActivityOrder = a.ActivityOrder,
+                    Location = a.Location,
+                    StartTime = a.StartTime,
+                    EndTime = a.EndTime,
+                    MaxCapacity = a.MaxCapacity,
+                    RequireQrCheckin = a.RequireQrCheckin,
+                    RequireMediaEvidence = a.RequireMediaEvidence,
+                    CreatedAt = a.CreatedAt,
+                    UpdatedAt = a.UpdatedAt,
+                }).ToList() ?? new(),
+        };
     }
 
     // =========================================================================
