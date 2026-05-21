@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.CourseDTO;
 using OboxSteam.Application.DTOs.ModuleDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -30,7 +31,7 @@ public class ModuleService : IModuleService
     {
         _logger.LogInformation("[GetModuleByIdAsync] Fetching module with Id: {Id}", id);
 
-        var module = await _unitOfWork.Modules.GetByIdAsync(id);
+        var module = await _unitOfWork.Modules.GetByIdAsync(id, m => m.Courses);
 
         if (module == null || module.IsDeleted)
         {
@@ -53,6 +54,20 @@ public class ModuleService : IModuleService
             RetakeFee = module.RetakeFee,
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
+            Courses = module.Courses?
+                .Where(c => !c.IsDeleted)
+                .OrderBy(c => c.Name)
+                .Select(c => new CourseResponseDto
+                {
+                    Id = c.Id,
+                    Code = c.Code,
+                    ModuleId = c.ModuleId,
+                    MentorId = c.MentorId,
+                    Name = c.Name,
+                    Description = c.Description,
+                    CreatedAt = c.CreatedAt,
+                    UpdatedAt = c.UpdatedAt,
+                }).ToList() ?? new(),
         };
     }
 
@@ -65,7 +80,8 @@ public class ModuleService : IModuleService
         _logger.LogInformation("[GetModuleByNameAsync] Fetching module with name: {Name}", name);
 
         var module = await _unitOfWork.Modules.FirstOrDefaultAsync(
-            m => m.Name.ToLower() == name.ToLower() && !m.IsDeleted);
+            m => m.Name.ToLower() == name.ToLower() && !m.IsDeleted,
+            m => m.Courses);
 
         if (module == null)
         {
@@ -88,6 +104,20 @@ public class ModuleService : IModuleService
             RetakeFee = module.RetakeFee,
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
+            Courses = module.Courses?
+                .Where(c => !c.IsDeleted)
+                .OrderBy(c => c.Name)
+                .Select(c => new CourseResponseDto
+                {
+                    Id = c.Id,
+                    Code = c.Code,
+                    ModuleId = c.ModuleId,
+                    MentorId = c.MentorId,
+                    Name = c.Name,
+                    Description = c.Description,
+                    CreatedAt = c.CreatedAt,
+                    UpdatedAt = c.UpdatedAt,
+                }).ToList() ?? new(),
         };
     }
 
@@ -148,6 +178,15 @@ public class ModuleService : IModuleService
             .Take(pageSize)
             .ToList();
 
+        var moduleIds = items.Select(module => module.Id).ToList();
+
+        var courses = await _unitOfWork.Courses.GetAllAsync(
+            c => moduleIds.Contains(c.ModuleId) && !c.IsDeleted);
+
+        var coursesByModuleId = courses
+            .GroupBy(course => course.ModuleId)
+            .ToDictionary(group => group.Key, group => group.OrderBy(c => c.Name).ToList());
+
         var dtos = items.Select(module => new ModuleResponseDto
         {
             Id = module.Id,
@@ -162,6 +201,19 @@ public class ModuleService : IModuleService
             RetakeFee = module.RetakeFee,
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
+            Courses = coursesByModuleId.TryGetValue(module.Id, out var moduleCourses)
+                ? moduleCourses.Select(c => new CourseResponseDto
+                {
+                    Id = c.Id,
+                    Code = c.Code,
+                    ModuleId = c.ModuleId,
+                    MentorId = c.MentorId,
+                    Name = c.Name,
+                    Description = c.Description,
+                    CreatedAt = c.CreatedAt,
+                    UpdatedAt = c.UpdatedAt,
+                }).ToList()
+                : new(),
         }).ToList();
 
         _logger.LogInformation("[GetAllModulesAsync] Retrieved {Count}/{Total} modules.", dtos.Count, totalCount);

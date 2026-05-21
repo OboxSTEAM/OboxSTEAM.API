@@ -1,3 +1,4 @@
+using OboxSteam.Application.DTOs.CourseDTO;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ModuleDTO;
@@ -16,5 +17,5 @@ public class ModuleResponseDto
     public decimal RetakeFee { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
-
+    public List<CourseResponseDto> Courses { get; set; } = new();
 }
