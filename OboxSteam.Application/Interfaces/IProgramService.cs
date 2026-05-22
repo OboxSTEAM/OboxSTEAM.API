@@ -6,9 +6,9 @@ namespace OboxSteam.Application.Interfaces;
 
 public interface IProgramService
 {
-    Task<ProgramResponseDto> GetProgramByIdAsync(Guid id);
-    Task<ProgramResponseDto> GetProgramByNameAsync(string name);
-    Task<Pagination<ProgramResponseDto>> GetAllProgramAsync(
+    Task<ProgramsResponseDto> GetProgramByIdAsync(Guid id);
+    Task<ProgramsResponseDto> GetProgramByNameAsync(string name);
+    Task<Pagination<ProgramsResponseDto>> GetAllProgramAsync(
         string? search,
         string? sortBy,
         bool isDescending,
@@ -20,9 +20,10 @@ public interface IProgramService
         string? skillsGained = null,
         string? status = null);
 
-    Task<ProgramResponseDto> AddProgramAsync(ProgramCreateDto programCreateDto);
+    Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request);
 
-    Task<ProgramResponseDto> UpdateProgramAsync(Guid id, ProgramUpdateDto programUpdateDto);
+
+    Task<ProgramsResponseDto> UpdateProgramAsync(Guid id, UpdateProgramRequestDto request);
 
     Task<bool> DeleteProgramAsync(Guid id);
 }

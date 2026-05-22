@@ -27,7 +27,7 @@ public class ProgramService : IProgramService
     // GET BY ID
     // =========================================================================
 
-    public async Task<ProgramResponseDto> GetProgramByIdAsync(Guid id)
+    public async Task<ProgramsResponseDto> GetProgramByIdAsync(Guid id)
     {
         _logger.LogInformation("[GetProgramByIdAsync] Fetching program with Id: {Id}", id);
 
@@ -40,7 +40,7 @@ public class ProgramService : IProgramService
         }
 
         _logger.LogInformation("[GetProgramByIdAsync] Program with Id {Id} retrieved successfully.", id);
-        return new ProgramResponseDto
+        return new ProgramsResponseDto
         {
             Id = program.Id,
             Code = program.Code,
@@ -57,7 +57,7 @@ public class ProgramService : IProgramService
             Price = program.Price,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
-            Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModuleResponseDto
+            Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModulesResponseDto
             {
                 Id = m.Id,
                 Code = m.Code,
@@ -79,7 +79,7 @@ public class ProgramService : IProgramService
     // GET BY NAME
     // =========================================================================
 
-    public async Task<ProgramResponseDto> GetProgramByNameAsync(string name)
+    public async Task<ProgramsResponseDto> GetProgramByNameAsync(string name)
     {
         _logger.LogInformation("[GetProgramByNameAsync] Fetching program with name: {Name}", name);
 
@@ -94,7 +94,7 @@ public class ProgramService : IProgramService
         }
 
         _logger.LogInformation("[GetProgramByNameAsync] Program '{Name}' retrieved successfully.", name);
-        return new ProgramResponseDto
+        return new ProgramsResponseDto
         {
             Id = program.Id,
             Code = program.Code,
@@ -111,7 +111,7 @@ public class ProgramService : IProgramService
             Price = program.Price,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
-            Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModuleResponseDto
+            Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModulesResponseDto
             {
                 Id = m.Id,
                 Code = m.Code,
@@ -133,7 +133,7 @@ public class ProgramService : IProgramService
     // GET ALL (PAGINATION + FILTER + SORT)
     // =========================================================================
 
-    public async Task<Pagination<ProgramResponseDto>> GetAllProgramAsync(
+    public async Task<Pagination<ProgramsResponseDto>> GetAllProgramAsync(
         string? search,
         string? sortBy,
         bool isDescending,
@@ -210,7 +210,7 @@ public class ProgramService : IProgramService
             .GroupBy(module => module.ProgramId)
             .ToDictionary(group => group.Key, group => group.OrderBy(m => m.ModuleOrder).ToList());
 
-        var dtos = items.Select(program => new ProgramResponseDto
+        var dtos = items.Select(program => new ProgramsResponseDto
         {
             Id = program.Id,
             Code = program.Code,
@@ -228,7 +228,7 @@ public class ProgramService : IProgramService
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
              Modules = modulesByProgramId.TryGetValue(program.Id, out var programModules)
-                 ? programModules.Select(m => new ModuleResponseDto
+                 ? programModules.Select(m => new ModulesResponseDto
             {
                 Id = m.Id,
                 Code = m.Code,
@@ -248,49 +248,50 @@ public class ProgramService : IProgramService
 
         _logger.LogInformation("[GetAllProgramAsync] Retrieved {Count}/{Total} programs.", dtos.Count, totalCount);
 
-        return new Pagination<ProgramResponseDto>(dtos, totalCount, page, pageSize);
+        return new Pagination<ProgramsResponseDto>(dtos, totalCount, page, pageSize);
     }
 
     // =========================================================================
-    // ADD
+    // CREATE
     // =========================================================================
 
-    public async Task<ProgramResponseDto> AddProgramAsync(ProgramCreateDto programCreateDto)
+
+    public async Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request)
     {
-        _logger.LogInformation("[AddProgramAsync] Start adding program: {Name} (Code: {Code})",
-            programCreateDto.Name, programCreateDto.Code);
+        _logger.LogInformation("[CreateProgramAsync] Start creating program: {Name} (Code: {Code})",
+            request.Name, request.Code);
 
         // Kiểm tra trùng Code
         var existing = await _unitOfWork.Programs.FirstOrDefaultAsync(
-            p => p.Code.ToLower() == programCreateDto.Code.ToLower() && !p.IsDeleted);
+            p => p.Code.ToLower() == request.Code.ToLower() && !p.IsDeleted);
 
         if (existing != null)
-        {
-            _logger.LogWarning("[AddProgramAsync] Program with code '{Code}' already exists.", programCreateDto.Code);
-            throw ErrorHelper.Conflict($"Program with code '{programCreateDto.Code}' already exists.");
+        { 
+            _logger.LogWarning("[CreateProgramAsync] Program with code '{Code}' already exists.", request.Code);
+            throw ErrorHelper.Conflict($"Program with code '{request.Code}' already exists.");
         }
 
         var program = new Program
         {
-            Code = programCreateDto.Code,
-            Name = programCreateDto.Name,
-            SeriesName = programCreateDto.SeriesName,
-            Description = programCreateDto.Description,
-            Level = programCreateDto.Level,
-            EstimatedDuration = programCreateDto.EstimatedDuration,
-            SkillsGained = programCreateDto.SkillsGained,
-            ThumbnailUrl = programCreateDto.ThumbnailUrl,
-            Status = programCreateDto.Status,
-            Price = programCreateDto.Price,
+            Code = request.Code,
+            Name = request.Name,
+            SeriesName = request.SeriesName,
+            Description = request.Description,
+            Level = request.Level,
+            EstimatedDuration = request.EstimatedDuration,
+            SkillsGained = request.SkillsGained,
+            ThumbnailUrl = request.ThumbnailUrl,
+            Status = request.Status,
+            Price = request.Price,
         };
 
         await _unitOfWork.Programs.AddAsync(program);
         await _unitOfWork.SaveChangesAsync();
 
-        _logger.LogInformation("[AddProgramAsync] Program '{Code}' added successfully with Id {Id}.",
+        _logger.LogInformation("[CreateProgramAsync] Program '{Code}' added successfully with Id {Id}.",
             program.Code, program.Id);
 
-        return new ProgramResponseDto
+        return new ProgramsResponseDto
         {
             Id = program.Id,
             Code = program.Code,
@@ -315,7 +316,7 @@ public class ProgramService : IProgramService
     // UPDATE
     // =========================================================================
 
-    public async Task<ProgramResponseDto> UpdateProgramAsync(Guid id, ProgramUpdateDto programUpdateDto)
+    public async Task<ProgramsResponseDto> UpdateProgramAsync(Guid id, UpdateProgramRequestDto request)
     {
         _logger.LogInformation("[UpdateProgramAsync] Attempting to update program with Id: {Id}", id);
 
@@ -328,27 +329,27 @@ public class ProgramService : IProgramService
         }
 
         // Kiểm tra trùng Code khi đổi Code
-        if (!string.IsNullOrWhiteSpace(programUpdateDto.Code) &&
-            !program.Code.Equals(programUpdateDto.Code, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(request.Code) &&
+            !program.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase))
         {
             var duplicate = await _unitOfWork.Programs.FirstOrDefaultAsync(
-                p => p.Code.ToLower() == programUpdateDto.Code.ToLower() &&
+                p => p.Code.ToLower() == request.Code.ToLower() &&
                      !p.IsDeleted &&
                      p.Id != id);
 
             if (duplicate != null)
             {
-                _logger.LogWarning("[UpdateProgramAsync] Code '{Code}' is already in use.", programUpdateDto.Code);
-                throw ErrorHelper.Conflict($"Program with code '{programUpdateDto.Code}' already exists.");
+                _logger.LogWarning("[UpdateProgramAsync] Code '{Code}' is already in use.", request.Code);
+                throw ErrorHelper.Conflict($"Program with code '{request.Code}' already exists.");
             }
         }
 
-        var isUpdated = UpdateHelper.ApplyUpdates(program, programUpdateDto);
+        var isUpdated = UpdateHelper.ApplyUpdates(program, request);
 
         if (!isUpdated)
         {
             _logger.LogWarning("[UpdateProgramAsync] No changes detected for program Id: {Id}", id);
-            return new ProgramResponseDto
+            return new ProgramsResponseDto
             {
                 Id = program.Id,
                 Code = program.Code,
@@ -365,7 +366,7 @@ public class ProgramService : IProgramService
                 Price = program.Price,
                 CreatedAt = program.CreatedAt,
                 UpdatedAt = program.UpdatedAt,
-                Modules = program.Modules?.Select(m => new ModuleResponseDto
+                Modules = program.Modules?.Select(m => new ModulesResponseDto
                 {
                     Id = m.Id,
                     Code = m.Code,
@@ -388,7 +389,7 @@ public class ProgramService : IProgramService
 
         _logger.LogInformation("[UpdateProgramAsync] Program Id {Id} updated successfully.", id);
 
-        return new ProgramResponseDto
+        return new ProgramsResponseDto
         {
             Id = program.Id,
             Code = program.Code,
@@ -405,7 +406,7 @@ public class ProgramService : IProgramService
             Price = program.Price,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
-            Modules = program.Modules?.Select(m => new ModuleResponseDto
+            Modules = program.Modules?.Select(m => new ModulesResponseDto
             {
                 Id = m.Id,
                 Code = m.Code,

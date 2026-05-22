@@ -5,10 +5,12 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Application.Interfaces;
 
 public interface IModuleService
- {
-    Task<ModuleResponseDto> GetModuleByIdAsync(Guid id);
-    Task<ModuleResponseDto> GetModuleByNameAsync(string name);
-    Task<Pagination<ModuleResponseDto>> GetAllModulesAsync(
+
+{
+
+    Task<ModulesResponseDto> GetModuleByIdAsync(Guid id);
+    Task<ModulesResponseDto> GetModuleByNameAsync(string name);
+    Task<Pagination<ModulesResponseDto>> GetAllModulesAsync(
         string? search,
         string? sortBy,
         bool isDescending,
@@ -17,10 +19,10 @@ public interface IModuleService
         string? code,
         ModuleType? moduleType);
 
-    Task<ModuleResponseDto> AddModuleAsync(ModuleCreateDto moduleCreateDto);
+    Task<ModulesResponseDto> CreateModuleAsync(CreateModuleRequestDto request);
 
-    Task<ModuleResponseDto> UpdateModuleAsync(Guid id, ModuleUpdateDto moduleUpdateDto);
+
+    Task<ModulesResponseDto> UpdateModuleAsync(Guid id, UpdateModuleRequestDto request);
 
     Task<bool> DeleteModuleAsync(Guid id);
- }
-
+}
