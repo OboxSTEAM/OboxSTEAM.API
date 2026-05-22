@@ -266,7 +266,7 @@ public class ProgramService : IProgramService
             p => p.Code.ToLower() == request.Code.ToLower() && !p.IsDeleted);
 
         if (existing != null)
-
+        { 
             _logger.LogWarning("[CreateProgramAsync] Program with code '{Code}' already exists.", request.Code);
             throw ErrorHelper.Conflict($"Program with code '{request.Code}' already exists.");
         }
