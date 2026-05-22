@@ -46,6 +46,7 @@ public class ActivityController : ControllerBase
         }
 
         var result = await _activityService.GetAllActivitiesAsync(
+
             search, sortBy, isDescending, page, pageSize, code, activityType);
 
         return Ok(ApiResult<Pagination<ActivitiesResponseDto>>.Success(result, "200", "Activities retrieved successfully."));

@@ -5,7 +5,9 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Application.Interfaces;
 
 public interface IModuleService
+
 {
+
     Task<ModulesResponseDto> GetModuleByIdAsync(Guid id);
     Task<ModulesResponseDto> GetModuleByNameAsync(string name);
     Task<Pagination<ModulesResponseDto>> GetAllModulesAsync(
@@ -18,6 +20,7 @@ public interface IModuleService
         ModuleType? moduleType);
 
     Task<ModulesResponseDto> CreateModuleAsync(CreateModuleRequestDto request);
+
 
     Task<ModulesResponseDto> UpdateModuleAsync(Guid id, UpdateModuleRequestDto request);
 

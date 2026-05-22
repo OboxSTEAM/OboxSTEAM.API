@@ -226,6 +226,7 @@ public class ModuleService : IModuleService
     // CREATE
     // =========================================================================
 
+
     public async Task<ModulesResponseDto> CreateModuleAsync(CreateModuleRequestDto request)
     {
         _logger.LogInformation("[CreateModuleAsync] Start creating module: {Name} (Code: {Code})",
@@ -235,6 +236,7 @@ public class ModuleService : IModuleService
 
         if (program == null || program.IsDeleted)
         {
+
             _logger.LogWarning("[CreateModuleAsync] Program with Id {Id} not found.", request.ProgramId);
             throw ErrorHelper.NotFound($"Program with id '{request.ProgramId}' not found.");
         }
@@ -245,6 +247,7 @@ public class ModuleService : IModuleService
         if (existing != null)
         {
             _logger.LogWarning("[CreateModuleAsync] Module with code '{Code}' already exists.", request.Code);
+
             throw ErrorHelper.Conflict($"Module with code '{request.Code}' already exists.");
         }
 

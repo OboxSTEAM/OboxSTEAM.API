@@ -54,7 +54,7 @@ public class ActivityService : IActivityService
         {
             query = query.Where(a => a.Code.ToLower().Contains(code.ToLower()));
         }
-
+        
         if (activityType.HasValue)
         {
             query = query.Where(a => a.ActivityType == activityType.Value);
