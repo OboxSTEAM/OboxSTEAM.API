@@ -100,7 +100,7 @@ public class ModuleController : ControllerBase
     public async Task<IActionResult> AddModule(
         [FromBody, SwaggerParameter("New module data to be created")] CreateModuleRequestDto dto)
     {
-        var result = await _moduleService.AddModuleAsync(dto);
+        var result = await _moduleService.CreateModuleAsync(dto);
 
         return CreatedAtAction(
             nameof(GetModuleById),

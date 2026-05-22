@@ -37,7 +37,6 @@ public class ActivityController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
         [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
         [FromQuery, SwaggerParameter(Description = "Filter by activity code (optional)")] string? code = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by course ID (optional)")] Guid? courseId = null,
         [FromQuery, SwaggerParameter(Description = "Filter by activity type (optional)")] ActivityType? activityType = null)
     {
         if (page < 1 || pageSize < 1)
@@ -46,7 +45,7 @@ public class ActivityController : ControllerBase
         }
 
         var result = await _activityService.GetAllActivitiesAsync(
-            search, sortBy, isDescending, page, pageSize, code, courseId, activityType);
+            search, sortBy, isDescending, page, pageSize, code, activityType);
 
         return Ok(ApiResult<Pagination<ActivitiesResponseDto>>.Success(result, "200", "Activities retrieved successfully."));
     }
@@ -68,30 +67,6 @@ public class ActivityController : ControllerBase
         if (result == null)
         {
             return NotFound(ApiResult<object>.Failure("404", $"Activity with ID '{id}' not found."));
-        }
-
-        return Ok(ApiResult<ActivitiesResponseDto>.Success(result, "200", "Activity retrieved successfully."));
-    }
-
-    // =========================================================================
-    // GET BY CODE  —  GET /api/activities/code/{code}
-    // =========================================================================
-
-    [HttpGet("code/{code}")]
-    [SwaggerOperation(
-        Summary = "Get activity by code",
-        Description = "Retrieve a single activity by its exact code (case-insensitive).")]
-    [ProducesResponseType(typeof(ApiResult<ActivitiesResponseDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> GetActivityByCode(
-        [FromRoute, SwaggerParameter(Description = "The activity code to search for")] string code)
-    {
-        var result = await _activityService.GetActivityByCodeAsync(code);
-
-        if (result == null)
-        {
-            return NotFound(ApiResult<object>.Failure("404", $"Activity with code '{code}' not found."));
         }
 
         return Ok(ApiResult<ActivitiesResponseDto>.Success(result, "200", "Activity retrieved successfully."));

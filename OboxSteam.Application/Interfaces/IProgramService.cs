@@ -20,7 +20,7 @@ public interface IProgramService
         string? skillsGained = null,
         string? status = null);
 
-    Task<ProgramsResponseDto> AddProgramAsync(CreateProgramRequestDto request);
+    Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request);
 
     Task<ProgramsResponseDto> UpdateProgramAsync(Guid id, UpdateProgramRequestDto request);
 

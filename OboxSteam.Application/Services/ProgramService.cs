@@ -252,12 +252,12 @@ public class ProgramService : IProgramService
     }
 
     // =========================================================================
-    // ADD
+    // CREATE
     // =========================================================================
 
-    public async Task<ProgramsResponseDto> AddProgramAsync(CreateProgramRequestDto request)
+    public async Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request)
     {
-        _logger.LogInformation("[AddProgramAsync] Start adding program: {Name} (Code: {Code})",
+        _logger.LogInformation("[CreateProgramAsync] Start creating program: {Name} (Code: {Code})",
             request.Name, request.Code);
 
         // Kiểm tra trùng Code
@@ -266,7 +266,7 @@ public class ProgramService : IProgramService
 
         if (existing != null)
         {
-            _logger.LogWarning("[AddProgramAsync] Program with code '{Code}' already exists.", request.Code);
+            _logger.LogWarning("[CreateProgramAsync] Program with code '{Code}' already exists.", request.Code);
             throw ErrorHelper.Conflict($"Program with code '{request.Code}' already exists.");
         }
 
@@ -287,7 +287,7 @@ public class ProgramService : IProgramService
         await _unitOfWork.Programs.AddAsync(program);
         await _unitOfWork.SaveChangesAsync();
 
-        _logger.LogInformation("[AddProgramAsync] Program '{Code}' added successfully with Id {Id}.",
+        _logger.LogInformation("[CreateProgramAsync] Program '{Code}' added successfully with Id {Id}.",
             program.Code, program.Id);
 
         return new ProgramsResponseDto

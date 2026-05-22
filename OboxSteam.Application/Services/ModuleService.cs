@@ -223,19 +223,19 @@ public class ModuleService : IModuleService
     }
 
     // =========================================================================
-    // ADD
+    // CREATE
     // =========================================================================
 
-    public async Task<ModulesResponseDto> AddModuleAsync(CreateModuleRequestDto request)
+    public async Task<ModulesResponseDto> CreateModuleAsync(CreateModuleRequestDto request)
     {
-        _logger.LogInformation("[AddModuleAsync] Start adding module: {Name} (Code: {Code})",
+        _logger.LogInformation("[CreateModuleAsync] Start creating module: {Name} (Code: {Code})",
             request.Name, request.Code);
 
         var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId);
 
         if (program == null || program.IsDeleted)
         {
-            _logger.LogWarning("[AddModuleAsync] Program with Id {Id} not found.", request.ProgramId);
+            _logger.LogWarning("[CreateModuleAsync] Program with Id {Id} not found.", request.ProgramId);
             throw ErrorHelper.NotFound($"Program with id '{request.ProgramId}' not found.");
         }
 
@@ -244,7 +244,7 @@ public class ModuleService : IModuleService
 
         if (existing != null)
         {
-            _logger.LogWarning("[AddModuleAsync] Module with code '{Code}' already exists.", request.Code);
+            _logger.LogWarning("[CreateModuleAsync] Module with code '{Code}' already exists.", request.Code);
             throw ErrorHelper.Conflict($"Module with code '{request.Code}' already exists.");
         }
 
@@ -289,7 +289,7 @@ public class ModuleService : IModuleService
         await _unitOfWork.Modules.AddAsync(module);
         await _unitOfWork.SaveChangesAsync();
 
-        _logger.LogInformation("[AddModuleAsync] Module '{Code}' added successfully with Id {Id}.",
+        _logger.LogInformation("[CreateModuleAsync] Module '{Code}' added successfully with Id {Id}.",
             module.Code, module.Id);
 
         return new ModulesResponseDto

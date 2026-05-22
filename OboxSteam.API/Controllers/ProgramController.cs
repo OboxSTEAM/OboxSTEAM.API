@@ -106,7 +106,7 @@ public class ProgramController : ControllerBase
     public async Task<IActionResult> AddProgram(
         [FromBody, SwaggerParameter("New program data to be created")] CreateProgramRequestDto dto)
     {
-        var result = await _programService.AddProgramAsync(dto);
+        var result = await _programService.CreateProgramAsync(dto);
 
         return CreatedAtAction(
             nameof(GetProgramById),
