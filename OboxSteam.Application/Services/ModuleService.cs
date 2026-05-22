@@ -4,6 +4,7 @@ using OboxSteam.Application.DTOs.CourseDTO;
 using OboxSteam.Application.DTOs.ModuleDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
@@ -27,7 +28,7 @@ public class ModuleService : IModuleService
     // GET BY ID
     // =========================================================================
 
-    public async Task<ModuleResponseDto> GetModuleByIdAsync(Guid id)
+    public async Task<ModulesResponseDto> GetModuleByIdAsync(Guid id)
     {
         _logger.LogInformation("[GetModuleByIdAsync] Fetching module with Id: {Id}", id);
 
@@ -40,7 +41,7 @@ public class ModuleService : IModuleService
         }
 
         _logger.LogInformation("[GetModuleByIdAsync] Module with Id {Id} retrieved successfully.", id);
-        return new ModuleResponseDto
+        return new ModulesResponseDto
         {
             Id = module.Id,
             Code = module.Code,
@@ -75,7 +76,7 @@ public class ModuleService : IModuleService
     // GET BY NAME
     // =========================================================================
 
-    public async Task<ModuleResponseDto> GetModuleByNameAsync(string name)
+    public async Task<ModulesResponseDto> GetModuleByNameAsync(string name)
     {
         _logger.LogInformation("[GetModuleByNameAsync] Fetching module with name: {Name}", name);
 
@@ -90,7 +91,7 @@ public class ModuleService : IModuleService
         }
 
         _logger.LogInformation("[GetModuleByNameAsync] Module '{Name}' retrieved successfully.", name);
-        return new ModuleResponseDto
+        return new ModulesResponseDto
         {
             Id = module.Id,
             Code = module.Code,
@@ -125,7 +126,7 @@ public class ModuleService : IModuleService
     // GET ALL (PAGINATION + FILTER + SORT)
     // =========================================================================
 
-    public async Task<Pagination<ModuleResponseDto>> GetAllModulesAsync(
+    public async Task<Pagination<ModulesResponseDto>> GetAllModulesAsync(
         string? search,
         string? sortBy,
         bool isDescending,
@@ -187,7 +188,7 @@ public class ModuleService : IModuleService
             .GroupBy(course => course.ModuleId)
             .ToDictionary(group => group.Key, group => group.OrderBy(c => c.Name).ToList());
 
-        var dtos = items.Select(module => new ModuleResponseDto
+        var dtos = items.Select(module => new ModulesResponseDto
         {
             Id = module.Id,
             Code = module.Code,
@@ -218,61 +219,71 @@ public class ModuleService : IModuleService
 
         _logger.LogInformation("[GetAllModulesAsync] Retrieved {Count}/{Total} modules.", dtos.Count, totalCount);
 
-        return new Pagination<ModuleResponseDto>(dtos, totalCount, page, pageSize);
+        return new Pagination<ModulesResponseDto>(dtos, totalCount, page, pageSize);
     }
 
     // =========================================================================
     // ADD
     // =========================================================================
 
-    public async Task<ModuleResponseDto> AddModuleAsync(ModuleCreateDto moduleCreateDto)
+    public async Task<ModulesResponseDto> AddModuleAsync(CreateModuleRequestDto request)
     {
         _logger.LogInformation("[AddModuleAsync] Start adding module: {Name} (Code: {Code})",
-            moduleCreateDto.Name, moduleCreateDto.Code);
+            request.Name, request.Code);
 
-        var program = await _unitOfWork.Programs.GetByIdAsync(moduleCreateDto.ProgramId);
+        var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId);
 
         if (program == null || program.IsDeleted)
         {
-            _logger.LogWarning("[AddModuleAsync] Program with Id {Id} not found.", moduleCreateDto.ProgramId);
-            throw ErrorHelper.NotFound($"Program with id '{moduleCreateDto.ProgramId}' not found.");
+            _logger.LogWarning("[AddModuleAsync] Program with Id {Id} not found.", request.ProgramId);
+            throw ErrorHelper.NotFound($"Program with id '{request.ProgramId}' not found.");
         }
 
         var existing = await _unitOfWork.Modules.FirstOrDefaultAsync(
-            m => m.Code.ToLower() == moduleCreateDto.Code.ToLower() && !m.IsDeleted);
+            m => m.Code.ToLower() == request.Code.ToLower() && !m.IsDeleted);
 
         if (existing != null)
         {
-            _logger.LogWarning("[AddModuleAsync] Module with code '{Code}' already exists.", moduleCreateDto.Code);
-            throw ErrorHelper.Conflict($"Module with code '{moduleCreateDto.Code}' already exists.");
+            _logger.LogWarning("[AddModuleAsync] Module with code '{Code}' already exists.", request.Code);
+            throw ErrorHelper.Conflict($"Module with code '{request.Code}' already exists.");
         }
 
-        if (moduleCreateDto.PrerequisiteModuleId.HasValue)
+        if (request.PrerequisiteModuleId.HasValue)
         {
-            var prerequisite = await _unitOfWork.Modules.GetByIdAsync(moduleCreateDto.PrerequisiteModuleId.Value);
+            var prerequisite = await _unitOfWork.Modules.GetByIdAsync(request.PrerequisiteModuleId.Value);
 
             if (prerequisite == null || prerequisite.IsDeleted)
             {
-                throw ErrorHelper.NotFound($"Prerequisite module with id '{moduleCreateDto.PrerequisiteModuleId}' not found.");
+                throw ErrorHelper.NotFound($"Prerequisite module with id '{request.PrerequisiteModuleId}' not found.");
             }
 
-            if (prerequisite.ProgramId != moduleCreateDto.ProgramId)
+            if (prerequisite.ProgramId != request.ProgramId)
             {
                 throw ErrorHelper.BadRequest("Prerequisite module must belong to the same program.");
             }
         }
 
+        var programModules = await _unitOfWork.Modules.GetAllAsync(
+            m => m.ProgramId == request.ProgramId && !m.IsDeleted);
+        var currentMaxOrder = programModules.Count == 0 ? 0 : programModules.Max(m => m.ModuleOrder);
+
+        SequentialOrderValidator.ValidateMustExceedMax(
+            request.ModuleOrder,
+            currentMaxOrder,
+            orderPropertyName: "ModuleOrder",
+            scopeDescription: $"program '{request.ProgramId}'");
+
         var module = new Module
         {
-            Code = moduleCreateDto.Code,
-            ProgramId = moduleCreateDto.ProgramId,
-            Name = moduleCreateDto.Name,
-            ModuleType = moduleCreateDto.ModuleType,
-            ModuleOrder = moduleCreateDto.ModuleOrder,
-            PrerequisiteModuleId = moduleCreateDto.PrerequisiteModuleId,
-            IsMandatory = moduleCreateDto.IsMandatory,
-            Price = moduleCreateDto.Price,
-            RetakeFee = moduleCreateDto.RetakeFee,
+            Code = request.Code,
+            ProgramId = request.ProgramId,
+            Name = request.Name,
+            ModuleType = request.ModuleType,
+            ModuleOrder = request.ModuleOrder,
+            PrerequisiteModuleId = request.PrerequisiteModuleId,
+            IsMandatory = request.IsMandatory,
+            Price = request.Price,
+            RetakeFee = request.RetakeFee,
         };
 
         await _unitOfWork.Modules.AddAsync(module);
@@ -281,7 +292,7 @@ public class ModuleService : IModuleService
         _logger.LogInformation("[AddModuleAsync] Module '{Code}' added successfully with Id {Id}.",
             module.Code, module.Id);
 
-        return new ModuleResponseDto
+        return new ModulesResponseDto
         {
             Id = module.Id,
             Code = module.Code,
@@ -302,7 +313,7 @@ public class ModuleService : IModuleService
     // UPDATE
     // =========================================================================
 
-    public async Task<ModuleResponseDto> UpdateModuleAsync(Guid id, ModuleUpdateDto moduleUpdateDto)
+    public async Task<ModulesResponseDto> UpdateModuleAsync(Guid id, UpdateModuleRequestDto request)
     {
         _logger.LogInformation("[UpdateModuleAsync] Attempting to update module with Id: {Id}", id);
 
@@ -314,68 +325,68 @@ public class ModuleService : IModuleService
             throw ErrorHelper.NotFound($"Module with id '{id}' not found.");
         }
 
-        if (!string.IsNullOrWhiteSpace(moduleUpdateDto.Code) &&
-            !module.Code.Equals(moduleUpdateDto.Code, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(request.Code) &&
+            !module.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase))
         {
             var duplicate = await _unitOfWork.Modules.FirstOrDefaultAsync(
-                m => m.Code.ToLower() == moduleUpdateDto.Code.ToLower() &&
+                m => m.Code.ToLower() == request.Code.ToLower() &&
                      !m.IsDeleted &&
                      m.Id != id);
 
             if (duplicate != null)
             {
-                _logger.LogWarning("[UpdateModuleAsync] Code '{Code}' is already in use.", moduleUpdateDto.Code);
-                throw ErrorHelper.Conflict($"Module with code '{moduleUpdateDto.Code}' already exists.");
+                _logger.LogWarning("[UpdateModuleAsync] Code '{Code}' is already in use.", request.Code);
+                throw ErrorHelper.Conflict($"Module with code '{request.Code}' already exists.");
             }
         }
 
         var isUpdated = false;
 
-        if (moduleUpdateDto.ProgramId.HasValue && module.ProgramId != moduleUpdateDto.ProgramId.Value)
+        if (request.ProgramId.HasValue && module.ProgramId != request.ProgramId.Value)
         {
-            var program = await _unitOfWork.Programs.GetByIdAsync(moduleUpdateDto.ProgramId.Value);
+            var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId.Value);
 
             if (program == null || program.IsDeleted)
             {
-                _logger.LogWarning("[UpdateModuleAsync] Program with Id {Id} not found.", moduleUpdateDto.ProgramId.Value);
-                throw ErrorHelper.NotFound($"Program with id '{moduleUpdateDto.ProgramId}' not found.");
+                _logger.LogWarning("[UpdateModuleAsync] Program with Id {Id} not found.", request.ProgramId.Value);
+                throw ErrorHelper.NotFound($"Program with id '{request.ProgramId}' not found.");
             }
 
-            module.ProgramId = moduleUpdateDto.ProgramId.Value;
+            module.ProgramId = request.ProgramId.Value;
             isUpdated = true;
         }
 
-        if (moduleUpdateDto.PrerequisiteModuleId.HasValue &&
-            module.PrerequisiteModuleId != moduleUpdateDto.PrerequisiteModuleId)
+        if (request.PrerequisiteModuleId.HasValue &&
+            module.PrerequisiteModuleId != request.PrerequisiteModuleId)
         {
-            if (moduleUpdateDto.PrerequisiteModuleId.Value == id)
+            if (request.PrerequisiteModuleId.Value == id)
             {
                 throw ErrorHelper.BadRequest("Module cannot be its own prerequisite.");
             }
 
-            var prerequisite = await _unitOfWork.Modules.GetByIdAsync(moduleUpdateDto.PrerequisiteModuleId.Value);
+            var prerequisite = await _unitOfWork.Modules.GetByIdAsync(request.PrerequisiteModuleId.Value);
 
             if (prerequisite == null || prerequisite.IsDeleted)
             {
-                throw ErrorHelper.NotFound($"Prerequisite module with id '{moduleUpdateDto.PrerequisiteModuleId}' not found.");
+                throw ErrorHelper.NotFound($"Prerequisite module with id '{request.PrerequisiteModuleId}' not found.");
             }
 
-            var targetProgramId = moduleUpdateDto.ProgramId ?? module.ProgramId;
+            var targetProgramId = request.ProgramId ?? module.ProgramId;
             if (prerequisite.ProgramId != targetProgramId)
             {
                 throw ErrorHelper.BadRequest("Prerequisite module must belong to the same program.");
             }
 
-            module.PrerequisiteModuleId = moduleUpdateDto.PrerequisiteModuleId;
+            module.PrerequisiteModuleId = request.PrerequisiteModuleId;
             isUpdated = true;
         }
 
-        isUpdated = UpdateHelper.ApplyUpdates(module, moduleUpdateDto) || isUpdated;
+        isUpdated = UpdateHelper.ApplyUpdates(module, request) || isUpdated;
 
         if (!isUpdated)
         {
             _logger.LogWarning("[UpdateModuleAsync] No changes detected for module Id: {Id}", id);
-            return new ModuleResponseDto
+            return new ModulesResponseDto
             {
                 Id = module.Id,
                 Code = module.Code,
@@ -397,7 +408,7 @@ public class ModuleService : IModuleService
 
         _logger.LogInformation("[UpdateModuleAsync] Module Id {Id} updated successfully.", id);
 
-        return new ModuleResponseDto
+        return new ModulesResponseDto
         {
             Id = module.Id,
             Code = module.Code,

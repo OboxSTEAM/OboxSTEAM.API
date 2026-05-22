@@ -157,6 +157,7 @@ public static class IocContainer
         services.AddScoped<IProgramService, ProgramService>();
         services.AddScoped<IModuleService, ModuleService>();
         services.AddScoped<ICourseService, CourseService>();
+        services.AddScoped<IActivityService, ActivityService>();
         services.AddScoped<IMediaService, MediaService>();
         services.AddScoped<IExpertService, ExpertService>();
         services.AddScoped<IParentService, ParentService>();

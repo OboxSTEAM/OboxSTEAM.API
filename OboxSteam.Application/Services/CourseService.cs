@@ -9,7 +9,7 @@ using OboxSteam.Domain.Interfaces;
 
 namespace OboxSteam.Application.Services;
 
-public class CourseService : ICourseService
+public sealed class CourseService : ICourseService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<CourseService> _logger;
@@ -86,7 +86,17 @@ public class CourseService : ICourseService
             .Take(pageSize)
             .ToList();
 
-        var dtos = items.Select(MapToResponseDto).ToList();
+        var dtos = items.Select(c => new CourseResponseDto
+        {
+            Id = c.Id,
+            Code = c.Code,
+            ModuleId = c.ModuleId,
+            MentorId = c.MentorId,
+            Name = c.Name,
+            Description = c.Description,
+            CreatedAt = c.CreatedAt,
+            UpdatedAt = c.UpdatedAt,
+        }).ToList();
 
         _logger.LogInformation("[GetAllCoursesAsync] Retrieved {Count}/{Total} courses.", dtos.Count, totalCount);
 
@@ -251,7 +261,17 @@ public class CourseService : ICourseService
         _logger.LogInformation("[CreateCourseAsync] Course '{Code}' created successfully with Id {Id}.",
             course.Code, course.Id);
 
-        return MapToResponseDto(course);
+        return new CourseResponseDto
+        {
+            Id = course.Id,
+            Code = course.Code,
+            ModuleId = course.ModuleId,
+            MentorId = course.MentorId,
+            Name = course.Name,
+            Description = course.Description,
+            CreatedAt = course.CreatedAt,
+            UpdatedAt = course.UpdatedAt,
+        };
     }
 
     // =========================================================================
@@ -328,7 +348,17 @@ public class CourseService : ICourseService
 
         _logger.LogInformation("[UpdateCourseAsync] Course Id {Id} updated successfully.", courseId);
 
-        return MapToResponseDto(course);
+        return new CourseResponseDto
+        {
+            Id = course.Id,
+            Code = course.Code,
+            ModuleId = course.ModuleId,
+            MentorId = course.MentorId,
+            Name = course.Name,
+            Description = course.Description,
+            CreatedAt = course.CreatedAt,
+            UpdatedAt = course.UpdatedAt,
+        };
     }
 
     // =========================================================================
@@ -354,16 +384,4 @@ public class CourseService : ICourseService
 
         return true;
     }
-
-    private static CourseResponseDto MapToResponseDto(Course course) => new()
-    {
-        Id = course.Id,
-        Code = course.Code,
-        ModuleId = course.ModuleId,
-        MentorId = course.MentorId,
-        Name = course.Name,
-        Description = course.Description,
-        CreatedAt = course.CreatedAt,
-        UpdatedAt = course.UpdatedAt,
-    };
 }

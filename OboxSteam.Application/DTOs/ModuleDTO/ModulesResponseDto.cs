@@ -3,7 +3,7 @@ using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ModuleDTO;
 
-public class ModuleResponseDto
+public class ModulesResponseDto
 {
     public Guid Id { get; set; }
     public string Code { get; set; } = null!;

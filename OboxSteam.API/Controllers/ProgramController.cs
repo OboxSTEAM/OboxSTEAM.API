@@ -28,7 +28,7 @@ public class ProgramController : ControllerBase
     [SwaggerOperation(
         Summary = "Get all programs",
         Description = "Retrieve a paginated list of programs with optional search, filter, and sort options.")]
-    [ProducesResponseType(typeof(ApiResult<Pagination<ProgramResponseDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<Pagination<ProgramsResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
     public async Task<IActionResult> GetAllPrograms(
@@ -50,7 +50,7 @@ public class ProgramController : ControllerBase
             search, sortBy, isDescending, page, pageSize,
             code, level, rating, skillsGained, status);
 
-        return Ok(ApiResult<Pagination<ProgramResponseDto>>.Success(result, "200", "Programs retrieved successfully."));
+        return Ok(ApiResult<Pagination<ProgramsResponseDto>>.Success(result, "200", "Programs retrieved successfully."));
     }
 
     // =========================================================================
@@ -61,13 +61,13 @@ public class ProgramController : ControllerBase
     [SwaggerOperation(
         Summary = "Get program details",
         Description = "Retrieve detailed information for a specific program by its ID.")]
-    [ProducesResponseType(typeof(ApiResult<ProgramResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
     public async Task<IActionResult> GetProgramById([FromRoute] Guid id)
     {
         var result = await _programService.GetProgramByIdAsync(id);
-        return Ok(ApiResult<ProgramResponseDto>.Success(result, "200", "Program retrieved successfully."));
+        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program retrieved successfully."));
     }
 
     // =========================================================================
@@ -78,14 +78,14 @@ public class ProgramController : ControllerBase
     [SwaggerOperation(
         Summary = "Get program by name",
         Description = "Retrieve a single program by its exact name (case-insensitive).")]
-    [ProducesResponseType(typeof(ApiResult<ProgramResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
     public async Task<IActionResult> GetProgramByName(
         [FromRoute, SwaggerParameter(Description = "The program name to search for")] string name)
     {
         var result = await _programService.GetProgramByNameAsync(name);
-        return Ok(ApiResult<ProgramResponseDto>.Success(result, "200", "Program retrieved successfully."));
+        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program retrieved successfully."));
     }
 
     // =========================================================================
@@ -97,21 +97,21 @@ public class ProgramController : ControllerBase
     [SwaggerOperation(
         Summary = "Create a new program",
         Description = "Creates a new program with the provided information. Requires SuperAdmin or Manager role.")]
-    [ProducesResponseType(typeof(ApiResult<ProgramResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
     public async Task<IActionResult> AddProgram(
-        [FromBody, SwaggerParameter("New program data to be created")] ProgramCreateDto dto)
+        [FromBody, SwaggerParameter("New program data to be created")] CreateProgramRequestDto dto)
     {
         var result = await _programService.AddProgramAsync(dto);
 
         return CreatedAtAction(
             nameof(GetProgramById),
             new { id = result.Id },
-            ApiResult<ProgramResponseDto>.Success(result, "201", "Program created successfully."));
+            ApiResult<ProgramsResponseDto>.Success(result, "201", "Program created successfully."));
     }
 
     // =========================================================================
@@ -123,7 +123,7 @@ public class ProgramController : ControllerBase
     [SwaggerOperation(
         Summary = "Update program information",
         Description = "Updates the details of a specific program by its ID. Requires SuperAdmin or Manager role.")]
-    [ProducesResponseType(typeof(ApiResult<ProgramResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -132,13 +132,13 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
     public async Task<IActionResult> UpdateProgram(
         [FromRoute] Guid id,
-        [FromBody, SwaggerParameter("Updated program data")] ProgramUpdateDto dto)
+        [FromBody, SwaggerParameter("Updated program data")] UpdateProgramRequestDto dto)
     {
         if (dto == null)
             return BadRequest(ApiResult<object>.Failure("400", "Program update data is required."));
 
         var result = await _programService.UpdateProgramAsync(id, dto);
-        return Ok(ApiResult<ProgramResponseDto>.Success(result, "200", "Program updated successfully."));
+        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program updated successfully."));
     }
 
     // =========================================================================
