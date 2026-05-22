@@ -37,7 +37,6 @@ public class ActivityController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
         [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
         [FromQuery, SwaggerParameter(Description = "Filter by activity code (optional)")] string? code = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by course ID (optional)")] Guid? courseId = null,
         [FromQuery, SwaggerParameter(Description = "Filter by activity type (optional)")] ActivityType? activityType = null)
     {
         if (page < 1 || pageSize < 1)
