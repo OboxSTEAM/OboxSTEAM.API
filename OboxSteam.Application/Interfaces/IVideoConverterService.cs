@@ -18,6 +18,16 @@ public interface IVideoConverterService
     Task<string> SubmitTranscodeJobAsync(string inputS3Key, string outputDestinationPrefix);
 
     /// <summary>
+    /// Submits a MediaConvert job that stitches/clips multiple source videos into one
+    /// personalised highlight reel. Each <see cref="ClipInput"/> represents one source
+    /// video; if <c>Clips</c> is null or empty the entire video is included.
+    /// </summary>
+    /// <param name="clips">Ordered list of source videos with optional time-range clips.</param>
+    /// <param name="outputS3Key">Full S3 key for the output MP4 (e.g. "personal-videos/student_ts.mp4").</param>
+    /// <returns>The MediaConvert Job ID.</returns>
+    Task<string> SubmitPersonalVideoJobAsync(List<ClipInput> clips, string outputS3Key);
+
+    /// <summary>
     /// Polls the status of a previously submitted MediaConvert job.
     /// </summary>
     /// <param name="jobId">The MediaConvert Job ID returned by <see cref="SubmitTranscodeJobAsync"/>.</param>
@@ -53,3 +63,18 @@ public enum MediaConvertJobStatus
     Complete,
     Error
 }
+
+// ── Personal Video DTOs ───────────────────────────────────────────────────────
+
+/// <summary>
+/// One source video for the personal highlight reel.
+/// When <see cref="Clips"/> is empty the entire video is included.
+/// </summary>
+public record ClipInput(string S3Key, List<TimeClip> Clips);
+
+/// <summary>
+/// A single time-range clip within a source video, expressed as HH:MM:SS:mmm timecodes
+/// as required by AWS MediaConvert InputClipping.
+/// </summary>
+public record TimeClip(string StartTimecode, string EndTimecode);
+

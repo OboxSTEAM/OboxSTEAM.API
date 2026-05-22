@@ -203,7 +203,106 @@ public class FaceRecognitionService : IFaceRecognitionService
         return new VideoFaceSearchResult("SUCCEEDED", allMatches.Values.ToList());
     }
 
-    // ── Helpers ──────────────────────────────────────
+    /// <inheritdoc />
+    public async Task<List<FaceTimestampSegment>> GetVideoFaceTimelineAsync(string jobId, Guid studentId)
+    {
+        _logger.LogInformation(
+            "GetVideoFaceTimelineAsync: JobId={JobId}, StudentId={StudentId}", jobId, studentId);
+
+        // Collect all raw detection timestamps for the target student across pages.
+        var rawTimestamps = new List<long>();
+        string? nextToken = null;
+
+        do
+        {
+            var request = new GetFaceSearchRequest
+            {
+                JobId      = jobId,
+                MaxResults = 1000,
+                SortBy     = FaceSearchSortBy.TIMESTAMP,
+            };
+            if (nextToken != null) request.NextToken = nextToken;
+
+            GetFaceSearchResponse response;
+            try
+            {
+                response = await _rekognition.GetFaceSearchAsync(request);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetFaceSearchAsync paging failed for JobId={JobId}", jobId);
+                throw;
+            }
+
+            // Job not ready yet — caller should retry
+            if (response.JobStatus == VideoJobStatus.IN_PROGRESS)
+            {
+                _logger.LogInformation("GetVideoFaceTimelineAsync: job {JobId} still IN_PROGRESS.", jobId);
+                return new List<FaceTimestampSegment>();
+            }
+
+            if (response.JobStatus == VideoJobStatus.FAILED)
+            {
+                _logger.LogError("GetVideoFaceTimelineAsync: job {JobId} FAILED.", jobId);
+                return new List<FaceTimestampSegment>();
+            }
+
+            foreach (var person in response.Persons)
+            {
+                if (person.FaceMatches == null || person.FaceMatches.Count == 0) continue;
+
+                // Check if any match belongs to the target student
+                var hasStudentMatch = person.FaceMatches.Any(m =>
+                    Guid.TryParse(m.Face.ExternalImageId, out var uid) && uid == studentId);
+
+                if (hasStudentMatch)
+                    rawTimestamps.Add(person.Timestamp);
+            }
+
+            nextToken = response.NextToken;
+        }
+        while (!string.IsNullOrEmpty(nextToken));
+
+        if (rawTimestamps.Count == 0)
+        {
+            _logger.LogInformation(
+                "GetVideoFaceTimelineAsync: No detections for StudentId={StudentId} in JobId={JobId}",
+                studentId, jobId);
+            return new List<FaceTimestampSegment>();
+        }
+
+        // Collapse contiguous timestamps into segments.
+        // Rekognition samples every ~1 second; treat detections within 500 ms as the same raw segment.
+        const long CollapseGapMs = 500;
+
+        rawTimestamps.Sort();
+        var segments = new List<FaceTimestampSegment>();
+        var segStart = rawTimestamps[0];
+        var segEnd   = rawTimestamps[0];
+
+        for (int i = 1; i < rawTimestamps.Count; i++)
+        {
+            if (rawTimestamps[i] - segEnd <= CollapseGapMs)
+            {
+                segEnd = rawTimestamps[i];
+            }
+            else
+            {
+                segments.Add(new FaceTimestampSegment(segStart, segEnd));
+                segStart = rawTimestamps[i];
+                segEnd   = rawTimestamps[i];
+            }
+        }
+        segments.Add(new FaceTimestampSegment(segStart, segEnd));
+
+        _logger.LogInformation(
+            "GetVideoFaceTimelineAsync: {Raw} raw ts → {Segs} segment(s) for StudentId={StudentId}",
+            rawTimestamps.Count, segments.Count, studentId);
+
+        return segments;
+    }
+
+    // ── Helpers ──────────────────────────────────────────
 
     private async Task EnsureCollectionExistsAsync()
     {

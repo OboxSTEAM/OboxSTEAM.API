@@ -29,8 +29,23 @@ public interface IFaceRecognitionService
     /// Trả về null nếu job chưa hoàn tất (IN_PROGRESS).
     /// </summary>
     Task<VideoFaceSearchResult?> GetVideoFaceSearchResultsAsync(string jobId);
+
+    /// <summary>
+    /// Trích xuất timeline (danh sách đoạn timestamp) của một student cụ thể từ kết quả
+    /// Rekognition video face-search. Trả về danh sách FaceTimestampSegment (StartMs, EndMs).
+    /// Trả về danh sách rỗng nếu student không xuất hiện hoặc job chưa hoàn tất.
+    /// </summary>
+    /// <param name="jobId">Rekognition video job ID (phải ở trạng thái SUCCEEDED).</param>
+    /// <param name="studentId">UserId của sinh viên cần tìm timeline.</param>
+    Task<List<FaceTimestampSegment>> GetVideoFaceTimelineAsync(string jobId, Guid studentId);
 }
 
 public record FaceMatchResult(Guid UserId, string FaceId, float Confidence);
 
 public record VideoFaceSearchResult(string JobStatus, List<FaceMatchResult> Matches);
+
+/// <summary>
+/// Một đoạn thời gian (ms) mà khuôn mặt sinh viên xuất hiện liên tục trong video.
+/// </summary>
+public record FaceTimestampSegment(long StartMs, long EndMs);
+

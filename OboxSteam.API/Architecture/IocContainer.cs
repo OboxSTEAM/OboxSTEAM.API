@@ -46,12 +46,16 @@ public static class IocContainer
         // Add Unit of Work (repositories are lazy-loaded inside)
         services.AddScoped<OboxSteam.Domain.Interfaces.IUnitOfWork, UnitOfWork>();
 
-        // Add business services
+        // Add Business services
         services.SetupBusinessServicesLayer();
 
         // Add Background Services
         services.AddSingleton<VideoProcessingChannel>();
         services.AddHostedService<VideoTagProcessingWorker>();
+
+        // Personal Video Generation pipeline
+        services.AddSingleton<PersonalVideoChannel>();
+        services.AddHostedService<PersonalVideoWorker>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
@@ -160,6 +164,7 @@ public static class IocContainer
         services.AddScoped<IMediaService, MediaService>();
         services.AddScoped<IExpertService, ExpertService>();
         services.AddScoped<IParentService, ParentService>();
+        services.AddScoped<IPersonalVideoService, PersonalVideoService>();
         return services;
     }
 
