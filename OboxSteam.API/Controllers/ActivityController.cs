@@ -46,7 +46,8 @@ public class ActivityController : ControllerBase
         }
 
         var result = await _activityService.GetAllActivitiesAsync(
-            search, sortBy, isDescending, page, pageSize, code, courseId, activityType);
+
+            search, sortBy, isDescending, page, pageSize, code, activityType);
 
         return Ok(ApiResult<Pagination<ActivitiesResponseDto>>.Success(result, "200", "Activities retrieved successfully."));
     }
@@ -73,29 +74,6 @@ public class ActivityController : ControllerBase
         return Ok(ApiResult<ActivitiesResponseDto>.Success(result, "200", "Activity retrieved successfully."));
     }
 
-    // =========================================================================
-    // GET BY CODE  —  GET /api/activities/code/{code}
-    // =========================================================================
-
-    [HttpGet("code/{code}")]
-    [SwaggerOperation(
-        Summary = "Get activity by code",
-        Description = "Retrieve a single activity by its exact code (case-insensitive).")]
-    [ProducesResponseType(typeof(ApiResult<ActivitiesResponseDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> GetActivityByCode(
-        [FromRoute, SwaggerParameter(Description = "The activity code to search for")] string code)
-    {
-        var result = await _activityService.GetActivityByCodeAsync(code);
-
-        if (result == null)
-        {
-            return NotFound(ApiResult<object>.Failure("404", $"Activity with code '{code}' not found."));
-        }
-
-        return Ok(ApiResult<ActivitiesResponseDto>.Success(result, "200", "Activity retrieved successfully."));
-    }
 
     // =========================================================================
     // CREATE  —  POST /api/activities          [Admin only]

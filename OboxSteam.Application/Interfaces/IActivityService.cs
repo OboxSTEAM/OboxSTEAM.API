@@ -13,12 +13,9 @@ public interface IActivityService
         int page,
         int pageSize,
         string? code,
-        Guid? courseId,
         ActivityType? activityType);
 
     Task<ActivitiesResponseDto?> GetActivityByIdAsync(Guid activityId);
-
-    Task<ActivitiesResponseDto?> GetActivityByCodeAsync(string code);
 
     Task<ActivitiesResponseDto> CreateActivityAsync(CreateActivitiesRequestDto request);
 

@@ -32,7 +32,6 @@ public class ActivityService : IActivityService
         int page,
         int pageSize,
         string? code,
-        Guid? courseId,
         ActivityType? activityType)
     {
         _logger.LogInformation(
@@ -55,12 +54,7 @@ public class ActivityService : IActivityService
         {
             query = query.Where(a => a.Code.ToLower().Contains(code.ToLower()));
         }
-
-        if (courseId.HasValue)
-        {
-            query = query.Where(a => a.CourseId == courseId.Value);
-        }
-
+        
         if (activityType.HasValue)
         {
             query = query.Where(a => a.ActivityType == activityType.Value);
@@ -146,48 +140,6 @@ public class ActivityService : IActivityService
         };
     }
 
-    // =========================================================================
-    // GET BY CODE
-    // =========================================================================
-
-    public async Task<ActivitiesResponseDto?> GetActivityByCodeAsync(string code)
-    {
-        if (string.IsNullOrWhiteSpace(code))
-        {
-            throw ErrorHelper.BadRequest("Activity code is required.");
-        }
-
-        _logger.LogInformation("[GetActivityByCodeAsync] Fetching activity with code: {Code}", code);
-
-        var activity = await _unitOfWork.Activities.FirstOrDefaultAsync(
-            a => a.Code.ToLower() == code.ToLower() && !a.IsDeleted);
-
-        if (activity == null)
-        {
-            _logger.LogWarning("[GetActivityByCodeAsync] Activity with code '{Code}' not found.", code);
-            return null;
-        }
-
-        _logger.LogInformation("[GetActivityByCodeAsync] Activity '{Code}' retrieved successfully.", code);
-        return new ActivitiesResponseDto
-        {
-            Id = activity.Id,
-            Code = activity.Code,
-            CourseId = activity.CourseId,
-            Name = activity.Name,
-            ActivityType = activity.ActivityType,
-            Description = activity.Description,
-            ActivityOrder = activity.ActivityOrder,
-            Location = activity.Location,
-            StartTime = activity.StartTime,
-            EndTime = activity.EndTime,
-            MaxCapacity = activity.MaxCapacity,
-            RequireQrCheckin = activity.RequireQrCheckin,
-            RequireMediaEvidence = activity.RequireMediaEvidence,
-            CreatedAt = activity.CreatedAt,
-            UpdatedAt = activity.UpdatedAt,
-        };
-    }
 
     // =========================================================================
     // CREATE
