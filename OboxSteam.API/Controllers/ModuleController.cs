@@ -28,7 +28,7 @@ public class ModuleController : ControllerBase
     [SwaggerOperation(
         Summary = "Get all modules",
         Description = "Retrieve a paginated list of modules with optional search, filter, and sort options.")]
-    [ProducesResponseType(typeof(ApiResult<Pagination<ModuleResponseDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<Pagination<ModulesResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     public async Task<IActionResult> GetAllModules(
         [FromQuery, SwaggerParameter(Description = "Search by name or code (optional)")] string? search = null,
@@ -47,7 +47,7 @@ public class ModuleController : ControllerBase
         var result = await _moduleService.GetAllModulesAsync(
             search, sortBy, isDescending, page, pageSize, code, moduleType);
 
-        return Ok(ApiResult<Pagination<ModuleResponseDto>>.Success(result, "200", "Modules retrieved successfully."));
+        return Ok(ApiResult<Pagination<ModulesResponseDto>>.Success(result, "200", "Modules retrieved successfully."));
     }
 
     // =========================================================================
@@ -58,12 +58,12 @@ public class ModuleController : ControllerBase
     [SwaggerOperation(
         Summary = "Get module details",
         Description = "Retrieve detailed information for a specific module by its ID.")]
-    [ProducesResponseType(typeof(ApiResult<ModuleResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<ModulesResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetModuleById([FromRoute] Guid id)
     {
         var result = await _moduleService.GetModuleByIdAsync(id);
-        return Ok(ApiResult<ModuleResponseDto>.Success(result, "200", "Module retrieved successfully."));
+        return Ok(ApiResult<ModulesResponseDto>.Success(result, "200", "Module retrieved successfully."));
     }
 
     // =========================================================================
@@ -74,13 +74,13 @@ public class ModuleController : ControllerBase
     [SwaggerOperation(
         Summary = "Get module by name",
         Description = "Retrieve a single module by its exact name (case-insensitive).")]
-    [ProducesResponseType(typeof(ApiResult<ModuleResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<ModulesResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetModuleByName(
         [FromRoute, SwaggerParameter(Description = "The module name to search for")] string name)
     {
         var result = await _moduleService.GetModuleByNameAsync(name);
-        return Ok(ApiResult<ModuleResponseDto>.Success(result, "200", "Module retrieved successfully."));
+        return Ok(ApiResult<ModulesResponseDto>.Success(result, "200", "Module retrieved successfully."));
     }
 
     // =========================================================================
@@ -92,20 +92,20 @@ public class ModuleController : ControllerBase
     [SwaggerOperation(
         Summary = "Create a new module",
         Description = "Creates a new module with the provided information. Requires SuperAdmin or Manager role.")]
-    [ProducesResponseType(typeof(ApiResult<ModuleResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<ModulesResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> AddModule(
-        [FromBody, SwaggerParameter("New module data to be created")] ModuleCreateDto dto)
+        [FromBody, SwaggerParameter("New module data to be created")] CreateModuleRequestDto dto)
     {
         var result = await _moduleService.AddModuleAsync(dto);
 
         return CreatedAtAction(
             nameof(GetModuleById),
             new { id = result.Id },
-            ApiResult<ModuleResponseDto>.Success(result, "201", "Module created successfully."));
+            ApiResult<ModulesResponseDto>.Success(result, "201", "Module created successfully."));
     }
 
     // =========================================================================
@@ -117,7 +117,7 @@ public class ModuleController : ControllerBase
     [SwaggerOperation(
         Summary = "Update module information",
         Description = "Updates the details of a specific module by its ID. Requires SuperAdmin or Manager role.")]
-    [ProducesResponseType(typeof(ApiResult<ModuleResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<ModulesResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -125,7 +125,7 @@ public class ModuleController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> UpdateModule(
         [FromRoute] Guid id,
-        [FromBody, SwaggerParameter("Updated module data")] ModuleUpdateDto dto)
+        [FromBody, SwaggerParameter("Updated module data")] UpdateModuleRequestDto dto)
     {
         if (dto == null)
         {
@@ -133,7 +133,7 @@ public class ModuleController : ControllerBase
         }
 
         var result = await _moduleService.UpdateModuleAsync(id, dto);
-        return Ok(ApiResult<ModuleResponseDto>.Success(result, "200", "Module updated successfully."));
+        return Ok(ApiResult<ModulesResponseDto>.Success(result, "200", "Module updated successfully."));
     }
 
     // =========================================================================

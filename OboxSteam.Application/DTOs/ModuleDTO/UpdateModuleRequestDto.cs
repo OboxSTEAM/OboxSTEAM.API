@@ -2,7 +2,7 @@ using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ModuleDTO;
 
-public class ModuleUpdateDto
+public class UpdateModuleRequestDto
 {
     public string? Code { get; set; }
     public Guid? ProgramId { get; set; }

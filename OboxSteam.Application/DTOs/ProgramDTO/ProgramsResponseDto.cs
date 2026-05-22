@@ -3,7 +3,7 @@ using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ProgramDTO;
 
-public class ProgramResponseDto
+public class ProgramsResponseDto
 {
     public Guid Id { get; set; }
     public string Code { get; set; } = null!;
@@ -20,5 +20,5 @@ public class ProgramResponseDto
     public decimal? Price { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
-    public List<ModuleResponseDto> Modules { get; set; } = new();
+    public List<ModulesResponseDto> Modules { get; set; } = new();
 }
