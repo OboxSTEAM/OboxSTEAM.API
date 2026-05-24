@@ -172,7 +172,6 @@ public class VideoConverterService : IVideoConverterService
                         {
                             new Output
                             {
-                                NameModifier      = "",
                                 VideoDescription  = BuildVideoDescription(watermarkUri),
                                 AudioDescriptions = BuildAudioDescriptions(),
                                 ContainerSettings = BuildContainerSettings()
