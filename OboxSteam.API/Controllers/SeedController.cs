@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
-using Swashbuckle.AspNetCore.Annotations;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace OboxSteam.API.Controllers;
 
@@ -25,7 +25,7 @@ public class SeedController : ControllerBase
     [HttpPost("all")]
     [SwaggerOperation(
         Summary = "Seed all data",
-        Description = "Seeds all database tables with sample data. Only available in Development environment."
+        Description = "Seeds all database tables with sample data."
     )]
     [ProducesResponseType(typeof(ApiResult), 200)]
     [ProducesResponseType(typeof(ApiResult), 400)]
@@ -33,11 +33,11 @@ public class SeedController : ControllerBase
     public async Task<IActionResult> SeedAllData()
     {
         // Check if in development mode
-        var environment = _configuration["ASPNETCORE_ENVIRONMENT"];
-        if (environment != "Development")
-        {
-            return StatusCode(403, ApiResult.Failure("403", "Seeding is only allowed in Development environment."));
-        }
+        //var environment = _configuration["ASPNETCORE_ENVIRONMENT"];
+        //if (environment != "Development")
+        //{
+        //    return StatusCode(403, ApiResult.Failure("403", "Seeding is only allowed in Development environment."));
+        //}
 
         await _seedService.SeedAllDataAsync();
         return Ok(ApiResult.Success("200", "All data seeded successfully."));
@@ -50,18 +50,18 @@ public class SeedController : ControllerBase
     [HttpDelete("clear")]
     [SwaggerOperation(
         Summary = "Clear all data",
-        Description = "Removes all data from the database. Only available in Development environment. Use with caution!"
+        Description = "Removes all data from the database."
     )]
     [ProducesResponseType(typeof(ApiResult), 200)]
     [ProducesResponseType(typeof(ApiResult), 400)]
     [ProducesResponseType(typeof(ApiResult), 403)]
     public async Task<IActionResult> ClearAllData()
     {
-        var environment = _configuration["ASPNETCORE_ENVIRONMENT"];
-        if (environment != "Development")
-        {
-            return StatusCode(403, ApiResult.Failure("403", "Clearing data is only allowed in Development environment."));
-        }
+        //var environment = _configuration["ASPNETCORE_ENVIRONMENT"];
+        //if (environment != "Development")
+        //{
+        //    return StatusCode(403, ApiResult.Failure("403", "Clearing data is only allowed in Development environment."));
+        //}
 
         await _seedService.ClearAllDataAsync();
         return Ok(ApiResult.Success("200", "All data cleared successfully."));
