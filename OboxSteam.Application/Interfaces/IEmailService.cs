@@ -8,9 +8,9 @@ public interface IEmailService
 
     Task SendOtpVerificationEmailAsync(EmailRequestDto request);
 
-    Task SendForgotPasswordOtpEmailAsync(EmailRequestDto request);
-
     Task SendPasswordChangeSuccessAsync(EmailRequestDto request);
+
+    Task SendForgotPasswordLinkEmailAsync(ActionEmailRequestDto request);
 
     Task SendMagicLinkEmailAsync(ActionEmailRequestDto request);
 

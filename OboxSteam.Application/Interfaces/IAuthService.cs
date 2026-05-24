@@ -20,5 +20,7 @@ public interface IAuthService
 
     Task<bool> ResendOtpAsync(string email, OtpPurpose otpPurpose);
 
-    Task<bool> ResetPasswordAsync(string email, string otp, string newPassword);
+    Task<bool> ForgotPasswordAsync(string email);
+
+    Task<bool> ResetPasswordAsync(string token, string newPassword);
 }

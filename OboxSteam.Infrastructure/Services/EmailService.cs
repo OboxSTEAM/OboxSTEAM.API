@@ -269,53 +269,36 @@ public class EmailService : IEmailService
     }
 
 
-    public async Task SendForgotPasswordOtpEmailAsync(EmailRequestDto request)
+    public async Task SendForgotPasswordLinkEmailAsync(ActionEmailRequestDto request)
     {
         var body = $@"
 <h1 style=""margin:0 0 12px;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:28px;font-weight:800;color:{ColorCharcoal};line-height:1.2;"">
   Reset your password.
 </h1>
 <p style=""margin:0 0 28px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:15px;color:{ColorMuted};line-height:1.7;"">
-  Use the code below to reset your password. It expires in <strong style=""color:{ColorCharcoal};font-weight:600;"">15 minutes</strong>.
+  Hello, <strong style=""color:{ColorCharcoal};font-weight:600;"">{request.UserName}</strong>. We received a request to reset your password. Click the button below to set a new password. This link expires in <strong style=""color:{ColorCharcoal};font-weight:600;"">15 minutes</strong>.
 </p>
-
-<!-- OTP display -->
-<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0""
-       style=""background-color:{ColorSurface};border:1px solid {ColorBorder};border-radius:16px;margin-bottom:20px;"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""background-color:{ColorSurface};border:1px solid {ColorBorder};border-radius:16px;margin-bottom:20px;"">
   <tr>
-    <td style=""padding:32px;text-align:center;"">
-      <p style=""margin:0 0 12px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:{ColorLight};"">Your reset code</p>
-      <p style=""margin:0;font-family:'Courier New',Courier,monospace;font-size:44px;font-weight:800;letter-spacing:14px;color:{ColorCharcoal};padding-left:14px;"">{request.Otp}</p>
+    <td style=""padding:28px 32px;text-align:center;"">
+      <a href=""{request.Link}"" style=""display:inline-block;background-color:{ColorRed};color:#ffffff;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:15px;font-weight:700;padding:14px 44px;border-radius:10px;text-decoration:none;box-shadow:0 4px 14px rgba(233,75,60,0.30);"">
+        Reset Password
+      </a>
     </td>
   </tr>
 </table>
-
-<!-- Expiry notice -->
-<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0""
-       style=""background-color:{ColorYellow}18;border:1px solid {ColorYellow}50;border-radius:10px;margin-bottom:16px;"">
-  <tr>
-    <td style=""padding:12px 20px;text-align:center;"">
-      <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;font-weight:600;color:#7A6000;"">This code expires in 15 minutes</p>
-    </td>
-  </tr>
-</table>
-
-<!-- Security notice -->
 <table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0""
        style=""background-color:{ColorRed}0d;border:1px solid {ColorRed}30;border-radius:10px;margin-bottom:8px;"">
   <tr>
     <td style=""padding:12px 20px;text-align:center;"">
-      <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;font-weight:600;color:{ColorRed};"">Never share this code with anyone. OboxSTEAM will never ask for it.</p>
+      <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;font-weight:600;color:{ColorRed};"">If you did not request a password reset, you can safely ignore this email.</p>
     </td>
   </tr>
-</table>
+</table>";
 
-<p style=""margin:12px 0 0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};text-align:center;line-height:1.6;"">
-  If you did not request a password reset, you can safely ignore this email.
-</p>";
-
-        await SendEmailAsync(request.To, "Password Reset — OboxSTEAM", BuildEmailShell("Password Reset", body));
+        await SendEmailAsync(request.To, "Reset Your Password — OboxSTEAM", BuildEmailShell("Password Reset", body));
     }
+
 
 
     public async Task SendPasswordChangeSuccessAsync(EmailRequestDto request)

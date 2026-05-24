@@ -20,17 +20,20 @@ public class AuthService : IAuthService
     private readonly ILogger<AuthService> _logger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
+    private readonly IConfiguration _configuration;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IEmailService emailService,
         ILogger<AuthService> logger,
-        IClaimsService claimsService)
+        IClaimsService claimsService,
+        IConfiguration configuration)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
         _logger = logger;
         _claimsService = claimsService;
+        _configuration = configuration;
     }
 
     /// <summary>Register a new user.</summary>
@@ -217,26 +220,77 @@ public class AuthService : IAuthService
         return true;
     }
 
-    /// <summary>Resend an OTP for registration or forgot-password flows.</summary>
+    /// <summary>Resend an OTP for registration flows.</summary>
     public async Task<bool> ResendOtpAsync(string email, OtpPurpose otpPurpose)
     {
         return otpPurpose switch
         {
             OtpPurpose.Register => await SendRegisterOtpAsync(email),
-            OtpPurpose.ForgotPassword => await SendForgotPasswordOtpAsync(email),
             _ => throw ErrorHelper.BadRequest("Invalid OTP type.")
         };
     }
 
-    /// <summary>Reset a user's password using an OTP.</summary>
-    public async Task<bool> ResetPasswordAsync(string email, string otp, string newPassword)
+    /// <summary>Send a password reset link to user's email.</summary>
+    public async Task<bool> ForgotPasswordAsync(string email)
     {
-        _logger.LogInformation("Password reset requested for {Email}", email);
+        _logger.LogInformation("Password reset link requested for {Email}", email);
 
+        var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email && !u.IsDeleted);
+        if (user == null)
+            throw ErrorHelper.NotFound("Email does not exist in the system.");
+
+        if (user.IsDeleted)
+            throw ErrorHelper.Forbidden("Account has been disabled.");
+
+        // Disable previous forgot-password OTPs
+        var previousOtps = await _unitOfWork.OtpStorages.GetAllAsync(o =>
+            o.Target == email && o.Purpose == OtpPurpose.ForgotPassword && !o.IsUsed);
+
+        foreach (var previousOtp in previousOtps)
+        {
+            previousOtp.IsUsed = true;
+            await _unitOfWork.OtpStorages.Update(previousOtp);
+        }
+
+        var token = OtpGenerator.GenerateAlphanumeric(10);
+        var otp = new OtpStorage
+        {
+            Target = email,
+            OtpCode = token,
+            ExpiredAt = DateTime.UtcNow.Add(ForgotPasswordOtpLifetime),
+            IsUsed = false,
+            Purpose = OtpPurpose.ForgotPassword
+        };
+
+        await _unitOfWork.OtpStorages.AddAsync(otp);
+        await _unitOfWork.SaveChangesAsync();
+
+        var appBaseUrl = (_configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
+        var resetLink = $"{appBaseUrl}/reset-password?email={Uri.EscapeDataString(email)}&token={token}";
+
+        await _emailService.SendForgotPasswordLinkEmailAsync(new ActionEmailRequestDto
+        {
+            To = email,
+            UserName = user.FullName,
+            Link = resetLink
+        });
+
+        _logger.LogInformation("Password reset link sent successfully to {Email}.", email);
+        return true;
+    }
+
+    /// <summary>Reset a user's password using a token.</summary>
+    public async Task<bool> ResetPasswordAsync(string token, string newPassword)
+    {
+        _logger.LogInformation("Password reset requested using token");
+
+        var otpRecord = await VerifyForgotPasswordTokenAsync(token);
+        if (otpRecord == null) return false;
+
+        var email = otpRecord.Target;
         var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email && !u.IsDeleted);
         if (user == null) return false;
         if (!user.IsEmailVerified) return false;
-        if (!await VerifyOtpAsync(email, otp, OtpPurpose.ForgotPassword)) return false;
 
         user.PasswordHash = new PasswordHasher().HashPassword(newPassword);
         await _unitOfWork.Users.Update(user);
@@ -252,6 +306,25 @@ public class AuthService : IAuthService
         return true;
     }
 
+    private async Task<OtpStorage?> VerifyForgotPasswordTokenAsync(string token)
+    {
+        var otpRecord = await _unitOfWork.OtpStorages.FirstOrDefaultAsync(o =>
+            o.OtpCode == token && o.Purpose == OtpPurpose.ForgotPassword && !o.IsUsed);
+
+        if (otpRecord == null || otpRecord.ExpiredAt < DateTime.UtcNow)
+        {
+            _logger.LogWarning("Forgot password token not found or expired: {Token}", token);
+            return null;
+        }
+
+        otpRecord.IsUsed = true;
+        await _unitOfWork.OtpStorages.Update(otpRecord);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("Forgot password token verified and marked as used for {Target}.", otpRecord.Target);
+        return otpRecord;
+    }
+
     //========================= PRIVATE HELPERS =================================
 
     private async Task<bool> UserExistsAsync(string email)
@@ -262,9 +335,7 @@ public class AuthService : IAuthService
 
     private async Task GenerateAndSendOtpAsync(User user, OtpPurpose purpose)
     {
-        var lifetime = purpose == OtpPurpose.ForgotPassword
-            ? ForgotPasswordOtpLifetime
-            : RegisterOtpLifetime;
+        var lifetime = RegisterOtpLifetime;
 
         var previousOtps = await _unitOfWork.OtpStorages.GetAllAsync(o =>
             o.Target == user.Email && o.Purpose == purpose && !o.IsUsed);
@@ -300,11 +371,6 @@ public class AuthService : IAuthService
             await _emailService.SendOtpVerificationEmailAsync(emailRequest);
             _logger.LogInformation("Registration OTP sent to {Email}", user.Email);
         }
-        else if (purpose == OtpPurpose.ForgotPassword)
-        {
-            await _emailService.SendForgotPasswordOtpEmailAsync(emailRequest);
-            _logger.LogInformation("Forgot-password OTP sent to {Email}", user.Email);
-        }
     }
 
     private async Task<bool> SendRegisterOtpAsync(string email)
@@ -323,18 +389,6 @@ public class AuthService : IAuthService
         return true;
     }
 
-    private async Task<bool> SendForgotPasswordOtpAsync(string email)
-    {
-        var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
-        if (user == null)
-            throw ErrorHelper.NotFound("Email does not exist in the system.");
-
-        if (user.IsDeleted)
-            throw ErrorHelper.Forbidden("Account has been disabled.");
-
-        await GenerateAndSendOtpAsync(user, OtpPurpose.ForgotPassword);
-        return true;
-    }
 
     private async Task<bool> VerifyOtpAsync(string email, string otp, OtpPurpose purpose)
     {
