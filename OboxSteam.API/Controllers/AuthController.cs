@@ -77,21 +77,40 @@ namespace OboxSteam.API.Controllers
         }
 
         /// <summary>
-        /// Reset user password using OTP.
+        /// Request to reset password by sending a link to user's email.
+        /// </summary>
+        /// <param name="dto">Forgot password request data.</param>
+        /// <returns>Result of the request.</returns>
+        [HttpPost("send-resetlink")]
+        [SwaggerOperation(
+            Summary = "Forgot password request",
+            Description = "Sends a password reset link to the specified email if it exists."
+        )]
+        [ProducesResponseType(typeof(ApiResult<object>), 200)]
+        [ProducesResponseType(typeof(ApiResult<object>), 400)]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequestDto dto)
+        {
+            var success = await _authService.ForgotPasswordAsync(dto.Email);
+            if (!success) return BadRequest(ApiResult.Failure("400", "Failed to send reset password link."));
+            return Ok(ApiResult.Success("200", "Password reset link has been sent to your email."));
+        }
+
+        /// <summary>
+        /// Reset user password using token sent to email.
         /// </summary>
         /// <param name="dto">Reset password data.</param>
         /// <returns>Password reset result.</returns>
-        [HttpPost("reset-password")]
+        [HttpPost("forgot-password")]
         [SwaggerOperation(
             Summary = "Reset password",
-            Description = "Reset user password using OTP sent to email."
+            Description = "Reset user password using token sent to email."
         )]
         [ProducesResponseType(typeof(ApiResult<object>), 200)]
         [ProducesResponseType(typeof(ApiResult<object>), 400)]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
         {
-            var reset = await _authService.ResetPasswordAsync(dto.Email, dto.Otp, dto.NewPassword);
-            if (!reset) return BadRequest(ApiResult.Failure("400", "OTP is invalid, expired or data is invalid."));
+            var reset = await _authService.ResetPasswordAsync(dto.Token, dto.NewPassword);
+            if (!reset) return BadRequest(ApiResult.Failure("400", "Token is invalid, expired or data is invalid."));
             return Ok(ApiResult.Success("200", "Password was reset successfully."));
         }
 
