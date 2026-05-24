@@ -50,11 +50,14 @@ builder.Services.AddCors(options =>
             }
             else
             {
-                // Load allowed origin from environment variable in production
-                var allowedOrigin = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGIN")
-                    ?? "https://oboxsteam.website";
+                var originsRaw = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS")
+                    ?? Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGIN")
+                    ?? "https://oboxsteam.website,http://localhost:3000";
 
-                policy.WithOrigins(allowedOrigin)
+                var allowedOrigins = originsRaw
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                policy.WithOrigins(allowedOrigins)
                       .AllowAnyHeader()
                       .AllowAnyMethod()
                       .AllowCredentials();
