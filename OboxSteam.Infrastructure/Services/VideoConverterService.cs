@@ -147,7 +147,7 @@ public class VideoConverterService : IVideoConverterService
         // Derive destination prefix and filename from the output S3 key
         var outputFolder = Path.GetDirectoryName(outputS3Key)?.Replace('\\', '/') ?? PersonalVideoFolder;
         var outputFileName = Path.GetFileNameWithoutExtension(outputS3Key);
-        var destUri = $"s3://{bucket}/{outputFolder}/";
+        var destUri = $"s3://{bucket}/{outputFolder}/{outputFileName}";
 
         var request = new CreateJobRequest
         {
@@ -172,8 +172,7 @@ public class VideoConverterService : IVideoConverterService
                         {
                             new Output
                             {
-                                // NameModifier becomes the filename base, e.g. studentId_ts
-                                NameModifier      = outputFileName,
+                                NameModifier      = "",
                                 VideoDescription  = BuildVideoDescription(watermarkUri),
                                 AudioDescriptions = BuildAudioDescriptions(),
                                 ContainerSettings = BuildContainerSettings()
@@ -213,27 +212,23 @@ public class VideoConverterService : IVideoConverterService
         var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });
         var job = response.Job;
 
-        // Reconstruct the output S3 key from the job's own settings.
-        // MediaConvert naming: {Destination}{baseName}{NameModifier}.{ext}
-        // We set:
-        //   Destination = "s3://bucket/media/"
-        //   NameModifier = "_conv"
-        //   Container = MP4 → extension = ".mp4"
-        //   Input = "s3://bucket/raw/{baseName}.{origExt}"
-        //
-        // Therefore output = "s3://bucket/media/{baseName}_conv.mp4"
-
-        var inputUri = job.Settings.Inputs.First().FileInput;
-        var inputFileName = inputUri.Split('/').Last();
-        var inputBaseName = Path.GetFileNameWithoutExtension(inputFileName);
-
         var destUri = job.Settings.OutputGroups
             .First().OutputGroupSettings.FileGroupSettings.Destination;
-
         var nameModifier = job.Settings.OutputGroups
             .First().Outputs.First().NameModifier ?? string.Empty;
 
-        var outputUri = $"{destUri}{inputBaseName}{nameModifier}.mp4";
+        string outputUri;
+        if (destUri.EndsWith('/'))
+        {
+            var inputUri = job.Settings.Inputs.First().FileInput;
+            var inputFileName = inputUri.Split('/').Last();
+            var inputBaseName = Path.GetFileNameWithoutExtension(inputFileName);
+            outputUri = $"{destUri}{inputBaseName}{nameModifier}.mp4";
+        }
+        else
+        {
+            outputUri = $"{destUri}{nameModifier}.mp4";
+        }
 
         var s3Prefix = $"s3://{bucket}/";
         if (!outputUri.StartsWith(s3Prefix, StringComparison.OrdinalIgnoreCase))
