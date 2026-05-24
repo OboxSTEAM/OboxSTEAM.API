@@ -1,9 +1,8 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
+using System.Text.Json;
 
 namespace OboxSteam.API.Controllers;
 
@@ -38,8 +37,14 @@ public class AwsWebhookController : ControllerBase
         {
             using var reader = new StreamReader(Request.Body);
             var body = await reader.ReadToEndAsync();
-            
-            _logger.LogInformation("Received AWS Webhook payload.");
+
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                _logger.LogWarning("Received AWS Webhook but the body is empty.");
+                return BadRequest("Empty body");
+            }
+
+            _logger.LogInformation("Received AWS Webhook payload: {Body}", body);
 
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
@@ -55,7 +60,7 @@ public class AwsWebhookController : ControllerBase
             {
                 var subscribeUrl = root.GetProperty("SubscribeURL").GetString();
                 _logger.LogInformation("SubscriptionConfirmation received. URL: {Url}", subscribeUrl);
-                
+
                 using var http = new HttpClient();
                 await http.GetAsync(subscribeUrl);
                 return Ok();
@@ -64,13 +69,13 @@ public class AwsWebhookController : ControllerBase
             if (type == "Notification")
             {
                 var message = root.GetProperty("Message").GetString() ?? "";
-                
+
                 // Parse the inner message
                 using var msgDoc = JsonDocument.Parse(message);
                 var msgRoot = msgDoc.RootElement;
 
                 // EventBridge (MediaConvert)
-                if (msgRoot.TryGetProperty("detail-type", out var detailTypeProp) && 
+                if (msgRoot.TryGetProperty("detail-type", out var detailTypeProp) &&
                     detailTypeProp.GetString() == "MediaConvert Job State Change")
                 {
                     var detail = msgRoot.GetProperty("detail");
@@ -87,7 +92,7 @@ public class AwsWebhookController : ControllerBase
                 {
                     var jobId = rekJobIdProp.GetString();
                     var status = msgRoot.GetProperty("Status").GetString();
-                    
+
                     if (status == "SUCCEEDED" || status == "FAILED")
                     {
                         await ProcessRekognitionJobAsync(jobId!, status == "SUCCEEDED");
