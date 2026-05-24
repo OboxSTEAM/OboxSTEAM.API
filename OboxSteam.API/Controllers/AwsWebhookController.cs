@@ -86,6 +86,10 @@ public class AwsWebhookController : ControllerBase
                     {
                         await ProcessMediaConvertJobAsync(jobId!, status == "COMPLETE");
                     }
+                    else
+                    {
+                        _logger.LogInformation("MediaConvert JobId: {JobId} is in status: {Status}. No action required.", jobId, status);
+                    }
                 }
                 // Rekognition
                 else if (msgRoot.TryGetProperty("JobId", out var rekJobIdProp))
