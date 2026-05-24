@@ -52,7 +52,7 @@ builder.Services.AddCors(options =>
             {
                 // Load allowed origin from environment variable in production
                 var allowedOrigin = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGIN")
-                    ?? "https://oboxsteam.com";
+                    ?? "https://oboxsteam.website";
 
                 policy.WithOrigins(allowedOrigin)
                       .AllowAnyHeader()
