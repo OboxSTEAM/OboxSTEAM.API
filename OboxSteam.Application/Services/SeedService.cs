@@ -1425,6 +1425,18 @@ namespace OboxSteam.Application.Services
         public async Task ClearAllDataAsync()
         {
             _loggerService.LogInformation("Starting clear all data");
+            await _unitOfWork.MediaTags.HardRemove(x => true);
+            await _unitOfWork.MediaAssets.HardRemove(x => true);
+            await _unitOfWork.HighlightVideos.HardRemove(x => true);
+            await _unitOfWork.FaceEmbeddings.HardRemove(x => true);
+            await _unitOfWork.PortfolioCustomItems.HardRemove(x => true);
+            await _unitOfWork.Portfolios.HardRemove(x => true);
+            await _unitOfWork.StudentSkills.HardRemove(x => true);
+            await _unitOfWork.StandardizedTests.HardRemove(x => true);
+            await _unitOfWork.Certificates.HardRemove(x => true);
+            await _unitOfWork.ProgramBoards.HardRemove(x => true);
+            await _unitOfWork.OtpStorages.HardRemove(x => true);
+            
             await _unitOfWork.QuizOptions.HardRemove(x => true);
             await _unitOfWork.QuizQuestions.HardRemove(x => true);
             await _unitOfWork.Submissions.HardRemove(x => true);
