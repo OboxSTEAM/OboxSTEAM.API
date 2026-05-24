@@ -141,7 +141,10 @@ public class FaceRecognitionService : IFaceRecognitionService
 
         await EnsureCollectionExistsAsync();
 
-        var response = await _rekognition.StartFaceSearchAsync(new StartFaceSearchRequest
+        var snsTopicArn = Environment.GetEnvironmentVariable("AWS_SNS_TOPIC_ARN");
+        var roleArn = Environment.GetEnvironmentVariable("AWS_REKOGNITION_ROLE_ARN");
+
+        var request = new StartFaceSearchRequest
         {
             CollectionId = CollectionId,
             Video = new Video
@@ -153,7 +156,18 @@ public class FaceRecognitionService : IFaceRecognitionService
                 }
             },
             FaceMatchThreshold = minConfidence
-        });
+        };
+
+        if (!string.IsNullOrEmpty(snsTopicArn) && !string.IsNullOrEmpty(roleArn))
+        {
+            request.NotificationChannel = new NotificationChannel
+            {
+                SNSTopicArn = snsTopicArn,
+                RoleArn = roleArn
+            };
+        }
+
+        var response = await _rekognition.StartFaceSearchAsync(request);
 
         _logger.LogInformation("Video face search started. JobId: {JobId}", response.JobId);
         return response.JobId;

@@ -13,7 +13,6 @@ using OboxSteam.Infrastructure;
 using OboxSteam.Infrastructure.Commons;
 using OboxSteam.Infrastructure.Persistence;
 using OboxSteam.Infrastructure.Services;
-using OboxSteam.Infrastructure.BackgroundServices;
 using Resend;
 using System.Text;
 
@@ -49,13 +48,7 @@ public static class IocContainer
         // Add Business services
         services.SetupBusinessServicesLayer();
 
-        // Add Background Services
-        services.AddSingleton<VideoProcessingChannel>();
-        services.AddHostedService<VideoTagProcessingWorker>();
-
-        // Personal Video Generation pipeline
-        services.AddSingleton<PersonalVideoChannel>();
-        services.AddHostedService<PersonalVideoWorker>();
+        // Background Services removed - now using Webhooks (AwsWebhookController)
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
@@ -188,7 +181,7 @@ public static class IocContainer
             ?? throw new InvalidOperationException("AWS_ACCESS_KEY not found in environment variables.");
         var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_KEY")
             ?? throw new InvalidOperationException("AWS_SECRET_KEY not found in environment variables.");
-        var endpoint  = Environment.GetEnvironmentVariable("AWS_MEDIACONVERT_ENDPOINT")
+        var endpoint = Environment.GetEnvironmentVariable("AWS_MEDIACONVERT_ENDPOINT")
             ?? throw new InvalidOperationException("AWS_MEDIACONVERT_ENDPOINT not found in environment variables.");
 
         services.AddSingleton<IAmazonMediaConvert>(_ =>

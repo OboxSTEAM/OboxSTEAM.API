@@ -36,7 +36,6 @@ public class MediaService : IMediaService
     private readonly IBlobService _blobService;
     private readonly IFaceRecognitionService _faceRecognitionService;
     private readonly ILogger<MediaService> _logger;
-    private readonly VideoProcessingChannel _videoChannel;
     private readonly IVideoConverterService _videoConverterService;
 
     public MediaService(
@@ -45,7 +44,6 @@ public class MediaService : IMediaService
         IBlobService blobService,
         IFaceRecognitionService faceRecognitionService,
         ILogger<MediaService> logger,
-        VideoProcessingChannel videoChannel,
         IVideoConverterService videoConverterService)
     {
         _claimsService = claimsService;
@@ -53,7 +51,6 @@ public class MediaService : IMediaService
         _blobService = blobService;
         _faceRecognitionService = faceRecognitionService;
         _logger = logger;
-        _videoChannel = videoChannel;
         _videoConverterService = videoConverterService;
     }
 
@@ -143,14 +140,14 @@ public class MediaService : IMediaService
             // Reuse the matches already fetched during pre-validation — no second Rekognition call.
             tags = await SaveFaceTagsAsync(media.Id, prevalidatedMatches);
         }
-        else // isVideo — enqueue for background processing
+        else // isVideo — submit MediaConvert job directly
         {
             // Store raw S3 key (prefixed) so the worker can locate the source video.
             media.VideoJobRef = $"{RawPrefix}{videoLocalPath}";
             await _unitOfWork.SaveChangesAsync();
 
-            await _videoChannel.Writer.WriteAsync(media.Id);
-            _logger.LogInformation("Video enqueued for MediaConvert. MediaId: {MediaId}, RawKey: {Key}", media.Id, videoLocalPath);
+            await StartVideoTranscodeAsync(media.Id);
+            _logger.LogInformation("Video submitted to MediaConvert. MediaId: {MediaId}, RawKey: {Key}", media.Id, videoLocalPath);
         }
 
         _logger.LogInformation("UploadMediaAsync completed. MediaId: {MediaId}", media.Id);

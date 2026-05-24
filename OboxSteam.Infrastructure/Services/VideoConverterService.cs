@@ -12,8 +12,8 @@ namespace OboxSteam.Infrastructure.Services;
 /// </summary>
 public class VideoConverterService : IVideoConverterService
 {
-    private const string EnvS3Bucket        = "AWS_S3_BUCKET";
-    private const string EnvRoleArn         = "AWS_MEDIACONVERT_ROLE_ARN";
+    private const string EnvS3Bucket = "AWS_S3_BUCKET";
+    private const string EnvRoleArn = "AWS_MEDIACONVERT_ROLE_ARN";
     private const string PersonalVideoFolder = "personal-videos";
 
     private readonly IAmazonMediaConvert _mediaConvert;
@@ -24,20 +24,20 @@ public class VideoConverterService : IVideoConverterService
         ILogger<VideoConverterService> logger)
     {
         _mediaConvert = mediaConvert;
-        _logger       = logger;
+        _logger = logger;
     }
 
     /// <inheritdoc />
     public async Task<string> SubmitTranscodeJobAsync(string inputS3Key, string outputDestinationPrefix)
     {
-        var bucket  = RequireEnv(EnvS3Bucket);
+        var bucket = RequireEnv(EnvS3Bucket);
         var roleArn = RequireEnv(EnvRoleArn);
 
         // Ensure prefix ends with /
         if (!outputDestinationPrefix.EndsWith('/'))
             outputDestinationPrefix += '/';
 
-        var inputUri       = $"s3://{bucket}/{inputS3Key}";
+        var inputUri = $"s3://{bucket}/{inputS3Key}";
         var outputGroupUri = $"s3://{bucket}/{outputDestinationPrefix}";
 
         _logger.LogInformation(
@@ -46,7 +46,7 @@ public class VideoConverterService : IVideoConverterService
 
         var request = new CreateJobRequest
         {
-            Role     = roleArn,
+            Role = roleArn,
             Settings = new JobSettings
             {
                 Inputs = new List<Input>
@@ -95,7 +95,7 @@ public class VideoConverterService : IVideoConverterService
         };
 
         var response = await _mediaConvert.CreateJobAsync(request);
-        var jobId    = response.Job.Id;
+        var jobId = response.Job.Id;
 
         _logger.LogInformation("MediaConvert job submitted. JobId: {JobId}", jobId);
         return jobId;
@@ -104,8 +104,9 @@ public class VideoConverterService : IVideoConverterService
     /// <inheritdoc />
     public async Task<string> SubmitPersonalVideoJobAsync(List<ClipInput> clips, string outputS3Key)
     {
-        var bucket  = RequireEnv(EnvS3Bucket);
+        var bucket = RequireEnv(EnvS3Bucket);
         var roleArn = RequireEnv(EnvRoleArn);
+        var watermarkUri = "https://oboxsteam-bucket.s3.ap-southeast-1.amazonaws.com/logo/obox-logo.png";
 
         _logger.LogInformation(
             "SubmitPersonalVideoJobAsync: {ClipCount} input(s) → s3://{Bucket}/{Key}",
@@ -116,7 +117,7 @@ public class VideoConverterService : IVideoConverterService
         {
             var input = new Input
             {
-                FileInput      = $"s3://{bucket}/{clip.S3Key}",
+                FileInput = $"s3://{bucket}/{clip.S3Key}",
                 // ZEROBASED so timecodes in InputClippings are relative to 00:00:00:000
                 TimecodeSource = InputTimecodeSource.ZEROBASED,
                 AudioSelectors = new Dictionary<string, AudioSelector>
@@ -135,7 +136,7 @@ public class VideoConverterService : IVideoConverterService
                     .Select(c => new InputClipping
                     {
                         StartTimecode = c.StartTimecode,
-                        EndTimecode   = c.EndTimecode
+                        EndTimecode = c.EndTimecode
                     })
                     .ToList();
             }
@@ -144,16 +145,16 @@ public class VideoConverterService : IVideoConverterService
         }).ToList();
 
         // Derive destination prefix and filename from the output S3 key
-        var outputFolder   = Path.GetDirectoryName(outputS3Key)?.Replace('\\', '/') ?? PersonalVideoFolder;
+        var outputFolder = Path.GetDirectoryName(outputS3Key)?.Replace('\\', '/') ?? PersonalVideoFolder;
         var outputFileName = Path.GetFileNameWithoutExtension(outputS3Key);
-        var destUri        = $"s3://{bucket}/{outputFolder}/";
+        var destUri = $"s3://{bucket}/{outputFolder}/";
 
         var request = new CreateJobRequest
         {
-            Role     = roleArn,
+            Role = roleArn,
             Settings = new JobSettings
             {
-                Inputs       = inputs,
+                Inputs = inputs,
                 OutputGroups = new List<OutputGroup>
                 {
                     new OutputGroup
@@ -173,7 +174,7 @@ public class VideoConverterService : IVideoConverterService
                             {
                                 // NameModifier becomes the filename base, e.g. studentId_ts
                                 NameModifier      = outputFileName,
-                                VideoDescription  = BuildVideoDescription(),
+                                VideoDescription  = BuildVideoDescription(watermarkUri),
                                 AudioDescriptions = BuildAudioDescriptions(),
                                 ContainerSettings = BuildContainerSettings()
                             }
@@ -208,9 +209,9 @@ public class VideoConverterService : IVideoConverterService
     /// <inheritdoc />
     public async Task<string> GetOutputS3KeyAsync(string jobId)
     {
-        var bucket   = RequireEnv(EnvS3Bucket);
+        var bucket = RequireEnv(EnvS3Bucket);
         var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });
-        var job      = response.Job;
+        var job = response.Job;
 
         // Reconstruct the output S3 key from the job's own settings.
         // MediaConvert naming: {Destination}{baseName}{NameModifier}.{ext}
@@ -222,7 +223,7 @@ public class VideoConverterService : IVideoConverterService
         //
         // Therefore output = "s3://bucket/media/{baseName}_conv.mp4"
 
-        var inputUri      = job.Settings.Inputs.First().FileInput;
+        var inputUri = job.Settings.Inputs.First().FileInput;
         var inputFileName = inputUri.Split('/').Last();
         var inputBaseName = Path.GetFileNameWithoutExtension(inputFileName);
 
@@ -248,7 +249,7 @@ public class VideoConverterService : IVideoConverterService
     /// <inheritdoc />
     public async Task<string> GetInputS3KeyAsync(string jobId)
     {
-        var bucket   = RequireEnv(EnvS3Bucket);
+        var bucket = RequireEnv(EnvS3Bucket);
         var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });
 
         var inputUri = response.Job.Settings.Inputs.First().FileInput;
@@ -266,26 +267,57 @@ public class VideoConverterService : IVideoConverterService
 
     // ── Shared codec/container builders ──────────────────────────────────────
 
-    private static VideoDescription BuildVideoDescription() => new()
+    private static VideoDescription BuildVideoDescription(string? watermarkS3Uri = null)
     {
-        CodecSettings = new VideoCodecSettings
+        var desc = new VideoDescription
         {
-            Codec        = VideoCodec.H_264,
-            H264Settings = new H264Settings
+            CodecSettings = new VideoCodecSettings
             {
-                RateControlMode = H264RateControlMode.QVBR,
-                MaxBitrate      = 5_000_000, // 5 Mbps — required for QVBR
-                QvbrSettings    = new H264QvbrSettings
+                Codec = VideoCodec.H_264,
+                H264Settings = new H264Settings
                 {
-                    QvbrQualityLevel = 7   // ~CRF 23 equivalent
+                    RateControlMode = H264RateControlMode.QVBR,
+                    MaxBitrate = 5_000_000, // 5 Mbps — required for QVBR
+                    QvbrSettings = new H264QvbrSettings
+                    {
+                        QvbrQualityLevel = 7   // ~CRF 23 equivalent
+                    }
+                    // Note: do NOT set FlickerAdaptiveQuantization,
+                    // SpatialAdaptiveQuantization, or TemporalAdaptiveQuantization
+                    // when H264AdaptiveQuantization is AUTO (the default).
+                    // MediaConvert handles these automatically.
                 }
-                // Note: do NOT set FlickerAdaptiveQuantization,
-                // SpatialAdaptiveQuantization, or TemporalAdaptiveQuantization
-                // when H264AdaptiveQuantization is AUTO (the default).
-                // MediaConvert handles these automatically.
             }
+        };
+
+        if (!string.IsNullOrWhiteSpace(watermarkS3Uri))
+        {
+            desc.VideoPreprocessors = new VideoPreprocessor
+            {
+                ImageInserter = new ImageInserter
+                {
+                    InsertableImages =
+                    [
+                        new InsertableImage
+                        {
+                            ImageInserterInput = watermarkS3Uri,
+                            // Tọa độ giả định cho video 1080p (1920x1080)
+                            // ImageX = 1920 - 150 (Width) - 50 (Margin) = 1720
+                            // ImageY = 1080 - 150 (Height) - 50 (Margin) = 880
+                            ImageX = 1780,
+                            ImageY = 950,
+                            Width = 125,  // Scale down width (adjust as needed)
+                            Height = 125, // Scale down height (adjust as needed)
+                            Opacity = 80,
+                            Layer = 1
+                        }
+                    ]
+                }
+            };
         }
-    };
+
+        return desc;
+    }
 
     private static List<AudioDescription> BuildAudioDescriptions() =>
     [
@@ -307,7 +339,7 @@ public class VideoConverterService : IVideoConverterService
 
     private static ContainerSettings BuildContainerSettings() => new()
     {
-        Container   = ContainerType.MP4,
+        Container = ContainerType.MP4,
         Mp4Settings = new Mp4Settings
         {
             // Move moov atom to front for progressive download / streaming

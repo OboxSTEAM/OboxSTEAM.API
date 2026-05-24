@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.MediaDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -31,13 +30,11 @@ public class PersonalVideoService : IPersonalVideoService
     private const long MergeGapMs = 1_000;
 
     private const string PersonalVideoFolder = "personal-videos";
-    private const string S3Bucket = "oboxsteam-bucket";
 
+    private readonly string _s3Bucket;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFaceRecognitionService _faceRecognitionService;
     private readonly IVideoConverterService _videoConverterService;
-    private readonly IBlobService _blobService;
-    private readonly PersonalVideoChannel _channel;
     private readonly ILogger<PersonalVideoService> _logger;
 
     public PersonalVideoService(
@@ -45,15 +42,13 @@ public class PersonalVideoService : IPersonalVideoService
         IFaceRecognitionService faceRecognitionService,
         IVideoConverterService videoConverterService,
         IBlobService blobService,
-        PersonalVideoChannel channel,
         ILogger<PersonalVideoService> logger)
     {
         _unitOfWork = unitOfWork;
         _faceRecognitionService = faceRecognitionService;
         _videoConverterService = videoConverterService;
-        _blobService = blobService;
-        _channel = channel;
         _logger = logger;
+        _s3Bucket = Environment.GetEnvironmentVariable("AWS_S3_BUCKET") ?? "oboxsteam-bucket";
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -132,9 +127,7 @@ public class PersonalVideoService : IPersonalVideoService
 
         await _unitOfWork.SaveChangesAsync();
 
-        // ── 6. Enqueue for background polling ────────────────────────────────
-        await _channel.Writer.WriteAsync(existing.Id);
-
+        // ── 6. Wait for AWS Webhook to notify completion ─────────────────────
         _logger.LogInformation(
             "[PersonalVideoService] Job submitted. HighlightVideoId={Id}, McJobId={McJobId}",
             existing.Id, mcJobId);
@@ -345,31 +338,23 @@ public class PersonalVideoService : IPersonalVideoService
     }
 
     /// <summary>
-    /// Converts milliseconds to AWS MediaConvert InputClipping timecode format: <c>HH:MM:SS:FF</c>
-    /// where FF is the zero-based frame number (2 digits, 00–29 at 30 fps).
-    ///
-    /// AWS MediaConvert requires exactly 2 digits for the frame field:
-    ///   pattern = ^([01][0-9]|2[0-4]):[0-5][0-9]:[0-5][0-9][:;][0-9]{2}$
-    ///
-    /// We assume 30 fps which matches the H.264 output preset used by VideoConverterService.
+    /// Converts milliseconds to AWS MediaConvert InputClipping timecode format: <c>HH:MM:SS:00</c>
+    /// using TimecodeSource.ZEROBASED and rounding to the nearest second.
     /// </summary>
-    private static string MsToTimecode(long totalMs, int fps = 30)
+    private static string MsToTimecode(long totalMs)
     {
-        // Convert ms → total frames, then decompose into HH:MM:SS:FF
-        var totalFrames = (long)Math.Round(totalMs * fps / 1000.0);
-        var frames = (int)(totalFrames % fps);
-        var totalSec = totalFrames / fps;
+        var totalSec = totalMs / 1000;
         var sec = (int)(totalSec % 60);
         var min = (int)(totalSec / 60 % 60);
         var hr = (int)(totalSec / 3_600);
-        return $"{hr:D2}:{min:D2}:{sec:D2}:{frames:D2}";
+        return $"{hr:D2}:{min:D2}:{sec:D2}:00";
     }
 
     /// <summary>
     /// Extracts the S3 bucket-relative key from a presigned or public URL.
     /// Falls back to treating the raw FileUrl as a key if parsing fails.
     /// </summary>
-    private static string? ExtractS3KeyFromUrl(string? fileUrl)
+    private string? ExtractS3KeyFromUrl(string? fileUrl)
     {
         if (string.IsNullOrWhiteSpace(fileUrl)) return null;
 
@@ -381,8 +366,8 @@ public class PersonalVideoService : IPersonalVideoService
             var path = uri.AbsolutePath.TrimStart('/');
 
             // If the path starts with the bucket name, strip it
-            if (path.StartsWith(S3Bucket + "/", StringComparison.OrdinalIgnoreCase))
-                path = path[(S3Bucket.Length + 1)..];
+            if (path.StartsWith(_s3Bucket + "/", StringComparison.OrdinalIgnoreCase))
+                path = path[(_s3Bucket.Length + 1)..];
 
             return path;
         }
