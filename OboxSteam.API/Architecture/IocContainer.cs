@@ -33,6 +33,14 @@ public static class IocContainer
         // Add HttpContextAccessor (required for ClaimsService)
         services.AddHttpContextAccessor();
 
+        // Named HttpClient used by AwsWebhookController to:
+        //   1. Confirm SNS subscriptions (SubscribeURL)
+        //   2. Fetch SNS signing certificates (SigningCertURL)
+        services.AddHttpClient("sns", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
+
         // Add Infrastructure services
         services.AddScoped<ICurrentTime, CurrentTime>();
         services.AddScoped<IClaimsService, ClaimsService>();

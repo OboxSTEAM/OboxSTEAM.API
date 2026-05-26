@@ -12,6 +12,14 @@ public class FaceRecognitionService : IFaceRecognitionService
 {
     private const string CollectionId = "oboxsteam-faces";
 
+    /// <summary>
+    /// When collapsing raw Rekognition timestamps into segments, detections within
+    /// this window are treated as part of the same continuous appearance.
+    /// Rekognition samples roughly every 1 s; 500 ms avoids splitting a single
+    /// appearance across two segments due to minor sampling jitter.
+    /// </summary>
+    private const long CollapseGapMs = 500;
+
     // Double-check lock to safely initialize the Rekognition collection once,
     // even under concurrent requests.
     private static volatile bool _collectionEnsured;
@@ -104,8 +112,11 @@ public class FaceRecognitionService : IFaceRecognitionService
 
         if (response.FaceMatches == null || !response.FaceMatches.Any())
         {
+            // Return empty list — callers decide what to do with "no match".
+            // Throwing here would force every caller into try/catch for a normal
+            // (non-exceptional) business outcome.
             _logger.LogInformation("SearchFacesAsync found no matches.");
-            throw ErrorHelper.BadRequest("No matching face found. Please ensure your face is registered and the photo is clear.");
+            return new List<FaceMatchResult>();
         }
 
         var results = response.FaceMatches
@@ -286,9 +297,8 @@ public class FaceRecognitionService : IFaceRecognitionService
         }
 
         // Collapse contiguous timestamps into segments.
-        // Rekognition samples every ~1 second; treat detections within 500 ms as the same raw segment.
-        const long CollapseGapMs = 500;
-
+        // Rekognition samples every ~1 second; treat detections within CollapseGapMs
+        // as the same continuous appearance (see class-level constant).
         rawTimestamps.Sort();
         var segments = new List<FaceTimestampSegment>();
         var segStart = rawTimestamps[0];

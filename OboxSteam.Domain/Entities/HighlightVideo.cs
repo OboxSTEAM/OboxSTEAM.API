@@ -14,8 +14,13 @@ public class HighlightVideo : BaseEntity
     /// <summary>Publicly accessible URL of the finished personal video.</summary>
     public string? VideoUrl { get; set; }
 
-    /// <summary>Legacy status field (kept for backward-compatibility).</summary>
+    /// <summary>
+    /// Legacy string status field kept for backward-compatibility with older migrations.
+    /// Do NOT write to this field in new code — use <see cref="PersonalVideoStatus"/> instead.
+    /// Reads via <see cref="StatusLabel"/> which derives from the enum.
+    /// </summary>
     [MaxLength(50)]
+    [Obsolete("Use PersonalVideoStatus enum instead. This field is kept for DB backward-compatibility only.")]
     public string? Status { get; set; }
 
     // ── Personal Video Generation pipeline ──────────────────────────────────

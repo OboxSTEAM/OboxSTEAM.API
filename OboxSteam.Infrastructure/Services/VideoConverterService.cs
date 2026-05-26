@@ -106,7 +106,9 @@ public class VideoConverterService : IVideoConverterService
     {
         var bucket = RequireEnv(EnvS3Bucket);
         var roleArn = RequireEnv(EnvRoleArn);
-        var watermarkUri = "https://oboxsteam-bucket.s3.ap-southeast-1.amazonaws.com/logo/obox-logo.png";
+        // Watermark URI is configurable via environment variable so it survives bucket/region changes.
+        var watermarkUri = Environment.GetEnvironmentVariable("AWS_WATERMARK_URI")
+            ?? "https://oboxsteam-bucket.s3.ap-southeast-1.amazonaws.com/logo/obox-logo.png";
 
         _logger.LogInformation(
             "SubmitPersonalVideoJobAsync: {ClipCount} input(s) → s3://{Bucket}/{Key}",
@@ -211,10 +213,12 @@ public class VideoConverterService : IVideoConverterService
         var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });
         var job = response.Job;
 
-        var destUri = job.Settings.OutputGroups
-            .First().OutputGroupSettings.FileGroupSettings.Destination;
-        var nameModifier = job.Settings.OutputGroups
-            .First().Outputs.First().NameModifier ?? string.Empty;
+        var outputGroup = job.Settings.OutputGroups.FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                $"MediaConvert job {jobId} has no output groups.");
+
+        var destUri = outputGroup.OutputGroupSettings.FileGroupSettings.Destination;
+        var nameModifier = outputGroup.Outputs.FirstOrDefault()?.NameModifier ?? string.Empty;
 
         string outputUri;
         if (destUri.EndsWith('/'))

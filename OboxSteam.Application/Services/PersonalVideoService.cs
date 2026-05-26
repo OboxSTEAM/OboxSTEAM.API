@@ -23,16 +23,20 @@ namespace OboxSteam.Application.Services;
 public class PersonalVideoService : IPersonalVideoService
 {
     // ── Clipping constants ───────────────────────────────────────────────────
-    /// <summary>Seconds of padding added before/after each detected segment.</summary>
+    /// <summary>Milliseconds of padding added before/after each detected face segment.</summary>
     private const long BufferMs = 2_000;
 
-    /// <summary>Adjacent segments whose gap is shorter than this are merged.</summary>
+    /// <summary>
+    /// Adjacent segments whose gap is shorter than this are merged into one.
+    /// Keeps the clip continuous when the student briefly leaves and re-enters frame.
+    /// </summary>
     private const long MergeGapMs = 1_000;
 
     private const string PersonalVideoFolder = "personal-videos";
 
     private readonly string _s3Bucket;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBlobService _blobService;
     private readonly IFaceRecognitionService _faceRecognitionService;
     private readonly IVideoConverterService _videoConverterService;
     private readonly ILogger<PersonalVideoService> _logger;
@@ -47,6 +51,7 @@ public class PersonalVideoService : IPersonalVideoService
         _unitOfWork = unitOfWork;
         _faceRecognitionService = faceRecognitionService;
         _videoConverterService = videoConverterService;
+        _blobService = blobService;
         _logger = logger;
         _s3Bucket = Environment.GetEnvironmentVariable("AWS_S3_BUCKET") ?? "oboxsteam-bucket";
     }
@@ -123,7 +128,7 @@ public class PersonalVideoService : IPersonalVideoService
         existing.PersonalVideoJobRef = mcJobId;
         existing.PersonalVideoStatus = HighlightVideoStatus.Processing;
         existing.PersonalVideoRequestedAt = DateTime.UtcNow;
-        existing.Status = "Processing";
+        // Note: do NOT set existing.Status — it is obsolete. Use PersonalVideoStatus only.
 
         await _unitOfWork.SaveChangesAsync();
 
@@ -193,9 +198,9 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] Found {Count} tagged video(s) for StudentId={StudentId}",
             taggedMedia.Count, studentId);
 
-        var clips = new List<ClipInput>();
-
-        foreach (var media in taggedMedia)
+        // Build ClipInputs in parallel — each Case 3 video requires a Rekognition API call.
+        // Running concurrently avoids sequential latency when many videos are tagged.
+        var clipTasks = taggedMedia.Select(async media =>
         {
             var s3Key = ExtractS3KeyFromUrl(media.FileUrl);
             if (string.IsNullOrEmpty(s3Key))
@@ -203,12 +208,14 @@ public class PersonalVideoService : IPersonalVideoService
                 _logger.LogWarning(
                     "[PersonalVideoService] Cannot extract S3 key from FileUrl for MediaId={MediaId}. Skipping.",
                     media.Id);
-                continue;
+                return null;
             }
 
-            var clipInput = await BuildClipInputForMediaAsync(media, s3Key, studentId);
-            clips.Add(clipInput);
-        }
+            return (ClipInput?)await BuildClipInputForMediaAsync(media, s3Key, studentId);
+        });
+
+        var clipResults = await Task.WhenAll(clipTasks);
+        var clips = clipResults.Where(c => c != null).Cast<ClipInput>().ToList();
 
         _logger.LogInformation(
             "[PersonalVideoService] BuildClipInputsAsync completed: {Count} ClipInput(s) built.",
@@ -339,11 +346,12 @@ public class PersonalVideoService : IPersonalVideoService
 
     /// <summary>
     /// Converts milliseconds to AWS MediaConvert InputClipping timecode format: <c>HH:MM:SS:00</c>
-    /// using TimecodeSource.ZEROBASED and rounding to the nearest second.
+    /// using TimecodeSource.ZEROBASED. Rounds to the nearest second.
     /// </summary>
     private static string MsToTimecode(long totalMs)
     {
-        var totalSec = totalMs / 1000;
+        // Round to nearest second (+500 before integer division).
+        var totalSec = (totalMs + 500) / 1000;
         var sec = (int)(totalSec % 60);
         var min = (int)(totalSec / 60 % 60);
         var hr = (int)(totalSec / 3_600);

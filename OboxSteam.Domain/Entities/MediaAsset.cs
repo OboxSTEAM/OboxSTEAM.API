@@ -16,7 +16,7 @@ public class MediaAsset : BaseEntity
     [MaxLength(50)]
     public string? FileType { get; set; }
 
-    [MaxLength(255)]
+    [MaxLength(512)]
     /// <summary>
     /// Multi-purpose pipeline reference for video assets. Holds different values depending on <see cref="VideoStatus"/>:
     /// <list type="bullet">
