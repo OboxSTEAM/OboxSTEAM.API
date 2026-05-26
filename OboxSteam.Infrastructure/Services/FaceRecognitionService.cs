@@ -229,7 +229,7 @@ public class FaceRecognitionService : IFaceRecognitionService
     }
 
     /// <inheritdoc />
-    public async Task<List<FaceTimestampSegment>> GetVideoFaceTimelineAsync(string jobId, Guid studentId)
+    public async Task<VideoFaceTimelineResult?> GetVideoFaceTimelineAsync(string jobId, Guid studentId)
     {
         _logger.LogInformation(
             "GetVideoFaceTimelineAsync: JobId={JobId}, StudentId={StudentId}", jobId, studentId);
@@ -237,6 +237,7 @@ public class FaceRecognitionService : IFaceRecognitionService
         // Collect all raw detection timestamps for the target student across pages.
         var rawTimestamps = new List<long>();
         string? nextToken = null;
+        bool hasOtherFaces = false;
 
         do
         {
@@ -263,25 +264,32 @@ public class FaceRecognitionService : IFaceRecognitionService
             if (response.JobStatus == VideoJobStatus.IN_PROGRESS)
             {
                 _logger.LogInformation("GetVideoFaceTimelineAsync: job {JobId} still IN_PROGRESS.", jobId);
-                return new List<FaceTimestampSegment>();
+                return null;
             }
 
             if (response.JobStatus == VideoJobStatus.FAILED)
             {
                 _logger.LogError("GetVideoFaceTimelineAsync: job {JobId} FAILED.", jobId);
-                return new List<FaceTimestampSegment>();
+                return null;
             }
 
             foreach (var person in response.Persons)
             {
-                if (person.FaceMatches == null || person.FaceMatches.Count == 0) continue;
+                bool isStudent = false;
+                if (person.FaceMatches != null && person.FaceMatches.Count > 0)
+                {
+                    isStudent = person.FaceMatches.Any(m =>
+                        Guid.TryParse(m.Face.ExternalImageId, out var uid) && uid == studentId);
+                }
 
-                // Check if any match belongs to the target student
-                var hasStudentMatch = person.FaceMatches.Any(m =>
-                    Guid.TryParse(m.Face.ExternalImageId, out var uid) && uid == studentId);
-
-                if (hasStudentMatch)
+                if (isStudent)
+                {
                     rawTimestamps.Add(person.Timestamp);
+                }
+                else
+                {
+                    hasOtherFaces = true;
+                }
             }
 
             nextToken = response.NextToken;
@@ -293,7 +301,7 @@ public class FaceRecognitionService : IFaceRecognitionService
             _logger.LogInformation(
                 "GetVideoFaceTimelineAsync: No detections for StudentId={StudentId} in JobId={JobId}",
                 studentId, jobId);
-            return new List<FaceTimestampSegment>();
+            return new VideoFaceTimelineResult(hasOtherFaces, new List<FaceTimestampSegment>());
         }
 
         // Collapse contiguous timestamps into segments.
@@ -323,7 +331,7 @@ public class FaceRecognitionService : IFaceRecognitionService
             "GetVideoFaceTimelineAsync: {Raw} raw ts → {Segs} segment(s) for StudentId={StudentId}",
             rawTimestamps.Count, segments.Count, studentId);
 
-        return segments;
+        return new VideoFaceTimelineResult(hasOtherFaces, segments);
     }
 
     // ── Helpers ──────────────────────────────────────────

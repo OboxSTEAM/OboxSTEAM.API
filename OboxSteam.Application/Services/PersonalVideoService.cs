@@ -231,32 +231,6 @@ public class PersonalVideoService : IPersonalVideoService
     private async Task<ClipInput> BuildClipInputForMediaAsync(
         MediaAsset media, string s3Key, Guid studentId)
     {
-        var otherFaces = media.MediaTags
-            .Where(t => t.StudentId != studentId)
-            .ToList();
-
-        // ── Case 1: No faces detected at all (scene-only / Fallback) ─────────
-        // A video with zero MediaTags has scene-only content. Since it was manually
-        // tagged for this student, include the whole video.
-        if (!media.MediaTags.Any())
-        {
-            _logger.LogInformation(
-                "[PersonalVideoService] Case 1 (no faces) → full video. MediaId={MediaId}", media.Id);
-            return new ClipInput(s3Key, new List<TimeClip>());
-        }
-
-        // ── Case 2: Only this student's face in the video ────────────────────
-        if (!otherFaces.Any())
-        {
-            _logger.LogInformation(
-                "[PersonalVideoService] Case 2 (sole face) → full video. MediaId={MediaId}", media.Id);
-            return new ClipInput(s3Key, new List<TimeClip>());
-        }
-
-        // ── Case 3: Multiple people — extract student's timeline ──────────────
-        _logger.LogInformation(
-            "[PersonalVideoService] Case 3 (mixed faces) → extracting timeline. MediaId={MediaId}", media.Id);
-
         if (string.IsNullOrEmpty(media.VideoJobRef))
         {
             _logger.LogWarning(
@@ -265,10 +239,10 @@ public class PersonalVideoService : IPersonalVideoService
             return new ClipInput(s3Key, new List<TimeClip>());
         }
 
-        List<FaceTimestampSegment> rawSegments;
+        VideoFaceTimelineResult? timelineResult;
         try
         {
-            rawSegments = await _faceRecognitionService
+            timelineResult = await _faceRecognitionService
                 .GetVideoFaceTimelineAsync(media.VideoJobRef, studentId);
         }
         catch (Exception ex)
@@ -279,22 +253,41 @@ public class PersonalVideoService : IPersonalVideoService
             return new ClipInput(s3Key, new List<TimeClip>());
         }
 
-        // Fallback: AI could not pinpoint the student's face
-        if (rawSegments.Count == 0)
+        if (timelineResult == null)
         {
             _logger.LogInformation(
-                "[PersonalVideoService] No segments found (AI fallback) → full video. MediaId={MediaId}", media.Id);
+                "[PersonalVideoService] Job IN_PROGRESS or FAILED -> fallback to full video. MediaId={MediaId}", media.Id);
             return new ClipInput(s3Key, new List<TimeClip>());
         }
 
-        var mergedSegments = ApplyBufferAndMerge(rawSegments);
+        // ── Case 1: No student face detected (AI fallback / scene-only) ─────────
+        if (timelineResult.Segments.Count == 0)
+        {
+            _logger.LogInformation(
+                "[PersonalVideoService] Case 1 (no student face detected by AI) → full video. MediaId={MediaId}", media.Id);
+            return new ClipInput(s3Key, new List<TimeClip>());
+        }
+
+        // ── Case 2: Only this student's face in the video (AI confirmed) ────────────
+        if (!timelineResult.HasOtherFaces)
+        {
+            _logger.LogInformation(
+                "[PersonalVideoService] Case 2 (sole face confirmed by AI) → full video. MediaId={MediaId}", media.Id);
+            return new ClipInput(s3Key, new List<TimeClip>());
+        }
+
+        // ── Case 3 & 4: Multiple people — extract student's timeline ──────────────
+        _logger.LogInformation(
+            "[PersonalVideoService] Case 3 & 4 (mixed faces confirmed by AI) → extracting timeline. MediaId={MediaId}", media.Id);
+
+        var mergedSegments = ApplyBufferAndMerge(timelineResult.Segments);
         var timeClips = mergedSegments.Select(s => new TimeClip(
             MsToTimecode(s.StartMs),
             MsToTimecode(s.EndMs))).ToList();
 
         _logger.LogInformation(
-            "[PersonalVideoService] Case 3: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}",
-            rawSegments.Count, mergedSegments.Count, media.Id);
+            "[PersonalVideoService] Case 3/4: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}",
+            timelineResult.Segments.Count, mergedSegments.Count, media.Id);
 
         return new ClipInput(s3Key, timeClips);
     }

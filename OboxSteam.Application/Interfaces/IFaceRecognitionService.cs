@@ -37,12 +37,17 @@ public interface IFaceRecognitionService
     /// </summary>
     /// <param name="jobId">Rekognition video job ID (phải ở trạng thái SUCCEEDED).</param>
     /// <param name="studentId">UserId của sinh viên cần tìm timeline.</param>
-    Task<List<FaceTimestampSegment>> GetVideoFaceTimelineAsync(string jobId, Guid studentId);
+    Task<VideoFaceTimelineResult?> GetVideoFaceTimelineAsync(string jobId, Guid studentId);
 }
 
 public record FaceMatchResult(Guid UserId, string FaceId, float Confidence);
 
 public record VideoFaceSearchResult(string JobStatus, List<FaceMatchResult> Matches);
+
+/// <summary>
+/// Kết quả trả về sau khi parse timeline từ Rekognition
+/// </summary>
+public record VideoFaceTimelineResult(bool HasOtherFaces, List<FaceTimestampSegment> Segments);
 
 /// <summary>
 /// Một đoạn thời gian (ms) mà khuôn mặt sinh viên xuất hiện liên tục trong video.
