@@ -39,7 +39,20 @@ public class ParentService : IParentService
         var parentEmail = dto.ParentEmail.ToLower();
         _logger.LogInformation("Student {StudentId} is requesting a link with parent {ParentEmail}.", studentId, parentEmail);
 
+        // Check if student already has 2 parent links
+        var activeLinks = await _unitOfWork.ParentStudents.GetAllAsync(ps => ps.StudentId == studentId && !ps.IsDeleted);
+
         var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == parentEmail && u.Role == RoleType.Parent);
+
+        if (activeLinks.Count >= 2)
+        {
+            var isAlreadyLinked = parent != null && activeLinks.Any(ps => ps.ParentId == parent.Id);
+            if (!isAlreadyLinked)
+            {
+                _logger.LogWarning("Student {StudentId} attempted to link with a 3rd parent {ParentEmail}.", studentId, parentEmail);
+                throw ErrorHelper.BadRequest("Each student is only allowed to link with a maximum of 2 parent accounts.");
+            }
+        }
 
         if (parent == null)
         {
@@ -66,9 +79,34 @@ public class ParentService : IParentService
 
             _logger.LogInformation("Created shadow account and pending link for parent {ParentEmail} (ParentId: {ParentId}).", parentEmail, parent.Id);
 
-            // Sinh Magic Token vì đây là lần đầu (nhúng kèm StudentId để duyệt)
-            var magicToken = JwtUtils.GenerateActionToken(parent.Id, "MagicLink", studentId.ToString(), configuration, TimeSpan.FromHours(24));
-            var loginUrl = $"{configuration["APP_BASE_URL"]}/magic-login?token={magicToken}";
+            // Vô hiệu hóa các OTP MagicLink/ApproveLink cũ của email này nếu có
+            var previousOtps = await _unitOfWork.OtpStorages.GetAllAsync(o =>
+                o.Target == parentEmail &&
+                (o.Purpose == OtpPurpose.MagicLink || o.Purpose == OtpPurpose.ApproveLink) &&
+                !o.IsUsed);
+
+            foreach (var previousOtp in previousOtps)
+            {
+                previousOtp.IsUsed = true;
+                await _unitOfWork.OtpStorages.Update(previousOtp);
+            }
+
+            // Sinh Token ngẫu nhiên (10 ký tự)
+            var token = OtpGenerator.GenerateAlphanumeric(10);
+            var otp = new OtpStorage
+            {
+                Target = parentEmail,
+                OtpCode = token,
+                ExpiredAt = DateTime.UtcNow.AddHours(24),
+                IsUsed = false,
+                Purpose = OtpPurpose.MagicLink
+            };
+
+            await _unitOfWork.OtpStorages.AddAsync(otp);
+            await _unitOfWork.SaveChangesAsync();
+
+            var appBaseUrl = (configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
+            var loginUrl = $"{appBaseUrl}/magic-login?email={Uri.EscapeDataString(parentEmail)}&studentId={studentId}&token={token}";
 
             await _emailService.SendMagicLinkEmailAsync(new ActionEmailRequestDto { To = parentEmail, Link = loginUrl });
             _logger.LogInformation("Sent magic login link email to new parent {ParentEmail}.", parentEmail);
@@ -93,25 +131,46 @@ public class ParentService : IParentService
             await _unitOfWork.SaveChangesAsync();
         }
 
-        if (string.IsNullOrEmpty(parent.PasswordHash))
+        // Vô hiệu hóa các OTP MagicLink/ApproveLink cũ của email này nếu có
+        var existingOtps = await _unitOfWork.OtpStorages.GetAllAsync(o =>
+            o.Target == parentEmail &&
+            (o.Purpose == OtpPurpose.MagicLink || o.Purpose == OtpPurpose.ApproveLink) &&
+            !o.IsUsed);
+
+        foreach (var previousOtp in existingOtps)
+        {
+            previousOtp.IsUsed = true;
+            await _unitOfWork.OtpStorages.Update(previousOtp);
+        }
+
+        // Sinh Token ngẫu nhiên (10 ký tự)
+        var parentToken = OtpGenerator.GenerateAlphanumeric(10);
+        var purpose = string.IsNullOrEmpty(parent.PasswordHash) ? OtpPurpose.MagicLink : OtpPurpose.ApproveLink;
+        var parentOtp = new OtpStorage
+        {
+            Target = parentEmail,
+            OtpCode = parentToken,
+            ExpiredAt = DateTime.UtcNow.AddHours(24),
+            IsUsed = false,
+            Purpose = purpose
+        };
+
+        await _unitOfWork.OtpStorages.AddAsync(parentOtp);
+        await _unitOfWork.SaveChangesAsync();
+
+        var baseAppUrl = (configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
+
+        if (purpose == OtpPurpose.MagicLink)
         {
             _logger.LogInformation("Parent {ParentEmail} has a shadow account (no password). Sending magic link.", parentEmail);
-            
-            // Tài khoản ngầm (Shadow) -> Yêu cầu đăng nhập Magic Link
-            var magicToken = JwtUtils.GenerateActionToken(parent.Id, "MagicLink", studentId.ToString(), configuration, TimeSpan.FromHours(24));
-            var loginUrl = $"{configuration["APP_BASE_URL"]}/magic-login?token={magicToken}";
-
+            var loginUrl = $"{baseAppUrl}/magic-login?email={Uri.EscapeDataString(parentEmail)}&studentId={studentId}&token={parentToken}";
             await _emailService.SendMagicLinkEmailAsync(new ActionEmailRequestDto { To = parentEmail, Link = loginUrl });
             _logger.LogInformation("Sent magic login link email to shadow parent {ParentEmail}.", parentEmail);
         }
         else
         {
             _logger.LogInformation("Parent {ParentEmail} has a completed account. Sending approval link.", parentEmail);
-            
-            // Phụ huynh đã có tài khoản chuẩn => Gửi ApproveLink
-            var approveToken = JwtUtils.GenerateActionToken(parent.Id, "ApproveLink", studentId.ToString(), configuration, TimeSpan.FromHours(24));
-            var approveUrl = $"{configuration["APP_BASE_URL"]}/approve-link?token={approveToken}";
-
+            var approveUrl = $"{baseAppUrl}/approve-link?email={Uri.EscapeDataString(parentEmail)}&studentId={studentId}&token={parentToken}";
             await _emailService.SendApproveLinkEmailAsync(new ActionEmailRequestDto { To = parentEmail, Link = approveUrl });
             _logger.LogInformation("Sent approval link email to registered parent {ParentEmail}.", parentEmail);
         }
@@ -121,46 +180,47 @@ public class ParentService : IParentService
 
     public async Task<LoginResponseDto> MagicLoginAsync(MagicLoginDto dto, IConfiguration configuration)
     {
-        _logger.LogInformation("Magic login attempt initiated.");
+        _logger.LogInformation("Magic login attempt initiated for email {Email}.", dto.Email);
         
-        var principal = JwtUtils.ValidateActionToken(dto.Token, configuration);
-        if (principal.FindFirst("Purpose")?.Value != "MagicLink")
+        // Find and validate the OTP in the database
+        var otp = await _unitOfWork.OtpStorages.FirstOrDefaultAsync(o => 
+            o.Target == dto.Email && 
+            o.OtpCode == dto.Token && 
+            o.Purpose == OtpPurpose.MagicLink && 
+            !o.IsUsed);
+
+        if (otp == null || otp.ExpiredAt < DateTime.UtcNow)
         {
-            _logger.LogWarning("Magic login failed: Invalid token purpose.");
-            throw ErrorHelper.BadRequest("Invalid token for login.");
+            _logger.LogWarning("Magic login failed: Invalid or expired token.");
+            throw ErrorHelper.BadRequest("Invalid or expired magic link.");
         }
 
-        var userIdStr = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? principal.FindFirst("nameid")?.Value ?? principal.FindFirst("sub")?.Value;
-        var studentIdStr = principal.FindFirst("ExtraData")?.Value;
+        // Mark OTP as used
+        otp.IsUsed = true;
+        await _unitOfWork.OtpStorages.Update(otp);
 
-        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var parentId))
-        {
-            _logger.LogWarning("Magic login failed: Token does not contain valid User ID.");
-            throw ErrorHelper.BadRequest("Token does not contain User information.");
-        }
-
-        var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == parentId && !u.IsDeleted);
+        var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == dto.Email && !u.IsDeleted);
         if (parent == null)
         {
-            _logger.LogWarning("Magic login failed: Account for Parent ID {ParentId} not found or is deleted.", parentId);
+            _logger.LogWarning("Magic login failed: Account for Parent Email {Email} not found.", dto.Email);
             throw ErrorHelper.NotFound("Account does not exist.");
         }
         if (parent.Status == AccountStatus.Locked)
         {
-            _logger.LogWarning("Magic login failed: Parent ID {ParentId} is locked.", parentId);
+            _logger.LogWarning("Magic login failed: Parent ID {ParentId} is locked.", parent.Id);
             throw ErrorHelper.Forbidden("Account has been locked.");
         }
 
-        // Bật cờ xác nhận liên kết cho bé thứ 1
-        if (!string.IsNullOrEmpty(studentIdStr) && Guid.TryParse(studentIdStr, out var studentId))
+        // Confirm association with StudentId
+        if (dto.StudentId != Guid.Empty)
         {
-            _logger.LogInformation("Confirming link association between Parent ID {ParentId} and Student ID {StudentId} via magic login.", parent.Id, studentId);
-            var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x => x.ParentId == parent.Id && x.StudentId == studentId);
+            _logger.LogInformation("Confirming link association between Parent ID {ParentId} and Student ID {StudentId} via magic login.", parent.Id, dto.StudentId);
+            var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x => x.ParentId == parent.Id && x.StudentId == dto.StudentId);
             if (ps != null && !ps.IsVerified)
             {
                 ps.IsVerified = true;
                 await _unitOfWork.ParentStudents.Update(ps);
-                _logger.LogInformation("Link verified successfully between Parent {ParentId} and Student {StudentId}.", parent.Id, studentId);
+                _logger.LogInformation("Link verified successfully between Parent {ParentId} and Student {StudentId}.", parent.Id, dto.StudentId);
             }
         }
         await _unitOfWork.SaveChangesAsync();
@@ -210,49 +270,44 @@ public class ParentService : IParentService
 
         _logger.LogInformation("Approve link requested by User ID {CurrentUserId}.", currentUserId);
 
-        var principal = JwtUtils.ValidateActionToken(dto.Token, configuration);
-        if (principal.FindFirst("Purpose")?.Value != "ApproveLink")
+        var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == currentUserId && !u.IsDeleted);
+        if (parent == null || parent.Role != RoleType.Parent)
         {
-            _logger.LogWarning("Approve link failed: Invalid token purpose.");
-            throw ErrorHelper.BadRequest("Invalid token.");
+            _logger.LogWarning("Approve link failed: User {UserId} is not a valid active Parent.", currentUserId);
+            throw ErrorHelper.Forbidden("Only registered parents can approve associations.");
         }
 
-        var userIdStr = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? principal.FindFirst("nameid")?.Value ?? principal.FindFirst("sub")?.Value;
-        var studentIdStr = principal.FindFirst("ExtraData")?.Value;
-        
-        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var parentId))
+        // Find and validate the OTP in the database
+        var otp = await _unitOfWork.OtpStorages.FirstOrDefaultAsync(o => 
+            o.Target == parent.Email && 
+            o.OtpCode == dto.Token && 
+            o.Purpose == OtpPurpose.ApproveLink && 
+            !o.IsUsed);
+
+        if (otp == null || otp.ExpiredAt < DateTime.UtcNow)
         {
-            _logger.LogWarning("Approve link failed: Token does not contain valid User ID.");
-            throw ErrorHelper.BadRequest("Invalid token format.");
+            _logger.LogWarning("Approve link failed: Invalid or expired token.");
+            throw ErrorHelper.BadRequest("Invalid or expired link.");
         }
 
-        if (currentUserId != parentId)
-        {
-            _logger.LogWarning("Approve link forbidden: Current User ID {CurrentUserId} does not match token Parent ID {ParentId}.", currentUserId, parentId);
-            throw ErrorHelper.Forbidden("You do not have permission to approve this association.");
-        }
-
-        var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == parentId && !u.IsDeleted);
-        if (parent == null)
-        {
-            _logger.LogWarning("Approve link failed: Parent ID {ParentId} not found or deleted.", parentId);
-            throw ErrorHelper.NotFound("Account does not exist.");
-        }
+        // Mark OTP as used
+        otp.IsUsed = true;
+        await _unitOfWork.OtpStorages.Update(otp);
 
         // Bật cờ xác nhận cho link
-        if (!string.IsNullOrEmpty(studentIdStr) && Guid.TryParse(studentIdStr, out var studentId))
+        if (dto.StudentId != Guid.Empty)
         {
-            _logger.LogInformation("Verifying link between Parent ID {ParentId} and Student ID {StudentId} via manual approval.", parent.Id, studentId);
-            var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x => x.ParentId == parent.Id && x.StudentId == studentId);
+            _logger.LogInformation("Verifying link between Parent ID {ParentId} and Student ID {StudentId} via manual approval.", parent.Id, dto.StudentId);
+            var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x => x.ParentId == parent.Id && x.StudentId == dto.StudentId);
             if (ps != null && !ps.IsVerified)
             {
                 ps.IsVerified = true;
                 await _unitOfWork.ParentStudents.Update(ps);
-                await _unitOfWork.SaveChangesAsync();
-                _logger.LogInformation("Link verified successfully between Parent {ParentId} and Student {StudentId}.", parent.Id, studentId);
+                _logger.LogInformation("Link verified successfully between Parent {ParentId} and Student {StudentId}.", parent.Id, dto.StudentId);
             }
         }
 
+        await _unitOfWork.SaveChangesAsync();
         return true;
     }
 
