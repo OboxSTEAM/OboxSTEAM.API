@@ -39,7 +39,13 @@ public class AuthService : IAuthService
     /// <summary>Register a new user.</summary>
     public async Task<UserDto?> RegisterUserAsync(UserRegistrationDto registrationDto)
     {
-        _logger.LogInformation("Start registration for {Email}", registrationDto.Email);
+        _logger.LogInformation("Start registration for {Email} with role {Role}", registrationDto.Email, registrationDto.Role);
+
+        if (registrationDto.Role != RoleType.Student && registrationDto.Role != RoleType.Parent)
+        {
+            _logger.LogWarning("Invalid registration role attempt: {Role}", registrationDto.Role);
+            throw ErrorHelper.BadRequest("Only Student and Parent roles are allowed for registration.");
+        }
 
         if (await UserExistsAsync(registrationDto.Email))
         {
@@ -49,21 +55,24 @@ public class AuthService : IAuthService
 
         var hashedPassword = new PasswordHasher().HashPassword(registrationDto.Password);
 
+        var codePrefix = registrationDto.Role == RoleType.Student ? "STD" : "PRT";
+        var userCode = $"{codePrefix}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+
         var user = new User
         {
-            Code = $"USR-{Guid.NewGuid().ToString("N")[..6].ToUpper()}",
+            Code = userCode,
             Email = registrationDto.Email,
             FullName = registrationDto.FullName,
             Phone = registrationDto.Phone,
             PasswordHash = hashedPassword,
-            Role = RoleType.Student,
+            Role = registrationDto.Role,
             IsEmailVerified = false
         };
 
         await _unitOfWork.Users.AddAsync(user);
         await _unitOfWork.SaveChangesAsync();
 
-        _logger.LogInformation("User {Email} created successfully.", user.Email);
+        _logger.LogInformation("User {Email} created successfully with role {Role}.", user.Email, user.Role);
 
         await GenerateAndSendOtpAsync(user, OtpPurpose.Register);
 

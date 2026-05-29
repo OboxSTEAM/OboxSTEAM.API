@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.AuthDTO;
 
@@ -18,4 +19,7 @@ public class UserRegistrationDto
 
     [MaxLength(20)]
     public string? Phone { get; set; }
+
+    [Required(ErrorMessage = "Role is required")]
+    public RoleType Role { get; set; }
 }
