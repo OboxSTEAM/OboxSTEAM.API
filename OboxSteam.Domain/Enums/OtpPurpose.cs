@@ -4,5 +4,7 @@ public enum OtpPurpose
 {
     Register,
     ForgotPassword,
-    TwoFactor
+    TwoFactor,
+    MagicLink,
+    ApproveLink
 }
