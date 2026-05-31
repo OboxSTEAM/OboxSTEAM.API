@@ -69,6 +69,16 @@ public class AuthService : IAuthService
             IsEmailVerified = false
         };
 
+        if (registrationDto.Role == RoleType.Student)
+        {
+            user.StudentProfile = new StudentProfile
+            {
+                Id = Guid.NewGuid(),
+                CreatedAt = DateTime.UtcNow,
+                IsDeleted = false
+            };
+        }
+
         await _unitOfWork.Users.AddAsync(user);
         await _unitOfWork.SaveChangesAsync();
 
@@ -338,8 +348,7 @@ public class AuthService : IAuthService
 
     private async Task<bool> UserExistsAsync(string email)
     {
-        var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
-        return user != null;
+        return await _unitOfWork.Users.GetQueryable().AnyAsync(u => u.Email == email)
     }
 
     private async Task GenerateAndSendOtpAsync(User user, OtpPurpose purpose)
