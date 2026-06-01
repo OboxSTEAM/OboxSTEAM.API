@@ -1,4 +1,5 @@
 
+using Amazon.BedrockRuntime;
 using Amazon.MediaConvert;
 using Amazon.Rekognition;
 using Amazon.S3;
@@ -67,6 +68,7 @@ public static class IocContainer
         services.SetupReSendService(configuration);
         services.SetupAwsRekognition();
         services.SetupAwsMediaConvert();
+        services.SetupAwsBedrock();
 
         return services;
     }
@@ -167,6 +169,7 @@ public static class IocContainer
         services.AddScoped<IExpertService, ExpertService>();
         services.AddScoped<IParentService, ParentService>();
         services.AddScoped<IPersonalVideoService, PersonalVideoService>();
+        services.AddScoped<IStrengthMatchService, BedrockStrengthMatchService>();
         return services;
     }
 
@@ -200,6 +203,24 @@ public static class IocContainer
                 {
                     ServiceURL = endpoint
                 }));
+
+        return services;
+    }
+
+    public static IServiceCollection SetupAwsBedrock(this IServiceCollection services)
+    {
+        var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY")
+            ?? throw new InvalidOperationException("AWS_ACCESS_KEY not found in environment variables.");
+        var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_KEY")
+            ?? throw new InvalidOperationException("AWS_SECRET_KEY not found in environment variables.");
+        var region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
+
+        // Singleton: reuses the underlying HTTP connection pool for lower latency.
+        services.AddSingleton<IAmazonBedrockRuntime>(_ =>
+            new AmazonBedrockRuntimeClient(
+                accessKey,
+                secretKey,
+                Amazon.RegionEndpoint.GetBySystemName(region)));
 
         return services;
     }

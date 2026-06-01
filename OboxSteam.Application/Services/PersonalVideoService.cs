@@ -19,6 +19,11 @@ namespace OboxSteam.Application.Services;
 ///             using 3-second buffers and merging gaps shorter than 3 seconds.
 ///   Fallback — Timeline extraction returned no segments for the student
 ///              (AI could not pinpoint the face) → include ENTIRE video.
+///
+/// Strengths Filtering (optional — triggered when caller supplies a strength description):
+///   After building face segments, cross-references them with the Rekognition Label Detection
+///   timeline via Claude (Bedrock). Only segments where the student is performing a matched
+///   strength are kept. If no match is found across all videos a BadRequest is thrown.
 /// </summary>
 public class PersonalVideoService : IPersonalVideoService
 {
@@ -36,22 +41,22 @@ public class PersonalVideoService : IPersonalVideoService
 
     private readonly string _s3Bucket;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IBlobService _blobService;
     private readonly IFaceRecognitionService _faceRecognitionService;
     private readonly IVideoConverterService _videoConverterService;
+    private readonly IStrengthMatchService _strengthMatchService;
     private readonly ILogger<PersonalVideoService> _logger;
 
     public PersonalVideoService(
         IUnitOfWork unitOfWork,
         IFaceRecognitionService faceRecognitionService,
         IVideoConverterService videoConverterService,
-        IBlobService blobService,
+        IStrengthMatchService strengthMatchService,
         ILogger<PersonalVideoService> logger)
     {
         _unitOfWork = unitOfWork;
         _faceRecognitionService = faceRecognitionService;
         _videoConverterService = videoConverterService;
-        _blobService = blobService;
+        _strengthMatchService = strengthMatchService;
         _logger = logger;
         _s3Bucket = Environment.GetEnvironmentVariable("AWS_S3_BUCKET") ?? "oboxsteam-bucket";
     }
@@ -61,7 +66,8 @@ public class PersonalVideoService : IPersonalVideoService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<HighlightVideoDto> TriggerPersonalVideoGenerationAsync(Guid programId, Guid studentId)
+    public async Task<HighlightVideoDto> TriggerPersonalVideoGenerationAsync(
+        Guid programId, Guid studentId, string? strengthDescription = null)
     {
         _logger.LogInformation(
             "[PersonalVideoService] TriggerPersonalVideoGenerationAsync: ProgramId={ProgramId}, StudentId={StudentId}",
@@ -89,11 +95,16 @@ public class PersonalVideoService : IPersonalVideoService
         }
 
         // ── 3. Collect all tagged, fully-processed videos in this Program ────
-        var clipInputs = await BuildClipInputsAsync(programId, studentId);
+        var clipInputs = await BuildClipInputsAsync(programId, studentId, strengthDescription);
 
         if (clipInputs.Count == 0)
-            throw ErrorHelper.BadRequest(
-                "No processed video assets tagged for this student were found in the program.");
+        {
+            var reason = !string.IsNullOrWhiteSpace(strengthDescription)
+                ? $"No video segments matched the specified strengths: '{strengthDescription}'. " +
+                  "Ensure the student's strengths are visible in the tagged videos and label detection has completed."
+                : "No processed video assets tagged for this student were found in the program.";
+            throw ErrorHelper.BadRequest(reason);
+        }
 
         // ── 4. Submit MediaConvert job ───────────────────────────────────────
         var outputKey = $"{PersonalVideoFolder}/{studentId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
@@ -158,8 +169,11 @@ public class PersonalVideoService : IPersonalVideoService
     /// <c>TaggingComplete</c> video assets that have a <see cref="MediaTag"/> for
     /// <paramref name="studentId"/>, then applies the Logic Core rules to build the
     /// ordered list of <see cref="ClipInput"/> objects for the MediaConvert job.
+    /// When <paramref name="strengthDescription"/> is provided, each video's face segments are
+    /// additionally filtered via Claude (Bedrock) against the label detection timeline.
     /// </summary>
-    private async Task<List<ClipInput>> BuildClipInputsAsync(Guid programId, Guid studentId)
+    private async Task<List<ClipInput>> BuildClipInputsAsync(
+        Guid programId, Guid studentId, string? strengthDescription = null)
     {
         _logger.LogInformation(
             "[PersonalVideoService] BuildClipInputsAsync: ProgramId={ProgramId}, StudentId={StudentId}",
@@ -211,7 +225,7 @@ public class PersonalVideoService : IPersonalVideoService
                 return null;
             }
 
-            return (ClipInput?)await BuildClipInputForMediaAsync(media, s3Key, studentId);
+            return (ClipInput?)await BuildClipInputForMediaAsync(media, s3Key, studentId, strengthDescription);
         });
 
         var clipResults = await Task.WhenAll(clipTasks);
@@ -227,14 +241,18 @@ public class PersonalVideoService : IPersonalVideoService
     /// <summary>
     /// Applies Logic Core rules to a single <see cref="MediaAsset"/> and returns the
     /// corresponding <see cref="ClipInput"/> (with or without <see cref="TimeClip"/>s).
+    /// When <paramref name="strengthDescription"/> is provided, face segments are cross-referenced
+    /// against the Label Detection timeline via Claude (Bedrock) before being used as clips.
+    /// Returns <c>null</c> when strengths filtering yields no matched segments for this video
+    /// (the video is simply skipped — other videos in the program may still contribute).
     /// </summary>
-    private async Task<ClipInput> BuildClipInputForMediaAsync(
-        MediaAsset media, string s3Key, Guid studentId)
+    private async Task<ClipInput?> BuildClipInputForMediaAsync(
+        MediaAsset media, string s3Key, Guid studentId, string? strengthDescription = null)
     {
-        if (string.IsNullOrEmpty(media.VideoJobRef))
+        if (string.IsNullOrEmpty(media.FaceSearchJobId))
         {
             _logger.LogWarning(
-                "[PersonalVideoService] No Rekognition JobRef for MediaId={MediaId}. Using full video (Fallback).",
+                "[PersonalVideoService] No Rekognition FaceSearchJobId for MediaId={MediaId}. Using full video (Fallback).",
                 media.Id);
             return new ClipInput(s3Key, new List<TimeClip>());
         }
@@ -243,7 +261,7 @@ public class PersonalVideoService : IPersonalVideoService
         try
         {
             timelineResult = await _faceRecognitionService
-                .GetVideoFaceTimelineAsync(media.VideoJobRef, studentId);
+                .GetVideoFaceTimelineAsync(media.FaceSearchJobId, studentId);
         }
         catch (Exception ex)
         {
@@ -280,17 +298,121 @@ public class PersonalVideoService : IPersonalVideoService
         _logger.LogInformation(
             "[PersonalVideoService] Case 3 & 4 (mixed faces confirmed by AI) → extracting timeline. MediaId={MediaId}", media.Id);
 
-        var mergedSegments = ApplyBufferAndMerge(timelineResult.Segments);
+        var faceSegments = timelineResult.Segments;
+
+        // ── Strengths Filtering (optional) ────────────────────────────────────────
+        if (!string.IsNullOrWhiteSpace(strengthDescription))
+        {
+            var filteredClips = await ApplyStrengthsFilterAsync(media, s3Key, faceSegments, strengthDescription);
+            // null  → label data unavailable, fall back to face-only for this video.
+            // empty → strengths checked but nothing matched, skip this video entirely.
+            if (filteredClips != null)
+                return filteredClips.Clips.Count == 0 ? null : filteredClips;
+
+            _logger.LogWarning(
+                "[PersonalVideoService] Strengths filter fallback → face-only for MediaId={MediaId}", media.Id);
+        }
+
+        // Standard face-timeline path (no strengths OR fallback from strengths filter)
+        var mergedSegments = ApplyBufferAndMerge(faceSegments);
         var timeClips = mergedSegments.Select(s => new TimeClip(
             MsToTimecode(s.StartMs),
             MsToTimecode(s.EndMs))).ToList();
 
         _logger.LogInformation(
             "[PersonalVideoService] Case 3/4: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}",
-            timelineResult.Segments.Count, mergedSegments.Count, media.Id);
+            faceSegments.Count, mergedSegments.Count, media.Id);
 
         return new ClipInput(s3Key, timeClips);
     }
+
+    /// <summary>
+    /// Loads the Label Detection timeline for <paramref name="media"/> then calls
+    /// <see cref="IStrengthMatchService.MatchStrengthsAsync"/> to obtain strength-filtered clips.
+    /// </summary>
+    /// <returns>
+    /// A <see cref="ClipInput"/> whose <c>Clips</c> may be empty (no match) or populated (matched).
+    /// Returns <c>null</c> when label data is unavailable — caller should fall back to face-only.
+    /// </returns>
+    private async Task<ClipInput?> ApplyStrengthsFilterAsync(
+        MediaAsset media, string s3Key,
+        IList<FaceTimestampSegment> faceSegments,
+        string strengthDescription)
+    {
+        if (string.IsNullOrEmpty(media.LabelJobRef))
+        {
+            _logger.LogWarning(
+                "[PersonalVideoService] LabelJobRef is null for MediaId={MediaId}. " +
+                "Label Detection was not triggered or video is still processing. Falling back to face-only.",
+                media.Id);
+            return null;
+        }
+
+        List<LabelDetectionEntry>? labelTimeline;
+        try
+        {
+            labelTimeline = await _faceRecognitionService
+                .GetLabelDetectionResultsAsync(media.LabelJobRef);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[PersonalVideoService] GetLabelDetectionResultsAsync failed for MediaId={MediaId}. Falling back.",
+                media.Id);
+            return null;
+        }
+
+        if (labelTimeline == null)
+        {
+            // IN_PROGRESS — label job not done yet
+            _logger.LogWarning(
+                "[PersonalVideoService] Label Detection still IN_PROGRESS for MediaId={MediaId}. Falling back.",
+                media.Id);
+            return null;
+        }
+
+        if (labelTimeline.Count == 0)
+        {
+            _logger.LogWarning(
+                "[PersonalVideoService] Label Detection returned 0 labels for MediaId={MediaId}. Skipping video.",
+                media.Id);
+            return new ClipInput(s3Key, new List<TimeClip>()); // empty → skipped by caller
+        }
+
+        // Cross-reference via Claude (Bedrock Converse API + Tool Use)
+        StrengthMatchResult matchResult;
+        try
+        {
+            matchResult = await _strengthMatchService.MatchStrengthsAsync(faceSegments, labelTimeline, strengthDescription);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[PersonalVideoService] Claude strength matching failed for MediaId={MediaId}. Falling back.",
+                media.Id);
+            return null;
+        }
+
+        if (matchResult.MatchedSegments.Count == 0)
+        {
+            _logger.LogInformation(
+                "[PersonalVideoService] No strength matches for MediaId={MediaId}. Reasoning: {Reasoning}",
+                media.Id, matchResult.Reasoning);
+            return new ClipInput(s3Key, new List<TimeClip>()); // empty → skipped by caller
+        }
+
+        // MatchedSegments are already sorted by score desc from BedrockStrengthMatchService
+        var timeClips = matchResult.MatchedSegments
+            .Select(seg => new TimeClip(MsToTimecode(seg.StartMs), MsToTimecode(seg.EndMs)))
+            .ToList();
+
+        _logger.LogInformation(
+            "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Reasoning: {Reasoning}",
+            timeClips.Count, media.Id, matchResult.Reasoning);
+
+        return new ClipInput(s3Key, timeClips);
+    }
+
 
     // ─────────────────────────────────────────────────────────────────────────
     // Segment processing helpers

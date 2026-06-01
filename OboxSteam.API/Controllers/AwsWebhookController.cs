@@ -299,10 +299,9 @@ public class AwsWebhookController : ControllerBase
             return;
         }
 
-        // 2. Check MediaAsset (VideoJobRef == "mc:{jobId}")
-        var mcRef = $"mc:{jobId}";
+        // 2. Check MediaAsset
         var mediaAsset = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
-            m => m.VideoJobRef == mcRef && !m.IsDeleted);
+            m => m.MediaConvertJobId == jobId && !m.IsDeleted);
 
         if (mediaAsset != null)
         {
@@ -331,7 +330,7 @@ public class AwsWebhookController : ControllerBase
             "Processing Rekognition Webhook JobId: {JobId}, Success: {Success}", jobId, isSuccess);
 
         var mediaAsset = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
-            m => m.VideoJobRef == jobId && !m.IsDeleted);
+            m => m.FaceSearchJobId == jobId && !m.IsDeleted);
 
         if (mediaAsset != null)
         {

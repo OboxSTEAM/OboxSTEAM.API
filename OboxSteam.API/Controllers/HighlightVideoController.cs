@@ -7,6 +7,20 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace OboxSteam.API.Controllers;
 
 /// <summary>
+/// Request body for triggering highlight video generation.
+/// All fields are optional — omitting the body entirely uses legacy face-only behavior.
+/// </summary>
+public record TriggerGenerationRequest
+{
+    /// <summary>
+    /// Optional description of the student's strengths used to filter video segments
+    /// by semantic matching. (e.g. "Sinh viên có thế mạnh trong thuyết trình và đánh cờ").
+    /// When null or empty, the standard face-timeline-only clipping is used.
+    /// </summary>
+    public string? StrengthDescription { get; init; }
+}
+
+/// <summary>
 /// Manages personal highlight video generation for a student within a Program.
 /// </summary>
 [Route("api/programs/{programId:guid}/students/{studentId:guid}/highlight-video")]
@@ -35,21 +49,31 @@ public class HighlightVideoController : ControllerBase
     /// - Video with multiple people → only the student's segments are extracted
     ///   (3-second buffer + merge if gap &lt; 3 s; fallback to full video if AI
     ///   cannot pinpoint the face).
+    ///
+    /// Strengths filtering (optional):
+    /// - When <c>Strengths</c> is provided, only segments where the student is
+    ///   demonstrating a matched strength are kept (via AWS Rekognition Label Detection
+    ///   cross-referenced by Claude on Bedrock).
+    /// - Supports Vietnamese and English strength names.
+    /// - Returns 400 if no segments match any of the specified strengths.
     /// </remarks>
     [HttpPost]
     [SwaggerOperation(
         Summary = "Trigger personal video generation",
         Description = "Starts an asynchronous MediaConvert job that stitches a personalised highlight reel " +
-                      "for the given student from all tagged videos in the program. Returns immediately with status=Processing."
+                      "for the given student from all tagged videos in the program. Returns immediately with status=Processing. " +
+                      "Supply optional 'StrengthDescription' to filter segments by student strengths (e.g. 'Sinh viên giỏi đá bóng')."
     )]
     [ProducesResponseType(typeof(ApiResult<HighlightVideoDto>), 202)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> TriggerGeneration(
         [FromRoute] Guid programId,
-        [FromRoute] Guid studentId)
+        [FromRoute] Guid studentId,
+        [FromBody] TriggerGenerationRequest? request = null)
     {
-        var result = await _personalVideoService.TriggerPersonalVideoGenerationAsync(programId, studentId);
+        var result = await _personalVideoService.TriggerPersonalVideoGenerationAsync(
+            programId, studentId, request?.StrengthDescription);
         return Accepted(ApiResult<HighlightVideoDto>.Success(result, "202", "Personal video generation started."));
     }
 
@@ -76,3 +100,4 @@ public class HighlightVideoController : ControllerBase
         return Ok(ApiResult<HighlightVideoDto>.Success(result, "200", "Highlight video retrieved."));
     }
 }
+

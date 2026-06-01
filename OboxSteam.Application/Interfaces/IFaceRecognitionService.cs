@@ -38,6 +38,19 @@ public interface IFaceRecognitionService
     /// <param name="jobId">Rekognition video job ID (phải ở trạng thái SUCCEEDED).</param>
     /// <param name="studentId">UserId của sinh viên cần tìm timeline.</param>
     Task<VideoFaceTimelineResult?> GetVideoFaceTimelineAsync(string jobId, Guid studentId);
+
+    /// <summary>
+    /// Start Rekognition Label Detection job trên video đã có trong S3 (async).
+    /// Trả về JobId để poll kết quả sau.
+    /// </summary>
+    Task<string> StartLabelDetectionAsync(string s3Bucket, string s3Key, float minConfidence = 70f);
+
+    /// <summary>
+    /// Truy xuất toàn bộ label timeline từ một completed Label Detection job.
+    /// Trả về <c>null</c> nếu job còn IN_PROGRESS.
+    /// Trả về danh sách rỗng nếu job FAILED hoặc không có label nào.
+    /// </summary>
+    Task<List<LabelDetectionEntry>?> GetLabelDetectionResultsAsync(string jobId);
 }
 
 public record FaceMatchResult(Guid UserId, string FaceId, float Confidence);
@@ -53,4 +66,10 @@ public record VideoFaceTimelineResult(bool HasOtherFaces, List<FaceTimestampSegm
 /// Một đoạn thời gian (ms) mà khuôn mặt sinh viên xuất hiện liên tục trong video.
 /// </summary>
 public record FaceTimestampSegment(long StartMs, long EndMs);
+
+/// <summary>
+/// Một điểm dữ liệu trong label timeline trả về từ Rekognition Label Detection.
+/// Mỗi entry tương ứng với một nhãn được phát hiện tại một thời điểm cụ thể.
+/// </summary>
+public record LabelDetectionEntry(long TimestampMs, string LabelName, float Confidence);
 
