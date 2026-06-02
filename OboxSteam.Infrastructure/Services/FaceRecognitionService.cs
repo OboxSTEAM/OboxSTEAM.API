@@ -375,6 +375,9 @@ public class FaceRecognitionService : IFaceRecognitionService
         _logger.LogInformation("GetLabelDetectionResultsAsync: JobId={JobId}", jobId);
 
         var entries   = new List<LabelDetectionEntry>();
+        // Dedup (timestamp, labelName) pairs — parent labels can repeat across
+        // multiple child labels at the same timestamp, inflating token usage.
+        var seen     = new HashSet<(long Ts, string Name)>();
         string? nextToken = null;
 
         do
@@ -412,19 +415,21 @@ public class FaceRecognitionService : IFaceRecognitionService
 
             foreach (var item in response.Labels)
             {
-                entries.Add(new LabelDetectionEntry(
-                    item.Timestamp,
-                    item.Label.Name,
-                    item.Label.Confidence));
+                if (seen.Add((item.Timestamp, item.Label.Name)))
+                    entries.Add(new LabelDetectionEntry(
+                        item.Timestamp,
+                        item.Label.Name,
+                        item.Label.Confidence));
 
                 // Also flatten parent labels so Claude sees richer context.
                 // E.g. "Soccer" has parents ["Sports", "Football"]
                 foreach (var parent in item.Label.Parents)
                 {
-                    entries.Add(new LabelDetectionEntry(
-                        item.Timestamp,
-                        parent.Name,
-                        item.Label.Confidence));
+                    if (seen.Add((item.Timestamp, parent.Name)))
+                        entries.Add(new LabelDetectionEntry(
+                            item.Timestamp,
+                            parent.Name,
+                            item.Label.Confidence));
                 }
             }
 

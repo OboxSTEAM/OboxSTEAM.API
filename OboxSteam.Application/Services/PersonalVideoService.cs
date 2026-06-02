@@ -290,7 +290,20 @@ public class PersonalVideoService : IPersonalVideoService
         if (!timelineResult.HasOtherFaces)
         {
             _logger.LogInformation(
-                "[PersonalVideoService] Case 2 (sole face confirmed by AI) → full video. MediaId={MediaId}", media.Id);
+                "[PersonalVideoService] Case 2 (sole face confirmed by AI). MediaId={MediaId}", media.Id);
+
+            // Even when the student is the only person, apply strengths filter if requested —
+            // they may only demonstrate the strength for part of the video.
+            if (!string.IsNullOrWhiteSpace(strengthDescription) && timelineResult.Segments.Count > 0)
+            {
+                var filteredClips = await ApplyStrengthsFilterAsync(media, s3Key, timelineResult.Segments, strengthDescription);
+                if (filteredClips != null)
+                    return filteredClips.Clips.Count == 0 ? null : filteredClips;
+
+                _logger.LogWarning(
+                    "[PersonalVideoService] Case 2 strengths filter fallback → full video for MediaId={MediaId}", media.Id);
+            }
+
             return new ClipInput(s3Key, new List<TimeClip>());
         }
 

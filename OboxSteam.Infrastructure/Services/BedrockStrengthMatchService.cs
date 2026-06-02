@@ -159,11 +159,22 @@ public class BedrockStrengthMatchService : IStrengthMatchService
         sb.AppendLine();
         sb.AppendLine("LABEL DETECTION TIMELINE (timestamp_ms: label [confidence%]):");
 
-        // Group labels by timestamp bucket (1s) for readability
-        foreach (var grp in labelTimeline
+        // Group labels by timestamp bucket (1s) for readability.
+        // Sample evenly across the full timeline (max 200 groups) so labels
+        // from the end of long videos are not silently dropped.
+        const int MaxLabelGroups = 200;
+        var allLabelGroups = labelTimeline
             .GroupBy(l => l.TimestampMs / 1000 * 1000)
             .OrderBy(g => g.Key)
-            .Take(200))  // cap at 200 groups to stay within token limits
+            .ToList();
+
+        var sampledGroups = allLabelGroups.Count <= MaxLabelGroups
+            ? allLabelGroups
+            : Enumerable.Range(0, MaxLabelGroups)
+                .Select(i => allLabelGroups[(int)((double)i * allLabelGroups.Count / MaxLabelGroups)])
+                .ToList();
+
+        foreach (var grp in sampledGroups)
         {
             var labels = string.Join(", ", grp.Select(l => $"{l.LabelName}({l.Confidence:F0}%)"));
             sb.AppendLine($"  {grp.Key}ms: {labels}");
