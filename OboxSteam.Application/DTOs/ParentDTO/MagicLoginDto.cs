@@ -9,8 +9,5 @@ public class MagicLoginDto
     public string Email { get; set; } = null!;
 
     [Required]
-    public Guid StudentId { get; set; }
-
-    [Required]
     public string Token { get; set; } = null!;
 }

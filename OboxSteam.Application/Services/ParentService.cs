@@ -79,9 +79,10 @@ public class ParentService : IParentService
 
             _logger.LogInformation("Created shadow account and pending link for parent {ParentEmail} (ParentId: {ParentId}).", parentEmail, parent.Id);
 
-            // Vô hiệu hóa các OTP MagicLink/ApproveLink cũ của email này nếu có
+            // Vô hiệu hóa các OTP MagicLink/ApproveLink cũ của email này tạo bởi học sinh này nếu có
             var previousOtps = await _unitOfWork.OtpStorages.GetAllAsync(o =>
                 o.Target == parentEmail &&
+                o.CreatedBy == studentId &&
                 (o.Purpose == OtpPurpose.MagicLink || o.Purpose == OtpPurpose.ApproveLink) &&
                 !o.IsUsed);
 
@@ -99,14 +100,15 @@ public class ParentService : IParentService
                 OtpCode = token,
                 ExpiredAt = DateTime.UtcNow.AddHours(24),
                 IsUsed = false,
-                Purpose = OtpPurpose.MagicLink
+                Purpose = OtpPurpose.MagicLink,
+                CreatedBy = studentId
             };
 
             await _unitOfWork.OtpStorages.AddAsync(otp);
             await _unitOfWork.SaveChangesAsync();
 
             var appBaseUrl = (configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
-            var loginUrl = $"{appBaseUrl}/magic-login?email={Uri.EscapeDataString(parentEmail)}&studentId={studentId}&token={token}";
+            var loginUrl = $"{appBaseUrl}/magic-login?email={Uri.EscapeDataString(parentEmail)}&token={token}";
 
             await _emailService.SendMagicLinkEmailAsync(new ActionEmailRequestDto { To = parentEmail, Link = loginUrl });
             _logger.LogInformation("Sent magic login link email to new parent {ParentEmail}.", parentEmail);
@@ -131,9 +133,10 @@ public class ParentService : IParentService
             await _unitOfWork.SaveChangesAsync();
         }
 
-        // Vô hiệu hóa các OTP MagicLink/ApproveLink cũ của email này nếu có
+        // Vô hiệu hóa các OTP MagicLink/ApproveLink cũ của email này tạo bởi học sinh này nếu có
         var existingOtps = await _unitOfWork.OtpStorages.GetAllAsync(o =>
             o.Target == parentEmail &&
+            o.CreatedBy == studentId &&
             (o.Purpose == OtpPurpose.MagicLink || o.Purpose == OtpPurpose.ApproveLink) &&
             !o.IsUsed);
 
@@ -152,7 +155,8 @@ public class ParentService : IParentService
             OtpCode = parentToken,
             ExpiredAt = DateTime.UtcNow.AddHours(24),
             IsUsed = false,
-            Purpose = purpose
+            Purpose = purpose,
+            CreatedBy = studentId
         };
 
         await _unitOfWork.OtpStorages.AddAsync(parentOtp);
@@ -163,14 +167,14 @@ public class ParentService : IParentService
         if (purpose == OtpPurpose.MagicLink)
         {
             _logger.LogInformation("Parent {ParentEmail} has a shadow account (no password). Sending magic link.", parentEmail);
-            var loginUrl = $"{baseAppUrl}/magic-login?email={Uri.EscapeDataString(parentEmail)}&studentId={studentId}&token={parentToken}";
+            var loginUrl = $"{baseAppUrl}/magic-login?email={Uri.EscapeDataString(parentEmail)}&token={parentToken}";
             await _emailService.SendMagicLinkEmailAsync(new ActionEmailRequestDto { To = parentEmail, Link = loginUrl });
             _logger.LogInformation("Sent magic login link email to shadow parent {ParentEmail}.", parentEmail);
         }
         else
         {
             _logger.LogInformation("Parent {ParentEmail} has a completed account. Sending approval link.", parentEmail);
-            var approveUrl = $"{baseAppUrl}/approve-link?email={Uri.EscapeDataString(parentEmail)}&studentId={studentId}&token={parentToken}";
+            var approveUrl = $"{baseAppUrl}/approve-link?email={Uri.EscapeDataString(parentEmail)}&token={parentToken}";
             await _emailService.SendApproveLinkEmailAsync(new ActionEmailRequestDto { To = parentEmail, Link = approveUrl });
             _logger.LogInformation("Sent approval link email to registered parent {ParentEmail}.", parentEmail);
         }
@@ -211,16 +215,17 @@ public class ParentService : IParentService
             throw ErrorHelper.Forbidden("Account has been locked.");
         }
 
-        // Confirm association with StudentId
-        if (dto.StudentId != Guid.Empty)
+        // Confirm association with the StudentId from the OTP's CreatedBy field
+        var targetStudentId = otp.CreatedBy;
+        if (targetStudentId != Guid.Empty)
         {
-            _logger.LogInformation("Confirming link association between Parent ID {ParentId} and Student ID {StudentId} via magic login.", parent.Id, dto.StudentId);
-            var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x => x.ParentId == parent.Id && x.StudentId == dto.StudentId);
+            _logger.LogInformation("Confirming link association between Parent ID {ParentId} and Student ID {StudentId} via magic login.", parent.Id, targetStudentId);
+            var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x => x.ParentId == parent.Id && x.StudentId == targetStudentId);
             if (ps != null && !ps.IsVerified)
             {
                 ps.IsVerified = true;
                 await _unitOfWork.ParentStudents.Update(ps);
-                _logger.LogInformation("Link verified successfully between Parent {ParentId} and Student {StudentId}.", parent.Id, dto.StudentId);
+                _logger.LogInformation("Link verified successfully between Parent {ParentId} and Student {StudentId}.", parent.Id, targetStudentId);
             }
         }
         await _unitOfWork.SaveChangesAsync();
@@ -295,15 +300,16 @@ public class ParentService : IParentService
         await _unitOfWork.OtpStorages.Update(otp);
 
         // Bật cờ xác nhận cho link
-        if (dto.StudentId != Guid.Empty)
+        var targetStudentId = otp.CreatedBy;
+        if (targetStudentId != Guid.Empty)
         {
-            _logger.LogInformation("Verifying link between Parent ID {ParentId} and Student ID {StudentId} via manual approval.", parent.Id, dto.StudentId);
-            var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x => x.ParentId == parent.Id && x.StudentId == dto.StudentId);
+            _logger.LogInformation("Verifying link between Parent ID {ParentId} and Student ID {StudentId} via manual approval.", parent.Id, targetStudentId);
+            var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x => x.ParentId == parent.Id && x.StudentId == targetStudentId);
             if (ps != null && !ps.IsVerified)
             {
                 ps.IsVerified = true;
                 await _unitOfWork.ParentStudents.Update(ps);
-                _logger.LogInformation("Link verified successfully between Parent {ParentId} and Student {StudentId}.", parent.Id, dto.StudentId);
+                _logger.LogInformation("Link verified successfully between Parent {ParentId} and Student {StudentId}.", parent.Id, targetStudentId);
             }
         }
 

@@ -69,6 +69,16 @@ public class AuthService : IAuthService
             IsEmailVerified = false
         };
 
+        if (registrationDto.Role == RoleType.Student)
+        {
+            user.StudentProfile = new StudentProfile
+            {
+                Id = Guid.NewGuid(),
+                CreatedAt = DateTime.UtcNow,
+                IsDeleted = false
+            };
+        }
+
         await _unitOfWork.Users.AddAsync(user);
         await _unitOfWork.SaveChangesAsync();
 
@@ -148,9 +158,6 @@ public class AuthService : IAuthService
         if (user == null)
             throw ErrorHelper.NotFound("Account does not exist.");
 
-        if (user.IsDeleted)
-            throw ErrorHelper.Forbidden("Account has been disabled.");
-
         if (string.IsNullOrEmpty(user.RefreshToken))
             throw ErrorHelper.BadRequest("User is already logged out.");
 
@@ -210,13 +217,17 @@ public class AuthService : IAuthService
         var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
         if (user == null) throw ErrorHelper.NotFound("Account does not exist.");
 
-        if (user.IsEmailVerified) return false;
-        if (!await VerifyOtpAsync(email, otp, OtpPurpose.Register)) return false;
+        if (user.IsEmailVerified)
+            throw ErrorHelper.Conflict("Account is already verified.");
+
+        var otpRecord = await VerifyOtpAsync(email, otp, OtpPurpose.Register);
 
         user.IsEmailVerified = true;
+        otpRecord.IsUsed = true;
         _logger.LogInformation("OTP verified for {Email}, activating account.", email);
 
         await _unitOfWork.Users.Update(user);
+        await _unitOfWork.OtpStorages.Update(otpRecord);
         await _unitOfWork.SaveChangesAsync();
 
         await _emailService.SendRegistrationSuccessEmailAsync(new EmailRequestDto
@@ -247,9 +258,6 @@ public class AuthService : IAuthService
         var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email && !u.IsDeleted);
         if (user == null)
             throw ErrorHelper.NotFound("Email does not exist in the system.");
-
-        if (user.IsDeleted)
-            throw ErrorHelper.Forbidden("Account has been disabled.");
 
         // Disable previous forgot-password OTPs
         var previousOtps = await _unitOfWork.OtpStorages.GetAllAsync(o =>
@@ -294,15 +302,20 @@ public class AuthService : IAuthService
         _logger.LogInformation("Password reset requested using token");
 
         var otpRecord = await VerifyForgotPasswordTokenAsync(token);
-        if (otpRecord == null) return false;
 
         var email = otpRecord.Target;
         var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email && !u.IsDeleted);
-        if (user == null) return false;
-        if (!user.IsEmailVerified) return false;
+        if (user == null)
+            throw ErrorHelper.NotFound("Account does not exist.");
+
+        if (!user.IsEmailVerified)
+            throw ErrorHelper.Forbidden("Please verify your email before resetting your password.");
 
         user.PasswordHash = new PasswordHasher().HashPassword(newPassword);
+        otpRecord.IsUsed = true;
+
         await _unitOfWork.Users.Update(user);
+        await _unitOfWork.OtpStorages.Update(otpRecord);
         await _unitOfWork.SaveChangesAsync();
 
         await _emailService.SendPasswordChangeSuccessAsync(new EmailRequestDto
@@ -315,22 +328,18 @@ public class AuthService : IAuthService
         return true;
     }
 
-    private async Task<OtpStorage?> VerifyForgotPasswordTokenAsync(string token)
+    private async Task<OtpStorage> VerifyForgotPasswordTokenAsync(string token)
     {
         var otpRecord = await _unitOfWork.OtpStorages.FirstOrDefaultAsync(o =>
             o.OtpCode == token && o.Purpose == OtpPurpose.ForgotPassword && !o.IsUsed);
 
         if (otpRecord == null || otpRecord.ExpiredAt < DateTime.UtcNow)
         {
-            _logger.LogWarning("Forgot password token not found or expired: {Token}", token);
-            return null;
+            _logger.LogWarning("Forgot password token not found or expired.");
+            throw ErrorHelper.BadRequest("Invalid or expired password reset token.");
         }
 
-        otpRecord.IsUsed = true;
-        await _unitOfWork.OtpStorages.Update(otpRecord);
-        await _unitOfWork.SaveChangesAsync();
-
-        _logger.LogInformation("Forgot password token verified and marked as used for {Target}.", otpRecord.Target);
+        _logger.LogInformation("Forgot password token verified for {Target}.", otpRecord.Target);
         return otpRecord;
     }
 
@@ -338,8 +347,7 @@ public class AuthService : IAuthService
 
     private async Task<bool> UserExistsAsync(string email)
     {
-        var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
-        return user != null;
+        return await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email) != null;
     }
 
     private async Task GenerateAndSendOtpAsync(User user, OtpPurpose purpose)
@@ -399,7 +407,7 @@ public class AuthService : IAuthService
     }
 
 
-    private async Task<bool> VerifyOtpAsync(string email, string otp, OtpPurpose purpose)
+    private async Task<OtpStorage> VerifyOtpAsync(string email, string otp, OtpPurpose purpose)
     {
         var otpRecord = await _unitOfWork.OtpStorages.FirstOrDefaultAsync(o =>
             o.Target == email && o.OtpCode == otp && o.Purpose == purpose && !o.IsUsed);
@@ -407,14 +415,10 @@ public class AuthService : IAuthService
         if (otpRecord == null || otpRecord.ExpiredAt < DateTime.UtcNow)
         {
             _logger.LogWarning("OTP not found or expired for {Email} (purpose: {Purpose})", email, purpose);
-            return false;
+            throw ErrorHelper.BadRequest("Invalid or expired OTP.");
         }
 
-        otpRecord.IsUsed = true;
-        await _unitOfWork.OtpStorages.Update(otpRecord);
-        await _unitOfWork.SaveChangesAsync();
-
-        _logger.LogInformation("OTP for {Email} (purpose: {Purpose}) verified and marked as used.", email, purpose);
-        return true;
+        _logger.LogInformation("OTP for {Email} (purpose: {Purpose}) verified.", email, purpose);
+        return otpRecord;
     }
 }
