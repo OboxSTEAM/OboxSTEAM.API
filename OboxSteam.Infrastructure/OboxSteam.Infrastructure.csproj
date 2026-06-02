@@ -23,6 +23,7 @@
     <PackageReference Include="Resend" Version="0.4.0" />
     <PackageReference Include="AWSSDK.Rekognition" Version="3.7.*" />
     <PackageReference Include="AWSSDK.MediaConvert" Version="3.7.*" />
+    <PackageReference Include="AWSSDK.BedrockRuntime" Version="3.7.*" />
     <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.1.2" />
 

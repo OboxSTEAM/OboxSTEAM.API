@@ -334,6 +334,111 @@ public class FaceRecognitionService : IFaceRecognitionService
         return new VideoFaceTimelineResult(hasOtherFaces, segments);
     }
 
+    /// <inheritdoc />
+    public async Task<string> StartLabelDetectionAsync(string s3Bucket, string s3Key, float minConfidence = 70f)
+    {
+        _logger.LogInformation("StartLabelDetectionAsync: Bucket={Bucket}, Key={Key}", s3Bucket, s3Key);
+
+        var snsTopicArn = Environment.GetEnvironmentVariable("AWS_SNS_TOPIC_ARN");
+        var roleArn     = Environment.GetEnvironmentVariable("AWS_REKOGNITION_ROLE_ARN");
+
+        var request = new StartLabelDetectionRequest
+        {
+            Video = new Video
+            {
+                S3Object = new Amazon.Rekognition.Model.S3Object
+                {
+                    Bucket = s3Bucket,
+                    Name   = s3Key
+                }
+            },
+            MinConfidence = minConfidence
+        };
+
+        if (!string.IsNullOrEmpty(snsTopicArn) && !string.IsNullOrEmpty(roleArn))
+        {
+            request.NotificationChannel = new NotificationChannel
+            {
+                SNSTopicArn = snsTopicArn,
+                RoleArn     = roleArn
+            };
+        }
+
+        var response = await _rekognition.StartLabelDetectionAsync(request);
+        _logger.LogInformation("Label Detection job started. JobId: {JobId}", response.JobId);
+        return response.JobId;
+    }
+
+    /// <inheritdoc />
+    public async Task<List<LabelDetectionEntry>?> GetLabelDetectionResultsAsync(string jobId)
+    {
+        _logger.LogInformation("GetLabelDetectionResultsAsync: JobId={JobId}", jobId);
+
+        var entries   = new List<LabelDetectionEntry>();
+        string? nextToken = null;
+
+        do
+        {
+            var request = new GetLabelDetectionRequest
+            {
+                JobId      = jobId,
+                MaxResults = 1000,
+                SortBy     = LabelDetectionSortBy.TIMESTAMP
+            };
+            if (nextToken != null) request.NextToken = nextToken;
+
+            GetLabelDetectionResponse response;
+            try
+            {
+                response = await _rekognition.GetLabelDetectionAsync(request);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetLabelDetectionAsync paging failed for JobId={JobId}", jobId);
+                throw;
+            }
+
+            if (response.JobStatus == VideoJobStatus.IN_PROGRESS)
+            {
+                _logger.LogInformation("GetLabelDetectionResultsAsync: job {JobId} still IN_PROGRESS.", jobId);
+                return null; // caller should retry later
+            }
+
+            if (response.JobStatus == VideoJobStatus.FAILED)
+            {
+                _logger.LogError("GetLabelDetectionResultsAsync: job {JobId} FAILED.", jobId);
+                return new List<LabelDetectionEntry>(); // empty — caller falls back
+            }
+
+            foreach (var item in response.Labels)
+            {
+                entries.Add(new LabelDetectionEntry(
+                    item.Timestamp,
+                    item.Label.Name,
+                    item.Label.Confidence));
+
+                // Also flatten parent labels so Claude sees richer context.
+                // E.g. "Soccer" has parents ["Sports", "Football"]
+                foreach (var parent in item.Label.Parents)
+                {
+                    entries.Add(new LabelDetectionEntry(
+                        item.Timestamp,
+                        parent.Name,
+                        item.Label.Confidence));
+                }
+            }
+
+            nextToken = response.NextToken;
+        }
+        while (!string.IsNullOrEmpty(nextToken));
+
+        _logger.LogInformation(
+            "GetLabelDetectionResultsAsync: {Count} label entry/entries for JobId={JobId}",
+            entries.Count, jobId);
+
+        return entries;
+    }
+
     // ── Helpers ──────────────────────────────────────────
 
     private async Task EnsureCollectionExistsAsync()

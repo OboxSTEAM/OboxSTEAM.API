@@ -17,19 +17,25 @@ public class MediaAsset : BaseEntity
     public string? FileType { get; set; }
 
     [MaxLength(512)]
-    /// <summary>
-    /// Multi-purpose pipeline reference for video assets. Holds different values depending on <see cref="VideoStatus"/>:
-    /// <list type="bullet">
-    ///   <item><c>"raw:{s3key}"</c> — raw S3 key, waiting for MediaConvert submission</item>
-    ///   <item><c>"mc:{jobId}"</c> — MediaConvert job ID, transcoding in progress</item>
-    ///   <item><c>"{rekJobId}"</c> — Rekognition job ID, face-search in progress</item>
-    /// </list>
-    /// Always <c>null</c> for image assets.
-    /// </summary>
-    public string? VideoJobRef { get; set; }
+    public string? RawVideoS3Key { get; set; }
+
+    [MaxLength(512)]
+    public string? MediaConvertJobId { get; set; }
+
+    [MaxLength(512)]
+    public string? FaceSearchJobId { get; set; }
 
     /// <summary>Tracks the background processing lifecycle for video assets.</summary>
     public VideoProcessingStatus VideoStatus { get; set; } = VideoProcessingStatus.None;
+
+    /// <summary>
+    /// Rekognition Label Detection job ID, populated alongside <see cref="VideoJobRef"/>
+    /// once transcoding completes. Null until label detection has been triggered.
+    /// Used by the strengths-based highlight filtering pipeline to retrieve a
+    /// per-frame label timeline (Soccer, Chess, Presentation, …).
+    /// </summary>
+    [MaxLength(512)]
+    public string? LabelJobRef { get; set; }
 
     public DateTime? UploadedAt { get; set; }
 

@@ -23,12 +23,7 @@ public class MediaService : IMediaService
     private const string RawFolder = "raw";
     private const string S3Bucket = "oboxsteam-bucket";
 
-    // Prefixes stored temporarily in VideoJobRef to distinguish pipeline stages:
-    // "raw:{s3key}"  → raw video uploaded to S3, MediaConvert job not yet submitted
-    // "mc:{jobId}"   → MediaConvert job submitted, waiting for completion
-    // (plain)        → real Rekognition job ID (VideoStatus = PendingTagging)
-    private const string RawPrefix = "raw:";
-    private const string McPrefix = "mc:";
+
 
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
@@ -139,8 +134,8 @@ public class MediaService : IMediaService
         }
         else // isVideo — submit MediaConvert job directly
         {
-            // Store raw S3 key (prefixed) so the worker can locate the source video.
-            media.VideoJobRef = $"{RawPrefix}{videoLocalPath}";
+            // Store raw S3 key so the worker can locate the source video.
+            media.RawVideoS3Key = videoLocalPath;
             await _unitOfWork.SaveChangesAsync();
 
             await StartVideoTranscodeAsync(media.Id);
@@ -194,7 +189,7 @@ public class MediaService : IMediaService
                 ActivityId = media.ActivityId,
                 FileUrl = media.FileUrl,
                 FileType = media.FileType,
-                VideoJobRef = media.VideoJobRef,
+                FaceSearchJobId = media.FaceSearchJobId,
                 VideoStatus = media.VideoStatus,
                 UploadedAt = media.UploadedAt,
                 Tags = tagDtos
@@ -207,7 +202,7 @@ public class MediaService : IMediaService
     /// <inheritdoc />
     /// Submits a MediaConvert job (non-blocking). After this returns, VideoStatus
     /// is still <see cref="VideoProcessingStatus.Transcoding"/> and
-    /// <c>VideoJobRef</c> holds the MC job ID prefixed with "mc:".
+    /// <c>MediaConvertJobId</c> holds the MC job ID.
     public async Task StartVideoTranscodeAsync(Guid mediaId)
     {
         _logger.LogInformation("StartVideoTranscodeAsync: MediaId={MediaId}", mediaId);
@@ -225,12 +220,8 @@ public class MediaService : IMediaService
             return;
         }
 
-        var stored = media.VideoJobRef
-            ?? throw new InvalidOperationException(
-                $"MediaId={mediaId} has no value stored in VideoJobRef.");
-
         // If a MC job was already submitted (e.g. recovery after crash), skip re-submission.
-        if (stored.StartsWith(McPrefix, StringComparison.Ordinal))
+        if (!string.IsNullOrEmpty(media.MediaConvertJobId))
         {
             _logger.LogInformation(
                 "StartVideoTranscodeAsync: MC job already submitted for MediaId={MediaId}. Skipping.",
@@ -238,11 +229,10 @@ public class MediaService : IMediaService
             return;
         }
 
-        if (!stored.StartsWith(RawPrefix, StringComparison.Ordinal))
+        var rawS3Key = media.RawVideoS3Key;
+        if (string.IsNullOrEmpty(rawS3Key))
             throw new InvalidOperationException(
-                $"MediaId={mediaId}: unexpected value in VideoJobRef: '{stored}'.");
-
-        var rawS3Key = stored[RawPrefix.Length..]; // strip "raw:" prefix
+                $"MediaId={mediaId}: expected RawVideoS3Key to be set.");
 
         try
         {
@@ -255,7 +245,7 @@ public class MediaService : IMediaService
                 rawS3Key, $"{MediaFolder}/");
 
             // ── Persist MC job ID so the worker can poll it ───────────────────
-            media.VideoJobRef = $"{McPrefix}{mcJobId}";
+            media.MediaConvertJobId = mcJobId;
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation(
@@ -291,12 +281,10 @@ public class MediaService : IMediaService
             return false;
         }
 
-        var stored = media.VideoJobRef ?? string.Empty;
-        if (!stored.StartsWith(McPrefix, StringComparison.Ordinal))
+        var mcJobId = media.MediaConvertJobId;
+        if (string.IsNullOrEmpty(mcJobId))
             throw new InvalidOperationException(
-                $"MediaId={mediaId}: expected 'mc:' prefix in VideoJobRef, got: '{stored}'.");
-
-        var mcJobId = stored[McPrefix.Length..]; // strip "mc:"
+                $"MediaId={mediaId}: expected MediaConvertJobId to be set.");
 
         // ── Poll MediaConvert ─────────────────────────────────────────────────
         var status = await _videoConverterService.GetJobStatusAsync(mcJobId);
@@ -359,9 +347,31 @@ public class MediaService : IMediaService
             throw;
         }
 
+        // ── Start Rekognition Label Detection (for strengths-based filtering) ──────
+        // Fire-and-forget style: failures are non-fatal — the strengths pipeline simply
+        // falls back to face-only clipping when LabelJobRef is null or the job fails.
+        try
+        {
+            _logger.LogInformation(
+                "Starting Rekognition Label Detection for MediaId={MediaId}, S3Key={Key}",
+                mediaId, outputS3Key);
+            var labelJobId = await _faceRecognitionService.StartLabelDetectionAsync(
+                S3Bucket, outputS3Key);
+            media.LabelJobRef = labelJobId;
+            _logger.LogInformation(
+                "Label Detection job started: {LabelJobId} for MediaId={MediaId}", labelJobId, mediaId);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: strengths filtering will fall back gracefully.
+            _logger.LogWarning(ex,
+                "TryCompleteTranscodeAsync: failed to start Label Detection for MediaId={MediaId}. " +
+                "Strengths-based filtering will be unavailable for this video.", mediaId);
+        }
+
         // ── Persist state transition ──────────────────────────────────────────────
         media.FileUrl = fileUrl;
-        media.VideoJobRef = rekJobId;   // now holds the real Rekognition job ID
+        media.FaceSearchJobId = rekJobId;
         media.VideoStatus = VideoProcessingStatus.PendingTagging;
         await _unitOfWork.SaveChangesAsync();
 
@@ -399,11 +409,11 @@ public class MediaService : IMediaService
         if (media == null || media.IsDeleted)
             throw ErrorHelper.NotFound("Media not found.");
 
-        // Guard: must be in PendingTagging state — not Transcoding (where VideoJobRef is a /tmp path)
+        // Guard: must be in PendingTagging state
         if (media.VideoStatus != VideoProcessingStatus.PendingTagging)
             throw ErrorHelper.BadRequest("Video is not ready for tag processing yet.");
 
-        if (string.IsNullOrEmpty(media.VideoJobRef))
+        if (string.IsNullOrEmpty(media.FaceSearchJobId))
             throw ErrorHelper.BadRequest("This media has no pending Rekognition video job.");
 
         var (success, newTags) = await DoProcessVideoTagsAsync(media);
@@ -423,7 +433,7 @@ public class MediaService : IMediaService
         if (media == null || media.IsDeleted) return false;
         // Only poll Rekognition once transcoding is done and a real job ID is stored
         if (media.VideoStatus != VideoProcessingStatus.PendingTagging) return false;
-        if (string.IsNullOrEmpty(media.VideoJobRef)) return false;
+        if (string.IsNullOrEmpty(media.FaceSearchJobId)) return false;
 
         var (success, _) = await DoProcessVideoTagsAsync(media);
         return success;
@@ -473,7 +483,7 @@ public class MediaService : IMediaService
         return media != null
                && !media.IsDeleted
                && media.VideoStatus == VideoProcessingStatus.PendingTagging
-               && !string.IsNullOrEmpty(media.VideoJobRef);
+               && !string.IsNullOrEmpty(media.FaceSearchJobId);
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────
@@ -486,7 +496,7 @@ public class MediaService : IMediaService
     /// </summary>
     private async Task<(bool Done, List<MediaTag> NewTags)> DoProcessVideoTagsAsync(MediaAsset media)
     {
-        var result = await _faceRecognitionService.GetVideoFaceSearchResultsAsync(media.VideoJobRef!);
+        var result = await _faceRecognitionService.GetVideoFaceSearchResultsAsync(media.FaceSearchJobId!);
 
         if (result == null)
             return (false, new List<MediaTag>()); // still IN_PROGRESS
@@ -494,7 +504,7 @@ public class MediaService : IMediaService
         if (result.JobStatus == "FAILED")
         {
             _logger.LogWarning("Rekognition job FAILED for MediaId: {MediaId}, JobId: {JobId}",
-                media.Id, media.VideoJobRef);
+                media.Id, media.FaceSearchJobId);
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
             throw ErrorHelper.Internal("Video face recognition job failed.");
@@ -607,12 +617,6 @@ public class MediaService : IMediaService
             }
         }
 
-        // Hide the internal "raw:" / "mc:" ref that is temporarily stored in VideoJobRef
-        // during transcoding. Clients should only see a real Rekognition job ID.
-        var videoJobRef = media.VideoStatus == VideoProcessingStatus.Transcoding
-            ? null
-            : media.VideoJobRef;
-
         return new MediaAssetDto
         {
             Id = media.Id,
@@ -620,7 +624,7 @@ public class MediaService : IMediaService
             ActivityId = media.ActivityId,
             FileUrl = media.FileUrl,
             FileType = media.FileType,
-            VideoJobRef = videoJobRef,
+            FaceSearchJobId = media.FaceSearchJobId,
             VideoStatus = media.VideoStatus,
             UploadedAt = media.UploadedAt,
             Tags = tagDtos
