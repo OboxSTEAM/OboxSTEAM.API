@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace OboxSteam.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitDB : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -200,6 +200,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     ProgramId = table.Column<Guid>(type: "uuid", nullable: false),
                     VideoUrl = table.Column<string>(type: "text", nullable: true),
                     Status = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    PersonalVideoJobRef = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    PersonalVideoStatus = table.Column<string>(type: "text", nullable: false),
+                    PersonalVideoRequestedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedBy = table.Column<Guid>(type: "uuid", nullable: false),
@@ -507,44 +510,6 @@ namespace OboxSteam.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "ModuleEnrollments",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    StudentId = table.Column<Guid>(type: "uuid", nullable: false),
-                    ModuleId = table.Column<Guid>(type: "uuid", nullable: false),
-                    Status = table.Column<string>(type: "text", nullable: false),
-                    ProgressPercent = table.Column<decimal>(type: "numeric", nullable: false),
-                    FinalGrade = table.Column<decimal>(type: "numeric", nullable: true),
-                    EnrolledAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    StartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedBy = table.Column<Guid>(type: "uuid", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    UpdatedBy = table.Column<Guid>(type: "uuid", nullable: true),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedBy = table.Column<Guid>(type: "uuid", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ModuleEnrollments", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_ModuleEnrollments_Modules_ModuleId",
-                        column: x => x.ModuleId,
-                        principalTable: "Modules",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_ModuleEnrollments_Users_StudentId",
-                        column: x => x.StudentId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "ProgramBoards",
                 columns: table => new
                 {
@@ -609,6 +574,53 @@ namespace OboxSteam.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "ModuleEnrollments",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    StudentId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ModuleId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ProgramEnrollmentId = table.Column<Guid>(type: "uuid", nullable: true),
+                    Status = table.Column<string>(type: "text", nullable: false),
+                    ProgressPercent = table.Column<decimal>(type: "numeric", nullable: false),
+                    FinalGrade = table.Column<decimal>(type: "numeric", nullable: true),
+                    AttemptNumber = table.Column<int>(type: "integer", nullable: false),
+                    AssignmentFailureCount = table.Column<int>(type: "integer", nullable: false),
+                    EnrolledAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    StartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedBy = table.Column<Guid>(type: "uuid", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    UpdatedBy = table.Column<Guid>(type: "uuid", nullable: true),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedBy = table.Column<Guid>(type: "uuid", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ModuleEnrollments", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ModuleEnrollments_Modules_ModuleId",
+                        column: x => x.ModuleId,
+                        principalTable: "Modules",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_ModuleEnrollments_ProgramEnrollments_ProgramEnrollmentId",
+                        column: x => x.ProgramEnrollmentId,
+                        principalTable: "ProgramEnrollments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_ModuleEnrollments_Users_StudentId",
+                        column: x => x.StudentId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Activities",
                 columns: table => new
                 {
@@ -656,6 +668,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     Description = table.Column<string>(type: "text", nullable: true),
                     AssignmentType = table.Column<string>(type: "text", nullable: false),
                     MaxPoints = table.Column<int>(type: "integer", nullable: false),
+                    PassScore = table.Column<decimal>(type: "numeric", nullable: false),
+                    IsRequiredForModulePass = table.Column<bool>(type: "boolean", nullable: false),
                     DueDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     AllowShuffle = table.Column<bool>(type: "boolean", nullable: false),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
@@ -797,15 +811,58 @@ namespace OboxSteam.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "ActivityProgresses",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    StudentId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ActivityId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ModuleEnrollmentId = table.Column<Guid>(type: "uuid", nullable: false),
+                    IsCompleted = table.Column<bool>(type: "boolean", nullable: false),
+                    CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedBy = table.Column<Guid>(type: "uuid", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    UpdatedBy = table.Column<Guid>(type: "uuid", nullable: true),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedBy = table.Column<Guid>(type: "uuid", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ActivityProgresses", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ActivityProgresses_Activities_ActivityId",
+                        column: x => x.ActivityId,
+                        principalTable: "Activities",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_ActivityProgresses_ModuleEnrollments_ModuleEnrollmentId",
+                        column: x => x.ModuleEnrollmentId,
+                        principalTable: "ModuleEnrollments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_ActivityProgresses_Users_StudentId",
+                        column: x => x.StudentId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Materials",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     ModuleId = table.Column<Guid>(type: "uuid", nullable: false),
+                    CourseId = table.Column<Guid>(type: "uuid", nullable: true),
                     ActivityId = table.Column<Guid>(type: "uuid", nullable: true),
                     Title = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
-                    MaterialType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    MaterialType = table.Column<string>(type: "text", nullable: false),
                     FileUrl = table.Column<string>(type: "text", nullable: true),
+                    FileSizeBytes = table.Column<long>(type: "bigint", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedBy = table.Column<Guid>(type: "uuid", nullable: false),
@@ -821,6 +878,11 @@ namespace OboxSteam.Infrastructure.Migrations
                         name: "FK_Materials_Activities_ActivityId",
                         column: x => x.ActivityId,
                         principalTable: "Activities",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_Materials_Courses_CourseId",
+                        column: x => x.CourseId,
+                        principalTable: "Courses",
                         principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_Materials_Modules_ModuleId",
@@ -839,8 +901,11 @@ namespace OboxSteam.Infrastructure.Migrations
                     ActivityId = table.Column<Guid>(type: "uuid", nullable: true),
                     FileUrl = table.Column<string>(type: "text", nullable: true),
                     FileType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    RekognitionJobId = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    RawVideoS3Key = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: true),
+                    MediaConvertJobId = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: true),
+                    FaceSearchJobId = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: true),
                     VideoStatus = table.Column<string>(type: "text", nullable: false),
+                    LabelJobRef = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: true),
                     UploadedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -903,6 +968,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     Code = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
                     AssignmentId = table.Column<Guid>(type: "uuid", nullable: false),
                     StudentId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ModuleEnrollmentId = table.Column<Guid>(type: "uuid", nullable: true),
+                    AttemptNumber = table.Column<int>(type: "integer", nullable: false),
                     Status = table.Column<string>(type: "text", nullable: false),
                     ContentText = table.Column<string>(type: "text", nullable: true),
                     FileUrl = table.Column<string>(type: "text", nullable: true),
@@ -927,6 +994,12 @@ namespace OboxSteam.Infrastructure.Migrations
                         principalTable: "Assignments",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_Submissions_ModuleEnrollments_ModuleEnrollmentId",
+                        column: x => x.ModuleEnrollmentId,
+                        principalTable: "ModuleEnrollments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_Submissions_Users_StudentId",
                         column: x => x.StudentId,
@@ -1057,6 +1130,23 @@ namespace OboxSteam.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_ActivityProgresses_ActivityId",
+                table: "ActivityProgresses",
+                column: "ActivityId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ActivityProgresses_ModuleEnrollmentId_ActivityId",
+                table: "ActivityProgresses",
+                columns: new[] { "ModuleEnrollmentId", "ActivityId" },
+                unique: true,
+                filter: "\"IsDeleted\" = false");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ActivityProgresses_StudentId",
+                table: "ActivityProgresses",
+                column: "StudentId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Assignments_Code",
                 table: "Assignments",
                 column: "Code",
@@ -1164,6 +1254,11 @@ namespace OboxSteam.Infrastructure.Migrations
                 column: "ActivityId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Materials_CourseId",
+                table: "Materials",
+                column: "CourseId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Materials_ModuleId",
                 table: "Materials",
                 column: "ModuleId");
@@ -1189,9 +1284,16 @@ namespace OboxSteam.Infrastructure.Migrations
                 column: "ModuleId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_ModuleEnrollments_StudentId",
+                name: "IX_ModuleEnrollments_ProgramEnrollmentId",
                 table: "ModuleEnrollments",
-                column: "StudentId");
+                column: "ProgramEnrollmentId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ModuleEnrollments_StudentId_ModuleId_AttemptNumber",
+                table: "ModuleEnrollments",
+                columns: new[] { "StudentId", "ModuleId", "AttemptNumber" },
+                unique: true,
+                filter: "\"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Modules_Code",
@@ -1279,9 +1381,11 @@ namespace OboxSteam.Infrastructure.Migrations
                 column: "ProgramId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_ProgramEnrollments_StudentId",
+                name: "IX_ProgramEnrollments_StudentId_ProgramId",
                 table: "ProgramEnrollments",
-                column: "StudentId");
+                columns: new[] { "StudentId", "ProgramId" },
+                unique: true,
+                filter: "\"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
                 name: "IX_QuizOptions_QuestionId",
@@ -1320,6 +1424,11 @@ namespace OboxSteam.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_Submissions_ModuleEnrollmentId",
+                table: "Submissions",
+                column: "ModuleEnrollmentId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Submissions_StudentId",
                 table: "Submissions",
                 column: "StudentId");
@@ -1347,6 +1456,9 @@ namespace OboxSteam.Infrastructure.Migrations
         {
             migrationBuilder.DropTable(
                 name: "ActivityBookings");
+
+            migrationBuilder.DropTable(
+                name: "ActivityProgresses");
 
             migrationBuilder.DropTable(
                 name: "Certificates");
@@ -1397,12 +1509,6 @@ namespace OboxSteam.Infrastructure.Migrations
                 name: "SubmissionEvidences");
 
             migrationBuilder.DropTable(
-                name: "ModuleEnrollments");
-
-            migrationBuilder.DropTable(
-                name: "ProgramEnrollments");
-
-            migrationBuilder.DropTable(
                 name: "Portfolios");
 
             migrationBuilder.DropTable(
@@ -1424,7 +1530,13 @@ namespace OboxSteam.Infrastructure.Migrations
                 name: "Assignments");
 
             migrationBuilder.DropTable(
+                name: "ModuleEnrollments");
+
+            migrationBuilder.DropTable(
                 name: "Courses");
+
+            migrationBuilder.DropTable(
+                name: "ProgramEnrollments");
 
             migrationBuilder.DropTable(
                 name: "Modules");

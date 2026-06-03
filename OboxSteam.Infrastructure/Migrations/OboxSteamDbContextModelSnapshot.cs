@@ -937,7 +937,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid>("ModuleId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("ProgramEnrollmentId")
+                    b.Property<Guid?>("ProgramEnrollmentId")
                         .HasColumnType("uuid");
 
                     b.Property<decimal>("ProgressPercent")
@@ -2182,8 +2182,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasOne("OboxSteam.Domain.Entities.ProgramEnrollment", "ProgramEnrollment")
                         .WithMany("ModuleEnrollments")
                         .HasForeignKey("ProgramEnrollmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
                         .WithMany("ModuleEnrollments")

@@ -11,8 +11,8 @@ public class ModuleEnrollment : BaseEntity
     public Module Module { get; set; } = null!;
 
     /// <summary>The program enrollment this module attempt belongs to.</summary>
-    public Guid ProgramEnrollmentId { get; set; }
-    public ProgramEnrollment ProgramEnrollment { get; set; } = null!;
+    public Guid? ProgramEnrollmentId { get; set; }
+    public ProgramEnrollment? ProgramEnrollment { get; set; }
 
     public EnrollmentStatus Status { get; set; } = EnrollmentStatus.Active;
 
