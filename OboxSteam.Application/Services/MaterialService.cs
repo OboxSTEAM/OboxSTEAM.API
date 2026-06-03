@@ -30,7 +30,6 @@ public class MaterialService : IMaterialService
     private const long MaxVideoSize = 3L   * 1024 * 1024 * 1024;   // 3  GB
 
     // ── S3 folder constants ───────────────────────────────────────────────────
-    private const string S3Bucket      = "oboxsteam-bucket";
     private const string FolderPdf     = "materials/pdf";
     private const string FolderDoc     = "materials/doc";
     private const string FolderVideo   = "materials/video";
@@ -216,7 +215,7 @@ public class MaterialService : IMaterialService
                 {
                     s3Key = uri.AbsolutePath.TrimStart('/');
                     // Strip bucket prefix if path-style URL: /{bucket}/{key}
-                    var bucketPrefix = $"{S3Bucket}/";
+                    var bucketPrefix = $"{_blobService.BucketName}/";
                     if (s3Key.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
                         s3Key = s3Key[bucketPrefix.Length..];
                 }

@@ -9,8 +9,6 @@ namespace OboxSteam.Application.Services
 {
     public class SeedService : ISeedService
     {
-        private const string S3Bucket = "oboxsteam-bucket";
-
         private readonly ILogger _loggerService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IBlobService _blobService;
@@ -1576,9 +1574,9 @@ namespace OboxSteam.Application.Services
 
         /// <summary>
         /// Trích xuất S3 key từ URL (path-style hoặc virtual-hosted style).
-        /// Trả về null nếu URL không hợp lệ hoặc không thuộc bucket của project.
+        /// Trả về null nếu URL không hợp lệ.
         /// </summary>
-        private static string? ExtractS3Key(string url)
+        private string? ExtractS3Key(string url)
         {
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 return null;
@@ -1586,7 +1584,7 @@ namespace OboxSteam.Application.Services
             var path = uri.AbsolutePath.TrimStart('/');
 
             // Path-style: /{bucket}/{key}
-            var bucketPrefix = $"{S3Bucket}/";
+            var bucketPrefix = $"{_blobService.BucketName}/";
             if (path.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
                 path = path[bucketPrefix.Length..];
 
@@ -1597,14 +1595,14 @@ namespace OboxSteam.Application.Services
         /// Kiểm tra URL có thuộc S3 bucket của project hay không.
         /// Chỉ xóa những URL chứa hostname amazonaws.com hoặc bucket name của project.
         /// </summary>
-        private static bool IsS3Url(string url)
+        private bool IsS3Url(string url)
         {
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 return false;
 
             var host = uri.Host;
             return host.EndsWith(".amazonaws.com", StringComparison.OrdinalIgnoreCase)
-                || host.Contains(S3Bucket, StringComparison.OrdinalIgnoreCase);
+                || host.Contains(_blobService.BucketName, StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<Activity> CreateSeedActivities(

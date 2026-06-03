@@ -27,6 +27,10 @@ public class BlobService : IBlobService
         _transferUtility = new Amazon.S3.Transfer.TransferUtility(_s3Client);
     }
 
+    /// <inheritdoc />
+    public string BucketName => _bucketName;
+
+
     /// <summary>
     ///     Check xem bucket đã tồn tại trên S3 chưa (creates nếu bucket ko tồn tại).
     /// </summary>
