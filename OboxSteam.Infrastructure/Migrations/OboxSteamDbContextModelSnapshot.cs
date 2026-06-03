@@ -154,6 +154,61 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.ToTable("ActivityBookings");
                 });
 
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ActivityProgress", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ActivityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsCompleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("ModuleEnrollmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActivityId");
+
+                    b.HasIndex("StudentId");
+
+                    b.HasIndex("ModuleEnrollmentId", "ActivityId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("ActivityProgresses");
+                });
+
             modelBuilder.Entity("OboxSteam.Domain.Entities.Assignment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -196,11 +251,17 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsRequiredForModulePass")
+                        .HasColumnType("boolean");
+
                     b.Property<int>("MaxPoints")
                         .HasColumnType("integer");
 
                     b.Property<Guid>("ModuleId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal>("PassScore")
+                        .HasColumnType("numeric");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -596,6 +657,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid?>("ActivityId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("CourseId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -608,6 +672,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<long?>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("FileUrl")
                         .HasColumnType("text");
 
@@ -616,8 +683,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<string>("MaterialType")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.Property<Guid>("ModuleId")
                         .HasColumnType("uuid");
@@ -636,6 +702,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ActivityId");
+
+                    b.HasIndex("CourseId");
 
                     b.HasIndex("ModuleId");
 
@@ -836,6 +904,12 @@ namespace OboxSteam.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("AssignmentFailureCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -863,6 +937,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid>("ModuleId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ProgramEnrollmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<decimal>("ProgressPercent")
                         .HasColumnType("numeric");
 
@@ -886,7 +963,11 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("ModuleId");
 
-                    b.HasIndex("StudentId");
+                    b.HasIndex("ProgramEnrollmentId");
+
+                    b.HasIndex("StudentId", "ModuleId", "AttemptNumber")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("ModuleEnrollments");
                 });
@@ -1370,7 +1451,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("ProgramId");
 
-                    b.HasIndex("StudentId");
+                    b.HasIndex("StudentId", "ProgramId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("ProgramEnrollments");
                 });
@@ -1643,6 +1726,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid>("AssignmentId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -1672,6 +1758,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<string>("MentorFeedback")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("ModuleEnrollmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text");
@@ -1697,6 +1786,8 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("Code")
                         .IsUnique();
+
+                    b.HasIndex("ModuleEnrollmentId");
 
                     b.HasIndex("StudentId");
 
@@ -1854,6 +1945,33 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Student");
                 });
 
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ActivityProgress", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.Activity", "Activity")
+                        .WithMany("ActivityProgresses")
+                        .HasForeignKey("ActivityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OboxSteam.Domain.Entities.ModuleEnrollment", "ModuleEnrollment")
+                        .WithMany("ActivityProgresses")
+                        .HasForeignKey("ModuleEnrollmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OboxSteam.Domain.Entities.User", "Student")
+                        .WithMany("ActivityProgresses")
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Activity");
+
+                    b.Navigation("ModuleEnrollment");
+
+                    b.Navigation("Student");
+                });
+
             modelBuilder.Entity("OboxSteam.Domain.Entities.Assignment", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.Course", "Course")
@@ -1982,6 +2100,10 @@ namespace OboxSteam.Infrastructure.Migrations
                         .WithMany("Materials")
                         .HasForeignKey("ActivityId");
 
+                    b.HasOne("OboxSteam.Domain.Entities.Course", "Course")
+                        .WithMany("Materials")
+                        .HasForeignKey("CourseId");
+
                     b.HasOne("OboxSteam.Domain.Entities.Module", "Module")
                         .WithMany("Materials")
                         .HasForeignKey("ModuleId")
@@ -1989,6 +2111,8 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Activity");
+
+                    b.Navigation("Course");
 
                     b.Navigation("Module");
                 });
@@ -2055,13 +2179,20 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("OboxSteam.Domain.Entities.ProgramEnrollment", "ProgramEnrollment")
+                        .WithMany("ModuleEnrollments")
+                        .HasForeignKey("ProgramEnrollmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
                         .WithMany("ModuleEnrollments")
                         .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Module");
+
+                    b.Navigation("ProgramEnrollment");
 
                     b.Navigation("Student");
                 });
@@ -2238,6 +2369,11 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("OboxSteam.Domain.Entities.ModuleEnrollment", "ModuleEnrollment")
+                        .WithMany("Submissions")
+                        .HasForeignKey("ModuleEnrollmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
                         .WithMany("Submissions")
                         .HasForeignKey("StudentId")
@@ -2250,6 +2386,8 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Assignment");
+
+                    b.Navigation("ModuleEnrollment");
 
                     b.Navigation("Student");
 
@@ -2279,6 +2417,8 @@ namespace OboxSteam.Infrastructure.Migrations
                 {
                     b.Navigation("ActivityBookings");
 
+                    b.Navigation("ActivityProgresses");
+
                     b.Navigation("Materials");
 
                     b.Navigation("MediaAssets");
@@ -2298,6 +2438,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Assignments");
 
                     b.Navigation("CourseEnrollments");
+
+                    b.Navigation("Materials");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Expert", b =>
@@ -2327,7 +2469,11 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ModuleEnrollment", b =>
                 {
+                    b.Navigation("ActivityProgresses");
+
                     b.Navigation("Payments");
+
+                    b.Navigation("Submissions");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Portfolio", b =>
@@ -2350,6 +2496,8 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramEnrollment", b =>
                 {
+                    b.Navigation("ModuleEnrollments");
+
                     b.Navigation("Payments");
                 });
 
@@ -2366,6 +2514,8 @@ namespace OboxSteam.Infrastructure.Migrations
             modelBuilder.Entity("OboxSteam.Domain.Entities.User", b =>
                 {
                     b.Navigation("ActivityBookings");
+
+                    b.Navigation("ActivityProgresses");
 
                     b.Navigation("Certificates");
 

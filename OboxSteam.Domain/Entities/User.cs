@@ -47,6 +47,7 @@ public class User : BaseEntity
     public ICollection<ActivityBooking> ActivityBookings { get; set; } = new List<ActivityBooking>();
     public ICollection<CourseEnrollment> CourseEnrollments { get; set; } = new List<CourseEnrollment>();
     public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();
+    public ICollection<ActivityProgress> ActivityProgresses { get; set; } = new List<ActivityProgress>();
     public ICollection<ProgramEnrollment> ProgramEnrollments { get; set; } = new List<ProgramEnrollment>();
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<Portfolio> Portfolios { get; set; } = new List<Portfolio>();

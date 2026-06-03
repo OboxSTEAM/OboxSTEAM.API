@@ -11,11 +11,13 @@ namespace OboxSteam.Application.Services
     {
         private readonly ILogger _loggerService;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IBlobService _blobService;
 
-        public SeedService(ILogger<SeedService> loggerService, IUnitOfWork unitOfWork)
+        public SeedService(ILogger<SeedService> loggerService, IUnitOfWork unitOfWork, IBlobService blobService)
         {
             _loggerService = loggerService;
             _unitOfWork = unitOfWork;
+            _blobService = blobService;
         }
         public async Task SeedAllDataAsync()
         {
@@ -1180,7 +1182,7 @@ namespace OboxSteam.Application.Services
                         ModuleId = moduleRobotics1.Id,
                         ActivityId = null,
                         Title = "Robotics Starter Kit Guide",
-                        MaterialType = "PDF",
+                        MaterialType = OboxSteam.Domain.Enums.MaterialType.PDF,
                         FileUrl = "https://storage.oboxsteam.com/materials/robotics-starter-guide.pdf",
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
@@ -1196,7 +1198,7 @@ namespace OboxSteam.Application.Services
                         ModuleId = moduleWebDev1.Id,
                         ActivityId = null,
                         Title = "HTML Cheat Sheet",
-                        MaterialType = "ExternalLink",
+                        MaterialType = OboxSteam.Domain.Enums.MaterialType.ExternalLink,
                         FileUrl = "https://developer.mozilla.org/en-US/docs/Web/HTML",
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
@@ -1212,7 +1214,7 @@ namespace OboxSteam.Application.Services
                         ModuleId = moduleRobotics1.Id,
                         ActivityId = activitySelfPaced.Id,
                         Title = "Pre-class Reading: What is a Robot?",
-                        MaterialType = "Video",
+                        MaterialType = OboxSteam.Domain.Enums.MaterialType.Video,
                         FileUrl = "https://storage.oboxsteam.com/videos/what-is-a-robot.mp4",
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
@@ -1425,6 +1427,11 @@ namespace OboxSteam.Application.Services
         public async Task ClearAllDataAsync()
         {
             _loggerService.LogInformation("Starting clear all data");
+
+            // ── Step 1: Delete tracked S3 objects before wiping DB rows ────────
+            await ClearS3ObjectsAsync();
+
+            // ── Step 2: Hard-delete all DB rows ───────────────────────────────
             await _unitOfWork.MediaTags.HardRemove(x => true);
             await _unitOfWork.MediaAssets.HardRemove(x => true);
             await _unitOfWork.HighlightVideos.HardRemove(x => true);
@@ -1436,7 +1443,7 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.Certificates.HardRemove(x => true);
             await _unitOfWork.ProgramBoards.HardRemove(x => true);
             await _unitOfWork.OtpStorages.HardRemove(x => true);
-            
+
             await _unitOfWork.QuizOptions.HardRemove(x => true);
             await _unitOfWork.QuizQuestions.HardRemove(x => true);
             await _unitOfWork.Submissions.HardRemove(x => true);
@@ -1457,6 +1464,145 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.SaveChangesAsync();
 
             _loggerService.LogInformation("Finished clear all data");
+        }
+
+        /// <summary>
+        /// Xóa các S3 objects được track trong DB trước khi xóa DB rows.
+        /// Bao gồm: media/, raw/, materials/, highlights/, avatars/ (Users + Experts).
+        /// Lỗi xóa từng object được log warning nhưng không làm dừng quá trình.
+        /// </summary>
+        private async Task ClearS3ObjectsAsync()
+        {
+            _loggerService.LogInformation("[ClearS3] Starting S3 cleanup...");
+            var s3KeysToDelete = new List<string>();
+
+            // ── 1. MediaAssets: FileUrl (media/) và RawVideoS3Key (raw/) ────────
+            var mediaAssets = await _unitOfWork.MediaAssets.GetAllAsync();
+            foreach (var asset in mediaAssets)
+            {
+                if (!string.IsNullOrWhiteSpace(asset.FileUrl))
+                {
+                    var key = ExtractS3Key(asset.FileUrl);
+                    if (!string.IsNullOrEmpty(key))
+                        s3KeysToDelete.Add(key);
+                }
+
+                if (!string.IsNullOrWhiteSpace(asset.RawVideoS3Key))
+                    s3KeysToDelete.Add(asset.RawVideoS3Key);
+            }
+
+            // ── 2. Materials: FileUrl (materials/) — chỉ những URL thuộc S3 ───
+            var materials = await _unitOfWork.Materials.GetAllAsync();
+            foreach (var material in materials)
+            {
+                if (string.IsNullOrWhiteSpace(material.FileUrl))
+                    continue;
+
+                // Bỏ qua external links (không phải S3 URLs)
+                if (!IsS3Url(material.FileUrl))
+                    continue;
+
+                var key = ExtractS3Key(material.FileUrl);
+                if (!string.IsNullOrEmpty(key))
+                    s3KeysToDelete.Add(key);
+            }
+
+            // ── 3. HighlightVideos: VideoUrl ────────────────────────────────────
+            var highlightVideos = await _unitOfWork.HighlightVideos.GetAllAsync();
+            foreach (var hv in highlightVideos)
+            {
+                if (!string.IsNullOrWhiteSpace(hv.VideoUrl))
+                {
+                    var key = ExtractS3Key(hv.VideoUrl);
+                    if (!string.IsNullOrEmpty(key))
+                        s3KeysToDelete.Add(key);
+                }
+            }
+
+            // ── 4. Users: AvatarUrl (avatars/) ──────────────────────────────────
+            var users = await _unitOfWork.Users.GetAllAsync();
+            foreach (var user in users)
+            {
+                if (!string.IsNullOrWhiteSpace(user.AvatarUrl) && IsS3Url(user.AvatarUrl))
+                {
+                    var key = ExtractS3Key(user.AvatarUrl);
+                    if (!string.IsNullOrEmpty(key))
+                        s3KeysToDelete.Add(key);
+                }
+            }
+
+            // ── 5. Experts: AvatarUrl (avatars/) ────────────────────────────────
+            var experts = await _unitOfWork.Experts.GetAllAsync();
+            foreach (var expert in experts)
+            {
+                if (!string.IsNullOrWhiteSpace(expert.AvatarUrl) && IsS3Url(expert.AvatarUrl))
+                {
+                    var key = ExtractS3Key(expert.AvatarUrl);
+                    if (!string.IsNullOrEmpty(key))
+                        s3KeysToDelete.Add(key);
+                }
+            }
+
+            // ── Deduplicate ────────────────────────────────────────────────────
+            var distinctKeys = s3KeysToDelete
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _loggerService.LogInformation("[ClearS3] Found {Count} S3 object(s) to delete.", distinctKeys.Count);
+
+            int deleted = 0, failed = 0;
+            foreach (var key in distinctKeys)
+            {
+                try
+                {
+                    await _blobService.DeleteByKeyAsync(key);
+                    deleted++;
+                    _loggerService.LogDebug("[ClearS3] Deleted: {Key}", key);
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    _loggerService.LogWarning(ex, "[ClearS3] Failed to delete S3 object: {Key}", key);
+                }
+            }
+
+            _loggerService.LogInformation(
+                "[ClearS3] S3 cleanup done. Deleted={Deleted}, Failed={Failed}",
+                deleted, failed);
+        }
+
+        /// <summary>
+        /// Trích xuất S3 key từ URL (path-style hoặc virtual-hosted style).
+        /// Trả về null nếu URL không hợp lệ.
+        /// </summary>
+        private string? ExtractS3Key(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return null;
+
+            var path = uri.AbsolutePath.TrimStart('/');
+
+            // Path-style: /{bucket}/{key}
+            var bucketPrefix = $"{_blobService.BucketName}/";
+            if (path.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
+                path = path[bucketPrefix.Length..];
+
+            return string.IsNullOrWhiteSpace(path) ? null : path;
+        }
+
+        /// <summary>
+        /// Kiểm tra URL có thuộc S3 bucket của project hay không.
+        /// Chỉ xóa những URL chứa hostname amazonaws.com hoặc bucket name của project.
+        /// </summary>
+        private bool IsS3Url(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return false;
+
+            var host = uri.Host;
+            return host.EndsWith(".amazonaws.com", StringComparison.OrdinalIgnoreCase)
+                || host.Contains(_blobService.BucketName, StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<Activity> CreateSeedActivities(

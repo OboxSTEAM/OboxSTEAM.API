@@ -21,7 +21,6 @@ public class MediaService : IMediaService
     private const long MaxVideoSize = 3L * 1024 * 1024 * 1024;  // 3 GB
     private const string MediaFolder = "media";
     private const string RawFolder = "raw";
-    private const string S3Bucket = "oboxsteam-bucket";
 
 
 
@@ -91,7 +90,7 @@ public class MediaService : IMediaService
             // ── Pre-validate faces BEFORE saving to DB ──────────────────────
             // This keeps the DB clean: if no face is found, we delete the S3 file
             // and reject the request without leaving any orphaned MediaAsset row.
-            prevalidatedMatches = await _faceRecognitionService.SearchFacesAsync(S3Bucket, path);
+            prevalidatedMatches = await _faceRecognitionService.SearchFacesAsync(_blobService.BucketName, path);
 
             if (prevalidatedMatches.Count == 0)
             {
@@ -337,7 +336,7 @@ public class MediaService : IMediaService
                 "Starting Rekognition video face-search for MediaId={MediaId}, S3Key={Key}",
                 mediaId, outputS3Key);
             rekJobId = await _faceRecognitionService.StartVideoFaceSearchAsync(
-                S3Bucket, outputS3Key);
+                _blobService.BucketName, outputS3Key);
         }
         catch (Exception ex)
         {
@@ -356,7 +355,7 @@ public class MediaService : IMediaService
                 "Starting Rekognition Label Detection for MediaId={MediaId}, S3Key={Key}",
                 mediaId, outputS3Key);
             var labelJobId = await _faceRecognitionService.StartLabelDetectionAsync(
-                S3Bucket, outputS3Key);
+                _blobService.BucketName, outputS3Key);
             media.LabelJobRef = labelJobId;
             _logger.LogInformation(
                 "Label Detection job started: {LabelJobId} for MediaId={MediaId}", labelJobId, mediaId);
@@ -457,7 +456,7 @@ public class MediaService : IMediaService
                 var uri = new Uri(media.FileUrl);
                 var s3Key = uri.AbsolutePath.TrimStart('/');
                 // Strip bucket prefix if present (path-style URL: /{bucket}/{key})
-                var bucketPrefix = $"{S3Bucket}/";
+                var bucketPrefix = $"{_blobService.BucketName}/";
                 if (s3Key.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
                     s3Key = s3Key[bucketPrefix.Length..];
 

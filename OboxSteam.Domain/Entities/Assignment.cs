@@ -24,6 +24,12 @@ public class Assignment : BaseEntity
 
     public int MaxPoints { get; set; }
 
+    /// <summary>Minimum grade required to pass this assignment.</summary>
+    public decimal PassScore { get; set; }
+
+    /// <summary>If true, this assignment must be passed for the module to be completed.</summary>
+    public bool IsRequiredForModulePass { get; set; } = true;
+
     public DateTime? DueDate { get; set; }
 
     public bool AllowShuffle { get; set; } = true;

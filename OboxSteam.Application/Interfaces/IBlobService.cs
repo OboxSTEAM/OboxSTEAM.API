@@ -2,6 +2,12 @@ namespace OboxSteam.Application.Interfaces;
 
 public interface IBlobService
 {
+    /// <summary>
+    /// Tên S3 bucket đang được sử dụng (đọc từ env var AWS_S3_BUCKET).
+    /// Dùng property này thay vì hardcode bucket name trong các service khác.
+    /// </summary>
+    string BucketName { get; }
+
     Task EnsureBucketExistsAsync(CancellationToken cancellationToken = default);
 
     Task UploadFileAsync(

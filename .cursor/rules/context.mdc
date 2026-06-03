@@ -1,0 +1,166 @@
+---
+alwaysApply: false
+---
+
+# OboxSTEAM — Project Context & Domain Reference
+
+> Load this file when working on feature logic, data modelling, routing, roles, or portfolio/subdomain behaviour. For code style use `nextjs-engineering-rule.mdc`; for colors and UI use `styling-rule.mdc`.
+
+---
+
+## Project Overview
+
+**OboxSTEAM** is a Vietnamese edtech platform that sells and delivers STEAM experiential learning programs (like a leaner Coursera + physical lab sessions). Its distinguishing feature is that every enrolled student automatically builds a **digital Portfolio** — a public microsite documenting their learning journey — which they can use for overseas university applications.
+
+**Core value loop:**
+Student enrolls in program → learns through online/offline sessions → evidence is collected automatically → AI processes evidence → Portfolio microsite is generated → student shares it with universities
+
+---
+
+## Actors & Roles
+
+| Actor | Key Permissions |
+|-------|----------------|
+| **Guest** | Browse programs, view public student portfolios |
+| **Student** | Enroll, learn, track progress, manage own portfolio |
+| **Parent** | Register on behalf of child, pay, monitor child's progress (linked sub-profile) |
+| **Mentor / Instructor** | Teach sessions, grade students per stage, upload recommendation letters, upload evidence media |
+| **Manager** | OboxSTEAM platform representative; oversees program quality and Mentor accounts |
+| **Admin** | System-level observer; manages users, content, AI pipelines |
+
+**Parent–Child linking:** A parent account can create multiple child (Student) sub-profiles. All child activity triggers real-time notifications to the parent.
+
+**Mentor approval flow:** Mentor registers → uploads CCCD, degree, CV, language cert → Manager reviews → Admin approves.
+
+---
+
+## Content Hierarchy
+
+```
+Program
+└── Curriculum Framework        (teaching syllabus, has unlock conditions)
+    └── Module                  (themed unit; has prerequisites)
+        └── Course              (theory docs + task list; reusable across modules)
+            └── Activity        (a concrete task the student must complete)
+```
+
+- A **Module** is locked until all prerequisite modules are passed. Failed prerequisite → student can re-enroll in that module only.
+- A **Course** contains theory materials + required activities. Activities are the atomic unit of student work.
+- **Program enrollment** gives the student a personal Curriculum instance (their own progress tracked separately from others).
+
+---
+
+## Core Features
+
+### 3.1 Authentication & Account Management
+- Multi-channel sign-up: Google OAuth, phone (OTP), email/password.
+- Role selection at registration (Student, Parent, Mentor).
+- Mentor accounts require Manager/Admin approval with document upload.
+- Parent can create and manage child sub-profiles; activity notifications flow to parent.
+
+### 3.2 Student Profile (Portfolio Data Source)
+The profile is the raw data the AI uses to build the portfolio. Key sections:
+
+**Academic info:** current school, grade, intended major direction, target study-abroad country & year, GPA (overall + STEM subjects), standardized test scores (SAT/ACT/AP/IB), language certificates (IELTS/TOEFL).
+
+**Achievements:** awards/competitions (especially Robotics, Informatics, ISEF), project roles, extracurriculars auto-pulled from enrolled programs.
+
+**STEAM evidence:** featured projects (student selects 3–5 proudest), community service linked to STEAM, field trips and workshops auto-counted from system.
+
+**Skills:** hard skills list, soft skills list.
+
+**Written content:** personal bio (250–500 words), stage reflections journal (AI summarises into Portfolio), recommendation letters uploaded by Mentors.
+
+**Media:** auto-tagged photo library (AI face recognition), short highlight video links (9:16, AI-generated from session footage).
+
+### 3.3 Learning Journey (LMS — built in-house)
+- Online sessions: embedded video lectures + live class links (e.g. Google Meet), auto-attendance.
+- Offline sessions: physical lab / field trip; Mentor uploads session photos/video → AI tags students → evidence auto-routed to student portfolio.
+- Stage timeline with start/end dates; system alerts on delay.
+- Per-activity student report form: self-assessment of knowledge gained.
+- Mentor evaluation per stage: Excellent / Pass / Needs Improvement.
+- Auto progress report sent to parent after each stage.
+- Past stage review: student can revisit completed stages to see materials, evidence, and evaluations.
+
+### 3.4 Certificates
+- Auto-generated E-Certificate PDF on program completion.
+- Sub-certificates per module or milestone.
+- Certificates feed automatically into the Portfolio.
+
+### 3.5 Portfolio & Personal Microsite
+- Aggregates all certificates, AI videos, mentor assessments from all programs into one master portfolio.
+- Skills radar/bar chart auto-generated from completed courses.
+- Student can manually add additional credentials/achievements.
+- Customisable layout: student picks a template; can write personal statement and set slogan.
+
+**Portfolio Plans:**
+
+| Plan | URL format | PDF export | Templates | Privacy |
+|------|-----------|-----------|-----------|---------|
+| Standard (free) | `obox.id/{student-id}` | View online only | Default templates | Public link |
+| Premium (paid) | `{name}.obox.id` | Unlimited PDF download | Premium templates + custom branding (colors, slogan) | Public link |
+
+**Subdomain architecture (Premium):**
+- Wildcard DNS `*.obox.id` points to the Next.js app.
+- `middleware.ts` reads `request.headers.host`, extracts subdomain, rewrites internally to `/(portfolio-site)/[username]`.
+- Route group `(portfolio-site)` has its own minimal layout (no main nav).
+
+### 3.6 AI Features
+- **Face recognition:** AI scans uploaded session photos/videos → identifies students → auto-tags and routes evidence to their individual portfolio store.
+- **Highlight reel generation:** AI cuts session footage into short 9:16 clips per student → stored in student media library.
+- **Reflection summarisation:** AI reads student journal entries → generates polished summary prose for the Portfolio.
+- **Skills analysis:** AI analyses completed courses → generates percentage scores per skill dimension.
+
+> AI feature implementation is backend/service responsibility. Frontend consumes the results via API. Do not implement AI logic on the frontend.
+
+---
+
+## Routing Architecture
+
+```
+app/
+├── (main)/                         → main platform (header + footer)
+│   ├── page.tsx                    → homepage
+│   ├── courses/                    → program catalog + detail
+│   ├── dashboard/                  → student/parent home
+│   ├── portfolio/                  → portfolio builder UI
+│   └── [role-specific routes]
+├── (auth)/                         → login, register, role selection
+├── (portfolio-site)/               → public student portfolio microsites
+│   └── [username]/page.tsx         → rendered when subdomain is detected
+└── middleware.ts                   → subdomain → route rewrite
+```
+
+---
+
+## Tech Stack
+
+| Layer | Choice |
+|-------|--------|
+| Framework | Next.js 16 (App Router, Turbopack) |
+| Language | TypeScript (strict) |
+| Styling | Tailwind CSS v4 + shadcn/ui (base-nova style) |
+| Animation components | React Bits (via shadcn MCP registry) |
+| State | Redux Toolkit (global auth/UI); Server Components for server data |
+| Validation | Zod v4 — `z.string().url()` pattern for env; shared schemas in `lib/validations/` |
+| Forms | react-hook-form + @hookform/resolvers/zod |
+| Package manager | pnpm only |
+| Icons | Lucide React (sparingly) |
+| Fonts | Nunito (headings), Inter (body), JetBrains Mono (code) |
+
+---
+
+## Key Conventions
+
+- `app/(main)/` for all authenticated platform pages; `app/(auth)/` for sign-in flows; `app/(portfolio-site)/` for public portfolio microsites.
+- Server Components by default; `"use client"` only for interactive leaves.
+- Redux slices live in `store/slices/`; typed hooks in `store/hooks.ts`.
+- API call wrappers go in `lib/api/`; Zod schemas in `lib/validations/`.
+- STEAM category colors (`--steam-science`, `--steam-technology`, etc.) are CSS variables — use `text-steam-science`, `bg-steam-technology` etc. as Tailwind utilities.
+- Student data is sensitive — never log PII; server-only API keys via env vars.
+
+---
+
+**Version**: 1.0
+**Last Updated**: May 2026
+**Project**: OboxSTEAM
