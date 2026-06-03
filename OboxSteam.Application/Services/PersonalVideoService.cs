@@ -44,6 +44,7 @@ public class PersonalVideoService : IPersonalVideoService
     private readonly IFaceRecognitionService _faceRecognitionService;
     private readonly IVideoConverterService _videoConverterService;
     private readonly IStrengthMatchService _strengthMatchService;
+    private readonly IBlobService _blobService;
     private readonly ILogger<PersonalVideoService> _logger;
 
     public PersonalVideoService(
@@ -51,14 +52,16 @@ public class PersonalVideoService : IPersonalVideoService
         IFaceRecognitionService faceRecognitionService,
         IVideoConverterService videoConverterService,
         IStrengthMatchService strengthMatchService,
+        IBlobService blobService,
         ILogger<PersonalVideoService> logger)
     {
         _unitOfWork = unitOfWork;
         _faceRecognitionService = faceRecognitionService;
         _videoConverterService = videoConverterService;
         _strengthMatchService = strengthMatchService;
+        _blobService = blobService;
         _logger = logger;
-        _s3Bucket = Environment.GetEnvironmentVariable("AWS_S3_BUCKET") ?? "oboxsteam-bucket";
+        _s3Bucket = blobService.BucketName;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
