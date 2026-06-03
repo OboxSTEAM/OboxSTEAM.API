@@ -14,6 +14,13 @@ public class Submission : BaseEntity
     public Guid StudentId { get; set; }
     public User Student { get; set; } = null!;
 
+    /// <summary>The module enrollment attempt this submission was made under (optional).</summary>
+    public Guid? ModuleEnrollmentId { get; set; }
+    public ModuleEnrollment? ModuleEnrollment { get; set; }
+
+    /// <summary>Distinguishes resubmissions; incremented each time the student submits again.</summary>
+    public int AttemptNumber { get; set; } = 1;
+
     public SubmissionStatus Status { get; set; } = SubmissionStatus.Pending;
 
     public string? ContentText { get; set; }

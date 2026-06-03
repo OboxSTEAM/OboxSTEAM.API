@@ -36,6 +36,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ModuleEnrollment> ModuleEnrollments { get; set; }
     public DbSet<CourseEnrollment> CourseEnrollments { get; set; }
     public DbSet<ActivityBooking> ActivityBookings { get; set; }
+    public DbSet<ActivityProgress> ActivityProgresses { get; set; }
 
     // ── 6. Assessments & Submissions ──
     public DbSet<Assignment> Assignments { get; set; }
@@ -83,6 +84,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ModuleEnrollment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CourseEnrollment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ActivityBooking>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ActivityProgress>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Assignment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuizQuestion>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuizOption>().HasQueryFilter(e => !e.IsDeleted);
@@ -199,6 +201,61 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
+        // PROGRAM ENROLLMENT (Unique: student + program, active only)
+        // =============================================
+        modelBuilder.Entity<ProgramEnrollment>(entity =>
+        {
+            entity.HasIndex(pe => new { pe.StudentId, pe.ProgramId })
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0");
+        });
+
+        // =============================================
+        // MODULE ENROLLMENT (Unique: student + module + attempt)
+        // =============================================
+        modelBuilder.Entity<ModuleEnrollment>(entity =>
+        {
+            entity.HasOne(me => me.ProgramEnrollment)
+                .WithMany(pe => pe.ModuleEnrollments)
+                .HasForeignKey(me => me.ProgramEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(me => me.Student)
+                .WithMany(u => u.ModuleEnrollments)
+                .HasForeignKey(me => me.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(me => new { me.StudentId, me.ModuleId, me.AttemptNumber })
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0");
+        });
+
+        // =============================================
+        // ACTIVITY PROGRESS (Unique: module enrollment + activity)
+        // =============================================
+        modelBuilder.Entity<ActivityProgress>(entity =>
+        {
+            entity.HasOne(ap => ap.ModuleEnrollment)
+                .WithMany(me => me.ActivityProgresses)
+                .HasForeignKey(ap => ap.ModuleEnrollmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(ap => ap.Student)
+                .WithMany(u => u.ActivityProgresses)
+                .HasForeignKey(ap => ap.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ap => ap.Activity)
+                .WithMany(a => a.ActivityProgresses)
+                .HasForeignKey(ap => ap.ActivityId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(ap => new { ap.ModuleEnrollmentId, ap.ActivityId })
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0");
+        });
+
+        // =============================================
         // ASSIGNMENT
         // =============================================
         modelBuilder.Entity<Assignment>(entity =>
@@ -221,6 +278,11 @@ public class OboxSteamDbContext : DbContext
             entity.HasOne(s => s.Student)
                 .WithMany(u => u.Submissions)
                 .HasForeignKey(s => s.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.ModuleEnrollment)
+                .WithMany(me => me.Submissions)
+                .HasForeignKey(s => s.ModuleEnrollmentId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
