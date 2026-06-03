@@ -171,6 +171,8 @@ public static class IocContainer
         services.AddScoped<IParentService, ParentService>();
         services.AddScoped<IPersonalVideoService, PersonalVideoService>();
         services.AddScoped<IStrengthMatchService, BedrockStrengthMatchService>();
+        services.AddScoped<IProgramEnrollmentService, ProgramEnrollmentService>();
+        services.AddScoped<IModuleEnrollmentService, ModuleEnrollmentService>();
         return services;
     }
 
