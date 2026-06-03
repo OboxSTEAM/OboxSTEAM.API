@@ -1470,7 +1470,7 @@ namespace OboxSteam.Application.Services
 
         /// <summary>
         /// Xóa các S3 objects được track trong DB trước khi xóa DB rows.
-        /// Chỉ xóa những keys thuộc bucket của project (media/, raw/, materials/, highlights/).
+        /// Bao gồm: media/, raw/, materials/, highlights/, avatars/ (Users + Experts).
         /// Lỗi xóa từng object được log warning nhưng không làm dừng quá trình.
         /// </summary>
         private async Task ClearS3ObjectsAsync()
@@ -1516,6 +1516,30 @@ namespace OboxSteam.Application.Services
                 if (!string.IsNullOrWhiteSpace(hv.VideoUrl))
                 {
                     var key = ExtractS3Key(hv.VideoUrl);
+                    if (!string.IsNullOrEmpty(key))
+                        s3KeysToDelete.Add(key);
+                }
+            }
+
+            // ── 4. Users: AvatarUrl (avatars/) ──────────────────────────────────
+            var users = await _unitOfWork.Users.GetAllAsync();
+            foreach (var user in users)
+            {
+                if (!string.IsNullOrWhiteSpace(user.AvatarUrl) && IsS3Url(user.AvatarUrl))
+                {
+                    var key = ExtractS3Key(user.AvatarUrl);
+                    if (!string.IsNullOrEmpty(key))
+                        s3KeysToDelete.Add(key);
+                }
+            }
+
+            // ── 5. Experts: AvatarUrl (avatars/) ────────────────────────────────
+            var experts = await _unitOfWork.Experts.GetAllAsync();
+            foreach (var expert in experts)
+            {
+                if (!string.IsNullOrWhiteSpace(expert.AvatarUrl) && IsS3Url(expert.AvatarUrl))
+                {
+                    var key = ExtractS3Key(expert.AvatarUrl);
                     if (!string.IsNullOrEmpty(key))
                         s3KeysToDelete.Add(key);
                 }
