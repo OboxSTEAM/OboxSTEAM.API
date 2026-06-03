@@ -207,7 +207,7 @@ public class OboxSteamDbContext : DbContext
         {
             entity.HasIndex(pe => new { pe.StudentId, pe.ProgramId })
                 .IsUnique()
-                .HasFilter("[IsDeleted] = 0");
+                .HasFilter("\"IsDeleted\" = false");
         });
 
         // =============================================
@@ -227,7 +227,7 @@ public class OboxSteamDbContext : DbContext
 
             entity.HasIndex(me => new { me.StudentId, me.ModuleId, me.AttemptNumber })
                 .IsUnique()
-                .HasFilter("[IsDeleted] = 0");
+                .HasFilter("\"IsDeleted\" = false");
         });
 
         // =============================================
@@ -252,7 +252,7 @@ public class OboxSteamDbContext : DbContext
 
             entity.HasIndex(ap => new { ap.ModuleEnrollmentId, ap.ActivityId })
                 .IsUnique()
-                .HasFilter("[IsDeleted] = 0");
+                .HasFilter("\"IsDeleted\" = false");
         });
 
         // =============================================

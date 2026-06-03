@@ -122,7 +122,7 @@ namespace OboxSteam.Infrastructure.Migrations
                 table: "ProgramEnrollments",
                 columns: new[] { "StudentId", "ProgramId" },
                 unique: true,
-                filter: "[IsDeleted] = 0");
+                filter: "\"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ModuleEnrollments_ProgramEnrollmentId",
@@ -134,7 +134,7 @@ namespace OboxSteam.Infrastructure.Migrations
                 table: "ModuleEnrollments",
                 columns: new[] { "StudentId", "ModuleId", "AttemptNumber" },
                 unique: true,
-                filter: "[IsDeleted] = 0");
+                filter: "\"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ActivityProgresses_ActivityId",
@@ -146,7 +146,7 @@ namespace OboxSteam.Infrastructure.Migrations
                 table: "ActivityProgresses",
                 columns: new[] { "ModuleEnrollmentId", "ActivityId" },
                 unique: true,
-                filter: "[IsDeleted] = 0");
+                filter: "\"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ActivityProgresses_StudentId",

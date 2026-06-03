@@ -204,7 +204,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("ModuleEnrollmentId", "ActivityId")
                         .IsUnique()
-                        .HasFilter("[IsDeleted] = 0");
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("ActivityProgresses");
                 });
@@ -967,7 +967,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId", "ModuleId", "AttemptNumber")
                         .IsUnique()
-                        .HasFilter("[IsDeleted] = 0");
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("ModuleEnrollments");
                 });
@@ -1453,7 +1453,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId", "ProgramId")
                         .IsUnique()
-                        .HasFilter("[IsDeleted] = 0");
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("ProgramEnrollments");
                 });
