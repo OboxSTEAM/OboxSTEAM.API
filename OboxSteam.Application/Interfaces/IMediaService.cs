@@ -56,5 +56,20 @@ public interface IMediaService
     /// Dùng bởi <c>VideoTagProcessingWorker</c> để phát hiện recovery case khi server restart.
     /// </summary>
     Task<bool> IsAwaitingTaggingAsync(Guid mediaId);
+
+    /// <summary>
+    /// Handle MediaConvert job completion webhook (for raw videos).
+    /// </summary>
+    Task HandleMediaConvertWebhookAsync(string jobId, bool isSuccess);
+
+    /// <summary>
+    /// Handle Rekognition Face Search job completion webhook.
+    /// </summary>
+    Task HandleFaceSearchWebhookAsync(string jobId, bool isSuccess);
+
+    /// <summary>
+    /// Handle Rekognition Label Detection job completion webhook.
+    /// </summary>
+    Task HandleLabelDetectionWebhookAsync(string jobId, bool isSuccess);
 }
 

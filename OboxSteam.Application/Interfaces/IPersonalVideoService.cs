@@ -29,4 +29,10 @@ public interface IPersonalVideoService
     /// Returns null if no generation has been triggered yet.
     /// </summary>
     Task<HighlightVideoDto?> GetHighlightVideoAsync(Guid programId, Guid studentId);
+
+    /// <summary>
+    /// Processes the webhook completion of a personal video MediaConvert job.
+    /// Updates the job status and fetches the S3 URL if successful.
+    /// </summary>
+    Task HandlePersonalVideoJobCompletionAsync(string jobId, bool isSuccess);
 }

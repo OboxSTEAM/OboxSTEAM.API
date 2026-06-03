@@ -73,8 +73,8 @@ public class PersonalVideoService : IPersonalVideoService
         Guid programId, Guid studentId, string? strengthDescription = null)
     {
         _logger.LogInformation(
-            "[PersonalVideoService] TriggerPersonalVideoGenerationAsync: ProgramId={ProgramId}, StudentId={StudentId}",
-            programId, studentId);
+            "[PersonalVideoService] TriggerPersonalVideoGenerationAsync: ProgramId={ProgramId}, StudentId={StudentId}, StrengthDescription={StrengthDescription}",
+            programId, studentId, strengthDescription);
 
         // ── 1. Validate program & student ────────────────────────────────────
         var program = await _unitOfWork.Programs.GetByIdAsync(programId);
@@ -94,7 +94,7 @@ public class PersonalVideoService : IPersonalVideoService
             _logger.LogInformation(
                 "[PersonalVideoService] Job already in progress for ProgramId={ProgramId}, StudentId={StudentId}",
                 programId, studentId);
-            return MapToDto(existing, 0);
+            return MapToDto(existing);
         }
 
         // ── 3. Collect all tagged, fully-processed videos in this Program ────
@@ -151,7 +151,7 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] Job submitted. HighlightVideoId={Id}, McJobId={McJobId}",
             existing.Id, mcJobId);
 
-        return MapToDto(existing, clipInputs.Count);
+        return MapToDto(existing);
     }
 
     /// <inheritdoc />
@@ -160,7 +160,44 @@ public class PersonalVideoService : IPersonalVideoService
         var record = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
             hv => hv.ProgramId == programId && hv.StudentId == studentId && !hv.IsDeleted);
 
-        return record == null ? null : MapToDto(record, 0);
+        return record == null ? null : MapToDto(record);
+    }
+
+    /// <inheritdoc />
+    public async Task HandlePersonalVideoJobCompletionAsync(string jobId, bool isSuccess)
+    {
+        _logger.LogInformation(
+            "[PersonalVideoService] Handling MediaConvert Webhook JobId: {JobId}, Success: {Success}", jobId, isSuccess);
+
+        var highlightVideo = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
+            h => h.PersonalVideoJobRef == jobId && !h.IsDeleted);
+
+        if (highlightVideo == null)
+            return;
+
+        if (isSuccess)
+        {
+            try
+            {
+                var outputS3Key = await _videoConverterService.GetOutputS3KeyAsync(jobId);
+                var videoUrl = await _blobService.GetPreviewUrlAsync(outputS3Key);
+
+                highlightVideo.VideoUrl = videoUrl;
+                highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Completed;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "[PersonalVideoService] Failed to resolve MediaConvert output for HighlightVideo {Id}", highlightVideo.Id);
+                highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Failed;
+            }
+        }
+        else
+        {
+            highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Failed;
+        }
+
+        await _unitOfWork.SaveChangesAsync();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -284,8 +321,40 @@ public class PersonalVideoService : IPersonalVideoService
         // ── Case 1: No student face detected (AI fallback / scene-only) ─────────
         if (timelineResult.Segments.Count == 0)
         {
-            _logger.LogInformation(
-                "[PersonalVideoService] Case 1 (no student face detected by AI) → full video. MediaId={MediaId}", media.Id);
+            if (!string.IsNullOrWhiteSpace(strengthDescription))
+            {
+                var fullVideoSegment = new List<FaceTimestampSegment>
+                    { new FaceTimestampSegment(0, long.MaxValue / 1_000) };
+
+                var filteredClips = await ApplyStrengthsFilterAsync(
+                    media, s3Key, fullVideoSegment, strengthDescription);
+
+                if (filteredClips != null)
+                {
+                    if (filteredClips.Clips.Count > 0)
+                    {
+                        // Strength content present → full video (ignore Claude's sub-clip timings)
+                        _logger.LogInformation(
+                            "[PersonalVideoService] Case 1 + strengths: strength labels found → full video. MediaId={MediaId}", media.Id);
+                        return new ClipInput(s3Key, new List<TimeClip>());
+                    }
+
+                    // No matching strength labels → skip video entirely
+                    _logger.LogInformation(
+                        "[PersonalVideoService] Case 1 + strengths: no matching strength labels → skipping. MediaId={MediaId}", media.Id);
+                    return null;
+                }
+
+                // null → label data unavailable → fallback to full video
+                _logger.LogWarning(
+                    "[PersonalVideoService] Case 1 + strengths: label data unavailable → full video fallback. MediaId={MediaId}", media.Id);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "[PersonalVideoService] Case 1 (no student face detected by AI) → full video. MediaId={MediaId}", media.Id);
+            }
+
             return new ClipInput(s3Key, new List<TimeClip>());
         }
 
@@ -521,7 +590,7 @@ public class PersonalVideoService : IPersonalVideoService
     // DTO mapping
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static HighlightVideoDto MapToDto(HighlightVideo hv, int sourceCount) => new()
+    private static HighlightVideoDto MapToDto(HighlightVideo hv) => new()
     {
         Id = hv.Id,
         StudentId = hv.StudentId,
@@ -529,6 +598,5 @@ public class PersonalVideoService : IPersonalVideoService
         VideoUrl = hv.VideoUrl,
         PersonalVideoStatus = hv.PersonalVideoStatus,
         PersonalVideoRequestedAt = hv.PersonalVideoRequestedAt,
-        SourceVideoCount = sourceCount,
     };
 }

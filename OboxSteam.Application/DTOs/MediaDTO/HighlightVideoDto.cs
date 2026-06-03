@@ -20,6 +20,4 @@ public class HighlightVideoDto
     /// <summary>UTC timestamp when the generation was last triggered.</summary>
     public DateTime? PersonalVideoRequestedAt { get; set; }
 
-    /// <summary>Total number of source video clips included in the job.</summary>
-    public int SourceVideoCount { get; set; }
 }
