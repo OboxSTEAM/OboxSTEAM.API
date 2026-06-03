@@ -186,7 +186,7 @@ public class ParentService : IParentService
     {
         _logger.LogInformation("Magic login attempt initiated for email {Email}.", dto.Email);
         
-        // Find and validate the OTP in the database
+        // Find and validate the OTP in the database (do NOT mark as used here)
         var otp = await _unitOfWork.OtpStorages.FirstOrDefaultAsync(o => 
             o.Target == dto.Email && 
             o.OtpCode == dto.Token && 
@@ -198,10 +198,6 @@ public class ParentService : IParentService
             _logger.LogWarning("Magic login failed: Invalid or expired token.");
             throw ErrorHelper.BadRequest("Invalid or expired magic link.");
         }
-
-        // Mark OTP as used
-        otp.IsUsed = true;
-        await _unitOfWork.OtpStorages.Update(otp);
 
         var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == dto.Email && !u.IsDeleted);
         if (parent == null)
@@ -215,22 +211,10 @@ public class ParentService : IParentService
             throw ErrorHelper.Forbidden("Account has been locked.");
         }
 
-        // Confirm association with the StudentId from the OTP's CreatedBy field
-        var targetStudentId = otp.CreatedBy;
-        if (targetStudentId != Guid.Empty)
-        {
-            _logger.LogInformation("Confirming link association between Parent ID {ParentId} and Student ID {StudentId} via magic login.", parent.Id, targetStudentId);
-            var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x => x.ParentId == parent.Id && x.StudentId == targetStudentId);
-            if (ps != null && !ps.IsVerified)
-            {
-                ps.IsVerified = true;
-                await _unitOfWork.ParentStudents.Update(ps);
-                _logger.LogInformation("Link verified successfully between Parent {ParentId} and Student {StudentId}.", parent.Id, targetStudentId);
-            }
-        }
-        await _unitOfWork.SaveChangesAsync();
-
-        _logger.LogInformation("Magic login successful for Parent {ParentEmail}. Issuing tokens.", parent.Email);
+        // OTP is intentionally NOT marked as used here.
+        // The token remains valid for 24 hours and will only be consumed
+        // once the parent completes their profile via CompleteProfileAsync.
+        _logger.LogInformation("Magic login validated for Parent {ParentEmail}. Issuing tokens (OTP kept active until profile completion).", parent.Email);
         return await IssueTokensAsync(parent, configuration);
     }
 
@@ -258,6 +242,40 @@ public class ParentService : IParentService
         parent.IsEmailVerified = true;
         
         await _unitOfWork.Users.Update(parent);
+
+        // Consume the active MagicLink OTP and confirm the parent-student association.
+        // This is the real business event: the parent has completed their profile,
+        // meaning they genuinely used the magic link.
+        var activeOtp = await _unitOfWork.OtpStorages.FirstOrDefaultAsync(o =>
+            o.Target == parent.Email &&
+            o.Purpose == OtpPurpose.MagicLink &&
+            !o.IsUsed);
+
+        if (activeOtp != null)
+        {
+            activeOtp.IsUsed = true;
+            await _unitOfWork.OtpStorages.Update(activeOtp);
+            _logger.LogInformation("MagicLink OTP consumed for Parent ID {ParentId} upon profile completion.", parentId);
+
+            // Confirm the parent-student link that was pending this magic login
+            var targetStudentId = activeOtp.CreatedBy;
+            if (targetStudentId != Guid.Empty)
+            {
+                var ps = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(x =>
+                    x.ParentId == parent.Id && x.StudentId == targetStudentId);
+                if (ps != null && !ps.IsVerified)
+                {
+                    ps.IsVerified = true;
+                    await _unitOfWork.ParentStudents.Update(ps);
+                    _logger.LogInformation("Link verified between Parent {ParentId} and Student {StudentId} upon profile completion.", parent.Id, targetStudentId);
+                }
+            }
+        }
+        else
+        {
+            _logger.LogWarning("No active MagicLink OTP found for Parent ID {ParentId} during profile completion.", parentId);
+        }
+
         await _unitOfWork.SaveChangesAsync();
         
         _logger.LogInformation("Profile successfully completed and activated for Parent ID {ParentId}.", parentId);
