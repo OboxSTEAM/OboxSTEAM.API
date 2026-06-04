@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Interfaces;
 using System.Security.Cryptography;
@@ -11,6 +12,9 @@ namespace OboxSteam.API.Controllers;
 [Route("api/webhooks/aws")]
 public class AwsWebhookController : ControllerBase
 {
+    // SNS certificates are stable per URL — cache them to avoid redundant downloads.
+    private static readonly ConcurrentDictionary<string, byte[]> _certCache = new();
+
     private readonly ILogger<AwsWebhookController> _logger;
     private readonly IMediaService _mediaService;
     private readonly IPersonalVideoService _personalVideoService;
@@ -183,9 +187,13 @@ public class AwsWebhookController : ControllerBase
                 return false;
             }
 
-            // Download the certificate
+            // Download the certificate (cached per URL — SNS certs are stable)
             var http = _httpClientFactory.CreateClient("sns");
-            var certBytes = await http.GetByteArrayAsync(certUrl);
+            if (!_certCache.TryGetValue(certUrl!, out var certBytes))
+            {
+                certBytes = await http.GetByteArrayAsync(certUrl);
+                _certCache.TryAdd(certUrl!, certBytes);
+            }
             using var cert = new X509Certificate2(certBytes);
 
             // Build the string-to-sign per SNS specification

@@ -1,10 +1,10 @@
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -17,7 +17,7 @@ public class BedrockStrengthMatchService : IStrengthMatchService
 {
     // Claude Haiku: fastest and cheapest model — sufficient for cross-reference reasoning.
     // Switch to claude-3-5-sonnet if accuracy needs improvement.
-    private const string ModelId = "anthropic.claude-3-haiku-20240307-v1:0";
+    private const string ModelId = "us.anthropic.claude-3-haiku-20240307-v1:0";
 
     // Bedrock Tool name — must match what Claude will call.
     private const string ToolName = "report_strength_matches";
@@ -199,7 +199,7 @@ public class BedrockStrengthMatchService : IStrengthMatchService
     {
         ToolSpec = new ToolSpecification
         {
-            Name        = ToolName,
+            Name = ToolName,
             Description = "Report which face appearance segments match the student's strengths, with confidence scores.",
             InputSchema = new ToolInputSchema
             {
@@ -210,7 +210,7 @@ public class BedrockStrengthMatchService : IStrengthMatchService
                     {
                         matched_segments = new
                         {
-                            type        = "array",
+                            type = "array",
                             description = "List of segments that match at least one strength, sorted by score descending.",
                             items = new
                             {
@@ -218,16 +218,16 @@ public class BedrockStrengthMatchService : IStrengthMatchService
                                 properties = new
                                 {
                                     start_ms = new { type = "integer", description = "Segment start in milliseconds" },
-                                    end_ms   = new { type = "integer", description = "Segment end in milliseconds" },
-                                    strength = new { type = "string",  description = "The matched strength label" },
-                                    score    = new { type = "number",  description = "Match confidence 0.0-1.0" }
+                                    end_ms = new { type = "integer", description = "Segment end in milliseconds" },
+                                    strength = new { type = "string", description = "The matched strength label" },
+                                    score = new { type = "number", description = "Match confidence 0.0-1.0" }
                                 },
                                 required = new[] { "start_ms", "end_ms", "strength", "score" }
                             }
                         },
                         reasoning = new
                         {
-                            type        = "string",
+                            type = "string",
                             description = "Brief explanation of the matching decisions"
                         }
                     },
