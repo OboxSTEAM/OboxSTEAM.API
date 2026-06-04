@@ -260,9 +260,14 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] Found {Count} tagged video(s) for StudentId={StudentId}",
             taggedMedia.Count, studentId);
 
-        // Build ClipInputs in parallel — each Case 3 video requires a Rekognition API call.
-        // Running concurrently avoids sequential latency when many videos are tagged.
-        var clipTasks = taggedMedia.Select(async media =>
+        // Build ClipInputs SEQUENTIALLY when strengths filtering is enabled.
+        // Running Bedrock calls in parallel on 3+ videos blows the tokens-per-minute quota
+        // (3 × 4365 labels = ~130k tokens in one burst). Sequential processing means only
+        // one Claude call is in-flight at a time, keeping token consumption well within limits.
+        // For the no-strength path the Rekognition calls remain cheap and can still be
+        // sequential without meaningful latency impact.
+        var clips = new List<ClipInput>();
+        foreach (var media in taggedMedia)
         {
             var s3Key = ExtractS3KeyFromUrl(media.FileUrl);
             if (string.IsNullOrEmpty(s3Key))
@@ -270,14 +275,13 @@ public class PersonalVideoService : IPersonalVideoService
                 _logger.LogWarning(
                     "[PersonalVideoService] Cannot extract S3 key from FileUrl for MediaId={MediaId}. Skipping.",
                     media.Id);
-                return null;
+                continue;
             }
 
-            return (ClipInput?)await BuildClipInputForMediaAsync(media, s3Key, studentId, strengthDescription);
-        });
-
-        var clipResults = await Task.WhenAll(clipTasks);
-        var clips = clipResults.Where(c => c != null).Cast<ClipInput>().ToList();
+            var clip = await BuildClipInputForMediaAsync(media, s3Key, studentId, strengthDescription);
+            if (clip != null)
+                clips.Add(clip);
+        }
 
         _logger.LogInformation(
             "[PersonalVideoService] BuildClipInputsAsync completed: {Count} ClipInput(s) built.",

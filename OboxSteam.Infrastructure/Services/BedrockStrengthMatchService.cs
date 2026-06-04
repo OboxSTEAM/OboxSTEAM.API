@@ -39,6 +39,7 @@ public class BedrockStrengthMatchService : IStrengthMatchService
         _logger = logger;
     }
 
+
     /// <inheritdoc />
     public async Task<StrengthMatchResult> MatchStrengthsAsync(
         IList<FaceTimestampSegment> faceSegments,
