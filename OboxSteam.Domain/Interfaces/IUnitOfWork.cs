@@ -35,6 +35,9 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Payment> Payments { get; }
     IGenericRepository<ProgramBoard> ProgramBoards { get; }
     IGenericRepository<ParentStudent> ParentStudents { get; }
+    IGenericRepository<QuestionBank> QuestionBanks { get; }
+    IGenericRepository<BankQuestion> BankQuestions { get; }
+    IGenericRepository<BankQuestionOption> BankQuestionOptions { get; }
 
     Task<int> SaveChangesAsync();
 }

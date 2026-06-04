@@ -23,4 +23,5 @@ public class Course : BaseEntity
     public ICollection<Assignment> Assignments { get; set; } = new List<Assignment>();
     public ICollection<CourseEnrollment> CourseEnrollments { get; set; } = new List<CourseEnrollment>();
     public ICollection<Material> Materials { get; set; } = new List<Material>();
+    public ICollection<QuestionBank> QuestionBanks { get; set; } = new List<QuestionBank>();
 }

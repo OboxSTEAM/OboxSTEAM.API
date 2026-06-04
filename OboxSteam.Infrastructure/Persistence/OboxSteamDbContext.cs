@@ -40,6 +40,9 @@ public class OboxSteamDbContext : DbContext
 
     // ── 6. Assessments & Submissions ──
     public DbSet<Assignment> Assignments { get; set; }
+    public DbSet<QuestionBank> QuestionBanks { get; set; }
+    public DbSet<BankQuestion> BankQuestions { get; set; }
+    public DbSet<BankQuestionOption> BankQuestionOptions { get; set; }
     public DbSet<QuizQuestion> QuizQuestions { get; set; }
     public DbSet<QuizOption> QuizOptions { get; set; }
     public DbSet<Submission> Submissions { get; set; }
@@ -86,6 +89,9 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ActivityBooking>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ActivityProgress>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Assignment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionBank>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<BankQuestion>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<BankQuestionOption>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuizQuestion>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuizOption>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Submission>().HasQueryFilter(e => !e.IsDeleted);
@@ -261,6 +267,59 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Assignment>(entity =>
         {
             entity.HasIndex(a => a.Code).IsUnique();
+
+            entity.HasOne(a => a.QuestionBank)
+                .WithMany(qb => qb.Assignments)
+                .HasForeignKey(a => a.QuestionBankId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // QUESTION BANK
+        // =============================================
+        modelBuilder.Entity<QuestionBank>(entity =>
+        {
+            entity.HasIndex(qb => new { qb.CourseId, qb.Name })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(qb => qb.Course)
+                .WithMany(c => c.QuestionBanks)
+                .HasForeignKey(qb => qb.CourseId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
+        // BANK QUESTION
+        // =============================================
+        modelBuilder.Entity<BankQuestion>(entity =>
+        {
+            entity.HasOne(bq => bq.QuestionBank)
+                .WithMany(qb => qb.Questions)
+                .HasForeignKey(bq => bq.QuestionBankId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
+        // BANK QUESTION OPTION
+        // =============================================
+        modelBuilder.Entity<BankQuestionOption>(entity =>
+        {
+            entity.HasOne(o => o.BankQuestion)
+                .WithMany(bq => bq.Options)
+                .HasForeignKey(o => o.BankQuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
+        // QUIZ QUESTION (snapshot)
+        // =============================================
+        modelBuilder.Entity<QuizQuestion>(entity =>
+        {
+            entity.HasOne(qq => qq.BankQuestion)
+                .WithMany()
+                .HasForeignKey(qq => qq.BankQuestionId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // =============================================
