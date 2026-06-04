@@ -17,7 +17,7 @@ public class BedrockStrengthMatchService : IStrengthMatchService
 {
     // Claude Haiku: fastest and cheapest model — sufficient for cross-reference reasoning.
     // Switch to claude-3-5-sonnet if accuracy needs improvement.
-    private const string ModelId = "ap.anthropic.claude-3-haiku-20240307-v1:0";
+    private const string ModelId = "anthropic.claude-3-haiku-20240307-v1:0";
 
     // Bedrock Tool name — must match what Claude will call.
     private const string ToolName = "report_strength_matches";
