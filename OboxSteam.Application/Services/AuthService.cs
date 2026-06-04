@@ -41,10 +41,10 @@ public class AuthService : IAuthService
     {
         _logger.LogInformation("Start registration for {Email} with role {Role}", registrationDto.Email, registrationDto.Role);
 
-        if (registrationDto.Role != RoleType.Student && registrationDto.Role != RoleType.Parent)
+        if (registrationDto.Role != RoleType.Student && registrationDto.Role != RoleType.Parent && registrationDto.Role != RoleType.Mentor)
         {
             _logger.LogWarning("Invalid registration role attempt: {Role}", registrationDto.Role);
-            throw ErrorHelper.BadRequest("Only Student and Parent roles are allowed for registration.");
+            throw ErrorHelper.BadRequest("Only Student, Parent and Mentor roles are allowed for registration.");
         }
 
         if (await UserExistsAsync(registrationDto.Email))
@@ -55,7 +55,12 @@ public class AuthService : IAuthService
 
         var hashedPassword = new PasswordHasher().HashPassword(registrationDto.Password);
 
-        var codePrefix = registrationDto.Role == RoleType.Student ? "STD" : "PRT";
+        var codePrefix = registrationDto.Role switch
+        {
+            RoleType.Student => "STD",
+            RoleType.Mentor  => "MNT",
+            _                => "PRT"
+        };
         var userCode = $"{codePrefix}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
         var user = new User
