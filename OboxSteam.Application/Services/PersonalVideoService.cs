@@ -37,6 +37,14 @@ public class PersonalVideoService : IPersonalVideoService
     /// </summary>
     private const long MergeGapMs = 1_000;
 
+    /// <summary>
+    /// When filtering label-detection entries for Claude, include labels within this
+    /// window around each face segment (before StartMs and after EndMs).
+    /// 5 seconds of extra context helps Claude detect activities that start just
+    /// before/after the student enters the frame.
+    /// </summary>
+    private const long LabelContextWindowMs = 5_000;
+
     private const string PersonalVideoFolder = "personal-videos";
 
     private readonly string _s3Bucket;
@@ -73,8 +81,8 @@ public class PersonalVideoService : IPersonalVideoService
         Guid programId, Guid studentId, string? strengthDescription = null)
     {
         _logger.LogInformation(
-            "[PersonalVideoService] TriggerPersonalVideoGenerationAsync: ProgramId={ProgramId}, StudentId={StudentId}",
-            programId, studentId);
+            "[PersonalVideoService] TriggerPersonalVideoGenerationAsync: ProgramId={ProgramId}, StudentId={StudentId}, StrengthDescription={StrengthDescription}",
+            programId, studentId, strengthDescription);
 
         // ── 1. Validate program & student ────────────────────────────────────
         var program = await _unitOfWork.Programs.GetByIdAsync(programId);
@@ -94,7 +102,7 @@ public class PersonalVideoService : IPersonalVideoService
             _logger.LogInformation(
                 "[PersonalVideoService] Job already in progress for ProgramId={ProgramId}, StudentId={StudentId}",
                 programId, studentId);
-            return MapToDto(existing, 0);
+            return MapToDto(existing);
         }
 
         // ── 3. Collect all tagged, fully-processed videos in this Program ────
@@ -151,7 +159,7 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] Job submitted. HighlightVideoId={Id}, McJobId={McJobId}",
             existing.Id, mcJobId);
 
-        return MapToDto(existing, clipInputs.Count);
+        return MapToDto(existing);
     }
 
     /// <inheritdoc />
@@ -160,7 +168,44 @@ public class PersonalVideoService : IPersonalVideoService
         var record = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
             hv => hv.ProgramId == programId && hv.StudentId == studentId && !hv.IsDeleted);
 
-        return record == null ? null : MapToDto(record, 0);
+        return record == null ? null : MapToDto(record);
+    }
+
+    /// <inheritdoc />
+    public async Task HandlePersonalVideoJobCompletionAsync(string jobId, bool isSuccess)
+    {
+        _logger.LogInformation(
+            "[PersonalVideoService] Handling MediaConvert Webhook JobId: {JobId}, Success: {Success}", jobId, isSuccess);
+
+        var highlightVideo = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
+            h => h.PersonalVideoJobRef == jobId && !h.IsDeleted);
+
+        if (highlightVideo == null)
+            return;
+
+        if (isSuccess)
+        {
+            try
+            {
+                var outputS3Key = await _videoConverterService.GetOutputS3KeyAsync(jobId);
+                var videoUrl = await _blobService.GetPreviewUrlAsync(outputS3Key);
+
+                highlightVideo.VideoUrl = videoUrl;
+                highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Completed;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "[PersonalVideoService] Failed to resolve MediaConvert output for HighlightVideo {Id}", highlightVideo.Id);
+                highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Failed;
+            }
+        }
+        else
+        {
+            highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Failed;
+        }
+
+        await _unitOfWork.SaveChangesAsync();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -215,9 +260,14 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] Found {Count} tagged video(s) for StudentId={StudentId}",
             taggedMedia.Count, studentId);
 
-        // Build ClipInputs in parallel — each Case 3 video requires a Rekognition API call.
-        // Running concurrently avoids sequential latency when many videos are tagged.
-        var clipTasks = taggedMedia.Select(async media =>
+        // Build ClipInputs SEQUENTIALLY when strengths filtering is enabled.
+        // Running Bedrock calls in parallel on 3+ videos blows the tokens-per-minute quota
+        // (3 × 4365 labels = ~130k tokens in one burst). Sequential processing means only
+        // one Claude call is in-flight at a time, keeping token consumption well within limits.
+        // For the no-strength path the Rekognition calls remain cheap and can still be
+        // sequential without meaningful latency impact.
+        var clips = new List<ClipInput>();
+        foreach (var media in taggedMedia)
         {
             var s3Key = ExtractS3KeyFromUrl(media.FileUrl);
             if (string.IsNullOrEmpty(s3Key))
@@ -225,14 +275,13 @@ public class PersonalVideoService : IPersonalVideoService
                 _logger.LogWarning(
                     "[PersonalVideoService] Cannot extract S3 key from FileUrl for MediaId={MediaId}. Skipping.",
                     media.Id);
-                return null;
+                continue;
             }
 
-            return (ClipInput?)await BuildClipInputForMediaAsync(media, s3Key, studentId, strengthDescription);
-        });
-
-        var clipResults = await Task.WhenAll(clipTasks);
-        var clips = clipResults.Where(c => c != null).Cast<ClipInput>().ToList();
+            var clip = await BuildClipInputForMediaAsync(media, s3Key, studentId, strengthDescription);
+            if (clip != null)
+                clips.Add(clip);
+        }
 
         _logger.LogInformation(
             "[PersonalVideoService] BuildClipInputsAsync completed: {Count} ClipInput(s) built.",
@@ -284,8 +333,40 @@ public class PersonalVideoService : IPersonalVideoService
         // ── Case 1: No student face detected (AI fallback / scene-only) ─────────
         if (timelineResult.Segments.Count == 0)
         {
-            _logger.LogInformation(
-                "[PersonalVideoService] Case 1 (no student face detected by AI) → full video. MediaId={MediaId}", media.Id);
+            if (!string.IsNullOrWhiteSpace(strengthDescription))
+            {
+                var fullVideoSegment = new List<FaceTimestampSegment>
+                    { new FaceTimestampSegment(0, long.MaxValue / 1_000) };
+
+                var filteredClips = await ApplyStrengthsFilterAsync(
+                    media, s3Key, fullVideoSegment, strengthDescription);
+
+                if (filteredClips != null)
+                {
+                    if (filteredClips.Clips.Count > 0)
+                    {
+                        // Strength content present → full video (ignore Claude's sub-clip timings)
+                        _logger.LogInformation(
+                            "[PersonalVideoService] Case 1 + strengths: strength labels found → full video. MediaId={MediaId}", media.Id);
+                        return new ClipInput(s3Key, new List<TimeClip>());
+                    }
+
+                    // No matching strength labels → skip video entirely
+                    _logger.LogInformation(
+                        "[PersonalVideoService] Case 1 + strengths: no matching strength labels → skipping. MediaId={MediaId}", media.Id);
+                    return null;
+                }
+
+                // null → label data unavailable → fallback to full video
+                _logger.LogWarning(
+                    "[PersonalVideoService] Case 1 + strengths: label data unavailable → full video fallback. MediaId={MediaId}", media.Id);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "[PersonalVideoService] Case 1 (no student face detected by AI) → full video. MediaId={MediaId}", media.Id);
+            }
+
             return new ClipInput(s3Key, new List<TimeClip>());
         }
 
@@ -395,11 +476,30 @@ public class PersonalVideoService : IPersonalVideoService
             return new ClipInput(s3Key, new List<TimeClip>()); // empty → skipped by caller
         }
 
+        // ── Token optimisation ────────────────────────────────────────────────
+        // Only send labels that fall within each face segment ± LabelContextWindowMs.
+        // This can reduce the label count by 80-95 % for long videos, staying well
+        // within Bedrock's daily token quota while keeping all relevant context.
+        var relevantLabels = FilterLabelsToSegmentWindows(labelTimeline, faceSegments);
+
+        if (relevantLabels.Count == 0)
+        {
+            // No labels overlap the student's face windows at all → no match possible.
+            _logger.LogInformation(
+                "[PersonalVideoService] No labels found within face-segment windows for MediaId={MediaId}. Skipping video.",
+                media.Id);
+            return new ClipInput(s3Key, new List<TimeClip>());
+        }
+
+        _logger.LogInformation(
+            "[PersonalVideoService] Label timeline filtered: {Total} → {Filtered} entries for MediaId={MediaId}",
+            labelTimeline.Count, relevantLabels.Count, media.Id);
+
         // Cross-reference via Claude (Bedrock Converse API + Tool Use)
         StrengthMatchResult matchResult;
         try
         {
-            matchResult = await _strengthMatchService.MatchStrengthsAsync(faceSegments, labelTimeline, strengthDescription);
+            matchResult = await _strengthMatchService.MatchStrengthsAsync(faceSegments, relevantLabels, strengthDescription);
         }
         catch (Exception ex)
         {
@@ -433,6 +533,27 @@ public class PersonalVideoService : IPersonalVideoService
     // ─────────────────────────────────────────────────────────────────────────
     // Segment processing helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Filters <paramref name="allLabels"/> to only those entries whose timestamp
+    /// falls within any face segment ± <see cref="LabelContextWindowMs"/>.
+    /// This reduces the prompt token count by 80-95 % on long videos while preserving
+    /// all contextually relevant label data for Claude to reason about.
+    /// </summary>
+    private static List<LabelDetectionEntry> FilterLabelsToSegmentWindows(
+        IList<LabelDetectionEntry> allLabels,
+        IList<FaceTimestampSegment> faceSegments)
+    {
+        // Build merged windows with context padding to avoid repeated overlap checks.
+        var windows = faceSegments
+            .Select(s => (Start: s.StartMs - LabelContextWindowMs, End: s.EndMs + LabelContextWindowMs))
+            .OrderBy(w => w.Start)
+            .ToList();
+
+        return allLabels
+            .Where(label => windows.Any(w => label.TimestampMs >= w.Start && label.TimestampMs <= w.End))
+            .ToList();
+    }
 
     /// <summary>
     /// Applies a <see cref="BufferMs"/>-millisecond padding to each segment (clamped to 0),
@@ -521,7 +642,7 @@ public class PersonalVideoService : IPersonalVideoService
     // DTO mapping
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static HighlightVideoDto MapToDto(HighlightVideo hv, int sourceCount) => new()
+    private static HighlightVideoDto MapToDto(HighlightVideo hv) => new()
     {
         Id = hv.Id,
         StudentId = hv.StudentId,
@@ -529,6 +650,5 @@ public class PersonalVideoService : IPersonalVideoService
         VideoUrl = hv.VideoUrl,
         PersonalVideoStatus = hv.PersonalVideoStatus,
         PersonalVideoRequestedAt = hv.PersonalVideoRequestedAt,
-        SourceVideoCount = sourceCount,
     };
 }

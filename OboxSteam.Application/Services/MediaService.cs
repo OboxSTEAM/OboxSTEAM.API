@@ -485,6 +485,95 @@ public class MediaService : IMediaService
                && !string.IsNullOrEmpty(media.FaceSearchJobId);
     }
 
+    /// <inheritdoc />
+    public async Task HandleMediaConvertWebhookAsync(string jobId, bool isSuccess)
+    {
+        var mediaAsset = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
+            m => m.MediaConvertJobId == jobId && !m.IsDeleted);
+
+        if (mediaAsset != null)
+        {
+            if (isSuccess)
+            {
+                try
+                {
+                    await TryCompleteTranscodeAsync(mediaAsset.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "TryCompleteTranscodeAsync failed for MediaId {Id}", mediaAsset.Id);
+                }
+            }
+            else
+            {
+                mediaAsset.VideoStatus = VideoProcessingStatus.Failed;
+                await _unitOfWork.SaveChangesAsync();
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task HandleFaceSearchWebhookAsync(string jobId, bool isSuccess)
+    {
+        var mediaAsset = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
+            m => m.FaceSearchJobId == jobId && !m.IsDeleted);
+
+        if (mediaAsset != null)
+        {
+            if (isSuccess)
+            {
+                try
+                {
+                    await TryProcessVideoTagsAsync(mediaAsset.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "TryProcessVideoTagsAsync failed for MediaId {Id}", mediaAsset.Id);
+                }
+            }
+            else
+            {
+                mediaAsset.VideoStatus = VideoProcessingStatus.Failed;
+                await _unitOfWork.SaveChangesAsync();
+            }
+        }
+        else
+        {
+            _logger.LogWarning("HandleFaceSearchWebhookAsync: no MediaAsset found for FaceSearch JobId={JobId}", jobId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task HandleLabelDetectionWebhookAsync(string jobId, bool isSuccess)
+    {
+        if (!isSuccess)
+        {
+            // Mark the asset so strengths filtering knows the label job failed.
+            var labelAsset = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
+                m => m.LabelJobRef == jobId && !m.IsDeleted);
+
+            if (labelAsset != null)
+            {
+                _logger.LogWarning(
+                    "Label Detection job FAILED for MediaId={MediaId}, JobId={JobId}. " +
+                    "Clearing LabelJobRef so strengths filter falls back gracefully.",
+                    labelAsset.Id, jobId);
+                labelAsset.LabelJobRef = null;
+                await _unitOfWork.SaveChangesAsync();
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Label Detection FAILED for unknown JobId={JobId} (no matching MediaAsset).", jobId);
+            }
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Label Detection job SUCCEEDED for JobId={JobId}. Results available on demand.", jobId);
+        }
+    }
+
     // ── Private Helpers ───────────────────────────────────────────────────────
 
     /// <summary>

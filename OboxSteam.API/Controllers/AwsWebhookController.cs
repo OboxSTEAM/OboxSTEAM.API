@@ -1,7 +1,6 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Interfaces;
-using OboxSteam.Domain.Enums;
-using OboxSteam.Domain.Interfaces;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -13,26 +12,23 @@ namespace OboxSteam.API.Controllers;
 [Route("api/webhooks/aws")]
 public class AwsWebhookController : ControllerBase
 {
+    // SNS certificates are stable per URL — cache them to avoid redundant downloads.
+    private static readonly ConcurrentDictionary<string, byte[]> _certCache = new();
+
     private readonly ILogger<AwsWebhookController> _logger;
-    private readonly IUnitOfWork _unitOfWork;
     private readonly IMediaService _mediaService;
-    private readonly IVideoConverterService _videoConverterService;
-    private readonly IBlobService _blobService;
+    private readonly IPersonalVideoService _personalVideoService;
     private readonly IHttpClientFactory _httpClientFactory;
 
     public AwsWebhookController(
         ILogger<AwsWebhookController> logger,
-        IUnitOfWork unitOfWork,
         IMediaService mediaService,
-        IVideoConverterService videoConverterService,
-        IBlobService blobService,
+        IPersonalVideoService personalVideoService,
         IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
-        _unitOfWork = unitOfWork;
         _mediaService = mediaService;
-        _videoConverterService = videoConverterService;
-        _blobService = blobService;
+        _personalVideoService = personalVideoService;
         _httpClientFactory = httpClientFactory;
     }
 
@@ -120,10 +116,12 @@ public class AwsWebhookController : ControllerBase
                 {
                     var jobId = rekJobIdProp.GetString();
                     var status = msgRoot.GetProperty("Status").GetString();
+                    // "API" field distinguishes job types, e.g. "StartFaceSearch" vs "StartLabelDetection".
+                    var api = msgRoot.TryGetProperty("API", out var apiProp) ? apiProp.GetString() : null;
 
                     if (status == "SUCCEEDED" || status == "FAILED")
                     {
-                        await ProcessRekognitionJobAsync(jobId!, status == "SUCCEEDED");
+                        await ProcessRekognitionJobAsync(jobId!, status == "SUCCEEDED", api);
                     }
                 }
             }
@@ -189,9 +187,13 @@ public class AwsWebhookController : ControllerBase
                 return false;
             }
 
-            // Download the certificate
+            // Download the certificate (cached per URL — SNS certs are stable)
             var http = _httpClientFactory.CreateClient("sns");
-            var certBytes = await http.GetByteArrayAsync(certUrl);
+            if (!_certCache.TryGetValue(certUrl!, out var certBytes))
+            {
+                certBytes = await http.GetByteArrayAsync(certUrl);
+                _certCache.TryAdd(certUrl!, certBytes);
+            }
             using var cert = new X509Certificate2(certBytes);
 
             // Build the string-to-sign per SNS specification
@@ -267,89 +269,25 @@ public class AwsWebhookController : ControllerBase
         _logger.LogInformation(
             "Processing MediaConvert Webhook JobId: {JobId}, Success: {Success}", jobId, isSuccess);
 
-        // 1. Check HighlightVideo (PersonalVideoJobRef)
-        var highlightVideo = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
-            h => h.PersonalVideoJobRef == jobId && !h.IsDeleted);
+        // We delegate the DB lookups and updates to the domain services
+        // so the Controller doesn't depend on IUnitOfWork directly.
+        await _personalVideoService.HandlePersonalVideoJobCompletionAsync(jobId, isSuccess);
+        await _mediaService.HandleMediaConvertWebhookAsync(jobId, isSuccess);
+    }
 
-        if (highlightVideo != null)
+    private async Task ProcessRekognitionJobAsync(string jobId, bool isSuccess, string? api)
+    {
+        _logger.LogInformation(
+            "Processing Rekognition Webhook JobId: {JobId}, API: {Api}, Success: {Success}",
+            jobId, api ?? "unknown", isSuccess);
+
+        if (string.Equals(api, "StartLabelDetection", StringComparison.OrdinalIgnoreCase))
         {
-            if (isSuccess)
-            {
-                try
-                {
-                    var outputS3Key = await _videoConverterService.GetOutputS3KeyAsync(jobId);
-                    var videoUrl = await _blobService.GetPreviewUrlAsync(outputS3Key);
-
-                    highlightVideo.VideoUrl = videoUrl;
-                    highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Completed;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex,
-                        "Failed to resolve MediaConvert output for HighlightVideo {Id}", highlightVideo.Id);
-                    highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Failed;
-                }
-            }
-            else
-            {
-                highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Failed;
-            }
-
-            await _unitOfWork.SaveChangesAsync();
+            await _mediaService.HandleLabelDetectionWebhookAsync(jobId, isSuccess);
             return;
         }
 
-        // 2. Check MediaAsset
-        var mediaAsset = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
-            m => m.MediaConvertJobId == jobId && !m.IsDeleted);
-
-        if (mediaAsset != null)
-        {
-            if (isSuccess)
-            {
-                try
-                {
-                    await _mediaService.TryCompleteTranscodeAsync(mediaAsset.Id);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "TryCompleteTranscodeAsync failed for MediaId {Id}", mediaAsset.Id);
-                }
-            }
-            else
-            {
-                mediaAsset.VideoStatus = VideoProcessingStatus.Failed;
-                await _unitOfWork.SaveChangesAsync();
-            }
-        }
-    }
-
-    private async Task ProcessRekognitionJobAsync(string jobId, bool isSuccess)
-    {
-        _logger.LogInformation(
-            "Processing Rekognition Webhook JobId: {JobId}, Success: {Success}", jobId, isSuccess);
-
-        var mediaAsset = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
-            m => m.FaceSearchJobId == jobId && !m.IsDeleted);
-
-        if (mediaAsset != null)
-        {
-            if (isSuccess)
-            {
-                try
-                {
-                    await _mediaService.TryProcessVideoTagsAsync(mediaAsset.Id);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "TryProcessVideoTagsAsync failed for MediaId {Id}", mediaAsset.Id);
-                }
-            }
-            else
-            {
-                mediaAsset.VideoStatus = VideoProcessingStatus.Failed;
-                await _unitOfWork.SaveChangesAsync();
-            }
-        }
+        // Face Search job (default / legacy path)
+        await _mediaService.HandleFaceSearchWebhookAsync(jobId, isSuccess);
     }
 }
