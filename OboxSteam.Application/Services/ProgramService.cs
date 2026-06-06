@@ -133,7 +133,7 @@ public class ProgramService : IProgramService
     // GET ALL (PAGINATION + FILTER + SORT)
     // =========================================================================
 
-    public async Task<Pagination<ProgramsResponseDto>> GetAllProgramAsync(
+    public async Task<Pagination<ProgramListItemDto>> GetAllProgramsAsync(
         string? search,
         string? sortBy,
         bool isDescending,
@@ -146,54 +146,43 @@ public class ProgramService : IProgramService
         string? status = null)
     {
         _logger.LogInformation(
-            "[GetAllProgramAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
+            "[GetAllProgramsAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
             page, pageSize, search);
 
-        var query = _unitOfWork.Programs
-            .GetQueryable()
-            .Where(p => !p.IsDeleted);
+        var query = BuildProgramsQuery(search, sortBy, isDescending, code, level, rating, skillsGained, status);
 
-        // ── Filters ───────────────────────────────────────────────────────
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var lowerSearch = search.ToLower();
-            query = query.Where(p =>
-                p.Name.ToLower().Contains(lowerSearch) ||
-                p.Code.ToLower().Contains(lowerSearch));
-        }
+        var totalCount = query.Count();
 
-        if (!string.IsNullOrWhiteSpace(code))
-            query = query.Where(p => p.Code.ToLower().Contains(code.ToLower()));
+        var items = query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
 
-        if (level.HasValue)
-            query = query.Where(p => p.Level == level.Value);
+        var dtos = items.Select(MapToProgramListItemDto).ToList();
 
-        if (rating.HasValue)
-            query = query.Where(p => p.Rating >= rating.Value);
+        _logger.LogInformation("[GetAllProgramsAsync] Retrieved {Count}/{Total} programs.", dtos.Count, totalCount);
 
-        if (!string.IsNullOrWhiteSpace(skillsGained))
-            query = query.Where(p =>
-                p.SkillsGained != null &&
-                p.SkillsGained.ToLower().Contains(skillsGained.ToLower()));
+        return new Pagination<ProgramListItemDto>(dtos, totalCount, page, pageSize);
+    }
 
-        if (!string.IsNullOrWhiteSpace(status))
-            query = query.Where(p =>
-                p.Status != null &&
-                p.Status.ToLower() == status.ToLower());
+    public async Task<Pagination<ProgramsResponseDto>> GetAllProgramsWithModulesAsync(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        int page,
+        int pageSize,
+        string? code = null,
+        DifficultyLevel? level = null,
+        decimal? rating = null,
+        string? skillsGained = null,
+        string? status = null)
+    {
+        _logger.LogInformation(
+            "[GetAllProgramsWithModulesAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
+            page, pageSize, search);
 
-        // ── Sorting ───────────────────────────────────────────────────────
-        query = sortBy?.ToLower() switch
-        {
-            "name" => isDescending ? query.OrderByDescending(p => p.Name) : query.OrderBy(p => p.Name),
-            "code" => isDescending ? query.OrderByDescending(p => p.Code) : query.OrderBy(p => p.Code),
-            "level" => isDescending ? query.OrderByDescending(p => p.Level) : query.OrderBy(p => p.Level),
-            "rating" => isDescending ? query.OrderByDescending(p => p.Rating) : query.OrderBy(p => p.Rating),
-            "price" => isDescending ? query.OrderByDescending(p => p.Price) : query.OrderBy(p => p.Price),
-            "createdat" => isDescending ? query.OrderByDescending(p => p.CreatedAt) : query.OrderBy(p => p.CreatedAt),
-            _ => isDescending ? query.OrderByDescending(p => p.CreatedAt) : query.OrderBy(p => p.CreatedAt),
-        };
+        var query = BuildProgramsQuery(search, sortBy, isDescending, code, level, rating, skillsGained, status);
 
-        // ── Pagination ────────────────────────────────────────────────────
         var totalCount = query.Count();
 
         var items = query
@@ -227,29 +216,104 @@ public class ProgramService : IProgramService
             Price = program.Price,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
-             Modules = modulesByProgramId.TryGetValue(program.Id, out var programModules)
-                 ? programModules.Select(m => new ModulesResponseDto
-            {
-                Id = m.Id,
-                Code = m.Code,
-                ProgramId = m.ProgramId,
-                Name = m.Name,
-                ModuleType = m.ModuleType,
-                ModuleOrder = m.ModuleOrder,
-                PrerequisiteModuleId = m.PrerequisiteModuleId,
-                IsMandatory = m.IsMandatory,
-                Price = m.Price,
-                RetakeFee = m.RetakeFee,
-                CreatedAt = m.CreatedAt,
-                 UpdatedAt = m.UpdatedAt,
-             }).ToList()
-                 : new(),
+            Modules = modulesByProgramId.TryGetValue(program.Id, out var programModules)
+                ? programModules.Select(m => new ModulesResponseDto
+                {
+                    Id = m.Id,
+                    Code = m.Code,
+                    ProgramId = m.ProgramId,
+                    Name = m.Name,
+                    ModuleType = m.ModuleType,
+                    ModuleOrder = m.ModuleOrder,
+                    PrerequisiteModuleId = m.PrerequisiteModuleId,
+                    IsMandatory = m.IsMandatory,
+                    Price = m.Price,
+                    RetakeFee = m.RetakeFee,
+                    CreatedAt = m.CreatedAt,
+                    UpdatedAt = m.UpdatedAt,
+                }).ToList()
+                : new(),
         }).ToList();
 
-        _logger.LogInformation("[GetAllProgramAsync] Retrieved {Count}/{Total} programs.", dtos.Count, totalCount);
+        _logger.LogInformation(
+            "[GetAllProgramsWithModulesAsync] Retrieved {Count}/{Total} programs.",
+            dtos.Count,
+            totalCount);
 
         return new Pagination<ProgramsResponseDto>(dtos, totalCount, page, pageSize);
     }
+
+    private IQueryable<Program> BuildProgramsQuery(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        string? code,
+        DifficultyLevel? level,
+        decimal? rating,
+        string? skillsGained,
+        string? status)
+    {
+        var query = _unitOfWork.Programs
+            .GetQueryable()
+            .Where(p => !p.IsDeleted);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var lowerSearch = search.ToLower();
+            query = query.Where(p =>
+                p.Name.ToLower().Contains(lowerSearch) ||
+                p.Code.ToLower().Contains(lowerSearch));
+        }
+
+        if (!string.IsNullOrWhiteSpace(code))
+            query = query.Where(p => p.Code.ToLower().Contains(code.ToLower()));
+
+        if (level.HasValue)
+            query = query.Where(p => p.Level == level.Value);
+
+        if (rating.HasValue)
+            query = query.Where(p => p.Rating >= rating.Value);
+
+        if (!string.IsNullOrWhiteSpace(skillsGained))
+            query = query.Where(p =>
+                p.SkillsGained != null &&
+                p.SkillsGained.ToLower().Contains(skillsGained.ToLower()));
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(p =>
+                p.Status != null &&
+                p.Status.ToLower() == status.ToLower());
+
+        return sortBy?.ToLower() switch
+        {
+            "name" => isDescending ? query.OrderByDescending(p => p.Name) : query.OrderBy(p => p.Name),
+            "code" => isDescending ? query.OrderByDescending(p => p.Code) : query.OrderBy(p => p.Code),
+            "level" => isDescending ? query.OrderByDescending(p => p.Level) : query.OrderBy(p => p.Level),
+            "rating" => isDescending ? query.OrderByDescending(p => p.Rating) : query.OrderBy(p => p.Rating),
+            "price" => isDescending ? query.OrderByDescending(p => p.Price) : query.OrderBy(p => p.Price),
+            "createdat" => isDescending ? query.OrderByDescending(p => p.CreatedAt) : query.OrderBy(p => p.CreatedAt),
+            _ => isDescending ? query.OrderByDescending(p => p.CreatedAt) : query.OrderBy(p => p.CreatedAt),
+        };
+    }
+
+    private static ProgramListItemDto MapToProgramListItemDto(Program program) => new()
+    {
+        Id = program.Id,
+        Code = program.Code,
+        Name = program.Name,
+        SeriesName = program.SeriesName,
+        Description = program.Description,
+        Level = program.Level,
+        EstimatedDuration = program.EstimatedDuration,
+        SkillsGained = program.SkillsGained,
+        Rating = program.Rating,
+        TotalReviews = program.TotalReviews,
+        ThumbnailUrl = program.ThumbnailUrl,
+        Status = program.Status,
+        Price = program.Price,
+        CreatedAt = program.CreatedAt,
+        UpdatedAt = program.UpdatedAt,
+    };
 
     // =========================================================================
     // CREATE

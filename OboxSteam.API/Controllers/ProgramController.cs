@@ -27,8 +27,8 @@ public class ProgramController : ControllerBase
     [HttpGet]
     [SwaggerOperation(
         Summary = "Get all programs",
-        Description = "Retrieve a paginated list of programs with optional search, filter, and sort options.")]
-    [ProducesResponseType(typeof(ApiResult<Pagination<ProgramsResponseDto>>), 200)]
+        Description = "Retrieve a paginated list of program information without modules. Supports search, filter, and sort options.")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<ProgramListItemDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
     public async Task<IActionResult> GetAllPrograms(
@@ -46,11 +46,44 @@ public class ProgramController : ControllerBase
         if (page < 1 || pageSize < 1)
             return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
 
-        var result = await _programService.GetAllProgramAsync(
+        var result = await _programService.GetAllProgramsAsync(
             search, sortBy, isDescending, page, pageSize,
             code, level, rating, skillsGained, status);
 
-        return Ok(ApiResult<Pagination<ProgramsResponseDto>>.Success(result, "200", "Programs retrieved successfully."));
+        return Ok(ApiResult<Pagination<ProgramListItemDto>>.Success(result, "200", "Programs retrieved successfully."));
+    }
+
+    // =========================================================================
+    // GET ALL WITH MODULES  —  GET /api/programs/with-modules
+    // =========================================================================
+
+    [HttpGet("with-modules")]
+    [SwaggerOperation(
+        Summary = "Get all programs with modules",
+        Description = "Retrieve a paginated list of programs including their modules. Supports search, filter, and sort options.")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<ProgramsResponseDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 500)]
+    public async Task<IActionResult> GetAllProgramsWithModules(
+        [FromQuery, SwaggerParameter(Description = "Search by name or code (optional)")] string? search = null,
+        [FromQuery, SwaggerParameter(Description = "Sort by field: name, code, level, rating, price, createdAt (optional)")] string? sortBy = null,
+        [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
+        [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
+        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
+        [FromQuery, SwaggerParameter(Description = "Filter by program code (optional)")] string? code = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null)
+    {
+        if (page < 1 || pageSize < 1)
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+
+        var result = await _programService.GetAllProgramsWithModulesAsync(
+            search, sortBy, isDescending, page, pageSize,
+            code, level, rating, skillsGained, status);
+
+        return Ok(ApiResult<Pagination<ProgramsResponseDto>>.Success(result, "200", "Programs with modules retrieved successfully."));
     }
 
     // =========================================================================
