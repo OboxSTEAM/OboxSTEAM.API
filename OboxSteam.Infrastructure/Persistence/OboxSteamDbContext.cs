@@ -62,6 +62,9 @@ public class OboxSteamDbContext : DbContext
     // ── 9. Payments ──
     public DbSet<Payment> Payments { get; set; }
 
+    // ── 10. Reviews ──
+    public DbSet<ProgramReview> ProgramReviews { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -102,6 +105,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<MediaAsset>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<HighlightVideo>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Payment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramReview>().HasQueryFilter(e => !e.IsDeleted);
 
         // =============================================
         // 1. USER
@@ -402,6 +406,26 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Payment>(entity =>
         {
             entity.HasIndex(p => p.Code).IsUnique();
+        });
+
+        // =============================================
+        // PROGRAM REVIEW (one review per student per program)
+        // =============================================
+        modelBuilder.Entity<ProgramReview>(entity =>
+        {
+            entity.HasIndex(pr => new { pr.ProgramId, pr.StudentId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(pr => pr.Program)
+                .WithMany(p => p.Reviews)
+                .HasForeignKey(pr => pr.ProgramId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(pr => pr.Student)
+                .WithMany(u => u.ProgramReviews)
+                .HasForeignKey(pr => pr.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
