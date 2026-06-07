@@ -1818,7 +1818,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<Guid>("SubmissionId")
+                    b.Property<Guid?>("SubmissionId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -2703,8 +2703,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasOne("OboxSteam.Domain.Entities.Submission", "Submission")
                         .WithMany("QuizQuestions")
                         .HasForeignKey("SubmissionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Assignment");
 

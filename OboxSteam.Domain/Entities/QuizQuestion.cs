@@ -30,8 +30,8 @@ public class QuizQuestion : BaseEntity
     /// Each attempt generates its own set of QuizQuestion snapshots so that
     /// different random draws / shuffle orders are preserved independently.
     /// </summary>
-    public Guid SubmissionId { get; set; }
-    public Submission Submission { get; set; } = null!;
+    public Guid? SubmissionId { get; set; }
+    public Submission? Submission { get; set; }
 
     /// <summary>
     /// Legacy / convenience field kept for backward compatibility.

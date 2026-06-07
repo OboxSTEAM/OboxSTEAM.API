@@ -330,7 +330,7 @@ public class OboxSteamDbContext : DbContext
             entity.HasOne(qq => qq.Submission)
                 .WithMany(s => s.QuizQuestions)
                 .HasForeignKey(qq => qq.SubmissionId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // =============================================
