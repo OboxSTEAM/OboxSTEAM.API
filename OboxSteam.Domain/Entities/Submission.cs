@@ -39,4 +39,6 @@ public class Submission : BaseEntity
 
     // Navigation
     public ICollection<SubmissionEvidence> SubmissionEvidences { get; set; } = new List<SubmissionEvidence>();
+    public ICollection<QuizQuestion> QuizQuestions { get; set; } = new List<QuizQuestion>();
+    public ICollection<QuizAnswer> QuizAnswers { get; set; } = new List<QuizAnswer>();
 }

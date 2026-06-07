@@ -45,6 +45,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<BankQuestionOption> BankQuestionOptions { get; set; }
     public DbSet<QuizQuestion> QuizQuestions { get; set; }
     public DbSet<QuizOption> QuizOptions { get; set; }
+    public DbSet<QuizAnswer> QuizAnswers { get; set; }
     public DbSet<Submission> Submissions { get; set; }
     public DbSet<SubmissionEvidence> SubmissionEvidences { get; set; }
 
@@ -97,6 +98,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<BankQuestionOption>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuizQuestion>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuizOption>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuizAnswer>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Submission>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Certificate>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Portfolio>().HasQueryFilter(e => !e.IsDeleted);
@@ -324,6 +326,35 @@ public class OboxSteamDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(qq => qq.BankQuestionId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(qq => qq.Submission)
+                .WithMany(s => s.QuizQuestions)
+                .HasForeignKey(qq => qq.SubmissionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
+        // QUIZ ANSWER (student selections)
+        // =============================================
+        modelBuilder.Entity<QuizAnswer>(entity =>
+        {
+            entity.HasIndex(qa => new { qa.SubmissionId, qa.QuizQuestionId, qa.QuizOptionId })
+                .IsUnique();
+
+            entity.HasOne(qa => qa.Submission)
+                .WithMany(s => s.QuizAnswers)
+                .HasForeignKey(qa => qa.SubmissionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(qa => qa.QuizQuestion)
+                .WithMany(qq => qq.Answers)
+                .HasForeignKey(qa => qa.QuizQuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(qa => qa.QuizOption)
+                .WithMany()
+                .HasForeignKey(qa => qa.QuizOptionId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // =============================================
