@@ -47,6 +47,7 @@ public static class IocContainer
         services.AddScoped<IClaimsService, ClaimsService>();
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();
         services.AddScoped<IBlobService, BlobService>();
+        services.AddScoped<ICsvQuestionParserService, CsvQuestionParserService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IVideoConverterService, VideoConverterService>();
 
@@ -171,10 +172,10 @@ public static class IocContainer
         services.AddScoped<IParentService, ParentService>();
         services.AddScoped<IPersonalVideoService, PersonalVideoService>();
         services.AddScoped<IStrengthMatchService, BedrockStrengthMatchService>();
-        
-        
-        
-        
+        services.AddScoped<IProgramEnrollmentService, ProgramEnrollmentService>();
+        services.AddScoped<IModuleEnrollmentService, ModuleEnrollmentService>();
+        services.AddScoped<IQuestionBankService, QuestionBankService>();
+        services.AddScoped<IBankQuestionService, BankQuestionService>();
         services.AddScoped<IProgramReviewService, ProgramReviewService>();
         return services;
     }

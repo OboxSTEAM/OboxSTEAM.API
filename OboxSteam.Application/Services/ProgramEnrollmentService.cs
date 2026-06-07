@@ -1,0 +1,387 @@
+using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.EnrollmentDTO;
+using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
+using OboxSteam.Domain.Entities;
+using OboxSteam.Domain.Enums;
+using OboxSteam.Domain.Interfaces;
+
+namespace OboxSteam.Application.Services;
+
+public sealed class ProgramEnrollmentService : IProgramEnrollmentService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IClaimsService _claimsService;
+    private readonly ILogger<ProgramEnrollmentService> _logger;
+
+    public ProgramEnrollmentService(
+        IUnitOfWork unitOfWork,
+        IClaimsService claimsService,
+        ILogger<ProgramEnrollmentService> logger)
+    {
+        _unitOfWork = unitOfWork;
+        _claimsService = claimsService;
+        _logger = logger;
+    }
+
+    public async Task<ProgramEnrollmentResponseDto> EnrollProgramAsync(CreateEnrollmentProgramRequestDto request)
+    {
+        ProgramEnrollmentValidator.ValidateProgramIdRequired(request.ProgramId);
+
+        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
+            _unitOfWork,
+            _claimsService,
+            ProgramEnrollmentValidator.EnrollForbiddenMessage);
+
+        var programEntity = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId);
+        if (programEntity == null || programEntity.IsDeleted)
+        {
+            _logger.LogWarning("[EnrollProgramAsync] Program {ProgramId} not found.", request.ProgramId);
+        }
+
+        var program = ProgramEnrollmentValidator.ValidateProgramExists(programEntity, request.ProgramId);
+
+        var existingEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+            pe => pe.StudentId == student.Id && pe.ProgramId == request.ProgramId && !pe.IsDeleted);
+
+        if (existingEnrollment != null)
+        {
+            _logger.LogWarning(
+                "[EnrollProgramAsync] Student {StudentId} already enrolled in program {ProgramId}.",
+                student.Id,
+                request.ProgramId);
+        }
+
+        ProgramEnrollmentValidator.ValidateNotAlreadyEnrolled(existingEnrollment);
+
+        // Payment validation skipped until Payment module is implemented (Q6).
+
+        var now = DateTime.UtcNow;
+        var enrollment = new ProgramEnrollment
+        {
+            StudentId = student.Id,
+            ProgramId = request.ProgramId,
+            Status = EnrollmentStatus.Active,
+            ProgressPercent = 0m,
+            EnrolledAt = now,
+        };
+
+        await _unitOfWork.ProgramEnrollments.AddAsync(enrollment);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[EnrollProgramAsync] Student {StudentId} enrolled in program {ProgramId} with enrollment {EnrollmentId}.",
+            student.Id,
+            request.ProgramId,
+            enrollment.Id);
+
+        return new ProgramEnrollmentResponseDto
+        {
+            Id = enrollment.Id,
+            StudentId = enrollment.StudentId,
+            ProgramId = enrollment.ProgramId,
+            Status = enrollment.Status,
+            ProgressPercent = enrollment.ProgressPercent,
+            EnrolledAt = enrollment.EnrolledAt,
+            StartedAt = enrollment.StartedAt,
+            CompletedAt = enrollment.CompletedAt,
+            CreatedAt = enrollment.CreatedAt,
+            UpdatedAt = enrollment.UpdatedAt,
+            Code = program.Code,
+            Name = program.Name,
+            SeriesName = program.SeriesName,
+            Description = program.Description,
+            Level = program.Level,
+            EstimatedDuration = program.EstimatedDuration,
+            SkillsGained = program.SkillsGained,
+            Rating = program.Rating,
+            TotalReviews = program.TotalReviews,
+            ThumbnailUrl = program.ThumbnailUrl,
+            ProgramStatus = program.Status,
+            Price = program.Price,
+        };
+    }
+
+    public async Task<ProgramEnrollmentResponseDto> GetProgramEnrollmentByIdAsync(Guid id)
+    {
+        await EnrollmentAccessValidator.GetCurrentUserForGetAsync(
+            _unitOfWork,
+            _claimsService,
+            ProgramEnrollmentValidator.ViewListForbiddenMessage);
+
+        var enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(id, pe => pe.Program);
+        if (enrollment == null || enrollment.IsDeleted)
+        {
+            _logger.LogWarning("[GetProgramEnrollmentByIdAsync] Enrollment {Id} not found.", id);
+            throw ErrorHelper.NotFound($"Program enrollment with id '{id}' not found.");
+        }
+
+        await EnrollmentAccessValidator.EnsureCanViewEnrollmentAsync(
+            _unitOfWork,
+            _claimsService,
+            enrollment.StudentId,
+            ProgramEnrollmentValidator.ViewEnrollmentForbiddenMessage);
+
+        var program = enrollment.Program
+            ?? await _unitOfWork.Programs.GetByIdAsync(enrollment.ProgramId);
+
+        if (program == null || program.IsDeleted)
+        {
+            _logger.LogWarning(
+                "[GetProgramEnrollmentByIdAsync] Program {ProgramId} not found for enrollment {Id}.",
+                enrollment.ProgramId,
+                id);
+            throw ErrorHelper.NotFound($"Program with id '{enrollment.ProgramId}' not found.");
+        }
+
+        return new ProgramEnrollmentResponseDto
+        {
+            Id = enrollment.Id,
+            StudentId = enrollment.StudentId,
+            ProgramId = enrollment.ProgramId,
+            Status = enrollment.Status,
+            ProgressPercent = enrollment.ProgressPercent,
+            EnrolledAt = enrollment.EnrolledAt,
+            StartedAt = enrollment.StartedAt,
+            CompletedAt = enrollment.CompletedAt,
+            CreatedAt = enrollment.CreatedAt,
+            UpdatedAt = enrollment.UpdatedAt,
+            Code = program.Code,
+            Name = program.Name,
+            SeriesName = program.SeriesName,
+            Description = program.Description,
+            Level = program.Level,
+            EstimatedDuration = program.EstimatedDuration,
+            SkillsGained = program.SkillsGained,
+            Rating = program.Rating,
+            TotalReviews = program.TotalReviews,
+            ThumbnailUrl = program.ThumbnailUrl,
+            ProgramStatus = program.Status,
+            Price = program.Price,
+        };
+    }
+
+    public async Task<Pagination<ProgramEnrollmentResponseDto>> GetMyProgramEnrollmentsAsync(
+        string? sortBy,
+        bool isDescending,
+        int page,
+        int pageSize)
+    {
+        _logger.LogInformation(
+            "[GetMyProgramEnrollmentsAsync] Start — page: {Page}, pageSize: {PageSize}",
+            page,
+            pageSize);
+
+        ProgramEnrollmentValidator.ValidatePagination(page, pageSize);
+
+        var currentUser = await EnrollmentAccessValidator.GetCurrentUserForGetAsync(
+            _unitOfWork,
+            _claimsService,
+            ProgramEnrollmentValidator.ViewListForbiddenMessage);
+
+        var query = _unitOfWork.ProgramEnrollments
+            .GetQueryable()
+            .Where(pe => !pe.IsDeleted);
+
+        if (currentUser.Role == RoleType.Student)
+        {
+            query = query.Where(pe => pe.StudentId == currentUser.Id);
+        }
+        else if (currentUser.Role == RoleType.Parent)
+        {
+            query = await ApplyParentStudentFilterAsync(query, currentUser.Id);
+        }
+        else
+        {
+            ProgramEnrollmentValidator.ValidateCanListProgramEnrollments(currentUser.Role);
+        }
+
+        query = sortBy?.ToLower() switch
+        {
+            "progresspercent" => isDescending
+                ? query.OrderByDescending(pe => pe.ProgressPercent)
+                : query.OrderBy(pe => pe.ProgressPercent),
+            "status" => isDescending
+                ? query.OrderByDescending(pe => pe.Status)
+                : query.OrderBy(pe => pe.Status),
+            "createdat" => isDescending
+                ? query.OrderByDescending(pe => pe.CreatedAt)
+                : query.OrderBy(pe => pe.CreatedAt),
+            "enrolledat" or _ => isDescending
+                ? query.OrderByDescending(pe => pe.EnrolledAt)
+                : query.OrderBy(pe => pe.EnrolledAt),
+        };
+
+        var totalCount = query.Count();
+
+        var items = query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var programIds = items.Select(pe => pe.ProgramId).Distinct().ToList();
+        var programs = await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id) && !p.IsDeleted);
+        var programsById = programs.ToDictionary(p => p.Id);
+
+        var dtos = new List<ProgramEnrollmentResponseDto>();
+        foreach (var enrollment in items)
+        {
+            if (!programsById.TryGetValue(enrollment.ProgramId, out var program))
+            {
+                throw ErrorHelper.NotFound($"Program with id '{enrollment.ProgramId}' not found.");
+            }
+
+            dtos.Add(new ProgramEnrollmentResponseDto
+            {
+                Id = enrollment.Id,
+                StudentId = enrollment.StudentId,
+                ProgramId = enrollment.ProgramId,
+                Status = enrollment.Status,
+                ProgressPercent = enrollment.ProgressPercent,
+                EnrolledAt = enrollment.EnrolledAt,
+                StartedAt = enrollment.StartedAt,
+                CompletedAt = enrollment.CompletedAt,
+                CreatedAt = enrollment.CreatedAt,
+                UpdatedAt = enrollment.UpdatedAt,
+                Code = program.Code,
+                Name = program.Name,
+                SeriesName = program.SeriesName,
+                Description = program.Description,
+                Level = program.Level,
+                EstimatedDuration = program.EstimatedDuration,
+                SkillsGained = program.SkillsGained,
+                Rating = program.Rating,
+                TotalReviews = program.TotalReviews,
+                ThumbnailUrl = program.ThumbnailUrl,
+                ProgramStatus = program.Status,
+                Price = program.Price,
+            });
+        }
+
+        _logger.LogInformation(
+            "[GetMyProgramEnrollmentsAsync] Retrieved {Count}/{Total} enrollments for user {UserId}.",
+            dtos.Count,
+            totalCount,
+            currentUser.Id);
+
+        return new Pagination<ProgramEnrollmentResponseDto>(dtos, totalCount, page, pageSize);
+    }
+
+    public async Task<Pagination<ProgramEnrollmentResponseDto>> GetProgramEnrollmentsByStudentIdAsync(
+        Guid studentId,
+        string? sortBy,
+        bool isDescending,
+        int page,
+        int pageSize)
+    {
+        _logger.LogInformation(
+            "[GetProgramEnrollmentsByStudentIdAsync] Start — studentId: {StudentId}, page: {Page}, pageSize: {PageSize}",
+            studentId,
+            page,
+            pageSize);
+
+        ProgramEnrollmentValidator.ValidatePagination(page, pageSize);
+        ProgramEnrollmentValidator.ValidateStudentIdRequired(studentId);
+
+        await EnrollmentAccessValidator.EnsureCanViewEnrollmentAsync(
+            _unitOfWork,
+            _claimsService,
+            studentId,
+            ProgramEnrollmentValidator.ViewEnrollmentForbiddenMessage);
+
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId);
+        ProgramEnrollmentValidator.ValidateStudentExists(student, studentId);
+
+        var query = _unitOfWork.ProgramEnrollments
+            .GetQueryable()
+            .Where(pe => pe.StudentId == studentId && !pe.IsDeleted);
+
+        query = sortBy?.ToLower() switch
+        {
+            "progresspercent" => isDescending
+                ? query.OrderByDescending(pe => pe.ProgressPercent)
+                : query.OrderBy(pe => pe.ProgressPercent),
+            "status" => isDescending
+                ? query.OrderByDescending(pe => pe.Status)
+                : query.OrderBy(pe => pe.Status),
+            "createdat" => isDescending
+                ? query.OrderByDescending(pe => pe.CreatedAt)
+                : query.OrderBy(pe => pe.CreatedAt),
+            "enrolledat" or _ => isDescending
+                ? query.OrderByDescending(pe => pe.EnrolledAt)
+                : query.OrderBy(pe => pe.EnrolledAt),
+        };
+
+        var totalCount = query.Count();
+
+        var items = query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var programIds = items.Select(pe => pe.ProgramId).Distinct().ToList();
+        var programs = await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id) && !p.IsDeleted);
+        var programsById = programs.ToDictionary(p => p.Id);
+
+        var dtos = new List<ProgramEnrollmentResponseDto>();
+        foreach (var enrollment in items)
+        {
+            if (!programsById.TryGetValue(enrollment.ProgramId, out var program))
+            {
+                throw ErrorHelper.NotFound($"Program with id '{enrollment.ProgramId}' not found.");
+            }
+
+            dtos.Add(new ProgramEnrollmentResponseDto
+            {
+                Id = enrollment.Id,
+                StudentId = enrollment.StudentId,
+                ProgramId = enrollment.ProgramId,
+                Status = enrollment.Status,
+                ProgressPercent = enrollment.ProgressPercent,
+                EnrolledAt = enrollment.EnrolledAt,
+                StartedAt = enrollment.StartedAt,
+                CompletedAt = enrollment.CompletedAt,
+                CreatedAt = enrollment.CreatedAt,
+                UpdatedAt = enrollment.UpdatedAt,
+                Code = program.Code,
+                Name = program.Name,
+                SeriesName = program.SeriesName,
+                Description = program.Description,
+                Level = program.Level,
+                EstimatedDuration = program.EstimatedDuration,
+                SkillsGained = program.SkillsGained,
+                Rating = program.Rating,
+                TotalReviews = program.TotalReviews,
+                ThumbnailUrl = program.ThumbnailUrl,
+                ProgramStatus = program.Status,
+                Price = program.Price,
+            });
+        }
+
+        _logger.LogInformation(
+            "[GetProgramEnrollmentsByStudentIdAsync] Retrieved {Count}/{Total} enrollments.",
+            dtos.Count,
+            totalCount);
+
+        return new Pagination<ProgramEnrollmentResponseDto>(dtos, totalCount, page, pageSize);
+    }
+
+    private async Task<IQueryable<ProgramEnrollment>> ApplyParentStudentFilterAsync(
+        IQueryable<ProgramEnrollment> query,
+        Guid parentId)
+    {
+        var parentLinks = await _unitOfWork.ParentStudents.GetAllAsync(
+            ps => ps.ParentId == parentId && !ps.IsDeleted);
+
+        var linkedStudentIds = parentLinks.Select(ps => ps.StudentId).Distinct().ToList();
+
+        if (linkedStudentIds.Count == 0)
+        {
+            return query.Where(pe => false);
+        }
+
+        return query.Where(pe => linkedStudentIds.Contains(pe.StudentId));
+    }
+}
