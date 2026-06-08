@@ -146,7 +146,7 @@ public class ProgramService : IProgramService
         decimal? rating = null,
         string? skillsGained = null,
         string? status = null,
-        string? category = null)
+        ProgramCategory? category = null)
     {
         _logger.LogInformation(
             "[GetAllProgramsAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
@@ -179,7 +179,7 @@ public class ProgramService : IProgramService
         decimal? rating = null,
         string? skillsGained = null,
         string? status = null,
-        string? category = null)
+        ProgramCategory? category = null)
     {
         _logger.LogInformation(
             "[GetAllProgramsWithModulesAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
@@ -257,7 +257,7 @@ public class ProgramService : IProgramService
         decimal? rating,
         string? skillsGained,
         string? status,
-        string? category = null)
+        ProgramCategory? category = null)
     {
         var query = _unitOfWork.Programs
             .GetQueryable()
@@ -290,10 +290,8 @@ public class ProgramService : IProgramService
                 p.Status != null &&
                 p.Status.ToLower() == status.ToLower());
 
-        if (!string.IsNullOrWhiteSpace(category))
-            query = query.Where(p =>
-                p.Category != null &&
-                p.Category.ToLower().Contains(category.ToLower()));
+        if (category.HasValue)
+            query = query.Where(p => p.Category == category.Value);
 
         return sortBy?.ToLower() switch
         {

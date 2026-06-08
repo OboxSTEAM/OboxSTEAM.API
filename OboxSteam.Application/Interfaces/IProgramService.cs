@@ -19,7 +19,7 @@ public interface IProgramService
         decimal? rating = null,
         string? skillsGained = null,
         string? status = null,
-        string? category = null);
+        ProgramCategory? category = null);
 
     Task<Pagination<ProgramsResponseDto>> GetAllProgramsWithModulesAsync(
         string? search,
@@ -32,7 +32,7 @@ public interface IProgramService
         decimal? rating = null,
         string? skillsGained = null,
         string? status = null,
-        string? category = null);
+        ProgramCategory? category = null);
 
     Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request);
 

@@ -42,7 +42,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
         [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by category keyword (optional)")] string? category = null)
+        [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)
             return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
@@ -76,7 +76,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
         [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by category keyword (optional)")] string? category = null)
+        [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)
             return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
