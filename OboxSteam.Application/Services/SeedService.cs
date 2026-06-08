@@ -265,8 +265,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "Basic mechanics, block-based coding, logical thinking",
                         Rating = 4.7m,
                         TotalReviews = 128,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1518314916381-77a37c2a49ae?q=80&w=1171&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 49.99m,
+                        Price = 1_200_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -284,27 +285,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "HTML, CSS, JavaScript, Web Design",
                         Rating = 4.5m,
                         TotalReviews = 214,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=1172&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 89.99m,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = Guid.Empty,
-                        IsDeleted = false
-                    },
-                    new Program
-                    {
-                        Id = Guid.NewGuid(),
-                        Code = "PRG-STEAM-01",
-                        Name = "STEAM Explorer",
-                        SeriesName = "Obox STEAM Discovery",
-                        Description = "Hands-on projects covering Science, Technology, Engineering, Arts, and Mathematics.",
-                        Level = DifficultyLevel.Beginner,
-                        Category = ProgramCategory.Science,
-                        EstimatedDuration = "6 weeks at 3 hours a week",
-                        SkillsGained = "Problem solving, creativity, scientific method",
-                        Rating = 4.8m,
-                        TotalReviews = 97,
-                        Status = "Active",
-                        Price = 69.99m,
+                        Price = 2_200_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -322,8 +305,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "Electronics, MQTT, sensor integration, prototyping",
                         Rating = 4.3m,
                         TotalReviews = 76,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1596658591534-591d75e2f2f7?q=80&w=1171&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 79.99m,
+                        Price = 1_950_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -342,8 +326,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "Python syntax, loops, functions, basic data structures",
                         Rating = 4.9m,
                         TotalReviews = 312,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1649180556628-9ba704115795?q=80&w=1162&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 59.99m,
+                        Price = 1_450_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -361,8 +346,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "Algebra, geometry, logical reasoning, mental math",
                         Rating = 4.6m,
                         TotalReviews = 189,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1635372722656-389f87a941b7?q=80&w=1331&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 44.99m,
+                        Price = 1_100_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -380,8 +366,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "Digital drawing, color theory, composition, character design",
                         Rating = 4.7m,
                         TotalReviews = 143,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1588876315093-ce09afb34028?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 74.99m,
+                        Price = 1_800_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -399,8 +386,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "Cell biology, genetics, lab techniques, scientific analysis",
                         Rating = 4.4m,
                         TotalReviews = 88,
+                        ThumbnailUrl = "https://plus.unsplash.com/premium_photo-1661380732508-93beb2601f24?q=80&w=1169&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 84.99m,
+                        Price = 2_050_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -418,8 +406,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "CAD modeling, 3D printing, prototyping, design thinking",
                         Rating = 4.5m,
                         TotalReviews = 102,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1547194936-28214bd75193?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 94.99m,
+                        Price = 2_300_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -437,8 +426,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "AI concepts, machine learning basics, data thinking, Python ML libraries",
                         Rating = 4.8m,
                         TotalReviews = 256,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1526378722484-bd91ca387e72?q=80&w=1334&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 99.99m,
+                        Price = 2_450_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -456,8 +446,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "Ecology, sustainability, data collection, environmental analysis",
                         Rating = 4.6m,
                         TotalReviews = 134,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?q=80&w=1313&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 54.99m,
+                        Price = 1_350_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -475,8 +466,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "Game logic, level design, sprite animation, basic programming",
                         Rating = 4.9m,
                         TotalReviews = 378,
+                        ThumbnailUrl = "https://plus.unsplash.com/premium_photo-1721080251127-76315300cc5c?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 109.99m,
+                        Price = 2_700_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -494,8 +486,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "DAW skills, music theory, sound design, audio mixing",
                         Rating = 4.5m,
                         TotalReviews = 91,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 64.99m,
+                        Price = 1_600_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -513,8 +506,9 @@ namespace OboxSteam.Application.Services
                         SkillsGained = "Statistics, probability, data visualization, spreadsheet analysis",
                         Rating = 4.4m,
                         TotalReviews = 67,
+                        ThumbnailUrl = "https://images.unsplash.com/photo-1666875753105-c63a6f3bdc86?q=80&w=1173&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                         Status = "Active",
-                        Price = 79.99m,
+                        Price = 1_950_000m,
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -535,10 +529,20 @@ namespace OboxSteam.Application.Services
             var existingModules = await _unitOfWork.Modules.GetAllAsync();
             if (!existingModules.Any())
             {
-                var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
-                var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
-                var programSteam = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-STEAM-01");
-                var programIot = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
+                var programRobotics  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+                var programWebDev    = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
+                var programSteam     = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-STEAM-01");
+                var programIot       = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
+                var programPyBasic   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-PYBASIC");
+                var programMathFun   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-MATHFUN");
+                var programDigArt    = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DIGART");
+                var programBiotech   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-BIOTECH");
+                var program3DDesign  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-3DDESIGN");
+                var programAiBasic   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-AIBASIC");
+                var programEnvSci    = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ENVSCI");
+                var programGameDev   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV");
+                var programMusicTech = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-MUSICTECH");
+                var programDataMath  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DATAMATH");
 
                 var modules = new List<Module>();
 
@@ -555,8 +559,8 @@ namespace OboxSteam.Application.Services
                             ModuleType = ModuleType.Theory,
                             ModuleOrder = 1,
                             IsMandatory = true,
-                            Price = 19.99m,
-                            RetakeFee = 5.00m,
+                            Price = 450_000m,
+                            RetakeFee = 100_000m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
                         },
@@ -570,8 +574,8 @@ namespace OboxSteam.Application.Services
                             ModuleOrder = 2,
                             PrerequisiteModuleId = null,
                             IsMandatory = true,
-                            Price = 24.99m,
-                            RetakeFee = 6.00m,
+                            Price = 500_000m,
+                            RetakeFee = 120_000m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
                         },
@@ -584,8 +588,8 @@ namespace OboxSteam.Application.Services
                             ModuleType = ModuleType.Research,
                             ModuleOrder = 3,
                             IsMandatory = true,
-                            Price = 29.99m,
-                            RetakeFee = 7.50m,
+                            Price = 550_000m,
+                            RetakeFee = 150_000m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
                         }
@@ -609,8 +613,8 @@ namespace OboxSteam.Application.Services
                             ModuleType = ModuleType.Theory,
                             ModuleOrder = 1,
                             IsMandatory = true,
-                            Price = 29.99m,
-                            RetakeFee = 7.00m,
+                            Price = 700_000m,
+                            RetakeFee = 150_000m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
                         },
@@ -623,8 +627,22 @@ namespace OboxSteam.Application.Services
                             ModuleType = ModuleType.Experiential,
                             ModuleOrder = 2,
                             IsMandatory = true,
-                            Price = 34.99m,
-                            RetakeFee = 8.00m,
+                            Price = 800_000m,
+                            RetakeFee = 180_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-WEBDEV-03",
+                            ProgramId = programWebDev.Id,
+                            Name = "Responsive Design & Deployment",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 700_000m,
+                            RetakeFee = 150_000m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
                         }
@@ -648,8 +666,8 @@ namespace OboxSteam.Application.Services
                             ModuleType = ModuleType.Theory,
                             ModuleOrder = 1,
                             IsMandatory = true,
-                            Price = 21.99m,
-                            RetakeFee = 5.50m,
+                            Price = 500_000m,
+                            RetakeFee = 110_000m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
                         },
@@ -662,8 +680,8 @@ namespace OboxSteam.Application.Services
                             ModuleType = ModuleType.Experiential,
                             ModuleOrder = 2,
                             IsMandatory = true,
-                            Price = 24.99m,
-                            RetakeFee = 6.00m,
+                            Price = 550_000m,
+                            RetakeFee = 120_000m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
                         }
@@ -687,8 +705,8 @@ namespace OboxSteam.Application.Services
                             ModuleType = ModuleType.Theory,
                             ModuleOrder = 1,
                             IsMandatory = true,
-                            Price = 27.99m,
-                            RetakeFee = 6.50m,
+                            Price = 650_000m,
+                            RetakeFee = 130_000m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
                         },
@@ -701,8 +719,22 @@ namespace OboxSteam.Application.Services
                             ModuleType = ModuleType.Experiential,
                             ModuleOrder = 2,
                             IsMandatory = true,
-                            Price = 32.99m,
-                            RetakeFee = 7.00m,
+                            Price = 700_000m,
+                            RetakeFee = 150_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-IOT-03",
+                            ProgramId = programIot.Id,
+                            Name = "IoT Project Showcase",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 600_000m,
+                            RetakeFee = 120_000m,
                             CreatedAt = DateTime.UtcNow,
                             CreatedBy = Guid.Empty
                         }
@@ -713,11 +745,565 @@ namespace OboxSteam.Application.Services
                     _loggerService.LogWarning("Program PRG-IOT not found. Skipping IoT module seeding.");
                 }
 
+                // ── PRG-PYBASIC ──────────────────────────────────────────────────
+                if (programPyBasic != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-PYBASIC-01",
+                            ProgramId = programPyBasic.Id,
+                            Name = "Python Syntax & Data Types",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 480_000m,
+                            RetakeFee = 100_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-PYBASIC-02",
+                            ProgramId = programPyBasic.Id,
+                            Name = "Control Flow & Functions",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 500_000m,
+                            RetakeFee = 110_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-PYBASIC-03",
+                            ProgramId = programPyBasic.Id,
+                            Name = "Mini-Project: Python Game",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 470_000m,
+                            RetakeFee = 100_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-PYBASIC not found. Skipping Python module seeding.");
+                }
+
+                // ── PRG-MATHFUN ──────────────────────────────────────────────────
+                if (programMathFun != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-MATHFUN-01",
+                            ProgramId = programMathFun.Id,
+                            Name = "Algebra & Number Patterns",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 380_000m,
+                            RetakeFee = 80_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-MATHFUN-02",
+                            ProgramId = programMathFun.Id,
+                            Name = "Geometry & Spatial Thinking",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 380_000m,
+                            RetakeFee = 80_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-MATHFUN-03",
+                            ProgramId = programMathFun.Id,
+                            Name = "Math Puzzle Challenge",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 340_000m,
+                            RetakeFee = 70_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-MATHFUN not found. Skipping Math module seeding.");
+                }
+
+                // ── PRG-DIGART ──────────────────────────────────────────────────
+                if (programDigArt != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-DIGART-01",
+                            ProgramId = programDigArt.Id,
+                            Name = "Color Theory & Digital Tools",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 600_000m,
+                            RetakeFee = 130_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-DIGART-02",
+                            ProgramId = programDigArt.Id,
+                            Name = "Character Design Workshop",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 650_000m,
+                            RetakeFee = 140_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-DIGART-03",
+                            ProgramId = programDigArt.Id,
+                            Name = "Portfolio Illustration Project",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 550_000m,
+                            RetakeFee = 110_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-DIGART not found. Skipping Digital Art module seeding.");
+                }
+
+                // ── PRG-BIOTECH ──────────────────────────────────────────────────
+                if (programBiotech != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-BIOTECH-01",
+                            ProgramId = programBiotech.Id,
+                            Name = "Cell Biology Fundamentals",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 700_000m,
+                            RetakeFee = 150_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-BIOTECH-02",
+                            ProgramId = programBiotech.Id,
+                            Name = "Genetics & Lab Simulation",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 750_000m,
+                            RetakeFee = 160_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-BIOTECH-03",
+                            ProgramId = programBiotech.Id,
+                            Name = "Biotechnology Case Study",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 600_000m,
+                            RetakeFee = 120_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-BIOTECH not found. Skipping Biotech module seeding.");
+                }
+
+                // ── PRG-3DDESIGN ─────────────────────────────────────────────────
+                if (program3DDesign != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-3DDESIGN-01",
+                            ProgramId = program3DDesign.Id,
+                            Name = "CAD Basics & Interface",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 800_000m,
+                            RetakeFee = 170_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-3DDESIGN-02",
+                            ProgramId = program3DDesign.Id,
+                            Name = "3D Modeling Practice",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 850_000m,
+                            RetakeFee = 180_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-3DDESIGN-03",
+                            ProgramId = program3DDesign.Id,
+                            Name = "Print & Prototype Challenge",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 650_000m,
+                            RetakeFee = 130_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-3DDESIGN not found. Skipping 3D Design module seeding.");
+                }
+
+                // ── PRG-AIBASIC ──────────────────────────────────────────────────
+                if (programAiBasic != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-AIBASIC-01",
+                            ProgramId = programAiBasic.Id,
+                            Name = "What is AI? Concepts & History",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 800_000m,
+                            RetakeFee = 170_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-AIBASIC-02",
+                            ProgramId = programAiBasic.Id,
+                            Name = "Image Recognition Hands-On",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 850_000m,
+                            RetakeFee = 180_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-AIBASIC-03",
+                            ProgramId = programAiBasic.Id,
+                            Name = "Build Your Own Chatbot",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 800_000m,
+                            RetakeFee = 160_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-AIBASIC not found. Skipping AI module seeding.");
+                }
+
+                // ── PRG-ENVSCI ───────────────────────────────────────────────────
+                if (programEnvSci != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-ENVSCI-01",
+                            ProgramId = programEnvSci.Id,
+                            Name = "Ecology & Ecosystems",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 450_000m,
+                            RetakeFee = 90_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-ENVSCI-02",
+                            ProgramId = programEnvSci.Id,
+                            Name = "Climate Change Field Research",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 500_000m,
+                            RetakeFee = 100_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-ENVSCI-03",
+                            ProgramId = programEnvSci.Id,
+                            Name = "Sustainability Action Project",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 400_000m,
+                            RetakeFee = 80_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-ENVSCI not found. Skipping Environmental Science module seeding.");
+                }
+
+                // ── PRG-GAMEDEV ──────────────────────────────────────────────────
+                if (programGameDev != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-GAMEDEV-01",
+                            ProgramId = programGameDev.Id,
+                            Name = "Game Design Fundamentals",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 900_000m,
+                            RetakeFee = 190_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-GAMEDEV-02",
+                            ProgramId = programGameDev.Id,
+                            Name = "2D Sprite & Level Design",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 950_000m,
+                            RetakeFee = 200_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-GAMEDEV-03",
+                            ProgramId = programGameDev.Id,
+                            Name = "Game Logic & Scripting",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 3,
+                            IsMandatory = true,
+                            Price = 950_000m,
+                            RetakeFee = 200_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-GAMEDEV-04",
+                            ProgramId = programGameDev.Id,
+                            Name = "Publish Your Game",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 4,
+                            IsMandatory = false,
+                            Price = 900_000m,
+                            RetakeFee = 180_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-GAMEDEV not found. Skipping Game Dev module seeding.");
+                }
+
+                // ── PRG-MUSICTECH ────────────────────────────────────────────────
+                if (programMusicTech != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-MUSICTECH-01",
+                            ProgramId = programMusicTech.Id,
+                            Name = "Music Theory Essentials",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 550_000m,
+                            RetakeFee = 110_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-MUSICTECH-02",
+                            ProgramId = programMusicTech.Id,
+                            Name = "DAW Production Workshop",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 600_000m,
+                            RetakeFee = 120_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-MUSICTECH-03",
+                            ProgramId = programMusicTech.Id,
+                            Name = "Original Track Showcase",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 450_000m,
+                            RetakeFee = 90_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-MUSICTECH not found. Skipping Music Tech module seeding.");
+                }
+
+                // ── PRG-DATAMATH ─────────────────────────────────────────────────
+                if (programDataMath != null)
+                {
+                    modules.AddRange(new List<Module>
+                    {
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-DATAMATH-01",
+                            ProgramId = programDataMath.Id,
+                            Name = "Statistics & Probability",
+                            ModuleType = ModuleType.Theory,
+                            ModuleOrder = 1,
+                            IsMandatory = true,
+                            Price = 650_000m,
+                            RetakeFee = 130_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-DATAMATH-02",
+                            ProgramId = programDataMath.Id,
+                            Name = "Data Visualization Lab",
+                            ModuleType = ModuleType.Experiential,
+                            ModuleOrder = 2,
+                            IsMandatory = true,
+                            Price = 700_000m,
+                            RetakeFee = 140_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        },
+                        new Module
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = "MOD-DATAMATH-03",
+                            ProgramId = programDataMath.Id,
+                            Name = "Real-World Data Analysis Project",
+                            ModuleType = ModuleType.Research,
+                            ModuleOrder = 3,
+                            IsMandatory = false,
+                            Price = 600_000m,
+                            RetakeFee = 120_000m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = Guid.Empty
+                        }
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Program PRG-DATAMATH not found. Skipping Data Math module seeding.");
+                }
+
                 if (modules.Count > 0)
                 {
                     await _unitOfWork.Modules.AddRangeAsync(modules);
                     await _unitOfWork.SaveChangesAsync();
-                    _loggerService.LogInformation("Finished seed modules");
+                    _loggerService.LogInformation("Finished seed modules — {Count} module(s) created.", modules.Count);
                 }
                 else
                 {
@@ -1596,7 +2182,7 @@ namespace OboxSteam.Application.Services
                             StudentId = student1.Id,
                             ProgramEnrollmentId = programEnrollment.Id,
                             ModuleEnrollmentId = null,
-                            Amount = 49.99m,
+                            Amount = 1_200_000m,
                             Gateway = PaymentGateway.Momo,
                             TransactionId = "MOMO-TXN-001",
                             Status = PaymentStatus.Success,
@@ -1615,6 +2201,174 @@ namespace OboxSteam.Application.Services
             else
             {
                 _loggerService.LogInformation("Payments already exist, skipping seeding");
+            }
+
+            _loggerService.LogInformation("Starting seed program reviews");
+            var existingProgramReviews = await _unitOfWork.ProgramReviews.GetAllAsync();
+            if (!existingProgramReviews.Any())
+            {
+                var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
+                var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
+                var student3 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-003");
+                var student4 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-004");
+                var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+                var programWebDev   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
+                var programIot      = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
+                var programPyBasic  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-PYBASIC");
+                var programGameDev  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV");
+                var reviewTime      = DateTime.UtcNow;
+
+                var programReviews = new List<ProgramReview>();
+
+                if (student1 != null && programRobotics != null)
+                {
+                    programReviews.Add(new ProgramReview
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = programRobotics.Id,
+                        StudentId = student1.Id,
+                        StarRating = 5,
+                        Comment = "Chương trình thực sự thú vị! Tôi đã học được rất nhiều về robotics từ căn bản đến nâng cao. Các hoạt động thực hành rất bổ ích.",
+                        CreatedAt = reviewTime.AddDays(-10),
+                        CreatedBy = student1.Id,
+                        IsDeleted = false
+                    });
+                }
+
+                if (student2 != null && programRobotics != null)
+                {
+                    programReviews.Add(new ProgramReview
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = programRobotics.Id,
+                        StudentId = student2.Id,
+                        StarRating = 4,
+                        Comment = "Nội dung phong phú, mentor nhiệt tình. Chỉ tiếc thời lượng hơi ngắn so với khối lượng kiến thức.",
+                        CreatedAt = reviewTime.AddDays(-8),
+                        CreatedBy = student2.Id,
+                        IsDeleted = false
+                    });
+                }
+
+                if (student1 != null && programWebDev != null)
+                {
+                    programReviews.Add(new ProgramReview
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = programWebDev.Id,
+                        StudentId = student1.Id,
+                        StarRating = 5,
+                        Comment = "Bootcamp web dev cực hay! Sau khoá học tôi đã tự xây dựng được trang web cá nhân. Rất đáng tiền.",
+                        CreatedAt = reviewTime.AddDays(-6),
+                        CreatedBy = student1.Id,
+                        IsDeleted = false
+                    });
+                }
+
+                if (student3 != null && programWebDev != null)
+                {
+                    programReviews.Add(new ProgramReview
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = programWebDev.Id,
+                        StudentId = student3.Id,
+                        StarRating = 4,
+                        Comment = "Giảng viên giải thích rõ ràng, bài tập thực hành đa dạng. Tôi đã cải thiện kỹ năng CSS rất nhiều.",
+                        CreatedAt = reviewTime.AddDays(-5),
+                        CreatedBy = student3.Id,
+                        IsDeleted = false
+                    });
+                }
+
+                if (student2 != null && programIot != null)
+                {
+                    programReviews.Add(new ProgramReview
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = programIot.Id,
+                        StudentId = student2.Id,
+                        StarRating = 4,
+                        Comment = "IoT Fundamentals rất bổ ích cho ai muốn tìm hiểu về thiết bị thông minh. Phần cloud connectivity là điểm nhấn.",
+                        CreatedAt = reviewTime.AddDays(-12),
+                        CreatedBy = student2.Id,
+                        IsDeleted = false
+                    });
+                }
+
+                if (student4 != null && programIot != null)
+                {
+                    programReviews.Add(new ProgramReview
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = programIot.Id,
+                        StudentId = student4.Id,
+                        StarRating = 3,
+                        Comment = "Nội dung ổn nhưng cần thêm tài liệu tham khảo bằng tiếng Việt. Phần thực hành cần nhiều kit hơn.",
+                        CreatedAt = reviewTime.AddDays(-3),
+                        CreatedBy = student4.Id,
+                        IsDeleted = false
+                    });
+                }
+
+                if (student1 != null && programPyBasic != null)
+                {
+                    programReviews.Add(new ProgramReview
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = programPyBasic.Id,
+                        StudentId = student1.Id,
+                        StarRating = 5,
+                        Comment = "Khoá Python cho người mới bắt đầu này cực kỳ dễ hiểu! Tôi chưa có kinh nghiệm lập trình nhưng sau 6 tuần đã viết được game nhỏ.",
+                        CreatedAt = reviewTime.AddDays(-15),
+                        CreatedBy = student1.Id,
+                        IsDeleted = false
+                    });
+                }
+
+                if (student3 != null && programGameDev != null)
+                {
+                    programReviews.Add(new ProgramReview
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = programGameDev.Id,
+                        StudentId = student3.Id,
+                        StarRating = 5,
+                        Comment = "Game Design & Development là khoá học yêu thích nhất của tôi! Tôi đã publish được game 2D đầu tiên sau khi hoàn thành.",
+                        CreatedAt = reviewTime.AddDays(-7),
+                        CreatedBy = student3.Id,
+                        IsDeleted = false
+                    });
+                }
+
+                if (student4 != null && programGameDev != null)
+                {
+                    programReviews.Add(new ProgramReview
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = programGameDev.Id,
+                        StudentId = student4.Id,
+                        StarRating = 4,
+                        Comment = "Nội dung phong phú, hướng dẫn chi tiết từng bước. Phần sprite animation rất thú vị và sáng tạo.",
+                        CreatedAt = reviewTime.AddDays(-2),
+                        CreatedBy = student4.Id,
+                        IsDeleted = false
+                    });
+                }
+
+                if (programReviews.Count > 0)
+                {
+                    await _unitOfWork.ProgramReviews.AddRangeAsync(programReviews);
+                    await _unitOfWork.SaveChangesAsync();
+                    _loggerService.LogInformation("Finished seed program reviews — {Count} review(s) created.", programReviews.Count);
+                }
+                else
+                {
+                    _loggerService.LogWarning("No program reviews seeded.");
+                }
+            }
+            else
+            {
+                _loggerService.LogInformation("Program reviews already exist, skipping seeding");
             }
 
             _loggerService.LogInformation("Finished seed all data");
@@ -1639,6 +2393,7 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.Certificates.HardRemove(x => true);
             await _unitOfWork.ProgramBoards.HardRemove(x => true);
             await _unitOfWork.OtpStorages.HardRemove(x => true);
+            await _unitOfWork.ProgramReviews.HardRemove(x => true);
 
             await _unitOfWork.QuizOptions.HardRemove(x => true);
             await _unitOfWork.QuizQuestions.HardRemove(x => true);
