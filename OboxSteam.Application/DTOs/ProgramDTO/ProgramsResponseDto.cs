@@ -11,6 +11,7 @@ public class ProgramsResponseDto
     public string? SeriesName { get; set; }
     public string? Description { get; set; }
     public DifficultyLevel Level { get; set; }
+    public ProgramCategory Category { get; set; }
     public string? EstimatedDuration { get; set; }
     public string? SkillsGained { get; set; }
     public decimal? Rating { get; set; }

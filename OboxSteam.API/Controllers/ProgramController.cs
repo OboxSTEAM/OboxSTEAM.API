@@ -41,14 +41,15 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null)
+        [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)
             return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
 
         var result = await _programService.GetAllProgramsAsync(
             search, sortBy, isDescending, page, pageSize,
-            code, level, rating, skillsGained, status);
+            code, level, rating, skillsGained, status, category);
 
         return Ok(ApiResult<Pagination<ProgramListItemDto>>.Success(result, "200", "Programs retrieved successfully."));
     }
@@ -74,14 +75,15 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null)
+        [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)
             return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
 
         var result = await _programService.GetAllProgramsWithModulesAsync(
             search, sortBy, isDescending, page, pageSize,
-            code, level, rating, skillsGained, status);
+            code, level, rating, skillsGained, status, category);
 
         return Ok(ApiResult<Pagination<ProgramsResponseDto>>.Success(result, "200", "Programs with modules retrieved successfully."));
     }

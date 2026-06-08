@@ -48,6 +48,7 @@ public class ProgramService : IProgramService
             SeriesName = program.SeriesName,
             Description = program.Description,
             Level = program.Level,
+            Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
             Rating = program.Rating,
@@ -102,6 +103,7 @@ public class ProgramService : IProgramService
             SeriesName = program.SeriesName,
             Description = program.Description,
             Level = program.Level,
+            Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
             Rating = program.Rating,
@@ -143,13 +145,14 @@ public class ProgramService : IProgramService
         DifficultyLevel? level = null,
         decimal? rating = null,
         string? skillsGained = null,
-        string? status = null)
+        string? status = null,
+        ProgramCategory? category = null)
     {
         _logger.LogInformation(
             "[GetAllProgramsAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
             page, pageSize, search);
 
-        var query = BuildProgramsQuery(search, sortBy, isDescending, code, level, rating, skillsGained, status);
+        var query = BuildProgramsQuery(search, sortBy, isDescending, code, level, rating, skillsGained, status, category);
 
         var totalCount = query.Count();
 
@@ -175,13 +178,14 @@ public class ProgramService : IProgramService
         DifficultyLevel? level = null,
         decimal? rating = null,
         string? skillsGained = null,
-        string? status = null)
+        string? status = null,
+        ProgramCategory? category = null)
     {
         _logger.LogInformation(
             "[GetAllProgramsWithModulesAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
             page, pageSize, search);
 
-        var query = BuildProgramsQuery(search, sortBy, isDescending, code, level, rating, skillsGained, status);
+        var query = BuildProgramsQuery(search, sortBy, isDescending, code, level, rating, skillsGained, status, category);
 
         var totalCount = query.Count();
 
@@ -207,6 +211,7 @@ public class ProgramService : IProgramService
             SeriesName = program.SeriesName,
             Description = program.Description,
             Level = program.Level,
+            Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
             Rating = program.Rating,
@@ -251,7 +256,8 @@ public class ProgramService : IProgramService
         DifficultyLevel? level,
         decimal? rating,
         string? skillsGained,
-        string? status)
+        string? status,
+        ProgramCategory? category = null)
     {
         var query = _unitOfWork.Programs
             .GetQueryable()
@@ -284,6 +290,9 @@ public class ProgramService : IProgramService
                 p.Status != null &&
                 p.Status.ToLower() == status.ToLower());
 
+        if (category.HasValue)
+            query = query.Where(p => p.Category == category.Value);
+
         return sortBy?.ToLower() switch
         {
             "name" => isDescending ? query.OrderByDescending(p => p.Name) : query.OrderBy(p => p.Name),
@@ -304,6 +313,7 @@ public class ProgramService : IProgramService
         SeriesName = program.SeriesName,
         Description = program.Description,
         Level = program.Level,
+        Category = program.Category,
         EstimatedDuration = program.EstimatedDuration,
         SkillsGained = program.SkillsGained,
         Rating = program.Rating,
@@ -342,6 +352,7 @@ public class ProgramService : IProgramService
             SeriesName = request.SeriesName,
             Description = request.Description,
             Level = request.Level,
+            Category = request.Category,
             EstimatedDuration = request.EstimatedDuration,
             SkillsGained = request.SkillsGained,
             ThumbnailUrl = request.ThumbnailUrl,
@@ -363,6 +374,7 @@ public class ProgramService : IProgramService
             SeriesName = program.SeriesName,
             Description = program.Description,
             Level = program.Level,
+            Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
             Rating = program.Rating,
@@ -421,6 +433,7 @@ public class ProgramService : IProgramService
                 SeriesName = program.SeriesName,
                 Description = program.Description,
                 Level = program.Level,
+                Category = program.Category,
                 EstimatedDuration = program.EstimatedDuration,
                 SkillsGained = program.SkillsGained,
                 Rating = program.Rating,
@@ -461,6 +474,7 @@ public class ProgramService : IProgramService
             SeriesName = program.SeriesName,
             Description = program.Description,
             Level = program.Level,
+            Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
             Rating = program.Rating,

@@ -1,4 +1,4 @@
-﻿using OboxSteam.Application.Commons;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Domain.Enums;
 
@@ -18,7 +18,8 @@ public interface IProgramService
         DifficultyLevel? level = null,
         decimal? rating = null,
         string? skillsGained = null,
-        string? status = null);
+        string? status = null,
+        ProgramCategory? category = null);
 
     Task<Pagination<ProgramsResponseDto>> GetAllProgramsWithModulesAsync(
         string? search,
@@ -30,7 +31,8 @@ public interface IProgramService
         DifficultyLevel? level = null,
         decimal? rating = null,
         string? skillsGained = null,
-        string? status = null);
+        string? status = null,
+        ProgramCategory? category = null);
 
     Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request);
 
