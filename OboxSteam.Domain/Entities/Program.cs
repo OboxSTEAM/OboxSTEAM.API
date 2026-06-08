@@ -18,6 +18,8 @@ public class Program : BaseEntity
 
     public DifficultyLevel Level { get; set; } = DifficultyLevel.Beginner;
 
+    public ProgramCategory Category { get; set; } 
+
     [MaxLength(255)]
     public string? EstimatedDuration { get; set; } // e.g., 3 months at 10 hours a week
 

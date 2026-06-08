@@ -9,6 +9,7 @@ public class CreateProgramRequestDto
     public string? SeriesName { get; set; }
     public string? Description { get; set; }
     public DifficultyLevel Level { get; set; } = DifficultyLevel.Beginner;
+    public ProgramCategory Category { get; set; }
     public string? EstimatedDuration { get; set; }
     public string? SkillsGained { get; set; }
     public string? ThumbnailUrl { get; set; }
