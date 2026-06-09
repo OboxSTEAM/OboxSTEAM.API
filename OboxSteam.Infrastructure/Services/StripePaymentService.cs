@@ -45,7 +45,7 @@ public class StripePaymentService : IStripePaymentService
                     PriceData = new SessionLineItemPriceDataOptions
                     {
                         Currency = payment.Currency.ToLower(),
-                        UnitAmount = (long)(payment.Amount), // Stripe expects cents/smallest unit
+                        UnitAmount = (long)(payment.Amount),
                         ProductData = new SessionLineItemPriceDataProductDataOptions
                         {
                             Name = programName,

@@ -190,14 +190,12 @@ public class PaymentService : IPaymentService
         };
         await _unitOfWork.Payments.AddAsync(payment);
 
-        // Mark request as Accepted
-        paymentRequest.Status = PaymentRequestStatus.Accepted;
-        await _unitOfWork.SaveChangesAsync();
-
         var description = BuildRichCheckoutDescription(program);
         // Create checkout URL
         var (checkoutUrl, sessionId) = await CreateGatewayCheckout(payment, program.Name, description, program.ThumbnailUrl, gateway);
         payment.CheckoutSessionId = sessionId;
+
+        paymentRequest.Status = PaymentRequestStatus.Accepted;
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -276,6 +274,12 @@ public class PaymentService : IPaymentService
 
     private async Task HandlePaymentSuccess(Payment payment, string transactionId)
     {
+        if(payment.Status == PaymentStatus.Success)
+        {
+            _logger.LogInformation("[HandlePaymentSuccess] Payment {PaymentId} is already marked as Success. Skipping.", payment.Id);
+            return;
+        }
+
         var now = DateTime.UtcNow;
 
         // 1. Update Payment
@@ -329,7 +333,7 @@ public class PaymentService : IPaymentService
         }
 
         // 5. Create Invoice with all details populated
-        var invoiceNumber = await GenerateInvoiceNumberAsync();
+        var invoiceNumber = GenerateInvoiceNumber();
         var invoice = new Invoice
         {
             InvoiceNumber = invoiceNumber,
@@ -417,15 +421,11 @@ public class PaymentService : IPaymentService
     private static string GeneratePaymentCode()
         => $"PAY-{DateTime.UtcNow:yyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
-    /// <summary>
-    /// Generates a sequential invoice number: INV-YYYY-NNNNNN.
-    /// The count is based on total (non-deleted) invoices already stored.
-    /// </summary>
-    private async Task<string> GenerateInvoiceNumberAsync()
+    private static string GenerateInvoiceNumber()
     {
-        var all = await _unitOfWork.Invoices.GetAllAsync();
-        var seq = all.Count + 1;
-        return $"INV-{DateTime.UtcNow:yyyy}-{seq:D6}";
+        var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+        var randomPart = Guid.NewGuid().ToString("N")[..6].ToUpper();
+        return $"INV-{datePart}-{randomPart}";
     }
 
     private static PaymentResponseDto MapToDto(Payment p) => new()

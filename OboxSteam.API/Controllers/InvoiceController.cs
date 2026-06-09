@@ -25,8 +25,8 @@ public class InvoiceController : ControllerBase
 
     [HttpGet("my")]
     [SwaggerOperation(
-        Summary = "Lấy danh sách invoice của tôi",
-        Description = "Trả về tất cả invoice đã phát hành cho user hiện tại (student hoặc parent), sắp xếp mới nhất trước.")]
+        Summary = "Get my invoices",
+        Description = "Retrieve all invoices issued for the current user (student or parent), sorted by most recent.")]
     [ProducesResponseType(typeof(ApiResult<List<InvoiceResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     public async Task<IActionResult> GetMyInvoices()
@@ -41,8 +41,8 @@ public class InvoiceController : ControllerBase
 
     [HttpGet("{id:guid}")]
     [SwaggerOperation(
-        Summary = "Lấy invoice theo ID",
-        Description = "Trả về chi tiết một invoice theo Invoice ID.")]
+        Summary = "Get invoice by ID",
+        Description = "Returns the details of an invoice by its Invoice ID.")]
     [ProducesResponseType(typeof(ApiResult<InvoiceResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
@@ -58,8 +58,8 @@ public class InvoiceController : ControllerBase
 
     [HttpGet("by-payment/{paymentId:guid}")]
     [SwaggerOperation(
-        Summary = "Lấy invoice theo Payment ID",
-        Description = "Trả về invoice được tạo tự động sau khi payment thành công. Trả 404 nếu payment chưa được xác nhận.")]
+        Summary = "Get invoice by Payment ID",
+        Description = "Returns the invoice created automatically after a successful payment. Returns 404 if the payment has not been confirmed.")]
     [ProducesResponseType(typeof(ApiResult<InvoiceResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
