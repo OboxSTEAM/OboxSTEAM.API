@@ -15,4 +15,10 @@ public interface IEmailService
     Task SendMagicLinkEmailAsync(ActionEmailRequestDto request);
 
     Task SendApproveLinkEmailAsync(ActionEmailRequestDto request);
+
+    Task SendPaymentRequestToParentEmailAsync(PaymentRequestEmailDto request);
+
+    Task SendPaymentInvoiceEmailAsync(InvoiceEmailDto request);
+
+    Task SendEnrollmentConfirmationEmailAsync(EnrollmentConfirmationEmailDto request);
 }

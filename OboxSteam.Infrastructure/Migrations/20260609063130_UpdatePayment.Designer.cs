@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260609063130_UpdatePayment")]
+    partial class UpdatePayment
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -771,85 +774,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("StudentId");
 
                     b.ToTable("HighlightVideos");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.Invoice", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("BillingEmail")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("BillingName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("InvoiceNumber")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("IssuedToId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ItemDescription")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<Guid>("PaymentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("SubTotal")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("InvoiceNumber")
-                        .IsUnique();
-
-                    b.HasIndex("IssuedToId");
-
-                    b.HasIndex("PaymentId")
-                        .IsUnique();
-
-                    b.ToTable("Invoices");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Material", b =>
@@ -2584,25 +2508,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Student");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.Invoice", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.User", "IssuedTo")
-                        .WithMany("Invoices")
-                        .HasForeignKey("IssuedToId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.Payment", "Payment")
-                        .WithOne("Invoice")
-                        .HasForeignKey("OboxSteam.Domain.Entities.Invoice", "PaymentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("IssuedTo");
-
-                    b.Navigation("Payment");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.Material", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.Activity", "Activity")
@@ -3113,11 +3018,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Submissions");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.Payment", b =>
-                {
-                    b.Navigation("Invoice");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.Portfolio", b =>
                 {
                     b.Navigation("CustomItems");
@@ -3185,8 +3085,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("FaceEmbedding");
 
                     b.Navigation("HighlightVideos");
-
-                    b.Navigation("Invoices");
 
                     b.Navigation("MediaTags");
 

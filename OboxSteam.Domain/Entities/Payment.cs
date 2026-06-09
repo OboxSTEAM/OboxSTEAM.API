@@ -30,4 +30,18 @@ public class Payment : BaseEntity
     public PaymentStatus Status { get; set; } = PaymentStatus.Pending;
 
     public DateTime? PaidAt { get; set; }
+
+    /// <summary>Who actually paid (Student or their linked Parent).</summary>
+    public Guid PaidById { get; set; }
+    public User PaidBy { get; set; } = null!;
+
+    [MaxLength(3)]
+    public string Currency { get; set; } = "VND";
+
+    /// <summary>Stripe Session ID or MoMo orderId for idempotency.</summary>
+    [MaxLength(255)]
+    public string? CheckoutSessionId { get; set; }
+
+    /// <summary>Invoice generated after this payment succeeds (1:1).</summary>
+    public Invoice? Invoice { get; set; }
 }
