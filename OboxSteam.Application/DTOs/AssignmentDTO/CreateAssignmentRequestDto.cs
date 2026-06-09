@@ -15,4 +15,12 @@ public class CreateAssignmentRequestDto
     public bool IsRequiredForModulePass { get; set; } = true;
     public DateTime? DueDate { get; set; }
     public bool AllowShuffle { get; set; } = true;
+    public Guid? QuestionBankId { get; set; }
+    public int? QuestionCount { get; set; }
+    public bool ShuffleOptions { get; set; } = true;
+    public int EasyPercent { get; set; }
+    public int MediumPercent { get; set; }
+    public int HardPercent { get; set; }
+    public int? TimeLimitMinutes { get; set; }
+    public int MaxAttempts { get; set; } = 1;
 }

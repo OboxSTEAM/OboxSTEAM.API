@@ -177,6 +177,7 @@ public static class IocContainer
         services.AddScoped<IQuestionBankService, QuestionBankService>();
         services.AddScoped<IBankQuestionService, BankQuestionService>();
         services.AddScoped<IProgramReviewService, ProgramReviewService>();
+        services.AddScoped<IAssignmentService, AssignmentService>();
         return services;
     }
 
