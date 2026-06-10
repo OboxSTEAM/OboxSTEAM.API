@@ -218,19 +218,39 @@ public class PaymentService : IPaymentService
     {
         var (eventType, sessionId, transactionId) = await _stripe.ParseWebhookEvent(json, signature);
 
-        if (eventType != "checkout.session.completed")
+        switch (eventType)
         {
-            _logger.LogInformation("[StripeWebhook] Ignoring event type: {Type}", eventType);
-            return;
+            case "checkout.session.completed":
+            {
+                _logger.LogInformation("[StripeWebhook] Processing checkout.session.completed for session {SessionId}", sessionId);
+
+                var payment = await _unitOfWork.Payments.FirstOrDefaultAsync(
+                    p => p.CheckoutSessionId == sessionId && !p.IsDeleted)
+                    ?? throw ErrorHelper.NotFound($"Payment not found for Stripe session '{sessionId}'.");
+
+                await HandlePaymentSuccess(payment, transactionId ?? sessionId);
+                break;
+            }
+
+            case "checkout.session.expired":
+            {
+                _logger.LogInformation("[StripeWebhook] Session expired: {SessionId}", sessionId);
+
+                var payment = await _unitOfWork.Payments.FirstOrDefaultAsync(
+                    p => p.CheckoutSessionId == sessionId && !p.IsDeleted);
+
+                if (payment != null)
+                    await HandlePaymentFailed(payment);
+                else
+                    _logger.LogWarning("[StripeWebhook] No payment found for expired session {SessionId}", sessionId);
+
+                break;
+            }
+
+            default:
+                _logger.LogInformation("[StripeWebhook] Ignoring event type: {Type}", eventType);
+                break;
         }
-
-        _logger.LogInformation("[StripeWebhook] Processing checkout.session.completed for session {SessionId}", sessionId);
-
-        var payment = await _unitOfWork.Payments.FirstOrDefaultAsync(
-            p => p.CheckoutSessionId == sessionId && !p.IsDeleted)
-            ?? throw ErrorHelper.NotFound($"Payment not found for Stripe session '{sessionId}'.");
-
-        await HandlePaymentSuccess(payment, transactionId ?? sessionId);
     }
 
     public async Task HandleMomoCallback(Dictionary<string, string> parameters)
@@ -257,13 +277,66 @@ public class PaymentService : IPaymentService
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // CANCEL (FE gọi khi redirect về cancelUrl)
+    // ══════════════════════════════════════════════════════════════════════
+
+    public async Task CancelPayment(Guid paymentId)
+    {
+        var payment = await _unitOfWork.Payments.GetByIdAsync(paymentId)
+            ?? throw ErrorHelper.NotFound($"Payment '{paymentId}' not found.");
+
+        if (payment.Status != PaymentStatus.Pending)
+        {
+            _logger.LogInformation(
+                "[CancelPayment] Payment {Id} is already {Status}. Skipping.",
+                payment.Id, payment.Status);
+            return; // idempotent
+        }
+
+        payment.Status = PaymentStatus.Cancelled;
+
+        // Rollback PaymentRequest về Pending nếu còn hạn → parent có thể thử lại
+        var paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+            pr => pr.StudentId == payment.StudentId
+                  && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
+                  && pr.Status == PaymentRequestStatus.Accepted
+                  && pr.ExpiresAt > DateTime.UtcNow
+                  && !pr.IsDeleted);
+
+        if (paymentRequest != null)
+        {
+            paymentRequest.Status = PaymentRequestStatus.Pending;
+            _logger.LogInformation(
+                "[CancelPayment] Rolled back PaymentRequest {RequestId} to Pending.",
+                paymentRequest.Id);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[CancelPayment] Payment {Id} marked Cancelled.", payment.Id);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // QUERY
     // ══════════════════════════════════════════════════════════════════════
 
     public async Task<PaymentResponseDto> GetPaymentById(Guid id)
     {
+        var currentUserId = _claimsService.GetCurrentUserId;
+        var currentUser = await _unitOfWork.Users.GetByIdAsync(currentUserId)
+            ?? throw ErrorHelper.Unauthorized("User not found.");
+
         var payment = await _unitOfWork.Payments.GetByIdAsync(id)
             ?? throw ErrorHelper.NotFound($"Payment '{id}' not found.");
+
+        // Check ownership: Admin or Manager can view all, otherwise user must be Student or Payer
+        if (currentUser.Role != RoleType.SuperAdmin && currentUser.Role != RoleType.Manager)
+        {
+            if (payment.StudentId != currentUserId && payment.PaidById != currentUserId)
+            {
+                throw ErrorHelper.Forbidden("You do not have permission to view this payment.");
+            }
+        }
 
         return MapToDto(payment);
     }
@@ -271,6 +344,38 @@ public class PaymentService : IPaymentService
     // ══════════════════════════════════════════════════════════════════════
     // PRIVATE HELPERS
     // ══════════════════════════════════════════════════════════════════════
+
+    private async Task HandlePaymentFailed(Payment payment)
+    {
+        if (payment.Status != PaymentStatus.Pending)
+        {
+            _logger.LogInformation(
+                "[HandlePaymentFailed] Payment {Id} is already {Status}. Skipping.",
+                payment.Id, payment.Status);
+            return;
+        }
+
+        payment.Status = PaymentStatus.Failed;
+
+        var paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+            pr => pr.StudentId == payment.StudentId
+                  && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
+                  && pr.Status == PaymentRequestStatus.Accepted
+                  && pr.ExpiresAt > DateTime.UtcNow
+                  && !pr.IsDeleted);
+
+        if (paymentRequest != null)
+        {
+            paymentRequest.Status = PaymentRequestStatus.Pending;
+            _logger.LogInformation(
+                "[HandlePaymentFailed] Rolled back PaymentRequest {RequestId} to Pending.",
+                paymentRequest.Id);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogWarning("[HandlePaymentFailed] Payment {Id} marked Failed.", payment.Id);
+    }
 
     private async Task HandlePaymentSuccess(Payment payment, string transactionId)
     {
@@ -287,10 +392,11 @@ public class PaymentService : IPaymentService
         payment.TransactionId = transactionId;
         payment.PaidAt = now;
 
-        // 2. Activate enrollment
+        // 2. Activate enrollment (load once)
+        ProgramEnrollment? enrollment = null;
         if (payment.ProgramEnrollmentId.HasValue)
         {
-            var enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(payment.ProgramEnrollmentId.Value);
+            enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(payment.ProgramEnrollmentId.Value);
             if (enrollment != null)
             {
                 enrollment.Status = EnrollmentStatus.Active;
@@ -311,9 +417,7 @@ public class PaymentService : IPaymentService
             paymentRequest.PaymentId = payment.Id;
         }
 
-        await _unitOfWork.SaveChangesAsync();
-
-        // 4. Load payer and student for emails
+        // 4. Load payer and student for emails and invoice info
         var payer = await _unitOfWork.Users.GetByIdAsync(payment.PaidById);
         var student = payment.PaidById != payment.StudentId
             ? await _unitOfWork.Users.GetByIdAsync(payment.StudentId)
@@ -321,15 +425,11 @@ public class PaymentService : IPaymentService
 
         string? programName = null;
         string? programThumbnail = null;
-        if (payment.ProgramEnrollmentId.HasValue)
+        if (enrollment != null)
         {
-            var enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(payment.ProgramEnrollmentId.Value);
-            if (enrollment != null)
-            {
-                var program = await _unitOfWork.Programs.GetByIdAsync(enrollment.ProgramId);
-                programName = program?.Name;
-                programThumbnail = program?.ThumbnailUrl;
-            }
+            var program = await _unitOfWork.Programs.GetByIdAsync(enrollment.ProgramId);
+            programName = program?.Name;
+            programThumbnail = program?.ThumbnailUrl;
         }
 
         // 5. Create Invoice with all details populated
@@ -347,9 +447,11 @@ public class PaymentService : IPaymentService
             ItemDescription = programName ?? "Program Enrollment"
         };
         await _unitOfWork.Invoices.AddAsync(invoice);
+
+        // 6. Save all changes atomically
         await _unitOfWork.SaveChangesAsync();
 
-        // 6. Send invoice email to payer
+        // 7. Send invoice email to payer
         if (payer != null)
         {
             await _emailService.SendPaymentInvoiceEmailAsync(new InvoiceEmailDto
@@ -367,7 +469,7 @@ public class PaymentService : IPaymentService
             });
         }
 
-        // 7. If parent paid, also send confirmation to student
+        // 8. If parent paid, also send confirmation to student
         if (paymentRequest != null && student != null && payer?.Id != student.Id)
         {
             await _emailService.SendEnrollmentConfirmationEmailAsync(new EnrollmentConfirmationEmailDto

@@ -18,6 +18,9 @@ public interface IPaymentService
     Task HandleStripeWebhook(string json, string signature);
     Task HandleMomoCallback(Dictionary<string, string> parameters);
 
+    // ── Cancel (FE gọi khi redirect về cancelUrl) ────────────────────────────
+    Task CancelPayment(Guid paymentId);
+
     // ── Query ───────────────────────────────────────────────────────────────
     Task<PaymentResponseDto> GetPaymentById(Guid id);
 }

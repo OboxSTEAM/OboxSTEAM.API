@@ -154,4 +154,25 @@ public class PaymentController : ControllerBase
         var result = await _paymentService.GetPaymentById(id);
         return Ok(ApiResult<PaymentResponseDto>.Success(result, "200", "Payment retrieved successfully."));
     }
+
+    // =========================================================================
+    // CANCEL payment (FE gọi khi redirect về cancelUrl)
+    // PATCH /api/payments/{id}/cancel  [AllowAnonymous]
+    // =========================================================================
+
+    [HttpPatch("{id:guid}/cancel")]
+    [AllowAnonymous]
+    [SwaggerOperation(
+        Summary = "Mark payment as Cancelled",
+        Description = "Called by the front-end when the user is redirected back to the cancelUrl. " +
+                      "Marks the Payment as Cancelled and, if applicable, rolls back the parent's " +
+                      "PaymentRequest to Pending so they can retry. Idempotent — safe to call multiple times.")]
+    [ProducesResponseType(204)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> CancelPayment([FromRoute] Guid id)
+    {
+        await _paymentService.CancelPayment(id);
+        return NoContent();
+    }
 }
+
