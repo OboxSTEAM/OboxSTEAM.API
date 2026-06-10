@@ -45,6 +45,8 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<BankQuestionOption> BankQuestionOptions { get; }
     IGenericRepository<QuizAnswer> QuizAnswers { get; }
     IGenericRepository<ProgramReview> ProgramReviews { get; }
+    IGenericRepository<PaymentRequest> PaymentRequests { get; }
+    IGenericRepository<Invoice> Invoices { get; }
 
     Task<int> SaveChangesAsync();
 }

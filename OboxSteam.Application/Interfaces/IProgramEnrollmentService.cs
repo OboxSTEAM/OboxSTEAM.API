@@ -1,11 +1,12 @@
-using OboxSteam.Application.Commons;
+using OboxSteam.Domain.Entities;
 using OboxSteam.Application.DTOs.EnrollmentDTO;
+using OboxSteam.Application.Commons;
 
 namespace OboxSteam.Application.Interfaces;
 
 public interface IProgramEnrollmentService
 {
-    Task<ProgramEnrollmentResponseDto> EnrollProgramAsync(CreateEnrollmentProgramRequestDto request);
+    Task<ProgramEnrollment> GetOrCreatePendingEnrollmentAsync(Guid studentId, Guid programId);
 
     Task<ProgramEnrollmentResponseDto> GetProgramEnrollmentByIdAsync(Guid id);
 

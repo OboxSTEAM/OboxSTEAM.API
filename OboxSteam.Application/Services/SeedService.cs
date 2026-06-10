@@ -2180,6 +2180,7 @@ namespace OboxSteam.Application.Services
                             Id = Guid.NewGuid(),
                             Code = "INV-26001",
                             StudentId = student1.Id,
+                            PaidById = student1.Id,
                             ProgramEnrollmentId = programEnrollment.Id,
                             ModuleEnrollmentId = null,
                             Amount = 1_200_000m,
@@ -2394,6 +2395,7 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.ProgramBoards.HardRemove(x => true);
             await _unitOfWork.OtpStorages.HardRemove(x => true);
             await _unitOfWork.ProgramReviews.HardRemove(x => true);
+            await _unitOfWork.Invoices.HardRemove(x => true);
 
             await _unitOfWork.QuizOptions.HardRemove(x => true);
             await _unitOfWork.QuizQuestions.HardRemove(x => true);

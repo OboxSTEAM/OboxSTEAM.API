@@ -9,7 +9,7 @@ namespace OboxSteam.Infrastructure.Services;
 
 public class EmailService : IEmailService
 {
-    private const string LogoUrl = "https://oboxsteam-bucket.s3.ap-southeast-1.amazonaws.com/obox-logo.png";
+    private const string LogoUrl = "https://oboxsteam-bucket.s3.ap-southeast-1.amazonaws.com/logo/obox-logo.png";
 
     // OboxSTEAM brand colors
     private const string ColorRed = "#E94B3C";
@@ -389,6 +389,175 @@ public class EmailService : IEmailService
 </p>";
 
         await SendEmailAsync(request.To, "Action Required: Link Request — OboxSTEAM", BuildEmailShell("Action Required", body));
+    }
+
+
+    public async Task SendPaymentRequestToParentEmailAsync(PaymentRequestEmailDto request)
+    {
+        var formattedAmount = $"{request.Amount:N0} {request.Currency}";
+        var body = $@"
+<h1 style=""margin:0 0 12px;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:28px;font-weight:800;color:{ColorCharcoal};line-height:1.2;"">
+  Payment Request from {request.StudentName}
+</h1>
+<p style=""margin:0 0 24px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:15px;color:{ColorMuted};line-height:1.7;"">
+  Hello, <strong style=""color:{ColorCharcoal};font-weight:600;"">{request.ParentName}</strong>.
+  Your child <strong style=""color:{ColorCharcoal};font-weight:600;"">{request.StudentName}</strong> wants to enroll in the program below.
+  Please review the details and complete the payment.
+</p>
+
+<!-- Program details inset -->
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0""
+       style=""background-color:{ColorSurface};border:1px solid {ColorBorder};border-radius:16px;margin-bottom:28px;"">
+  <tr>
+    <td style=""padding:24px 28px;"">
+      <p style=""margin:0 0 6px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:{ColorLight};"">Program</p>
+      <p style=""margin:0 0 16px;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:18px;font-weight:700;color:{ColorCharcoal};"">{request.ProgramName}</p>
+      <p style=""margin:0 0 6px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:{ColorLight};"">Amount due</p>
+      <p style=""margin:0;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:24px;font-weight:800;color:{ColorGreen};"">{formattedAmount}</p>
+    </td>
+  </tr>
+</table>
+
+<!-- CTA -->
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0""
+       style=""background-color:{ColorSurface};border:1px solid {ColorBorder};border-radius:16px;margin-bottom:20px;"">
+  <tr>
+    <td style=""padding:28px 32px;text-align:center;"">
+      <p style=""margin:0 0 16px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:13px;color:{ColorLight};"">
+        This link expires in 24 hours
+      </p>
+      <a href=""{request.PaymentLink}""
+         style=""display:inline-block;background-color:{ColorGreen};color:#ffffff;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:15px;font-weight:700;padding:14px 44px;border-radius:10px;text-decoration:none;box-shadow:0 4px 14px rgba(124,179,66,0.30);"">
+        Pay Now
+      </a>
+    </td>
+  </tr>
+</table>
+<p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};text-align:center;line-height:1.6;"">
+  If you do not recognise this request, you can safely ignore this email.
+</p>";
+
+        await SendEmailAsync(request.To,
+            $"Payment Request: {request.ProgramName} — OboxSTEAM",
+            BuildEmailShell("Payment Request", body));
+    }
+
+
+    public async Task SendPaymentInvoiceEmailAsync(InvoiceEmailDto request)
+    {
+        var formattedAmount = $"{request.Amount:N0} {request.Currency}";
+        var programImageHtml = string.IsNullOrEmpty(request.ThumbnailUrl)
+            ? ""
+            : $@"<td style=""vertical-align:middle;padding-right:12px;"">
+                  <img src=""{request.ThumbnailUrl}"" alt=""{request.ProgramName}"" width=""60"" height=""60"" style=""border-radius:8px;object-fit:cover;display:block;"" />
+                </td>";
+
+        var body = $@"
+<h1 style=""margin:0 0 12px;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:28px;font-weight:800;color:{ColorCharcoal};line-height:1.2;"">
+  Payment Confirmed ✓
+</h1>
+<p style=""margin:0 0 24px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:15px;color:{ColorMuted};line-height:1.7;"">
+  Hello, <strong style=""color:{ColorCharcoal};font-weight:600;"">{request.PayerName}</strong>.
+  Your payment has been processed successfully. Below is your receipt.
+</p>
+
+<!-- Invoice table -->
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0""
+       style=""background-color:{ColorSurface};border:1px solid {ColorBorder};border-radius:16px;margin-bottom:28px;"">
+  <tr>
+    <td style=""padding:24px 28px;"">
+      <table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"">
+        <tr>
+          <td style=""padding:8px 0;border-bottom:1px solid {ColorBorder};"">
+            <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};"">Invoice</p>
+            <p style=""margin:0;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:14px;font-weight:700;color:{ColorCharcoal};"">{request.InvoiceCode}</p>
+          </td>
+        </tr>
+        <tr>
+          <td style=""padding:8px 0;border-bottom:1px solid {ColorBorder};"">
+            <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};"">Program</p>
+            <table cellpadding=""0"" cellspacing=""0"" border=""0"" style=""margin-top:4px;"">
+              <tr>
+                {programImageHtml}
+                <td style=""vertical-align:middle;"">
+                  <p style=""margin:0;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:14px;font-weight:700;color:{ColorCharcoal};"">{request.ProgramName}</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style=""padding:8px 0;border-bottom:1px solid {ColorBorder};"">
+            <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};"">Student</p>
+            <p style=""margin:0;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:14px;font-weight:700;color:{ColorCharcoal};"">{request.StudentName}</p>
+          </td>
+        </tr>
+        <tr>
+          <td style=""padding:8px 0;border-bottom:1px solid {ColorBorder};"">
+            <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};"">Amount paid</p>
+            <p style=""margin:0;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:20px;font-weight:800;color:{ColorGreen};"">{formattedAmount}</p>
+          </td>
+        </tr>
+        <tr>
+          <td style=""padding:8px 0;border-bottom:1px solid {ColorBorder};"">
+            <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};"">Transaction ID</p>
+            <p style=""margin:0;font-family:'Courier New',Courier,monospace;font-size:13px;color:{ColorCharcoal};"">{request.TransactionId}</p>
+          </td>
+        </tr>
+        <tr>
+          <td style=""padding:8px 0;"">
+            <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};"">Date</p>
+            <p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:14px;font-weight:600;color:{ColorCharcoal};"">{request.PaidAt:dd MMM yyyy, HH:mm} UTC</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+<p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};text-align:center;line-height:1.6;"">
+  Thank you for your payment. The student's enrollment is now active.
+</p>";
+
+        await SendEmailAsync(request.To,
+            $"Payment Receipt: {request.InvoiceCode} — OboxSTEAM",
+            BuildEmailShell("Payment Receipt", body));
+    }
+
+
+    public async Task SendEnrollmentConfirmationEmailAsync(EnrollmentConfirmationEmailDto request)
+    {
+        var body = $@"
+<h1 style=""margin:0 0 12px;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:28px;font-weight:800;color:{ColorCharcoal};line-height:1.2;"">
+  You're enrolled, {request.StudentName}!
+</h1>
+<p style=""margin:0 0 28px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:15px;color:{ColorMuted};line-height:1.7;"">
+  Great news — you are now enrolled in <strong style=""color:{ColorCharcoal};font-weight:600;"">{request.ProgramName}</strong>.
+  Your parent has completed the payment on your behalf. Start exploring your first module!
+</p>
+
+<!-- CTA inset -->
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0""
+       style=""background-color:{ColorSurface};border:1px solid {ColorBorder};border-radius:16px;margin-bottom:20px;"">
+  <tr>
+    <td style=""padding:28px 32px;text-align:center;"">
+      <p style=""margin:0 0 16px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:13px;color:{ColorLight};"">
+        Ready to begin your learning journey?
+      </p>
+      <a href=""{_appBaseUrl}""
+         style=""display:inline-block;background-color:{ColorPurple};color:#ffffff;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:15px;font-weight:700;padding:14px 44px;border-radius:10px;text-decoration:none;box-shadow:0 4px 14px rgba(126,87,194,0.30);"">
+        Start Learning
+      </a>
+    </td>
+  </tr>
+</table>
+<p style=""margin:0;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:12px;color:{ColorLight};text-align:center;line-height:1.6;"">
+  Questions? Contact us at support@oboxsteam.com
+</p>";
+
+        await SendEmailAsync(request.To,
+            $"You're Enrolled in {request.ProgramName} — OboxSTEAM",
+            BuildEmailShell("Enrollment Confirmed", body));
     }
 
 }

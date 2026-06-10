@@ -26,44 +26,48 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
         _logger = logger;
     }
 
-    public async Task<ProgramEnrollmentResponseDto> EnrollProgramAsync(CreateEnrollmentProgramRequestDto request)
+    public async Task<ProgramEnrollment> GetOrCreatePendingEnrollmentAsync(Guid studentId, Guid programId)
     {
-        ProgramEnrollmentValidator.ValidateProgramIdRequired(request.ProgramId);
+        ProgramEnrollmentValidator.ValidateStudentIdRequired(studentId);
+        ProgramEnrollmentValidator.ValidateProgramIdRequired(programId);
 
-        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
-            _unitOfWork,
-            _claimsService,
-            ProgramEnrollmentValidator.EnrollForbiddenMessage);
-
-        var programEntity = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId);
+        var programEntity = await _unitOfWork.Programs.GetByIdAsync(programId);
         if (programEntity == null || programEntity.IsDeleted)
         {
-            _logger.LogWarning("[EnrollProgramAsync] Program {ProgramId} not found.", request.ProgramId);
+            _logger.LogWarning("[GetOrCreatePendingEnrollmentAsync] Program {ProgramId} not found.", programId);
+            throw ErrorHelper.NotFound($"Program with id '{programId}' not found.");
         }
 
-        var program = ProgramEnrollmentValidator.ValidateProgramExists(programEntity, request.ProgramId);
-
         var existingEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-            pe => pe.StudentId == student.Id && pe.ProgramId == request.ProgramId && !pe.IsDeleted);
+            pe => pe.StudentId == studentId && pe.ProgramId == programId && !pe.IsDeleted);
 
         if (existingEnrollment != null)
         {
-            _logger.LogWarning(
-                "[EnrollProgramAsync] Student {StudentId} already enrolled in program {ProgramId}.",
-                student.Id,
-                request.ProgramId);
+            if (existingEnrollment.Status != EnrollmentStatus.PendingPayment)
+            {
+                _logger.LogWarning(
+                    "[GetOrCreatePendingEnrollmentAsync] Student {StudentId} already enrolled in program {ProgramId} with status {Status}.",
+                    studentId,
+                    programId,
+                    existingEnrollment.Status);
+                throw ErrorHelper.Conflict("Student is already enrolled in this program.");
+            }
+
+            _logger.LogInformation(
+                "[GetOrCreatePendingEnrollmentAsync] Reusing existing PendingPayment enrollment {EnrollmentId} for student {StudentId} on program {ProgramId}.",
+                existingEnrollment.Id,
+                studentId,
+                programId);
+
+            return existingEnrollment;
         }
-
-        ProgramEnrollmentValidator.ValidateNotAlreadyEnrolled(existingEnrollment);
-
-        // Payment validation skipped until Payment module is implemented (Q6).
 
         var now = DateTime.UtcNow;
         var enrollment = new ProgramEnrollment
         {
-            StudentId = student.Id,
-            ProgramId = request.ProgramId,
-            Status = EnrollmentStatus.Active,
+            StudentId = studentId,
+            ProgramId = programId,
+            Status = EnrollmentStatus.PendingPayment,
             ProgressPercent = 0m,
             EnrolledAt = now,
         };
@@ -72,36 +76,12 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
-            "[EnrollProgramAsync] Student {StudentId} enrolled in program {ProgramId} with enrollment {EnrollmentId}.",
-            student.Id,
-            request.ProgramId,
-            enrollment.Id);
+            "[GetOrCreatePendingEnrollmentAsync] Created new PendingPayment enrollment {EnrollmentId} for student {StudentId} on program {ProgramId}.",
+            enrollment.Id,
+            studentId,
+            programId);
 
-        return new ProgramEnrollmentResponseDto
-        {
-            Id = enrollment.Id,
-            StudentId = enrollment.StudentId,
-            ProgramId = enrollment.ProgramId,
-            Status = enrollment.Status,
-            ProgressPercent = enrollment.ProgressPercent,
-            EnrolledAt = enrollment.EnrolledAt,
-            StartedAt = enrollment.StartedAt,
-            CompletedAt = enrollment.CompletedAt,
-            CreatedAt = enrollment.CreatedAt,
-            UpdatedAt = enrollment.UpdatedAt,
-            Code = program.Code,
-            Name = program.Name,
-            SeriesName = program.SeriesName,
-            Description = program.Description,
-            Level = program.Level,
-            EstimatedDuration = program.EstimatedDuration,
-            SkillsGained = program.SkillsGained,
-            Rating = program.Rating,
-            TotalReviews = program.TotalReviews,
-            ThumbnailUrl = program.ThumbnailUrl,
-            ProgramStatus = program.Status,
-            Price = program.Price,
-        };
+        return enrollment;
     }
 
     public async Task<ProgramEnrollmentResponseDto> GetProgramEnrollmentByIdAsync(Guid id)
