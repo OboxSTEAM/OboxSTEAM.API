@@ -4,8 +4,10 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Domain.Entities;
 
 /// <summary>
-/// Activities represent individual slots within a course.
+/// Activities represent individual learning tasks within a course.
 /// Can be SelfPaced (no scheduling), LiveOnline, or Offline.
+/// StartTime/EndTime/Location/MaxCapacity are template defaults; actual cohort
+/// schedule lives on <see cref="ClassSession"/>.
 /// </summary>
 public class Activity : BaseEntity
 {
@@ -20,11 +22,13 @@ public class Activity : BaseEntity
 
     public ActivityType ActivityType { get; set; }
 
+    public SchedulingMode SchedulingMode { get; set; } = SchedulingMode.SelfPaced;
+
     public string? Description { get; set; }
 
     public int ActivityOrder { get; set; }
 
-    // Slot scheduling — only applies to LiveOnline / Offline
+    // Template scheduling hints — cohort times are on ClassSession
     [MaxLength(500)]
     public string? Location { get; set; } // Google Meet link or physical address
 
@@ -41,4 +45,5 @@ public class Activity : BaseEntity
     public ICollection<Material> Materials { get; set; } = new List<Material>();
     public ICollection<MediaAsset> MediaAssets { get; set; } = new List<MediaAsset>();
     public ICollection<ActivityProgress> ActivityProgresses { get; set; } = new List<ActivityProgress>();
+    public ICollection<ClassSession> ClassSessions { get; set; } = new List<ClassSession>();
 }

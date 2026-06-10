@@ -26,4 +26,5 @@ public class ProgramEnrollment : BaseEntity
     // Navigation
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();
+    public ICollection<ClassEnrollment> ClassEnrollments { get; set; } = new List<ClassEnrollment>();
 }

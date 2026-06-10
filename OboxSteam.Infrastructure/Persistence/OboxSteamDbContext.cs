@@ -38,6 +38,12 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ActivityBooking> ActivityBookings { get; set; }
     public DbSet<ActivityProgress> ActivityProgresses { get; set; }
 
+    // ── 5b. Class Delivery (cohort scheduling) ──
+    public DbSet<Class> Classes { get; set; }
+    public DbSet<ClassEnrollment> ClassEnrollments { get; set; }
+    public DbSet<ClassSession> ClassSessions { get; set; }
+    public DbSet<SessionAttendance> SessionAttendances { get; set; }
+
     // ── 6. Assessments & Submissions ──
     public DbSet<Assignment> Assignments { get; set; }
     public DbSet<QuestionBank> QuestionBanks { get; set; }
@@ -92,6 +98,10 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<CourseEnrollment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ActivityBooking>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ActivityProgress>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Class>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ClassEnrollment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ClassSession>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<SessionAttendance>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Assignment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuestionBank>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<BankQuestion>().HasQueryFilter(e => !e.IsDeleted);
@@ -437,6 +447,107 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Payment>(entity =>
         {
             entity.HasIndex(p => p.Code).IsUnique();
+        });
+
+        // =============================================
+        // CLASS (cohort / đợt học)
+        // =============================================
+        modelBuilder.Entity<Class>(entity =>
+        {
+            entity.HasIndex(c => c.Code).IsUnique();
+
+            entity.HasOne(c => c.Program)
+                .WithMany(p => p.Classes)
+                .HasForeignKey(c => c.ProgramId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Mentor)
+                .WithMany(u => u.MentoredClasses)
+                .HasForeignKey(c => c.MentorId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // CLASS ENROLLMENT (Unique: class + student)
+        // =============================================
+        modelBuilder.Entity<ClassEnrollment>(entity =>
+        {
+            entity.HasOne(ce => ce.Class)
+                .WithMany(c => c.ClassEnrollments)
+                .HasForeignKey(ce => ce.ClassId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ce => ce.Student)
+                .WithMany(u => u.ClassEnrollments)
+                .HasForeignKey(ce => ce.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ce => ce.ProgramEnrollment)
+                .WithMany(pe => pe.ClassEnrollments)
+                .HasForeignKey(ce => ce.ProgramEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(ce => new { ce.ClassId, ce.StudentId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+        });
+
+        // =============================================
+        // CLASS SESSION (cohort calendar event)
+        // =============================================
+        modelBuilder.Entity<ClassSession>(entity =>
+        {
+            entity.HasIndex(cs => new { cs.ClassId, cs.StartTime });
+
+            entity.HasOne(cs => cs.Class)
+                .WithMany(c => c.ClassSessions)
+                .HasForeignKey(cs => cs.ClassId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(cs => cs.Module)
+                .WithMany(m => m.ClassSessions)
+                .HasForeignKey(cs => cs.ModuleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cs => cs.Activity)
+                .WithMany(a => a.ClassSessions)
+                .HasForeignKey(cs => cs.ActivityId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(cs => cs.Assignment)
+                .WithMany(a => a.ClassSessions)
+                .HasForeignKey(cs => cs.AssignmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // SESSION ATTENDANCE (Unique: session + student)
+        // =============================================
+        modelBuilder.Entity<SessionAttendance>(entity =>
+        {
+            entity.HasOne(sa => sa.ClassSession)
+                .WithMany(cs => cs.SessionAttendances)
+                .HasForeignKey(sa => sa.ClassSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(sa => sa.Student)
+                .WithMany(u => u.SessionAttendances)
+                .HasForeignKey(sa => sa.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(sa => sa.ModuleEnrollment)
+                .WithMany(me => me.SessionAttendances)
+                .HasForeignKey(sa => sa.ModuleEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(sa => sa.Recorder)
+                .WithMany(u => u.RecordedSessionAttendances)
+                .HasForeignKey(sa => sa.RecordedBy)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(sa => new { sa.ClassSessionId, sa.StudentId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
         });
 
         // =============================================

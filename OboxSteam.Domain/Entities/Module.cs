@@ -16,6 +16,9 @@ public class Module : BaseEntity
 
     public ModuleType ModuleType { get; set; }
 
+    /// <summary>Suggested default scheduling mode for new activities in this module.</summary>
+    public SchedulingMode? DefaultSchedulingMode { get; set; }
+
     public int ModuleOrder { get; set; }
 
     /// <summary>Prerequisite module that must be completed before this one can be accessed.</summary>
@@ -36,4 +39,5 @@ public class Module : BaseEntity
     public ICollection<Assignment> Assignments { get; set; } = new List<Assignment>();
     public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();
     public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
+    public ICollection<ClassSession> ClassSessions { get; set; } = new List<ClassSession>();
 }

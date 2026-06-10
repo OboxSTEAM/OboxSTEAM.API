@@ -35,4 +35,5 @@ public class ModuleEnrollment : BaseEntity
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<ActivityProgress> ActivityProgresses { get; set; } = new List<ActivityProgress>();
     public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
+    public ICollection<SessionAttendance> SessionAttendances { get; set; } = new List<SessionAttendance>();
 }

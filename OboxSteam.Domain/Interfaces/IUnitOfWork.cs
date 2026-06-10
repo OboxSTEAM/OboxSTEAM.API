@@ -22,6 +22,11 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<QuizOption> QuizOptions { get; }
     IGenericRepository<Activity> Activities { get; }
     IGenericRepository<ActivityBooking> ActivityBookings { get; }
+    IGenericRepository<ActivityProgress> ActivityProgresses { get; }
+    IGenericRepository<Class> Classes { get; }
+    IGenericRepository<ClassEnrollment> ClassEnrollments { get; }
+    IGenericRepository<ClassSession> ClassSessions { get; }
+    IGenericRepository<SessionAttendance> SessionAttendances { get; }
     IGenericRepository<Expert> Experts { get; }
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }

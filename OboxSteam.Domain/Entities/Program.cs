@@ -44,4 +44,5 @@ public class Program : BaseEntity
     public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
     public ICollection<HighlightVideo> HighlightVideos { get; set; } = new List<HighlightVideo>();
     public ICollection<ProgramReview> Reviews { get; set; } = new List<ProgramReview>();
+    public ICollection<Class> Classes { get; set; } = new List<Class>();
 }

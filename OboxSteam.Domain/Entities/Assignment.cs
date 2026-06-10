@@ -32,6 +32,12 @@ public class Assignment : BaseEntity
 
     public DateTime? DueDate { get; set; }
 
+    /// <summary>Earliest moment a student may start this assignment (template default).</summary>
+    public DateTime? AvailableFrom { get; set; }
+
+    /// <summary>Hard close — no new attempts after this time (template default).</summary>
+    public DateTime? AvailableUntil { get; set; }
+
     public bool AllowShuffle { get; set; } = true;
 
     // ── Question-Bank quiz configuration ──
@@ -82,4 +88,5 @@ public class Assignment : BaseEntity
     // Navigation
     public ICollection<QuizQuestion> QuizQuestions { get; set; } = new List<QuizQuestion>();
     public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
+    public ICollection<ClassSession> ClassSessions { get; set; } = new List<ClassSession>();
 }
