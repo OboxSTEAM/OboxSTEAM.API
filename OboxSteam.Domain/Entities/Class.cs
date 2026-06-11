@@ -24,10 +24,6 @@ public class Class : BaseEntity
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
 
-    /// <summary>IANA timezone id, e.g. Asia/Ho_Chi_Minh.</summary>
-    [MaxLength(64)]
-    public string Timezone { get; set; } = "Asia/Ho_Chi_Minh";
-
     public int MaxCapacity { get; set; }
 
     public ClassStatus Status { get; set; } = ClassStatus.Draft;
@@ -41,9 +37,6 @@ public class Class : BaseEntity
     /// <summary>Human-readable schedule for class picker UI, e.g. "Every Saturday 9:00–12:00".</summary>
     [MaxLength(255)]
     public string? ScheduleSummary { get; set; }
-
-    [MaxLength(255)]
-    public string? LocationSummary { get; set; }
 
     // Navigation
     public ICollection<ClassEnrollment> ClassEnrollments { get; set; } = new List<ClassEnrollment>();
