@@ -180,6 +180,7 @@ public static class IocContainer
         services.AddScoped<IBankQuestionService, BankQuestionService>();
         services.AddScoped<IProgramReviewService, ProgramReviewService>();
         services.AddScoped<IAssignmentService, AssignmentService>();
+        services.AddScoped<IQuizAttemptService, QuizAttemptService>();
         services.AddScoped<IStripePaymentService, StripePaymentService>();
         services.AddScoped<IMomoPaymentService, MomoPaymentService>();
         services.AddScoped<IPaymentService, PaymentService>();
