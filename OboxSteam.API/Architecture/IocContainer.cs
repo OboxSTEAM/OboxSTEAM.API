@@ -58,7 +58,8 @@ public static class IocContainer
         // Add Business services
         services.SetupBusinessServicesLayer();
 
-        // Background Services removed - now using Webhooks (AwsWebhookController)
+        // Background Services
+        services.AddHostedService<PendingEnrollmentCleanupService>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
