@@ -12,8 +12,8 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    [Migration("20260610120233_AddClassDeliveryAndSchedulingFields")]
-    partial class AddClassDeliveryAndSchedulingFields
+    [Migration("20260611124650_AddSubmissionQuizTiming")]
+    partial class AddSubmissionQuizTiming
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -2329,6 +2329,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("FileUrl")
                         .HasColumnType("text");
 
@@ -2340,6 +2343,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<Guid?>("ModuleEnrollmentId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
                         .IsRequired()

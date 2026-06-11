@@ -35,6 +35,15 @@ public class Submission : BaseEntity
     public Guid? VerifiedBy { get; set; }
     public User? Verifier { get; set; }
 
+    /// <summary>When the student started this attempt (quiz timer begins).</summary>
+    public DateTime? StartedAt { get; set; }
+
+    /// <summary>
+    /// When this attempt expires. Set to StartedAt + Assignment.TimeLimitMinutes at start.
+    /// Null when the assignment has no per-attempt time limit.
+    /// </summary>
+    public DateTime? ExpiresAt { get; set; }
+
     public DateTime? SubmittedAt { get; set; }
 
     // Navigation
