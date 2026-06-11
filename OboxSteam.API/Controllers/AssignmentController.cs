@@ -21,8 +21,9 @@ public class AssignmentController : ControllerBase
     [HttpGet("{assignmentId:guid}")]
     [SwaggerOperation(
         Summary = "Get assignment by ID",
-        Description = "Retrieve an assignment by its ID.")]
+        Description = "Retrieve an assignment by its ID. Students must have an active enrollment in the assignment's module.")]
     [ProducesResponseType(typeof(ApiResult<AssignmentResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetAssignmentById(Guid assignmentId)
     {

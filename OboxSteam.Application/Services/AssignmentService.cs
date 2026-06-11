@@ -75,6 +75,8 @@ public sealed class AssignmentService : IAssignmentService
             PassScore = request.PassScore,
             IsRequiredForModulePass = request.IsRequiredForModulePass,
             DueDate = request.DueDate,
+            AvailableFrom = request.AvailableFrom,
+            AvailableUntil = request.AvailableUntil,
             AllowShuffle = request.AllowShuffle,
             QuestionBankId = request.QuestionBankId,
             QuestionCount = request.QuestionCount,
@@ -109,6 +111,8 @@ public sealed class AssignmentService : IAssignmentService
             PassScore = assignment.PassScore,
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
             DueDate = assignment.DueDate,
+            AvailableFrom = assignment.AvailableFrom,
+            AvailableUntil = assignment.AvailableUntil,
             AllowShuffle = assignment.AllowShuffle,
             QuestionBankId = assignment.QuestionBankId,
             QuestionCount = assignment.QuestionCount,
@@ -129,6 +133,11 @@ public sealed class AssignmentService : IAssignmentService
         if (assignment == null || assignment.IsDeleted)
             return null;
 
+        await QuizAttemptValidator.ValidateStudentModuleAccessAsync(
+            _unitOfWork,
+            _claimsService,
+            assignment);
+
         return new AssignmentResponseDto
         {
             Id = assignment.Id,
@@ -142,6 +151,8 @@ public sealed class AssignmentService : IAssignmentService
             PassScore = assignment.PassScore,
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
             DueDate = assignment.DueDate,
+            AvailableFrom = assignment.AvailableFrom,
+            AvailableUntil = assignment.AvailableUntil,
             AllowShuffle = assignment.AllowShuffle,
             QuestionBankId = assignment.QuestionBankId,
             QuestionCount = assignment.QuestionCount,
@@ -251,6 +262,12 @@ public sealed class AssignmentService : IAssignmentService
         if (request.DueDate.HasValue)
             assignment.DueDate = request.DueDate;
 
+        if (request.AvailableFrom.HasValue)
+            assignment.AvailableFrom = request.AvailableFrom;
+
+        if (request.AvailableUntil.HasValue)
+            assignment.AvailableUntil = request.AvailableUntil;
+
         if (request.AllowShuffle.HasValue)
             assignment.AllowShuffle = request.AllowShuffle.Value;
 
@@ -301,6 +318,8 @@ public sealed class AssignmentService : IAssignmentService
             PassScore = assignment.PassScore,
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
             DueDate = assignment.DueDate,
+            AvailableFrom = assignment.AvailableFrom,
+            AvailableUntil = assignment.AvailableUntil,
             AllowShuffle = assignment.AllowShuffle,
             QuestionBankId = assignment.QuestionBankId,
             QuestionCount = assignment.QuestionCount,
