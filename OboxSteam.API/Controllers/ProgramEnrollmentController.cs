@@ -20,32 +20,6 @@ public class ProgramEnrollmentController : ControllerBase
     }
 
     // =========================================================================
-    // ENROLL  —  POST /api/program-enrollments          [Student only]
-    // =========================================================================
-
-    [HttpPost]
-    [Authorize(Roles = "Student")]
-    [SwaggerOperation(
-        Summary = "Enroll in a program",
-        Description = "Creates a program enrollment for the authenticated student. Requires Student role.")]
-    [ProducesResponseType(typeof(ApiResult<ProgramEnrollmentResponseDto>), 201)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> EnrollProgram(
-        [FromBody, SwaggerParameter("Program enrollment request")] CreateEnrollmentProgramRequestDto dto)
-    {
-        var result = await _programEnrollmentService.EnrollProgramAsync(dto);
-
-        return CreatedAtAction(
-            nameof(GetProgramEnrollmentById),
-            new { id = result.Id },
-            ApiResult<ProgramEnrollmentResponseDto>.Success(result, "201", "Program enrollment created successfully."));
-    }
-
-    // =========================================================================
     // GET BY ID  —  GET /api/program-enrollments/{id}
     // =========================================================================
 
