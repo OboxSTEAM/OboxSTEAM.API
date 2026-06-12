@@ -39,6 +39,13 @@ public class ProgramService : IProgramService
             throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
         }
 
+        var programBoards = await _unitOfWork.ProgramBoards.GetAllAsync(pb => pb.ProgramId == id);
+        var expertIds = programBoards.Select(pb => pb.ExpertId).Distinct().ToList();
+        var experts = expertIds.Any()
+            ? await _unitOfWork.Experts.GetAllAsync(e => expertIds.Contains(e.Id) && !e.IsDeleted)
+            : new List<Expert>();
+        var expertsById = experts.ToDictionary(e => e.Id, e => e);
+
         _logger.LogInformation("[GetProgramByIdAsync] Program with Id {Id} retrieved successfully.", id);
         return new ProgramsResponseDto
         {
@@ -73,6 +80,7 @@ public class ProgramService : IProgramService
                 CreatedAt = m.CreatedAt,
                 UpdatedAt = m.UpdatedAt,
             }).ToList() ?? new(),
+            Experts = MapExpertsForProgram(programBoards, expertsById),
         };
     }
 
@@ -181,24 +189,7 @@ public class ProgramService : IProgramService
         {
             var dto = MapToProgramListItemDto(program);
             dto.Experts = programBoardsByProgramId.TryGetValue(program.Id, out var boards)
-                ? boards
-                    .Where(pb => expertsById.ContainsKey(pb.ExpertId))
-                    .Select(pb =>
-                    {
-                        var expert = expertsById[pb.ExpertId];
-                        return new ProgramExpertSummaryDto
-                        {
-                            ExpertId = expert.Id,
-                            Code = expert.Code,
-                            FullName = expert.FullName,
-                            Title = expert.Title,
-                            Organization = expert.Organization,
-                            AvatarUrl = expert.AvatarUrl,
-                            LinkedInUrl = expert.LinkedInUrl,
-                            RoleInBoard = pb.RoleInBoard,
-                        };
-                    })
-                    .ToList()
+                ? MapExpertsForProgram(boards, expertsById)
                 : new();
             return dto;
         }).ToList();
@@ -344,6 +335,28 @@ public class ProgramService : IProgramService
             _ => isDescending ? query.OrderByDescending(p => p.CreatedAt) : query.OrderBy(p => p.CreatedAt),
         };
     }
+
+    private static List<ProgramExpertSummaryDto> MapExpertsForProgram(
+        IEnumerable<ProgramBoard> boards,
+        IReadOnlyDictionary<Guid, Expert> expertsById) =>
+        boards
+            .Where(pb => expertsById.ContainsKey(pb.ExpertId))
+            .Select(pb =>
+            {
+                var expert = expertsById[pb.ExpertId];
+                return new ProgramExpertSummaryDto
+                {
+                    ExpertId = expert.Id,
+                    Code = expert.Code,
+                    FullName = expert.FullName,
+                    Title = expert.Title,
+                    Organization = expert.Organization,
+                    AvatarUrl = expert.AvatarUrl,
+                    LinkedInUrl = expert.LinkedInUrl,
+                    RoleInBoard = pb.RoleInBoard,
+                };
+            })
+            .ToList();
 
     private static ProgramListItemDto MapToProgramListItemDto(Program program) => new()
     {
