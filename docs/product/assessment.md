@@ -1,0 +1,78 @@
+# Assessment
+
+## Assignment Types
+
+| AssignmentType | Behavior |
+| --- | --- |
+| Quiz | Auto-graded question flow via quiz endpoints |
+| FileUpload | Student uploads evidence files |
+| Practical | Hands-on work with submission review |
+| Retrospective | Reflective submission |
+
+Assignments belong to a `Module` and optionally a `Course`. Fields include
+`MaxPoints`, `PassScore`, `IsRequiredForModulePass`, availability window, and
+`DueDate`.
+
+API: `/api/assignments` — CRUD for Manager/SuperAdmin; student submission
+flows via assignment and quiz services.
+
+## Question Banks
+
+Reusable question pools attached to courses. Supports CSV import via
+`ICsvQuestionParserService`.
+
+- `BankQuestion` and `BankQuestionOption` entities.
+- Difficulty levels via `DifficultyLevel` enum.
+
+API: `/api/question-banks`.
+
+## Quiz Modes
+
+### Bank-drawn quiz
+
+When `Assignment.QuestionBankId` is set:
+
+- Questions are randomly drawn at serve-time from the linked bank.
+- `QuestionCount`, `EasyPercent` / `MediumPercent` / `HardPercent` control draw.
+- `ShuffleOptions`, `AllowShuffle`, `TimeLimitMinutes`, `MaxAttempts` configure
+  attempt behavior.
+
+### Direct quiz
+
+When `QuestionBankId` is null, questions are attached via `QuizQuestion` on the
+assignment.
+
+## Quiz Attempt Lifecycle (Student)
+
+Endpoints on `QuizController` (`/api`):
+
+| Step | Endpoint |
+| --- | --- |
+| Start or resume | `POST /api/assignments/{assignmentId}/quiz/start` |
+| Get in-progress | `GET /api/submissions/{submissionId}/quiz` |
+| Save drafts | `PUT /api/submissions/{submissionId}/quiz/answers` |
+| Submit | `POST /api/submissions/{submissionId}/quiz/submit` |
+| View result | `GET /api/submissions/{submissionId}/quiz/result` |
+
+Flow:
+
+1. Student starts attempt → creates or resumes `Submission` in Pending state.
+2. Draft answers stored in `QuizAnswer`.
+3. Submit merges drafts, validates completeness, auto-grades, sets Graded status.
+4. Result returns score against `PassScore` and `MaxPoints`.
+
+## Submissions and Evidence
+
+`Submission` tracks student work. `SubmissionEvidence` holds file references.
+Mentors or staff may verify submissions (`VerifiedSubmissions` on User).
+
+## Certificates
+
+`Certificate` entity links completion credentials to users, programs, and
+modules.
+
+## Validation Expectations
+
+Quiz grading logic lives in `IQuizAttemptService` / application services.
+Changes to grading rules, attempt limits, or bank draw algorithms are high-risk
+and need integration tests before proof claims.

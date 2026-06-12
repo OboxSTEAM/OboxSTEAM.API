@@ -1,0 +1,47 @@
+# Enrollment
+
+## Enrollment Types
+
+| Entity | Scope | Purpose |
+| --- | --- | --- |
+| ProgramEnrollment | Program | Student enrolled in a full track |
+| ModuleEnrollment | Module | Access to a module (may be à la carte) |
+| CourseEnrollment | Course | Mentor-led course instance access |
+| ClassEnrollment | Class | Cohort membership with shared schedule |
+
+Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
+
+## Student Flow
+
+1. Browse programs (public catalog).
+2. Enroll at program level (`POST /api/program-enrollments`) — Student role.
+3. Enroll in modules (`POST /api/module-enrollments`) when module access is
+   required separately.
+4. Join a class cohort when class-based delivery applies.
+
+Parents and managers can view enrollment state on shared read endpoints
+(Student, Parent, SuperAdmin, Manager).
+
+## Gating Rules
+
+- Module prerequisites: `PrerequisiteModuleId` must be satisfied before access.
+- Class late-join: `Class.MinHoursBeforeAssignmentJoin` blocks self-enrollment
+  near assignment windows; managers may bypass in service logic.
+- Quiz and assignment access require active module enrollment (enforced in
+  `IQuizAttemptService` and assignment services).
+
+## Progress
+
+`ActivityProgress` tracks completion per student per activity.
+`ActivityBooking` handles booking for capacity-limited activities.
+
+## Payments
+
+`Payment` entity and `PaymentStatus` / `PaymentGateway` enums exist in the
+domain model. Payment integration endpoints should be verified against current
+controllers before documenting public contract details.
+
+## Parent Visibility
+
+Parents access linked student enrollment data through endpoints that accept
+Parent role alongside Student and admin roles.
