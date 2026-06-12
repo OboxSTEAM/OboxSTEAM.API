@@ -4,7 +4,7 @@ alwaysApply: false
 
 # OboxSTEAM — Project Context & Domain Reference
 
-> Load this file when working on feature logic, data modelling, routing, roles, or portfolio/subdomain behaviour. For code style use `nextjs-engineering-rule.mdc`; for colors and UI use `styling-rule.mdc`.
+> Load this file when working on feature logic, data modelling, routing, roles, or portfolio/subdomain behaviour. For C# API patterns use `coding-style-csharp.mdc`. For the Next.js frontend use `nextjs-engineering-rule.mdc` and `styling-rule.mdc`.
 
 ---
 
@@ -13,109 +13,247 @@ alwaysApply: false
 **OboxSTEAM** is a Vietnamese edtech platform that sells and delivers STEAM experiential learning programs (like a leaner Coursera + physical lab sessions). Its distinguishing feature is that every enrolled student automatically builds a **digital Portfolio** — a public microsite documenting their learning journey — which they can use for overseas university applications.
 
 **Core value loop:**
-Student enrolls in program → learns through online/offline sessions → evidence is collected automatically → AI processes evidence → Portfolio microsite is generated → student shares it with universities
+Student enrolls in program → joins a class cohort → learns through online/offline sessions → evidence is collected automatically → AI processes evidence → Portfolio microsite is generated → student shares it with universities
+
+**Repositories:**
+- **OboxSTEAM.API** (this repo) — ASP.NET Core 8 REST API, PostgreSQL, AWS integrations
+- **OboxSTEAM frontend** (separate repo) — Next.js 16 App Router client
 
 ---
 
 ## Actors & Roles
 
-| Actor | Key Permissions |
-|-------|----------------|
-| **Guest** | Browse programs, view public student portfolios |
-| **Student** | Enroll, learn, track progress, manage own portfolio |
-| **Parent** | Register on behalf of child, pay, monitor child's progress (linked sub-profile) |
-| **Mentor / Instructor** | Teach sessions, grade students per stage, upload recommendation letters, upload evidence media |
-| **Manager** | OboxSTEAM platform representative; oversees program quality and Mentor accounts |
-| **Admin** | System-level observer; manages users, content, AI pipelines |
+| Actor | `RoleType` | Key Permissions |
+|-------|------------|-----------------|
+| **Guest** | — | Browse programs, view public student portfolios |
+| **Student** | `Student` | Enroll, learn, track progress, manage own portfolio |
+| **Parent** | `Parent` | Register on behalf of child, pay, monitor child's progress (linked sub-profile) |
+| **Mentor / Instructor** | `Mentor` | Teach cohort sessions, grade submissions, upload evidence media |
+| **Manager** | `Manager` | OboxSTEAM platform representative; oversees program quality and Mentor accounts |
+| **Admin** | `SuperAdmin` | System-level observer; manages users, content, AI pipelines |
 
-**Parent–Child linking:** A parent account can create multiple child (Student) sub-profiles. All child activity triggers real-time notifications to the parent.
+**Parent–Child linking:** `ParentStudent` join table links parent and student accounts. A parent can manage multiple child sub-profiles. Activity notifications flow to the parent.
 
-**Mentor approval flow:** Mentor registers → uploads CCCD, degree, CV, language cert → Manager reviews → Admin approves.
+**Mentor approval flow:** Mentor registers → uploads CCCD, degree, CV, language cert → Manager reviews → SuperAdmin approves.
 
 ---
 
-## Content Hierarchy
+## Content Hierarchy (Curriculum Layer)
+
+Content defines **what** students learn. It is authored once per program and is **not shared across unrelated programs** in MVP (no cross-module course library).
 
 ```
 Program
-└── Curriculum Framework        (teaching syllabus, has unlock conditions)
-    └── Module                  (themed unit; has prerequisites)
-        └── Course              (theory docs + task list; reusable across modules)
-            └── Activity        (a concrete task the student must complete)
+└── Module                         (themed unit; prerequisites; priced individually)
+    └── Course                     (unit / chapter within a module — theory + task list)
+        └── Activity               (atomic learning task: video, lab, reflection, etc.)
 ```
 
-- A **Module** is locked until all prerequisite modules are passed. Failed prerequisite → student can re-enroll in that module only.
-- A **Course** contains theory materials + required activities. Activities are the atomic unit of student work.
-- **Program enrollment** gives the student a personal Curriculum instance (their own progress tracked separately from others).
+**Also attached to modules/courses (not in the tree above):**
+- `Material` — files/docs at module, course, or activity level
+- `Assignment` — graded work (quiz, project, reflection) at module or course level
+- `QuestionBank` → `BankQuestion` → `BankQuestionOption` — reusable quiz pools scoped to a course
+
+### Entity responsibilities
+
+| Entity | Role |
+|--------|------|
+| **Program** | Catalog product: metadata, price, category, reviews, expert board |
+| **Module** | Stage in the curriculum; has `PrerequisiteModuleId`, `ModuleOrder`, `ModuleType`, retail/retake pricing |
+| **Course** | Sub-grouping inside a module (chapter/unit). Holds activities and optional materials. **Not a cohort.** |
+| **Activity** | Concrete task (`ActivityType`: SelfPaced, LiveOnline, Offline). Template scheduling hints only. |
+| **Assignment** | Assessments with quiz config, pass score, time limits, question-bank draw rules |
+| **Material** | Uploaded theory assets (PDF, video link, etc.) |
+
+### Module access rules
+
+- A **Module** is locked until its prerequisite module is passed.
+- Failed prerequisite → student can re-enroll in that module only (`ModuleEnrollment.AttemptNumber` increments; retake fee via `Payment`).
+- Progress is tracked per student via enrollments (see below).
+
+### Learning page UI mapping (frontend)
+
+Coursera-style sidebar should show **2 visible levels**, not 3:
+
+| Domain | UI role |
+|--------|---------|
+| Program | Page header / breadcrumb |
+| Module | Top-level accordion sections (MOOC-like blocks) |
+| Course | Optional **unit label** grouping activities inside a module (hide if only one course) |
+| Activity | Clickable leaf items with type icon + progress state |
+| Class | Cohort banner / schedule context — not a tree level |
 
 ---
 
-## Core Features
+## Cohort Delivery Layer (Class)
 
-### 3.1 Authentication & Account Management
-- Multi-channel sign-up: Google OAuth, phone (OTP), email/password.
-- Role selection at registration (Student, Parent, Mentor).
-- Mentor accounts require Manager/Admin approval with document upload.
-- Parent can create and manage child sub-profiles; activity notifications flow to parent.
+Delivery defines **when / with whom** students learn. Separate from curriculum content.
 
-### 3.2 Student Profile (Portfolio Data Source)
-The profile is the raw data the AI uses to build the portfolio. Key sections:
+```
+Program
+└── Class                            (đợt học — cohort instance)
+    ├── ClassEnrollment              (student ↔ cohort, linked to ProgramEnrollment)
+    └── ClassSession                 (calendar event for this cohort)
+            ├── Activity?            (lesson / lab / field trip)
+            └── Assignment?          (assignment window)
+                    └── SessionAttendance
+```
 
-**Academic info:** current school, grade, intended major direction, target study-abroad country & year, GPA (overall + STEM subjects), standardized test scores (SAT/ACT/AP/IB), language certificates (IELTS/TOEFL).
+| Entity | Role |
+|--------|------|
+| **Class** | Running cohort: mentor, start/end dates, capacity, schedule summary, late-join guard |
+| **ClassEnrollment** | Links student to cohort; one active class per program enrollment (v1) |
+| **ClassSession** | Scheduled event (`SessionKind`: Lesson, LiveOnline, FieldTrip, AssignmentWindow, MentorCheckIn) |
+| **SessionAttendance** | Roster attendance per session, tied to `ModuleEnrollment` |
+| **ActivityBooking** | Student slot booking for Live/Offline activities (unique per student + activity) |
 
-**Achievements:** awards/competitions (especially Robotics, Informatics, ISEF), project roles, extracurriculars auto-pulled from enrolled programs.
+**Scheduling split:**
+- `Activity.StartTime` / `EndTime` / `Location` = **template defaults** on the content blueprint
+- `ClassSession.StartTime` / `EndTime` / `Location` = **actual cohort schedule**
+- `Activity.SchedulingMode`: SelfPaced, ClassSynchronized, OptionalBooking
+- `Module.DefaultSchedulingMode` — suggested default for new activities
 
-**STEAM evidence:** featured projects (student selects 3–5 proudest), community service linked to STEAM, field trips and workshops auto-counted from system.
-
-**Skills:** hard skills list, soft skills list.
-
-**Written content:** personal bio (250–500 words), stage reflections journal (AI summarises into Portfolio), recommendation letters uploaded by Mentors.
-
-**Media:** auto-tagged photo library (AI face recognition), short highlight video links (9:16, AI-generated from session footage).
-
-### 3.3 Learning Journey (LMS — built in-house)
-- Online sessions: embedded video lectures + live class links (e.g. Google Meet), auto-attendance.
-- Offline sessions: physical lab / field trip; Mentor uploads session photos/video → AI tags students → evidence auto-routed to student portfolio.
-- Stage timeline with start/end dates; system alerts on delay.
-- Per-activity student report form: self-assessment of knowledge gained.
-- Mentor evaluation per stage: Excellent / Pass / Needs Improvement.
-- Auto progress report sent to parent after each stage.
-- Past stage review: student can revisit completed stages to see materials, evidence, and evaluations.
-
-### 3.4 Certificates
-- Auto-generated E-Certificate PDF on program completion.
-- Sub-certificates per module or milestone.
-- Certificates feed automatically into the Portfolio.
-
-### 3.5 Portfolio & Personal Microsite
-- Aggregates all certificates, AI videos, mentor assessments from all programs into one master portfolio.
-- Skills radar/bar chart auto-generated from completed courses.
-- Student can manually add additional credentials/achievements.
-- Customisable layout: student picks a template; can write personal statement and set slogan.
-
-**Portfolio Plans:**
-
-| Plan | URL format | PDF export | Templates | Privacy |
-|------|-----------|-----------|-----------|---------|
-| Standard (free) | `obox.id/{student-id}` | View online only | Default templates | Public link |
-| Premium (paid) | `{name}.obox.id` | Unlimited PDF download | Premium templates + custom branding (colors, slogan) | Public link |
-
-**Subdomain architecture (Premium):**
-- Wildcard DNS `*.obox.id` points to the Next.js app.
-- `middleware.ts` reads `request.headers.host`, extracts subdomain, rewrites internally to `/(portfolio-site)/[username]`.
-- Route group `(portfolio-site)` has its own minimal layout (no main nav).
-
-### 3.6 AI Features
-- **Face recognition:** AI scans uploaded session photos/videos → identifies students → auto-tags and routes evidence to their individual portfolio store.
-- **Highlight reel generation:** AI cuts session footage into short 9:16 clips per student → stored in student media library.
-- **Reflection summarisation:** AI reads student journal entries → generates polished summary prose for the Portfolio.
-- **Skills analysis:** AI analyses completed courses → generates percentage scores per skill dimension.
-
-> AI feature implementation is backend/service responsibility. Frontend consumes the results via API. Do not implement AI logic on the frontend.
+**Mentor assignment (MVP direction):**
+- Prefer **`Class.MentorId`** for the instructor of a running cohort
+- `Course.MentorId` is legacy/content-author field — do not use for cohort scheduling
 
 ---
 
-## Routing Architecture
+## Enrollment & Progress Tracking
+
+Enrollment creates a **personal curriculum instance** per student.
+
+```
+ProgramEnrollment          (student bought / joined a program)
+├── ModuleEnrollment       (per module attempt; tracks grade, failures, retakes)
+│   ├── ActivityProgress   (lesson completion within this module attempt)
+│   ├── Submission         (assignment attempts)
+│   └── SessionAttendance  (cohort session attendance)
+├── ClassEnrollment        (which cohort the student belongs to)
+└── Payment                (program purchase or module retake fee)
+
+CourseEnrollment           (legacy slot tracking — prefer ClassEnrollment + ActivityProgress for new flows)
+```
+
+| Entity | Tracks |
+|--------|--------|
+| **ProgramEnrollment** | Overall program status, progress %, enrolled/started/completed timestamps |
+| **ModuleEnrollment** | Module attempt, `FinalGrade`, `AssignmentFailureCount`, retake `AttemptNumber` |
+| **ActivityProgress** | Single activity completion within a module enrollment attempt |
+| **CourseEnrollment** | Per-course join/start/complete timestamps (older booking model) |
+
+---
+
+## Assessments & Quizzes
+
+```
+Assignment
+├── QuestionBank (optional)     → random draw at serve-time (Easy/Medium/Hard %)
+├── QuizQuestion (snapshot)     → frozen questions for a submission attempt
+│   └── QuizOption
+└── Submission
+    ├── QuizAnswer
+    ├── SubmissionEvidence → MediaAsset
+    └── VerifiedBy (Mentor)
+```
+
+- Quiz timer: `Submission.StartedAt` + `Submission.ExpiresAt` from `Assignment.TimeLimitMinutes`
+- Manual grading: `AssignedGrade`, `MentorFeedback`, `SubmissionStatus`
+- Module pass: assignments with `IsRequiredForModulePass` + all required activities completed
+
+---
+
+## Student Profile, Portfolio & Certificates
+
+### Profile data source (`StudentProfile`, `StudentSkill`, `StandardizedTest`)
+
+Academic info, target study-abroad country, GPA, standardized tests, personal statement — raw data for AI portfolio generation.
+
+### Portfolio (`Portfolio`, `PortfolioCustomItem`)
+
+| Plan | `PlanType` | URL format | Features |
+|------|------------|-----------|----------|
+| Standard (free) | `Standard` | `obox.id/{student-id}` | View online, default templates |
+| Premium (paid) | `Premium` | `{subdomain}.obox.id` | PDF export, premium templates, custom branding |
+
+- `Portfolio.Subdomain` — unique slug for premium microsites
+- `Portfolio.ParentPortfolioId` — versioned/cloned portfolios
+
+### Certificates (`Certificate`)
+
+Auto-generated PDF on program or module completion. Linked to `ProgramBoard` expert signatures. Feeds portfolio automatically.
+
+---
+
+## AI & Media Pipeline
+
+| Entity / Service | Purpose |
+|------------------|---------|
+| `FaceEmbedding` | Student face vector (AWS Rekognition) for auto-tagging session media |
+| `MediaAsset` | Uploaded photos/videos; S3 + MediaConvert + Rekognition job tracking |
+| `MediaTag` | Links tagged students to media assets |
+| `HighlightVideo` | AI-generated 9:16 personal highlight reel per student per program |
+| Bedrock / Rekognition services | Reflection summarisation, skills analysis, face search, label detection |
+
+> AI logic lives in the **backend**. Frontend consumes results via API only.
+
+---
+
+## Payments & Reviews
+
+| Entity | Purpose |
+|--------|---------|
+| `Payment` | Program enrollment or module retake fee; Momo/VnPay/Stripe via `PaymentGateway` |
+| `ProgramReview` | One review per student per program; drives `Program.Rating` |
+
+---
+
+## Experts & Program Board
+
+| Entity | Purpose |
+|--------|---------|
+| `Expert` | VIP advisor / board member (may exist without a User login) |
+| `ProgramBoard` | Links experts to programs; signatures appear on certificates |
+
+---
+
+## Domain Entity Index (Backend)
+
+Grouped as registered in `OboxSteamDbContext`:
+
+1. **Users & auth** — `User`, `OtpStorage`, `ParentStudent`
+2. **Experts** — `Expert`, `ProgramBoard`
+3. **Student profile** — `StudentProfile`, `StudentSkill`, `StandardizedTest`
+4. **LMS content** — `Program`, `Module`, `Course`, `Activity`, `Material`
+5. **Enrollments** — `ProgramEnrollment`, `ModuleEnrollment`, `CourseEnrollment`, `ActivityBooking`, `ActivityProgress`
+6. **Class delivery** — `Class`, `ClassEnrollment`, `ClassSession`, `SessionAttendance`
+7. **Assessments** — `Assignment`, `QuestionBank`, `BankQuestion`, `BankQuestionOption`, `QuizQuestion`, `QuizOption`, `QuizAnswer`, `Submission`, `SubmissionEvidence`
+8. **Portfolio & certs** — `Certificate`, `Portfolio`, `PortfolioCustomItem`
+9. **AI & media** — `FaceEmbedding`, `MediaAsset`, `MediaTag`, `HighlightVideo`
+10. **Commerce & reviews** — `Payment`, `ProgramReview`
+
+All entities inherit `BaseEntity` (Id, audit fields, soft delete via `IsDeleted` global query filters).
+
+---
+
+## API Surface (this repo)
+
+Controllers under `OboxSteam.API/Controllers/`:
+
+| Area | Controllers |
+|------|-------------|
+| Auth & accounts | `AuthController`, `AccountController`, `ParentController` |
+| Catalog & content | `ProgramController`, `ModuleController`, `CourseController`, `ActivityController`, `MaterialController` |
+| Enrollments | `ProgramEnrollmentController`, `ModuleEnrollmentController` |
+| Assessments | `AssignmentController`, `QuestionBankController`, `QuizController` |
+| Media & AI | `MediaController`, `HighlightVideoController`, `AwsWebhookController` |
+| Other | `ExpertController`, `ProgramReviewController`, `SeedController` |
+
+Class delivery endpoints are planned; domain entities and migrations exist (`Class`, `ClassSession`, etc.).
+
+---
+
+## Frontend Routing (separate repo)
 
 ```
 app/
@@ -135,32 +273,45 @@ app/
 
 ## Tech Stack
 
+### Backend (this repo)
+
+| Layer | Choice |
+|-------|--------|
+| Framework | ASP.NET Core 8 Web API |
+| Language | C# (.NET 8) |
+| Architecture | Clean Architecture — Domain / Application / Infrastructure / API |
+| ORM | Entity Framework Core 8 + Npgsql (PostgreSQL 15) |
+| Auth | JWT Bearer |
+| Storage | AWS S3 |
+| AI / media | AWS Rekognition, MediaConvert, Bedrock |
+| Email | Resend |
+| Payments | Stripe (+ Momo/VnPay planned) |
+| Cache | Redis (optional, docker-compose commented) |
+| Container | Docker + docker-compose |
+
+### Frontend (separate repo)
+
 | Layer | Choice |
 |-------|--------|
 | Framework | Next.js 16 (App Router, Turbopack) |
 | Language | TypeScript (strict) |
-| Styling | Tailwind CSS v4 + shadcn/ui (base-nova style) |
-| Animation components | React Bits (via shadcn MCP registry) |
-| State | Redux Toolkit (global auth/UI); Server Components for server data |
-| Validation | Zod v4 — `z.string().url()` pattern for env; shared schemas in `lib/validations/` |
+| Styling | Tailwind CSS v4 + shadcn/ui |
+| State | Redux Toolkit |
+| Validation | Zod v4 |
 | Forms | react-hook-form + @hookform/resolvers/zod |
-| Package manager | pnpm only |
-| Icons | Lucide React (sparingly) |
-| Fonts | Nunito (headings), Inter (body), JetBrains Mono (code) |
 
 ---
 
 ## Key Conventions
 
-- `app/(main)/` for all authenticated platform pages; `app/(auth)/` for sign-in flows; `app/(portfolio-site)/` for public portfolio microsites.
-- Server Components by default; `"use client"` only for interactive leaves.
-- Redux slices live in `store/slices/`; typed hooks in `store/hooks.ts`.
-- API call wrappers go in `lib/api/`; Zod schemas in `lib/validations/`.
-- STEAM category colors (`--steam-science`, `--steam-technology`, etc.) are CSS variables — use `text-steam-science`, `bg-steam-technology` etc. as Tailwind utilities.
-- Student data is sensitive — never log PII; server-only API keys via env vars.
+- Enum values are stored as **strings** in PostgreSQL (human-readable, reorder-safe).
+- Soft delete: global query filters on most entities; prefer soft delete over hard delete.
+- Student data is sensitive — never log PII; secrets via environment variables only.
+- STEAM category colors on frontend: `--steam-science`, `--steam-technology`, etc.
+- API responses use `ApiResult<T>` wrapper pattern in Application layer.
 
 ---
 
-**Version**: 1.0
-**Last Updated**: May 2026
+**Version**: 2.0  
+**Last Updated**: June 2026  
 **Project**: OboxSTEAM
