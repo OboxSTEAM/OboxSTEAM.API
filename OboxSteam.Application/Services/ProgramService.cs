@@ -161,7 +161,47 @@ public class ProgramService : IProgramService
             .Take(pageSize)
             .ToList();
 
-        var dtos = items.Select(MapToProgramListItemDto).ToList();
+        var programIds = items.Select(program => program.Id).ToList();
+
+        var programBoards = programIds.Any()
+            ? await _unitOfWork.ProgramBoards.GetAllAsync(pb => programIds.Contains(pb.ProgramId))
+            : new List<ProgramBoard>();
+
+        var expertIds = programBoards.Select(pb => pb.ExpertId).Distinct().ToList();
+        var experts = expertIds.Any()
+            ? await _unitOfWork.Experts.GetAllAsync(e => expertIds.Contains(e.Id) && !e.IsDeleted)
+            : new List<Expert>();
+
+        var expertsById = experts.ToDictionary(e => e.Id, e => e);
+        var programBoardsByProgramId = programBoards
+            .GroupBy(pb => pb.ProgramId)
+            .ToDictionary(group => group.Key, group => group.ToList());
+
+        var dtos = items.Select(program =>
+        {
+            var dto = MapToProgramListItemDto(program);
+            dto.Experts = programBoardsByProgramId.TryGetValue(program.Id, out var boards)
+                ? boards
+                    .Where(pb => expertsById.ContainsKey(pb.ExpertId))
+                    .Select(pb =>
+                    {
+                        var expert = expertsById[pb.ExpertId];
+                        return new ProgramExpertSummaryDto
+                        {
+                            ExpertId = expert.Id,
+                            Code = expert.Code,
+                            FullName = expert.FullName,
+                            Title = expert.Title,
+                            Organization = expert.Organization,
+                            AvatarUrl = expert.AvatarUrl,
+                            LinkedInUrl = expert.LinkedInUrl,
+                            RoleInBoard = pb.RoleInBoard,
+                        };
+                    })
+                    .ToList()
+                : new();
+            return dto;
+        }).ToList();
 
         _logger.LogInformation("[GetAllProgramsAsync] Retrieved {Count}/{Total} programs.", dtos.Count, totalCount);
 

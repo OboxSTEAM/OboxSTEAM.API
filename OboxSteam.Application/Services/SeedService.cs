@@ -195,8 +195,8 @@ namespace OboxSteam.Application.Services
                         Title = "Senior Robotics Mentor",
                         Organization = "OboxSTEAM",
                         Bio = "Robotics mentor with a focus on hands-on learning and STEM outreach.",
-                        AvatarUrl = null,
-                        LinkedInUrl = null,
+                        AvatarUrl = "https://images.unsplash.com/photo-1758685848006-1bc450061624?q=80&w=1332&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                        LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                         Achievements = "National STEM Educator Award",
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
@@ -211,8 +211,8 @@ namespace OboxSteam.Application.Services
                         Title = "Visiting STEAM Advisor",
                         Organization = "STEAM Research Lab",
                         Bio = "Advisor for STEAM curriculum design and experiential learning.",
-                        AvatarUrl = null,
-                        LinkedInUrl = null,
+                        AvatarUrl = "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                        LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                         Achievements = "Published 20+ STEAM research papers",
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
@@ -227,9 +227,73 @@ namespace OboxSteam.Application.Services
                         Title = "Web Development Specialist",
                         Organization = "Tech Academy Vietnam",
                         Bio = "Full-stack developer teaching modern web technologies to young learners.",
-                        AvatarUrl = null,
-                        LinkedInUrl = null,
+                        AvatarUrl = "https://images.unsplash.com/photo-1555436169-20e93ea9a7ff?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                        LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                         Achievements = "10+ years industry experience",
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
+                    new Expert
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "EXP-004",
+                        UserId = null,
+                        FullName = "Dr. Mai Nguyen",
+                        Title = "AI & Machine Learning Specialist",
+                        Organization = "Vietnam AI Institute",
+                        Bio = "Researcher and educator specializing in introductory AI and data science for students.",
+                        AvatarUrl = "https://placeholder.local/avatars/exp-004",
+                        LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
+                        Achievements = "Led 5 national AI education initiatives",
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
+                    new Expert
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "EXP-005",
+                        UserId = null,
+                        FullName = "Prof. Hoa Le",
+                        Title = "Mathematics Educator",
+                        Organization = "National University of Education",
+                        Bio = "Passionate about making mathematics engaging through puzzles and real-world applications.",
+                        AvatarUrl = "https://images.unsplash.com/photo-1561346745-5db62ae43861?q=80&w=1283&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                        LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
+                        Achievements = "Author of 3 popular math textbooks",
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
+                    new Expert
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "EXP-006",
+                        UserId = null,
+                        FullName = "Ms. Thao Vu",
+                        Title = "Digital Arts Director",
+                        Organization = "Creative Minds Studio",
+                        Bio = "Professional illustrator mentoring students in digital art, design, and creative expression.",
+                        AvatarUrl = "https://plus.unsplash.com/premium_photo-1658506656752-4f1b1c1d5916?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                        LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
+                        Achievements = "Award-winning digital artist",
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
+                    new Expert
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "EXP-007",
+                        UserId = null,
+                        FullName = "Dr. Khoa Bui",
+                        Title = "Environmental Scientist",
+                        Organization = "Green Earth Foundation",
+                        Bio = "Environmental researcher focused on sustainability education and climate science outreach.",
+                        AvatarUrl = "https://images.unsplash.com/photo-1581368129682-e2d66324045b?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                        LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
+                        Achievements = "UN Youth Climate Ambassador 2023",
                         CreatedAt = DateTime.UtcNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -523,6 +587,84 @@ namespace OboxSteam.Application.Services
             else
             {
                 _loggerService.LogInformation("Programs already exist, skipping program seeding");
+            }
+
+            _loggerService.LogInformation("Starting seed program boards");
+            var existingProgramBoards = await _unitOfWork.ProgramBoards.GetAllAsync();
+
+            if (!existingProgramBoards.Any())
+            {
+                var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001");
+                var expert002 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-002");
+                var expert003 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-003");
+                var expert004 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-004");
+                var expert005 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-005");
+                var expert006 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-006");
+                var expert007 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-007");
+
+                var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+                var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
+                var programIot = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
+                var programPyBasic = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-PYBASIC");
+                var programMathFun = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-MATHFUN");
+                var programDigArt = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DIGART");
+                var programBiotech = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-BIOTECH");
+                var programAiBasic = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-AIBASIC");
+                var programEnvSci = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ENVSCI");
+                var programGameDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV");
+                var programMusicTech = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-MUSICTECH");
+                var programDataMath = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DATAMATH");
+                var program3DDesign = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-3DDESIGN");
+
+                var programBoards = new List<ProgramBoard>();
+                var seedUtc = DateTime.UtcNow;
+
+                void AddBoard(Expert? expert, Program? program, string role)
+                {
+                    if (expert == null || program == null)
+                        return;
+
+                    programBoards.Add(new ProgramBoard
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = program.Id,
+                        ExpertId = expert.Id,
+                        RoleInBoard = role,
+                        CreatedAt = seedUtc,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
+                }
+
+                AddBoard(expert001, programRobotics, "Lead Robotics Advisor");
+                AddBoard(expert001, programIot, "IoT Hardware Mentor");
+                AddBoard(expert002, programRobotics, "STEAM Curriculum Advisor");
+                AddBoard(expert002, programBiotech, "Life Sciences Board Member");
+                AddBoard(expert003, programWebDev, "Lead Web Development Advisor");
+                AddBoard(expert003, programGameDev, "Game Development Mentor");
+                AddBoard(expert004, programAiBasic, "AI Program Director");
+                AddBoard(expert004, programPyBasic, "Programming Advisor");
+                AddBoard(expert004, programDataMath, "Data Science Board Member");
+                AddBoard(expert005, programMathFun, "Lead Mathematics Advisor");
+                AddBoard(expert005, programDataMath, "Statistics Board Member");
+                AddBoard(expert006, programDigArt, "Lead Digital Arts Advisor");
+                AddBoard(expert006, program3DDesign, "3D Design Mentor");
+                AddBoard(expert006, programMusicTech, "Creative Arts Board Member");
+                AddBoard(expert007, programEnvSci, "Environmental Science Director");
+                AddBoard(expert007, programBiotech, "Sustainability Advisor");
+                AddBoard(expert002, programEnvSci, "STEAM Outreach Advisor");
+
+                if (programBoards.Any())
+                {
+                    await _unitOfWork.ProgramBoards.AddRangeAsync(programBoards);
+                    await _unitOfWork.SaveChangesAsync();
+                }
+
+                _loggerService.LogInformation("Finished seed program boards");
+            }
+            else
+            {
+                _loggerService.LogInformation("Program boards already exist, skipping program board seeding");
             }
 
             _loggerService.LogInformation("Starting seed modules");
