@@ -46,4 +46,6 @@ public class Activity : BaseEntity
     public ICollection<MediaAsset> MediaAssets { get; set; } = new List<MediaAsset>();
     public ICollection<ActivityProgress> ActivityProgresses { get; set; } = new List<ActivityProgress>();
     public ICollection<ClassSession> ClassSessions { get; set; } = new List<ClassSession>();
+    public ICollection<ResearchMilestoneActivity> ResearchMilestoneActivities { get; set; } =
+        new List<ResearchMilestoneActivity>();
 }

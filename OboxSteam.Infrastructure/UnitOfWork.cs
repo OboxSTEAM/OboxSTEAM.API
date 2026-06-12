@@ -60,6 +60,9 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<FaceEmbedding> FaceEmbeddings => Repository<FaceEmbedding>();
     public IGenericRepository<Portfolio> Portfolios => Repository<Portfolio>();
     public IGenericRepository<PortfolioCustomItem> PortfolioCustomItems => Repository<PortfolioCustomItem>();
+    public IGenericRepository<PortfolioItemSubmission> PortfolioItemSubmissions => Repository<PortfolioItemSubmission>();
+    public IGenericRepository<ResearchMilestone> ResearchMilestones => Repository<ResearchMilestone>();
+    public IGenericRepository<ResearchMilestoneActivity> ResearchMilestoneActivities => Repository<ResearchMilestoneActivity>();
     public IGenericRepository<StudentSkill> StudentSkills => Repository<StudentSkill>();
     public IGenericRepository<StandardizedTest> StandardizedTests => Repository<StandardizedTest>();
     public IGenericRepository<Payment> Payments => Repository<Payment>();

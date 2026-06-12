@@ -86,6 +86,7 @@ public class Assignment : BaseEntity
     public int MaxAttempts { get; set; } = 1;
 
     // Navigation
+    public ResearchMilestone? ResearchMilestone { get; set; }
     public ICollection<QuizQuestion> QuizQuestions { get; set; } = new List<QuizQuestion>();
     public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
     public ICollection<ClassSession> ClassSessions { get; set; } = new List<ClassSession>();

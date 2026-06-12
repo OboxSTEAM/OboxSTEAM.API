@@ -46,6 +46,13 @@ public class Submission : BaseEntity
 
     public DateTime? SubmittedAt { get; set; }
 
+    /// <summary>Research milestone this submission belongs to (null for quiz/non-research work).</summary>
+    public Guid? ResearchMilestoneId { get; set; }
+    public ResearchMilestone? ResearchMilestone { get; set; }
+
+    /// <summary>When the mentor graded this submission.</summary>
+    public DateTime? GradedAt { get; set; }
+
     // Navigation
     public ICollection<SubmissionEvidence> SubmissionEvidences { get; set; } = new List<SubmissionEvidence>();
     public ICollection<QuizQuestion> QuizQuestions { get; set; } = new List<QuizQuestion>();
