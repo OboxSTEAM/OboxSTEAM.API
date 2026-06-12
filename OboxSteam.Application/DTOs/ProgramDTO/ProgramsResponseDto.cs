@@ -22,4 +22,5 @@ public class ProgramsResponseDto
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<ModulesResponseDto> Modules { get; set; } = new();
+    public List<ProgramExpertSummaryDto> Experts { get; set; } = new();
 }

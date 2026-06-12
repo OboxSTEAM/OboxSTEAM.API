@@ -35,6 +35,9 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<FaceEmbedding> FaceEmbeddings { get; }
     IGenericRepository<Portfolio> Portfolios { get; }
     IGenericRepository<PortfolioCustomItem> PortfolioCustomItems { get; }
+    IGenericRepository<PortfolioItemSubmission> PortfolioItemSubmissions { get; }
+    IGenericRepository<ResearchMilestone> ResearchMilestones { get; }
+    IGenericRepository<ResearchMilestoneActivity> ResearchMilestoneActivities { get; }
     IGenericRepository<StudentSkill> StudentSkills { get; }
     IGenericRepository<StandardizedTest> StandardizedTests { get; }
     IGenericRepository<Payment> Payments { get; }

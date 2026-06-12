@@ -1,0 +1,72 @@
+# Permissions and Authorization
+
+## Role Model
+
+`RoleType` enum (`OboxSteam.Domain.Enums`):
+
+| Role | Description |
+| --- | --- |
+| SuperAdmin | Platform-wide administration |
+| Manager | Curriculum and operational management |
+| Mentor | Delivers courses and mentors class cohorts |
+| Parent | Views and acts on behalf of linked students |
+| Student | Learns, enrolls, submits work |
+
+JWT role claims must match enum names exactly (e.g. `"Student"`, `"SuperAdmin"`).
+
+## Authorization Patterns
+
+### Public (no auth)
+
+- `POST /api/auth/register`, `login`, password reset, OTP, refresh-token.
+- Read-only catalog endpoints on programs, modules, courses, activities (where
+  not decorated with `[Authorize]`).
+
+### Authenticated (any role)
+
+- `POST /api/auth/logout`
+- `/api/account/*`
+- `/api/media/*` (base controller requires auth)
+
+### Manager / SuperAdmin
+
+Create, update, delete for:
+
+- Programs, modules, courses, activities (mutations).
+- Assignments and question banks.
+- Curriculum structure and admin seed data.
+
+### Student
+
+- Program and module enrollment.
+- Quiz attempts and submissions.
+- Program reviews (own reviews).
+- Parent link requests (student-initiated).
+
+### Parent
+
+- View linked student enrollments and progress (shared endpoints with Student,
+  SuperAdmin, Manager).
+- Parent-specific endpoints under `/api/parent/*`.
+
+### Mentor
+
+- Assigned via `Course.MentorId` and `Class.MentorId`; mentor-scoped behavior
+  is enforced in services, not only at controller level.
+
+## Parent–Student Linking
+
+`ParentStudent` entity models the relationship. Parent and Student roles have
+dedicated endpoints in `ParentController` for link requests and approvals.
+
+## Claims Access
+
+`IClaimsService` reads the current user from `HttpContext` for service-layer
+authorization and audit context.
+
+## Security Notes
+
+- Auth, OTP, and refresh-token flows are high-risk areas; changes require
+  decision records and stronger validation proof.
+- `SeedController` (`/api/seed`) should be disabled or protected in production
+  deployments (verify deployment configuration outside this repo).

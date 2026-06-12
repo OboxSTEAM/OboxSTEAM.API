@@ -20,4 +20,5 @@ public class ProgramListItemDto
     public decimal? Price { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    public List<ProgramExpertSummaryDto> Experts { get; set; } = new();
 }

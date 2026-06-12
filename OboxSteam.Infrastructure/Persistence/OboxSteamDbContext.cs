@@ -59,6 +59,11 @@ public class OboxSteamDbContext : DbContext
     public DbSet<Certificate> Certificates { get; set; }
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<PortfolioCustomItem> PortfolioCustomItems { get; set; }
+    public DbSet<PortfolioItemSubmission> PortfolioItemSubmissions { get; set; }
+
+    // ── 7b. Research Milestones ──
+    public DbSet<ResearchMilestone> ResearchMilestones { get; set; }
+    public DbSet<ResearchMilestoneActivity> ResearchMilestoneActivities { get; set; }
 
     // ── 8. AI Engine & Media ──
     public DbSet<FaceEmbedding> FaceEmbeddings { get; set; }
@@ -115,6 +120,9 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Certificate>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Portfolio>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<PortfolioCustomItem>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<PortfolioItemSubmission>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ResearchMilestone>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ResearchMilestoneActivity>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<FaceEmbedding>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<MediaAsset>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<HighlightVideo>().HasQueryFilter(e => !e.IsDeleted);
@@ -392,6 +400,11 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(me => me.Submissions)
                 .HasForeignKey(s => s.ModuleEnrollmentId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.ResearchMilestone)
+                .WithMany(rm => rm.Submissions)
+                .HasForeignKey(s => s.ResearchMilestoneId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // =============================================
@@ -422,6 +435,109 @@ public class OboxSteamDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(p => p.ParentPortfolioId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(p => p.StudentId)
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"ParentPortfolioId\" IS NULL");
+        });
+
+        // =============================================
+        // PORTFOLIO CUSTOM ITEM
+        // =============================================
+        modelBuilder.Entity<PortfolioCustomItem>(entity =>
+        {
+            entity.HasOne(i => i.Program)
+                .WithMany()
+                .HasForeignKey(i => i.ProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(i => i.ProgramEnrollment)
+                .WithMany()
+                .HasForeignKey(i => i.ProgramEnrollmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(i => i.Module)
+                .WithMany()
+                .HasForeignKey(i => i.ModuleId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(i => i.ModuleEnrollment)
+                .WithMany()
+                .HasForeignKey(i => i.ModuleEnrollmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(i => i.Submission)
+                .WithMany()
+                .HasForeignKey(i => i.SubmissionId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(i => new { i.ModuleEnrollmentId, i.ItemType })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"ModuleEnrollmentId\" IS NOT NULL AND \"ItemType\" = 'CapstoneProject'");
+        });
+
+        // =============================================
+        // PORTFOLIO ITEM SUBMISSION (capstone appendix)
+        // =============================================
+        modelBuilder.Entity<PortfolioItemSubmission>(entity =>
+        {
+            entity.HasOne(pis => pis.PortfolioCustomItem)
+                .WithMany(i => i.AppendixSubmissions)
+                .HasForeignKey(pis => pis.PortfolioCustomItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(pis => pis.Submission)
+                .WithMany()
+                .HasForeignKey(pis => pis.SubmissionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(pis => new { pis.PortfolioCustomItemId, pis.SubmissionId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+        });
+
+        // =============================================
+        // RESEARCH MILESTONE
+        // =============================================
+        modelBuilder.Entity<ResearchMilestone>(entity =>
+        {
+            entity.HasIndex(rm => rm.Code)
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(rm => new { rm.ModuleId, rm.MilestoneOrder })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(rm => rm.Module)
+                .WithMany(m => m.ResearchMilestones)
+                .HasForeignKey(rm => rm.ModuleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(rm => rm.Assignment)
+                .WithOne(a => a.ResearchMilestone)
+                .HasForeignKey<ResearchMilestone>(rm => rm.AssignmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // RESEARCH MILESTONE ACTIVITY
+        // =============================================
+        modelBuilder.Entity<ResearchMilestoneActivity>(entity =>
+        {
+            entity.HasOne(rma => rma.ResearchMilestone)
+                .WithMany(rm => rm.MilestoneActivities)
+                .HasForeignKey(rma => rma.ResearchMilestoneId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(rma => rma.Activity)
+                .WithMany(a => a.ResearchMilestoneActivities)
+                .HasForeignKey(rma => rma.ActivityId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(rma => new { rma.ResearchMilestoneId, rma.ActivityId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
         });
 
         // =============================================

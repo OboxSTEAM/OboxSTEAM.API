@@ -40,4 +40,5 @@ public class Module : BaseEntity
     public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();
     public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
     public ICollection<ClassSession> ClassSessions { get; set; } = new List<ClassSession>();
+    public ICollection<ResearchMilestone> ResearchMilestones { get; set; } = new List<ResearchMilestone>();
 }
