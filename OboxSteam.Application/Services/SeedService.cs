@@ -2524,6 +2524,7 @@ namespace OboxSteam.Application.Services
             await ClearS3ObjectsAsync();
             await _unitOfWork.MediaTags.HardRemove(x => true);               // join table
             await _unitOfWork.QuizAnswers.HardRemove(x => true);             // → Submission (Restrict), QuizQuestion (Cascade), QuizOption (Restrict)
+            await _unitOfWork.SubmissionEvidences.HardRemove(x => true);     // → Submission (Restrict), MediaAsset (Restrict)
             await _unitOfWork.PortfolioItemSubmissions.HardRemove(x => true); // → PortfolioCustomItem (Cascade), Submission (Restrict)
             await _unitOfWork.SessionAttendances.HardRemove(x => true);      // → ClassSession (Cascade), ModuleEnrollment (Restrict)
             await _unitOfWork.ActivityProgresses.HardRemove(x => true);      // → ModuleEnrollment (Cascade), Activity (Restrict)
@@ -2563,6 +2564,7 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.Modules.HardRemove(x => true);
             await _unitOfWork.Programs.HardRemove(x => true);
             await _unitOfWork.ParentStudents.HardRemove(x => true);          // → User (Restrict) × 2
+            await _unitOfWork.StudentProfiles.HardRemove(x => true);         // → User (Cascade, but direct removal is safer)
             await _unitOfWork.Experts.HardRemove(x => true);                 // → User (SetNull)
             await _unitOfWork.Users.HardRemove(x => true);
             await _unitOfWork.SaveChangesAsync();
