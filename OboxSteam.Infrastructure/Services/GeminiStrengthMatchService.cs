@@ -83,7 +83,7 @@ public class GeminiStrengthMatchService : IStrengthMatchService
                 Required = ["matched_segments", "reasoning"]
             },
             Temperature = 0f,       // deterministic — consistent matching
-            MaxOutputTokens = 2048
+            MaxOutputTokens = 8192  // 2048 was too low → JSON got truncated mid-response
         };
 
         GenerateContentResponse response;
