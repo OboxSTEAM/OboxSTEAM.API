@@ -16,7 +16,6 @@ public interface IPaymentService
 
     // ── Webhooks ────────────────────────────────────────────────────────────
     Task HandleStripeWebhook(string json, string signature);
-    Task HandleMomoCallback(Dictionary<string, string> parameters);
 
     // ── Cancel (FE gọi khi redirect về cancelUrl) ────────────────────────────
     Task CancelPayment(Guid paymentId);

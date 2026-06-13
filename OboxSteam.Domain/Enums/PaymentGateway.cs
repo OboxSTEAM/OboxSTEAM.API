@@ -2,8 +2,7 @@ namespace OboxSteam.Domain.Enums;
 
 public enum PaymentGateway
 {
-    Momo,
-    VnPay,
-    Stripe,
-    BankTransfer
+    VnPay = 1,
+    Stripe = 2,
+    BankTransfer = 3
 }

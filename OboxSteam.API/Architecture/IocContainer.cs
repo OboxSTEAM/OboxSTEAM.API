@@ -182,7 +182,6 @@ public static class IocContainer
         services.AddScoped<IAssignmentService, AssignmentService>();
         services.AddScoped<IQuizAttemptService, QuizAttemptService>();
         services.AddScoped<IStripePaymentService, StripePaymentService>();
-        services.AddScoped<IMomoPaymentService, MomoPaymentService>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IInvoiceService, InvoiceService>();
         return services;
@@ -196,22 +195,6 @@ public static class IocContainer
             opts.SecretKey = configuration["STRIPE_SECRET_KEY"] ?? string.Empty;
             opts.PublishableKey = configuration["STRIPE_PUBLISHABLE_KEY"] ?? string.Empty;
             opts.WebhookSecret = configuration["STRIPE_WEBHOOK_SECRET"] ?? string.Empty;
-        });
-
-        services.Configure<OboxSteam.Application.Commons.MomoSettings>(opts =>
-        {
-            opts.PartnerCode = configuration["MOMO_PARTNER_CODE"] ?? string.Empty;
-            opts.AccessKey = configuration["MOMO_ACCESS_KEY"] ?? string.Empty;
-            opts.SecretKey = configuration["MOMO_SECRET_KEY"] ?? string.Empty;
-            opts.ApiEndpoint = configuration["MOMO_API_ENDPOINT"] ?? "https://test-payment.momo.vn/v2/gateway/api";
-            opts.ReturnUrl = configuration["MOMO_RETURN_URL"] ?? string.Empty;
-            opts.NotifyUrl = configuration["MOMO_NOTIFY_URL"] ?? string.Empty;
-        });
-
-        // Named HttpClient for MoMo API calls
-        services.AddHttpClient("momo", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(30);
         });
 
         return services;

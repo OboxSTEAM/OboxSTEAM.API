@@ -16,7 +16,6 @@ public class PaymentService : IPaymentService
     private readonly IClaimsService _claimsService;
     private readonly IProgramEnrollmentService _programEnrollmentService;
     private readonly IStripePaymentService _stripe;
-    private readonly IMomoPaymentService _momo;
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<PaymentService> _logger;
@@ -26,7 +25,6 @@ public class PaymentService : IPaymentService
         IClaimsService claimsService,
         IProgramEnrollmentService programEnrollmentService,
         IStripePaymentService stripe,
-        IMomoPaymentService momo,
         IEmailService emailService,
         IConfiguration configuration,
         ILogger<PaymentService> logger)
@@ -35,7 +33,6 @@ public class PaymentService : IPaymentService
         _claimsService = claimsService;
         _programEnrollmentService = programEnrollmentService;
         _stripe = stripe;
-        _momo = momo;
         _emailService = emailService;
         _configuration = configuration;
         _logger = logger;
@@ -253,28 +250,6 @@ public class PaymentService : IPaymentService
         }
     }
 
-    public async Task HandleMomoCallback(Dictionary<string, string> parameters)
-    {
-        if (!_momo.ValidateCallback(parameters))
-            throw ErrorHelper.BadRequest("Invalid MoMo callback signature.");
-
-        var (orderId, transactionId, resultCode) = _momo.ParseCallback(parameters);
-
-        if (resultCode != 0)
-        {
-            _logger.LogWarning("[MoMoCallback] Payment failed for orderId={OrderId}, resultCode={Code}", orderId, resultCode);
-            return; // Failed payment — do nothing, allow retry
-        }
-
-        // orderId was set to payment.Id.ToString("N")
-        if (!Guid.TryParseExact(orderId, "N", out var paymentId))
-            throw ErrorHelper.BadRequest($"Invalid orderId format: {orderId}");
-
-        var payment = await _unitOfWork.Payments.GetByIdAsync(paymentId)
-            ?? throw ErrorHelper.NotFound($"Payment '{paymentId}' not found.");
-
-        await HandlePaymentSuccess(payment, transactionId);
-    }
 
     // ══════════════════════════════════════════════════════════════════════
     // CANCEL (FE gọi khi redirect về cancelUrl)
@@ -499,7 +474,6 @@ public class PaymentService : IPaymentService
         return gateway switch
         {
             PaymentGateway.Stripe => await CreateStripeCheckout(payment, programName, description, thumbnailUrl, successUrl, cancelUrl),
-            PaymentGateway.Momo => await CreateMomoCheckout(payment, programName),
             _ => throw ErrorHelper.BadRequest($"Gateway '{gateway}' is not supported for online checkout.")
         };
     }
@@ -509,15 +483,6 @@ public class PaymentService : IPaymentService
     {
         var (url, sessionId) = await _stripe.CreateCheckoutSession(payment, programName, description, thumbnailUrl, successUrl, cancelUrl);
         return (url, sessionId);
-    }
-
-    private async Task<(string url, string sessionId)> CreateMomoCheckout(
-        Payment payment, string programName)
-    {
-        var orderInfo = $"OboxSTEAM - {programName} enrollment";
-        var url = await _momo.CreatePaymentUrl(payment, orderInfo);
-        var orderId = payment.Id.ToString("N");
-        return (url, orderId);
     }
 
     private static string GeneratePaymentCode()
