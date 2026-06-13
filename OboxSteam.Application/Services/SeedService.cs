@@ -2548,6 +2548,7 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.Assignments.HardRemove(x => true);
             await _unitOfWork.CourseEnrollments.HardRemove(x => true);
             await _unitOfWork.ModuleEnrollments.HardRemove(x => true);
+            await _unitOfWork.PaymentRequests.HardRemove(x => true);
             await _unitOfWork.Payments.HardRemove(x => true);
             await _unitOfWork.ProgramEnrollments.HardRemove(x => true);
             await _unitOfWork.Courses.HardRemove(x => true);
