@@ -2532,6 +2532,8 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.BankQuestionOptions.HardRemove(x => true);     // → BankQuestion (Cascade)
             await _unitOfWork.QuizOptions.HardRemove(x => true);             // → QuizQuestion (Cascade / leaf after Tier 1)
             await _unitOfWork.QuizQuestions.HardRemove(x => true);           // → Submission (SetNull)
+            await _unitOfWork.SaveChangesAsync(); // Flush Phase 1 (Leaves)
+
             await _unitOfWork.Submissions.HardRemove(x => true);             // → ModuleEnrollment (Restrict) ← flush before ME
             await _unitOfWork.PortfolioCustomItems.HardRemove(x => true);    // → ProgramEnrollment (SetNull), ModuleEnrollment (SetNull)
             await _unitOfWork.ActivityBookings.HardRemove(x => true);
@@ -2549,25 +2551,31 @@ namespace OboxSteam.Application.Services
             await _unitOfWork.ProgramBoards.HardRemove(x => true);
             await _unitOfWork.Portfolios.HardRemove(x => true);
             await _unitOfWork.Payments.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync(); // Flush Phase 2 (Mid-leaves)
+
             await _unitOfWork.ModuleEnrollments.HardRemove(x => true);       // → ProgramEnrollment (Restrict)
             await _unitOfWork.CourseEnrollments.HardRemove(x => true);
             await _unitOfWork.ProgramEnrollments.HardRemove(x => true);
             await _unitOfWork.BankQuestions.HardRemove(x => true);           // → QuestionBank (Cascade)
             await _unitOfWork.QuestionBanks.HardRemove(x => true);           // → Course (Cascade)
             await _unitOfWork.ResearchMilestones.HardRemove(x => true);      // → Module (Restrict), Assignment (Restrict)
+            await _unitOfWork.ClassSessions.HardRemove(x => true);           // → Class (Cascade), Activity, Assignment
             await _unitOfWork.Materials.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync(); // Flush Phase 3 (Enrollments & Content Links)
+
             await _unitOfWork.Assignments.HardRemove(x => true);
             await _unitOfWork.Activities.HardRemove(x => true);
-            await _unitOfWork.ClassSessions.HardRemove(x => true);           // → Class (Cascade)
             await _unitOfWork.Classes.HardRemove(x => true);                 // → Program (Restrict)
             await _unitOfWork.Courses.HardRemove(x => true);                 // → Module (implicit)
             await _unitOfWork.Modules.HardRemove(x => true);
             await _unitOfWork.Programs.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync(); // Flush Phase 4 (Core LMS)
+
             await _unitOfWork.ParentStudents.HardRemove(x => true);          // → User (Restrict) × 2
             await _unitOfWork.StudentProfiles.HardRemove(x => true);         // → User (Cascade, but direct removal is safer)
             await _unitOfWork.Experts.HardRemove(x => true);                 // → User (SetNull)
             await _unitOfWork.Users.HardRemove(x => true);
-            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync(); // Flush Phase 5 (Users)
 
             _loggerService.LogInformation("Finished clear all data");
         }
