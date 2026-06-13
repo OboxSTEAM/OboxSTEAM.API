@@ -65,6 +65,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ResearchMilestoneActivity> ResearchMilestoneActivities => Repository<ResearchMilestoneActivity>();
     public IGenericRepository<StudentSkill> StudentSkills => Repository<StudentSkill>();
     public IGenericRepository<StandardizedTest> StandardizedTests => Repository<StandardizedTest>();
+    public IGenericRepository<StudentProfile> StudentProfiles => Repository<StudentProfile>();
+    public IGenericRepository<SubmissionEvidence> SubmissionEvidences => Repository<SubmissionEvidence>();
     public IGenericRepository<Payment> Payments => Repository<Payment>();
     public IGenericRepository<ProgramBoard> ProgramBoards => Repository<ProgramBoard>();
     public IGenericRepository<ParentStudent> ParentStudents => Repository<ParentStudent>();

@@ -411,14 +411,11 @@ public class PersonalVideoService : IPersonalVideoService
         }
 
         // Standard face-timeline path (no strengths OR fallback from strengths filter)
-        var mergedSegments = ApplyBufferAndMerge(faceSegments);
-        var timeClips = mergedSegments.Select(s => new TimeClip(
-            MsToTimecode(s.StartMs),
-            MsToTimecode(s.EndMs))).ToList();
+        var timeClips = MergeAndFormatTimeClips(faceSegments.Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0)));
 
         _logger.LogInformation(
             "[PersonalVideoService] Case 3/4: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}",
-            faceSegments.Count, mergedSegments.Count, media.Id);
+            faceSegments.Count, timeClips.Count, media.Id);
 
         return new ClipInput(s3Key, timeClips);
     }
@@ -517,16 +514,67 @@ public class PersonalVideoService : IPersonalVideoService
             return new ClipInput(s3Key, new List<TimeClip>()); // empty → skipped by caller
         }
 
-        // MatchedSegments are already sorted by score desc from BedrockStrengthMatchService
-        var timeClips = matchResult.MatchedSegments
-            .Select(seg => new TimeClip(MsToTimecode(seg.StartMs), MsToTimecode(seg.EndMs)))
-            .ToList();
+        // Convert to TimeClips using the foolproof merge logic
+        var timeClips = MergeAndFormatTimeClips(matchResult.MatchedSegments);
 
         _logger.LogInformation(
             "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Reasoning: {Reasoning}",
             timeClips.Count, media.Id, matchResult.Reasoning);
 
         return new ClipInput(s3Key, timeClips);
+    }
+
+    /// <summary>
+    /// Converts a list of raw segments into AWS MediaConvert-compatible TimeClips, mathematically guaranteeing 
+    /// strictly ascending and non-overlapping StartTimecodes to prevent ERROR 1040.
+    /// </summary>
+    private static List<TimeClip> MergeAndFormatTimeClips(IEnumerable<MatchedSegment> segments)
+    {
+        // 1. Convert to TimeClips first, safely ignoring EndMs < StartMs hallucinations
+        var timeClipsRaw = segments
+            .Where(s => s.StartMs < s.EndMs) // basic sanity check
+            // Apply 1-second buffer pad (similar to FaceTimestampSegment buffer)
+            .Select(s => new { Start = Math.Max(0, s.StartMs - BufferMs), End = s.EndMs + BufferMs })
+            .Select(seg => new TimeClip(MsToTimecode(seg.Start), MsToTimecode(seg.End)))
+            .Where(t => t.StartTimecode != t.EndTimecode) // drop 0-duration clips
+            .OrderBy(t => t.StartTimecode)
+            .ToList();
+
+        // 2. Merge overlapping or identical StartTimecodes
+        var timeClips = new List<TimeClip>();
+        foreach (var tc in timeClipsRaw)
+        {
+            if (timeClips.Count == 0)
+            {
+                timeClips.Add(tc);
+                continue;
+            }
+
+            var last = timeClips[^1];
+            // If the start timecode is equal to or earlier than the previous one's start
+            if (string.Compare(tc.StartTimecode, last.StartTimecode) <= 0)
+            {
+                // Merge them by extending the EndTimecode of the last clip if needed
+                if (string.Compare(tc.EndTimecode, last.EndTimecode) > 0)
+                {
+                    timeClips[^1] = last with { EndTimecode = tc.EndTimecode };
+                }
+            }
+            // If it overlaps with the previous clip's end time
+            else if (string.Compare(tc.StartTimecode, last.EndTimecode) <= 0)
+            {
+                // Extend end time
+                if (string.Compare(tc.EndTimecode, last.EndTimecode) > 0)
+                {
+                    timeClips[^1] = last with { EndTimecode = tc.EndTimecode };
+                }
+            }
+            else
+            {
+                timeClips.Add(tc);
+            }
+        }
+        return timeClips;
     }
 
 
