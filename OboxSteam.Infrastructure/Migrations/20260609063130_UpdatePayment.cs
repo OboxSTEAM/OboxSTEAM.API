@@ -37,6 +37,13 @@ namespace OboxSteam.Infrastructure.Migrations
                 nullable: false,
                 defaultValue: new Guid("00000000-0000-0000-0000-000000000000"));
 
+            // Existing rows get empty GUID; backfill from StudentId before FK is added.
+            migrationBuilder.Sql(
+                @"UPDATE ""Payments"" SET ""PaidById"" = ""StudentId"" WHERE ""PaidById"" = '00000000-0000-0000-0000-000000000000';");
+
+            migrationBuilder.Sql(
+                @"UPDATE ""Payments"" SET ""Currency"" = 'VND' WHERE ""Currency"" = '';");
+
             migrationBuilder.CreateTable(
                 name: "PaymentRequests",
                 columns: table => new
