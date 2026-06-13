@@ -411,14 +411,11 @@ public class PersonalVideoService : IPersonalVideoService
         }
 
         // Standard face-timeline path (no strengths OR fallback from strengths filter)
-        var mergedSegments = ApplyBufferAndMerge(faceSegments);
-        var timeClips = mergedSegments.Select(s => new TimeClip(
-            MsToTimecode(s.StartMs),
-            MsToTimecode(s.EndMs))).ToList();
+        var timeClips = MergeAndFormatTimeClips(faceSegments.Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0)));
 
         _logger.LogInformation(
             "[PersonalVideoService] Case 3/4: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}",
-            faceSegments.Count, mergedSegments.Count, media.Id);
+            faceSegments.Count, timeClips.Count, media.Id);
 
         return new ClipInput(s3Key, timeClips);
     }
@@ -517,10 +514,28 @@ public class PersonalVideoService : IPersonalVideoService
             return new ClipInput(s3Key, new List<TimeClip>()); // empty → skipped by caller
         }
 
+        // Convert to TimeClips using the foolproof merge logic
+        var timeClips = MergeAndFormatTimeClips(matchResult.MatchedSegments);
+
+        _logger.LogInformation(
+            "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Reasoning: {Reasoning}",
+            timeClips.Count, media.Id, matchResult.Reasoning);
+
+        return new ClipInput(s3Key, timeClips);
+    }
+
+    /// <summary>
+    /// Converts a list of raw segments into AWS MediaConvert-compatible TimeClips, mathematically guaranteeing 
+    /// strictly ascending and non-overlapping StartTimecodes to prevent ERROR 1040.
+    /// </summary>
+    private static List<TimeClip> MergeAndFormatTimeClips(IEnumerable<MatchedSegment> segments)
+    {
         // 1. Convert to TimeClips first, safely ignoring EndMs < StartMs hallucinations
-        var timeClipsRaw = matchResult.MatchedSegments
+        var timeClipsRaw = segments
             .Where(s => s.StartMs < s.EndMs) // basic sanity check
-            .Select(seg => new TimeClip(MsToTimecode(seg.StartMs), MsToTimecode(seg.EndMs)))
+            // Apply 1-second buffer pad (similar to FaceTimestampSegment buffer)
+            .Select(s => new { Start = Math.Max(0, s.StartMs - BufferMs), End = s.EndMs + BufferMs })
+            .Select(seg => new TimeClip(MsToTimecode(seg.Start), MsToTimecode(seg.End)))
             .Where(t => t.StartTimecode != t.EndTimecode) // drop 0-duration clips
             .OrderBy(t => t.StartTimecode)
             .ToList();
@@ -559,12 +574,7 @@ public class PersonalVideoService : IPersonalVideoService
                 timeClips.Add(tc);
             }
         }
-
-        _logger.LogInformation(
-            "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Reasoning: {Reasoning}",
-            timeClips.Count, media.Id, matchResult.Reasoning);
-
-        return new ClipInput(s3Key, timeClips);
+        return timeClips;
     }
 
 
