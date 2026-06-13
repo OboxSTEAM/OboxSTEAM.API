@@ -671,20 +671,20 @@ namespace OboxSteam.Application.Services
             var existingModules = await _unitOfWork.Modules.GetAllAsync();
             if (!existingModules.Any())
             {
-                var programRobotics  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
-                var programWebDev    = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
-                var programSteam     = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-STEAM-01");
-                var programIot       = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
-                var programPyBasic   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-PYBASIC");
-                var programMathFun   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-MATHFUN");
-                var programDigArt    = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DIGART");
-                var programBiotech   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-BIOTECH");
-                var program3DDesign  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-3DDESIGN");
-                var programAiBasic   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-AIBASIC");
-                var programEnvSci    = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ENVSCI");
-                var programGameDev   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV");
+                var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+                var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
+                var programSteam = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-STEAM-01");
+                var programIot = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
+                var programPyBasic = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-PYBASIC");
+                var programMathFun = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-MATHFUN");
+                var programDigArt = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DIGART");
+                var programBiotech = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-BIOTECH");
+                var program3DDesign = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-3DDESIGN");
+                var programAiBasic = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-AIBASIC");
+                var programEnvSci = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ENVSCI");
+                var programGameDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV");
                 var programMusicTech = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-MUSICTECH");
-                var programDataMath  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DATAMATH");
+                var programDataMath = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DATAMATH");
 
                 var modules = new List<Module>();
 
@@ -2355,11 +2355,11 @@ namespace OboxSteam.Application.Services
                 var student3 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-003");
                 var student4 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-004");
                 var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
-                var programWebDev   = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
-                var programIot      = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
-                var programPyBasic  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-PYBASIC");
-                var programGameDev  = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV");
-                var reviewTime      = DateTime.UtcNow;
+                var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
+                var programIot = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
+                var programPyBasic = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-PYBASIC");
+                var programGameDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV");
+                var reviewTime = DateTime.UtcNow;
 
                 var programReviews = new List<ProgramReview>();
 
@@ -2521,46 +2521,55 @@ namespace OboxSteam.Application.Services
         {
             _loggerService.LogInformation("Starting clear all data");
 
-            // ── Step 1: Delete tracked S3 objects before wiping DB rows ────────
             await ClearS3ObjectsAsync();
-
-            // ── Step 2: Hard-delete all DB rows ───────────────────────────────
-            await _unitOfWork.MediaTags.HardRemove(x => true);
-            await _unitOfWork.MediaAssets.HardRemove(x => true);
+            await _unitOfWork.MediaTags.HardRemove(x => true);               // join table
+            await _unitOfWork.QuizAnswers.HardRemove(x => true);             // → Submission (Restrict), QuizQuestion (Cascade), QuizOption (Restrict)
+            await _unitOfWork.PortfolioItemSubmissions.HardRemove(x => true); // → PortfolioCustomItem (Cascade), Submission (Restrict)
+            await _unitOfWork.SessionAttendances.HardRemove(x => true);      // → ClassSession (Cascade), ModuleEnrollment (Restrict)
+            await _unitOfWork.ActivityProgresses.HardRemove(x => true);      // → ModuleEnrollment (Cascade), Activity (Restrict)
+            await _unitOfWork.ResearchMilestoneActivities.HardRemove(x => true); // → ResearchMilestone (Cascade)
+            await _unitOfWork.BankQuestionOptions.HardRemove(x => true);     // → BankQuestion (Cascade)
+            await _unitOfWork.QuizOptions.HardRemove(x => true);             // → QuizQuestion (Cascade / leaf after Tier 1)
+            await _unitOfWork.QuizQuestions.HardRemove(x => true);           // → Submission (SetNull)
+            await _unitOfWork.Submissions.HardRemove(x => true);             // → ModuleEnrollment (Restrict) ← flush before ME
+            await _unitOfWork.PortfolioCustomItems.HardRemove(x => true);    // → ProgramEnrollment (SetNull), ModuleEnrollment (SetNull)
+            await _unitOfWork.ActivityBookings.HardRemove(x => true);
+            await _unitOfWork.ClassEnrollments.HardRemove(x => true);        // → ProgramEnrollment (Restrict) ← flush before PE
+            await _unitOfWork.PaymentRequests.HardRemove(x => true);         // → ProgramEnrollment (Restrict) ← flush before PE
+            await _unitOfWork.Invoices.HardRemove(x => true);                // → Payment (Restrict) ← flush before Payments
+            await _unitOfWork.ProgramReviews.HardRemove(x => true);          // → Program (Cascade) — safe here
+            await _unitOfWork.Certificates.HardRemove(x => true);
             await _unitOfWork.HighlightVideos.HardRemove(x => true);
             await _unitOfWork.FaceEmbeddings.HardRemove(x => true);
-            await _unitOfWork.PortfolioCustomItems.HardRemove(x => true);
-            await _unitOfWork.Portfolios.HardRemove(x => true);
+            await _unitOfWork.MediaAssets.HardRemove(x => true);
             await _unitOfWork.StudentSkills.HardRemove(x => true);
             await _unitOfWork.StandardizedTests.HardRemove(x => true);
-            await _unitOfWork.Certificates.HardRemove(x => true);
-            await _unitOfWork.ProgramBoards.HardRemove(x => true);
             await _unitOfWork.OtpStorages.HardRemove(x => true);
-            await _unitOfWork.ProgramReviews.HardRemove(x => true);
-            await _unitOfWork.Invoices.HardRemove(x => true);
-
-            await _unitOfWork.QuizOptions.HardRemove(x => true);
-            await _unitOfWork.QuizQuestions.HardRemove(x => true);
-            await _unitOfWork.Submissions.HardRemove(x => true);
-            await _unitOfWork.ActivityBookings.HardRemove(x => true);
-            await _unitOfWork.Materials.HardRemove(x => true);
-            await _unitOfWork.Activities.HardRemove(x => true);
-            await _unitOfWork.Assignments.HardRemove(x => true);
-            await _unitOfWork.CourseEnrollments.HardRemove(x => true);
-            await _unitOfWork.ModuleEnrollments.HardRemove(x => true);
-            await _unitOfWork.PaymentRequests.HardRemove(x => true);
+            await _unitOfWork.ProgramBoards.HardRemove(x => true);
+            await _unitOfWork.Portfolios.HardRemove(x => true);
             await _unitOfWork.Payments.HardRemove(x => true);
+            await _unitOfWork.ModuleEnrollments.HardRemove(x => true);       // → ProgramEnrollment (Restrict)
+            await _unitOfWork.CourseEnrollments.HardRemove(x => true);
             await _unitOfWork.ProgramEnrollments.HardRemove(x => true);
-            await _unitOfWork.Courses.HardRemove(x => true);
+            await _unitOfWork.BankQuestions.HardRemove(x => true);           // → QuestionBank (Cascade)
+            await _unitOfWork.QuestionBanks.HardRemove(x => true);           // → Course (Cascade)
+            await _unitOfWork.ResearchMilestones.HardRemove(x => true);      // → Module (Restrict), Assignment (Restrict)
+            await _unitOfWork.Materials.HardRemove(x => true);
+            await _unitOfWork.Assignments.HardRemove(x => true);
+            await _unitOfWork.Activities.HardRemove(x => true);
+            await _unitOfWork.ClassSessions.HardRemove(x => true);           // → Class (Cascade)
+            await _unitOfWork.Classes.HardRemove(x => true);                 // → Program (Restrict)
+            await _unitOfWork.Courses.HardRemove(x => true);                 // → Module (implicit)
             await _unitOfWork.Modules.HardRemove(x => true);
             await _unitOfWork.Programs.HardRemove(x => true);
-            await _unitOfWork.ParentStudents.HardRemove(x => true);
-            await _unitOfWork.Experts.HardRemove(x => true);
+            await _unitOfWork.ParentStudents.HardRemove(x => true);          // → User (Restrict) × 2
+            await _unitOfWork.Experts.HardRemove(x => true);                 // → User (SetNull)
             await _unitOfWork.Users.HardRemove(x => true);
             await _unitOfWork.SaveChangesAsync();
 
             _loggerService.LogInformation("Finished clear all data");
         }
+
 
         /// <summary>
         /// Xóa các S3 objects được track trong DB trước khi xóa DB rows.
@@ -2888,19 +2897,19 @@ namespace OboxSteam.Application.Services
             int? maxCapacity,
             bool requireQrCheckin,
             bool requireMediaEvidence) => new()
-        {
-            Id = Guid.NewGuid(),
-            Code = code,
-            Name = name,
-            ActivityType = activityType,
-            Description = description,
-            ActivityOrder = activityOrder,
-            Location = location,
-            StartTime = startTime,
-            EndTime = endTime,
-            MaxCapacity = maxCapacity,
-            RequireQrCheckin = requireQrCheckin,
-            RequireMediaEvidence = requireMediaEvidence,
-        };
+            {
+                Id = Guid.NewGuid(),
+                Code = code,
+                Name = name,
+                ActivityType = activityType,
+                Description = description,
+                ActivityOrder = activityOrder,
+                Location = location,
+                StartTime = startTime,
+                EndTime = endTime,
+                MaxCapacity = maxCapacity,
+                RequireQrCheckin = requireQrCheckin,
+                RequireMediaEvidence = requireMediaEvidence,
+            };
     }
 }
