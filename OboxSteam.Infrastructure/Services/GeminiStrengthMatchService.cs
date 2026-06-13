@@ -104,7 +104,20 @@ public class GeminiStrengthMatchService : IStrengthMatchService
             throw;
         }
 
-        var rawJson = response.Text;
+        // response.Text only returns Parts[0].Text — when Gemini splits a large JSON
+        // response across multiple parts, remaining parts are silently dropped, causing
+        // the raw JSON to be truncated at ~149 bytes. Concatenate all parts manually.
+        var rawJson = string.Concat(
+            response.Candidates
+                ?.FirstOrDefault()?.Content?.Parts
+                ?.Where(p => p.Text != null)
+                .Select(p => p.Text)
+            ?? Enumerable.Empty<string>());
+
+        _logger.LogDebug("GeminiStrengthMatchService: rawJson length={Len}, parts={Parts}",
+            rawJson.Length,
+            response.Candidates?.FirstOrDefault()?.Content?.Parts?.Count ?? 0);
+
         if (string.IsNullOrWhiteSpace(rawJson))
         {
             _logger.LogWarning("GeminiStrengthMatchService: empty response text. Returning empty match.");

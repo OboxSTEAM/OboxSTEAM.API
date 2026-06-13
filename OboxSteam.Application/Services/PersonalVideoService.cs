@@ -517,9 +517,34 @@ public class PersonalVideoService : IPersonalVideoService
             return new ClipInput(s3Key, new List<TimeClip>()); // empty → skipped by caller
         }
 
-        // MatchedSegments are already sorted by score desc from BedrockStrengthMatchService
-        var timeClips = matchResult.MatchedSegments
+        // Gemini outputs might overlap or be unordered. MediaConvert requires strictly ascending,
+        // non-overlapping regions. We must sort and merge them before converting to TimeClips.
+        var sortedMatches = matchResult.MatchedSegments.OrderBy(s => s.StartMs).ToList();
+        var mergedMatches = new List<MatchedSegment>();
+        foreach (var seg in sortedMatches)
+        {
+            if (mergedMatches.Count == 0)
+            {
+                mergedMatches.Add(seg);
+                continue;
+            }
+
+            var last = mergedMatches[^1];
+            // Merge if they overlap or are very close (< 1000ms gap) to avoid equal timecodes
+            if (seg.StartMs - last.EndMs <= MergeGapMs)
+            {
+                mergedMatches[^1] = last with { EndMs = Math.Max(last.EndMs, seg.EndMs) };
+            }
+            else
+            {
+                mergedMatches.Add(seg);
+            }
+        }
+
+        var timeClips = mergedMatches
             .Select(seg => new TimeClip(MsToTimecode(seg.StartMs), MsToTimecode(seg.EndMs)))
+            // Extra safety: drop if rounding makes start == end
+            .Where(t => t.StartTimecode != t.EndTimecode)
             .ToList();
 
         _logger.LogInformation(
