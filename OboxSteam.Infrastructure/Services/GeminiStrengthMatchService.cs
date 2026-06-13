@@ -183,6 +183,7 @@ public class GeminiStrengthMatchService : IStrengthMatchService
         sb.AppendLine("2. Semantically match labels to strengths (e.g. 'Soccer'='football'='đá bóng', 'Chess'='đánh cờ', 'Presentation'='thuyết trình').");
         sb.AppendLine("3. Assign a score 0.0–1.0 based on how well the labels match the strength and how much of the segment has matching labels.");
         sb.AppendLine("4. Only include segments with score >= 0.5.");
+        sb.AppendLine("5. Keep 'reasoning' to ONE short sentence (max 20 words). Do not write long explanations.");
 
         return sb.ToString();
     }
