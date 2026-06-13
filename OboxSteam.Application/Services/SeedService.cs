@@ -2522,60 +2522,106 @@ namespace OboxSteam.Application.Services
             _loggerService.LogInformation("Starting clear all data");
 
             await ClearS3ObjectsAsync();
+
+            // ── Phase 1: True leaf tables (no children) ──────────────────────────
             await _unitOfWork.MediaTags.HardRemove(x => true);               // join table
-            await _unitOfWork.QuizAnswers.HardRemove(x => true);             // → Submission (Restrict), QuizQuestion (Cascade), QuizOption (Restrict)
-            await _unitOfWork.SubmissionEvidences.HardRemove(x => true);     // → Submission (Restrict), MediaAsset (Restrict)
-            await _unitOfWork.PortfolioItemSubmissions.HardRemove(x => true); // → PortfolioCustomItem (Cascade), Submission (Restrict)
-            await _unitOfWork.SessionAttendances.HardRemove(x => true);      // → ClassSession (Cascade), ModuleEnrollment (Restrict)
-            await _unitOfWork.ActivityProgresses.HardRemove(x => true);      // → ModuleEnrollment (Cascade), Activity (Restrict)
-            await _unitOfWork.ResearchMilestoneActivities.HardRemove(x => true); // → ResearchMilestone (Cascade)
-            await _unitOfWork.BankQuestionOptions.HardRemove(x => true);     // → BankQuestion (Cascade)
-            await _unitOfWork.QuizOptions.HardRemove(x => true);             // → QuizQuestion (Cascade / leaf after Tier 1)
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.QuizAnswers.HardRemove(x => true);             // → Submission, QuizQuestion, QuizOption
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.SubmissionEvidences.HardRemove(x => true);     // → Submission, MediaAsset
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.PortfolioItemSubmissions.HardRemove(x => true); // → PortfolioCustomItem, Submission
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.SessionAttendances.HardRemove(x => true);      // → ClassSession, ModuleEnrollment
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.ActivityProgresses.HardRemove(x => true);      // → ModuleEnrollment, Activity
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.ResearchMilestoneActivities.HardRemove(x => true); // → ResearchMilestone
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.BankQuestionOptions.HardRemove(x => true);     // → BankQuestion
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.QuizOptions.HardRemove(x => true);             // → QuizQuestion
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.QuizQuestions.HardRemove(x => true);           // → Submission (SetNull)
-            await _unitOfWork.SaveChangesAsync(); // Flush Phase 1 (Leaves)
+            await _unitOfWork.SaveChangesAsync();
 
-            await _unitOfWork.Submissions.HardRemove(x => true);             // → ModuleEnrollment (Restrict) ← flush before ME
-            await _unitOfWork.PortfolioCustomItems.HardRemove(x => true);    // → ProgramEnrollment (SetNull), ModuleEnrollment (SetNull)
+            // ── Phase 2: Mid-leaf tables ──────────────────────────────────────────
+            await _unitOfWork.Submissions.HardRemove(x => true);             // → ModuleEnrollment (Restrict)
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.PortfolioCustomItems.HardRemove(x => true);    // → ProgramEnrollment, ModuleEnrollment
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.ActivityBookings.HardRemove(x => true);
-            await _unitOfWork.ClassEnrollments.HardRemove(x => true);        // → ProgramEnrollment (Restrict) ← flush before PE
-            await _unitOfWork.PaymentRequests.HardRemove(x => true);         // → ProgramEnrollment (Restrict) ← flush before PE
-            await _unitOfWork.Invoices.HardRemove(x => true);                // → Payment (Restrict) ← flush before Payments
-            await _unitOfWork.ProgramReviews.HardRemove(x => true);          // → Program (Cascade) — safe here
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.ClassEnrollments.HardRemove(x => true);        // → ProgramEnrollment (Restrict)
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.PaymentRequests.HardRemove(x => true);         // → ProgramEnrollment (Restrict)
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.Invoices.HardRemove(x => true);                // → Payment (Restrict)
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.ProgramReviews.HardRemove(x => true);          // → Program
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Certificates.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.HighlightVideos.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.FaceEmbeddings.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.MediaAssets.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.StudentSkills.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.StandardizedTests.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.OtpStorages.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.ProgramBoards.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Portfolios.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Payments.HardRemove(x => true);
-            await _unitOfWork.SaveChangesAsync(); // Flush Phase 2 (Mid-leaves)
+            await _unitOfWork.SaveChangesAsync();
 
+            // ── Phase 3: Enrollments & content links ──────────────────────────────
             await _unitOfWork.ModuleEnrollments.HardRemove(x => true);       // → ProgramEnrollment (Restrict)
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.CourseEnrollments.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.ProgramEnrollments.HardRemove(x => true);
-            await _unitOfWork.BankQuestions.HardRemove(x => true);           // → QuestionBank (Cascade)
-            await _unitOfWork.QuestionBanks.HardRemove(x => true);           // → Course (Cascade)
-            await _unitOfWork.ResearchMilestones.HardRemove(x => true);      // → Module (Restrict), Assignment (Restrict)
-            await _unitOfWork.ClassSessions.HardRemove(x => true);           // → Class (Cascade), Activity, Assignment
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.BankQuestions.HardRemove(x => true);           // → QuestionBank
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.QuestionBanks.HardRemove(x => true);           // → Course
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.ResearchMilestones.HardRemove(x => true);      // → Module, Assignment
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.ClassSessions.HardRemove(x => true);           // → Class, Activity, Assignment
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Materials.HardRemove(x => true);
-            await _unitOfWork.SaveChangesAsync(); // Flush Phase 3 (Enrollments & Content Links)
+            await _unitOfWork.SaveChangesAsync();
 
+            // ── Phase 4: Core LMS entities ────────────────────────────────────────
             await _unitOfWork.Assignments.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Activities.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Classes.HardRemove(x => true);                 // → Program (Restrict)
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Courses.HardRemove(x => true);                 // → Module (implicit)
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Modules.HardRemove(x => true);
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Programs.HardRemove(x => true);
-            await _unitOfWork.SaveChangesAsync(); // Flush Phase 4 (Core LMS)
+            await _unitOfWork.SaveChangesAsync();
 
+            // ── Phase 5: Users ────────────────────────────────────────────────────
             await _unitOfWork.ParentStudents.HardRemove(x => true);          // → User (Restrict) × 2
-            await _unitOfWork.StudentProfiles.HardRemove(x => true);         // → User (Cascade, but direct removal is safer)
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.StudentProfiles.HardRemove(x => true);         // → User (Cascade)
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Experts.HardRemove(x => true);                 // → User (SetNull)
+            await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.Users.HardRemove(x => true);
-            await _unitOfWork.SaveChangesAsync(); // Flush Phase 5 (Users)
+            await _unitOfWork.SaveChangesAsync();
 
             _loggerService.LogInformation("Finished clear all data");
         }
