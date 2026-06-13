@@ -1,5 +1,4 @@
 
-using Amazon.BedrockRuntime;
 using Amazon.MediaConvert;
 using Amazon.Rekognition;
 using Amazon.S3;
@@ -70,7 +69,7 @@ public static class IocContainer
         services.SetupReSendService(configuration);
         services.SetupAwsRekognition();
         services.SetupAwsMediaConvert();
-        services.SetupAwsBedrock();
+        services.SetupGemini();
         services.SetupPaymentGateways(configuration);
 
         return services;
@@ -173,7 +172,7 @@ public static class IocContainer
         services.AddScoped<IExpertService, ExpertService>();
         services.AddScoped<IParentService, ParentService>();
         services.AddScoped<IPersonalVideoService, PersonalVideoService>();
-        services.AddScoped<IStrengthMatchService, BedrockStrengthMatchService>();
+        services.AddScoped<IStrengthMatchService, GeminiStrengthMatchService>();
         services.AddScoped<IProgramEnrollmentService, ProgramEnrollmentService>();
         services.AddScoped<IModuleEnrollmentService, ModuleEnrollmentService>();
         services.AddScoped<IQuestionBankService, QuestionBankService>();
@@ -251,20 +250,13 @@ public static class IocContainer
         return services;
     }
 
-    public static IServiceCollection SetupAwsBedrock(this IServiceCollection services)
+    public static IServiceCollection SetupGemini(this IServiceCollection services)
     {
-        var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY")
-            ?? throw new InvalidOperationException("AWS_ACCESS_KEY not found in environment variables.");
-        var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_KEY")
-            ?? throw new InvalidOperationException("AWS_SECRET_KEY not found in environment variables.");
-        var region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
+        var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
+            ?? throw new InvalidOperationException("GEMINI_API_KEY not found in environment variables.");
 
-        // Singleton: reuses the underlying HTTP connection pool for lower latency.
-        services.AddSingleton<IAmazonBedrockRuntime>(_ =>
-            new AmazonBedrockRuntimeClient(
-                accessKey,
-                secretKey,
-                Amazon.RegionEndpoint.GetBySystemName(region)));
+        // Singleton: Client is thread-safe and owns the underlying HttpClient.
+        services.AddSingleton(_ => new Google.GenAI.Client(apiKey: apiKey));
 
         return services;
     }
