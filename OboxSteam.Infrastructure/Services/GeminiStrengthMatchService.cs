@@ -16,7 +16,9 @@ namespace OboxSteam.Infrastructure.Services;
 public class GeminiStrengthMatchService : IStrengthMatchService
 {
 
-    private const string ModelId = "gemini-2.5-flash";
+    // gemini-2.5-flash has a strict 20 requests/day limit on the free tier.
+    // Switching to gemini-1.5-flash which allows 1500 requests/day.
+    private const string ModelId = "gemini-1.5-flash";
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
