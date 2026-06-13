@@ -45,4 +45,5 @@ public class Program : BaseEntity
     public ICollection<HighlightVideo> HighlightVideos { get; set; } = new List<HighlightVideo>();
     public ICollection<ProgramReview> Reviews { get; set; } = new List<ProgramReview>();
     public ICollection<Class> Classes { get; set; } = new List<Class>();
+    public ICollection<PaymentRequest> PaymentRequests { get; set; } = new List<PaymentRequest>();
 }

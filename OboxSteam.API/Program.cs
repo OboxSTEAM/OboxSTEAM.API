@@ -151,17 +151,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "OboxSteam API v1");
         c.RoutePrefix = string.Empty;
         c.HeadContent = $@"
-            <style>{SwaggerTheme.GetSwaggerThemeCss(Theme.Dracula)}</style>
-            <style>
-                #checkboxContainer label {{
-                    color: #000000 !important;
-                    background: #f8fafc !important;
-                    border: 2px solid #e5e7eb !important;
-                }}
-                #checkboxContainer label * {{
-                    color: #000000 !important;
-                }}
-            </style>";
+            <style>{SwaggerTheme.GetSwaggerThemeCss(Theme.Dracula)}</style>";
         c.ConfigObject.AdditionalItems.Add("persistAuthorization", "true");
         c.InjectJavascript("/custom-swagger.js");
     });

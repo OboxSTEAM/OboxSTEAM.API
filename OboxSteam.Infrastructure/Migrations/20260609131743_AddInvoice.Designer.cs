@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260609131743_AddInvoice")]
+    partial class AddInvoice
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -81,10 +84,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<bool>("RequireQrCheckin")
                         .HasColumnType("boolean");
-
-                    b.Property<string>("SchedulingMode")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<DateTime?>("StartTime")
                         .HasColumnType("timestamp with time zone");
@@ -225,12 +224,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<string>("AssignmentType")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("AvailableFrom")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("AvailableUntil")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Code")
                         .IsRequired()
@@ -486,221 +479,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("StudentId");
 
                     b.ToTable("Certificates");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.Class", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("EndDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("MaxCapacity")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("MentorId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("MinHoursBeforeAssignmentJoin")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<Guid>("ProgramId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ScheduleSummary")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<DateTime>("StartDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique();
-
-                    b.HasIndex("MentorId");
-
-                    b.HasIndex("ProgramId");
-
-                    b.ToTable("Classes");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassEnrollment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ClassId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("EnrolledAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("ProgramEnrollmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("StudentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProgramEnrollmentId");
-
-                    b.HasIndex("StudentId");
-
-                    b.HasIndex("ClassId", "StudentId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("ClassEnrollments");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSession", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ActivityId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AssignmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ClassId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("EndTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Location")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<int?>("MaxCapacity")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ModuleId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("RequiresAttendance")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("SessionKind")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("StartTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActivityId");
-
-                    b.HasIndex("AssignmentId");
-
-                    b.HasIndex("ModuleId");
-
-                    b.HasIndex("ClassId", "StartTime");
-
-                    b.ToTable("ClassSessions");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Course", b =>
@@ -1273,9 +1051,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid>("CreatedBy")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("DefaultSchedulingMode")
-                        .HasColumnType("text");
-
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1734,9 +1509,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("ParentPortfolioId");
 
-                    b.HasIndex("StudentId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"ParentPortfolioId\" IS NULL");
+                    b.HasIndex("StudentId");
 
                     b.HasIndex("Subdomain")
                         .IsUnique();
@@ -1771,45 +1544,18 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("IsVisible")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("ItemType")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.Property<string>("MediaUrl")
                         .HasColumnType("text");
 
-                    b.Property<string>("MentorEndorsement")
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("ModuleEnrollmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ModuleId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid>("PortfolioId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("ProgramEnrollmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ProgramId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid?>("ReferenceId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("StudentEditedBody")
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("SubmissionId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Title")
@@ -1825,73 +1571,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ModuleId");
-
                     b.HasIndex("PortfolioId");
 
-                    b.HasIndex("ProgramEnrollmentId");
-
-                    b.HasIndex("ProgramId");
-
-                    b.HasIndex("SubmissionId");
-
-                    b.HasIndex("ModuleEnrollmentId", "ItemType")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"ModuleEnrollmentId\" IS NOT NULL AND \"ItemType\" = 'CapstoneProject'");
-
                     b.ToTable("PortfolioCustomItems");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.PortfolioItemSubmission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("DisplayOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("PortfolioCustomItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("SectionTitle")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<Guid>("SubmissionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SubmissionId");
-
-                    b.HasIndex("PortfolioCustomItemId", "SubmissionId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("PortfolioItemSubmissions");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Program", b =>
@@ -2336,185 +2018,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.ToTable("QuizQuestions");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ResearchMilestone", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AssignmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsCapstone")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("MilestoneOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ModuleId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignmentId")
-                        .IsUnique();
-
-                    b.HasIndex("Code")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("ModuleId", "MilestoneOrder")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("ResearchMilestones");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ResearchMilestoneActivity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ActivityId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("DisplayOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsRequiredForSubmission")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("ResearchMilestoneId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActivityId");
-
-                    b.HasIndex("ResearchMilestoneId", "ActivityId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("ResearchMilestoneActivities");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.SessionAttendance", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CheckedInAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ClassSessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("ModuleEnrollmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("RecordedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("StudentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ModuleEnrollmentId");
-
-                    b.HasIndex("RecordedBy");
-
-                    b.HasIndex("StudentId");
-
-                    b.HasIndex("ClassSessionId", "StudentId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("SessionAttendances");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.StandardizedTest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2710,14 +2213,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("FileUrl")
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("GradedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
@@ -2727,12 +2224,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<Guid?>("ModuleEnrollmentId")
                         .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ResearchMilestoneId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -2761,8 +2252,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("ModuleEnrollmentId");
-
-                    b.HasIndex("ResearchMilestoneId");
 
                     b.HasIndex("StudentId");
 
@@ -3014,85 +2503,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Program");
 
                     b.Navigation("Student");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.Class", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.User", "Mentor")
-                        .WithMany("MentoredClasses")
-                        .HasForeignKey("MentorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
-                        .WithMany("Classes")
-                        .HasForeignKey("ProgramId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Mentor");
-
-                    b.Navigation("Program");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassEnrollment", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.Class", "Class")
-                        .WithMany("ClassEnrollments")
-                        .HasForeignKey("ClassId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramEnrollment", "ProgramEnrollment")
-                        .WithMany("ClassEnrollments")
-                        .HasForeignKey("ProgramEnrollmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany("ClassEnrollments")
-                        .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Class");
-
-                    b.Navigation("ProgramEnrollment");
-
-                    b.Navigation("Student");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSession", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.Activity", "Activity")
-                        .WithMany("ClassSessions")
-                        .HasForeignKey("ActivityId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("OboxSteam.Domain.Entities.Assignment", "Assignment")
-                        .WithMany("ClassSessions")
-                        .HasForeignKey("AssignmentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("OboxSteam.Domain.Entities.Class", "Class")
-                        .WithMany("ClassSessions")
-                        .HasForeignKey("ClassId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.Module", "Module")
-                        .WithMany("ClassSessions")
-                        .HasForeignKey("ModuleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Activity");
-
-                    b.Navigation("Assignment");
-
-                    b.Navigation("Class");
-
-                    b.Navigation("Module");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Course", b =>
@@ -3411,67 +2821,13 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.PortfolioCustomItem", b =>
                 {
-                    b.HasOne("OboxSteam.Domain.Entities.ModuleEnrollment", "ModuleEnrollment")
-                        .WithMany()
-                        .HasForeignKey("ModuleEnrollmentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("OboxSteam.Domain.Entities.Module", "Module")
-                        .WithMany()
-                        .HasForeignKey("ModuleId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("OboxSteam.Domain.Entities.Portfolio", "Portfolio")
                         .WithMany("CustomItems")
                         .HasForeignKey("PortfolioId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramEnrollment", "ProgramEnrollment")
-                        .WithMany()
-                        .HasForeignKey("ProgramEnrollmentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
-                        .WithMany()
-                        .HasForeignKey("ProgramId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("OboxSteam.Domain.Entities.Submission", "Submission")
-                        .WithMany()
-                        .HasForeignKey("SubmissionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Module");
-
-                    b.Navigation("ModuleEnrollment");
-
                     b.Navigation("Portfolio");
-
-                    b.Navigation("Program");
-
-                    b.Navigation("ProgramEnrollment");
-
-                    b.Navigation("Submission");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.PortfolioItemSubmission", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.PortfolioCustomItem", "PortfolioCustomItem")
-                        .WithMany("AppendixSubmissions")
-                        .HasForeignKey("PortfolioCustomItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.Submission", "Submission")
-                        .WithMany()
-                        .HasForeignKey("SubmissionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("PortfolioCustomItem");
-
-                    b.Navigation("Submission");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramBoard", b =>
@@ -3605,78 +2961,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Submission");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ResearchMilestone", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.Assignment", "Assignment")
-                        .WithOne("ResearchMilestone")
-                        .HasForeignKey("OboxSteam.Domain.Entities.ResearchMilestone", "AssignmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.Module", "Module")
-                        .WithMany("ResearchMilestones")
-                        .HasForeignKey("ModuleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Assignment");
-
-                    b.Navigation("Module");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ResearchMilestoneActivity", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.Activity", "Activity")
-                        .WithMany("ResearchMilestoneActivities")
-                        .HasForeignKey("ActivityId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ResearchMilestone", "ResearchMilestone")
-                        .WithMany("MilestoneActivities")
-                        .HasForeignKey("ResearchMilestoneId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Activity");
-
-                    b.Navigation("ResearchMilestone");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.SessionAttendance", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.ClassSession", "ClassSession")
-                        .WithMany("SessionAttendances")
-                        .HasForeignKey("ClassSessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ModuleEnrollment", "ModuleEnrollment")
-                        .WithMany("SessionAttendances")
-                        .HasForeignKey("ModuleEnrollmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.User", "Recorder")
-                        .WithMany("RecordedSessionAttendances")
-                        .HasForeignKey("RecordedBy")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany("SessionAttendances")
-                        .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("ClassSession");
-
-                    b.Navigation("ModuleEnrollment");
-
-                    b.Navigation("Recorder");
-
-                    b.Navigation("Student");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.StandardizedTest", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
@@ -3723,11 +3007,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasForeignKey("ModuleEnrollmentId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("OboxSteam.Domain.Entities.ResearchMilestone", "ResearchMilestone")
-                        .WithMany("Submissions")
-                        .HasForeignKey("ResearchMilestoneId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("OboxSteam.Domain.Entities.User", "Student")
                         .WithMany("Submissions")
                         .HasForeignKey("StudentId")
@@ -3742,8 +3021,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Assignment");
 
                     b.Navigation("ModuleEnrollment");
-
-                    b.Navigation("ResearchMilestone");
 
                     b.Navigation("Student");
 
@@ -3775,22 +3052,14 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Navigation("ActivityProgresses");
 
-                    b.Navigation("ClassSessions");
-
                     b.Navigation("Materials");
 
                     b.Navigation("MediaAssets");
-
-                    b.Navigation("ResearchMilestoneActivities");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Assignment", b =>
                 {
-                    b.Navigation("ClassSessions");
-
                     b.Navigation("QuizQuestions");
-
-                    b.Navigation("ResearchMilestone");
 
                     b.Navigation("Submissions");
                 });
@@ -3798,18 +3067,6 @@ namespace OboxSteam.Infrastructure.Migrations
             modelBuilder.Entity("OboxSteam.Domain.Entities.BankQuestion", b =>
                 {
                     b.Navigation("Options");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.Class", b =>
-                {
-                    b.Navigation("ClassEnrollments");
-
-                    b.Navigation("ClassSessions");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSession", b =>
-                {
-                    b.Navigation("SessionAttendances");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Course", b =>
@@ -3843,15 +3100,11 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Navigation("Certificates");
 
-                    b.Navigation("ClassSessions");
-
                     b.Navigation("Courses");
 
                     b.Navigation("Materials");
 
                     b.Navigation("ModuleEnrollments");
-
-                    b.Navigation("ResearchMilestones");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ModuleEnrollment", b =>
@@ -3859,8 +3112,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("ActivityProgresses");
 
                     b.Navigation("Payments");
-
-                    b.Navigation("SessionAttendances");
 
                     b.Navigation("Submissions");
                 });
@@ -3875,16 +3126,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("CustomItems");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.PortfolioCustomItem", b =>
-                {
-                    b.Navigation("AppendixSubmissions");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.Program", b =>
                 {
                     b.Navigation("Certificates");
-
-                    b.Navigation("Classes");
 
                     b.Navigation("HighlightVideos");
 
@@ -3901,8 +3145,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramEnrollment", b =>
                 {
-                    b.Navigation("ClassEnrollments");
-
                     b.Navigation("ModuleEnrollments");
 
                     b.Navigation("Payments");
@@ -3922,13 +3164,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Options");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ResearchMilestone", b =>
-                {
-                    b.Navigation("MilestoneActivities");
-
-                    b.Navigation("Submissions");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.Submission", b =>
                 {
                     b.Navigation("QuizAnswers");
@@ -3946,8 +3181,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Navigation("Certificates");
 
-                    b.Navigation("ClassEnrollments");
-
                     b.Navigation("CourseEnrollments");
 
                     b.Navigation("Expert");
@@ -3959,8 +3192,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Invoices");
 
                     b.Navigation("MediaTags");
-
-                    b.Navigation("MentoredClasses");
 
                     b.Navigation("MentoredCourses");
 
@@ -3978,9 +3209,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Navigation("ProgramReviews");
 
-                    b.Navigation("RecordedSessionAttendances");
-
-                    b.Navigation("SessionAttendances");
                     b.Navigation("ReceivedPaymentRequests");
 
                     b.Navigation("SentPaymentRequests");

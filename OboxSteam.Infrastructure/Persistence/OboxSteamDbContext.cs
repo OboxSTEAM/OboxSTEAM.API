@@ -73,6 +73,8 @@ public class OboxSteamDbContext : DbContext
 
     // ── 9. Payments ──
     public DbSet<Payment> Payments { get; set; }
+    public DbSet<PaymentRequest> PaymentRequests { get; set; }
+    public DbSet<Invoice> Invoices { get; set; }
 
     // ── 10. Reviews ──
     public DbSet<ProgramReview> ProgramReviews { get; set; }
@@ -125,6 +127,8 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<MediaAsset>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<HighlightVideo>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Payment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<PaymentRequest>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Invoice>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramReview>().HasQueryFilter(e => !e.IsDeleted);
 
         // =============================================
@@ -558,11 +562,54 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
-        // PAYMENT (Unique code)
+        // PAYMENT (Unique code + PaidBy FK)
         // =============================================
         modelBuilder.Entity<Payment>(entity =>
         {
             entity.HasIndex(p => p.Code).IsUnique();
+
+            entity.HasOne(p => p.PaidBy)
+                .WithMany(u => u.PaidPayments)
+                .HasForeignKey(p => p.PaidById)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(p => p.Student)
+                .WithMany(u => u.Payments)
+                .HasForeignKey(p => p.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // PAYMENT REQUEST (token-based parent-pay-for-child)
+        // =============================================
+        modelBuilder.Entity<PaymentRequest>(entity =>
+        {
+            entity.HasIndex(pr => pr.Token).IsUnique();
+
+            entity.HasOne(pr => pr.Student)
+                .WithMany(u => u.SentPaymentRequests)
+                .HasForeignKey(pr => pr.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(pr => pr.Parent)
+                .WithMany(u => u.ReceivedPaymentRequests)
+                .HasForeignKey(pr => pr.ParentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(pr => pr.Program)
+                .WithMany(p => p.PaymentRequests)
+                .HasForeignKey(pr => pr.ProgramId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(pr => pr.ProgramEnrollment)
+                .WithMany()
+                .HasForeignKey(pr => pr.ProgramEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(pr => pr.Payment)
+                .WithMany()
+                .HasForeignKey(pr => pr.PaymentId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // =============================================
@@ -684,6 +731,30 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(u => u.ProgramReviews)
                 .HasForeignKey(pr => pr.StudentId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // INVOICE (1:1 with Payment, auto-created on success)
+        // =============================================
+        modelBuilder.Entity<Invoice>(entity =>
+        {
+            entity.HasIndex(i => i.InvoiceNumber).IsUnique();
+
+            // 1:1 with Payment — Payment is the principal
+            entity.HasOne(i => i.Payment)
+                .WithOne(p => p.Invoice)
+                .HasForeignKey<Invoice>(i => i.PaymentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // FK to the user who was billed (parent or student)
+            entity.HasOne(i => i.IssuedTo)
+                .WithMany(u => u.Invoices)
+                .HasForeignKey(i => i.IssuedToId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Precision for financial amounts
+            entity.Property(i => i.SubTotal).HasPrecision(18, 2);
+            entity.Property(i => i.TotalAmount).HasPrecision(18, 2);
         });
     }
 }

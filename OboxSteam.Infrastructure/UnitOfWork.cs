@@ -73,6 +73,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<BankQuestionOption> BankQuestionOptions => Repository<BankQuestionOption>();
     public IGenericRepository<QuizAnswer> QuizAnswers => Repository<QuizAnswer>();
     public IGenericRepository<ProgramReview> ProgramReviews => Repository<ProgramReview>();
+    public IGenericRepository<PaymentRequest> PaymentRequests => Repository<PaymentRequest>();
+    public IGenericRepository<Invoice> Invoices => Repository<Invoice>();
     public async Task<int> SaveChangesAsync()
     {
         return await _dbContext.SaveChangesAsync();
