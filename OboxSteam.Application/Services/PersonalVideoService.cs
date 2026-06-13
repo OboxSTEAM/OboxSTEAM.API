@@ -517,35 +517,48 @@ public class PersonalVideoService : IPersonalVideoService
             return new ClipInput(s3Key, new List<TimeClip>()); // empty → skipped by caller
         }
 
-        // Gemini outputs might overlap or be unordered. MediaConvert requires strictly ascending,
-        // non-overlapping regions. We must sort and merge them before converting to TimeClips.
-        var sortedMatches = matchResult.MatchedSegments.OrderBy(s => s.StartMs).ToList();
-        var mergedMatches = new List<MatchedSegment>();
-        foreach (var seg in sortedMatches)
+        // 1. Convert to TimeClips first, safely ignoring EndMs < StartMs hallucinations
+        var timeClipsRaw = matchResult.MatchedSegments
+            .Where(s => s.StartMs < s.EndMs) // basic sanity check
+            .Select(seg => new TimeClip(MsToTimecode(seg.StartMs), MsToTimecode(seg.EndMs)))
+            .Where(t => t.StartTimecode != t.EndTimecode) // drop 0-duration clips
+            .OrderBy(t => t.StartTimecode)
+            .ToList();
+
+        // 2. Merge overlapping or identical StartTimecodes
+        var timeClips = new List<TimeClip>();
+        foreach (var tc in timeClipsRaw)
         {
-            if (mergedMatches.Count == 0)
+            if (timeClips.Count == 0)
             {
-                mergedMatches.Add(seg);
+                timeClips.Add(tc);
                 continue;
             }
 
-            var last = mergedMatches[^1];
-            // Merge if they overlap or are very close (< 1000ms gap) to avoid equal timecodes
-            if (seg.StartMs - last.EndMs <= MergeGapMs)
+            var last = timeClips[^1];
+            // If the start timecode is equal to or earlier than the previous one's start
+            if (string.Compare(tc.StartTimecode, last.StartTimecode) <= 0)
             {
-                mergedMatches[^1] = last with { EndMs = Math.Max(last.EndMs, seg.EndMs) };
+                // Merge them by extending the EndTimecode of the last clip if needed
+                if (string.Compare(tc.EndTimecode, last.EndTimecode) > 0)
+                {
+                    timeClips[^1] = last with { EndTimecode = tc.EndTimecode };
+                }
+            }
+            // If it overlaps with the previous clip's end time
+            else if (string.Compare(tc.StartTimecode, last.EndTimecode) <= 0)
+            {
+                // Extend end time
+                if (string.Compare(tc.EndTimecode, last.EndTimecode) > 0)
+                {
+                    timeClips[^1] = last with { EndTimecode = tc.EndTimecode };
+                }
             }
             else
             {
-                mergedMatches.Add(seg);
+                timeClips.Add(tc);
             }
         }
-
-        var timeClips = mergedMatches
-            .Select(seg => new TimeClip(MsToTimecode(seg.StartMs), MsToTimecode(seg.EndMs)))
-            // Extra safety: drop if rounding makes start == end
-            .Where(t => t.StartTimecode != t.EndTimecode)
-            .ToList();
 
         _logger.LogInformation(
             "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Reasoning: {Reasoning}",

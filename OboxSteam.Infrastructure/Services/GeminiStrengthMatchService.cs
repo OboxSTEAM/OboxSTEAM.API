@@ -114,9 +114,10 @@ public class GeminiStrengthMatchService : IStrengthMatchService
                 .Select(p => p.Text)
             ?? Enumerable.Empty<string>());
 
-        _logger.LogDebug("GeminiStrengthMatchService: rawJson length={Len}, parts={Parts}",
+        _logger.LogInformation("GeminiStrengthMatchService: rawJson length={Len}, parts={Parts}, finishReason={Reason}",
             rawJson.Length,
-            response.Candidates?.FirstOrDefault()?.Content?.Parts?.Count ?? 0);
+            response.Candidates?.FirstOrDefault()?.Content?.Parts?.Count ?? 0,
+            response.Candidates?.FirstOrDefault()?.FinishReason);
 
         if (string.IsNullOrWhiteSpace(rawJson))
         {
