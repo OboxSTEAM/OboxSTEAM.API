@@ -83,7 +83,11 @@ public class GeminiStrengthMatchService : IStrengthMatchService
                 Required = ["matched_segments", "reasoning"]
             },
             Temperature = 0f,       // deterministic — consistent matching
-            MaxOutputTokens = 8192  // 2048 was too low → JSON got truncated mid-response
+            MaxOutputTokens = 8192, // safety net against long responses
+            // gemini-2.5-flash enables thinking by default — thinking tokens also count
+            // against MaxOutputTokens, leaving too few tokens for the actual JSON output.
+            // This is a simple label-matching task; thinking is unnecessary overhead.
+            ThinkingConfig = new ThinkingConfig { ThinkingBudget = 0 }
         };
 
         GenerateContentResponse response;
