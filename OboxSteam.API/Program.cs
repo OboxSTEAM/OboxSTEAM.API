@@ -1,6 +1,7 @@
 using Amazon.Rekognition;
 using Amazon.Rekognition.Model;
 using OboxSteam.API.Architecture;
+using OboxSteam.API.Json;
 using OboxSteam.API.Middlewares;
 using OboxSteam.Application.Interfaces;
 using SwaggerThemes;
@@ -68,6 +69,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
+        options.JsonSerializerOptions.Converters.Add(new VietnamDateTimeJsonConverterFactory());
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
