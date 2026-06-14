@@ -1,0 +1,182 @@
+using OboxSteam.Application.Utils;
+using OboxSteam.Domain.Entities;
+using OboxSteam.Domain.Enums;
+using OboxSteam.Domain.Interfaces;
+
+namespace OboxSteam.Application.Validation;
+
+/// <summary>
+/// Class enrollment business rules and input validation.
+/// </summary>
+public static class ClassEnrollmentValidator
+{
+    public const string EnrollForbiddenMessage = "Only students can enroll in a class.";
+    public const string ViewListForbiddenMessage = "You do not have permission to view class enrollments.";
+    public const string ViewEnrollmentForbiddenMessage = "You do not have permission to view this enrollment.";
+
+    public static void ValidateProgramEnrollmentIdRequired(Guid programEnrollmentId)
+    {
+        if (programEnrollmentId == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("ProgramEnrollmentId is required.");
+        }
+    }
+
+    public static void ValidateClassIdRequired(Guid classId)
+    {
+        if (classId == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("ClassId is required.");
+        }
+    }
+
+    public static ProgramEnrollment ValidateProgramEnrollmentExists(
+        ProgramEnrollment? programEnrollment,
+        Guid programEnrollmentId)
+    {
+        if (programEnrollment == null || programEnrollment.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Program enrollment with id '{programEnrollmentId}' not found.");
+        }
+
+        return programEnrollment;
+    }
+
+    public static void ValidateProgramEnrollmentBelongsToStudent(
+        ProgramEnrollment programEnrollment,
+        Guid studentId)
+    {
+        if (programEnrollment.StudentId != studentId)
+        {
+            throw ErrorHelper.Forbidden("This program enrollment does not belong to the current student.");
+        }
+    }
+
+    public static void ValidateProgramEnrollmentActiveForEnroll(ProgramEnrollment programEnrollment)
+    {
+        if (programEnrollment.Status != EnrollmentStatus.Active)
+        {
+            throw ErrorHelper.BadRequest("Program enrollment must be active to enroll in a class.");
+        }
+    }
+
+    public static Class ValidateClassExists(Class? classEntity, Guid classId)
+    {
+        ClassValidator.ValidateClassExists(classEntity, classId);
+        return classEntity!;
+    }
+
+    public static void ValidateClassBelongsToProgram(Class classEntity, Guid programId)
+    {
+        if (classEntity.ProgramId != programId)
+        {
+            throw ErrorHelper.BadRequest("Class does not belong to the enrolled program.");
+        }
+    }
+
+    public static void ValidateClassOpenForEnrollment(Class classEntity)
+    {
+        if (classEntity.Status is not (ClassStatus.Open or ClassStatus.InProgress))
+        {
+            throw ErrorHelper.BadRequest(
+                $"Class '{classEntity.Code}' is not open for enrollment (status: {classEntity.Status}).");
+        }
+    }
+
+    public static void ValidateNoActiveClassEnrollmentForProgram(ClassEnrollment? activeEnrollment)
+    {
+        if (activeEnrollment != null)
+        {
+            throw ErrorHelper.Conflict("You already have an active class enrollment for this program.");
+        }
+    }
+
+    public static ClassEnrollment ValidateClassEnrollmentExists(
+        ClassEnrollment? enrollment,
+        Guid enrollmentId)
+    {
+        if (enrollment == null || enrollment.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Class enrollment with id '{enrollmentId}' not found.");
+        }
+
+        return enrollment;
+    }
+
+    public static void ValidateClassEnrollmentBelongsToStudent(
+        ClassEnrollment enrollment,
+        Guid studentId)
+    {
+        if (enrollment.StudentId != studentId)
+        {
+            throw ErrorHelper.Forbidden("This class enrollment does not belong to the current student.");
+        }
+    }
+
+    public static void ValidateEnrollmentActive(ClassEnrollment enrollment)
+    {
+        if (enrollment.Status != ClassEnrollmentStatus.Active)
+        {
+            throw ErrorHelper.BadRequest("Only an active class enrollment can be transferred.");
+        }
+    }
+
+    public static void ValidateTransferTargetDifferent(Guid currentClassId, Guid targetClassId)
+    {
+        if (currentClassId == targetClassId)
+        {
+            throw ErrorHelper.BadRequest("Target class must differ from the current class.");
+        }
+    }
+
+    public static void ValidateNotAlreadyEnrolledInClass(ClassEnrollment? existingEnrollment, Guid currentEnrollmentId)
+    {
+        if (existingEnrollment != null && existingEnrollment.Id != currentEnrollmentId)
+        {
+            throw ErrorHelper.Conflict("You are already enrolled in the target class.");
+        }
+    }
+
+    public static async Task ValidateClassHasCapacityAsync(
+        IUnitOfWork unitOfWork,
+        Guid classId,
+        int maxCapacity)
+    {
+        var activeEnrollments = await unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ClassId == classId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        if (activeEnrollments.Count >= maxCapacity)
+        {
+            throw ErrorHelper.Conflict("Class has reached maximum capacity.");
+        }
+    }
+
+    public static async Task ValidateLateJoinAllowedAsync(IUnitOfWork unitOfWork, Class classEntity)
+    {
+        var now = DateTime.UtcNow;
+
+        var nextAssignmentWindow = unitOfWork.ClassSessions
+            .GetQueryable()
+            .Where(cs => cs.ClassId == classEntity.Id
+                         && cs.SessionKind == SessionKind.AssignmentWindow
+                         && cs.StartTime > now
+                         && cs.Status != ClassSessionStatus.Cancelled
+                         && !cs.IsDeleted)
+            .OrderBy(cs => cs.StartTime)
+            .FirstOrDefault();
+
+        if (nextAssignmentWindow == null)
+        {
+            return;
+        }
+
+        var hoursUntil = (nextAssignmentWindow.StartTime - now).TotalHours;
+        if (hoursUntil < classEntity.MinHoursBeforeAssignmentJoin)
+        {
+            throw ErrorHelper.BadRequest(
+                $"Cannot join within {classEntity.MinHoursBeforeAssignmentJoin} hours of the next assignment window.");
+        }
+    }
+}

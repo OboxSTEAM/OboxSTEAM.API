@@ -1,0 +1,512 @@
+using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.ClassDTO;
+using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
+using OboxSteam.Domain.Entities;
+using OboxSteam.Domain.Enums;
+using OboxSteam.Domain.Interfaces;
+
+namespace OboxSteam.Application.Services;
+
+public sealed class ClassService : IClassService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<ClassService> _logger;
+
+    public ClassService(IUnitOfWork unitOfWork, ILogger<ClassService> logger)
+    {
+        _unitOfWork = unitOfWork;
+        _logger = logger;
+    }
+
+    public async Task<Pagination<ClassResponseDto>> GetAllClassesAsync(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        int page,
+        int pageSize,
+        Guid? programId = null,
+        ClassStatus? status = null,
+        Guid? mentorId = null)
+    {
+        _logger.LogInformation(
+            "[GetAllClassesAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
+            page, pageSize, search);
+
+        ClassValidator.ValidatePagination(page, pageSize);
+
+        var query = _unitOfWork.Classes
+            .GetQueryable()
+            .Where(c => !c.IsDeleted);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var lowerSearch = search.ToLower();
+            query = query.Where(c =>
+                c.Name.ToLower().Contains(lowerSearch) ||
+                c.Code.ToLower().Contains(lowerSearch));
+        }
+
+        if (programId.HasValue)
+        {
+            query = query.Where(c => c.ProgramId == programId.Value);
+        }
+
+        if (status.HasValue)
+        {
+            query = query.Where(c => c.Status == status.Value);
+        }
+
+        if (mentorId.HasValue)
+        {
+            query = query.Where(c => c.MentorId == mentorId.Value);
+        }
+
+        query = sortBy?.ToLower() switch
+        {
+            "name" => isDescending ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
+            "code" => isDescending ? query.OrderByDescending(c => c.Code) : query.OrderBy(c => c.Code),
+            "startdate" => isDescending ? query.OrderByDescending(c => c.StartDate) : query.OrderBy(c => c.StartDate),
+            "enddate" => isDescending ? query.OrderByDescending(c => c.EndDate) : query.OrderBy(c => c.EndDate),
+            "status" => isDescending ? query.OrderByDescending(c => c.Status) : query.OrderBy(c => c.Status),
+            "maxcapacity" => isDescending ? query.OrderByDescending(c => c.MaxCapacity) : query.OrderBy(c => c.MaxCapacity),
+            "createdat" => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
+            _ => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
+        };
+
+        var totalCount = query.Count();
+
+        var items = query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var dtos = items.Select(c => new ClassResponseDto
+        {
+            Id = c.Id,
+            Code = c.Code,
+            Name = c.Name,
+            ProgramId = c.ProgramId,
+            MentorId = c.MentorId,
+            StartDate = c.StartDate,
+            EndDate = c.EndDate,
+            MaxCapacity = c.MaxCapacity,
+            Status = c.Status,
+            MinHoursBeforeAssignmentJoin = c.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = c.ScheduleSummary,
+            CreatedAt = c.CreatedAt,
+            UpdatedAt = c.UpdatedAt,
+        }).ToList();
+
+        _logger.LogInformation("[GetAllClassesAsync] Retrieved {Count}/{Total} classes.", dtos.Count, totalCount);
+
+        return new Pagination<ClassResponseDto>(dtos, totalCount, page, pageSize);
+    }
+
+    public async Task<ClassResponseDto> GetClassByIdAsync(Guid id)
+    {
+        _logger.LogInformation("[GetClassByIdAsync] Fetching class with Id: {Id}", id);
+
+        var entity = await _unitOfWork.Classes.GetByIdAsync(id);
+        ClassValidator.ValidateClassExists(entity, id);
+
+        _logger.LogInformation("[GetClassByIdAsync] Class with Id {Id} retrieved successfully.", id);
+
+        return new ClassResponseDto
+        {
+            Id = entity!.Id,
+            Code = entity.Code,
+            Name = entity.Name,
+            ProgramId = entity.ProgramId,
+            MentorId = entity.MentorId,
+            StartDate = entity.StartDate,
+            EndDate = entity.EndDate,
+            MaxCapacity = entity.MaxCapacity,
+            Status = entity.Status,
+            MinHoursBeforeAssignmentJoin = entity.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = entity.ScheduleSummary,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt,
+        };
+    }
+
+    public async Task<ClassResponseDto> CreateClassAsync(CreateClassRequestDto request)
+    {
+        _logger.LogInformation("[CreateClassAsync] Start creating class: {Name} (Code: {Code})",
+            request.Name, request.Code);
+
+        ClassValidator.ValidateCreateRequest(request);
+
+        var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId);
+        ClassValidator.ValidateProgramExists(program, request.ProgramId);
+
+        var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId);
+        ClassValidator.ValidateMentorExists(mentor, request.MentorId);
+
+        var duplicate = await _unitOfWork.Classes.FirstOrDefaultAsync(
+            c => c.Code.ToLower() == request.Code.Trim().ToLower() && !c.IsDeleted);
+
+        if (duplicate != null)
+        {
+            _logger.LogWarning("[CreateClassAsync] Class with code '{Code}' already exists.", request.Code);
+            throw ErrorHelper.Conflict($"Class with code '{request.Code}' already exists.");
+        }
+
+        var entity = new Class
+        {
+            Code = request.Code.Trim(),
+            Name = request.Name.Trim(),
+            ProgramId = request.ProgramId,
+            MentorId = request.MentorId,
+            StartDate = request.StartDate,
+            EndDate = request.EndDate,
+            MaxCapacity = request.MaxCapacity,
+            Status = ClassStatus.Draft,
+            MinHoursBeforeAssignmentJoin = request.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = request.ScheduleSummary?.Trim(),
+        };
+
+        await _unitOfWork.Classes.AddAsync(entity);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[CreateClassAsync] Class '{Code}' created with Id {Id}.", entity.Code, entity.Id);
+
+        return new ClassResponseDto
+        {
+            Id = entity.Id,
+            Code = entity.Code,
+            Name = entity.Name,
+            ProgramId = entity.ProgramId,
+            MentorId = entity.MentorId,
+            StartDate = entity.StartDate,
+            EndDate = entity.EndDate,
+            MaxCapacity = entity.MaxCapacity,
+            Status = entity.Status,
+            MinHoursBeforeAssignmentJoin = entity.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = entity.ScheduleSummary,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt,
+        };
+    }
+
+    public async Task<ClassResponseDto> UpdateClassAsync(Guid id, UpdateClassRequestDto request)
+    {
+        _logger.LogInformation("[UpdateClassAsync] Attempting to update class with Id: {Id}", id);
+
+        var entity = await _unitOfWork.Classes.GetByIdAsync(id);
+        ClassValidator.ValidateClassExists(entity, id);
+        var classEntity = entity!;
+
+        ClassValidator.ValidateNotUpdatingStatusViaPatch(request.Status);
+
+        if (!string.IsNullOrWhiteSpace(request.Code) &&
+            !classEntity.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            var duplicate = await _unitOfWork.Classes.FirstOrDefaultAsync(
+                c => c.Code.ToLower() == request.Code.Trim().ToLower() &&
+                     !c.IsDeleted &&
+                     c.Id != id);
+
+            if (duplicate != null)
+            {
+                _logger.LogWarning("[UpdateClassAsync] Code '{Code}' is already in use.", request.Code);
+                throw ErrorHelper.Conflict($"Class with code '{request.Code}' already exists.");
+            }
+        }
+
+        var isUpdated = false;
+
+        if (!string.IsNullOrWhiteSpace(request.Code) && classEntity.Code != request.Code.Trim())
+        {
+            classEntity.Code = request.Code.Trim();
+            isUpdated = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Name) && classEntity.Name != request.Name.Trim())
+        {
+            classEntity.Name = request.Name.Trim();
+            isUpdated = true;
+        }
+
+        if (request.ProgramId.HasValue && classEntity.ProgramId != request.ProgramId.Value)
+        {
+            var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId.Value);
+            ClassValidator.ValidateProgramExists(program, request.ProgramId.Value);
+            classEntity.ProgramId = request.ProgramId.Value;
+            isUpdated = true;
+        }
+
+        if (request.MentorId.HasValue && classEntity.MentorId != request.MentorId.Value)
+        {
+            var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId.Value);
+            ClassValidator.ValidateMentorExists(mentor, request.MentorId.Value);
+            classEntity.MentorId = request.MentorId.Value;
+            isUpdated = true;
+        }
+
+        var startDate = request.StartDate ?? classEntity.StartDate;
+        var endDate = request.EndDate ?? classEntity.EndDate;
+
+        if (request.StartDate.HasValue || request.EndDate.HasValue)
+        {
+            ClassValidator.ValidateDateRange(startDate, endDate);
+            classEntity.StartDate = startDate;
+            classEntity.EndDate = endDate;
+            isUpdated = true;
+        }
+
+        if (request.MaxCapacity.HasValue && classEntity.MaxCapacity != request.MaxCapacity.Value)
+        {
+            ClassValidator.ValidateMaxCapacity(request.MaxCapacity.Value);
+
+            var enrolledCount = await _unitOfWork.ClassEnrollments.GetAllAsync(
+                e => e.ClassId == id &&
+                     !e.IsDeleted &&
+                     e.Status == ClassEnrollmentStatus.Active);
+
+            ClassValidator.ValidateCapacityNotBelowEnrollment(request.MaxCapacity.Value, enrolledCount.Count);
+            classEntity.MaxCapacity = request.MaxCapacity.Value;
+            isUpdated = true;
+        }
+
+        if (request.MinHoursBeforeAssignmentJoin.HasValue &&
+            classEntity.MinHoursBeforeAssignmentJoin != request.MinHoursBeforeAssignmentJoin.Value)
+        {
+            ClassValidator.ValidateMinHoursBeforeAssignmentJoin(request.MinHoursBeforeAssignmentJoin.Value);
+            classEntity.MinHoursBeforeAssignmentJoin = request.MinHoursBeforeAssignmentJoin.Value;
+            isUpdated = true;
+        }
+
+        if (request.ScheduleSummary != null && classEntity.ScheduleSummary != request.ScheduleSummary.Trim())
+        {
+            classEntity.ScheduleSummary = string.IsNullOrWhiteSpace(request.ScheduleSummary)
+                ? null
+                : request.ScheduleSummary.Trim();
+            isUpdated = true;
+        }
+
+        if (!isUpdated)
+        {
+            _logger.LogInformation("[UpdateClassAsync] No changes detected for class {Id}.", id);
+            return new ClassResponseDto
+            {
+                Id = classEntity.Id,
+                Code = classEntity.Code,
+                Name = classEntity.Name,
+                ProgramId = classEntity.ProgramId,
+                MentorId = classEntity.MentorId,
+                StartDate = classEntity.StartDate,
+                EndDate = classEntity.EndDate,
+                MaxCapacity = classEntity.MaxCapacity,
+                Status = classEntity.Status,
+                MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
+                ScheduleSummary = classEntity.ScheduleSummary,
+                CreatedAt = classEntity.CreatedAt,
+                UpdatedAt = classEntity.UpdatedAt,
+            };
+        }
+
+        await _unitOfWork.Classes.Update(classEntity);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[UpdateClassAsync] Class {Id} updated successfully.", id);
+
+        return new ClassResponseDto
+        {
+            Id = classEntity.Id,
+            Code = classEntity.Code,
+            Name = classEntity.Name,
+            ProgramId = classEntity.ProgramId,
+            MentorId = classEntity.MentorId,
+            StartDate = classEntity.StartDate,
+            EndDate = classEntity.EndDate,
+            MaxCapacity = classEntity.MaxCapacity,
+            Status = classEntity.Status,
+            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = classEntity.ScheduleSummary,
+            CreatedAt = classEntity.CreatedAt,
+            UpdatedAt = classEntity.UpdatedAt,
+        };
+    }
+
+    public async Task<ClassResponseDto> OpenClassAsync(Guid id)
+    {
+        _logger.LogInformation("[OpenClassAsync] class {Id} -> {Status}", id, ClassStatus.Open);
+
+        var entity = await _unitOfWork.Classes.GetByIdAsync(id);
+        ClassValidator.ValidateTransitionToStatus(entity, id, ClassStatus.Open);
+        var classEntity = entity!;
+
+        classEntity.Status = ClassStatus.Open;
+
+        await _unitOfWork.Classes.Update(classEntity);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[OpenClassAsync] class {Id} is now Open.", id);
+
+        return new ClassResponseDto
+        {
+            Id = classEntity.Id,
+            Code = classEntity.Code,
+            Name = classEntity.Name,
+            ProgramId = classEntity.ProgramId,
+            MentorId = classEntity.MentorId,
+            StartDate = classEntity.StartDate,
+            EndDate = classEntity.EndDate,
+            MaxCapacity = classEntity.MaxCapacity,
+            Status = classEntity.Status,
+            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = classEntity.ScheduleSummary,
+            CreatedAt = classEntity.CreatedAt,
+            UpdatedAt = classEntity.UpdatedAt,
+        };
+    }
+
+    public async Task<ClassResponseDto> StartClassAsync(Guid id)
+    {
+        _logger.LogInformation("[StartClassAsync] class {Id} -> {Status}", id, ClassStatus.InProgress);
+
+        var entity = await _unitOfWork.Classes.GetByIdAsync(id);
+        ClassValidator.ValidateTransitionToStatus(entity, id, ClassStatus.InProgress);
+        var classEntity = entity!;
+
+        classEntity.Status = ClassStatus.InProgress;
+
+        await _unitOfWork.Classes.Update(classEntity);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[StartClassAsync] class {Id} is now InProgress.", id);
+
+        return new ClassResponseDto
+        {
+            Id = classEntity.Id,
+            Code = classEntity.Code,
+            Name = classEntity.Name,
+            ProgramId = classEntity.ProgramId,
+            MentorId = classEntity.MentorId,
+            StartDate = classEntity.StartDate,
+            EndDate = classEntity.EndDate,
+            MaxCapacity = classEntity.MaxCapacity,
+            Status = classEntity.Status,
+            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = classEntity.ScheduleSummary,
+            CreatedAt = classEntity.CreatedAt,
+            UpdatedAt = classEntity.UpdatedAt,
+        };
+    }
+
+    public async Task TryAutoStartClassIfReadyAsync(Guid classId)
+    {
+        var entity = await _unitOfWork.Classes.GetByIdAsync(classId);
+        if (entity == null || entity.IsDeleted || entity.Status != ClassStatus.Open)
+        {
+            return;
+        }
+
+        var activeEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ClassId == classId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        var now = DateTime.UtcNow;
+        if (!ClassValidator.IsReadyForAutoStart(entity, activeEnrollments.Count, now))
+        {
+            return;
+        }
+
+        entity.Status = ClassStatus.InProgress;
+
+        await _unitOfWork.Classes.Update(entity);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[TryAutoStartClassIfReadyAsync] class {Id} auto-started to InProgress (capacity {Count}/{Max}, start {StartDate}).",
+            classId,
+            activeEnrollments.Count,
+            entity.MaxCapacity,
+            entity.StartDate);
+    }
+
+    public async Task<int> AutoStartEligibleOpenClassesAsync()
+    {
+        var now = DateTime.UtcNow;
+
+        var openClasses = await _unitOfWork.Classes.GetAllAsync(
+            c => c.Status == ClassStatus.Open
+                 && !c.IsDeleted
+                 && c.StartDate <= now);
+
+        if (openClasses.Count == 0)
+        {
+            return 0;
+        }
+
+        var startedCount = 0;
+
+        foreach (var classEntity in openClasses)
+        {
+            var activeEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+                ce => ce.ClassId == classEntity.Id
+                      && ce.Status == ClassEnrollmentStatus.Active
+                      && !ce.IsDeleted);
+
+            if (!ClassValidator.IsReadyForAutoStart(classEntity, activeEnrollments.Count, now))
+            {
+                continue;
+            }
+
+            classEntity.Status = ClassStatus.InProgress;
+            await _unitOfWork.Classes.Update(classEntity);
+            startedCount++;
+
+            _logger.LogInformation(
+                "[AutoStartEligibleOpenClassesAsync] class {Id} auto-started to InProgress (capacity {Count}/{Max}, start {StartDate}).",
+                classEntity.Id,
+                activeEnrollments.Count,
+                classEntity.MaxCapacity,
+                classEntity.StartDate);
+        }
+
+        if (startedCount > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        return startedCount;
+    }
+
+    public async Task<ClassResponseDto> CompleteClassAsync(Guid id)
+    {
+        _logger.LogInformation("[CompleteClassAsync] class {Id} -> {Status}", id, ClassStatus.Completed);
+
+        var entity = await _unitOfWork.Classes.GetByIdAsync(id);
+        ClassValidator.ValidateTransitionToStatus(entity, id, ClassStatus.Completed);
+        var classEntity = entity!;
+
+        classEntity.Status = ClassStatus.Completed;
+
+        await _unitOfWork.Classes.Update(classEntity);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[CompleteClassAsync] class {Id} is now Completed.", id);
+
+        return new ClassResponseDto
+        {
+            Id = classEntity.Id,
+            Code = classEntity.Code,
+            Name = classEntity.Name,
+            ProgramId = classEntity.ProgramId,
+            MentorId = classEntity.MentorId,
+            StartDate = classEntity.StartDate,
+            EndDate = classEntity.EndDate,
+            MaxCapacity = classEntity.MaxCapacity,
+            Status = classEntity.Status,
+            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = classEntity.ScheduleSummary,
+            CreatedAt = classEntity.CreatedAt,
+            UpdatedAt = classEntity.UpdatedAt,
+        };
+    }
+}
