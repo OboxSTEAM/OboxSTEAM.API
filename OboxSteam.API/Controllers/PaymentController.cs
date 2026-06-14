@@ -112,29 +112,6 @@ public class PaymentController : ControllerBase
         return Ok();
     }
 
-    // =========================================================================
-    // MOMO WEBHOOK
-    // POST /api/payments/momo-webhook  [AllowAnonymous]
-    // =========================================================================
-
-    [HttpPost("momo-webhook")]
-    [AllowAnonymous]
-    [SwaggerOperation(
-        Summary = "MoMo IPN callback",
-        Description = "Receives IPN callbacks from MoMo after payment completes. Signature is verified via HMAC-SHA256.")]
-    [ProducesResponseType(200)]
-    [ProducesResponseType(400)]
-    public async Task<IActionResult> MomoWebhook([FromForm] Dictionary<string, string> parameters)
-    {
-        // MoMo sends IPN as form data — merge query params + form data
-        foreach (var key in Request.Query.Keys)
-        {
-            parameters.TryAdd(key, Request.Query[key]!);
-        }
-
-        await _paymentService.HandleMomoCallback(parameters);
-        return Ok(new { message = "ok" });
-    }
 
     // =========================================================================
     // GET payment by ID
