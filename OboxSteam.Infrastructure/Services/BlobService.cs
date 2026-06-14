@@ -22,7 +22,7 @@ public class BlobService : IBlobService
     {
         _s3Client = s3Client;
         _logger = logger;
-        _bucketName = Environment.GetEnvironmentVariable("AWS_S3_BUCKET") ?? "oboxsteam-bucket";
+        _bucketName = Environment.GetEnvironmentVariable("AWS_S3_BUCKET") ?? "oboxsteam-bucket-main";
         _region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
         _transferUtility = new Amazon.S3.Transfer.TransferUtility(_s3Client);
     }

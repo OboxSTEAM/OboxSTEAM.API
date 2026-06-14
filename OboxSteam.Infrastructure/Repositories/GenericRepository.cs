@@ -160,7 +160,7 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
     {
         try
         {
-            var entities = await _dbSet.Where(predicate).ToListAsync();
+            var entities = await _dbSet.IgnoreQueryFilters().Where(predicate).ToListAsync();
             if (entities.Any())
             {
                 _dbSet.RemoveRange(entities);
