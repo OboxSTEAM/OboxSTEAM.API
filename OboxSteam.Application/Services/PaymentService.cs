@@ -195,6 +195,16 @@ public class PaymentService : IPaymentService
         paymentRequest.Status = PaymentRequestStatus.Accepted;
         await _unitOfWork.SaveChangesAsync();
 
+        var parent = await _unitOfWork.Users.GetByIdAsync(paymentRequest.ParentId)
+            ?? throw ErrorHelper.NotFound("Parent not found.");
+
+        var parentAccessToken = JwtUtils.GenerateJwtToken(
+            parent.Id,
+            parent.Email,
+            parent.Role.ToString(),
+            _configuration,
+            TimeSpan.FromMinutes(30));
+
         _logger.LogInformation(
             "[CreateParentCheckout] Parent {ParentId} created checkout for student {StudentId}, program {ProgramId}. Payment={PaymentId}",
             paymentRequest.ParentId, paymentRequest.StudentId, paymentRequest.ProgramId, payment.Id);
@@ -203,7 +213,8 @@ public class PaymentService : IPaymentService
         {
             PaymentId = payment.Id,
             EnrollmentId = paymentRequest.ProgramEnrollmentId,
-            CheckoutUrl = checkoutUrl
+            CheckoutUrl = checkoutUrl,
+            AccessToken = parentAccessToken
         };
     }
 
