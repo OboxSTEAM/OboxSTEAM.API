@@ -16,9 +16,9 @@ namespace OboxSteam.Infrastructure.Services;
 public class GeminiStrengthMatchService : IStrengthMatchService
 {
 
-    // gemini-2.5-flash has a strict 20 requests/day limit on the free tier.
-    // Switching to gemini-1.5-flash which allows 1500 requests/day.
-    private const string ModelId = "gemini-1.5-flash";
+    // gemini-2.0-flash-lite is the recommended free-tier replacement:
+    // it supports structured JSON output and has a high requests/day quota.
+    private const string ModelId = "gemini-2.0-flash-lite";
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -85,11 +85,9 @@ public class GeminiStrengthMatchService : IStrengthMatchService
                 Required = ["matched_segments", "reasoning"]
             },
             Temperature = 0f,       // deterministic — consistent matching
-            MaxOutputTokens = 8192, // safety net against long responses
-            // gemini-2.5-flash enables thinking by default — thinking tokens also count
-            // against MaxOutputTokens, leaving too few tokens for the actual JSON output.
-            // This is a simple label-matching task; thinking is unnecessary overhead.
-            ThinkingConfig = new ThinkingConfig { ThinkingBudget = 0 }
+            MaxOutputTokens = 8192  // safety net against long responses
+            // Note: ThinkingConfig is only applicable to Gemini 2.5+ thinking models.
+            // gemini-2.0-flash-lite does not support it — omit to avoid 400 errors.
         };
 
         GenerateContentResponse response;
