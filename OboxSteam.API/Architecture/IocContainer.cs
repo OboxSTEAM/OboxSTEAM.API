@@ -9,7 +9,6 @@ using Microsoft.OpenApi.Models;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
-using OboxSteam.API.Swagger;
 using OboxSteam.Infrastructure;
 using OboxSteam.Infrastructure.Commons;
 using OboxSteam.Infrastructure.Persistence;
@@ -309,7 +308,6 @@ public static class IocContainer
 
             // Add file upload operation filter
             c.OperationFilter<FileUploadOperationFilter>();
-            c.SchemaFilter<SwaggerDateTimeSchemaFilter>();
         });
 
         return services;
