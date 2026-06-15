@@ -5,6 +5,7 @@ using Amazon.S3;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
@@ -305,6 +306,18 @@ public static class IocContainer
 
             c.UseAllOfForInheritance();
             c.EnableAnnotations();
+
+            c.MapType<DateTime>(() => new OpenApiSchema
+            {
+                Type = "string",
+                Example = new OpenApiString("15/06/2026 14:30:00")
+            });
+            c.MapType<DateTime?>(() => new OpenApiSchema
+            {
+                Type = "string",
+                Nullable = true,
+                Example = new OpenApiString("15/06/2026 14:30:00")
+            });
 
             // Add file upload operation filter
             c.OperationFilter<FileUploadOperationFilter>();
