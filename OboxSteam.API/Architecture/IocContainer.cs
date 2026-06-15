@@ -9,6 +9,7 @@ using Microsoft.OpenApi.Models;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
+using OboxSteam.API.Swagger;
 using OboxSteam.Infrastructure;
 using OboxSteam.Infrastructure.Commons;
 using OboxSteam.Infrastructure.Persistence;
@@ -59,6 +60,7 @@ public static class IocContainer
 
         // Background Services
         services.AddHostedService<PendingEnrollmentCleanupService>();
+        services.AddHostedService<OpenClassAutoStartService>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
@@ -175,6 +177,9 @@ public static class IocContainer
         services.AddScoped<IStrengthMatchService, GeminiStrengthMatchService>();
         services.AddScoped<IProgramEnrollmentService, ProgramEnrollmentService>();
         services.AddScoped<IModuleEnrollmentService, ModuleEnrollmentService>();
+        services.AddScoped<IClassEnrollmentService, ClassEnrollmentService>();
+        services.AddScoped<IClassService, ClassService>();
+        services.AddScoped<IClassSessionService, ClassSessionService>();
         services.AddScoped<IQuestionBankService, QuestionBankService>();
         services.AddScoped<IBankQuestionService, BankQuestionService>();
         services.AddScoped<IProgramReviewService, ProgramReviewService>();
@@ -304,6 +309,7 @@ public static class IocContainer
 
             // Add file upload operation filter
             c.OperationFilter<FileUploadOperationFilter>();
+            c.SchemaFilter<SwaggerDateTimeSchemaFilter>();
         });
 
         return services;
