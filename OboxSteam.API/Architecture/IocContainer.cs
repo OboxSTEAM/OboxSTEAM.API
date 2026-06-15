@@ -2,6 +2,9 @@
 using Amazon.MediaConvert;
 using Amazon.Rekognition;
 using Amazon.S3;
+using OpenAI;
+using OpenAI.Chat;
+using System.ClientModel;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -71,7 +74,7 @@ public static class IocContainer
         services.SetupReSendService(configuration);
         services.SetupAwsRekognition();
         services.SetupAwsMediaConvert();
-        services.SetupGemini();
+        services.SetupBedrockMantle();
         services.SetupPaymentGateways(configuration);
 
         return services;
@@ -174,7 +177,7 @@ public static class IocContainer
         services.AddScoped<IExpertService, ExpertService>();
         services.AddScoped<IParentService, ParentService>();
         services.AddScoped<IPersonalVideoService, PersonalVideoService>();
-        services.AddScoped<IStrengthMatchService, GeminiStrengthMatchService>();
+        services.AddScoped<IStrengthMatchService, BedrockMantleStrengthMatchService>();
         services.AddScoped<IProgramEnrollmentService, ProgramEnrollmentService>();
         services.AddScoped<IModuleEnrollmentService, ModuleEnrollmentService>();
         services.AddScoped<IClassEnrollmentService, ClassEnrollmentService>();
@@ -238,13 +241,28 @@ public static class IocContainer
         return services;
     }
 
-    public static IServiceCollection SetupGemini(this IServiceCollection services)
+    public static IServiceCollection SetupBedrockMantle(this IServiceCollection services)
     {
-        var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
-            ?? throw new InvalidOperationException("GEMINI_API_KEY not found in environment variables.");
+        var apiKey = Environment.GetEnvironmentVariable("BEDROCK_API_KEY")
+            ?? throw new InvalidOperationException("BEDROCK_API_KEY not found in environment variables.");
 
-        // Singleton: Client is thread-safe and owns the underlying HttpClient.
-        services.AddSingleton(_ => new Google.GenAI.Client(apiKey: apiKey));
+        // Bedrock Mantle region — defaults to ap-southeast-2 (Sydney).
+        // Supported Mantle regions: us-east-1, us-east-2, us-west-2, ap-southeast-2/3,
+        // ap-south-1, ap-northeast-1, eu-central-1, eu-west-1/2, eu-south-1, eu-north-1.
+        var mantleRegion = Environment.GetEnvironmentVariable("BEDROCK_MANTLE_REGION") ?? "ap-southeast-2";
+        var endpoint = new Uri($"https://bedrock-mantle.{mantleRegion}.api.aws/v1");
+
+        // OpenAI SDK pointed at the Bedrock Mantle OpenAI-compatible endpoint.
+        // Auth via Bedrock API Key (generated in AWS Bedrock console, not IAM).
+        var openAiClient = new OpenAIClient(
+            new ApiKeyCredential(apiKey),
+            new OpenAIClientOptions { Endpoint = endpoint });
+
+        // Moonshot Kimi K2.5 on AWS Bedrock (ap-southeast-2)
+        var chatClient = openAiClient.GetChatClient("moonshotai.kimi-k2.5");
+
+        // Singleton: OpenAIClient / ChatClient are thread-safe.
+        services.AddSingleton(chatClient);
 
         return services;
     }
