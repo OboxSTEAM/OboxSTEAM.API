@@ -1,5 +1,4 @@
 
-using Amazon.BedrockRuntime;
 using Amazon.MediaConvert;
 using Amazon.Rekognition;
 using Amazon.S3;
@@ -61,6 +60,7 @@ public static class IocContainer
 
         // Background Services
         services.AddHostedService<PendingEnrollmentCleanupService>();
+        services.AddHostedService<OpenClassAutoStartService>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
@@ -71,7 +71,7 @@ public static class IocContainer
         services.SetupReSendService(configuration);
         services.SetupAwsRekognition();
         services.SetupAwsMediaConvert();
-        services.SetupAwsBedrock();
+        services.SetupGemini();
         services.SetupPaymentGateways(configuration);
 
         return services;
@@ -174,16 +174,18 @@ public static class IocContainer
         services.AddScoped<IExpertService, ExpertService>();
         services.AddScoped<IParentService, ParentService>();
         services.AddScoped<IPersonalVideoService, PersonalVideoService>();
-        services.AddScoped<IStrengthMatchService, BedrockStrengthMatchService>();
+        services.AddScoped<IStrengthMatchService, GeminiStrengthMatchService>();
         services.AddScoped<IProgramEnrollmentService, ProgramEnrollmentService>();
         services.AddScoped<IModuleEnrollmentService, ModuleEnrollmentService>();
+        services.AddScoped<IClassEnrollmentService, ClassEnrollmentService>();
+        services.AddScoped<IClassService, ClassService>();
+        services.AddScoped<IClassSessionService, ClassSessionService>();
         services.AddScoped<IQuestionBankService, QuestionBankService>();
         services.AddScoped<IBankQuestionService, BankQuestionService>();
         services.AddScoped<IProgramReviewService, ProgramReviewService>();
         services.AddScoped<IAssignmentService, AssignmentService>();
         services.AddScoped<IQuizAttemptService, QuizAttemptService>();
         services.AddScoped<IStripePaymentService, StripePaymentService>();
-        services.AddScoped<IMomoPaymentService, MomoPaymentService>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IInvoiceService, InvoiceService>();
         return services;
@@ -197,22 +199,6 @@ public static class IocContainer
             opts.SecretKey = configuration["STRIPE_SECRET_KEY"] ?? string.Empty;
             opts.PublishableKey = configuration["STRIPE_PUBLISHABLE_KEY"] ?? string.Empty;
             opts.WebhookSecret = configuration["STRIPE_WEBHOOK_SECRET"] ?? string.Empty;
-        });
-
-        services.Configure<OboxSteam.Application.Commons.MomoSettings>(opts =>
-        {
-            opts.PartnerCode = configuration["MOMO_PARTNER_CODE"] ?? string.Empty;
-            opts.AccessKey = configuration["MOMO_ACCESS_KEY"] ?? string.Empty;
-            opts.SecretKey = configuration["MOMO_SECRET_KEY"] ?? string.Empty;
-            opts.ApiEndpoint = configuration["MOMO_API_ENDPOINT"] ?? "https://test-payment.momo.vn/v2/gateway/api";
-            opts.ReturnUrl = configuration["MOMO_RETURN_URL"] ?? string.Empty;
-            opts.NotifyUrl = configuration["MOMO_NOTIFY_URL"] ?? string.Empty;
-        });
-
-        // Named HttpClient for MoMo API calls
-        services.AddHttpClient("momo", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(30);
         });
 
         return services;
@@ -252,20 +238,13 @@ public static class IocContainer
         return services;
     }
 
-    public static IServiceCollection SetupAwsBedrock(this IServiceCollection services)
+    public static IServiceCollection SetupGemini(this IServiceCollection services)
     {
-        var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY")
-            ?? throw new InvalidOperationException("AWS_ACCESS_KEY not found in environment variables.");
-        var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_KEY")
-            ?? throw new InvalidOperationException("AWS_SECRET_KEY not found in environment variables.");
-        var region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
+        var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
+            ?? throw new InvalidOperationException("GEMINI_API_KEY not found in environment variables.");
 
-        // Singleton: reuses the underlying HTTP connection pool for lower latency.
-        services.AddSingleton<IAmazonBedrockRuntime>(_ =>
-            new AmazonBedrockRuntimeClient(
-                accessKey,
-                secretKey,
-                Amazon.RegionEndpoint.GetBySystemName(region)));
+        // Singleton: Client is thread-safe and owns the underlying HttpClient.
+        services.AddSingleton(_ => new Google.GenAI.Client(apiKey: apiKey));
 
         return services;
     }
