@@ -42,12 +42,20 @@ jobs:
                   script: |
                     set -e
                     cd /root/apps/oboxsteam/oboxsteam-be
+                    
                     echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            
-                    # Kéo image api mới về
+                    
+                    echo "Pulling latest image..."
                     docker compose pull obox-backend
-            
-                    # Khởi động lại duy nhất container api
-                    docker compose up -d obox-backend
+                    
+                    echo "Recreating container..."
+                    # Added --force-recreate to ensure Docker drops the old container entirely
+                    docker compose up -d --force-recreate obox-backend
+                    
+                    echo "Cleaning up old images..."
                     docker image prune -af
-                    docker logs --tail 20 obox-backend
+                    
+                    echo "Checking container status and logs..."
+                    sleep 3
+                    docker ps -a --filter name=obox-backend
+                    docker logs --tail 50 obox-backend
