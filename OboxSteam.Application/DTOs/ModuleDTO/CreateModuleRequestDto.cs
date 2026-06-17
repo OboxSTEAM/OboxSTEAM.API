@@ -13,4 +13,5 @@ public class CreateModuleRequestDto
     public bool IsMandatory { get; set; } = true;
     public decimal Price { get; set; }
     public decimal RetakeFee { get; set; }
+    public string[] LearningOutcomes { get; set; } = Array.Empty<string>();
 }

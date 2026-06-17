@@ -199,6 +199,10 @@ public class OboxSteamDbContext : DbContext
         {
             entity.HasIndex(m => m.Code).IsUnique();
 
+            entity.Property(m => m.LearningOutcomes)
+                .HasColumnType("text[]")
+                .HasDefaultValueSql("ARRAY[]::text[]");
+
             entity.HasOne(m => m.PrerequisiteModule)
                 .WithMany()
                 .HasForeignKey(m => m.PrerequisiteModuleId)

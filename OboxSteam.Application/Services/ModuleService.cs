@@ -53,6 +53,7 @@ public class ModuleService : IModuleService
             IsMandatory = module.IsMandatory,
             Price = module.Price,
             RetakeFee = module.RetakeFee,
+            LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
             Courses = module.Courses?
@@ -103,6 +104,7 @@ public class ModuleService : IModuleService
             IsMandatory = module.IsMandatory,
             Price = module.Price,
             RetakeFee = module.RetakeFee,
+            LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
             Courses = module.Courses?
@@ -200,6 +202,7 @@ public class ModuleService : IModuleService
             IsMandatory = module.IsMandatory,
             Price = module.Price,
             RetakeFee = module.RetakeFee,
+            LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
             Courses = coursesByModuleId.TryGetValue(module.Id, out var moduleCourses)
@@ -287,6 +290,7 @@ public class ModuleService : IModuleService
             IsMandatory = request.IsMandatory,
             Price = request.Price,
             RetakeFee = request.RetakeFee,
+            LearningOutcomes = request.LearningOutcomes ?? Array.Empty<string>(),
         };
 
         await _unitOfWork.Modules.AddAsync(module);
@@ -307,6 +311,7 @@ public class ModuleService : IModuleService
             IsMandatory = module.IsMandatory,
             Price = module.Price,
             RetakeFee = module.RetakeFee,
+            LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
         };
@@ -401,6 +406,7 @@ public class ModuleService : IModuleService
                 IsMandatory = module.IsMandatory,
                 Price = module.Price,
                 RetakeFee = module.RetakeFee,
+                LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
                 CreatedAt = module.CreatedAt,
                 UpdatedAt = module.UpdatedAt,
             };
@@ -423,6 +429,7 @@ public class ModuleService : IModuleService
             IsMandatory = module.IsMandatory,
             Price = module.Price,
             RetakeFee = module.RetakeFee,
+            LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
         };

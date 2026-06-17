@@ -33,6 +33,9 @@ public class Module : BaseEntity
     /// <summary>Retake fee if the student fails.</summary>
     public decimal RetakeFee { get; set; }
 
+    /// <summary>What students will learn in this module.</summary>
+    public string[] LearningOutcomes { get; set; } = Array.Empty<string>();
+
     // Navigation
     public ICollection<Course> Courses { get; set; } = new List<Course>();
     public ICollection<Material> Materials { get; set; } = new List<Material>();
