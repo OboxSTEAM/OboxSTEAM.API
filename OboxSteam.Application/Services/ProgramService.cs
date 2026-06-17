@@ -265,6 +265,7 @@ public class ProgramService : IProgramService
                     IsMandatory = m.IsMandatory,
                     Price = m.Price,
                     RetakeFee = m.RetakeFee,
+                    LearningOutcomes = m.LearningOutcomes,
                     CreatedAt = m.CreatedAt,
                     UpdatedAt = m.UpdatedAt,
                 }).ToList()
