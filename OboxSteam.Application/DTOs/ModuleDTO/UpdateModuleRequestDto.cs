@@ -13,4 +13,5 @@ public class UpdateModuleRequestDto
     public bool? IsMandatory { get; set; }
     public decimal? Price { get; set; }
     public decimal? RetakeFee { get; set; }
+    public string[]? LearningOutcomes { get; set; }
 }

@@ -15,6 +15,7 @@ public class ModulesResponseDto
     public bool IsMandatory { get; set; }
     public decimal Price { get; set; }
     public decimal RetakeFee { get; set; }
+    public string[] LearningOutcomes { get; set; } = Array.Empty<string>();
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<CourseResponseDto> Courses { get; set; } = new();
