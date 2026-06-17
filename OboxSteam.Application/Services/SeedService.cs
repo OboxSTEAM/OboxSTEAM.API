@@ -1599,6 +1599,157 @@ namespace OboxSteam.Application.Services
             else
             {
                 _loggerService.LogInformation("Modules already exist, skipping module seeding");
+
+                var modulesToBackfill = await _unitOfWork.Modules.GetAllAsync(
+                    m => !m.IsDeleted && (m.LearningOutcomes == null || m.LearningOutcomes.Length == 0));
+
+                if (modulesToBackfill.Any())
+                {
+                    foreach (var module in modulesToBackfill)
+                    {
+                        module.LearningOutcomes = module.Code switch
+                        {
+                            "MOD-ROBOTICS-01" => new[]
+                            {
+                                "Understand core robotics concepts and components",
+                                "Identify basic mechanical structures and actuators",
+                                "Follow safety practices in a robotics lab"
+                            },
+                            "MOD-ROBOTICS-02" => new[]
+                            {
+                                "Work with common sensors and read sensor data",
+                                "Implement movement control for simple robots",
+                                "Debug and calibrate sensor-based behaviors"
+                            },
+                            "MOD-ROBOTICS-03" => new[]
+                            {
+                                "Plan and build a small robot for a challenge",
+                                "Test, iterate, and improve performance",
+                                "Present results and reflect on engineering trade-offs"
+                            },
+                            "MOD-WEBDEV-01" => new[]
+                            {
+                                "Build semantic HTML structures",
+                                "Style pages with modern CSS",
+                                "Create clean layouts using Flexbox/Grid"
+                            },
+                            "MOD-WEBDEV-02" => new[]
+                            {
+                                "Write JavaScript with variables, functions, and control flow",
+                                "Manipulate the DOM to create interactivity",
+                                "Use debugging tools to fix common issues"
+                            },
+                            "MOD-WEBDEV-03" => new[]
+                            {
+                                "Design responsive pages for multiple screen sizes",
+                                "Understand deployment basics and hosting",
+                                "Ship a small web project end-to-end"
+                            },
+                            "MOD-STEAM-01" => new[]
+                            {
+                                "Understand STEAM learning workflow and lab rules",
+                                "Explore core tools used in the program",
+                                "Practice collaboration and documentation"
+                            },
+                            "MOD-STEAM-02" => new[]
+                            {
+                                "Prototype ideas using simple materials and tools",
+                                "Iterate quickly based on feedback",
+                                "Communicate design choices clearly"
+                            },
+                            "MOD-IOT-01" => new[]
+                            {
+                                "Understand microcontrollers and basic electronics",
+                                "Read data from sensors in embedded projects",
+                                "Build simple circuits safely"
+                            },
+                            "MOD-IOT-02" => new[]
+                            {
+                                "Send device data to the cloud",
+                                "Understand connectivity basics (Wi‑Fi/API)",
+                                "Monitor and troubleshoot IoT data flow"
+                            },
+                            "MOD-IOT-03" => new[]
+                            {
+                                "Build a small IoT prototype as a project",
+                                "Demonstrate end-to-end device-to-cloud flow",
+                                "Present outcomes and lessons learned"
+                            },
+                            "MOD-PYBASIC-01" => new[]
+                            {
+                                "Write Python syntax confidently",
+                                "Work with core data types and operators",
+                                "Practice clean coding and formatting"
+                            },
+                            "MOD-PYBASIC-02" => new[]
+                            {
+                                "Use conditions and loops effectively",
+                                "Write and reuse functions",
+                                "Solve small problems with structured thinking"
+                            },
+                            "MOD-PYBASIC-03" => new[]
+                            {
+                                "Apply Python fundamentals in a mini-project",
+                                "Plan simple game logic and implement it",
+                                "Test and refine features"
+                            },
+                            "MOD-MATHFUN-01" => new[]
+                            {
+                                "Build number sense through games",
+                                "Practice basic arithmetic strategies",
+                                "Develop confidence with math challenges"
+                            },
+                            "MOD-MATHFUN-02" => new[]
+                            {
+                                "Recognize patterns and sequences",
+                                "Solve puzzles using logical reasoning",
+                                "Explain solutions clearly"
+                            },
+                            "MOD-DIGART-01" => new[]
+                            {
+                                "Use basic digital drawing tools",
+                                "Apply color and composition principles",
+                                "Create simple artwork with layers"
+                            },
+                            "MOD-DIGART-02" => new[]
+                            {
+                                "Design characters or scenes digitally",
+                                "Improve line, shading, and texture",
+                                "Export artwork for sharing"
+                            },
+                            "MOD-BIOTECH-01" => new[]
+                            {
+                                "Understand basic biology and lab safety",
+                                "Observe and document simple experiments",
+                                "Learn scientific method basics"
+                            },
+                            "MOD-3DDESIGN-01" => new[]
+                            {
+                                "Model simple 3D shapes and objects",
+                                "Understand dimensions and constraints",
+                                "Prepare models for printing or presentation"
+                            },
+                            "MOD-AIBASIC-01" => new[]
+                            {
+                                "Understand what AI is and common applications",
+                                "Learn basic ML concepts (data, training, prediction)",
+                                "Discuss AI ethics at a beginner level"
+                            },
+                            _ => new[]
+                            {
+                                "Understand key concepts of this module",
+                                "Practice skills through hands-on activities",
+                                "Apply learning in a small project or assessment"
+                            }
+                        };
+                    }
+
+                    await _unitOfWork.Modules.UpdateRange(modulesToBackfill);
+                    await _unitOfWork.SaveChangesAsync();
+                    _loggerService.LogInformation(
+                        "Backfilled LearningOutcomes for {Count} existing module(s).",
+                        modulesToBackfill.Count);
+                }
             }
 
             _loggerService.LogInformation("Starting seed courses");
