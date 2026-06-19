@@ -27,17 +27,20 @@ public class PendingEnrollmentCleanupService : BackgroundService
             try
             {
                 await CleanupExpiredEnrollmentsAsync(stoppingToken);
+                await Task.Delay(RunInterval, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error when running PendingEnrollmentCleanupService.");
+                await Task.Delay(RunInterval, stoppingToken);
             }
-
-            // Await next run
-            await Task.Delay(RunInterval, stoppingToken);
         }
 
-        _logger.LogInformation("PendingEnrollmentCleanupService running.");
+        _logger.LogInformation("PendingEnrollmentCleanupService stopped.");
     }
 
     private async Task CleanupExpiredEnrollmentsAsync(CancellationToken stoppingToken)
