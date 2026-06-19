@@ -560,6 +560,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("ProgramId");
 
+                    b.HasIndex("Status", "StartDate")
+                        .HasFilter("\"IsDeleted\" = false");
+
                     b.ToTable("Classes");
                 });
 
@@ -611,6 +614,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("ProgramEnrollmentId");
 
                     b.HasIndex("StudentId");
+
+                    b.HasIndex("ClassId", "Status")
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("ClassId", "StudentId")
                         .IsUnique()
@@ -2085,6 +2091,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ProgramId");
+
+                    b.HasIndex("Status", "CreatedAt")
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("StudentId", "ProgramId")
                         .IsUnique()

@@ -170,3 +170,13 @@ public async Task<IActionResult> CreateActivityAsync([FromBody] CreateActivityRe
 ## References
 
 - Adhere to Microsoft's [coding conventions](https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions).
+
+## Entity Framework Migrations
+
+- **Never** create or edit migration `.cs` files or `OboxSteamDbContextModelSnapshot.cs` manually.
+- After schema changes in `OboxSteamDbContext` or entity configuration, generate migrations with the EF CLI only:
+  ```bash
+  dotnet tool restore
+  dotnet ef migrations add <MigrationName> --project OboxSteam.Infrastructure/OboxSteam.Infrastructure.csproj --startup-project OboxSteam.API/OboxSteam.API.csproj
+  ```
+- The `dotnet-ef` tool is pinned in `.config/dotnet-tools.json`; run `dotnet tool restore` before `dotnet ef` if the tool is missing.

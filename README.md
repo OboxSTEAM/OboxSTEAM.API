@@ -83,7 +83,7 @@ Create a `.env` file at the solution root (loaded by `EnvFileLoader` at startup)
 
 ```env
 ASPNETCORE_ENVIRONMENT=Development
-ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=oboxsteam;Username=postgres;Password=your_password
+ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=oboxsteam;Username=postgres;Password=your_password;Maximum Pool Size=15;Timeout=15;Command Timeout=30
 JWT__SecretKey=your-secret-key-at-least-32-chars
 JWT__Issuer=OboxSTEAM
 JWT__Audience=OboxSTEAM
@@ -97,6 +97,13 @@ API_PORT=5000
 ```
 
 AWS, Resend, and payment keys are required for full feature testing (media upload, email OTP, payments).
+
+For production (`shared-postgres` with `max_connections=20`), append the same pool limits to
+`ConnectionStrings__DefaultConnection` in your Infrastructure `.env`:
+
+```env
+ConnectionStrings__DefaultConnection=Host=shared-postgres;Port=5432;Database=OboxSteam_db;Username=admin;Password=...;Maximum Pool Size=15;Timeout=15;Command Timeout=30
+```
 
 ### 2. Run with Docker Compose
 
