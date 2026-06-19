@@ -367,6 +367,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# CodeGraph local index
+.codegraph/
+
 # Harness durable layer
 harness.db
 harness.db-wal
