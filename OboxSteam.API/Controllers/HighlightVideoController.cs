@@ -47,8 +47,8 @@ public class HighlightVideoController : ControllerBase
     /// - Scene-only video (no faces detected) → included in full.
     /// - Video where only the student's face appears → included in full.
     /// - Video with multiple people → only the student's segments are extracted
-    ///   (3-second buffer + merge if gap &lt; 3 s; fallback to full video if AI
-    ///   cannot pinpoint the face).
+    ///   (2-second buffer; segments that overlap after buffering are merged;
+    ///   fallback to full video if AI cannot pinpoint the face).
     ///
     /// Strengths filtering (optional):
     /// - When <c>Strengths</c> is provided, only segments where the student is
