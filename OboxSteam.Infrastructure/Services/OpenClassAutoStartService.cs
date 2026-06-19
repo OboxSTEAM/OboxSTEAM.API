@@ -9,7 +9,7 @@ public class OpenClassAutoStartService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<OpenClassAutoStartService> _logger;
-    private static readonly TimeSpan RunInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan RunInterval = TimeSpan.FromMinutes(30);
 
     public OpenClassAutoStartService(
         IServiceProvider serviceProvider,
@@ -28,13 +28,17 @@ public class OpenClassAutoStartService : BackgroundService
             try
             {
                 await AutoStartEligibleClassesAsync(stoppingToken);
+                await Task.Delay(RunInterval, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error when running OpenClassAutoStartService.");
+                await Task.Delay(RunInterval, stoppingToken);
             }
-
-            await Task.Delay(RunInterval, stoppingToken);
         }
 
         _logger.LogInformation("OpenClassAutoStartService stopped.");

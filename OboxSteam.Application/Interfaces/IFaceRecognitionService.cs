@@ -40,6 +40,17 @@ public interface IFaceRecognitionService
     Task<VideoFaceTimelineResult?> GetVideoFaceTimelineAsync(string jobId, Guid studentId);
 
     /// <summary>
+    /// Trích xuất timeline cho TẤT CẢ student xuất hiện trong video chỉ với một lần duyệt
+    /// kết quả Rekognition (thay vì gọi <see cref="GetVideoFaceTimelineAsync"/> nhiều lần).
+    /// Dùng tại thời điểm tagging để lưu timeline vào DB khi job còn tươi mới
+    /// (Rekognition chỉ giữ kết quả video job 7 ngày).
+    /// Trả về <c>null</c> nếu job còn IN_PROGRESS hoặc FAILED.
+    /// </summary>
+    /// <param name="jobId">Rekognition video job ID.</param>
+    /// <returns>Map từ StudentId → timeline (segments + HasOtherFaces) của student đó.</returns>
+    Task<Dictionary<Guid, VideoFaceTimelineResult>?> GetAllFaceTimelinesAsync(string jobId);
+
+    /// <summary>
     /// Start Rekognition Label Detection job trên video đã có trong S3 (async).
     /// Trả về JobId để poll kết quả sau.
     /// </summary>

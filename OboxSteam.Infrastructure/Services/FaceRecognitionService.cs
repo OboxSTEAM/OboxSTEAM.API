@@ -304,11 +304,119 @@ public class FaceRecognitionService : IFaceRecognitionService
             return new VideoFaceTimelineResult(hasOtherFaces, new List<FaceTimestampSegment>());
         }
 
-        // Collapse contiguous timestamps into segments.
-        // Rekognition samples every ~1 second; treat detections within CollapseGapMs
-        // as the same continuous appearance (see class-level constant).
-        rawTimestamps.Sort();
+        var segments = CollapseToSegments(rawTimestamps);
+
+        _logger.LogInformation(
+            "GetVideoFaceTimelineAsync: {Raw} raw ts → {Segs} segment(s) for StudentId={StudentId}",
+            rawTimestamps.Count, segments.Count, studentId);
+
+        return new VideoFaceTimelineResult(hasOtherFaces, segments);
+    }
+
+    /// <inheritdoc />
+    public async Task<Dictionary<Guid, VideoFaceTimelineResult>?> GetAllFaceTimelinesAsync(string jobId)
+    {
+        _logger.LogInformation("GetAllFaceTimelinesAsync: JobId={JobId}", jobId);
+
+        // Per-student raw detection timestamps.
+        var rawByStudent = new Dictionary<Guid, List<long>>();
+        // Students that appeared anywhere in the video.
+        var allStudents = new HashSet<Guid>();
+        // True if any detected person could NOT be matched to a registered student.
+        var hasUnknownPerson = false;
+        string? nextToken = null;
+
+        do
+        {
+            var request = new GetFaceSearchRequest
+            {
+                JobId      = jobId,
+                MaxResults = 1000,
+                SortBy     = FaceSearchSortBy.TIMESTAMP,
+            };
+            if (nextToken != null) request.NextToken = nextToken;
+
+            GetFaceSearchResponse response;
+            try
+            {
+                response = await _rekognition.GetFaceSearchAsync(request);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetAllFaceTimelinesAsync paging failed for JobId={JobId}", jobId);
+                throw;
+            }
+
+            if (response.JobStatus == VideoJobStatus.IN_PROGRESS)
+            {
+                _logger.LogInformation("GetAllFaceTimelinesAsync: job {JobId} still IN_PROGRESS.", jobId);
+                return null;
+            }
+
+            if (response.JobStatus == VideoJobStatus.FAILED)
+            {
+                _logger.LogError("GetAllFaceTimelinesAsync: job {JobId} FAILED.", jobId);
+                return null;
+            }
+
+            foreach (var person in response.Persons)
+            {
+                var matchedStudents = person.FaceMatches?
+                    .Select(m => Guid.TryParse(m.Face.ExternalImageId, out var uid) ? uid : (Guid?)null)
+                    .Where(uid => uid.HasValue)
+                    .Select(uid => uid!.Value)
+                    .Distinct()
+                    .ToList() ?? new List<Guid>();
+
+                if (matchedStudents.Count == 0)
+                {
+                    hasUnknownPerson = true;
+                    continue;
+                }
+
+                foreach (var sid in matchedStudents)
+                {
+                    allStudents.Add(sid);
+                    if (!rawByStudent.TryGetValue(sid, out var list))
+                    {
+                        list = new List<long>();
+                        rawByStudent[sid] = list;
+                    }
+                    list.Add(person.Timestamp);
+                }
+            }
+
+            nextToken = response.NextToken;
+        }
+        while (!string.IsNullOrEmpty(nextToken));
+
+        var result = new Dictionary<Guid, VideoFaceTimelineResult>();
+        foreach (var sid in allStudents)
+        {
+            // "Other faces" for this student = any unknown person OR any other tagged student.
+            var hasOtherFaces = hasUnknownPerson || allStudents.Any(s => s != sid);
+            var segments = CollapseToSegments(rawByStudent[sid]);
+            result[sid] = new VideoFaceTimelineResult(hasOtherFaces, segments);
+        }
+
+        _logger.LogInformation(
+            "GetAllFaceTimelinesAsync: {Students} student(s), hasUnknownPerson={HasUnknown} for JobId={JobId}",
+            result.Count, hasUnknownPerson, jobId);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Collapses sorted/unsorted raw detection timestamps into continuous segments,
+    /// merging detections within <see cref="CollapseGapMs"/> of each other.
+    /// </summary>
+    private static List<FaceTimestampSegment> CollapseToSegments(List<long> rawTimestamps)
+    {
         var segments = new List<FaceTimestampSegment>();
+        if (rawTimestamps.Count == 0)
+            return segments;
+
+        rawTimestamps.Sort();
         var segStart = rawTimestamps[0];
         var segEnd   = rawTimestamps[0];
 
@@ -327,11 +435,7 @@ public class FaceRecognitionService : IFaceRecognitionService
         }
         segments.Add(new FaceTimestampSegment(segStart, segEnd));
 
-        _logger.LogInformation(
-            "GetVideoFaceTimelineAsync: {Raw} raw ts → {Segs} segment(s) for StudentId={StudentId}",
-            rawTimestamps.Count, segments.Count, studentId);
-
-        return new VideoFaceTimelineResult(hasOtherFaces, segments);
+        return segments;
     }
 
     /// <inheritdoc />
