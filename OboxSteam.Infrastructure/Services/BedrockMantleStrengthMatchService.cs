@@ -21,6 +21,13 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
     // Note: The model ID (moonshotai.kimi-k2.5) is configured via DI in IocContainer.cs
     // and injected into this service via the ChatClient.
 
+    /// <summary>
+    /// Minimum score for a segment to count as a strength match. Enforced both in the prompt
+    /// and again in code as a safety net against speculative low-confidence matches.
+    /// Raise toward 1.0 for stricter (fewer false positives) matching.
+    /// </summary>
+    private const double MinMatchScore = 0.7;
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -98,14 +105,18 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
 
         // Claude often copies the prompt example and returns end_ms=0 for point-in-time
         // detections. Treat missing/invalid end_ms as a single-sample segment [start, start].
+        // Also enforce the score threshold in code as a safety net — the model sometimes
+        // returns speculative low-confidence matches (e.g. "Slapping suggests martial arts")
+        // despite the prompt asking it to exclude them.
         var matched = (output.MatchedSegments ?? Array.Empty<ClaudeSegment>())
             .Select(NormalizeClaudeSegment)
+            .Where(s => s.Score >= MinMatchScore)
             .OrderByDescending(s => s.Score)
             .ToList();
 
         _logger.LogInformation(
-            "BedrockMantleStrengthMatchService: {Matched} matched segment(s). Reasoning: {Reasoning}",
-            matched.Count, output.Reasoning);
+            "BedrockMantleStrengthMatchService: {Matched} matched segment(s) (>= {Threshold}). Reasoning: {Reasoning}",
+            matched.Count, MinMatchScore, output.Reasoning);
 
         return new StrengthMatchResult(matched, output.Reasoning ?? string.Empty);
     }
@@ -170,10 +181,13 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         sb.AppendLine();
         sb.AppendLine("INSTRUCTIONS:");
         sb.AppendLine("1. For each face segment, check which labels appear during that time window.");
-        sb.AppendLine("2. Semantically match labels to strengths (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh).");
-        sb.AppendLine("3. Assign a score 0.0-1.0: how well labels match the strength and how much of the segment has matching labels.");
-        sb.AppendLine("4. Only include segments with score >= 0.5.");
-        sb.AppendLine("5. Keep reasoning to ONE short sentence, max 20 words.");
+        sb.AppendLine("2. Match a label to the strength ONLY when the label DIRECTLY and UNAMBIGUOUSLY represents that strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
+        sb.AppendLine("3. DO NOT match on weak, generic, or speculative evidence. A single ambiguous label (e.g. 'Slapping', 'Hand', 'Person', 'People', 'Clothing') is NOT enough. If you find yourself reasoning that a label 'suggests', 'could be', 'might be', or 'is related to' the strength, treat it as NO match.");
+        sb.AppendLine("4. Require multiple corroborating labels OR one strong, specific label that names the activity itself before matching.");
+        sb.AppendLine("5. Assign a score 0.0-1.0 reflecting how directly and consistently the labels demonstrate the strength across the segment.");
+        sb.AppendLine($"6. Only include segments with score >= {MinMatchScore:0.0}. When in doubt, exclude the segment.");
+        sb.AppendLine("7. If NO segment clearly demonstrates the strength, return an empty matched_segments array.");
+        sb.AppendLine("8. Keep reasoning to ONE short sentence, max 20 words.");
         sb.AppendLine();
         sb.AppendLine("Respond with ONLY valid JSON, no extra text, no markdown fences:");
         sb.AppendLine("{");
