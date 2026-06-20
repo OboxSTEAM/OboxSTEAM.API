@@ -9,7 +9,11 @@ public class MediaAssetDto
     public Guid? ActivityId { get; set; }
     public string? FileUrl { get; set; }
     public string? FileType { get; set; }
+    public string? RawVideoS3Key { get; set; }
+    public string? MediaConvertJobId { get; set; }
     public string? FaceSearchJobId { get; set; }
+    public string? LabelJobRef { get; set; }
+    public string? LabelTimelineJson { get; set; }
     public VideoProcessingStatus VideoStatus { get; set; }
     public DateTime? UploadedAt { get; set; }
     public List<MediaTagDto> Tags { get; set; } = new();

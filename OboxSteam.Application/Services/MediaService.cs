@@ -154,9 +154,8 @@ public class MediaService : IMediaService
         var mediaList = await _unitOfWork.MediaAssets
             .GetAllAsync(m => m.ActivityId == activityId && !m.IsDeleted, m => m.MediaTags);
 
-        // Batch-fetch all referenced students in a single query to avoid N+1.
         var allStudentIds = mediaList
-            .SelectMany(m => m.MediaTags)
+            .SelectMany(m => m.MediaTags.Where(t => !t.IsDeleted))
             .Select(t => t.StudentId)
             .Distinct()
             .ToList();
@@ -166,37 +165,9 @@ public class MediaService : IMediaService
               .ToDictionary(u => u.Id)
             : new Dictionary<Guid, User>();
 
-        var result = new List<MediaAssetDto>();
-
-        foreach (var media in mediaList)
-        {
-            var tagDtos = media.MediaTags.Select(tag =>
-            {
-                studentMap.TryGetValue(tag.StudentId, out var student);
-                return new MediaTagDto
-                {
-                    StudentId = tag.StudentId,
-                    StudentName = student?.FullName,
-                    ConfidenceScore = tag.ConfidenceScore,
-                    IsVerified = tag.IsVerified
-                };
-            }).ToList();
-
-            result.Add(new MediaAssetDto
-            {
-                Id = media.Id,
-                UploaderId = media.UploaderId,
-                ActivityId = media.ActivityId,
-                FileUrl = media.FileUrl,
-                FileType = media.FileType,
-                FaceSearchJobId = media.FaceSearchJobId,
-                VideoStatus = media.VideoStatus,
-                UploadedAt = media.UploadedAt,
-                Tags = tagDtos
-            });
-        }
-
-        return result;
+        return mediaList
+            .Select(m => MapAssetToDto(m, m.MediaTags.Where(t => !t.IsDeleted), studentMap))
+            .ToList();
     }
 
     /// <inheritdoc />
@@ -755,27 +726,20 @@ public class MediaService : IMediaService
 
     private async Task<MediaAssetDto> MapToDto(MediaAsset media, ICollection<MediaTag>? tags = null)
     {
-        var tagDtos = new List<MediaTagDto>();
-        if (tags != null && tags.Count > 0)
-        {
-            // Batch-fetch all students in one query to avoid N+1.
-            var studentIds = tags.Select(t => t.StudentId).Distinct().ToList();
-            var studentMap = (await _unitOfWork.Users.GetAllAsync(u => studentIds.Contains(u.Id)))
-                .ToDictionary(u => u.Id);
+        var tagSource = (tags ?? media.MediaTags).Where(t => !t.IsDeleted).ToList();
+        var studentIds = tagSource.Select(t => t.StudentId).Distinct().ToList();
+        var studentMap = studentIds.Count > 0
+            ? (await _unitOfWork.Users.GetAllAsync(u => studentIds.Contains(u.Id))).ToDictionary(u => u.Id)
+            : new Dictionary<Guid, User>();
 
-            foreach (var t in tags)
-            {
-                studentMap.TryGetValue(t.StudentId, out var student);
-                tagDtos.Add(new MediaTagDto
-                {
-                    StudentId = t.StudentId,
-                    StudentName = student?.FullName,
-                    ConfidenceScore = t.ConfidenceScore,
-                    IsVerified = t.IsVerified
-                });
-            }
-        }
+        return MapAssetToDto(media, tagSource, studentMap);
+    }
 
+    private static MediaAssetDto MapAssetToDto(
+        MediaAsset media,
+        IEnumerable<MediaTag> tags,
+        IReadOnlyDictionary<Guid, User> studentMap)
+    {
         return new MediaAssetDto
         {
             Id = media.Id,
@@ -783,10 +747,29 @@ public class MediaService : IMediaService
             ActivityId = media.ActivityId,
             FileUrl = media.FileUrl,
             FileType = media.FileType,
+            RawVideoS3Key = media.RawVideoS3Key,
+            MediaConvertJobId = media.MediaConvertJobId,
             FaceSearchJobId = media.FaceSearchJobId,
+            LabelJobRef = media.LabelJobRef,
+            LabelTimelineJson = media.LabelTimelineJson,
             VideoStatus = media.VideoStatus,
             UploadedAt = media.UploadedAt,
-            Tags = tagDtos
+            Tags = tags.Select(t => MapTagToDto(t, studentMap)).ToList()
+        };
+    }
+
+    private static MediaTagDto MapTagToDto(MediaTag tag, IReadOnlyDictionary<Guid, User> studentMap)
+    {
+        studentMap.TryGetValue(tag.StudentId, out var student);
+        return new MediaTagDto
+        {
+            Id = tag.Id,
+            StudentId = tag.StudentId,
+            StudentName = student?.FullName,
+            ConfidenceScore = tag.ConfidenceScore,
+            IsVerified = tag.IsVerified,
+            FaceSegmentsJson = tag.FaceSegmentsJson,
+            HasOtherFaces = tag.HasOtherFaces
         };
     }
 }
