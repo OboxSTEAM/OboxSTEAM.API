@@ -105,13 +105,24 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
 
         // Claude often copies the prompt example and returns end_ms=0 for point-in-time
         // detections. Treat missing/invalid end_ms as a single-sample segment [start, start].
-        // Also enforce the score threshold in code as a safety net — the model sometimes
-        // returns speculative low-confidence matches (e.g. "Slapping suggests martial arts")
-        // despite the prompt asking it to exclude them.
-        var matched = (output.MatchedSegments ?? Array.Empty<ClaudeSegment>())
+        var normalized = (output.MatchedSegments ?? Array.Empty<ClaudeSegment>())
             .Select(NormalizeClaudeSegment)
-            .Where(s => s.Score >= MinMatchScore)
             .OrderByDescending(s => s.Score)
+            .ToList();
+
+        // Log every raw (pre-threshold) segment so we can see exactly what the model returned
+        // and how long each clip would be: clip length ≈ (end-start) + 2×buffer applied later.
+        foreach (var s in normalized)
+            _logger.LogInformation(
+                "BedrockMantleStrengthMatchService: raw match [{Start}ms→{End}ms] span={Span}ms score={Score:0.00} strength={Strength} {Kept}",
+                s.StartMs, s.EndMs, s.EndMs - s.StartMs, s.Score, s.Strength,
+                s.Score >= MinMatchScore ? "KEPT" : "DROPPED(<threshold)");
+
+        // Enforce the score threshold in code as a safety net — the model sometimes returns
+        // speculative low-confidence matches (e.g. "Slapping suggests martial arts") despite
+        // the prompt asking it to exclude them.
+        var matched = normalized
+            .Where(s => s.Score >= MinMatchScore)
             .ToList();
 
         _logger.LogInformation(

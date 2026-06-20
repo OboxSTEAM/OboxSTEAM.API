@@ -520,8 +520,9 @@ public class PersonalVideoService : IPersonalVideoService
         var timeClips = MergeAndFormatTimeClips(faceSegments.Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0)));
 
         _logger.LogInformation(
-            "[PersonalVideoService] Case 3/4: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}",
-            faceSegments.Count, timeClips.Count, media.Id);
+            "[PersonalVideoService] Case 3/4: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}. Clips=[{Clips}]",
+            faceSegments.Count, timeClips.Count, media.Id,
+            string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")));
 
         return new ClipInput(s3Key, timeClips);
     }
@@ -643,8 +644,10 @@ public class PersonalVideoService : IPersonalVideoService
         var timeClips = MergeAndFormatTimeClips(matchResult.MatchedSegments);
 
         _logger.LogInformation(
-            "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Reasoning: {Reasoning}",
-            timeClips.Count, media.Id, matchResult.Reasoning);
+            "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Clips=[{Clips}]. Reasoning: {Reasoning}",
+            timeClips.Count, media.Id,
+            string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")),
+            matchResult.Reasoning);
 
         return new ClipInput(s3Key, timeClips);
     }
