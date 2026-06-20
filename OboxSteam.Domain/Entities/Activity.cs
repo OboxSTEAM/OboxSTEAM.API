@@ -42,7 +42,7 @@ public class Activity : BaseEntity
 
     // Navigation
     public ICollection<ActivityBooking> ActivityBookings { get; set; } = new List<ActivityBooking>();
-    public ICollection<Material> Materials { get; set; } = new List<Material>();
+    public Material? Material { get; set; }
     public ICollection<MediaAsset> MediaAssets { get; set; } = new List<MediaAsset>();
     public ICollection<ActivityProgress> ActivityProgresses { get; set; } = new List<ActivityProgress>();
     public ICollection<ClassSession> ClassSessions { get; set; } = new List<ClassSession>();

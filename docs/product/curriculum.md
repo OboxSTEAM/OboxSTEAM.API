@@ -9,7 +9,6 @@ Program
   │     ├── Course[] (each has a Mentor)
   │     │     └── Activity[]
   │     ├── Assignment[] (module- or course-scoped)
-  │     └── Material[]
   ├── Class[] (cohorts)
   └── ProgramReview[]
 ```
@@ -35,7 +34,8 @@ API: `/api/modules`.
 
 ## Course
 
-A mentor-owned slice of a module containing activities and materials.
+A mentor-owned slice of a module containing activities. SelfPaced activities may
+have one optional learning material (video, PDF, etc.).
 
 API: `/api/courses`.
 
@@ -70,10 +70,10 @@ domain and migrations.
 
 ## Materials
 
-Learning assets attached to courses, modules, or activities. Types via
-`MaterialType` enum.
+Learning assets for **SelfPaced** activities only (video, PDF, doc, etc.). At most
+one material per activity. LiveOnline and Offline activities do not have materials.
 
-API: `/api/materials`.
+Types via `MaterialType` enum. API: `/api/materials`.
 
 ## Experts
 

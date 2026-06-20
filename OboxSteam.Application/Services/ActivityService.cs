@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ActivityDTO;
+using OboxSteam.Application.DTOs.MaterialDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
@@ -120,6 +121,19 @@ public class ActivityService : IActivityService
         }
 
         _logger.LogInformation("[GetActivityByIdAsync] Activity with Id {Id} retrieved successfully.", activityId);
+
+        MaterialResponseDto? materialDto = null;
+        if (activity.ActivityType == ActivityType.SelfPaced)
+        {
+            var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
+                m => m.ActivityId == activityId && !m.IsDeleted);
+
+            if (material != null)
+            {
+                materialDto = MaterialService.MapToDto(material);
+            }
+        }
+
         return new ActivitiesResponseDto
         {
             Id = activity.Id,
@@ -137,6 +151,7 @@ public class ActivityService : IActivityService
             RequireMediaEvidence = activity.RequireMediaEvidence,
             CreatedAt = activity.CreatedAt,
             UpdatedAt = activity.UpdatedAt,
+            Material = materialDto,
         };
     }
 

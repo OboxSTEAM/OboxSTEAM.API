@@ -2387,50 +2387,13 @@ namespace OboxSteam.Application.Services
             var existingMaterials = await _unitOfWork.Materials.GetAllAsync();
             if (!existingMaterials.Any())
             {
-                var moduleRobotics1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01");
-                var moduleWebDev1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-01");
                 var activitySelfPaced = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-01-01");
 
-                var materials = new List<Material>();
-
-                if (moduleRobotics1 != null)
+                if (activitySelfPaced != null)
                 {
-                    materials.Add(new Material
+                    await _unitOfWork.Materials.AddAsync(new Material
                     {
                         Id = Guid.NewGuid(),
-                        ModuleId = moduleRobotics1.Id,
-                        ActivityId = null,
-                        Title = "Robotics Starter Kit Guide",
-                        MaterialType = OboxSteam.Domain.Enums.MaterialType.PDF,
-                        FileUrl = "https://storage.oboxsteam.com/materials/robotics-starter-guide.pdf",
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = Guid.Empty,
-                        IsDeleted = false
-                    });
-                }
-
-                if (moduleWebDev1 != null)
-                {
-                    materials.Add(new Material
-                    {
-                        Id = Guid.NewGuid(),
-                        ModuleId = moduleWebDev1.Id,
-                        ActivityId = null,
-                        Title = "HTML Cheat Sheet",
-                        MaterialType = OboxSteam.Domain.Enums.MaterialType.ExternalLink,
-                        FileUrl = "https://developer.mozilla.org/en-US/docs/Web/HTML",
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = Guid.Empty,
-                        IsDeleted = false
-                    });
-                }
-
-                if (moduleRobotics1 != null && activitySelfPaced != null)
-                {
-                    materials.Add(new Material
-                    {
-                        Id = Guid.NewGuid(),
-                        ModuleId = moduleRobotics1.Id,
                         ActivityId = activitySelfPaced.Id,
                         Title = "Pre-class Reading: What is a Robot?",
                         MaterialType = OboxSteam.Domain.Enums.MaterialType.Video,
@@ -2439,11 +2402,6 @@ namespace OboxSteam.Application.Services
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
                     });
-                }
-
-                if (materials.Count > 0)
-                {
-                    await _unitOfWork.Materials.AddRangeAsync(materials);
                     await _unitOfWork.SaveChangesAsync();
                     _loggerService.LogInformation("Finished seed materials");
                 }
