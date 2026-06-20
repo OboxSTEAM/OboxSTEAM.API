@@ -123,15 +123,12 @@ public class ActivityService : IActivityService
         _logger.LogInformation("[GetActivityByIdAsync] Activity with Id {Id} retrieved successfully.", activityId);
 
         MaterialResponseDto? materialDto = null;
-        if (activity.ActivityType == ActivityType.SelfPaced)
-        {
-            var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
-                m => m.ActivityId == activityId && !m.IsDeleted);
+        var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
+            m => m.ActivityId == activityId && !m.IsDeleted);
 
-            if (material != null)
-            {
-                materialDto = MaterialService.MapToDto(material);
-            }
+        if (material != null)
+        {
+            materialDto = MaterialService.MapToDto(material);
         }
 
         return new ActivitiesResponseDto
@@ -186,6 +183,12 @@ public class ActivityService : IActivityService
             currentMaxOrder,
             orderPropertyName: "ActivityOrder",
             scopeDescription: $"course '{request.CourseId}'");
+
+        await ActivityValidator.ValidateActivityTypeForCourseAsync(
+            _unitOfWork,
+            request.CourseId,
+            request.ActivityType);
+
         ActivityValidator.ValidateTypeRules(
             request.ActivityType,
             request.StartTime,
@@ -303,6 +306,11 @@ public class ActivityService : IActivityService
         var resolvedEndTime = request.EndTime ?? activity.EndTime;
         var resolvedLocation = request.Location ?? activity.Location;
         var resolvedRequireQrCheckin = request.RequireQrCheckin ?? activity.RequireQrCheckin;
+
+        await ActivityValidator.ValidateActivityTypeForCourseAsync(
+            _unitOfWork,
+            targetCourseId,
+            resolvedActivityType);
 
         ActivityValidator.ValidateTypeRules(
             resolvedActivityType,
