@@ -655,10 +655,16 @@ public class PersonalVideoService : IPersonalVideoService
     /// </summary>
     private static List<TimeClip> MergeAndFormatTimeClips(IEnumerable<MatchedSegment> segments)
     {
-        // 1. Convert to TimeClips first, safely ignoring EndMs < StartMs hallucinations
+        // 1. Convert to TimeClips.
+        //    IMPORTANT: face timelines are collapsed with a 500 ms gap while Rekognition samples
+        //    faces ~once per second, so MOST face segments are single-sample points where
+        //    StartMs == EndMs. We must keep those (StartMs <= EndMs) and only drop genuine
+        //    hallucinations where StartMs > EndMs. The buffer is applied AFTER this check so a
+        //    point [t, t] becomes a valid [t-BufferMs, t+BufferMs] clip — dropping points here
+        //    (the old `StartMs < EndMs`) emptied the clip list and fell back to the full video.
         var timeClipsRaw = segments
-            .Where(s => s.StartMs < s.EndMs) // basic sanity check
-            // Apply 1-second buffer pad (similar to FaceTimestampSegment buffer)
+            .Where(s => s.StartMs <= s.EndMs) // keep point detections; drop EndMs < StartMs hallucinations
+            // Apply BufferMs padding on both sides (clamped to 0) for breathing room around each segment.
             .Select(s => new { Start = Math.Max(0, s.StartMs - BufferMs), End = s.EndMs + BufferMs })
             .Select(seg => new TimeClip(MsToTimecode(seg.Start), MsToTimecode(seg.End)))
             .Where(t => t.StartTimecode != t.EndTimecode) // drop 0-duration clips
