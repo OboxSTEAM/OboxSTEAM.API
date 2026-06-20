@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
@@ -2104,7 +2105,7 @@ namespace OboxSteam.Application.Services
                         StudentId = student1.Id,
                         ProgramId = programRobotics.Id,
                         Status = EnrollmentStatus.Active,
-                        ProgressPercent = 25m,
+                        ProgressPercent = 0m,
                         EnrolledAt = enrollTime.AddDays(-14),
                         StartedAt = enrollTime.AddDays(-10),
                         CreatedAt = enrollTime,
@@ -2121,7 +2122,7 @@ namespace OboxSteam.Application.Services
                         StudentId = student2.Id,
                         ProgramId = programWebDev.Id,
                         Status = EnrollmentStatus.Active,
-                        ProgressPercent = 10m,
+                        ProgressPercent = 0m,
                         EnrolledAt = enrollTime.AddDays(-7),
                         StartedAt = enrollTime.AddDays(-5),
                         CreatedAt = enrollTime,
@@ -2187,6 +2188,16 @@ namespace OboxSteam.Application.Services
                 var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
                 var moduleRobotics1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01");
                 var moduleWebDev1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-01");
+                var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+                var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
+                var programEnrollmentStudent1 = student1 != null && programRobotics != null
+                    ? await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                        pe => pe.StudentId == student1.Id && pe.ProgramId == programRobotics.Id && !pe.IsDeleted)
+                    : null;
+                var programEnrollmentStudent2 = student2 != null && programWebDev != null
+                    ? await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                        pe => pe.StudentId == student2.Id && pe.ProgramId == programWebDev.Id && !pe.IsDeleted)
+                    : null;
                 var enrollTime = DateTime.UtcNow;
 
                 var moduleEnrollments = new List<ModuleEnrollment>();
@@ -2198,8 +2209,9 @@ namespace OboxSteam.Application.Services
                         Id = Guid.NewGuid(),
                         StudentId = student1.Id,
                         ModuleId = moduleRobotics1.Id,
+                        ProgramEnrollmentId = programEnrollmentStudent1?.Id,
                         Status = EnrollmentStatus.Active,
-                        ProgressPercent = 40m,
+                        ProgressPercent = 0m,
                         FinalGrade = null,
                         EnrolledAt = enrollTime.AddDays(-10),
                         StartedAt = enrollTime.AddDays(-8),
@@ -2216,9 +2228,11 @@ namespace OboxSteam.Application.Services
                         Id = Guid.NewGuid(),
                         StudentId = student2.Id,
                         ModuleId = moduleWebDev1.Id,
+                        ProgramEnrollmentId = programEnrollmentStudent2?.Id,
                         Status = EnrollmentStatus.Active,
-                        ProgressPercent = 15m,
+                        ProgressPercent = 0m,
                         EnrolledAt = enrollTime.AddDays(-5),
+                        StartedAt = enrollTime.AddDays(-4),
                         CreatedAt = enrollTime,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -2332,7 +2346,7 @@ namespace OboxSteam.Application.Services
             if (!existingBookings.Any())
             {
                 var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
-                var offlineActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-01-03");
+                var offlineActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-03-03");
 
                 if (student1 != null && offlineActivity != null)
                 {
@@ -2381,34 +2395,6 @@ namespace OboxSteam.Application.Services
             else
             {
                 _loggerService.LogInformation("Activity bookings already exist, skipping seeding");
-            }
-
-            _loggerService.LogInformation("Starting seed materials");
-            var existingMaterials = await _unitOfWork.Materials.GetAllAsync();
-            if (!existingMaterials.Any())
-            {
-                var activitySelfPaced = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-01-01");
-
-                if (activitySelfPaced != null)
-                {
-                    await _unitOfWork.Materials.AddAsync(new Material
-                    {
-                        Id = Guid.NewGuid(),
-                        ActivityId = activitySelfPaced.Id,
-                        Title = "Pre-class Reading: What is a Robot?",
-                        MaterialType = OboxSteam.Domain.Enums.MaterialType.Video,
-                        FileUrl = "https://storage.oboxsteam.com/videos/what-is-a-robot.mp4",
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = Guid.Empty,
-                        IsDeleted = false
-                    });
-                    await _unitOfWork.SaveChangesAsync();
-                    _loggerService.LogInformation("Finished seed materials");
-                }
-            }
-            else
-            {
-                _loggerService.LogInformation("Materials already exist, skipping seeding");
             }
 
             _loggerService.LogInformation("Starting seed assignments");
@@ -2767,7 +2753,1508 @@ namespace OboxSteam.Application.Services
                 _loggerService.LogInformation("Program reviews already exist, skipping seeding");
             }
 
+            await SeedClassFlowAsync();
+            await SeedResearchMilestoneDataAsync();
+            await SeedResearchModuleEnrollmentsAsync();
+            await SeedResearchActivityProgressAsync();
+            await SeedEnrollmentActivityProgressAsync();
+            await BackfillActivityProgressStatusAsync();
+            await SeedResearchSubmissionsAsync();
+            await SeedExtendedResearchDataAsync();
+            await SeedMaterialsAsync();
+
             _loggerService.LogInformation("Finished seed all data");
+        }
+
+        private async Task SeedClassFlowAsync()
+        {
+            _loggerService.LogInformation("Starting seed class flow");
+            var existingClass = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == "CLS-ROBOTICS-2026A");
+            if (existingClass != null)
+            {
+                _loggerService.LogInformation("Class flow already seeded, skipping");
+                return;
+            }
+
+            var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
+            var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
+            var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
+            var moduleRobotics1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01");
+            var activityLive = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-01-02");
+            var activityUpcoming = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-01-03");
+            var assignmentQuiz = await _unitOfWork.Assignments.FirstOrDefaultAsync(a => a.Code == "ASG-ROBOTICS-QUIZ-01");
+
+            if (programRobotics == null || mentor == null || student1 == null || student2 == null
+                || moduleRobotics1 == null || activityLive == null || activityUpcoming == null)
+            {
+                _loggerService.LogWarning("Required entities for class flow not found. Skipping.");
+                return;
+            }
+
+            var seedTime = DateTime.UtcNow;
+            var classStart = seedTime.AddDays(-14);
+            var classEnd = seedTime.AddDays(90);
+
+            var activeClass = new Class
+            {
+                Id = Guid.NewGuid(),
+                Code = "CLS-ROBOTICS-2026A",
+                Name = "Robotics Spring 2026 - Cohort A",
+                ProgramId = programRobotics.Id,
+                MentorId = mentor.Id,
+                StartDate = classStart,
+                EndDate = classEnd,
+                MaxCapacity = 25,
+                Status = ClassStatus.InProgress,
+                MinHoursBeforeAssignmentJoin = 48,
+                ScheduleSummary = "Every Saturday 9:00-12:00",
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            var openClass = new Class
+            {
+                Id = Guid.NewGuid(),
+                Code = "CLS-ROBOTICS-2026B",
+                Name = "Robotics Summer 2026 - Cohort B",
+                ProgramId = programRobotics.Id,
+                MentorId = mentor.Id,
+                StartDate = seedTime.AddDays(21),
+                EndDate = seedTime.AddDays(120),
+                MaxCapacity = 20,
+                Status = ClassStatus.Open,
+                MinHoursBeforeAssignmentJoin = 48,
+                ScheduleSummary = "Every Sunday 14:00-17:00",
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            await _unitOfWork.Classes.AddRangeAsync(new List<Class> { activeClass, openClass });
+            await _unitOfWork.SaveChangesAsync();
+
+            var student1ProgramEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                pe => pe.StudentId == student1.Id
+                      && pe.ProgramId == programRobotics.Id
+                      && !pe.IsDeleted);
+
+            if (student1ProgramEnrollment == null)
+            {
+                student1ProgramEnrollment = new ProgramEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student1.Id,
+                    ProgramId = programRobotics.Id,
+                    Status = EnrollmentStatus.Active,
+                    ProgressPercent = 25m,
+                    EnrolledAt = seedTime.AddDays(-14),
+                    StartedAt = seedTime.AddDays(-10),
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                };
+                await _unitOfWork.ProgramEnrollments.AddAsync(student1ProgramEnrollment);
+                await _unitOfWork.SaveChangesAsync();
+            }
+
+            var student2ProgramEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                pe => pe.StudentId == student2.Id
+                      && pe.ProgramId == programRobotics.Id
+                      && !pe.IsDeleted);
+
+            if (student2ProgramEnrollment == null)
+            {
+                student2ProgramEnrollment = new ProgramEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student2.Id,
+                    ProgramId = programRobotics.Id,
+                    Status = EnrollmentStatus.Active,
+                    ProgressPercent = 5m,
+                    EnrolledAt = seedTime.AddDays(-5),
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                };
+                await _unitOfWork.ProgramEnrollments.AddAsync(student2ProgramEnrollment);
+                await _unitOfWork.SaveChangesAsync();
+            }
+
+            var student1ModuleEnrollment = await EnsureModuleEnrollmentForClassAsync(
+                student1.Id,
+                moduleRobotics1.Id,
+                student1ProgramEnrollment.Id,
+                seedTime,
+                progressPercent: 40m);
+
+            var student2ModuleEnrollment = await EnsureModuleEnrollmentForClassAsync(
+                student2.Id,
+                moduleRobotics1.Id,
+                student2ProgramEnrollment.Id,
+                seedTime,
+                progressPercent: 10m);
+
+            var classEnrollments = new List<ClassEnrollment>
+            {
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ClassId = activeClass.Id,
+                    StudentId = student1.Id,
+                    ProgramEnrollmentId = student1ProgramEnrollment.Id,
+                    Status = ClassEnrollmentStatus.Active,
+                    EnrolledAt = seedTime.AddDays(-10),
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ClassId = activeClass.Id,
+                    StudentId = student2.Id,
+                    ProgramEnrollmentId = student2ProgramEnrollment.Id,
+                    Status = ClassEnrollmentStatus.Active,
+                    EnrolledAt = seedTime.AddDays(-8),
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                }
+            };
+
+            await _unitOfWork.ClassEnrollments.AddRangeAsync(classEnrollments);
+            await _unitOfWork.SaveChangesAsync();
+
+            var sessionPast = new ClassSession
+            {
+                Id = Guid.NewGuid(),
+                ClassId = activeClass.Id,
+                ModuleId = moduleRobotics1.Id,
+                ActivityId = activityLive.Id,
+                SessionKind = SessionKind.LiveOnline,
+                Title = "Introduction Lecture",
+                Description = "Live online introduction to robotics for cohort A.",
+                StartTime = seedTime.AddDays(-7).Date.AddHours(9),
+                EndTime = seedTime.AddDays(-7).Date.AddHours(11),
+                Location = "https://meet.google.com/robotics-cohort-a-intro",
+                RequiresAttendance = true,
+                Status = ClassSessionStatus.Completed,
+                CreatedAt = seedTime,
+                CreatedBy = mentor.Id,
+                IsDeleted = false
+            };
+
+            var sessionUpcoming = new ClassSession
+            {
+                Id = Guid.NewGuid(),
+                ClassId = activeClass.Id,
+                ModuleId = moduleRobotics1.Id,
+                ActivityId = activityUpcoming.Id,
+                SessionKind = SessionKind.LiveOnline,
+                Title = "Chassis Design Workshop",
+                Description = "Live online workshop for robot chassis design and planning.",
+                StartTime = seedTime.AddDays(7).Date.AddHours(14),
+                EndTime = seedTime.AddDays(7).Date.AddHours(16),
+                Location = "https://meet.google.com/robotics-chassis-workshop",
+                RequiresAttendance = true,
+                Status = ClassSessionStatus.Scheduled,
+                CreatedAt = seedTime,
+                CreatedBy = mentor.Id,
+                IsDeleted = false
+            };
+
+            var sessions = new List<ClassSession> { sessionPast, sessionUpcoming };
+
+            if (assignmentQuiz != null)
+            {
+                sessions.Add(new ClassSession
+                {
+                    Id = Guid.NewGuid(),
+                    ClassId = activeClass.Id,
+                    ModuleId = moduleRobotics1.Id,
+                    AssignmentId = assignmentQuiz.Id,
+                    SessionKind = SessionKind.AssignmentWindow,
+                    Title = "Robotics Fundamentals Quiz Window",
+                    Description = "Assignment window for the module quiz.",
+                    StartTime = seedTime.AddDays(14).Date.AddHours(9),
+                    EndTime = seedTime.AddDays(14).Date.AddHours(12),
+                    RequiresAttendance = false,
+                    Status = ClassSessionStatus.Scheduled,
+                    CreatedAt = seedTime,
+                    CreatedBy = mentor.Id,
+                    IsDeleted = false
+                });
+            }
+
+            await _unitOfWork.ClassSessions.AddRangeAsync(sessions);
+            await _unitOfWork.SaveChangesAsync();
+
+            var attendances = new List<SessionAttendance>
+            {
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ClassSessionId = sessionPast.Id,
+                    StudentId = student1.Id,
+                    ModuleEnrollmentId = student1ModuleEnrollment.Id,
+                    Status = AttendanceStatus.Present,
+                    CheckedInAt = sessionPast.StartTime.AddMinutes(5),
+                    RecordedBy = mentor.Id,
+                    CreatedAt = seedTime,
+                    CreatedBy = mentor.Id,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ClassSessionId = sessionPast.Id,
+                    StudentId = student2.Id,
+                    ModuleEnrollmentId = student2ModuleEnrollment.Id,
+                    Status = AttendanceStatus.Late,
+                    CheckedInAt = sessionPast.StartTime.AddMinutes(25),
+                    RecordedBy = mentor.Id,
+                    CreatedAt = seedTime,
+                    CreatedBy = mentor.Id,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ClassSessionId = sessionUpcoming.Id,
+                    StudentId = student1.Id,
+                    ModuleEnrollmentId = student1ModuleEnrollment.Id,
+                    Status = AttendanceStatus.Expected,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ClassSessionId = sessionUpcoming.Id,
+                    StudentId = student2.Id,
+                    ModuleEnrollmentId = student2ModuleEnrollment.Id,
+                    Status = AttendanceStatus.Expected,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                }
+            };
+
+            await _unitOfWork.SessionAttendances.AddRangeAsync(attendances);
+            await _unitOfWork.SaveChangesAsync();
+
+            _loggerService.LogInformation(
+                "Finished seed class flow — 2 class(es), 2 enrollment(s), {SessionCount} session(s), {AttendanceCount} attendance(s).",
+                sessions.Count,
+                attendances.Count);
+        }
+
+        private async Task<ModuleEnrollment> EnsureModuleEnrollmentForClassAsync(
+            Guid studentId,
+            Guid moduleId,
+            Guid programEnrollmentId,
+            DateTime seedTime,
+            decimal progressPercent)
+        {
+            var enrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                me => me.StudentId == studentId
+                      && me.ModuleId == moduleId
+                      && !me.IsDeleted);
+
+            if (enrollment == null)
+            {
+                enrollment = new ModuleEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = studentId,
+                    ModuleId = moduleId,
+                    ProgramEnrollmentId = programEnrollmentId,
+                    Status = EnrollmentStatus.Active,
+                    ProgressPercent = progressPercent,
+                    EnrolledAt = seedTime.AddDays(-10),
+                    StartedAt = seedTime.AddDays(-8),
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                };
+                await _unitOfWork.ModuleEnrollments.AddAsync(enrollment);
+                await _unitOfWork.SaveChangesAsync();
+                return enrollment;
+            }
+
+            if (!enrollment.ProgramEnrollmentId.HasValue)
+            {
+                enrollment.ProgramEnrollmentId = programEnrollmentId;
+                await _unitOfWork.ModuleEnrollments.Update(enrollment);
+                await _unitOfWork.SaveChangesAsync();
+            }
+
+            return enrollment;
+        }
+
+        private async Task SeedResearchMilestoneDataAsync()
+        {
+            _loggerService.LogInformation("Starting seed research milestones");
+            var existingRoboticsMilestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
+                rm => rm.Code == "RML-ROBOTICS-03-01" && !rm.IsDeleted);
+            if (existingRoboticsMilestone != null)
+            {
+                _loggerService.LogInformation("Robotics research milestones already exist, skipping robotics seeding");
+                return;
+            }
+
+            var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
+            if (moduleRobotics3 == null)
+            {
+                _loggerService.LogWarning("Module MOD-ROBOTICS-03 not found. Skipping research milestone seeding.");
+                return;
+            }
+
+            var designBriefActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-01");
+            var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-02");
+            var finalPresentationActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-03");
+
+            if (designBriefActivity == null || prototypeBuildActivity == null || finalPresentationActivity == null)
+            {
+                _loggerService.LogWarning(
+                    "Research module activities not found. Skipping research milestone seeding.");
+                return;
+            }
+
+            var seedTime = DateTime.UtcNow;
+            var availabilityFrom = seedTime.AddDays(-30);
+            var availabilityUntil = seedTime.AddDays(90);
+
+            var assignmentDesign = new Assignment
+            {
+                Id = Guid.NewGuid(),
+                Code = "ASG-ROBOTICS-03-01",
+                ModuleId = moduleRobotics3.Id,
+                Title = "Design Brief Submission",
+                Description = "Submit your robot design document and component list.",
+                AssignmentType = AssignmentType.FileUpload,
+                MaxPoints = 100,
+                PassScore = 60m,
+                IsRequiredForModulePass = true,
+                DueDate = seedTime.AddDays(14),
+                AvailableFrom = availabilityFrom,
+                AvailableUntil = availabilityUntil,
+                MaxAttempts = 3,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            var assignmentPrototype = new Assignment
+            {
+                Id = Guid.NewGuid(),
+                Code = "ASG-ROBOTICS-03-02",
+                ModuleId = moduleRobotics3.Id,
+                Title = "Prototype Build Report",
+                Description = "Upload photos, build notes, and a short test summary.",
+                AssignmentType = AssignmentType.FileUpload,
+                MaxPoints = 100,
+                PassScore = 60m,
+                IsRequiredForModulePass = true,
+                DueDate = seedTime.AddDays(28),
+                AvailableFrom = availabilityFrom,
+                AvailableUntil = availabilityUntil,
+                MaxAttempts = 3,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            var assignmentCapstone = new Assignment
+            {
+                Id = Guid.NewGuid(),
+                Code = "ASG-ROBOTICS-03-03",
+                ModuleId = moduleRobotics3.Id,
+                Title = "Capstone Presentation Deliverable",
+                Description = "Submit your final presentation deck and demo video link.",
+                AssignmentType = AssignmentType.FileUpload,
+                MaxPoints = 100,
+                PassScore = 70m,
+                IsRequiredForModulePass = true,
+                DueDate = seedTime.AddDays(42),
+                AvailableFrom = availabilityFrom,
+                AvailableUntil = availabilityUntil,
+                MaxAttempts = 2,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            var milestoneDesign = new ResearchMilestone
+            {
+                Id = Guid.NewGuid(),
+                Code = "RML-ROBOTICS-03-01",
+                ModuleId = moduleRobotics3.Id,
+                Title = "Design & Planning",
+                Description = "Plan the robot challenge approach and document design choices.",
+                MilestoneOrder = 1,
+                IsCapstone = false,
+                AssignmentId = assignmentDesign.Id,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            var milestonePrototype = new ResearchMilestone
+            {
+                Id = Guid.NewGuid(),
+                Code = "RML-ROBOTICS-03-02",
+                ModuleId = moduleRobotics3.Id,
+                Title = "Prototype Assembly",
+                Description = "Build and test the first working prototype.",
+                MilestoneOrder = 2,
+                IsCapstone = false,
+                AssignmentId = assignmentPrototype.Id,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            var milestoneCapstone = new ResearchMilestone
+            {
+                Id = Guid.NewGuid(),
+                Code = "RML-ROBOTICS-03-03",
+                ModuleId = moduleRobotics3.Id,
+                Title = "Capstone Presentation",
+                Description = "Present the final robot and reflect on engineering trade-offs.",
+                MilestoneOrder = 3,
+                IsCapstone = true,
+                AssignmentId = assignmentCapstone.Id,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            await _unitOfWork.Assignments.AddRangeAsync(
+                new List<Assignment> { assignmentDesign, assignmentPrototype, assignmentCapstone });
+            await _unitOfWork.ResearchMilestones.AddRangeAsync(
+                new List<ResearchMilestone> { milestoneDesign, milestonePrototype, milestoneCapstone });
+            await _unitOfWork.SaveChangesAsync();
+
+            var milestoneActivities = new List<ResearchMilestoneActivity>
+            {
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ResearchMilestoneId = milestoneDesign.Id,
+                    ActivityId = designBriefActivity.Id,
+                    IsRequiredForSubmission = true,
+                    DisplayOrder = 1,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ResearchMilestoneId = milestonePrototype.Id,
+                    ActivityId = prototypeBuildActivity.Id,
+                    IsRequiredForSubmission = true,
+                    DisplayOrder = 1,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ResearchMilestoneId = milestoneCapstone.Id,
+                    ActivityId = finalPresentationActivity.Id,
+                    IsRequiredForSubmission = true,
+                    DisplayOrder = 1,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                }
+            };
+
+            await _unitOfWork.ResearchMilestoneActivities.AddRangeAsync(milestoneActivities);
+            await _unitOfWork.SaveChangesAsync();
+            _loggerService.LogInformation(
+                "Finished seed research milestones — 3 milestone(s) and 3 activity link(s) created.");
+        }
+
+        private async Task SeedResearchModuleEnrollmentsAsync()
+        {
+            _loggerService.LogInformation("Starting seed research module enrollments");
+            var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
+            if (moduleRobotics3 == null)
+            {
+                _loggerService.LogWarning("Module MOD-ROBOTICS-03 not found. Skipping research module enrollment seeding.");
+                return;
+            }
+
+            var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
+            var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
+            var student3 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-003");
+            ProgramEnrollment? programEnrollmentStudent1 = null;
+            if (student1 != null)
+            {
+                programEnrollmentStudent1 = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                    pe => pe.StudentId == student1.Id && !pe.IsDeleted);
+            }
+            var enrollTime = DateTime.UtcNow;
+            var moduleEnrollments = new List<ModuleEnrollment>();
+
+            async Task TryAddEnrollmentAsync(User? student, Guid? programEnrollmentId, decimal progressPercent)
+            {
+                if (student == null)
+                {
+                    return;
+                }
+
+                var exists = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                    me => me.StudentId == student.Id
+                          && me.ModuleId == moduleRobotics3.Id
+                          && !me.IsDeleted);
+
+                if (exists != null)
+                {
+                    return;
+                }
+
+                moduleEnrollments.Add(new ModuleEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student.Id,
+                    ModuleId = moduleRobotics3.Id,
+                    ProgramEnrollmentId = programEnrollmentId,
+                    Status = EnrollmentStatus.Active,
+                    ProgressPercent = progressPercent,
+                    EnrolledAt = enrollTime.AddDays(-7),
+                    StartedAt = enrollTime.AddDays(-5),
+                    CreatedAt = enrollTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+
+            await TryAddEnrollmentAsync(student1, programEnrollmentStudent1?.Id, 55m);
+            await TryAddEnrollmentAsync(student2, null, 20m);
+            await TryAddEnrollmentAsync(student3, null, 10m);
+
+            if (moduleEnrollments.Count == 0)
+            {
+                _loggerService.LogInformation("Research module enrollments already exist, skipping seeding");
+                return;
+            }
+
+            await _unitOfWork.ModuleEnrollments.AddRangeAsync(moduleEnrollments);
+            await _unitOfWork.SaveChangesAsync();
+            _loggerService.LogInformation(
+                "Finished seed research module enrollments — {Count} enrollment(s) created.",
+                moduleEnrollments.Count);
+        }
+
+        private async Task SeedResearchActivityProgressAsync()
+        {
+            _loggerService.LogInformation("Starting seed research activity progress");
+            var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
+            if (moduleRobotics3 == null)
+            {
+                _loggerService.LogWarning("Module MOD-ROBOTICS-03 not found. Skipping research activity progress seeding.");
+                return;
+            }
+
+            var designBriefActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-01");
+            var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-02");
+            if (designBriefActivity == null || prototypeBuildActivity == null)
+            {
+                _loggerService.LogWarning("Research activities not found. Skipping research activity progress seeding.");
+                return;
+            }
+
+            var studentCodes = new[] { "STD-001", "STD-002", "STD-003" };
+            var progressTime = DateTime.UtcNow;
+            var activityProgresses = new List<ActivityProgress>();
+
+            foreach (var studentCode in studentCodes)
+            {
+                var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
+                if (student == null)
+                {
+                    continue;
+                }
+
+                var enrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                    me => me.StudentId == student.Id
+                          && me.ModuleId == moduleRobotics3.Id
+                          && !me.IsDeleted);
+
+                if (enrollment == null)
+                {
+                    continue;
+                }
+
+                var existingProgress = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+                    ap => ap.ModuleEnrollmentId == enrollment.Id
+                          && ap.ActivityId == designBriefActivity.Id
+                          && !ap.IsDeleted);
+
+                if (existingProgress == null)
+                {
+                    activityProgresses.Add(new ActivityProgress
+                    {
+                        Id = Guid.NewGuid(),
+                        StudentId = student.Id,
+                        ActivityId = designBriefActivity.Id,
+                        ModuleEnrollmentId = enrollment.Id,
+                        ActivityStatus = ActivityStatus.Done,
+                        IsCompleted = true,
+                        CompletedAt = progressTime.AddDays(-4),
+                        CreatedAt = progressTime,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
+                }
+
+                if (studentCode == "STD-001")
+                {
+                    var existingPrototypeProgress = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+                        ap => ap.ModuleEnrollmentId == enrollment.Id
+                              && ap.ActivityId == prototypeBuildActivity.Id
+                              && !ap.IsDeleted);
+
+                    if (existingPrototypeProgress == null)
+                    {
+                        activityProgresses.Add(new ActivityProgress
+                        {
+                            Id = Guid.NewGuid(),
+                            StudentId = student.Id,
+                            ActivityId = prototypeBuildActivity.Id,
+                            ModuleEnrollmentId = enrollment.Id,
+                            ActivityStatus = ActivityStatus.Done,
+                            IsCompleted = true,
+                            CompletedAt = progressTime.AddDays(-2),
+                            CreatedAt = progressTime,
+                            CreatedBy = Guid.Empty,
+                            IsDeleted = false
+                        });
+                    }
+                }
+            }
+
+            if (activityProgresses.Count == 0)
+            {
+                _loggerService.LogInformation("Research activity progress already exists, skipping seeding");
+                return;
+            }
+
+            await _unitOfWork.ActivityProgresses.AddRangeAsync(activityProgresses);
+            await _unitOfWork.SaveChangesAsync();
+
+            foreach (var studentCode in studentCodes)
+            {
+                var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
+                if (student == null)
+                {
+                    continue;
+                }
+
+                var enrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                    me => me.StudentId == student.Id
+                          && me.ModuleId == moduleRobotics3.Id
+                          && !me.IsDeleted);
+
+                if (enrollment == null)
+                {
+                    continue;
+                }
+
+                var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+                    _unitOfWork,
+                    enrollment);
+
+                if (moduleProgressPercent >= 100m && enrollment.ProgramEnrollmentId.HasValue)
+                {
+                    await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                        _unitOfWork,
+                        enrollment.ProgramEnrollmentId.Value,
+                        enrollment);
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+            _loggerService.LogInformation(
+                "Finished seed research activity progress — {Count} record(s) created.",
+                activityProgresses.Count);
+        }
+
+        private async Task SeedEnrollmentActivityProgressAsync()
+        {
+            _loggerService.LogInformation("Starting seed enrollment activity progress");
+            var seedTime = DateTime.UtcNow;
+
+            await TrySeedModuleActivityProgressAsync(
+                "STD-001",
+                "MOD-ROBOTICS-01",
+                "PRG-ROBOTICS",
+                [
+                    ("ACT-ROBOTICS-01-01", ActivityStatus.Done, seedTime.AddDays(-6)),
+                    ("ACT-ROBOTICS-01-02", ActivityStatus.Done, seedTime.AddDays(-4)),
+                    ("ACT-ROBOTICS-01-03", ActivityStatus.InProgress, null),
+                ]);
+
+            await TrySeedModuleActivityProgressAsync(
+                "STD-002",
+                "MOD-WEBDEV-01",
+                "PRG-WEBDEV",
+                [
+                    ("ACT-WEBDEV-01-01", ActivityStatus.Done, seedTime.AddDays(-3)),
+                    ("ACT-WEBDEV-01-02", ActivityStatus.InProgress, null),
+                ]);
+
+            _loggerService.LogInformation("Finished seed enrollment activity progress");
+        }
+
+        private async Task TrySeedModuleActivityProgressAsync(
+            string studentCode,
+            string moduleCode,
+            string programCode,
+            (string ActivityCode, ActivityStatus Status, DateTime? CompletedAt)[] activitySeeds)
+        {
+            var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
+            var module = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == moduleCode);
+            if (student == null || module == null)
+            {
+                _loggerService.LogWarning(
+                    "Student {StudentCode} or module {ModuleCode} not found. Skipping activity progress seeding.",
+                    studentCode,
+                    moduleCode);
+                return;
+            }
+
+            var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == programCode);
+            ProgramEnrollment? programEnrollment = null;
+            if (program != null)
+            {
+                programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                    pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted);
+            }
+
+            var moduleEnrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                me => me.StudentId == student.Id
+                      && me.ModuleId == module.Id
+                      && me.Status == EnrollmentStatus.Active
+                      && !me.IsDeleted);
+
+            if (moduleEnrollment == null)
+            {
+                _loggerService.LogWarning(
+                    "Active module enrollment not found for {StudentCode} / {ModuleCode}. Skipping activity progress seeding.",
+                    studentCode,
+                    moduleCode);
+                return;
+            }
+
+            var enrollmentUpdated = false;
+            if (programEnrollment != null && moduleEnrollment.ProgramEnrollmentId != programEnrollment.Id)
+            {
+                moduleEnrollment.ProgramEnrollmentId = programEnrollment.Id;
+                enrollmentUpdated = true;
+            }
+
+            if (!moduleEnrollment.StartedAt.HasValue)
+            {
+                moduleEnrollment.StartedAt = DateTime.UtcNow.AddDays(-7);
+                enrollmentUpdated = true;
+            }
+
+            if (enrollmentUpdated)
+            {
+                await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+            }
+
+            var seedTime = DateTime.UtcNow;
+            var progressChanged = enrollmentUpdated;
+
+            foreach (var (activityCode, status, completedAt) in activitySeeds)
+            {
+                var activity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == activityCode);
+                if (activity == null)
+                {
+                    _loggerService.LogWarning("Activity {ActivityCode} not found. Skipping.", activityCode);
+                    continue;
+                }
+
+                var existingProgress = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+                    ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
+                          && ap.ActivityId == activity.Id
+                          && !ap.IsDeleted);
+
+                if (existingProgress != null)
+                {
+                    if (existingProgress.ActivityStatus == status
+                        && existingProgress.IsCompleted == (status == ActivityStatus.Done))
+                    {
+                        continue;
+                    }
+
+                    existingProgress.ActivityStatus = status;
+                    existingProgress.IsCompleted = status == ActivityStatus.Done;
+                    existingProgress.CompletedAt = status == ActivityStatus.Done
+                        ? completedAt ?? seedTime
+                        : null;
+                    await _unitOfWork.ActivityProgresses.Update(existingProgress);
+                    progressChanged = true;
+                    continue;
+                }
+
+                await _unitOfWork.ActivityProgresses.AddAsync(new ActivityProgress
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student.Id,
+                    ActivityId = activity.Id,
+                    ModuleEnrollmentId = moduleEnrollment.Id,
+                    ActivityStatus = status,
+                    IsCompleted = status == ActivityStatus.Done,
+                    CompletedAt = status == ActivityStatus.Done ? completedAt ?? seedTime : null,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+                progressChanged = true;
+            }
+
+            if (!progressChanged)
+            {
+                return;
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+                _unitOfWork,
+                moduleEnrollment);
+
+            if (moduleProgressPercent >= 100m && moduleEnrollment.ProgramEnrollmentId.HasValue)
+            {
+                await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                    _unitOfWork,
+                    moduleEnrollment.ProgramEnrollmentId.Value,
+                    moduleEnrollment);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            _loggerService.LogInformation(
+                "Seeded activity progress for {StudentCode} / {ModuleCode} — module progress {ProgressPercent}%.",
+                studentCode,
+                moduleCode,
+                moduleProgressPercent);
+        }
+
+        private async Task BackfillActivityProgressStatusAsync()
+        {
+            _loggerService.LogInformation("Starting backfill activity progress status");
+            var progresses = await _unitOfWork.ActivityProgresses.GetAllAsync(ap => !ap.IsDeleted);
+            var moduleEnrollmentIds = new HashSet<Guid>();
+            var changed = false;
+
+            foreach (var progress in progresses)
+            {
+                if (progress.IsCompleted && progress.ActivityStatus != ActivityStatus.Done)
+                {
+                    progress.ActivityStatus = ActivityStatus.Done;
+                    progress.CompletedAt ??= DateTime.UtcNow;
+                    await _unitOfWork.ActivityProgresses.Update(progress);
+                    moduleEnrollmentIds.Add(progress.ModuleEnrollmentId);
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+            {
+                _loggerService.LogInformation("No activity progress status backfill required");
+                return;
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            foreach (var moduleEnrollmentId in moduleEnrollmentIds)
+            {
+                var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId);
+                if (moduleEnrollment == null || moduleEnrollment.IsDeleted)
+                {
+                    continue;
+                }
+
+                var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+                    _unitOfWork,
+                    moduleEnrollment);
+
+                if (moduleProgressPercent >= 100m && moduleEnrollment.ProgramEnrollmentId.HasValue)
+                {
+                    await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                        _unitOfWork,
+                        moduleEnrollment.ProgramEnrollmentId.Value,
+                        moduleEnrollment);
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+            _loggerService.LogInformation(
+                "Finished backfill activity progress status — {Count} module enrollment(s) recalculated.",
+                moduleEnrollmentIds.Count);
+        }
+
+        private async Task SeedResearchSubmissionsAsync()
+        {
+            _loggerService.LogInformation("Starting seed research submissions");
+
+            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
+            var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
+            var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
+            var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
+            var milestoneDesign = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
+                rm => rm.Code == "RML-ROBOTICS-03-01" && !rm.IsDeleted);
+            var milestonePrototype = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
+                rm => rm.Code == "RML-ROBOTICS-03-02" && !rm.IsDeleted);
+
+            if (mentor == null
+                || student1 == null
+                || student2 == null
+                || moduleRobotics3 == null
+                || milestoneDesign == null
+                || milestonePrototype == null)
+            {
+                _loggerService.LogWarning("Required research submission seed data not found. Skipping.");
+                return;
+            }
+
+            var assignmentDesign = await _unitOfWork.Assignments.GetByIdAsync(milestoneDesign.AssignmentId);
+            var assignmentPrototype = await _unitOfWork.Assignments.GetByIdAsync(milestonePrototype.AssignmentId);
+            if (assignmentDesign == null || assignmentPrototype == null)
+            {
+                _loggerService.LogWarning("Research milestone assignments not found. Skipping research submission seeding.");
+                return;
+            }
+
+            var enrollmentStudent1 = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                me => me.StudentId == student1.Id
+                      && me.ModuleId == moduleRobotics3.Id
+                      && !me.IsDeleted);
+            var enrollmentStudent2 = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                me => me.StudentId == student2.Id
+                      && me.ModuleId == moduleRobotics3.Id
+                      && !me.IsDeleted);
+
+            if (enrollmentStudent1 == null || enrollmentStudent2 == null)
+            {
+                _loggerService.LogWarning("Research module enrollments not found. Skipping research submission seeding.");
+                return;
+            }
+
+            var seedTime = DateTime.UtcNow;
+            var submissions = new List<Submission>();
+
+            if (!await SubmissionCodeExistsAsync("SUB-RML0301A"))
+            {
+                submissions.Add(new Submission
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "SUB-RML0301A",
+                    AssignmentId = assignmentDesign.Id,
+                    StudentId = student1.Id,
+                    ModuleEnrollmentId = enrollmentStudent1.Id,
+                    ResearchMilestoneId = milestoneDesign.Id,
+                    AttemptNumber = 1,
+                    Status = SubmissionStatus.Graded,
+                    ContentText = "Our team chose a line-following chassis with ultrasonic obstacle detection.",
+                    FileUrl = "https://storage.oboxsteam.com/submissions/robotics-design-brief-std001.pdf",
+                    AssignedGrade = 85m,
+                    MentorFeedback = "Strong design rationale. Consider adding a power budget table.",
+                    VerifiedBy = mentor.Id,
+                    SubmittedAt = seedTime.AddDays(-6),
+                    GradedAt = seedTime.AddDays(-4),
+                    CreatedAt = seedTime.AddDays(-8),
+                    CreatedBy = mentor.Id,
+                    IsDeleted = false
+                });
+            }
+
+            if (!await SubmissionCodeExistsAsync("SUB-RML0302A"))
+            {
+                submissions.Add(new Submission
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "SUB-RML0302A",
+                    AssignmentId = assignmentPrototype.Id,
+                    StudentId = student1.Id,
+                    ModuleEnrollmentId = enrollmentStudent1.Id,
+                    ResearchMilestoneId = milestonePrototype.Id,
+                    AttemptNumber = 0,
+                    Status = SubmissionStatus.Pending,
+                    CreatedAt = seedTime.AddDays(-1),
+                    CreatedBy = mentor.Id,
+                    IsDeleted = false
+                });
+            }
+
+            if (!await SubmissionCodeExistsAsync("SUB-RML0301B"))
+            {
+                submissions.Add(new Submission
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "SUB-RML0301B",
+                    AssignmentId = assignmentDesign.Id,
+                    StudentId = student2.Id,
+                    ModuleEnrollmentId = enrollmentStudent2.Id,
+                    ResearchMilestoneId = milestoneDesign.Id,
+                    AttemptNumber = 1,
+                    Status = SubmissionStatus.ReturnedForRevision,
+                    ContentText = "Initial design draft with motor placement notes.",
+                    FileUrl = "https://storage.oboxsteam.com/submissions/robotics-design-brief-std002.pdf",
+                    MentorFeedback = "Please add sensor placement diagrams and a parts list before resubmitting.",
+                    SubmittedAt = seedTime.AddDays(-3),
+                    CreatedAt = seedTime.AddDays(-5),
+                    CreatedBy = mentor.Id,
+                    UpdatedAt = seedTime.AddDays(-2),
+                    UpdatedBy = mentor.Id,
+                    IsDeleted = false
+                });
+            }
+
+            if (submissions.Count == 0)
+            {
+                _loggerService.LogInformation("Research submissions already exist, skipping seeding");
+                return;
+            }
+
+            await _unitOfWork.Submissions.AddRangeAsync(submissions);
+            await _unitOfWork.SaveChangesAsync();
+            _loggerService.LogInformation(
+                "Finished seed research submissions — {Count} submission(s) created.",
+                submissions.Count);
+        }
+
+        private async Task<bool> SubmissionCodeExistsAsync(string code)
+            => await _unitOfWork.Submissions.FirstOrDefaultAsync(s => s.Code == code && !s.IsDeleted) != null;
+
+        private async Task SeedExtendedResearchDataAsync()
+        {
+            await SeedWebDevResearchMilestonesAsync();
+            await SeedWebDevResearchEnrollmentsAsync();
+            await SeedExtendedResearchSubmissionsAsync();
+        }
+
+        private async Task SeedWebDevResearchMilestonesAsync()
+        {
+            _loggerService.LogInformation("Starting seed webdev research milestones");
+            var existingMilestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
+                rm => rm.Code == "RML-WEBDEV-03-01" && !rm.IsDeleted);
+            if (existingMilestone != null)
+            {
+                _loggerService.LogInformation("WebDev research milestones already exist, skipping");
+                return;
+            }
+
+            var moduleWebDev3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-03");
+            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
+            if (moduleWebDev3 == null || mentor == null)
+            {
+                _loggerService.LogWarning("MOD-WEBDEV-03 or mentor not found. Skipping webdev research milestones.");
+                return;
+            }
+
+            var seedTime = DateTime.UtcNow;
+            var courseWebDev3 = await _unitOfWork.Courses.FirstOrDefaultAsync(c => c.Code == "CRS-WEBDEV-03");
+            if (courseWebDev3 == null)
+            {
+                courseWebDev3 = new Course
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "CRS-WEBDEV-03",
+                    ModuleId = moduleWebDev3.Id,
+                    MentorId = mentor.Id,
+                    Name = "Responsive Design & Deployment - Capstone Cohort",
+                    Description = "Research cohort for responsive design and deployment capstone work.",
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                };
+                await _unitOfWork.Courses.AddAsync(courseWebDev3);
+                await _unitOfWork.SaveChangesAsync();
+
+                var activities = new List<Activity>
+                {
+                    NewActivity("ACT-WEBDEV-03-01", "Responsive Design Brief", ActivityType.SelfPaced, 1,
+                        "Review responsive design requirements and breakpoints.", null, null, null, null, false, false),
+                    NewActivity("ACT-WEBDEV-03-02", "Deployment Workshop", ActivityType.LiveOnline, 2,
+                        "Live session on hosting and deployment pipelines.",
+                        "https://meet.google.com/webdev-deploy",
+                        seedTime.AddDays(10).Date.AddHours(10),
+                        seedTime.AddDays(10).Date.AddHours(12),
+                        20, false, false),
+                    NewActivity("ACT-WEBDEV-03-03", "Capstone Demo Day", ActivityType.LiveOnline, 3,
+                        "Present deployed capstone sites to mentors.",
+                        "https://meet.google.com/webdev-capstone",
+                        seedTime.AddDays(28).Date.AddHours(14),
+                        seedTime.AddDays(28).Date.AddHours(16),
+                        30, false, true)
+                };
+
+                foreach (var activity in activities)
+                {
+                    activity.CourseId = courseWebDev3.Id;
+                    activity.CreatedAt = seedTime;
+                    activity.CreatedBy = Guid.Empty;
+                    activity.IsDeleted = false;
+                }
+
+                await _unitOfWork.Activities.AddRangeAsync(activities);
+                await _unitOfWork.SaveChangesAsync();
+            }
+
+            var wireframeActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-WEBDEV-03-01");
+            var deploymentActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-WEBDEV-03-02");
+            var capstoneActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-WEBDEV-03-03");
+
+            if (wireframeActivity == null || deploymentActivity == null || capstoneActivity == null)
+            {
+                _loggerService.LogWarning("WebDev research activities not found. Skipping milestones.");
+                return;
+            }
+
+            var availabilityFrom = seedTime.AddDays(-30);
+            var availabilityUntil = seedTime.AddDays(90);
+
+            var assignmentWireframe = new Assignment
+            {
+                Id = Guid.NewGuid(),
+                Code = "ASG-WEBDEV-03-01",
+                ModuleId = moduleWebDev3.Id,
+                Title = "Responsive Wireframe Package",
+                Description = "Submit wireframes for mobile, tablet, and desktop breakpoints.",
+                AssignmentType = AssignmentType.FileUpload,
+                MaxPoints = 100,
+                PassScore = 60m,
+                IsRequiredForModulePass = true,
+                DueDate = seedTime.AddDays(14),
+                AvailableFrom = availabilityFrom,
+                AvailableUntil = availabilityUntil,
+                MaxAttempts = 3,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            var assignmentCapstone = new Assignment
+            {
+                Id = Guid.NewGuid(),
+                Code = "ASG-WEBDEV-03-02",
+                ModuleId = moduleWebDev3.Id,
+                Title = "Deployed Capstone Site",
+                Description = "Submit the live URL and source archive for the capstone site.",
+                AssignmentType = AssignmentType.FileUpload,
+                MaxPoints = 100,
+                PassScore = 70m,
+                IsRequiredForModulePass = true,
+                DueDate = seedTime.AddDays(35),
+                AvailableFrom = availabilityFrom,
+                AvailableUntil = availabilityUntil,
+                MaxAttempts = 2,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            var milestoneWireframe = new ResearchMilestone
+            {
+                Id = Guid.NewGuid(),
+                Code = "RML-WEBDEV-03-01",
+                ModuleId = moduleWebDev3.Id,
+                Title = "Responsive Planning",
+                Description = "Plan responsive layouts and document deployment approach.",
+                MilestoneOrder = 1,
+                IsCapstone = false,
+                AssignmentId = assignmentWireframe.Id,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            var milestoneCapstone = new ResearchMilestone
+            {
+                Id = Guid.NewGuid(),
+                Code = "RML-WEBDEV-03-02",
+                ModuleId = moduleWebDev3.Id,
+                Title = "Capstone Deployment",
+                Description = "Ship and present the final responsive web project.",
+                MilestoneOrder = 2,
+                IsCapstone = true,
+                AssignmentId = assignmentCapstone.Id,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            await _unitOfWork.Assignments.AddRangeAsync(
+                new List<Assignment> { assignmentWireframe, assignmentCapstone });
+            await _unitOfWork.ResearchMilestones.AddRangeAsync(
+                new List<ResearchMilestone> { milestoneWireframe, milestoneCapstone });
+            await _unitOfWork.SaveChangesAsync();
+
+            await _unitOfWork.ResearchMilestoneActivities.AddRangeAsync(new List<ResearchMilestoneActivity>
+            {
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ResearchMilestoneId = milestoneWireframe.Id,
+                    ActivityId = wireframeActivity.Id,
+                    IsRequiredForSubmission = true,
+                    DisplayOrder = 1,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ResearchMilestoneId = milestoneCapstone.Id,
+                    ActivityId = deploymentActivity.Id,
+                    IsRequiredForSubmission = true,
+                    DisplayOrder = 1,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ResearchMilestoneId = milestoneCapstone.Id,
+                    ActivityId = capstoneActivity.Id,
+                    IsRequiredForSubmission = false,
+                    DisplayOrder = 2,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                }
+            });
+            await _unitOfWork.SaveChangesAsync();
+
+            _loggerService.LogInformation(
+                "Finished seed webdev research milestones — 2 milestone(s) and 3 activity link(s) created.");
+        }
+
+        private async Task SeedWebDevResearchEnrollmentsAsync()
+        {
+            _loggerService.LogInformation("Starting seed webdev research enrollments");
+            var moduleWebDev3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-03");
+            var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
+            var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
+
+            if (moduleWebDev3 == null || student2 == null || programWebDev == null)
+            {
+                _loggerService.LogWarning("WebDev research enrollment prerequisites not found. Skipping.");
+                return;
+            }
+
+            var existing = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                me => me.StudentId == student2.Id
+                      && me.ModuleId == moduleWebDev3.Id
+                      && !me.IsDeleted);
+
+            if (existing != null)
+            {
+                _loggerService.LogInformation("WebDev research module enrollment already exists, skipping");
+                return;
+            }
+
+            var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                pe => pe.StudentId == student2.Id
+                      && pe.ProgramId == programWebDev.Id
+                      && !pe.IsDeleted);
+
+            var seedTime = DateTime.UtcNow;
+            var moduleEnrollment = new ModuleEnrollment
+            {
+                Id = Guid.NewGuid(),
+                StudentId = student2.Id,
+                ModuleId = moduleWebDev3.Id,
+                ProgramEnrollmentId = programEnrollment?.Id,
+                Status = EnrollmentStatus.Active,
+                ProgressPercent = 5m,
+                EnrolledAt = seedTime.AddDays(-3),
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            };
+
+            await _unitOfWork.ModuleEnrollments.AddAsync(moduleEnrollment);
+            await _unitOfWork.SaveChangesAsync();
+
+            var wireframeActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-WEBDEV-03-01");
+            if (wireframeActivity != null)
+            {
+                await _unitOfWork.ActivityProgresses.AddAsync(new ActivityProgress
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student2.Id,
+                    ActivityId = wireframeActivity.Id,
+                    ModuleEnrollmentId = moduleEnrollment.Id,
+                    ActivityStatus = ActivityStatus.Done,
+                    IsCompleted = true,
+                    CompletedAt = seedTime.AddDays(-1),
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+                await _unitOfWork.SaveChangesAsync();
+
+                var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+                    _unitOfWork,
+                    moduleEnrollment);
+
+                if (moduleProgressPercent >= 100m && moduleEnrollment.ProgramEnrollmentId.HasValue)
+                {
+                    await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                        _unitOfWork,
+                        moduleEnrollment.ProgramEnrollmentId.Value,
+                        moduleEnrollment);
+                }
+
+                await _unitOfWork.SaveChangesAsync();
+            }
+
+            _loggerService.LogInformation("Finished seed webdev research enrollment for STD-002.");
+        }
+
+        private async Task SeedExtendedResearchSubmissionsAsync()
+        {
+            _loggerService.LogInformation("Starting seed extended research submissions");
+
+            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
+            var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
+            var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
+            if (mentor == null || student1 == null || student2 == null)
+            {
+                return;
+            }
+
+            var seedTime = DateTime.UtcNow;
+            var createdCount = 0;
+
+            var gradedSubmission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+                s => s.Code == "SUB-RML0301A" && !s.IsDeleted);
+            if (gradedSubmission != null)
+            {
+                var existingEvidence = await _unitOfWork.SubmissionEvidences.FirstOrDefaultAsync(
+                    se => se.SubmissionId == gradedSubmission.Id && !se.IsDeleted);
+
+                if (existingEvidence == null)
+                {
+                    var media = new MediaAsset
+                    {
+                        Id = Guid.NewGuid(),
+                        UploaderId = student1.Id,
+                        FileUrl = "https://storage.oboxsteam.com/submissions/evidence/robotics-sensor-photo.jpg",
+                        FileType = "image/jpeg",
+                        UploadedAt = seedTime.AddDays(-6),
+                        CreatedAt = seedTime,
+                        CreatedBy = student1.Id,
+                        IsDeleted = false
+                    };
+                    await _unitOfWork.MediaAssets.AddAsync(media);
+                    await _unitOfWork.SubmissionEvidences.AddAsync(new SubmissionEvidence
+                    {
+                        SubmissionId = gradedSubmission.Id,
+                        MediaId = media.Id,
+                        CreatedAt = seedTime,
+                        CreatedBy = student1.Id,
+                        IsDeleted = false
+                    });
+                    await _unitOfWork.SaveChangesAsync();
+                    createdCount++;
+                }
+            }
+
+            var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
+            var milestoneCapstone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
+                rm => rm.Code == "RML-ROBOTICS-03-03" && !rm.IsDeleted);
+            var enrollmentStudent1 = moduleRobotics3 == null
+                ? null
+                : await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                    me => me.StudentId == student1.Id
+                          && me.ModuleId == moduleRobotics3.Id
+                          && !me.IsDeleted);
+
+            if (milestoneCapstone != null
+                && enrollmentStudent1 != null
+                && !await SubmissionCodeExistsAsync("SUB-RML0303A"))
+            {
+                var assignmentCapstone = await _unitOfWork.Assignments.GetByIdAsync(milestoneCapstone.AssignmentId);
+                if (assignmentCapstone != null)
+                {
+                    await _unitOfWork.Submissions.AddAsync(new Submission
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "SUB-RML0303A",
+                        AssignmentId = assignmentCapstone.Id,
+                        StudentId = student1.Id,
+                        ModuleEnrollmentId = enrollmentStudent1.Id,
+                        ResearchMilestoneId = milestoneCapstone.Id,
+                        AttemptNumber = 0,
+                        Status = SubmissionStatus.Pending,
+                        CreatedAt = seedTime,
+                        CreatedBy = mentor.Id,
+                        IsDeleted = false
+                    });
+                    await _unitOfWork.SaveChangesAsync();
+                    createdCount++;
+                }
+            }
+
+            var moduleWebDev3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-03");
+            var milestoneWebDev1 = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
+                rm => rm.Code == "RML-WEBDEV-03-01" && !rm.IsDeleted);
+            var enrollmentStudent2WebDev = moduleWebDev3 == null
+                ? null
+                : await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                    me => me.StudentId == student2.Id
+                          && me.ModuleId == moduleWebDev3.Id
+                          && !me.IsDeleted);
+
+            if (milestoneWebDev1 != null
+                && enrollmentStudent2WebDev != null
+                && !await SubmissionCodeExistsAsync("SUB-WDV0301B"))
+            {
+                var assignmentWebDev = await _unitOfWork.Assignments.GetByIdAsync(milestoneWebDev1.AssignmentId);
+                if (assignmentWebDev != null)
+                {
+                    await _unitOfWork.Submissions.AddAsync(new Submission
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "SUB-WDV0301B",
+                        AssignmentId = assignmentWebDev.Id,
+                        StudentId = student2.Id,
+                        ModuleEnrollmentId = enrollmentStudent2WebDev.Id,
+                        ResearchMilestoneId = milestoneWebDev1.Id,
+                        AttemptNumber = 1,
+                        Status = SubmissionStatus.TurnedIn,
+                        ContentText = "Wireframes for landing page across mobile and desktop breakpoints.",
+                        FileUrl = "https://storage.oboxsteam.com/submissions/webdev-wireframes-std002.pdf",
+                        SubmittedAt = seedTime.AddDays(-2),
+                        CreatedAt = seedTime.AddDays(-4),
+                        CreatedBy = mentor.Id,
+                        IsDeleted = false
+                    });
+                    await _unitOfWork.SaveChangesAsync();
+                    createdCount++;
+                }
+            }
+
+            _loggerService.LogInformation(
+                "Finished seed extended research submissions — {Count} update(s)/record(s).",
+                createdCount);
         }
 
         public async Task ClearAllDataAsync()
@@ -2881,105 +4368,14 @@ namespace OboxSteam.Application.Services
 
 
         /// <summary>
-        /// Xóa các S3 objects được track trong DB trước khi xóa DB rows.
-        /// Bao gồm: media/, raw/, materials/, highlights/, avatars/ (Users + Experts).
+        /// Xóa toàn bộ objects trong S3 bucket trước khi xóa DB rows.
         /// Lỗi xóa từng object được log warning nhưng không làm dừng quá trình.
         /// </summary>
         private async Task ClearS3ObjectsAsync()
         {
-            _loggerService.LogInformation("[ClearS3] Starting S3 cleanup...");
-            var s3KeysToDelete = new List<string>();
+            _loggerService.LogInformation("[ClearS3] Starting full bucket cleanup...");
 
-            // ── 1. MediaAssets: FileUrl (media/) và RawVideoS3Key (raw/) ────────
-            var mediaAssets = await _unitOfWork.MediaAssets.GetAllAsync();
-            foreach (var asset in mediaAssets)
-            {
-                if (!string.IsNullOrWhiteSpace(asset.FileUrl))
-                {
-                    var key = ExtractS3Key(asset.FileUrl);
-                    if (!string.IsNullOrEmpty(key))
-                        s3KeysToDelete.Add(key);
-                }
-
-                if (!string.IsNullOrWhiteSpace(asset.RawVideoS3Key))
-                    s3KeysToDelete.Add(asset.RawVideoS3Key);
-            }
-
-            // ── 2. Materials: FileUrl (materials/) — chỉ những URL thuộc S3 ───
-            var materials = await _unitOfWork.Materials.GetAllAsync();
-            foreach (var material in materials)
-            {
-                if (string.IsNullOrWhiteSpace(material.FileUrl))
-                    continue;
-
-                // Bỏ qua external links (không phải S3 URLs)
-                if (!IsS3Url(material.FileUrl))
-                    continue;
-
-                var key = ExtractS3Key(material.FileUrl);
-                if (!string.IsNullOrEmpty(key))
-                    s3KeysToDelete.Add(key);
-            }
-
-            // ── 3. HighlightVideos: VideoUrl ────────────────────────────────────
-            var highlightVideos = await _unitOfWork.HighlightVideos.GetAllAsync();
-            foreach (var hv in highlightVideos)
-            {
-                if (!string.IsNullOrWhiteSpace(hv.VideoUrl))
-                {
-                    var key = ExtractS3Key(hv.VideoUrl);
-                    if (!string.IsNullOrEmpty(key))
-                        s3KeysToDelete.Add(key);
-                }
-            }
-
-            // ── 4. Users: AvatarUrl (avatars/) ──────────────────────────────────
-            var users = await _unitOfWork.Users.GetAllAsync();
-            foreach (var user in users)
-            {
-                if (!string.IsNullOrWhiteSpace(user.AvatarUrl) && IsS3Url(user.AvatarUrl))
-                {
-                    var key = ExtractS3Key(user.AvatarUrl);
-                    if (!string.IsNullOrEmpty(key))
-                        s3KeysToDelete.Add(key);
-                }
-            }
-
-            // ── 5. Experts: AvatarUrl (avatars/) ────────────────────────────────
-            var experts = await _unitOfWork.Experts.GetAllAsync();
-            foreach (var expert in experts)
-            {
-                if (!string.IsNullOrWhiteSpace(expert.AvatarUrl) && IsS3Url(expert.AvatarUrl))
-                {
-                    var key = ExtractS3Key(expert.AvatarUrl);
-                    if (!string.IsNullOrEmpty(key))
-                        s3KeysToDelete.Add(key);
-                }
-            }
-
-            // ── Deduplicate ────────────────────────────────────────────────────
-            var distinctKeys = s3KeysToDelete
-                .Where(k => !string.IsNullOrWhiteSpace(k))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            _loggerService.LogInformation("[ClearS3] Found {Count} S3 object(s) to delete.", distinctKeys.Count);
-
-            int deleted = 0, failed = 0;
-            foreach (var key in distinctKeys)
-            {
-                try
-                {
-                    await _blobService.DeleteByKeyAsync(key);
-                    deleted++;
-                    _loggerService.LogDebug("[ClearS3] Deleted: {Key}", key);
-                }
-                catch (Exception ex)
-                {
-                    failed++;
-                    _loggerService.LogWarning(ex, "[ClearS3] Failed to delete S3 object: {Key}", key);
-                }
-            }
+            var (deleted, failed) = await _blobService.ClearAllObjectsAsync();
 
             _loggerService.LogInformation(
                 "[ClearS3] S3 cleanup done. Deleted={Deleted}, Failed={Failed}",
@@ -3019,6 +4415,119 @@ namespace OboxSteam.Application.Services
                 || host.Contains(_blobService.BucketName, StringComparison.OrdinalIgnoreCase);
         }
 
+        private sealed record SeedMaterialDefinition(
+            string ActivityCode,
+            string Title,
+            MaterialType MaterialType,
+            string FileUrl,
+            long? FileSizeBytes = null);
+
+        private static IReadOnlyList<SeedMaterialDefinition> GetSeedMaterialDefinitions() =>
+        [
+            new("ACT-ROBOTICS-01-01", "Pre-class Reading: What is a Robot?", MaterialType.Video,
+                "https://storage.oboxsteam.com/materials/video/what-is-a-robot.mp4", 48_500_000L),
+            new("ACT-ROBOTICS-01-04", "Reflection Journal Template", MaterialType.PDF,
+                "https://storage.oboxsteam.com/materials/pdf/robotics-reflection-journal.pdf", 245_000L),
+            new("ACT-ROBOTICS-02-02", "Block Programming Exercise Pack", MaterialType.PDF,
+                "https://storage.oboxsteam.com/materials/pdf/block-programming-exercises.pdf", 1_120_000L),
+            new("ACT-ROBOTICS-02-03", "Weekly Quiz Review Videos", MaterialType.Video,
+                "https://storage.oboxsteam.com/materials/video/robotics-quiz-review.mp4", 62_000_000L),
+            new("ACT-ROBOTICS-03-01", "Sensor Theory Overview", MaterialType.Video,
+                "https://storage.oboxsteam.com/materials/video/sensor-theory-overview.mp4", 55_800_000L),
+            new("ACT-ROBOTICS-04-01", "Build and Test Design Brief", MaterialType.PDF,
+                "https://storage.oboxsteam.com/materials/pdf/robotics-design-brief.pdf", 890_000L),
+            new("ACT-WEBDEV-01-01", "HTML Structure Overview", MaterialType.Video,
+                "https://storage.oboxsteam.com/materials/video/html-structure-overview.mp4", 41_200_000L),
+            new("ACT-WEBDEV-01-03", "Responsive Layout Exercise Workbook", MaterialType.PDF,
+                "https://storage.oboxsteam.com/materials/pdf/responsive-layout-workbook.pdf", 760_000L),
+            new("ACT-WEBDEV-02-01", "JavaScript Variables and Types", MaterialType.Video,
+                "https://storage.oboxsteam.com/materials/video/javascript-variables-types.mp4", 38_400_000L),
+            new("ACT-WEBDEV-02-04", "Code Review Checklist", MaterialType.DOC,
+                "https://storage.oboxsteam.com/materials/doc/webdev-code-review-checklist.docx", 128_000L),
+            new("ACT-WEBDEV-03-01", "Responsive Design Brief", MaterialType.PDF,
+                "https://storage.oboxsteam.com/materials/pdf/responsive-design-brief.pdf", 512_000L),
+            new("ACT-STEAM-01-02", "Science Experiment Kit Guide", MaterialType.PDF,
+                "https://storage.oboxsteam.com/materials/pdf/steam-science-kit-guide.pdf", 680_000L),
+            new("ACT-STEAM-02-01", "Prototyping Principles", MaterialType.Video,
+                "https://storage.oboxsteam.com/materials/video/prototyping-principles.mp4", 44_600_000L),
+            new("ACT-STEAM-02-03", "Design Critique Worksheet", MaterialType.PDF,
+                "https://storage.oboxsteam.com/materials/pdf/design-critique-worksheet.pdf", 198_000L),
+            new("ACT-STEAM-02-04", "Portfolio Documentation Template", MaterialType.DOC,
+                "https://storage.oboxsteam.com/materials/doc/portfolio-documentation-template.docx", 156_000L),
+            new("ACT-IOT-01-01", "Microcontroller Basics", MaterialType.Video,
+                "https://storage.oboxsteam.com/materials/video/microcontroller-basics.mp4", 52_300_000L),
+            new("ACT-IOT-01-02", "Sensor Wiring Guide", MaterialType.Image,
+                "https://storage.oboxsteam.com/materials/image/sensor-wiring-diagram.png", 2_400_000L),
+            new("ACT-IOT-02-01", "MQTT Concepts Explained", MaterialType.Video,
+                "https://storage.oboxsteam.com/materials/video/mqtt-concepts.mp4", 36_700_000L),
+            new("ACT-IOT-02-02", "Cloud Dashboard Setup Guide", MaterialType.PDF,
+                "https://storage.oboxsteam.com/materials/pdf/cloud-dashboard-setup.pdf", 945_000L),
+        ];
+
+        private async Task SeedMaterialsAsync()
+        {
+            _loggerService.LogInformation("Starting seed materials");
+
+            var definitions = GetSeedMaterialDefinitions();
+            var definitionByCode = definitions.ToDictionary(
+                d => d.ActivityCode,
+                d => d,
+                StringComparer.OrdinalIgnoreCase);
+
+            var existingMaterials = await _unitOfWork.Materials.GetAllAsync(m => !m.IsDeleted);
+            var activityIdsWithMaterial = existingMaterials
+                .Select(m => m.ActivityId)
+                .ToHashSet();
+
+            var selfPacedActivities = await _unitOfWork.Activities.GetAllAsync(
+                a => !a.IsDeleted && a.ActivityType == ActivityType.SelfPaced);
+
+            var seedTime = DateTime.UtcNow;
+            var materialsToAdd = new List<Material>();
+
+            foreach (var activity in selfPacedActivities)
+            {
+                if (activityIdsWithMaterial.Contains(activity.Id))
+                {
+                    continue;
+                }
+
+                if (!definitionByCode.TryGetValue(activity.Code, out var definition))
+                {
+                    _loggerService.LogWarning(
+                        "No seed material definition for SelfPaced activity '{ActivityCode}'. Skipping.",
+                        activity.Code);
+                    continue;
+                }
+
+                materialsToAdd.Add(new Material
+                {
+                    Id = Guid.NewGuid(),
+                    ActivityId = activity.Id,
+                    Title = definition.Title,
+                    MaterialType = definition.MaterialType,
+                    FileUrl = definition.FileUrl,
+                    FileSizeBytes = definition.FileSizeBytes,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+
+            if (materialsToAdd.Count == 0)
+            {
+                _loggerService.LogInformation("No new materials to seed.");
+                return;
+            }
+
+            await _unitOfWork.Materials.AddRangeAsync(materialsToAdd);
+            await _unitOfWork.SaveChangesAsync();
+
+            _loggerService.LogInformation(
+                "Finished seed materials — {Count} material(s) created.",
+                materialsToAdd.Count);
+        }
+
         private static List<Activity> CreateSeedActivities(
             Dictionary<string, Course> courseByCode,
             DateTime baseDate,
@@ -3051,10 +4560,10 @@ namespace OboxSteam.Application.Services
                     "Live online introduction to robotics.",
                     "https://meet.google.com/robotics-intro",
                     baseDate.AddDays(1).AddHours(9), baseDate.AddDays(1).AddHours(11), 30, false, false),
-                NewActivity("ACT-ROBOTICS-01-03", "Building the Chassis", ActivityType.Offline, 3,
-                    "Hands-on lab for building robot chassis.",
-                    "Lab Room 101",
-                    baseDate.AddDays(3).AddHours(14), baseDate.AddDays(3).AddHours(16), 20, true, true),
+                NewActivity("ACT-ROBOTICS-01-03", "Chassis Design Workshop", ActivityType.LiveOnline, 3,
+                    "Live online workshop for robot chassis design and planning.",
+                    "https://meet.google.com/robotics-chassis-workshop",
+                    baseDate.AddDays(3).AddHours(14), baseDate.AddDays(3).AddHours(16), 30, false, false),
                 NewActivity("ACT-ROBOTICS-01-04", "Reflection Journal", ActivityType.SelfPaced, 4,
                     "Submit a short reflection on what you learned this week.", null, null, null, null, false, false),
             });
@@ -3065,10 +4574,8 @@ namespace OboxSteam.Application.Services
                     "Welcome session for cohort B.",
                     "https://meet.google.com/robotics-cohort-b",
                     baseDate.AddDays(2).AddHours(10), baseDate.AddDays(2).AddHours(11), 25, false, false),
-                NewActivity("ACT-ROBOTICS-02-02", "Block Programming Lab", ActivityType.Offline, 2,
-                    "Practice block-based programming with physical kits.",
-                    "Lab Room 102",
-                    baseDate.AddDays(5).AddHours(14), baseDate.AddDays(5).AddHours(16), 20, true, true),
+                NewActivity("ACT-ROBOTICS-02-02", "Block Programming Exercises", ActivityType.SelfPaced, 2,
+                    "Self-paced block programming practice exercises.", null, null, null, null, false, false),
                 NewActivity("ACT-ROBOTICS-02-03", "Weekly Quiz Review", ActivityType.SelfPaced, 3,
                     "Review quiz answers and supplementary videos.", null, null, null, null, false, false),
             });
@@ -3077,10 +4584,10 @@ namespace OboxSteam.Application.Services
             {
                 NewActivity("ACT-ROBOTICS-03-01", "Sensor Theory", ActivityType.SelfPaced, 1,
                     "Learn how ultrasonic and infrared sensors work.", null, null, null, null, false, false),
-                NewActivity("ACT-ROBOTICS-03-02", "Movement Patterns Workshop", ActivityType.LiveOnline, 2,
-                    "Live workshop on programming movement patterns.",
-                    "https://meet.google.com/robotics-movement",
-                    baseDate.AddDays(7).AddHours(9), baseDate.AddDays(7).AddHours(11), 30, false, false),
+                NewActivity("ACT-ROBOTICS-03-02", "Movement Patterns Workshop", ActivityType.Offline, 2,
+                    "Hands-on workshop on programming movement patterns.",
+                    "Lab Room 103",
+                    baseDate.AddDays(7).AddHours(9), baseDate.AddDays(7).AddHours(11), 30, true, false),
                 NewActivity("ACT-ROBOTICS-03-03", "Sensor Calibration Lab", ActivityType.Offline, 3,
                     "Calibrate sensors and test obstacle avoidance.",
                     "Lab Room 103",
@@ -3109,28 +4616,24 @@ namespace OboxSteam.Application.Services
                     "Live session on flexbox and grid layouts.",
                     "https://meet.google.com/webdev-css",
                     baseDate.AddDays(4).AddHours(18), baseDate.AddDays(4).AddHours(20), 35, false, false),
-                NewActivity("ACT-WEBDEV-01-03", "Responsive Design Clinic", ActivityType.Offline, 3,
-                    "In-person clinic for responsive page layouts.",
-                    "Computer Lab 201",
-                    baseDate.AddDays(8).AddHours(18), baseDate.AddDays(8).AddHours(20), 18, true, false),
+                NewActivity("ACT-WEBDEV-01-03", "Responsive Layout Exercises", ActivityType.SelfPaced, 3,
+                    "Self-paced responsive layout practice exercises.", null, null, null, null, false, false),
             });
 
             AddActivities("CRS-WEBDEV-02", new[]
             {
                 NewActivity("ACT-WEBDEV-02-01", "JavaScript Variables & Types", ActivityType.SelfPaced, 1,
                     "Self-paced module on JS fundamentals.", null, null, null, null, false, false),
-                NewActivity("ACT-WEBDEV-02-02", "DOM Manipulation Live Lab", ActivityType.LiveOnline, 2,
-                    "Interactive live coding on DOM APIs.",
-                    "https://meet.google.com/webdev-js-dom",
-                    baseDate.AddDays(6).AddHours(10), baseDate.AddDays(6).AddHours(12), 30, false, false),
+                NewActivity("ACT-WEBDEV-02-02", "DOM Manipulation Lab", ActivityType.Offline, 2,
+                    "Hands-on lab for DOM manipulation exercises.",
+                    "Computer Lab 202",
+                    baseDate.AddDays(6).AddHours(10), baseDate.AddDays(6).AddHours(12), 30, true, false),
                 NewActivity("ACT-WEBDEV-02-03", "Weekend Hackathon", ActivityType.Offline, 3,
                     "Build a simple interactive page in teams.",
                     "Computer Lab 202",
                     baseDate.AddDays(12).AddHours(9), baseDate.AddDays(12).AddHours(15), 24, true, true),
-                NewActivity("ACT-WEBDEV-02-04", "Code Review Session", ActivityType.LiveOnline, 4,
-                    "Mentor-led code review of student projects.",
-                    "https://meet.google.com/webdev-review",
-                    baseDate.AddDays(15).AddHours(10), baseDate.AddDays(15).AddHours(12), 30, false, false),
+                NewActivity("ACT-WEBDEV-02-04", "Code Review Checklist", ActivityType.SelfPaced, 4,
+                    "Self-paced code review checklist and mentor feedback guide.", null, null, null, null, false, false),
             });
 
             AddActivities("CRS-STEAM-01", new[]
@@ -3141,10 +4644,10 @@ namespace OboxSteam.Application.Services
                     baseDate.AddDays(3).AddHours(9), baseDate.AddDays(3).AddHours(10), 40, false, false),
                 NewActivity("ACT-STEAM-01-02", "Science Experiment Kit", ActivityType.SelfPaced, 2,
                     "Complete the at-home science experiment kit.", null, null, null, null, false, true),
-                NewActivity("ACT-STEAM-01-03", "Group Art & Engineering Session", ActivityType.Offline, 3,
-                    "Combine art and engineering in a collaborative build.",
-                    "STEAM Studio 1",
-                    baseDate.AddDays(9).AddHours(13), baseDate.AddDays(9).AddHours(16), 16, true, true),
+                NewActivity("ACT-STEAM-01-03", "Art & Engineering Discussion", ActivityType.LiveOnline, 3,
+                    "Live discussion on combining art and engineering in projects.",
+                    "https://meet.google.com/steam-art-engineering",
+                    baseDate.AddDays(9).AddHours(13), baseDate.AddDays(9).AddHours(16), 16, false, true),
             });
 
             AddActivities("CRS-STEAM-02", new[]
@@ -3155,10 +4658,8 @@ namespace OboxSteam.Application.Services
                     "Explore recycled materials and simple circuits.",
                     "STEAM Studio 2",
                     baseDate.AddDays(11).AddHours(10), baseDate.AddDays(11).AddHours(13), 14, true, true),
-                NewActivity("ACT-STEAM-02-03", "Design Critique", ActivityType.LiveOnline, 3,
-                    "Peer and mentor critique of prototype designs.",
-                    "https://meet.google.com/steam-critique",
-                    baseDate.AddDays(16).AddHours(15), baseDate.AddDays(16).AddHours(16), 30, false, false),
+                NewActivity("ACT-STEAM-02-03", "Design Critique Worksheet", ActivityType.SelfPaced, 3,
+                    "Complete the peer design critique worksheet.", null, null, null, null, false, false),
                 NewActivity("ACT-STEAM-02-04", "Portfolio Documentation", ActivityType.SelfPaced, 4,
                     "Document your prototype with photos and a short write-up.", null, null, null, null, false, true),
             });
@@ -3167,10 +4668,8 @@ namespace OboxSteam.Application.Services
             {
                 NewActivity("ACT-IOT-01-01", "Microcontroller Basics", ActivityType.SelfPaced, 1,
                     "Self-paced intro to Arduino and GPIO pins.", null, null, null, null, false, false),
-                NewActivity("ACT-IOT-01-02", "Sensor Wiring Workshop", ActivityType.Offline, 2,
-                    "Wire temperature and humidity sensors to a board.",
-                    "Electronics Lab 301",
-                    baseDate.AddDays(5).AddHours(9), baseDate.AddDays(5).AddHours(12), 16, true, true),
+                NewActivity("ACT-IOT-01-02", "Sensor Wiring Guide", ActivityType.SelfPaced, 2,
+                    "Self-paced guide for wiring temperature and humidity sensors.", null, null, null, null, false, false),
                 NewActivity("ACT-IOT-01-03", "Live Q&A: Sensor Data", ActivityType.LiveOnline, 3,
                     "Live Q&A on reading and interpreting sensor data.",
                     "https://meet.google.com/iot-sensors",
@@ -3181,10 +4680,8 @@ namespace OboxSteam.Application.Services
             {
                 NewActivity("ACT-IOT-02-01", "MQTT Concepts", ActivityType.SelfPaced, 1,
                     "Learn MQTT publish/subscribe patterns.", null, null, null, null, false, false),
-                NewActivity("ACT-IOT-02-02", "Cloud Dashboard Setup", ActivityType.LiveOnline, 2,
-                    "Set up a cloud dashboard for live sensor feeds.",
-                    "https://meet.google.com/iot-cloud",
-                    baseDate.AddDays(10).AddHours(10), baseDate.AddDays(10).AddHours(12), 20, false, false),
+                NewActivity("ACT-IOT-02-02", "Cloud Dashboard Setup Guide", ActivityType.SelfPaced, 2,
+                    "Self-paced guide for setting up a cloud dashboard.", null, null, null, null, false, false),
                 NewActivity("ACT-IOT-02-03", "Device Deployment Lab", ActivityType.Offline, 3,
                     "Deploy a device and verify cloud connectivity.",
                     "Electronics Lab 302",

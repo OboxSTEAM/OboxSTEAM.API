@@ -12,19 +12,25 @@ namespace OboxSteam.Application.Services;
 /// <summary>
 /// Orchestrates personal highlight video generation for a student within a Program.
 ///
+/// Data source: face and label timelines are captured at tagging time and persisted
+/// (<see cref="MediaTag.FaceSegmentsJson"/> / <see cref="MediaTag.HasOtherFaces"/> and
+/// <see cref="MediaAsset.LabelTimelineJson"/>). This service reads them from the DB and
+/// does NOT re-query Rekognition (whose video job results expire after 7 days).
+///
 /// Logic Core (clipping rules per source video):
-///   Case 1 — Video has ZERO faces detected by Rekognition (scene-only / activity footage)
-///             but was tagged for the student → include the ENTIRE video (Fallback).
-///   Case 2 — Video's only detected face belongs to the target student → include ENTIRE video.
+///   Case 1 — Video has ZERO recorded face segments for the student (scene-only / activity
+///             footage) but was tagged for the student → include the ENTIRE video (Fallback).
+///   Case 2 — Video has no other faces besides the target student → include ENTIRE video.
 ///   Case 3 — Video has multiple people → extract only the student's segments from the timeline
 ///             using 2-second buffers; segments that overlap after buffering are merged.
-///   Fallback — Timeline extraction returned no segments for the student
-///              (AI could not pinpoint the face) → include ENTIRE video.
+///   Fallback — No persisted timeline (legacy data / capture failure): include the ENTIRE video
+///              only when the student is the sole tagged person; otherwise skip the video to
+///              avoid leaking other people's faces.
 ///
 /// Strengths Filtering (optional — triggered when caller supplies a strength description):
-///   After building face segments, cross-references them with the Rekognition Label Detection
-///   timeline via Claude (Bedrock). Only segments where the student is performing a matched
-///   strength are kept. If no match is found across all videos a BadRequest is thrown.
+///   Cross-references face segments with the persisted Label Detection timeline via an LLM
+///   (AWS Bedrock). Only segments where the student is performing a matched strength are kept.
+///   If no match is found across all videos a BadRequest is thrown.
 /// </summary>
 public class PersonalVideoService : IPersonalVideoService
 {
@@ -43,6 +49,13 @@ public class PersonalVideoService : IPersonalVideoService
     private const string PersonalVideoFolder = "personal-videos";
 
     /// <summary>
+    /// Sentinel "end" timestamp (ms) for a synthetic full-video segment used in Case 1
+    /// (no recorded face segments) + strengths filtering. Divided by 1000 so that later
+    /// buffer additions (+<see cref="BufferMs"/>) cannot overflow <see cref="long"/>.
+    /// </summary>
+    private const long FullVideoEndMs = long.MaxValue / 1_000;
+
+    /// <summary>
     /// A HighlightVideo stuck in <see cref="HighlightVideoStatus.Processing"/> longer than this
     /// is treated as stale (e.g. the MediaConvert completion webhook never arrived) and may be
     /// re-triggered. Without this guard a lost webhook would lock the record forever.
@@ -51,25 +64,25 @@ public class PersonalVideoService : IPersonalVideoService
 
     private readonly string _s3Bucket;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IFaceRecognitionService _faceRecognitionService;
     private readonly IVideoConverterService _videoConverterService;
     private readonly IStrengthMatchService _strengthMatchService;
     private readonly IBlobService _blobService;
+    private readonly IPersonalVideoQueue _queue;
     private readonly ILogger<PersonalVideoService> _logger;
 
     public PersonalVideoService(
         IUnitOfWork unitOfWork,
-        IFaceRecognitionService faceRecognitionService,
         IVideoConverterService videoConverterService,
         IStrengthMatchService strengthMatchService,
         IBlobService blobService,
+        IPersonalVideoQueue queue,
         ILogger<PersonalVideoService> logger)
     {
         _unitOfWork = unitOfWork;
-        _faceRecognitionService = faceRecognitionService;
         _videoConverterService = videoConverterService;
         _strengthMatchService = strengthMatchService;
         _blobService = blobService;
+        _queue = queue;
         _logger = logger;
         _s3Bucket = blobService.BucketName;
     }
@@ -120,61 +133,137 @@ public class PersonalVideoService : IPersonalVideoService
                 requestedAt, programId, studentId);
         }
 
-        // ── 3. Collect all tagged, fully-processed videos in this Program ────
-        var clipInputs = await BuildClipInputsAsync(programId, studentId, strengthDescription);
-
-        if (clipInputs.Count == 0)
-        {
-            var reason = !string.IsNullOrWhiteSpace(strengthDescription)
-                ? $"No video segments matched the specified strengths: '{strengthDescription}'. " +
-                  "Ensure the student's strengths are visible in the tagged videos and label detection has completed."
-                : "No processed video assets tagged for this student were found in the program.";
-            throw ErrorHelper.BadRequest(reason);
-        }
-
-        // ── 4. Submit MediaConvert job ───────────────────────────────────────
-        var outputKey = $"{PersonalVideoFolder}/{studentId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
-
-        _logger.LogInformation(
-            "[PersonalVideoService] Submitting personal video job: {ClipCount} clip(s) → {OutputKey}",
-            clipInputs.Count, outputKey);
-
-        string mcJobId;
-        try
-        {
-            mcJobId = await _videoConverterService.SubmitPersonalVideoJobAsync(clipInputs, outputKey);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "[PersonalVideoService] Failed to submit MediaConvert job.");
-            throw ErrorHelper.Internal("Failed to start video generation. Please try again later.");
-        }
-
-        // ── 5. Persist / upsert HighlightVideo record ────────────────────────
+        // ── 3. Create / reset the HighlightVideo record in Processing state ──
+        //
+        // The record is persisted as Processing BEFORE any heavy work (clip building, Bedrock,
+        // MediaConvert). This lets the API return 202 immediately (no request-thread timeout)
+        // and — together with the guard above and the unique (ProgramId, StudentId) index —
+        // collapses the window for duplicate job submission from rapid double-clicks.
         if (existing == null)
         {
             existing = new HighlightVideo
             {
                 StudentId = studentId,
                 ProgramId = programId,
+                PersonalVideoStatus = HighlightVideoStatus.Processing,
+                PersonalVideoRequestedAt = DateTime.UtcNow,
             };
             await _unitOfWork.HighlightVideos.AddAsync(existing);
+
+            try
+            {
+                await _unitOfWork.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                // A concurrent request inserted the row first → unique index violation.
+                // Return that winning record instead of submitting a duplicate job.
+                _logger.LogWarning(ex,
+                    "[PersonalVideoService] Concurrent trigger for ProgramId={ProgramId}, StudentId={StudentId}; returning existing record.",
+                    programId, studentId);
+
+                var winner = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
+                    hv => hv.ProgramId == programId && hv.StudentId == studentId && !hv.IsDeleted);
+
+                if (winner != null)
+                    return MapToDto(winner);
+
+                throw;
+            }
+        }
+        else
+        {
+            // Regenerate: keep the previous VideoUrl so the old video stays available until the
+            // new job completes; reset the stale job ref / failure reason.
+            existing.PersonalVideoStatus = HighlightVideoStatus.Processing;
+            existing.PersonalVideoRequestedAt = DateTime.UtcNow;
+            existing.PersonalVideoJobRef = null;
+            existing.PersonalVideoFailureReason = null;
+            await _unitOfWork.SaveChangesAsync();
         }
 
-        existing.VideoUrl = null; // will be set when job completes
-        existing.PersonalVideoJobRef = mcJobId;
-        existing.PersonalVideoStatus = HighlightVideoStatus.Processing;
-        existing.PersonalVideoRequestedAt = DateTime.UtcNow;
-        // Note: do NOT set existing.Status — it is obsolete. Use PersonalVideoStatus only.
+        // ── 4. Hand off the heavy work (clip build + MediaConvert) to the worker ──
+        _queue.Enqueue(new PersonalVideoJob(existing.Id, programId, studentId, strengthDescription));
 
-        await _unitOfWork.SaveChangesAsync();
-
-        // ── 6. Wait for AWS Webhook to notify completion ─────────────────────
         _logger.LogInformation(
-            "[PersonalVideoService] Job submitted. HighlightVideoId={Id}, McJobId={McJobId}",
-            existing.Id, mcJobId);
+            "[PersonalVideoService] Generation queued. HighlightVideoId={Id}, ProgramId={ProgramId}, StudentId={StudentId}",
+            existing.Id, programId, studentId);
 
         return MapToDto(existing);
+    }
+
+    /// <inheritdoc />
+    public async Task ProcessGenerationAsync(PersonalVideoJob job)
+    {
+        var record = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
+            hv => hv.Id == job.HighlightVideoId && !hv.IsDeleted);
+
+        if (record == null)
+        {
+            _logger.LogWarning(
+                "[PersonalVideoService] ProcessGenerationAsync: HighlightVideo {Id} not found; skipping.",
+                job.HighlightVideoId);
+            return;
+        }
+
+        try
+        {
+            // ── Collect all tagged, fully-processed videos in this Program ──
+            var clipInputs = await BuildClipInputsAsync(
+                job.ProgramId, job.StudentId, job.StrengthDescription);
+
+            if (clipInputs.Count == 0)
+            {
+                var reason = !string.IsNullOrWhiteSpace(job.StrengthDescription)
+                    ? $"No video segments matched the specified strengths: '{job.StrengthDescription}'. " +
+                      "Ensure the student's strengths are visible in the tagged videos and label detection has completed."
+                    : "No processed video assets tagged for this student were found in the program.";
+
+                _logger.LogInformation(
+                    "[PersonalVideoService] No clips for HighlightVideoId={Id}: {Reason}", record.Id, reason);
+
+                record.PersonalVideoStatus = HighlightVideoStatus.Failed;
+                record.PersonalVideoFailureReason = reason;
+                await _unitOfWork.SaveChangesAsync();
+                return;
+            }
+
+            // ── Submit MediaConvert job ──
+            var outputKey = $"{PersonalVideoFolder}/{job.StudentId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
+
+            _logger.LogInformation(
+                "[PersonalVideoService] Submitting personal video job: {ClipCount} clip(s) → {OutputKey}",
+                clipInputs.Count, outputKey);
+
+            var mcJobId = await _videoConverterService.SubmitPersonalVideoJobAsync(clipInputs, outputKey);
+
+            record.PersonalVideoJobRef = mcJobId;
+            record.PersonalVideoStatus = HighlightVideoStatus.Processing;
+            record.PersonalVideoFailureReason = null;
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "[PersonalVideoService] Job submitted. HighlightVideoId={Id}, McJobId={McJobId}. Awaiting MediaConvert webhook.",
+                record.Id, mcJobId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "[PersonalVideoService] Generation failed for HighlightVideoId={Id}.", record.Id);
+
+            record.PersonalVideoStatus = HighlightVideoStatus.Failed;
+            record.PersonalVideoFailureReason =
+                "An internal error occurred during video generation. Please try again later.";
+            try
+            {
+                await _unitOfWork.SaveChangesAsync();
+            }
+            catch (Exception saveEx)
+            {
+                _logger.LogError(saveEx,
+                    "[PersonalVideoService] Failed to persist Failed status for HighlightVideoId={Id}.", record.Id);
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -277,10 +366,12 @@ public class PersonalVideoService : IPersonalVideoService
 
         // Build ClipInputs SEQUENTIALLY when strengths filtering is enabled.
         // Running Bedrock calls in parallel on 3+ videos blows the tokens-per-minute quota
-        // (3 × 4365 labels = ~130k tokens in one burst). Sequential processing means only
-        // one Claude call is in-flight at a time, keeping token consumption well within limits.
-        // For the no-strength path the Rekognition calls remain cheap and can still be
-        // sequential without meaningful latency impact.
+        // (several thousand labels per video → ~100k+ tokens in one burst). Sequential
+        // processing means only one LLM call is in-flight at a time, keeping token
+        // consumption well within limits.
+        // Both face and label timelines are read from the DB here (captured at tagging time),
+        // so there are NO Rekognition calls in this loop — the no-strengths path is pure
+        // DB reads and is effectively instant.
         var clips = new List<ClipInput>();
         foreach (var media in taggedMedia)
         {
@@ -351,7 +442,7 @@ public class PersonalVideoService : IPersonalVideoService
             if (!string.IsNullOrWhiteSpace(strengthDescription))
             {
                 var fullVideoSegment = new List<FaceTimestampSegment>
-                    { new FaceTimestampSegment(0, long.MaxValue / 1_000) };
+                    { new FaceTimestampSegment(0, FullVideoEndMs) };
 
                 var filteredClips = await ApplyStrengthsFilterAsync(
                     media, s3Key, fullVideoSegment, strengthDescription);
@@ -385,11 +476,11 @@ public class PersonalVideoService : IPersonalVideoService
             return new ClipInput(s3Key, new List<TimeClip>());
         }
 
-        // ── Case 2: Only this student's face in the video (AI confirmed) ────────────
+        // ── Case 2: Only this student's face in the video ────────────
         if (!timelineResult.HasOtherFaces)
         {
             _logger.LogInformation(
-                "[PersonalVideoService] Case 2 (sole face confirmed by AI). MediaId={MediaId}", media.Id);
+                "[PersonalVideoService] Case 2 (sole face per persisted timeline). MediaId={MediaId}", media.Id);
 
             // Even when the student is the only person, apply strengths filter if requested —
             // they may only demonstrate the strength for part of the video.
@@ -408,7 +499,7 @@ public class PersonalVideoService : IPersonalVideoService
 
         // ── Case 3 & 4: Multiple people — extract student's timeline ──────────────
         _logger.LogInformation(
-            "[PersonalVideoService] Case 3 & 4 (mixed faces confirmed by AI) → extracting timeline. MediaId={MediaId}", media.Id);
+            "[PersonalVideoService] Case 3 & 4 (mixed faces per persisted timeline) → extracting timeline. MediaId={MediaId}", media.Id);
 
         var faceSegments = timelineResult.Segments;
 
@@ -429,8 +520,9 @@ public class PersonalVideoService : IPersonalVideoService
         var timeClips = MergeAndFormatTimeClips(faceSegments.Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0)));
 
         _logger.LogInformation(
-            "[PersonalVideoService] Case 3/4: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}",
-            faceSegments.Count, timeClips.Count, media.Id);
+            "[PersonalVideoService] Case 3/4: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}. Clips=[{Clips}]",
+            faceSegments.Count, timeClips.Count, media.Id,
+            string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")));
 
         return new ClipInput(s3Key, timeClips);
     }
@@ -475,11 +567,13 @@ public class PersonalVideoService : IPersonalVideoService
         IList<FaceTimestampSegment> faceSegments,
         string strengthDescription)
     {
-        if (string.IsNullOrEmpty(media.LabelJobRef))
+        // Read the label timeline captured at label-detection time (no Rekognition re-query —
+        // its results expire after 7 days). See MediaAsset.LabelTimelineJson.
+        if (string.IsNullOrEmpty(media.LabelTimelineJson))
         {
             _logger.LogWarning(
-                "[PersonalVideoService] LabelJobRef is null for MediaId={MediaId}. " +
-                "Label Detection was not triggered or video is still processing. Falling back to face-only.",
+                "[PersonalVideoService] No persisted label timeline for MediaId={MediaId}. " +
+                "Label Detection not finished, failed, or capture failed. Falling back to face-only.",
                 media.Id);
             return null;
         }
@@ -487,30 +581,20 @@ public class PersonalVideoService : IPersonalVideoService
         List<LabelDetectionEntry>? labelTimeline;
         try
         {
-            labelTimeline = await _faceRecognitionService
-                .GetLabelDetectionResultsAsync(media.LabelJobRef);
+            labelTimeline = JsonSerializer.Deserialize<List<LabelDetectionEntry>>(media.LabelTimelineJson);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
-                "[PersonalVideoService] GetLabelDetectionResultsAsync failed for MediaId={MediaId}. Falling back.",
+                "[PersonalVideoService] Failed to deserialize LabelTimelineJson for MediaId={MediaId}. Falling back.",
                 media.Id);
             return null;
         }
 
-        if (labelTimeline == null)
-        {
-            // IN_PROGRESS — label job not done yet
-            _logger.LogWarning(
-                "[PersonalVideoService] Label Detection still IN_PROGRESS for MediaId={MediaId}. Falling back.",
-                media.Id);
-            return null;
-        }
-
-        if (labelTimeline.Count == 0)
+        if (labelTimeline == null || labelTimeline.Count == 0)
         {
             _logger.LogWarning(
-                "[PersonalVideoService] Label Detection returned 0 labels for MediaId={MediaId}. Skipping video.",
+                "[PersonalVideoService] Persisted label timeline is empty for MediaId={MediaId}. Skipping video.",
                 media.Id);
             return new ClipInput(s3Key, new List<TimeClip>()); // empty → skipped by caller
         }
@@ -560,8 +644,10 @@ public class PersonalVideoService : IPersonalVideoService
         var timeClips = MergeAndFormatTimeClips(matchResult.MatchedSegments);
 
         _logger.LogInformation(
-            "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Reasoning: {Reasoning}",
-            timeClips.Count, media.Id, matchResult.Reasoning);
+            "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Clips=[{Clips}]. Reasoning: {Reasoning}",
+            timeClips.Count, media.Id,
+            string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")),
+            matchResult.Reasoning);
 
         return new ClipInput(s3Key, timeClips);
     }
@@ -572,10 +658,16 @@ public class PersonalVideoService : IPersonalVideoService
     /// </summary>
     private static List<TimeClip> MergeAndFormatTimeClips(IEnumerable<MatchedSegment> segments)
     {
-        // 1. Convert to TimeClips first, safely ignoring EndMs < StartMs hallucinations
+        // 1. Convert to TimeClips.
+        //    IMPORTANT: face timelines are collapsed with a 500 ms gap while Rekognition samples
+        //    faces ~once per second, so MOST face segments are single-sample points where
+        //    StartMs == EndMs. We must keep those (StartMs <= EndMs) and only drop genuine
+        //    hallucinations where StartMs > EndMs. The buffer is applied AFTER this check so a
+        //    point [t, t] becomes a valid [t-BufferMs, t+BufferMs] clip — dropping points here
+        //    (the old `StartMs < EndMs`) emptied the clip list and fell back to the full video.
         var timeClipsRaw = segments
-            .Where(s => s.StartMs < s.EndMs) // basic sanity check
-            // Apply 1-second buffer pad (similar to FaceTimestampSegment buffer)
+            .Where(s => s.StartMs <= s.EndMs) // keep point detections; drop EndMs < StartMs hallucinations
+            // Apply BufferMs padding on both sides (clamped to 0) for breathing room around each segment.
             .Select(s => new { Start = Math.Max(0, s.StartMs - BufferMs), End = s.EndMs + BufferMs })
             .Select(seg => new TimeClip(MsToTimecode(seg.Start), MsToTimecode(seg.End)))
             .Where(t => t.StartTimecode != t.EndTimecode) // drop 0-duration clips
@@ -699,5 +791,6 @@ public class PersonalVideoService : IPersonalVideoService
         VideoUrl = hv.VideoUrl,
         PersonalVideoStatus = hv.PersonalVideoStatus,
         PersonalVideoRequestedAt = hv.PersonalVideoRequestedAt,
+        PersonalVideoFailureReason = hv.PersonalVideoFailureReason,
     };
 }

@@ -1,6 +1,7 @@
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
+using OboxSteam.Domain.Interfaces;
 
 namespace OboxSteam.Application.Validation;
 
@@ -9,6 +10,41 @@ namespace OboxSteam.Application.Validation;
 /// </summary>
 public static class ActivityValidator
 {
+    public static IReadOnlyCollection<ActivityType> GetAllowedActivityTypes(ModuleType moduleType) =>
+        moduleType switch
+        {
+            ModuleType.Theory => [ActivityType.SelfPaced, ActivityType.LiveOnline],
+            ModuleType.Experiential => [ActivityType.SelfPaced, ActivityType.Offline],
+            ModuleType.Research => [ActivityType.SelfPaced, ActivityType.LiveOnline, ActivityType.Offline],
+            _ => throw ErrorHelper.BadRequest($"Unsupported module type '{moduleType}'.")
+        };
+
+    public static void ValidateActivityTypeForModule(ModuleType moduleType, ActivityType activityType)
+    {
+        var allowedTypes = GetAllowedActivityTypes(moduleType);
+        if (allowedTypes.Contains(activityType))
+        {
+            return;
+        }
+
+        var allowedList = string.Join(", ", allowedTypes);
+        throw ErrorHelper.BadRequest(
+            $"ActivityType '{activityType}' is not allowed for {moduleType} module. Allowed: {allowedList}.");
+    }
+
+    public static async Task ValidateActivityTypeForCourseAsync(
+        IUnitOfWork unitOfWork,
+        Guid courseId,
+        ActivityType activityType)
+    {
+        var course = await unitOfWork.Courses.GetByIdAsync(courseId);
+        ValidateCourseExists(course, courseId);
+
+        var module = await unitOfWork.Modules.GetByIdAsync(course!.ModuleId);
+        var validModule = AssignmentValidator.ValidateModuleExists(module);
+        ValidateActivityTypeForModule(validModule.ModuleType, activityType);
+    }
+
     public static void ValidateCourseExists(Course? course, Guid courseId)
     {
         if (course == null || course.IsDeleted)

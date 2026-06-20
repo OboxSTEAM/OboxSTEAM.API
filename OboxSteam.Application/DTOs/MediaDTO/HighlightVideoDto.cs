@@ -20,4 +20,9 @@ public class HighlightVideoDto
     /// <summary>UTC timestamp when the generation was last triggered.</summary>
     public DateTime? PersonalVideoRequestedAt { get; set; }
 
+    /// <summary>
+    /// Reason the last generation failed (only set when <see cref="PersonalVideoStatus"/>
+    /// is Failed). E.g. no segments matched the requested strengths.
+    /// </summary>
+    public string? PersonalVideoFailureReason { get; set; }
 }

@@ -229,91 +229,6 @@ public class FaceRecognitionService : IFaceRecognitionService
     }
 
     /// <inheritdoc />
-    public async Task<VideoFaceTimelineResult?> GetVideoFaceTimelineAsync(string jobId, Guid studentId)
-    {
-        _logger.LogInformation(
-            "GetVideoFaceTimelineAsync: JobId={JobId}, StudentId={StudentId}", jobId, studentId);
-
-        // Collect all raw detection timestamps for the target student across pages.
-        var rawTimestamps = new List<long>();
-        string? nextToken = null;
-        bool hasOtherFaces = false;
-
-        do
-        {
-            var request = new GetFaceSearchRequest
-            {
-                JobId      = jobId,
-                MaxResults = 1000,
-                SortBy     = FaceSearchSortBy.TIMESTAMP,
-            };
-            if (nextToken != null) request.NextToken = nextToken;
-
-            GetFaceSearchResponse response;
-            try
-            {
-                response = await _rekognition.GetFaceSearchAsync(request);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "GetFaceSearchAsync paging failed for JobId={JobId}", jobId);
-                throw;
-            }
-
-            // Job not ready yet — caller should retry
-            if (response.JobStatus == VideoJobStatus.IN_PROGRESS)
-            {
-                _logger.LogInformation("GetVideoFaceTimelineAsync: job {JobId} still IN_PROGRESS.", jobId);
-                return null;
-            }
-
-            if (response.JobStatus == VideoJobStatus.FAILED)
-            {
-                _logger.LogError("GetVideoFaceTimelineAsync: job {JobId} FAILED.", jobId);
-                return null;
-            }
-
-            foreach (var person in response.Persons)
-            {
-                bool isStudent = false;
-                if (person.FaceMatches != null && person.FaceMatches.Count > 0)
-                {
-                    isStudent = person.FaceMatches.Any(m =>
-                        Guid.TryParse(m.Face.ExternalImageId, out var uid) && uid == studentId);
-                }
-
-                if (isStudent)
-                {
-                    rawTimestamps.Add(person.Timestamp);
-                }
-                else
-                {
-                    hasOtherFaces = true;
-                }
-            }
-
-            nextToken = response.NextToken;
-        }
-        while (!string.IsNullOrEmpty(nextToken));
-
-        if (rawTimestamps.Count == 0)
-        {
-            _logger.LogInformation(
-                "GetVideoFaceTimelineAsync: No detections for StudentId={StudentId} in JobId={JobId}",
-                studentId, jobId);
-            return new VideoFaceTimelineResult(hasOtherFaces, new List<FaceTimestampSegment>());
-        }
-
-        var segments = CollapseToSegments(rawTimestamps);
-
-        _logger.LogInformation(
-            "GetVideoFaceTimelineAsync: {Raw} raw ts → {Segs} segment(s) for StudentId={StudentId}",
-            rawTimestamps.Count, segments.Count, studentId);
-
-        return new VideoFaceTimelineResult(hasOtherFaces, segments);
-    }
-
-    /// <inheritdoc />
     public async Task<Dictionary<Guid, VideoFaceTimelineResult>?> GetAllFaceTimelinesAsync(string jobId)
     {
         _logger.LogInformation("GetAllFaceTimelinesAsync: JobId={JobId}", jobId);
@@ -525,7 +440,7 @@ public class FaceRecognitionService : IFaceRecognitionService
                         item.Label.Name,
                         item.Label.Confidence));
 
-                // Also flatten parent labels so Claude sees richer context.
+                // Flatten parent labels so Claude sees richer context.
                 // E.g. "Soccer" has parents ["Sports", "Football"]
                 foreach (var parent in item.Label.Parents)
                 {
@@ -533,6 +448,18 @@ public class FaceRecognitionService : IFaceRecognitionService
                         entries.Add(new LabelDetectionEntry(
                             item.Timestamp,
                             parent.Name,
+                            item.Label.Confidence));
+                }
+
+                // Flatten aliases — Rekognition often exposes the more descriptive name
+                // as an alias rather than the primary label.
+                // E.g. "Presentation" → alias "Public Speaking" (critical for strengths matching).
+                foreach (var alias in item.Label.Aliases)
+                {
+                    if (seen.Add((item.Timestamp, alias.Name)))
+                        entries.Add(new LabelDetectionEntry(
+                            item.Timestamp,
+                            alias.Name,
                             item.Label.Confidence));
                 }
             }

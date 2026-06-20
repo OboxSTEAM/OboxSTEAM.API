@@ -54,6 +54,9 @@ public static class IocContainer
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IVideoConverterService, VideoConverterService>();
 
+        // In-process queue (singleton) shared between the personal-video trigger and its worker.
+        services.AddSingleton<IPersonalVideoQueue, PersonalVideoQueue>();
+
 
         // Add Unit of Work (repositories are lazy-loaded inside)
         services.AddScoped<OboxSteam.Domain.Interfaces.IUnitOfWork, UnitOfWork>();
@@ -64,6 +67,7 @@ public static class IocContainer
         // Background Services
         services.AddHostedService<PendingEnrollmentCleanupService>();
         services.AddHostedService<OpenClassAutoStartService>();
+        services.AddHostedService<PersonalVideoGenerationWorker>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
@@ -180,13 +184,17 @@ public static class IocContainer
         services.AddScoped<IStrengthMatchService, BedrockMantleStrengthMatchService>();
         services.AddScoped<IProgramEnrollmentService, ProgramEnrollmentService>();
         services.AddScoped<IModuleEnrollmentService, ModuleEnrollmentService>();
+        services.AddScoped<IActivityProgressService, ActivityProgressService>();
         services.AddScoped<IClassEnrollmentService, ClassEnrollmentService>();
         services.AddScoped<IClassService, ClassService>();
         services.AddScoped<IClassSessionService, ClassSessionService>();
+        services.AddScoped<ISessionAttendanceService, SessionAttendanceService>();
         services.AddScoped<IQuestionBankService, QuestionBankService>();
         services.AddScoped<IBankQuestionService, BankQuestionService>();
         services.AddScoped<IProgramReviewService, ProgramReviewService>();
         services.AddScoped<IAssignmentService, AssignmentService>();
+        services.AddScoped<IResearchMilestoneService, ResearchMilestoneService>();
+        services.AddScoped<IResearchSubmissionService, ResearchSubmissionService>();
         services.AddScoped<IQuizAttemptService, QuizAttemptService>();
         services.AddScoped<IStripePaymentService, StripePaymentService>();
         services.AddScoped<IPaymentService, PaymentService>();

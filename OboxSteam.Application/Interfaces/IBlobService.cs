@@ -27,4 +27,10 @@ public interface IBlobService
     /// Prefer this over <see cref="DeleteFileAsync"/> when you already have the key.
     /// </summary>
     Task DeleteByKeyAsync(string s3Key, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Xóa toàn bộ objects trong bucket hiện tại.
+    /// Trả về số object đã xóa và số object xóa thất bại.
+    /// </summary>
+    Task<(int Deleted, int Failed)> ClearAllObjectsAsync(CancellationToken cancellationToken = default);
 }
