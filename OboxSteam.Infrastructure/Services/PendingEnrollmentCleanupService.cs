@@ -51,18 +51,36 @@ public class PendingEnrollmentCleanupService : BackgroundService
         var cutoffTime = DateTime.UtcNow.AddDays(-1);
         _logger.LogInformation("Checking for expired pending enrollments created before {CutoffTime}.", cutoffTime);
 
+        bool changesMade = false;
+
+        // 1. Clean up expired ProgramEnrollments
         var expiredEnrollments = await unitOfWork.ProgramEnrollments.GetAllAsync(
             pe => pe.Status == EnrollmentStatus.PendingPayment && pe.CreatedAt < cutoffTime && !pe.IsDeleted
         );
 
         if (expiredEnrollments.Any())
         {
-            _logger.LogInformation("Found {Count} expired pending enrollments to clean up.", expiredEnrollments.Count);
-
+            _logger.LogInformation("Found {Count} expired pending program enrollments to clean up.", expiredEnrollments.Count);
             await unitOfWork.ProgramEnrollments.SoftRemoveRange(expiredEnrollments);
+            changesMade = true;
+        }
+
+        // 2. Clean up expired ModuleEnrollments
+        var expiredModuleEnrollments = await unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.Status == EnrollmentStatus.PendingPayment && me.CreatedAt < cutoffTime && !me.IsDeleted
+        );
+
+        if (expiredModuleEnrollments.Any())
+        {
+            _logger.LogInformation("Found {Count} expired pending module enrollments to clean up.", expiredModuleEnrollments.Count);
+            await unitOfWork.ModuleEnrollments.SoftRemoveRange(expiredModuleEnrollments);
+            changesMade = true;
+        }
+
+        if (changesMade)
+        {
             int affectedRows = await unitOfWork.SaveChangesAsync();
-            
-            _logger.LogInformation("Successfully soft deleted {Count} expired enrollment records. SaveChanges affected {AffectedRows} rows.", expiredEnrollments.Count, affectedRows);
+            _logger.LogInformation("Successfully soft deleted expired enrollment records. SaveChanges affected {AffectedRows} rows.", affectedRows);
         }
         else
         {

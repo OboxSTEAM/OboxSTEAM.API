@@ -144,14 +144,51 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
                   && me.ProgramEnrollmentId == request.ProgramEnrollmentId
                   && !me.IsDeleted);
 
+        var pendingEnrollment = moduleAttempts
+            .FirstOrDefault(me => me.Status == EnrollmentStatus.PendingPayment);
+
+        if (pendingEnrollment != null)
+        {
+            _logger.LogInformation(
+                "[RetakeModuleAsync] Reusing existing PendingPayment enrollment {EnrollmentId} for student {StudentId} on module {ModuleId}.",
+                pendingEnrollment.Id,
+                student.Id,
+                request.ModuleId);
+
+            return new ModuleEnrollmentResponseDto
+            {
+                Id = pendingEnrollment.Id,
+                StudentId = pendingEnrollment.StudentId,
+                ModuleId = pendingEnrollment.ModuleId,
+                ProgramEnrollmentId = ModuleEnrollmentValidator.ValidateProgramEnrollmentLink(pendingEnrollment.ProgramEnrollmentId),
+                Status = pendingEnrollment.Status,
+                ProgressPercent = pendingEnrollment.ProgressPercent,
+                FinalGrade = pendingEnrollment.FinalGrade,
+                AttemptNumber = pendingEnrollment.AttemptNumber,
+                AssignmentFailureCount = pendingEnrollment.AssignmentFailureCount,
+                EnrolledAt = pendingEnrollment.EnrolledAt,
+                StartedAt = pendingEnrollment.StartedAt,
+                CompletedAt = pendingEnrollment.CompletedAt,
+                CreatedAt = pendingEnrollment.CreatedAt,
+                UpdatedAt = pendingEnrollment.UpdatedAt,
+                Code = module.Code,
+                ProgramId = module.ProgramId,
+                Name = module.Name,
+                ModuleType = module.ModuleType,
+                ModuleOrder = module.ModuleOrder,
+                PrerequisiteModuleId = module.PrerequisiteModuleId,
+                IsMandatory = module.IsMandatory,
+                Price = module.Price,
+                RetakeFee = module.RetakeFee,
+            };
+        }
+
         var failedEnrollment = moduleAttempts
             .Where(me => me.Status == EnrollmentStatus.Failed)
             .OrderByDescending(me => me.AttemptNumber)
             .FirstOrDefault();
 
         var previousFailedAttempt = ModuleEnrollmentValidator.ValidateRetakeEligibility(failedEnrollment);
-
-        // RetakeFee payment validation skipped until Payment module is implemented (Q6).
 
         var nextAttemptNumber = previousFailedAttempt.AttemptNumber + 1;
         var now = DateTime.UtcNow;
@@ -161,7 +198,7 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
             StudentId = student.Id,
             ModuleId = request.ModuleId,
             ProgramEnrollmentId = request.ProgramEnrollmentId,
-            Status = EnrollmentStatus.Active,
+            Status = EnrollmentStatus.PendingPayment,
             ProgressPercent = 0m,
             AttemptNumber = nextAttemptNumber,
             AssignmentFailureCount = 0,

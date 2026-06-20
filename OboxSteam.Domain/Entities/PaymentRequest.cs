@@ -15,11 +15,17 @@ public class PaymentRequest : BaseEntity
     public Guid ParentId { get; set; }
     public User Parent { get; set; } = null!;
 
-    public Guid ProgramId { get; set; }
-    public Program Program { get; set; } = null!;
+    public Guid? ProgramId { get; set; }
+    public Program? Program { get; set; }
 
-    public Guid ProgramEnrollmentId { get; set; }
-    public ProgramEnrollment ProgramEnrollment { get; set; } = null!;
+    public Guid? ProgramEnrollmentId { get; set; }
+    public ProgramEnrollment? ProgramEnrollment { get; set; }
+
+    public Guid? ModuleId { get; set; }
+    public Module? Module { get; set; }
+
+    public Guid? ModuleEnrollmentId { get; set; }
+    public ModuleEnrollment? ModuleEnrollment { get; set; }
 
     public decimal Amount { get; set; }
 
