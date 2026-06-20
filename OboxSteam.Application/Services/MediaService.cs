@@ -570,8 +570,48 @@ public class MediaService : IMediaService
         }
         else
         {
-            _logger.LogInformation(
-                "Label Detection job SUCCEEDED for JobId={JobId}. Results available on demand.", jobId);
+            // Capture the label timeline NOW, while the Rekognition job results are still
+            // available (Rekognition retains video job results for only 7 days). Persisting
+            // them lets the strengths-filtering pipeline run indefinitely without re-querying.
+            var labelAsset = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
+                m => m.LabelJobRef == jobId && !m.IsDeleted);
+
+            if (labelAsset == null)
+            {
+                _logger.LogWarning(
+                    "Label Detection SUCCEEDED for unknown JobId={JobId} (no matching MediaAsset).", jobId);
+                return;
+            }
+
+            try
+            {
+                var labelTimeline = await _faceRecognitionService.GetLabelDetectionResultsAsync(jobId);
+
+                if (labelTimeline == null)
+                {
+                    // Job reported SUCCEEDED via webhook but the query says IN_PROGRESS —
+                    // a rare eventual-consistency race. Leave LabelTimelineJson null; the
+                    // strengths filter will fall back to face-only for this video.
+                    _logger.LogWarning(
+                        "HandleLabelDetectionWebhookAsync: results not ready yet for MediaId={MediaId}, JobId={JobId}.",
+                        labelAsset.Id, jobId);
+                    return;
+                }
+
+                labelAsset.LabelTimelineJson = JsonSerializer.Serialize(labelTimeline);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "Label Detection captured: {Count} entry/entries persisted for MediaId={MediaId}, JobId={JobId}.",
+                    labelTimeline.Count, labelAsset.Id, jobId);
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal: strengths filtering will fall back to face-only for this video.
+                _logger.LogWarning(ex,
+                    "HandleLabelDetectionWebhookAsync: failed to capture label timeline for MediaId={MediaId}, JobId={JobId}.",
+                    labelAsset.Id, jobId);
+            }
         }
     }
 

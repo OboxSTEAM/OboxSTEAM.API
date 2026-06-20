@@ -569,6 +569,16 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
+        // HIGHLIGHT VIDEO (one personal video per student per program)
+        // =============================================
+        modelBuilder.Entity<HighlightVideo>(entity =>
+        {
+            entity.HasIndex(hv => new { hv.ProgramId, hv.StudentId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+        });
+
+        // =============================================
         // PAYMENT (Unique code + PaidBy FK)
         // =============================================
         modelBuilder.Entity<Payment>(entity =>

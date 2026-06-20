@@ -35,4 +35,12 @@ public interface IPersonalVideoService
     /// Updates the job status and fetches the S3 URL if successful.
     /// </summary>
     Task HandlePersonalVideoJobCompletionAsync(string jobId, bool isSuccess);
+
+    /// <summary>
+    /// Background entry point: builds the clip list and submits the MediaConvert job for a
+    /// previously-created <c>Processing</c> HighlightVideo record. Called by the background
+    /// worker (never from the HTTP request thread). On no matching clips or any error, the
+    /// record is marked <c>Failed</c> with a reason rather than throwing.
+    /// </summary>
+    Task ProcessGenerationAsync(PersonalVideoJob job);
 }

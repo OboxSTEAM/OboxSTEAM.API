@@ -37,6 +37,16 @@ public class MediaAsset : BaseEntity
     [MaxLength(512)]
     public string? LabelJobRef { get; set; }
 
+    /// <summary>
+    /// JSON-serialized Rekognition Label Detection timeline, captured when the label
+    /// detection webhook reports SUCCEEDED (results are retained by Rekognition for only
+    /// 7 days). Format: <c>[{"TimestampMs":2000,"LabelName":"Soccer","Confidence":88.3}, ...]</c>.
+    /// Null until the label job completes, or if capture failed. The strengths-filtering
+    /// pipeline reads this instead of re-querying Rekognition, so highlight generation
+    /// works indefinitely regardless of the 7-day window.
+    /// </summary>
+    public string? LabelTimelineJson { get; set; }
+
     public DateTime? UploadedAt { get; set; }
 
     // Navigation
