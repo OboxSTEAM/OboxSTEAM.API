@@ -96,8 +96,10 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             return new StrengthMatchResult(Array.Empty<MatchedSegment>(), "Failed to parse response.");
         }
 
+        // Claude often copies the prompt example and returns end_ms=0 for point-in-time
+        // detections. Treat missing/invalid end_ms as a single-sample segment [start, start].
         var matched = (output.MatchedSegments ?? Array.Empty<ClaudeSegment>())
-            .Select(s => new MatchedSegment(s.StartMs, s.EndMs, s.Strength ?? string.Empty, s.Score))
+            .Select(NormalizeClaudeSegment)
             .OrderByDescending(s => s.Score)
             .ToList();
 
@@ -109,6 +111,18 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
     }
 
     // -- Private Helpers -------------------------------------------------------
+
+    /// <summary>
+    /// Maps a Claude JSON segment to <see cref="MatchedSegment"/>, coercing invalid
+    /// <c>end_ms</c> values (0 or &lt; start_ms) to <c>start_ms</c> so point detections
+    /// survive the clip merge step downstream.
+    /// </summary>
+    private static MatchedSegment NormalizeClaudeSegment(ClaudeSegment s)
+    {
+        var start = s.StartMs;
+        var end = s.EndMs <= 0 || s.EndMs < start ? start : s.EndMs;
+        return new MatchedSegment(start, end, s.Strength ?? string.Empty, s.Score);
+    }
 
     /// <summary>
     /// Builds the user prompt. Identical sampling logic to BedrockStrengthMatchService -
@@ -164,8 +178,9 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         sb.AppendLine("Respond with ONLY valid JSON, no extra text, no markdown fences:");
         sb.AppendLine("{");
         sb.AppendLine("  \"matched_segments\": [");
-        sb.AppendLine("    { \"start_ms\": 0, \"end_ms\": 0, \"strength\": \"example\", \"score\": 0.9 }");
+        sb.AppendLine("    { \"start_ms\": 6000, \"end_ms\": 6000, \"strength\": \"example\", \"score\": 0.9 }");
         sb.AppendLine("  ],");
+        sb.AppendLine("  NOTE: end_ms MUST equal start_ms for a single detection instant; never use end_ms=0.");
         sb.AppendLine("  \"reasoning\": \"one short sentence\"");
         sb.AppendLine("}");
 
