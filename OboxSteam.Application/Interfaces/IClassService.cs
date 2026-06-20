@@ -37,4 +37,12 @@ public interface IClassService
     /// Scans all eligible Open classes and transitions them to InProgress when ready.
     /// </summary>
     Task<int> AutoStartEligibleOpenClassesAsync();
+
+    /// <summary>
+    /// Adaptive scheduler for <c>OpenClassAutoStartService</c> (Tier 2 safety net).
+    /// Inspects all Open classes, classifies them (Idle / waiting for capacity / waiting for StartDate / ready),
+    /// and returns whether to run <see cref="AutoStartEligibleOpenClassesAsync"/> plus the next sleep interval.
+    /// Primary auto-start on enroll remains <see cref="TryAutoStartClassIfReadyAsync"/> (Tier 1).
+    /// </summary>
+    Task<OpenClassAutoStartSchedule> ResolveOpenClassAutoStartScheduleAsync();
 }

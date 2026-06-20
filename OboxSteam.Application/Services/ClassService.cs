@@ -429,6 +429,112 @@ public sealed class ClassService : IClassService
             entity.StartDate);
     }
 
+    // Adaptive delays for OpenClassAutoStartService (replaces fixed 30-minute polling).
+    private static readonly TimeSpan AfterRunDelay = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan WaitingForCapacityDelay = TimeSpan.FromHours(1);
+    private static readonly TimeSpan IdleDelay = TimeSpan.FromHours(12);
+    private static readonly TimeSpan MaxSleepCap = TimeSpan.FromHours(12);
+
+    public async Task<OpenClassAutoStartSchedule> ResolveOpenClassAutoStartScheduleAsync()
+    {
+        var now = DateTime.UtcNow;
+
+        var openClasses = await _unitOfWork.Classes.GetAllAsync(
+            c => c.Status == ClassStatus.Open && !c.IsDeleted);
+
+        // State A — no Open classes: nothing to auto-start; sleep long to avoid idle DB load.
+        if (openClasses.Count == 0)
+        {
+            return new OpenClassAutoStartSchedule
+            {
+                ShouldRunAutoStart = false,
+                NextDelay = IdleDelay,
+                Reason = "Idle",
+            };
+        }
+
+        // Single grouped query for active enrollment counts (avoids N+1 per Open class).
+        var openClassIds = openClasses.Select(c => c.Id).ToList();
+        var enrollmentCounts = _unitOfWork.ClassEnrollments
+            .GetQueryable()
+            .Where(ce => openClassIds.Contains(ce.ClassId)
+                         && ce.Status == ClassEnrollmentStatus.Active
+                         && !ce.IsDeleted)
+            .GroupBy(ce => ce.ClassId)
+            .Select(g => new { ClassId = g.Key, Count = g.Count() })
+            .ToList();
+
+        var countByClassId = enrollmentCounts.ToDictionary(x => x.ClassId, x => x.Count);
+
+        var hasReadyToStart = false;
+        DateTime? earliestFutureStartDate = null;
+
+        foreach (var classEntity in openClasses)
+        {
+            var activeCount = countByClassId.GetValueOrDefault(classEntity.Id, 0);
+            if (activeCount < classEntity.MaxCapacity)
+            {
+                // State C — not full; enroll events (TryAutoStartClassIfReadyAsync) handle the happy path.
+                continue;
+            }
+
+            if (now >= classEntity.StartDate)
+            {
+                // State D — full and StartDate reached; run auto-start on this wake.
+                hasReadyToStart = true;
+                break;
+            }
+
+            // State B — full but waiting for StartDate; track the nearest start time.
+            if (earliestFutureStartDate == null || classEntity.StartDate < earliestFutureStartDate)
+            {
+                earliestFutureStartDate = classEntity.StartDate;
+            }
+        }
+
+        if (hasReadyToStart)
+        {
+            return new OpenClassAutoStartSchedule
+            {
+                ShouldRunAutoStart = true,
+                NextDelay = AfterRunDelay,
+                Reason = "ReadyToStart",
+            };
+        }
+
+        if (earliestFutureStartDate.HasValue)
+        {
+            var remaining = earliestFutureStartDate.Value - now;
+            if (remaining <= TimeSpan.Zero)
+            {
+                // Safety: full class past StartDate should start immediately, not sleep again.
+                return new OpenClassAutoStartSchedule
+                {
+                    ShouldRunAutoStart = true,
+                    NextDelay = AfterRunDelay,
+                    Reason = "ReadyToStart",
+                };
+            }
+
+            // Sleep until StartDate when within 12h; otherwise wake every 12h to re-check (cap).
+            var delay = remaining > MaxSleepCap ? MaxSleepCap : remaining;
+            return new OpenClassAutoStartSchedule
+            {
+                ShouldRunAutoStart = false,
+                NextDelay = delay,
+                Reason = "WaitingForStartDate",
+            };
+        }
+
+        // State C only — Open classes exist but none are full; light periodic safety net.
+        return new OpenClassAutoStartSchedule
+        {
+            ShouldRunAutoStart = false,
+            NextDelay = WaitingForCapacityDelay,
+            Reason = "WaitingForCapacity",
+        };
+    }
+
     public async Task<int> AutoStartEligibleOpenClassesAsync()
     {
         var now = DateTime.UtcNow;

@@ -187,10 +187,13 @@ public static class IocContainer
         services.AddScoped<IClassEnrollmentService, ClassEnrollmentService>();
         services.AddScoped<IClassService, ClassService>();
         services.AddScoped<IClassSessionService, ClassSessionService>();
+        services.AddScoped<ISessionAttendanceService, SessionAttendanceService>();
         services.AddScoped<IQuestionBankService, QuestionBankService>();
         services.AddScoped<IBankQuestionService, BankQuestionService>();
         services.AddScoped<IProgramReviewService, ProgramReviewService>();
         services.AddScoped<IAssignmentService, AssignmentService>();
+        services.AddScoped<IResearchMilestoneService, ResearchMilestoneService>();
+        services.AddScoped<IResearchSubmissionService, ResearchSubmissionService>();
         services.AddScoped<IQuizAttemptService, QuizAttemptService>();
         services.AddScoped<IStripePaymentService, StripePaymentService>();
         services.AddScoped<IPaymentService, PaymentService>();
