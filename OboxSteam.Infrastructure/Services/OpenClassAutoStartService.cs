@@ -9,7 +9,7 @@ public class OpenClassAutoStartService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<OpenClassAutoStartService> _logger;
-    private static readonly TimeSpan RunInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan RunInterval = TimeSpan.FromMinutes(30);
 
     public OpenClassAutoStartService(
         IServiceProvider serviceProvider,
