@@ -26,7 +26,7 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
     /// and again in code as a safety net against speculative low-confidence matches.
     /// Raise toward 1.0 for stricter (fewer false positives) matching.
     /// </summary>
-    private const double MinMatchScore = 0.7;
+    private const double MinMatchScore = 0.6;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
