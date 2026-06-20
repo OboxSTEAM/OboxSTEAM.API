@@ -443,16 +443,23 @@ public sealed class ClassService : IClassService
             return 0;
         }
 
+        var classIds = openClasses.Select(c => c.Id).ToList();
+        var activeEnrollmentCounts = _unitOfWork.ClassEnrollments
+            .GetQueryable()
+            .Where(ce => classIds.Contains(ce.ClassId)
+                         && ce.Status == ClassEnrollmentStatus.Active
+                         && !ce.IsDeleted)
+            .GroupBy(ce => ce.ClassId)
+            .Select(g => new { ClassId = g.Key, Count = g.Count() })
+            .ToDictionary(x => x.ClassId, x => x.Count);
+
         var startedCount = 0;
 
         foreach (var classEntity in openClasses)
         {
-            var activeEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
-                ce => ce.ClassId == classEntity.Id
-                      && ce.Status == ClassEnrollmentStatus.Active
-                      && !ce.IsDeleted);
+            activeEnrollmentCounts.TryGetValue(classEntity.Id, out var activeEnrollmentCount);
 
-            if (!ClassValidator.IsReadyForAutoStart(classEntity, activeEnrollments.Count, now))
+            if (!ClassValidator.IsReadyForAutoStart(classEntity, activeEnrollmentCount, now))
             {
                 continue;
             }
@@ -464,7 +471,7 @@ public sealed class ClassService : IClassService
             _logger.LogInformation(
                 "[AutoStartEligibleOpenClassesAsync] class {Id} auto-started to InProgress (capacity {Count}/{Max}, start {StartDate}).",
                 classEntity.Id,
-                activeEnrollments.Count,
+                activeEnrollmentCount,
                 classEntity.MaxCapacity,
                 classEntity.StartDate);
         }

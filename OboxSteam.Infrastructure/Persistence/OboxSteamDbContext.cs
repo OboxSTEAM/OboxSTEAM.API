@@ -231,6 +231,19 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
+        // MATERIAL (1:1 with SelfPaced activity)
+        // =============================================
+        modelBuilder.Entity<Material>(entity =>
+        {
+            entity.HasIndex(m => m.ActivityId).IsUnique();
+
+            entity.HasOne(m => m.Activity)
+                .WithOne(a => a.Material)
+                .HasForeignKey<Material>(m => m.ActivityId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
         // ACTIVITY BOOKING (Unique: student + activity)
         // =============================================
         modelBuilder.Entity<ActivityBooking>(entity =>
@@ -245,6 +258,9 @@ public class OboxSteamDbContext : DbContext
         {
             entity.HasIndex(pe => new { pe.StudentId, pe.ProgramId })
                 .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(pe => new { pe.Status, pe.CreatedAt })
                 .HasFilter("\"IsDeleted\" = false");
         });
 
@@ -623,6 +639,9 @@ public class OboxSteamDbContext : DbContext
         {
             entity.HasIndex(c => c.Code).IsUnique();
 
+            entity.HasIndex(c => new { c.Status, c.StartDate })
+                .HasFilter("\"IsDeleted\" = false");
+
             entity.HasOne(c => c.Program)
                 .WithMany(p => p.Classes)
                 .HasForeignKey(c => c.ProgramId)
@@ -656,6 +675,9 @@ public class OboxSteamDbContext : DbContext
 
             entity.HasIndex(ce => new { ce.ClassId, ce.StudentId })
                 .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(ce => new { ce.ClassId, ce.Status })
                 .HasFilter("\"IsDeleted\" = false");
         });
 

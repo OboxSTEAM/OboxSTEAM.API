@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.MaterialDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
@@ -61,42 +62,35 @@ public class MaterialService : IMaterialService
     {
         var userId = _claimsService.GetCurrentUserId;
         _logger.LogInformation(
-            "UploadMaterialAsync started by UserId={UserId} for ModuleId={ModuleId}",
-            userId, request.ModuleId);
+            "UploadMaterialAsync started by UserId={UserId} for ActivityId={ActivityId}",
+            userId, request.ActivityId);
 
-        // ── Validate file ─────────────────────────────────────────────────────
         var extension    = Path.GetExtension(file.FileName).ToLowerInvariant();
         var materialType = ResolveType(extension);
 
         if (materialType is null)
+        {
             throw ErrorHelper.BadRequest(
                 "File type not supported. Allowed: PDF (.pdf), DOC (.doc, .docx), " +
                 "Video (.mp4, .mov, .avi, .mkv), Image (.jpg, .jpeg, .png, .gif, .webp).");
+        }
 
         ValidateFileSize(materialType.Value, file.Length);
 
-        // ── Validate foreign keys ─────────────────────────────────────────────
-        var module = await _unitOfWork.Modules.GetByIdAsync(request.ModuleId);
-        if (module == null || module.IsDeleted)
-            throw ErrorHelper.NotFound("Module not found.");
+        var activity = await _unitOfWork.Activities.GetByIdAsync(request.ActivityId);
+        MaterialValidator.ValidateActivityExists(activity, request.ActivityId);
+        MaterialValidator.ValidateSelfPacedOnly(activity!);
 
-        if (request.CourseId.HasValue)
+        var existing = await _unitOfWork.Materials.FirstOrDefaultAsync(
+            m => m.ActivityId == request.ActivityId && !m.IsDeleted);
+
+        if (existing != null)
         {
-            var course = await _unitOfWork.Courses.GetByIdAsync(request.CourseId.Value);
-            if (course == null || course.IsDeleted)
-                throw ErrorHelper.NotFound("Course not found.");
+            throw ErrorHelper.Conflict("This activity already has a material. Delete it before uploading a new one.");
         }
 
-        if (request.ActivityId.HasValue)
-        {
-            var activity = await _unitOfWork.Activities.GetByIdAsync(request.ActivityId.Value);
-            if (activity == null || activity.IsDeleted)
-                throw ErrorHelper.NotFound("Activity not found.");
-        }
-
-        // ── Upload to S3 ──────────────────────────────────────────────────────
         var folder   = ResolveFolder(materialType.Value);
-        var fileName = $"{request.ModuleId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
+        var fileName = $"{request.ActivityId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
         var s3Key    = $"{folder}/{fileName}";
 
         _logger.LogInformation("Uploading material to S3: {S3Key}", s3Key);
@@ -106,11 +100,8 @@ public class MaterialService : IMaterialService
 
         var fileUrl = await _blobService.GetPreviewUrlAsync(s3Key);
 
-        // ── Save to DB ────────────────────────────────────────────────────────
         var material = new Material
         {
-            ModuleId      = request.ModuleId,
-            CourseId      = request.CourseId,
             ActivityId    = request.ActivityId,
             Title         = request.Title,
             MaterialType  = materialType.Value,
@@ -135,36 +126,18 @@ public class MaterialService : IMaterialService
     // =========================================================================
 
     /// <inheritdoc />
-    public async Task<List<MaterialResponseDto>> GetMaterialsByModuleAsync(Guid moduleId)
+    public async Task<MaterialResponseDto?> GetMaterialByActivityAsync(Guid activityId)
     {
-        _logger.LogInformation("GetMaterialsByModuleAsync: ModuleId={ModuleId}", moduleId);
+        _logger.LogInformation("GetMaterialByActivityAsync: ActivityId={ActivityId}", activityId);
 
-        var materials = await _unitOfWork.Materials
-            .GetAllAsync(m => m.ModuleId == moduleId && !m.IsDeleted);
+        var activity = await _unitOfWork.Activities.GetByIdAsync(activityId);
+        MaterialValidator.ValidateActivityExists(activity, activityId);
+        MaterialValidator.ValidateSelfPacedOnly(activity!);
 
-        return materials.Select(MapToDto).ToList();
-    }
+        var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
+            m => m.ActivityId == activityId && !m.IsDeleted);
 
-    /// <inheritdoc />
-    public async Task<List<MaterialResponseDto>> GetMaterialsByCourseAsync(Guid courseId)
-    {
-        _logger.LogInformation("GetMaterialsByCourseAsync: CourseId={CourseId}", courseId);
-
-        var materials = await _unitOfWork.Materials
-            .GetAllAsync(m => m.CourseId == courseId && !m.IsDeleted);
-
-        return materials.Select(MapToDto).ToList();
-    }
-
-    /// <inheritdoc />
-    public async Task<List<MaterialResponseDto>> GetMaterialsByActivityAsync(Guid activityId)
-    {
-        _logger.LogInformation("GetMaterialsByActivityAsync: ActivityId={ActivityId}", activityId);
-
-        var materials = await _unitOfWork.Materials
-            .GetAllAsync(m => m.ActivityId == activityId && !m.IsDeleted);
-
-        return materials.Select(MapToDto).ToList();
+        return material == null ? null : MapToDto(material);
     }
 
     // =========================================================================
@@ -178,10 +151,14 @@ public class MaterialService : IMaterialService
 
         var material = await _unitOfWork.Materials.GetByIdAsync(materialId);
         if (material == null || material.IsDeleted)
+        {
             throw ErrorHelper.NotFound("Material not found.");
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Title))
+        {
             material.Title = request.Title;
+        }
 
         material.UpdatedAt = DateTime.UtcNow;
         material.UpdatedBy = _claimsService.GetCurrentUserId;
@@ -203,9 +180,10 @@ public class MaterialService : IMaterialService
 
         var material = await _unitOfWork.Materials.GetByIdAsync(materialId);
         if (material == null || material.IsDeleted)
+        {
             throw ErrorHelper.NotFound("Material not found.");
+        }
 
-        // Delete file from S3 using bucket-relative key extracted from FileUrl.
         if (!string.IsNullOrWhiteSpace(material.FileUrl))
         {
             try
@@ -214,14 +192,15 @@ public class MaterialService : IMaterialService
                 if (Uri.TryCreate(material.FileUrl, UriKind.Absolute, out var uri))
                 {
                     s3Key = uri.AbsolutePath.TrimStart('/');
-                    // Strip bucket prefix if path-style URL: /{bucket}/{key}
                     var bucketPrefix = $"{_blobService.BucketName}/";
                     if (s3Key.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
+                    {
                         s3Key = s3Key[bucketPrefix.Length..];
+                    }
                 }
                 else
                 {
-                    s3Key = material.FileUrl; // already a raw key
+                    s3Key = material.FileUrl;
                 }
 
                 await _blobService.DeleteByKeyAsync(s3Key);
@@ -244,6 +223,18 @@ public class MaterialService : IMaterialService
     // =========================================================================
     // Private helpers
     // =========================================================================
+
+    internal static MaterialResponseDto MapToDto(Material m) => new()
+    {
+        Id            = m.Id,
+        ActivityId    = m.ActivityId,
+        Title         = m.Title,
+        MaterialType  = m.MaterialType,
+        FileUrl       = m.FileUrl,
+        FileSizeBytes = m.FileSizeBytes,
+        UploaderId    = m.CreatedBy,
+        UploadedAt    = m.CreatedAt
+    };
 
     /// <summary>
     /// Returns MaterialType or null if extension is not supported.
@@ -278,20 +269,8 @@ public class MaterialService : IMaterialService
         };
 
         if (fileLength > limit)
+        {
             throw ErrorHelper.BadRequest(label);
+        }
     }
-
-    private static MaterialResponseDto MapToDto(Material m) => new()
-    {
-        Id            = m.Id,
-        ModuleId      = m.ModuleId,
-        CourseId      = m.CourseId,
-        ActivityId    = m.ActivityId,
-        Title         = m.Title,
-        MaterialType  = m.MaterialType,
-        FileUrl       = m.FileUrl,
-        FileSizeBytes = m.FileSizeBytes,
-        UploaderId    = m.CreatedBy,
-        UploadedAt    = m.CreatedAt
-    };
 }

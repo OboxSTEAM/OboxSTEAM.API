@@ -32,6 +32,13 @@ It is **EXTREMELY important** that you follow the instructions in the rule files
 
 5. Fix any compiler warnings and errors before going to the next step.
 
+6. **EF Core migrations:** never hand-write migration files or edit `OboxSteamDbContextModelSnapshot.cs` by hand. After changing `OboxSteamDbContext` (or entity configs), always generate migrations with the EF CLI:
+   ```bash
+   dotnet tool restore
+   dotnet ef migrations add <MigrationName> --project OboxSteam.Infrastructure/OboxSteam.Infrastructure.csproj --startup-project OboxSteam.API/OboxSteam.API.csproj
+   ```
+   Use `dotnet ef database update` only when explicitly applying locally; production applies migrations on startup via `MigrationExtensions`.
+
 ## Related Rules
 
 - C# style and API patterns: `coding-style-csharp.mdc` (applies to `**/*.cs`)

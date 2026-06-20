@@ -3,18 +3,13 @@ using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Domain.Entities;
 
+/// <summary>
+/// Learning asset for a SelfPaced activity (video, PDF, doc, etc.). At most one per activity.
+/// </summary>
 public class Material : BaseEntity
 {
-    public Guid ModuleId { get; set; }
-    public Module Module { get; set; } = null!;
-
-    /// <summary>Specific course within the module (optional).</summary>
-    public Guid? CourseId { get; set; }
-    public Course? Course { get; set; }
-
-    /// <summary>Null if the material belongs to the module directly (not a specific activity).</summary>
-    public Guid? ActivityId { get; set; }
-    public Activity? Activity { get; set; }
+    public Guid ActivityId { get; set; }
+    public Activity Activity { get; set; } = null!;
 
     [MaxLength(255)]
     public string Title { get; set; } = null!;

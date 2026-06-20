@@ -33,8 +33,31 @@ This repo uses Harness. Before work, read:
 - `docs/FEATURE_INTAKE.md`
 - `docs/ARCHITECTURE.md`
 - `docs/CONTEXT_RULES.md`
+- `docs/TOOL_REGISTRY.md` (CodeGraph + inbound tool registry)
 - `scripts/bin/harness-cli query matrix` on macOS/Linux, or `.\scripts\bin\harness-cli.exe query matrix` on Windows
 
 Use the Rust Harness CLI at `scripts/bin/harness-cli` on macOS/Linux or
 `scripts/bin/harness-cli.exe` on Windows as the main operational tool.
 <!-- HARNESS:END -->
+
+<!-- CODEGRAPH:BEGIN -->
+## CodeGraph
+
+Local code knowledge graph for cheaper structure navigation. **Additive to
+Harness** — see `docs/CONTEXT_RULES.md` (CodeGraph Integration) for lane-by-lane
+rules. Harness still owns intake, product contract, validation, and traces.
+
+**Setup (once per checkout):**
+
+```bash
+codegraph init
+scripts/bin/harness-cli tool check
+```
+
+**Cursor MCP:** `.cursor/mcp.json` runs `codegraph serve --mcp`. Restart Cursor
+after changing MCP config.
+
+**Prefer graph over grep loops** for structure questions (`explore`, `callers`).
+Still **Read** files before editing and still read `docs/product/*` per lane.
+Record graph usage in harness traces (`actions_taken`).
+<!-- CODEGRAPH:END -->

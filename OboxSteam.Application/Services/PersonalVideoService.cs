@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.MediaDTO;
 using OboxSteam.Application.Interfaces;
@@ -16,7 +17,7 @@ namespace OboxSteam.Application.Services;
 ///             but was tagged for the student → include the ENTIRE video (Fallback).
 ///   Case 2 — Video's only detected face belongs to the target student → include ENTIRE video.
 ///   Case 3 — Video has multiple people → extract only the student's segments from the timeline
-///             using 3-second buffers and merging gaps shorter than 3 seconds.
+///             using 2-second buffers; segments that overlap after buffering are merged.
 ///   Fallback — Timeline extraction returned no segments for the student
 ///              (AI could not pinpoint the face) → include ENTIRE video.
 ///
@@ -32,12 +33,6 @@ public class PersonalVideoService : IPersonalVideoService
     private const long BufferMs = 2_000;
 
     /// <summary>
-    /// Adjacent segments whose gap is shorter than this are merged into one.
-    /// Keeps the clip continuous when the student briefly leaves and re-enters frame.
-    /// </summary>
-    private const long MergeGapMs = 1_000;
-
-    /// <summary>
     /// When filtering label-detection entries for Claude, include labels within this
     /// window around each face segment (before StartMs and after EndMs).
     /// 5 seconds of extra context helps Claude detect activities that start just
@@ -46,6 +41,13 @@ public class PersonalVideoService : IPersonalVideoService
     private const long LabelContextWindowMs = 5_000;
 
     private const string PersonalVideoFolder = "personal-videos";
+
+    /// <summary>
+    /// A HighlightVideo stuck in <see cref="HighlightVideoStatus.Processing"/> longer than this
+    /// is treated as stale (e.g. the MediaConvert completion webhook never arrived) and may be
+    /// re-triggered. Without this guard a lost webhook would lock the record forever.
+    /// </summary>
+    private static readonly TimeSpan ProcessingStaleThreshold = TimeSpan.FromMinutes(30);
 
     private readonly string _s3Bucket;
     private readonly IUnitOfWork _unitOfWork;
@@ -99,10 +101,23 @@ public class PersonalVideoService : IPersonalVideoService
 
         if (existing?.PersonalVideoStatus == HighlightVideoStatus.Processing)
         {
-            _logger.LogInformation(
-                "[PersonalVideoService] Job already in progress for ProgramId={ProgramId}, StudentId={StudentId}",
-                programId, studentId);
-            return MapToDto(existing);
+            var requestedAt = existing.PersonalVideoRequestedAt ?? existing.CreatedAt;
+            var isStale = DateTime.UtcNow - requestedAt > ProcessingStaleThreshold;
+
+            if (!isStale)
+            {
+                _logger.LogInformation(
+                    "[PersonalVideoService] Job already in progress for ProgramId={ProgramId}, StudentId={StudentId}",
+                    programId, studentId);
+                return MapToDto(existing);
+            }
+
+            // The previous job has been Processing past the stale threshold — assume its
+            // completion webhook was lost and allow a fresh job to be submitted below.
+            _logger.LogWarning(
+                "[PersonalVideoService] Existing Processing job is stale (requested at {RequestedAt:o}); " +
+                "allowing re-trigger. ProgramId={ProgramId}, StudentId={StudentId}",
+                requestedAt, programId, studentId);
         }
 
         // ── 3. Collect all tagged, fully-processed videos in this Program ────
@@ -301,32 +316,32 @@ public class PersonalVideoService : IPersonalVideoService
     private async Task<ClipInput?> BuildClipInputForMediaAsync(
         MediaAsset media, string s3Key, Guid studentId, string? strengthDescription = null)
     {
-        if (string.IsNullOrEmpty(media.FaceSearchJobId))
-        {
-            _logger.LogWarning(
-                "[PersonalVideoService] No Rekognition FaceSearchJobId for MediaId={MediaId}. Using full video (Fallback).",
-                media.Id);
-            return new ClipInput(s3Key, new List<TimeClip>());
-        }
-
-        VideoFaceTimelineResult? timelineResult;
-        try
-        {
-            timelineResult = await _faceRecognitionService
-                .GetVideoFaceTimelineAsync(media.FaceSearchJobId, studentId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "[PersonalVideoService] GetVideoFaceTimelineAsync failed for MediaId={MediaId}. Using full video (Fallback).",
-                media.Id);
-            return new ClipInput(s3Key, new List<TimeClip>());
-        }
+        // Read the face timeline captured at tagging time (no Rekognition re-query — its
+        // results expire after 7 days). See MediaTag.FaceSegmentsJson.
+        var timelineResult = ReadPersistedTimeline(media, studentId);
 
         if (timelineResult == null)
         {
-            _logger.LogInformation(
-                "[PersonalVideoService] Job IN_PROGRESS or FAILED -> fallback to full video. MediaId={MediaId}", media.Id);
+            // No persisted timeline: legacy media tagged before timelines were captured,
+            // or capture failed. Apply a privacy-safe fallback — only include the whole
+            // video when the student is the ONLY tagged person; otherwise skip the video
+            // to avoid leaking other people's faces into a personal highlight.
+            var taggedStudentCount = media.MediaTags
+                .Select(t => t.StudentId)
+                .Distinct()
+                .Count();
+
+            if (taggedStudentCount > 1)
+            {
+                _logger.LogWarning(
+                    "[PersonalVideoService] No persisted timeline and {Count} tagged students → skipping video (privacy-safe). MediaId={MediaId}",
+                    taggedStudentCount, media.Id);
+                return null;
+            }
+
+            _logger.LogWarning(
+                "[PersonalVideoService] No persisted timeline; sole tagged student → full video. MediaId={MediaId}",
+                media.Id);
             return new ClipInput(s3Key, new List<TimeClip>());
         }
 
@@ -418,6 +433,33 @@ public class PersonalVideoService : IPersonalVideoService
             faceSegments.Count, timeClips.Count, media.Id);
 
         return new ClipInput(s3Key, timeClips);
+    }
+
+    /// <summary>
+    /// Reconstructs the student's face timeline from the <see cref="MediaTag"/> captured at
+    /// tagging time (<see cref="MediaTag.FaceSegmentsJson"/> + <see cref="MediaTag.HasOtherFaces"/>).
+    /// Returns <c>null</c> when no timeline was persisted for this student (legacy data created
+    /// before this field existed, or a capture failure) so the caller can apply a fallback policy.
+    /// </summary>
+    private VideoFaceTimelineResult? ReadPersistedTimeline(MediaAsset media, Guid studentId)
+    {
+        var tag = media.MediaTags.FirstOrDefault(t => t.StudentId == studentId);
+        if (tag?.FaceSegmentsJson == null)
+            return null;
+
+        try
+        {
+            var segments = JsonSerializer.Deserialize<List<FaceTimestampSegment>>(tag.FaceSegmentsJson)
+                           ?? new List<FaceTimestampSegment>();
+            return new VideoFaceTimelineResult(tag.HasOtherFaces, segments);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[PersonalVideoService] Failed to deserialize FaceSegmentsJson for MediaId={MediaId}, StudentId={StudentId}.",
+                media.Id, studentId);
+            return null;
+        }
     }
 
     /// <summary>
@@ -601,47 +643,6 @@ public class PersonalVideoService : IPersonalVideoService
         return allLabels
             .Where(label => windows.Any(w => label.TimestampMs >= w.Start && label.TimestampMs <= w.End))
             .ToList();
-    }
-
-    /// <summary>
-    /// Applies a <see cref="BufferMs"/>-millisecond padding to each segment (clamped to 0),
-    /// then merges any overlapping or near-adjacent segments (gap &lt; <see cref="MergeGapMs"/>).
-    /// </summary>
-    private static List<FaceTimestampSegment> ApplyBufferAndMerge(
-        IEnumerable<FaceTimestampSegment> segments)
-    {
-        // 1. Apply buffer (clamp start to 0)
-        var buffered = segments
-            .Select(s => new FaceTimestampSegment(
-                Math.Max(0, s.StartMs - BufferMs),
-                s.EndMs + BufferMs))
-            .OrderBy(s => s.StartMs)
-            .ToList();
-
-        // 2. Merge overlapping / near-adjacent
-        var merged = new List<FaceTimestampSegment>();
-        foreach (var seg in buffered)
-        {
-            if (merged.Count == 0)
-            {
-                merged.Add(seg);
-                continue;
-            }
-
-            var last = merged[^1];
-            // Gap between last.EndMs and seg.StartMs
-            if (seg.StartMs - last.EndMs <= MergeGapMs)
-            {
-                // Extend the last segment
-                merged[^1] = last with { EndMs = Math.Max(last.EndMs, seg.EndMs) };
-            }
-            else
-            {
-                merged.Add(seg);
-            }
-        }
-
-        return merged;
     }
 
     /// <summary>

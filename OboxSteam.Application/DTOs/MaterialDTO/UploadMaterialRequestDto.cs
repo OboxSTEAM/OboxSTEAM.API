@@ -5,20 +5,10 @@ namespace OboxSteam.Application.DTOs.MaterialDTO;
 public class UploadMaterialRequestDto
 {
     /// <summary>
-    /// The module this material belongs to (required).
+    /// SelfPaced activity this material belongs to.
     /// </summary>
     [Required]
-    public Guid ModuleId { get; set; }
-
-    /// <summary>
-    /// Specific course within the module (optional).
-    /// </summary>
-    public Guid? CourseId { get; set; }
-
-    /// <summary>
-    /// Specific activity (optional).
-    /// </summary>
-    public Guid? ActivityId { get; set; }
+    public Guid ActivityId { get; set; }
 
     /// <summary>
     /// Display title of the material.

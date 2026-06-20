@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.MediaDTO;
@@ -600,6 +601,23 @@ public class MediaService : IMediaService
 
         var newTags = new List<MediaTag>();
 
+        // Capture per-student appearance timelines NOW, while the Rekognition job results
+        // are still available (Rekognition retains video job results for only 7 days).
+        // Persisting them lets the personal-video pipeline build clips indefinitely without
+        // re-querying Rekognition. A null result means the job is not SUCCEEDED — unexpected
+        // here since result.JobStatus was already checked, so we just skip persistence.
+        Dictionary<Guid, VideoFaceTimelineResult>? timelines = null;
+        try
+        {
+            timelines = await _faceRecognitionService.GetAllFaceTimelinesAsync(media.FaceSearchJobId!);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "DoProcessVideoTagsAsync: failed to capture face timelines for MediaId={MediaId}. " +
+                "Personal video generation will fall back to the safe legacy policy.", media.Id);
+        }
+
         // Batch-load all matched students in one query to avoid N+1 DB round-trips.
         var matchedUserIds = result.Matches
             .Select(m => m.UserId)
@@ -632,6 +650,19 @@ public class MediaService : IMediaService
             };
             await _unitOfWork.MediaTags.AddAsync(tag);
             newTags.Add(tag);
+        }
+
+        // Persist captured timelines onto every tag (new + existing) for this media.
+        if (timelines != null)
+        {
+            foreach (var tag in media.MediaTags.Concat(newTags))
+            {
+                if (timelines.TryGetValue(tag.StudentId, out var timeline))
+                {
+                    tag.FaceSegmentsJson = JsonSerializer.Serialize(timeline.Segments);
+                    tag.HasOtherFaces = timeline.HasOtherFaces;
+                }
+            }
         }
 
         media.VideoStatus = VideoProcessingStatus.TaggingComplete;

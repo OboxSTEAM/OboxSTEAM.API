@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260618145216_AddMediaTagFaceTimeline")]
+    partial class AddMediaTagFaceTimeline
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -560,9 +563,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("ProgramId");
 
-                    b.HasIndex("Status", "StartDate")
-                        .HasFilter("\"IsDeleted\" = false");
-
                     b.ToTable("Classes");
                 });
 
@@ -614,9 +614,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("ProgramEnrollmentId");
 
                     b.HasIndex("StudentId");
-
-                    b.HasIndex("ClassId", "Status")
-                        .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("ClassId", "StudentId")
                         .IsUnique()
@@ -1089,7 +1086,10 @@ namespace OboxSteam.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("ActivityId")
+                    b.Property<Guid?>("ActivityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CourseId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1117,6 +1117,9 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid>("ModuleId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -1130,8 +1133,11 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ActivityId")
-                        .IsUnique();
+                    b.HasIndex("ActivityId");
+
+                    b.HasIndex("CourseId");
+
+                    b.HasIndex("ModuleId");
 
                     b.ToTable("Materials");
                 });
@@ -2082,9 +2088,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ProgramId");
-
-                    b.HasIndex("Status", "CreatedAt")
-                        .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("StudentId", "ProgramId")
                         .IsUnique()
@@ -3211,12 +3214,24 @@ namespace OboxSteam.Infrastructure.Migrations
             modelBuilder.Entity("OboxSteam.Domain.Entities.Material", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.Activity", "Activity")
-                        .WithOne("Material")
-                        .HasForeignKey("OboxSteam.Domain.Entities.Material", "ActivityId")
+                        .WithMany("Materials")
+                        .HasForeignKey("ActivityId");
+
+                    b.HasOne("OboxSteam.Domain.Entities.Course", "Course")
+                        .WithMany("Materials")
+                        .HasForeignKey("CourseId");
+
+                    b.HasOne("OboxSteam.Domain.Entities.Module", "Module")
+                        .WithMany("Materials")
+                        .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Activity");
+
+                    b.Navigation("Course");
+
+                    b.Navigation("Module");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.MediaAsset", b =>
@@ -3777,7 +3792,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Navigation("ClassSessions");
 
-                    b.Navigation("Material");
+                    b.Navigation("Materials");
 
                     b.Navigation("MediaAssets");
 
@@ -3820,6 +3835,8 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Navigation("CourseEnrollments");
 
+                    b.Navigation("Materials");
+
                     b.Navigation("QuestionBanks");
                 });
 
@@ -3844,6 +3861,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("ClassSessions");
 
                     b.Navigation("Courses");
+
+                    b.Navigation("Materials");
 
                     b.Navigation("ModuleEnrollments");
 

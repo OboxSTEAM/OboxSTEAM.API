@@ -6,24 +6,14 @@ namespace OboxSteam.Application.Interfaces;
 public interface IMaterialService
 {
     /// <summary>
-    /// Upload file (PDF/DOC/Video/Image) to S3 and save Material record to DB.
+    /// Upload file (PDF/DOC/Video/Image) to S3 and attach to a SelfPaced activity (one per activity).
     /// </summary>
     Task<MaterialResponseDto> UploadMaterialAsync(IFormFile file, UploadMaterialRequestDto request);
 
     /// <summary>
-    /// Get all materials by Module.
+    /// Get the material for a SelfPaced activity, or null if none exists.
     /// </summary>
-    Task<List<MaterialResponseDto>> GetMaterialsByModuleAsync(Guid moduleId);
-
-    /// <summary>
-    /// Get all materials by Course.
-    /// </summary>
-    Task<List<MaterialResponseDto>> GetMaterialsByCourseAsync(Guid courseId);
-
-    /// <summary>
-    /// Get all materials by Activity.
-    /// </summary>
-    Task<List<MaterialResponseDto>> GetMaterialsByActivityAsync(Guid activityId);
+    Task<MaterialResponseDto?> GetMaterialByActivityAsync(Guid activityId);
 
     /// <summary>
     /// Update material title.
