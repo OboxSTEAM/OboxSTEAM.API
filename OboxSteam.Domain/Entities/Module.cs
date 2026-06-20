@@ -38,7 +38,6 @@ public class Module : BaseEntity
 
     // Navigation
     public ICollection<Course> Courses { get; set; } = new List<Course>();
-    public ICollection<Material> Materials { get; set; } = new List<Material>();
     public ICollection<Assignment> Assignments { get; set; } = new List<Assignment>();
     public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();
     public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();

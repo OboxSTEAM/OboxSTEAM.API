@@ -231,6 +231,19 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
+        // MATERIAL (1:1 with SelfPaced activity)
+        // =============================================
+        modelBuilder.Entity<Material>(entity =>
+        {
+            entity.HasIndex(m => m.ActivityId).IsUnique();
+
+            entity.HasOne(m => m.Activity)
+                .WithOne(a => a.Material)
+                .HasForeignKey<Material>(m => m.ActivityId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
         // ACTIVITY BOOKING (Unique: student + activity)
         // =============================================
         modelBuilder.Entity<ActivityBooking>(entity =>

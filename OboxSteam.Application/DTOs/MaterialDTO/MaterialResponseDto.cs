@@ -6,11 +6,7 @@ public class MaterialResponseDto
 {
     public Guid Id { get; set; }
 
-    public Guid ModuleId { get; set; }
-
-    public Guid? CourseId { get; set; }
-
-    public Guid? ActivityId { get; set; }
+    public Guid ActivityId { get; set; }
 
     public string Title { get; set; } = null!;
 

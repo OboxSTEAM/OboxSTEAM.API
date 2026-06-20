@@ -49,8 +49,8 @@ Program
         └── Activity               (atomic learning task: video, lab, reflection, etc.)
 ```
 
-**Also attached to modules/courses (not in the tree above):**
-- `Material` — files/docs at module, course, or activity level
+**Also attached to activities (SelfPaced only):**
+- `Material` — one learning asset per SelfPaced activity (video, PDF, doc, etc.)
 - `Assignment` — graded work (quiz, project, reflection) at module or course level
 - `QuestionBank` → `BankQuestion` → `BankQuestionOption` — reusable quiz pools scoped to a course
 
@@ -63,7 +63,7 @@ Program
 | **Course** | Sub-grouping inside a module (chapter/unit). Holds activities and optional materials. **Not a cohort.** |
 | **Activity** | Concrete task (`ActivityType`: SelfPaced, LiveOnline, Offline). Template scheduling hints only. |
 | **Assignment** | Assessments with quiz config, pass score, time limits, question-bank draw rules |
-| **Material** | Uploaded theory assets (PDF, video link, etc.) |
+| **Material** | Learning asset for a SelfPaced activity (at most one per activity) |
 
 ### Module access rules
 

@@ -1,4 +1,5 @@
 using OboxSteam.Domain.Enums;
+using OboxSteam.Application.DTOs.MaterialDTO;
 
 namespace OboxSteam.Application.DTOs.ActivityDTO;
 
@@ -19,4 +20,7 @@ public class ActivitiesResponseDto
     public bool RequireMediaEvidence { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>Learning material when ActivityType is SelfPaced and a material exists.</summary>
+    public MaterialResponseDto? Material { get; set; }
 }
