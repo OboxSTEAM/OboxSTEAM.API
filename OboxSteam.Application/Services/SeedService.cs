@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
@@ -2104,7 +2105,7 @@ namespace OboxSteam.Application.Services
                         StudentId = student1.Id,
                         ProgramId = programRobotics.Id,
                         Status = EnrollmentStatus.Active,
-                        ProgressPercent = 25m,
+                        ProgressPercent = 0m,
                         EnrolledAt = enrollTime.AddDays(-14),
                         StartedAt = enrollTime.AddDays(-10),
                         CreatedAt = enrollTime,
@@ -2121,7 +2122,7 @@ namespace OboxSteam.Application.Services
                         StudentId = student2.Id,
                         ProgramId = programWebDev.Id,
                         Status = EnrollmentStatus.Active,
-                        ProgressPercent = 10m,
+                        ProgressPercent = 0m,
                         EnrolledAt = enrollTime.AddDays(-7),
                         StartedAt = enrollTime.AddDays(-5),
                         CreatedAt = enrollTime,
@@ -2187,6 +2188,16 @@ namespace OboxSteam.Application.Services
                 var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
                 var moduleRobotics1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01");
                 var moduleWebDev1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-01");
+                var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+                var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
+                var programEnrollmentStudent1 = student1 != null && programRobotics != null
+                    ? await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                        pe => pe.StudentId == student1.Id && pe.ProgramId == programRobotics.Id && !pe.IsDeleted)
+                    : null;
+                var programEnrollmentStudent2 = student2 != null && programWebDev != null
+                    ? await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                        pe => pe.StudentId == student2.Id && pe.ProgramId == programWebDev.Id && !pe.IsDeleted)
+                    : null;
                 var enrollTime = DateTime.UtcNow;
 
                 var moduleEnrollments = new List<ModuleEnrollment>();
@@ -2198,8 +2209,9 @@ namespace OboxSteam.Application.Services
                         Id = Guid.NewGuid(),
                         StudentId = student1.Id,
                         ModuleId = moduleRobotics1.Id,
+                        ProgramEnrollmentId = programEnrollmentStudent1?.Id,
                         Status = EnrollmentStatus.Active,
-                        ProgressPercent = 40m,
+                        ProgressPercent = 0m,
                         FinalGrade = null,
                         EnrolledAt = enrollTime.AddDays(-10),
                         StartedAt = enrollTime.AddDays(-8),
@@ -2216,9 +2228,11 @@ namespace OboxSteam.Application.Services
                         Id = Guid.NewGuid(),
                         StudentId = student2.Id,
                         ModuleId = moduleWebDev1.Id,
+                        ProgramEnrollmentId = programEnrollmentStudent2?.Id,
                         Status = EnrollmentStatus.Active,
-                        ProgressPercent = 15m,
+                        ProgressPercent = 0m,
                         EnrolledAt = enrollTime.AddDays(-5),
+                        StartedAt = enrollTime.AddDays(-4),
                         CreatedAt = enrollTime,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
@@ -2743,6 +2757,8 @@ namespace OboxSteam.Application.Services
             await SeedResearchMilestoneDataAsync();
             await SeedResearchModuleEnrollmentsAsync();
             await SeedResearchActivityProgressAsync();
+            await SeedEnrollmentActivityProgressAsync();
+            await BackfillActivityProgressStatusAsync();
             await SeedResearchSubmissionsAsync();
             await SeedExtendedResearchDataAsync();
             await SeedMaterialsAsync();
@@ -3391,6 +3407,7 @@ namespace OboxSteam.Application.Services
                         StudentId = student.Id,
                         ActivityId = designBriefActivity.Id,
                         ModuleEnrollmentId = enrollment.Id,
+                        ActivityStatus = ActivityStatus.Done,
                         IsCompleted = true,
                         CompletedAt = progressTime.AddDays(-4),
                         CreatedAt = progressTime,
@@ -3414,6 +3431,7 @@ namespace OboxSteam.Application.Services
                             StudentId = student.Id,
                             ActivityId = prototypeBuildActivity.Id,
                             ModuleEnrollmentId = enrollment.Id,
+                            ActivityStatus = ActivityStatus.Done,
                             IsCompleted = true,
                             CompletedAt = progressTime.AddDays(-2),
                             CreatedAt = progressTime,
@@ -3432,9 +3450,260 @@ namespace OboxSteam.Application.Services
 
             await _unitOfWork.ActivityProgresses.AddRangeAsync(activityProgresses);
             await _unitOfWork.SaveChangesAsync();
+
+            foreach (var studentCode in studentCodes)
+            {
+                var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
+                if (student == null)
+                {
+                    continue;
+                }
+
+                var enrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                    me => me.StudentId == student.Id
+                          && me.ModuleId == moduleRobotics3.Id
+                          && !me.IsDeleted);
+
+                if (enrollment == null)
+                {
+                    continue;
+                }
+
+                var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+                    _unitOfWork,
+                    enrollment);
+
+                if (moduleProgressPercent >= 100m && enrollment.ProgramEnrollmentId.HasValue)
+                {
+                    await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                        _unitOfWork,
+                        enrollment.ProgramEnrollmentId.Value,
+                        enrollment);
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync();
             _loggerService.LogInformation(
                 "Finished seed research activity progress — {Count} record(s) created.",
                 activityProgresses.Count);
+        }
+
+        private async Task SeedEnrollmentActivityProgressAsync()
+        {
+            _loggerService.LogInformation("Starting seed enrollment activity progress");
+            var seedTime = DateTime.UtcNow;
+
+            await TrySeedModuleActivityProgressAsync(
+                "STD-001",
+                "MOD-ROBOTICS-01",
+                "PRG-ROBOTICS",
+                [
+                    ("ACT-ROBOTICS-01-01", ActivityStatus.Done, seedTime.AddDays(-6)),
+                    ("ACT-ROBOTICS-01-02", ActivityStatus.Done, seedTime.AddDays(-4)),
+                    ("ACT-ROBOTICS-01-03", ActivityStatus.InProgress, null),
+                ]);
+
+            await TrySeedModuleActivityProgressAsync(
+                "STD-002",
+                "MOD-WEBDEV-01",
+                "PRG-WEBDEV",
+                [
+                    ("ACT-WEBDEV-01-01", ActivityStatus.Done, seedTime.AddDays(-3)),
+                    ("ACT-WEBDEV-01-02", ActivityStatus.InProgress, null),
+                ]);
+
+            _loggerService.LogInformation("Finished seed enrollment activity progress");
+        }
+
+        private async Task TrySeedModuleActivityProgressAsync(
+            string studentCode,
+            string moduleCode,
+            string programCode,
+            (string ActivityCode, ActivityStatus Status, DateTime? CompletedAt)[] activitySeeds)
+        {
+            var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
+            var module = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == moduleCode);
+            if (student == null || module == null)
+            {
+                _loggerService.LogWarning(
+                    "Student {StudentCode} or module {ModuleCode} not found. Skipping activity progress seeding.",
+                    studentCode,
+                    moduleCode);
+                return;
+            }
+
+            var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == programCode);
+            ProgramEnrollment? programEnrollment = null;
+            if (program != null)
+            {
+                programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                    pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted);
+            }
+
+            var moduleEnrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                me => me.StudentId == student.Id
+                      && me.ModuleId == module.Id
+                      && me.Status == EnrollmentStatus.Active
+                      && !me.IsDeleted);
+
+            if (moduleEnrollment == null)
+            {
+                _loggerService.LogWarning(
+                    "Active module enrollment not found for {StudentCode} / {ModuleCode}. Skipping activity progress seeding.",
+                    studentCode,
+                    moduleCode);
+                return;
+            }
+
+            var enrollmentUpdated = false;
+            if (programEnrollment != null && moduleEnrollment.ProgramEnrollmentId != programEnrollment.Id)
+            {
+                moduleEnrollment.ProgramEnrollmentId = programEnrollment.Id;
+                enrollmentUpdated = true;
+            }
+
+            if (!moduleEnrollment.StartedAt.HasValue)
+            {
+                moduleEnrollment.StartedAt = DateTime.UtcNow.AddDays(-7);
+                enrollmentUpdated = true;
+            }
+
+            if (enrollmentUpdated)
+            {
+                await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+            }
+
+            var seedTime = DateTime.UtcNow;
+            var progressChanged = enrollmentUpdated;
+
+            foreach (var (activityCode, status, completedAt) in activitySeeds)
+            {
+                var activity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == activityCode);
+                if (activity == null)
+                {
+                    _loggerService.LogWarning("Activity {ActivityCode} not found. Skipping.", activityCode);
+                    continue;
+                }
+
+                var existingProgress = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+                    ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
+                          && ap.ActivityId == activity.Id
+                          && !ap.IsDeleted);
+
+                if (existingProgress != null)
+                {
+                    if (existingProgress.ActivityStatus == status
+                        && existingProgress.IsCompleted == (status == ActivityStatus.Done))
+                    {
+                        continue;
+                    }
+
+                    existingProgress.ActivityStatus = status;
+                    existingProgress.IsCompleted = status == ActivityStatus.Done;
+                    existingProgress.CompletedAt = status == ActivityStatus.Done
+                        ? completedAt ?? seedTime
+                        : null;
+                    await _unitOfWork.ActivityProgresses.Update(existingProgress);
+                    progressChanged = true;
+                    continue;
+                }
+
+                await _unitOfWork.ActivityProgresses.AddAsync(new ActivityProgress
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student.Id,
+                    ActivityId = activity.Id,
+                    ModuleEnrollmentId = moduleEnrollment.Id,
+                    ActivityStatus = status,
+                    IsCompleted = status == ActivityStatus.Done,
+                    CompletedAt = status == ActivityStatus.Done ? completedAt ?? seedTime : null,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+                progressChanged = true;
+            }
+
+            if (!progressChanged)
+            {
+                return;
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+                _unitOfWork,
+                moduleEnrollment);
+
+            if (moduleProgressPercent >= 100m && moduleEnrollment.ProgramEnrollmentId.HasValue)
+            {
+                await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                    _unitOfWork,
+                    moduleEnrollment.ProgramEnrollmentId.Value,
+                    moduleEnrollment);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            _loggerService.LogInformation(
+                "Seeded activity progress for {StudentCode} / {ModuleCode} — module progress {ProgressPercent}%.",
+                studentCode,
+                moduleCode,
+                moduleProgressPercent);
+        }
+
+        private async Task BackfillActivityProgressStatusAsync()
+        {
+            _loggerService.LogInformation("Starting backfill activity progress status");
+            var progresses = await _unitOfWork.ActivityProgresses.GetAllAsync(ap => !ap.IsDeleted);
+            var moduleEnrollmentIds = new HashSet<Guid>();
+            var changed = false;
+
+            foreach (var progress in progresses)
+            {
+                if (progress.IsCompleted && progress.ActivityStatus != ActivityStatus.Done)
+                {
+                    progress.ActivityStatus = ActivityStatus.Done;
+                    progress.CompletedAt ??= DateTime.UtcNow;
+                    await _unitOfWork.ActivityProgresses.Update(progress);
+                    moduleEnrollmentIds.Add(progress.ModuleEnrollmentId);
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+            {
+                _loggerService.LogInformation("No activity progress status backfill required");
+                return;
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            foreach (var moduleEnrollmentId in moduleEnrollmentIds)
+            {
+                var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId);
+                if (moduleEnrollment == null || moduleEnrollment.IsDeleted)
+                {
+                    continue;
+                }
+
+                var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+                    _unitOfWork,
+                    moduleEnrollment);
+
+                if (moduleProgressPercent >= 100m && moduleEnrollment.ProgramEnrollmentId.HasValue)
+                {
+                    await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                        _unitOfWork,
+                        moduleEnrollment.ProgramEnrollmentId.Value,
+                        moduleEnrollment);
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+            _loggerService.LogInformation(
+                "Finished backfill activity progress status — {Count} module enrollment(s) recalculated.",
+                moduleEnrollmentIds.Count);
         }
 
         private async Task SeedResearchSubmissionsAsync()
@@ -3832,12 +4101,27 @@ namespace OboxSteam.Application.Services
                     StudentId = student2.Id,
                     ActivityId = wireframeActivity.Id,
                     ModuleEnrollmentId = moduleEnrollment.Id,
+                    ActivityStatus = ActivityStatus.Done,
                     IsCompleted = true,
                     CompletedAt = seedTime.AddDays(-1),
                     CreatedAt = seedTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 });
+                await _unitOfWork.SaveChangesAsync();
+
+                var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+                    _unitOfWork,
+                    moduleEnrollment);
+
+                if (moduleProgressPercent >= 100m && moduleEnrollment.ProgramEnrollmentId.HasValue)
+                {
+                    await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                        _unitOfWork,
+                        moduleEnrollment.ProgramEnrollmentId.Value,
+                        moduleEnrollment);
+                }
+
                 await _unitOfWork.SaveChangesAsync();
             }
 

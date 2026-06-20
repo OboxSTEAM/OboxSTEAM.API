@@ -184,6 +184,7 @@ public static class IocContainer
         services.AddScoped<IStrengthMatchService, BedrockMantleStrengthMatchService>();
         services.AddScoped<IProgramEnrollmentService, ProgramEnrollmentService>();
         services.AddScoped<IModuleEnrollmentService, ModuleEnrollmentService>();
+        services.AddScoped<IActivityProgressService, ActivityProgressService>();
         services.AddScoped<IClassEnrollmentService, ClassEnrollmentService>();
         services.AddScoped<IClassService, ClassService>();
         services.AddScoped<IClassSessionService, ClassSessionService>();
