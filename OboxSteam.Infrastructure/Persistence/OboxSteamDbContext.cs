@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OboxSteam.Domain.Entities;
+using OboxSteam.Domain.Enums;
 using OboxSteam.Infrastructure.Commons;
 
 namespace OboxSteam.Infrastructure.Persistence;
@@ -307,6 +308,9 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(ap => new { ap.ModuleEnrollmentId, ap.ActivityId })
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false");
+
+            entity.Property(ap => ap.ActivityStatus)
+                .HasDefaultValue(ActivityStatus.NotStart);
         });
 
         // =============================================

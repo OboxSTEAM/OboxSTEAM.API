@@ -89,6 +89,23 @@ public class ProgramController : ControllerBase
     }
 
     // =========================================================================
+    // GET CURRICULUM  —  GET /api/programs/{id}/curriculum
+    // =========================================================================
+
+    [HttpGet("{id:guid}/curriculum")]
+    [SwaggerOperation(
+        Summary = "Get program curriculum tree",
+        Description = "Retrieve a compact curriculum outline for a program: modules, courses or milestones, activities, and materials.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramCurriculumDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 500)]
+    public async Task<IActionResult> GetProgramCurriculum([FromRoute] Guid id)
+    {
+        var result = await _programService.GetProgramCurriculumAsync(id);
+        return Ok(ApiResult<ProgramCurriculumDto>.Success(result, "200", "Program curriculum retrieved successfully."));
+    }
+
+    // =========================================================================
     // GET BY ID  —  GET /api/programs/{id}
     // =========================================================================
 

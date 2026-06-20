@@ -21,6 +21,6 @@ public class ActivitiesResponseDto
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 
-    /// <summary>Learning material when ActivityType is SelfPaced and a material exists.</summary>
+    /// <summary>Learning material linked to this activity, when one exists.</summary>
     public MaterialResponseDto? Material { get; set; }
 }
