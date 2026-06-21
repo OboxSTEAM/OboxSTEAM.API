@@ -93,6 +93,67 @@ public class PaymentService : IPaymentService
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // FLOW 1b: Student pays for module retake fee directly
+    // ══════════════════════════════════════════════════════════════════════
+
+    public async Task<CheckoutResponseDto> CreateModuleRetakeCheckout(Guid moduleEnrollmentId, PaymentGateway gateway)
+    {
+        var studentId = _claimsService.GetCurrentUserId;
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId)
+            ?? throw ErrorHelper.NotFound("Student not found.");
+
+        if (student.Role != RoleType.Student)
+            throw ErrorHelper.Forbidden("Only students can initiate module retake checkout.");
+
+        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId, me => me.Module)
+            ?? throw ErrorHelper.NotFound($"Module enrollment '{moduleEnrollmentId}' not found.");
+
+        if (moduleEnrollment.StudentId != studentId)
+            throw ErrorHelper.Forbidden("This module enrollment does not belong to you.");
+
+        if (moduleEnrollment.Status != EnrollmentStatus.PendingPayment)
+            throw ErrorHelper.BadRequest("This module enrollment is not pending payment.");
+
+        var module = moduleEnrollment.Module;
+        if (module == null || module.IsDeleted)
+            throw ErrorHelper.NotFound("Module not found.");
+
+        if (module.RetakeFee <= 0)
+            throw ErrorHelper.BadRequest("This module does not have a retake fee.");
+
+        // Create Payment record
+        var payment = new Payment
+        {
+            Code = GeneratePaymentCode(),
+            StudentId = studentId,
+            PaidById = studentId,
+            ModuleEnrollmentId = moduleEnrollment.Id,
+            Amount = module.RetakeFee,
+            Currency = "VND",
+            Gateway = gateway,
+            Status = PaymentStatus.Pending
+        };
+        await _unitOfWork.Payments.AddAsync(payment);
+        await _unitOfWork.SaveChangesAsync();
+
+        var description = $"Retake Fee for Module: {module.Name}";
+        var (checkoutUrl, sessionId) = await CreateGatewayCheckout(payment, $"Retake {module.Name}", description, null, gateway);
+        payment.CheckoutSessionId = sessionId;
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[CreateModuleRetakeCheckout] Student {StudentId} initiated retake checkout for module {ModuleId}. Payment={PaymentId}",
+            studentId, module.Id, payment.Id);
+
+        return new CheckoutResponseDto
+        {
+            PaymentId = payment.Id,
+            EnrollmentId = moduleEnrollment.Id,
+            CheckoutUrl = checkoutUrl
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // FLOW 2a: Student requests parent to pay
     // ══════════════════════════════════════════════════════════════════════
 
@@ -160,6 +221,81 @@ public class PaymentService : IPaymentService
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // FLOW 2a-retake: Student requests parent to pay for module retake
+    // ══════════════════════════════════════════════════════════════════════
+
+    public async Task RequestParentModulePayment(Guid moduleEnrollmentId, Guid parentId)
+    {
+        var studentId = _claimsService.GetCurrentUserId;
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId)
+            ?? throw ErrorHelper.NotFound("Student not found.");
+
+        if (student.Role != RoleType.Student)
+            throw ErrorHelper.Forbidden("Only students can send payment requests.");
+
+        // Validate verified ParentStudent link
+        var link = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(
+            ps => ps.ParentId == parentId && ps.StudentId == studentId && ps.IsVerified && !ps.IsDeleted)
+            ?? throw ErrorHelper.BadRequest("No verified parent-student link found with this parent.");
+
+        var parent = await _unitOfWork.Users.GetByIdAsync(parentId)
+            ?? throw ErrorHelper.NotFound("Parent not found.");
+
+        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId, me => me.Module)
+            ?? throw ErrorHelper.NotFound($"Module enrollment '{moduleEnrollmentId}' not found.");
+
+        if (moduleEnrollment.StudentId != studentId)
+            throw ErrorHelper.Forbidden("This module enrollment does not belong to you.");
+
+        if (moduleEnrollment.Status != EnrollmentStatus.PendingPayment)
+            throw ErrorHelper.BadRequest("This module enrollment is not pending payment.");
+
+        var module = moduleEnrollment.Module;
+        if (module == null || module.IsDeleted)
+            throw ErrorHelper.NotFound("Module not found.");
+
+        if (module.RetakeFee <= 0)
+            throw ErrorHelper.BadRequest("This module does not have a retake fee.");
+
+        // Create PaymentRequest record
+        var token = Guid.NewGuid().ToString("N");
+        var paymentRequest = new PaymentRequest
+        {
+            StudentId = studentId,
+            ParentId = parentId,
+            ModuleId = module.Id,
+            ModuleEnrollmentId = moduleEnrollment.Id,
+            Amount = module.RetakeFee,
+            Currency = "VND",
+            Token = token,
+            ExpiresAt = DateTime.UtcNow.AddHours(24),
+            Status = PaymentRequestStatus.Pending
+        };
+        await _unitOfWork.PaymentRequests.AddAsync(paymentRequest);
+        await _unitOfWork.SaveChangesAsync();
+
+        // Build payment link for parent
+        var frontendBaseUrl = (_configuration["APP_FRONTEND_URL"] ?? _configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
+        var paymentLink = $"{frontendBaseUrl}/payment/parent-checkout?token={token}";
+
+        // Send email to parent
+        await _emailService.SendPaymentRequestToParentEmailAsync(new PaymentRequestEmailDto
+        {
+            To = parent.Email,
+            ParentName = parent.FullName ?? "Parent",
+            StudentName = student.FullName ?? "Student",
+            ProgramName = $"Module Retake: {module.Name}",
+            Amount = module.RetakeFee,
+            Currency = "VND",
+            PaymentLink = paymentLink
+        });
+
+        _logger.LogInformation(
+            "[RequestParentModulePayment] Student {StudentId} sent payment request to parent {ParentId} for module retake {ModuleId}.",
+            studentId, parentId, module.Id);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // FLOW 2b: Parent opens checkout from token link
     // ══════════════════════════════════════════════════════════════════════
 
@@ -170,8 +306,33 @@ public class PaymentService : IPaymentService
             pr => pr.Token == token && pr.Status == PaymentRequestStatus.Pending && pr.ExpiresAt > now && !pr.IsDeleted)
             ?? throw ErrorHelper.BadRequest("Payment token is invalid, expired, or already used.");
 
-        var program = await _unitOfWork.Programs.GetByIdAsync(paymentRequest.ProgramId)
-            ?? throw ErrorHelper.NotFound("Program not found.");
+        string itemName = "";
+        string? itemDescription = null;
+        string? thumbnailUrl = null;
+        Guid? programEnrollmentId = null;
+        Guid? moduleEnrollmentId = null;
+
+        if (paymentRequest.ProgramEnrollmentId.HasValue)
+        {
+            var program = await _unitOfWork.Programs.GetByIdAsync(paymentRequest.ProgramId!.Value)
+                ?? throw ErrorHelper.NotFound("Program not found.");
+            itemName = program.Name;
+            itemDescription = BuildRichCheckoutDescription(program);
+            thumbnailUrl = program.ThumbnailUrl;
+            programEnrollmentId = paymentRequest.ProgramEnrollmentId;
+        }
+        else if (paymentRequest.ModuleEnrollmentId.HasValue)
+        {
+            var module = await _unitOfWork.Modules.GetByIdAsync(paymentRequest.ModuleId!.Value)
+                ?? throw ErrorHelper.NotFound("Module not found.");
+            itemName = $"Retake {module.Name}";
+            itemDescription = $"Retake Fee for Module: {module.Name}";
+            moduleEnrollmentId = paymentRequest.ModuleEnrollmentId;
+        }
+        else
+        {
+            throw ErrorHelper.BadRequest("Invalid payment request type.");
+        }
 
         // Create Payment record on behalf of the student, paid by parent
         var payment = new Payment
@@ -179,7 +340,8 @@ public class PaymentService : IPaymentService
             Code = GeneratePaymentCode(),
             StudentId = paymentRequest.StudentId,
             PaidById = paymentRequest.ParentId,
-            ProgramEnrollmentId = paymentRequest.ProgramEnrollmentId,
+            ProgramEnrollmentId = programEnrollmentId,
+            ModuleEnrollmentId = moduleEnrollmentId,
             Amount = paymentRequest.Amount,
             Currency = paymentRequest.Currency,
             Gateway = gateway,
@@ -187,9 +349,8 @@ public class PaymentService : IPaymentService
         };
         await _unitOfWork.Payments.AddAsync(payment);
 
-        var description = BuildRichCheckoutDescription(program);
         // Create checkout URL
-        var (checkoutUrl, sessionId) = await CreateGatewayCheckout(payment, program.Name, description, program.ThumbnailUrl, gateway);
+        var (checkoutUrl, sessionId) = await CreateGatewayCheckout(payment, itemName, itemDescription, thumbnailUrl, gateway);
         payment.CheckoutSessionId = sessionId;
 
         paymentRequest.Status = PaymentRequestStatus.Accepted;
@@ -206,13 +367,13 @@ public class PaymentService : IPaymentService
             TimeSpan.FromMinutes(30));
 
         _logger.LogInformation(
-            "[CreateParentCheckout] Parent {ParentId} created checkout for student {StudentId}, program {ProgramId}. Payment={PaymentId}",
-            paymentRequest.ParentId, paymentRequest.StudentId, paymentRequest.ProgramId, payment.Id);
+            "[CreateParentCheckout] Parent {ParentId} created checkout for student {StudentId}, payment request {RequestId}. Payment={PaymentId}",
+            paymentRequest.ParentId, paymentRequest.StudentId, paymentRequest.Id, payment.Id);
 
         return new CheckoutResponseDto
         {
             PaymentId = payment.Id,
-            EnrollmentId = paymentRequest.ProgramEnrollmentId,
+            EnrollmentId = programEnrollmentId ?? moduleEnrollmentId ?? Guid.Empty,
             CheckoutUrl = checkoutUrl,
             AccessToken = parentAccessToken
         };
@@ -282,12 +443,25 @@ public class PaymentService : IPaymentService
         payment.Status = PaymentStatus.Cancelled;
 
         // Rollback PaymentRequest về Pending nếu còn hạn → parent có thể thử lại
-        var paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
-            pr => pr.StudentId == payment.StudentId
-                  && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
-                  && pr.Status == PaymentRequestStatus.Accepted
-                  && pr.ExpiresAt > DateTime.UtcNow
-                  && !pr.IsDeleted);
+        PaymentRequest? paymentRequest = null;
+        if (payment.ProgramEnrollmentId.HasValue)
+        {
+            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == payment.StudentId
+                      && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
+                      && pr.Status == PaymentRequestStatus.Accepted
+                      && pr.ExpiresAt > DateTime.UtcNow
+                      && !pr.IsDeleted);
+        }
+        else if (payment.ModuleEnrollmentId.HasValue)
+        {
+            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == payment.StudentId
+                      && pr.ModuleEnrollmentId == payment.ModuleEnrollmentId
+                      && pr.Status == PaymentRequestStatus.Accepted
+                      && pr.ExpiresAt > DateTime.UtcNow
+                      && !pr.IsDeleted);
+        }
 
         if (paymentRequest != null)
         {
@@ -343,12 +517,25 @@ public class PaymentService : IPaymentService
 
         payment.Status = PaymentStatus.Failed;
 
-        var paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
-            pr => pr.StudentId == payment.StudentId
-                  && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
-                  && pr.Status == PaymentRequestStatus.Accepted
-                  && pr.ExpiresAt > DateTime.UtcNow
-                  && !pr.IsDeleted);
+        PaymentRequest? paymentRequest = null;
+        if (payment.ProgramEnrollmentId.HasValue)
+        {
+            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == payment.StudentId
+                      && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
+                      && pr.Status == PaymentRequestStatus.Accepted
+                      && pr.ExpiresAt > DateTime.UtcNow
+                      && !pr.IsDeleted);
+        }
+        else if (payment.ModuleEnrollmentId.HasValue)
+        {
+            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == payment.StudentId
+                      && pr.ModuleEnrollmentId == payment.ModuleEnrollmentId
+                      && pr.Status == PaymentRequestStatus.Accepted
+                      && pr.ExpiresAt > DateTime.UtcNow
+                      && !pr.IsDeleted);
+        }
 
         if (paymentRequest != null)
         {
@@ -390,12 +577,35 @@ public class PaymentService : IPaymentService
             }
         }
 
+        ModuleEnrollment? moduleEnrollment = null;
+        if (payment.ModuleEnrollmentId.HasValue)
+        {
+            moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(payment.ModuleEnrollmentId.Value);
+            if (moduleEnrollment != null)
+            {
+                moduleEnrollment.Status = EnrollmentStatus.Active;
+                moduleEnrollment.EnrolledAt = now;
+            }
+        }
+
         // 3. Update PaymentRequest if parent paid
-        var paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
-            pr => pr.StudentId == payment.StudentId
-                  && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
-                  && pr.Status == PaymentRequestStatus.Accepted
-                  && !pr.IsDeleted);
+        PaymentRequest? paymentRequest = null;
+        if (payment.ProgramEnrollmentId.HasValue)
+        {
+            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == payment.StudentId
+                      && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
+                      && pr.Status == PaymentRequestStatus.Accepted
+                      && !pr.IsDeleted);
+        }
+        else if (payment.ModuleEnrollmentId.HasValue)
+        {
+            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == payment.StudentId
+                      && pr.ModuleEnrollmentId == payment.ModuleEnrollmentId
+                      && pr.Status == PaymentRequestStatus.Accepted
+                      && !pr.IsDeleted);
+        }
 
         if (paymentRequest != null)
         {
@@ -418,6 +628,13 @@ public class PaymentService : IPaymentService
             programThumbnail = program?.ThumbnailUrl;
         }
 
+        string? moduleName = null;
+        if (moduleEnrollment != null)
+        {
+            var module = await _unitOfWork.Modules.GetByIdAsync(moduleEnrollment.ModuleId);
+            moduleName = module?.Name;
+        }
+
         // 5. Create Invoice with all details populated
         var invoiceNumber = GenerateInvoiceNumber();
         var invoice = new Invoice
@@ -430,7 +647,7 @@ public class PaymentService : IPaymentService
             TotalAmount = payment.Amount,
             BillingName = payer?.FullName ?? payer?.Email ?? string.Empty,
             BillingEmail = payer?.Email ?? string.Empty,
-            ItemDescription = programName ?? "Program Enrollment"
+            ItemDescription = programName ?? (moduleName != null ? $"Module Retake: {moduleName}" : "Module Retake")
         };
         await _unitOfWork.Invoices.AddAsync(invoice);
 
@@ -445,7 +662,7 @@ public class PaymentService : IPaymentService
                 To = payer.Email,
                 PayerName = payer.FullName ?? payer.Email,
                 StudentName = student?.FullName ?? "Student",
-                ProgramName = programName ?? "Program",
+                ProgramName = programName ?? moduleName ?? "Module Retake",
                 ThumbnailUrl = programThumbnail,
                 Amount = payment.Amount,
                 Currency = payment.Currency,
@@ -513,6 +730,7 @@ public class PaymentService : IPaymentService
         StudentId = p.StudentId,
         PaidById = p.PaidById,
         ProgramEnrollmentId = p.ProgramEnrollmentId,
+        ModuleEnrollmentId = p.ModuleEnrollmentId,
         Amount = p.Amount,
         Currency = p.Currency,
         Gateway = p.Gateway,

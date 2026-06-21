@@ -10,6 +10,7 @@ public class PaymentResponseDto
     public Guid StudentId { get; set; }
     public Guid PaidById { get; set; }
     public Guid? ProgramEnrollmentId { get; set; }
+    public Guid? ModuleEnrollmentId { get; set; }
     public decimal Amount { get; set; }
     public string Currency { get; set; } = null!;
     public PaymentGateway Gateway { get; set; }

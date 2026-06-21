@@ -640,6 +640,16 @@ public class OboxSteamDbContext : DbContext
                 .HasForeignKey(pr => pr.ProgramEnrollmentId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            entity.HasOne(pr => pr.Module)
+                .WithMany()
+                .HasForeignKey(pr => pr.ModuleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(pr => pr.ModuleEnrollment)
+                .WithMany()
+                .HasForeignKey(pr => pr.ModuleEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             entity.HasOne(pr => pr.Payment)
                 .WithMany()
                 .HasForeignKey(pr => pr.PaymentId)

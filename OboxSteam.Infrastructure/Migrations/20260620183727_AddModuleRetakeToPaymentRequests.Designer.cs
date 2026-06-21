@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260620183727_AddModuleRetakeToPaymentRequests")]
+    partial class AddModuleRetakeToPaymentRequests
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -166,12 +169,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<Guid>("ActivityId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("ActivityStatus")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasDefaultValue("NotStart");
 
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
@@ -971,10 +968,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("PersonalVideoFailureReason")
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
-
                     b.Property<string>("PersonalVideoJobRef")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
@@ -1007,11 +1000,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StudentId");
+                    b.HasIndex("ProgramId");
 
-                    b.HasIndex("ProgramId", "StudentId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
+                    b.HasIndex("StudentId");
 
                     b.ToTable("HighlightVideos");
                 });
@@ -1186,9 +1177,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<string>("LabelJobRef")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
-
-                    b.Property<string>("LabelTimelineJson")
-                        .HasColumnType("text");
 
                     b.Property<string>("MediaConvertJobId")
                         .HasMaxLength(512)

@@ -43,6 +43,25 @@ public class PaymentController : ControllerBase
     }
 
     // =========================================================================
+    // RETAKE CHECKOUT  —  POST /api/payments/checkout/retake  [Student]
+    // =========================================================================
+    [HttpPost("checkout/retake")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Initiate module retake checkout (student pays)",
+        Description = "Student initiates checkout for a module retake fee. Returns a hosted payment URL.")]
+    [ProducesResponseType(typeof(ApiResult<CheckoutResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> CreateModuleRetakeCheckout([FromBody] ModuleRetakeCheckoutRequestDto dto)
+    {
+        var result = await _paymentService.CreateModuleRetakeCheckout(dto.ModuleEnrollmentId, dto.Gateway);
+        return Ok(ApiResult<CheckoutResponseDto>.Success(result, "200", "Retake checkout session created. Redirect to checkoutUrl to complete payment."));
+    }
+
+    // =========================================================================
     // FLOW 2a: Student requests parent to pay
     // POST /api/payments/request-parent  [Student]
     // =========================================================================
@@ -61,6 +80,25 @@ public class PaymentController : ControllerBase
     {
         await _paymentService.RequestParentPayment(dto.ProgramId, dto.ParentId);
         return Ok(ApiResult<object>.Success(null, "200", "Payment request sent to parent's email."));
+    }
+
+    // =========================================================================
+    // POST /api/payments/request-parent/retake  [Student]
+    // =========================================================================
+    [HttpPost("request-parent/retake")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Request parent to pay for module retake fee",
+        Description = "Student sends a payment request email to a linked, verified parent. The parent receives a 24h payment link for the module retake fee.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> RequestParentModulePayment([FromBody] ParentModulePaymentRequestDto dto)
+    {
+        await _paymentService.RequestParentModulePayment(dto.ModuleEnrollmentId, dto.ParentId);
+        return Ok(ApiResult<object>.Success(null, "200", "Retake payment request sent to parent's email."));
     }
 
     // =========================================================================
