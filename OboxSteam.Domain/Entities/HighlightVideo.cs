@@ -37,4 +37,13 @@ public class HighlightVideo : BaseEntity
 
     /// <summary>UTC timestamp when the generation was last triggered.</summary>
     public DateTime? PersonalVideoRequestedAt { get; set; }
+
+    /// <summary>
+    /// Human-readable reason the last generation attempt failed (e.g. no segments matched the
+    /// requested strengths). Set when <see cref="PersonalVideoStatus"/> is
+    /// <see cref="HighlightVideoStatus.Failed"/>; null otherwise. Because clip building now runs
+    /// in the background, this replaces the old synchronous BadRequest response.
+    /// </summary>
+    [MaxLength(1024)]
+    public string? PersonalVideoFailureReason { get; set; }
 }

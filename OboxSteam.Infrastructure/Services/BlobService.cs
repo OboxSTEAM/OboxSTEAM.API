@@ -262,6 +262,80 @@ public class BlobService : IBlobService
         }
     }
 
+    /// <inheritdoc />
+    public async Task<(int Deleted, int Failed)> ClearAllObjectsAsync(CancellationToken cancellationToken = default)
+    {
+        const int batchSize = 1000;
+        var deleted = 0;
+        var failed = 0;
+        string? continuationToken = null;
+
+        _logger.LogInformation("Clearing all objects from bucket '{Bucket}'...", _bucketName);
+
+        do
+        {
+            var listResponse = await _s3Client.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = _bucketName,
+                ContinuationToken = continuationToken
+            }, cancellationToken);
+
+            var keys = listResponse.S3Objects
+                .Select(o => o.Key)
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .ToList();
+
+            for (var i = 0; i < keys.Count; i += batchSize)
+            {
+                var batch = keys
+                    .Skip(i)
+                    .Take(batchSize)
+                    .Select(k => new KeyVersion { Key = k })
+                    .ToList();
+
+                if (batch.Count == 0)
+                    continue;
+
+                try
+                {
+                    var deleteResponse = await _s3Client.DeleteObjectsAsync(new DeleteObjectsRequest
+                    {
+                        BucketName = _bucketName,
+                        Objects = batch
+                    }, cancellationToken);
+
+                    deleted += deleteResponse.DeletedObjects?.Count ?? 0;
+
+                    if (deleteResponse.DeleteErrors?.Count > 0)
+                    {
+                        failed += deleteResponse.DeleteErrors.Count;
+                        foreach (var error in deleteResponse.DeleteErrors)
+                        {
+                            _logger.LogWarning(
+                                "Failed to delete S3 object: {Key} — {Code}: {Message}",
+                                error.Key, error.Code, error.Message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failed += batch.Count;
+                    _logger.LogWarning(ex, "Failed to delete S3 object batch ({Count} keys)", batch.Count);
+                }
+            }
+
+            continuationToken = listResponse.IsTruncated
+                ? listResponse.NextContinuationToken
+                : null;
+        } while (continuationToken != null);
+
+        _logger.LogInformation(
+            "Bucket '{Bucket}' cleared. Deleted={Deleted}, Failed={Failed}",
+            _bucketName, deleted, failed);
+
+        return (deleted, failed);
+    }
+
     private string GetContentType(string fileName)
     {
         var ext = Path.GetExtension(fileName)?.ToLowerInvariant();

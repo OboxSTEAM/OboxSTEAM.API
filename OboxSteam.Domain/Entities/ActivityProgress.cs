@@ -1,3 +1,5 @@
+using OboxSteam.Domain.Enums;
+
 namespace OboxSteam.Domain.Entities;
 
 /// <summary>
@@ -18,6 +20,8 @@ public class ActivityProgress : BaseEntity
     /// <summary>Anchors the progress to the module enrollment attempt it belongs to.</summary>
     public Guid ModuleEnrollmentId { get; set; }
     public ModuleEnrollment ModuleEnrollment { get; set; } = null!;
+
+    public ActivityStatus ActivityStatus { get; set; } = ActivityStatus.NotStart;
 
     public bool IsCompleted { get; set; }
 

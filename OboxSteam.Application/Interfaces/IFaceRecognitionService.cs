@@ -31,17 +31,9 @@ public interface IFaceRecognitionService
     Task<VideoFaceSearchResult?> GetVideoFaceSearchResultsAsync(string jobId);
 
     /// <summary>
-    /// Trích xuất timeline (danh sách đoạn timestamp) của một student cụ thể từ kết quả
-    /// Rekognition video face-search. Trả về danh sách FaceTimestampSegment (StartMs, EndMs).
-    /// Trả về danh sách rỗng nếu student không xuất hiện hoặc job chưa hoàn tất.
-    /// </summary>
-    /// <param name="jobId">Rekognition video job ID (phải ở trạng thái SUCCEEDED).</param>
-    /// <param name="studentId">UserId của sinh viên cần tìm timeline.</param>
-    Task<VideoFaceTimelineResult?> GetVideoFaceTimelineAsync(string jobId, Guid studentId);
-
-    /// <summary>
     /// Trích xuất timeline cho TẤT CẢ student xuất hiện trong video chỉ với một lần duyệt
-    /// kết quả Rekognition (thay vì gọi <see cref="GetVideoFaceTimelineAsync"/> nhiều lần).
+    /// kết quả Rekognition video face-search. Mỗi student có danh sách FaceTimestampSegment
+    /// (StartMs, EndMs) và cờ HasOtherFaces.
     /// Dùng tại thời điểm tagging để lưu timeline vào DB khi job còn tươi mới
     /// (Rekognition chỉ giữ kết quả video job 7 ngày).
     /// Trả về <c>null</c> nếu job còn IN_PROGRESS hoặc FAILED.

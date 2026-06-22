@@ -8,6 +8,7 @@ public interface IProgramService
 {
     Task<ProgramsResponseDto> GetProgramByIdAsync(Guid id);
     Task<ProgramsResponseDto> GetProgramByNameAsync(string name);
+    Task<ProgramCurriculumDto> GetProgramCurriculumAsync(Guid id);
     Task<Pagination<ProgramListItemDto>> GetAllProgramsAsync(
         string? search,
         string? sortBy,

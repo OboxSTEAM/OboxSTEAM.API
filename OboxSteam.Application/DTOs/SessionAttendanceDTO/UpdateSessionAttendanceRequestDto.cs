@@ -1,0 +1,21 @@
+using System.ComponentModel.DataAnnotations;
+using OboxSteam.Domain.Enums;
+
+namespace OboxSteam.Application.DTOs.SessionAttendanceDTO;
+
+/// <summary>
+/// Request to record or update attendance for a roster entry.
+/// Only Mentor, Manager, and SuperAdmin may submit this request.
+/// <c>RecordedBy</c> is set from the authenticated user in the service layer.
+/// </summary>
+public sealed class UpdateSessionAttendanceRequestDto
+{
+    [Required(ErrorMessage = "Status is required.")]
+    public AttendanceStatus Status { get; set; }
+
+    /// <summary>
+    /// Optional check-in timestamp override. When null, the service may set it automatically
+    /// for <see cref="AttendanceStatus.Present"/> or <see cref="AttendanceStatus.Late"/>.
+    /// </summary>
+    public DateTime? CheckedInAt { get; set; }
+}
