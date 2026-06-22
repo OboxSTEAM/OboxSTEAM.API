@@ -174,6 +174,12 @@ public sealed class ClassSessionService : IClassSessionService
             request.ActivityId,
             request.AssignmentId);
 
+        await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
+            _unitOfWork,
+            classEntity!.MentorId,
+            request.StartTime,
+            request.EndTime);
+
         var entity = new ClassSession
         {
             ClassId = request.ClassId,
@@ -307,6 +313,13 @@ public sealed class ClassSessionService : IClassSessionService
                 classEntity!,
                 targetStartTime,
                 targetEndTime);
+
+            await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
+                _unitOfWork,
+                classEntity!.MentorId,
+                targetStartTime,
+                targetEndTime,
+                excludeSessionId: session.Id);
         }
 
         if (request.Location != null)

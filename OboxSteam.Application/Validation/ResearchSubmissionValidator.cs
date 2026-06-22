@@ -220,7 +220,8 @@ public static class ResearchSubmissionValidator
     public static async Task<User> EnsureCanStartSubmissionAsync(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
-        Guid moduleId)
+        Guid moduleId,
+        Guid studentId)
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
@@ -231,10 +232,17 @@ public static class ResearchSubmissionValidator
 
         if (user.Role == RoleType.Mentor)
         {
-            await ResearchMilestoneValidator.EnsureMentorCanManageModuleLinksAsync(
+            var module = await unitOfWork.Modules.GetByIdAsync(moduleId);
+            if (module == null || module.IsDeleted)
+            {
+                throw ErrorHelper.NotFound($"Module with id '{moduleId}' not found.");
+            }
+
+            await MentorScopeValidator.EnsureMentorOwnsStudentInProgramAsync(
                 unitOfWork,
                 user.Id,
-                moduleId);
+                studentId,
+                module.ProgramId);
             return user;
         }
 
@@ -244,7 +252,8 @@ public static class ResearchSubmissionValidator
     public static async Task<User> EnsureCanGradeSubmissionAsync(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
-        Guid moduleId)
+        Guid moduleId,
+        Guid studentId)
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
@@ -255,10 +264,17 @@ public static class ResearchSubmissionValidator
 
         if (user.Role == RoleType.Mentor)
         {
-            await ResearchMilestoneValidator.EnsureMentorCanManageModuleLinksAsync(
+            var module = await unitOfWork.Modules.GetByIdAsync(moduleId);
+            if (module == null || module.IsDeleted)
+            {
+                throw ErrorHelper.NotFound($"Module with id '{moduleId}' not found.");
+            }
+
+            await MentorScopeValidator.EnsureMentorOwnsStudentInProgramAsync(
                 unitOfWork,
                 user.Id,
-                moduleId);
+                studentId,
+                module.ProgramId);
             return user;
         }
 
@@ -313,10 +329,17 @@ public static class ResearchSubmissionValidator
                 throw ErrorHelper.NotFound($"Assignment with id '{submission.AssignmentId}' not found.");
             }
 
-            await ResearchMilestoneValidator.EnsureMentorCanManageModuleLinksAsync(
+            var module = await unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+            if (module == null || module.IsDeleted)
+            {
+                throw ErrorHelper.NotFound($"Module with id '{assignment.ModuleId}' not found.");
+            }
+
+            await MentorScopeValidator.EnsureMentorOwnsStudentInProgramAsync(
                 unitOfWork,
                 user.Id,
-                assignment.ModuleId);
+                submission.StudentId,
+                module.ProgramId);
             return;
         }
 

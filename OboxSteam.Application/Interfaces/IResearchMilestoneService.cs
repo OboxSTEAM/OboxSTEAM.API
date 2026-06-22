@@ -30,7 +30,7 @@ public interface IResearchMilestoneService
         Guid activityId,
         UpdateMilestoneActivityLinkRequestDto request);
 
-    Task<bool> UnlinkActivity(Guid milestoneId, Guid activityId);
+    Task<bool> UnlinkActivity(Guid milestoneId, Guid activityId, Guid? classId = null);
 
     Task<StudentMilestoneProgressDto> GetStudentMilestoneProgress(Guid moduleEnrollmentId);
 }

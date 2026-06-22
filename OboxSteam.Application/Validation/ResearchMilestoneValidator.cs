@@ -100,7 +100,8 @@ public static class ResearchMilestoneValidator
     public static async Task<User> EnsureCanMutateActivityLinkAsync(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
-        Guid moduleId)
+        Guid moduleId,
+        Guid? classId)
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
@@ -111,42 +112,20 @@ public static class ResearchMilestoneValidator
 
         if (user.Role == RoleType.Mentor)
         {
-            await EnsureMentorCanManageModuleLinksAsync(unitOfWork, user.Id, moduleId);
+            if (!classId.HasValue || classId.Value == Guid.Empty)
+            {
+                throw ErrorHelper.BadRequest(MentorScopeValidator.ClassIdRequiredMessage);
+            }
+
+            await MentorScopeValidator.EnsureMentorOwnsClassForModuleAsync(
+                unitOfWork,
+                user.Id,
+                classId.Value,
+                moduleId);
             return user;
         }
 
         throw ErrorHelper.Forbidden(MutateActivityLinkForbiddenMessage);
-    }
-
-    public static async Task EnsureMentorCanManageModuleLinksAsync(
-        IUnitOfWork unitOfWork,
-        Guid mentorId,
-        Guid moduleId)
-    {
-        var isCourseMentor = await unitOfWork.Courses.FirstOrDefaultAsync(
-            c => c.ModuleId == moduleId && c.MentorId == mentorId && !c.IsDeleted);
-
-        if (isCourseMentor != null)
-        {
-            return;
-        }
-
-        var module = await unitOfWork.Modules.GetByIdAsync(moduleId);
-        if (module == null || module.IsDeleted)
-        {
-            throw ErrorHelper.NotFound($"Module with id '{moduleId}' not found.");
-        }
-
-        var isClassMentor = await unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.ProgramId == module.ProgramId && c.MentorId == mentorId && !c.IsDeleted);
-
-        if (isClassMentor != null)
-        {
-            return;
-        }
-
-        throw ErrorHelper.Forbidden(
-            "You can only manage milestone activity links for modules where you are an assigned course or class mentor.");
     }
 
     public static async Task ValidateActivityBelongsToModuleAsync(

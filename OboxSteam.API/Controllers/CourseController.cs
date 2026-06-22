@@ -31,13 +31,12 @@ public class CourseController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     public async Task<IActionResult> GetAllCourses(
         [FromQuery, SwaggerParameter(Description = "Search by name or code (optional)")] string? search = null,
-        [FromQuery, SwaggerParameter(Description = "Sort by field: name, code, moduleId, mentorId, createdAt (optional)")] string? sortBy = null,
+        [FromQuery, SwaggerParameter(Description = "Sort by field: name, code, moduleId, createdAt (optional)")] string? sortBy = null,
         [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
         [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
         [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
         [FromQuery, SwaggerParameter(Description = "Filter by course code (optional)")] string? code = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by module name (optional)")] string? moduleName = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by mentor full name (optional)")] string? mentorName = null)
+        [FromQuery, SwaggerParameter(Description = "Filter by module name (optional)")] string? moduleName = null)
     {
         if (page < 1 || pageSize < 1)
         {
@@ -45,7 +44,7 @@ public class CourseController : ControllerBase
         }
 
         var result = await _courseService.GetAllCoursesAsync(
-            search, sortBy, isDescending, page, pageSize, code, moduleName, mentorName);
+            search, sortBy, isDescending, page, pageSize, code, moduleName);
 
         return Ok(ApiResult<Pagination<CourseResponseDto>>.Success(result, "200", "Courses retrieved successfully."));
     }

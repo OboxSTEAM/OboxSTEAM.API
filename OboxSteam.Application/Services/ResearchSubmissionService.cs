@@ -60,7 +60,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         var opener = await ResearchSubmissionValidator.EnsureCanStartSubmissionAsync(
             _unitOfWork,
             _claimsService,
-            enrollment.ModuleId);
+            enrollment.ModuleId,
+            enrollment.StudentId);
 
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(milestone.AssignmentId);
         if (assignment == null || assignment.IsDeleted)
@@ -381,7 +382,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         var grader = await ResearchSubmissionValidator.EnsureCanGradeSubmissionAsync(
             _unitOfWork,
             _claimsService,
-            assignment.ModuleId);
+            assignment.ModuleId,
+            submission!.StudentId);
 
         if (request.AssignedGrade < 0 || request.AssignedGrade > assignment.MaxPoints)
         {

@@ -171,13 +171,9 @@ public static class SessionAttendanceValidator
         Guid mentorId,
         ClassSession classSession)
     {
-        var classEntity = await unitOfWork.Classes.GetByIdAsync(classSession.ClassId);
-        ClassValidator.ValidateClassExists(classEntity, classSession.ClassId);
-
-        if (classEntity!.MentorId != mentorId)
-        {
-            throw ErrorHelper.Forbidden(
-                "You can only manage attendance for classes where you are the assigned mentor.");
-        }
+        await MentorScopeValidator.EnsureMentorOwnsClassAsync(
+            unitOfWork,
+            mentorId,
+            classSession.ClassId);
     }
 }

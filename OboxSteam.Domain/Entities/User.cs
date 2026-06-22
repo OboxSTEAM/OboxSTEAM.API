@@ -57,7 +57,6 @@ public class User : BaseEntity
     public ICollection<HighlightVideo> HighlightVideos { get; set; } = new List<HighlightVideo>();
     public ICollection<MediaAsset> UploadedMediaAssets { get; set; } = new List<MediaAsset>();
     public ICollection<MediaTag> MediaTags { get; set; } = new List<MediaTag>();
-    public ICollection<Course> MentoredCourses { get; set; } = new List<Course>();
     public ICollection<ProgramReview> ProgramReviews { get; set; } = new List<ProgramReview>();
     public ICollection<Class> MentoredClasses { get; set; } = new List<Class>();
     public ICollection<ClassEnrollment> ClassEnrollments { get; set; } = new List<ClassEnrollment>();

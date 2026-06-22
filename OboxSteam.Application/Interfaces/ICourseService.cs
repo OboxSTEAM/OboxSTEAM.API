@@ -12,8 +12,7 @@ public interface ICourseService
         int page,
         int pageSize,
         string? code,
-        string? moduleName,
-        string? mentorName);
+        string? moduleName);
 
     Task<CourseResponseDto?> GetCourseByIdAsync(Guid courseId);
 
