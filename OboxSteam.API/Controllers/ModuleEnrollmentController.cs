@@ -20,32 +20,6 @@ public class ModuleEnrollmentController : ControllerBase
     }
 
     // =========================================================================
-    // ENROLL  —  POST /api/module-enrollments          [Student only]
-    // =========================================================================
-
-    [HttpPost]
-    [Authorize(Roles = "Student")]
-    [SwaggerOperation(
-        Summary = "Enroll in a module",
-        Description = "Creates a module enrollment within an active program enrollment. Requires Student role.")]
-    [ProducesResponseType(typeof(ApiResult<ModuleEnrollmentResponseDto>), 201)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> EnrollModule(
-        [FromBody, SwaggerParameter("Module enrollment request")] CreateModuleEnrollmentRequestDto dto)
-    {
-        var result = await _moduleEnrollmentService.EnrollModuleAsync(dto);
-
-        return CreatedAtAction(
-            nameof(GetModuleEnrollmentById),
-            new { id = result.Id },
-            ApiResult<ModuleEnrollmentResponseDto>.Success(result, "201", "Module enrollment created successfully."));
-    }
-
-    // =========================================================================
     // RETAKE  —  POST /api/module-enrollments/retake   [Student only]
     // =========================================================================
 
@@ -92,44 +66,5 @@ public class ModuleEnrollmentController : ControllerBase
             result,
             "200",
             "Module enrollment retrieved successfully."));
-    }
-
-    // =========================================================================
-    // GET BY PROGRAM ENROLLMENT  —  GET /api/module-enrollments/program-enrollment/{programEnrollmentId}
-    // =========================================================================
-
-    [HttpGet("program-enrollment/{programEnrollmentId:guid}")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
-    [SwaggerOperation(
-        Summary = "Get module enrollments by program enrollment",
-        Description = "Lists module enrollments for a program enrollment. Access is enforced per role.")]
-    [ProducesResponseType(typeof(ApiResult<Pagination<ModuleEnrollmentResponseDto>>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> GetModuleEnrollmentsByProgramEnrollment(
-        [FromRoute] Guid programEnrollmentId,
-        [FromQuery, SwaggerParameter(Description = "Sort by: moduleOrder, attemptNumber, progressPercent, status, enrolledAt, createdAt")] string? sortBy = null,
-        [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
-        [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
-        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10)
-    {
-        if (page < 1 || pageSize < 1)
-        {
-            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
-        }
-
-        var result = await _moduleEnrollmentService.GetModuleEnrollmentsByProgramEnrollmentAsync(
-            programEnrollmentId,
-            sortBy,
-            isDescending,
-            page,
-            pageSize);
-
-        return Ok(ApiResult<Pagination<ModuleEnrollmentResponseDto>>.Success(
-            result,
-            "200",
-            "Module enrollments retrieved successfully."));
     }
 }
