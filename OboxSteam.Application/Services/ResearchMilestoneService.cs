@@ -540,7 +540,8 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
         await ResearchMilestoneValidator.EnsureCanMutateActivityLinkAsync(
             _unitOfWork,
             _claimsService,
-            milestone.ModuleId);
+            milestone.ModuleId,
+            request.ClassId);
 
         await ResearchMilestoneValidator.ValidateActivityBelongsToModuleAsync(
             _unitOfWork,
@@ -597,7 +598,8 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
         await ResearchMilestoneValidator.EnsureCanMutateActivityLinkAsync(
             _unitOfWork,
             _claimsService,
-            milestone.ModuleId);
+            milestone.ModuleId,
+            request.ClassId);
 
         var link = await _unitOfWork.ResearchMilestoneActivities.FirstOrDefaultAsync(
             l => l.ResearchMilestoneId == milestoneId
@@ -640,7 +642,7 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
         };
     }
 
-    public async Task<bool> UnlinkActivity(Guid milestoneId, Guid activityId)
+    public async Task<bool> UnlinkActivity(Guid milestoneId, Guid activityId, Guid? classId = null)
     {
         var milestoneEntity = await _unitOfWork.ResearchMilestones.GetByIdAsync(milestoneId);
         var milestone = ResearchMilestoneValidator.ValidateMilestoneExists(milestoneEntity, milestoneId);
@@ -648,7 +650,8 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
         await ResearchMilestoneValidator.EnsureCanMutateActivityLinkAsync(
             _unitOfWork,
             _claimsService,
-            milestone.ModuleId);
+            milestone.ModuleId,
+            classId);
 
         var link = await _unitOfWork.ResearchMilestoneActivities.FirstOrDefaultAsync(
             l => l.ResearchMilestoneId == milestoneId

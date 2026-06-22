@@ -10,9 +10,6 @@ public class Course : BaseEntity
     public Guid ModuleId { get; set; }
     public Module Module { get; set; } = null!;
 
-    public Guid MentorId { get; set; }
-    public User Mentor { get; set; } = null!;
-
     [MaxLength(255)]
     public string Name { get; set; } = null!;
 

@@ -216,11 +216,6 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Course>(entity =>
         {
             entity.HasIndex(c => c.Code).IsUnique();
-
-            entity.HasOne(c => c.Mentor)
-                .WithMany()
-                .HasForeignKey(c => c.MentorId)
-                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // =============================================

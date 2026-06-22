@@ -31,8 +31,7 @@ public sealed class CourseService : ICourseService
         int page,
         int pageSize,
         string? code,
-        string? moduleName,
-        string? mentorName)
+        string? moduleName)
     {
         _logger.LogInformation(
             "[GetAllCoursesAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
@@ -61,20 +60,11 @@ public sealed class CourseService : ICourseService
             query = query.Where(c => c.Module.Name.ToLower().Contains(lowerModuleName));
         }
 
-        if (!string.IsNullOrWhiteSpace(mentorName))
-        {
-            var lowerMentorName = mentorName.ToLower();
-            query = query.Where(c =>
-                c.Mentor.FullName != null &&
-                c.Mentor.FullName.ToLower().Contains(lowerMentorName));
-        }
-
         query = sortBy?.ToLower() switch
         {
             "name" => isDescending ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
             "code" => isDescending ? query.OrderByDescending(c => c.Code) : query.OrderBy(c => c.Code),
             "moduleid" => isDescending ? query.OrderByDescending(c => c.ModuleId) : query.OrderBy(c => c.ModuleId),
-            "mentorid" => isDescending ? query.OrderByDescending(c => c.MentorId) : query.OrderBy(c => c.MentorId),
             "createdat" => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
             _ => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
         };
@@ -91,7 +81,6 @@ public sealed class CourseService : ICourseService
             Id = c.Id,
             Code = c.Code,
             ModuleId = c.ModuleId,
-            MentorId = c.MentorId,
             Name = c.Name,
             Description = c.Description,
             CreatedAt = c.CreatedAt,
@@ -125,7 +114,6 @@ public sealed class CourseService : ICourseService
             Id = course.Id,
             Code = course.Code,
             ModuleId = course.ModuleId,
-            MentorId = course.MentorId,
             Name = course.Name,
             Description = course.Description,
             CreatedAt = course.CreatedAt,
@@ -183,7 +171,6 @@ public sealed class CourseService : ICourseService
             Id = course.Id,
             Code = course.Code,
             ModuleId = course.ModuleId,
-            MentorId = course.MentorId,
             Name = course.Name,
             Description = course.Description,
             CreatedAt = course.CreatedAt,
@@ -229,14 +216,6 @@ public sealed class CourseService : ICourseService
             throw new NotFoundException($"Module with id '{request.ModuleId}' not found.");
         }
 
-        var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId);
-
-        if (mentor == null || mentor.IsDeleted)
-        {
-            _logger.LogWarning("[CreateCourseAsync] Mentor with Id {Id} not found.", request.MentorId);
-            throw new NotFoundException($"Mentor with id '{request.MentorId}' not found.");
-        }
-
         var existing = await _unitOfWork.Courses.FirstOrDefaultAsync(
             c => c.Code.ToLower() == request.Code.ToLower() && !c.IsDeleted);
 
@@ -250,7 +229,6 @@ public sealed class CourseService : ICourseService
         {
             Code = request.Code,
             ModuleId = request.ModuleId,
-            MentorId = request.MentorId,
             Name = request.Name,
             Description = request.Description,
         };
@@ -266,7 +244,6 @@ public sealed class CourseService : ICourseService
             Id = course.Id,
             Code = course.Code,
             ModuleId = course.ModuleId,
-            MentorId = course.MentorId,
             Name = course.Name,
             Description = course.Description,
             CreatedAt = course.CreatedAt,
@@ -320,19 +297,6 @@ public sealed class CourseService : ICourseService
             course.ModuleId = request.ModuleId.Value;
         }
 
-        if (request.MentorId.HasValue && course.MentorId != request.MentorId.Value)
-        {
-            var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId.Value);
-
-            if (mentor == null || mentor.IsDeleted)
-            {
-                _logger.LogWarning("[UpdateCourseAsync] Mentor with Id {Id} not found.", request.MentorId.Value);
-                throw new NotFoundException($"Mentor with id '{request.MentorId}' not found.");
-            }
-
-            course.MentorId = request.MentorId.Value;
-        }
-
         if (!string.IsNullOrWhiteSpace(request.Name) && course.Name != request.Name)
         {
             course.Name = request.Name;
@@ -353,7 +317,6 @@ public sealed class CourseService : ICourseService
             Id = course.Id,
             Code = course.Code,
             ModuleId = course.ModuleId,
-            MentorId = course.MentorId,
             Name = course.Name,
             Description = course.Description,
             CreatedAt = course.CreatedAt,

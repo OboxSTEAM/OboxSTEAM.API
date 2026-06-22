@@ -242,6 +242,12 @@ public sealed class ClassService : IClassService
         {
             var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId.Value);
             ClassValidator.ValidateMentorExists(mentor, request.MentorId.Value);
+
+            await MentorScopeValidator.ValidateMentorCanTakeClassSessionsAsync(
+                _unitOfWork,
+                request.MentorId.Value,
+                classEntity.Id);
+
             classEntity.MentorId = request.MentorId.Value;
             isUpdated = true;
         }

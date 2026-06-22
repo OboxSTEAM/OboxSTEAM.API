@@ -215,9 +215,10 @@ public sealed class ResearchMilestoneController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> UnlinkActivity(
         [FromRoute] Guid milestoneId,
-        [FromRoute] Guid activityId)
+        [FromRoute] Guid activityId,
+        [FromQuery, SwaggerParameter(Description = "Required for Mentor — class cohort scope")] Guid? classId = null)
     {
-        var removed = await _researchMilestoneService.UnlinkActivity(milestoneId, activityId);
+        var removed = await _researchMilestoneService.UnlinkActivity(milestoneId, activityId, classId);
         if (!removed)
         {
             return NotFound(ApiResult<object>.Failure("404", "Milestone activity link not found."));

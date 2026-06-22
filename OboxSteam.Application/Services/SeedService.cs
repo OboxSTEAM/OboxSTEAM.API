@@ -167,6 +167,66 @@ namespace OboxSteam.Application.Services
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
                     },
+                    new User
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "MNT-003",
+                        Email = "mentor3@oboxsteam.com",
+                        PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                        FullName = "Michael Mentor",
+                        Phone = "0123456780",
+                        Role = RoleType.Mentor,
+                        Status = AccountStatus.Active,
+                        IsEmailVerified = true,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
+                    new User
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "MNT-004",
+                        Email = "mentor4@oboxsteam.com",
+                        PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                        FullName = "Emily Mentor",
+                        Phone = "0123456779",
+                        Role = RoleType.Mentor,
+                        Status = AccountStatus.Active,
+                        IsEmailVerified = true,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
+                    new User
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "MNT-005",
+                        Email = "mentor5@oboxsteam.com",
+                        PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                        FullName = "Chris Mentor",
+                        Phone = "0123456778",
+                        Role = RoleType.Mentor,
+                        Status = AccountStatus.Active,
+                        IsEmailVerified = true,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
+                    new User
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "MNT-006",
+                        Email = "mentor6@oboxsteam.com",
+                        PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                        FullName = "Lisa Mentor",
+                        Phone = "0123456777",
+                        Role = RoleType.Mentor,
+                        Status = AccountStatus.Active,
+                        IsEmailVerified = true,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    },
                 };
 
                 await _unitOfWork.Users.AddRangeAsync(users);
@@ -177,6 +237,8 @@ namespace OboxSteam.Application.Services
             {
                 _loggerService.LogInformation("Users already exist, skipping user seeding");
             }
+
+            await EnsureAdditionalMentorUsersAsync();
 
             _loggerService.LogInformation("Starting seed experts");
             var existingExperts = await _unitOfWork.Experts.GetAllAsync();
@@ -1757,9 +1819,6 @@ namespace OboxSteam.Application.Services
             var existingCourses = await _unitOfWork.Courses.GetAllAsync();
             if (!existingCourses.Any())
             {
-                var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
-                var mentor2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-002");
-
                 var moduleRobotics1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01");
                 var moduleRobotics2 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-02");
                 var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
@@ -1770,220 +1829,139 @@ namespace OboxSteam.Application.Services
                 var moduleIot1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-IOT-01");
                 var moduleIot2 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-IOT-02");
 
-                if (mentor == null)
+                var courses = new List<Course>();
+                var seedTime = DateTime.UtcNow;
+
+                AddRoboticsCourses(
+                    courses,
+                    moduleRobotics1,
+                    moduleRobotics2,
+                    moduleRobotics3,
+                    seedTime);
+
+                if (moduleWebDev1 != null)
                 {
-                    _loggerService.LogWarning("Mentor MNT-001 not found. Skipping course seeding.");
+                    courses.Add(new Course
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = "CRS-WEBDEV-01",
+                        ModuleId = moduleWebDev1.Id,
+                        Name = "HTML & CSS - Evening Class",
+                        Description = "Evening cohort for HTML structure, semantic markup, and responsive CSS layouts.",
+                        CreatedAt = seedTime,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
                 }
                 else
                 {
-                    var courses = new List<Course>();
-                    var seedTime = DateTime.UtcNow;
+                    _loggerService.LogWarning("Module MOD-WEBDEV-01 not found. Skipping web foundations course seeding.");
+                }
 
-                    if (moduleRobotics1 != null)
+                if (moduleWebDev2 != null)
+                {
+                    courses.Add(new Course
                     {
-                        courses.AddRange(new List<Course>
-                        {
-                            new Course
-                            {
-                                Id = Guid.NewGuid(),
-                                Code = "CRS-ROBOTICS-01",
-                                ModuleId = moduleRobotics1.Id,
-                                MentorId = mentor.Id,
-                                Name = "Robotics 101 - Cohort A",
-                                Description = "First cohort for the basics of robotics and block-based programming.",
-                                CreatedAt = seedTime,
-                                CreatedBy = Guid.Empty,
-                                IsDeleted = false
-                            },
-                            new Course
-                            {
-                                Id = Guid.NewGuid(),
-                                Code = "CRS-ROBOTICS-02",
-                                ModuleId = moduleRobotics1.Id,
-                                MentorId = mentor.Id,
-                                Name = "Robotics 101 - Cohort B",
-                                Description = "Second cohort covering robotics fundamentals with hands-on exercises.",
-                                CreatedAt = seedTime,
-                                CreatedBy = Guid.Empty,
-                                IsDeleted = false
-                            }
-                        });
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("Module MOD-ROBOTICS-01 not found. Skipping robotics basics course seeding.");
-                    }
+                        Id = Guid.NewGuid(),
+                        Code = "CRS-WEBDEV-02",
+                        ModuleId = moduleWebDev2.Id,
+                        Name = "JavaScript Basics - Weekend Bootcamp",
+                        Description = "Weekend intensive on variables, DOM manipulation, and simple interactive pages.",
+                        CreatedAt = seedTime,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Module MOD-WEBDEV-02 not found. Skipping JavaScript course seeding.");
+                }
 
-                    if (moduleRobotics2 != null)
+                if (moduleSteam1 != null)
+                {
+                    courses.Add(new Course
                     {
-                        courses.Add(new Course
-                        {
-                            Id = Guid.NewGuid(),
-                            Code = "CRS-ROBOTICS-03",
-                            ModuleId = moduleRobotics2.Id,
-                            MentorId = mentor.Id,
-                            Name = "Sensors and Movement - Spring 2026",
-                            Description = "Experiential course on sensors, motors, and robot movement patterns.",
-                            CreatedAt = seedTime,
-                            CreatedBy = Guid.Empty,
-                            IsDeleted = false
-                        });
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("Module MOD-ROBOTICS-02 not found. Skipping sensors course seeding.");
-                    }
+                        Id = Guid.NewGuid(),
+                        Code = "CRS-STEAM-01",
+                        ModuleId = moduleSteam1.Id,
+                        Name = "STEAM Lab Kickoff - Cohort 1",
+                        Description = "Introductory STEAM lab exploring interdisciplinary project-based learning.",
+                        CreatedAt = seedTime,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Module MOD-STEAM-01 not found. Skipping STEAM kickoff course seeding.");
+                }
 
-                    if (moduleRobotics3 != null)
+                if (moduleSteam2 != null)
+                {
+                    courses.Add(new Course
                     {
-                        courses.Add(new Course
-                        {
-                            Id = Guid.NewGuid(),
-                            Code = "CRS-ROBOTICS-04",
-                            ModuleId = moduleRobotics3.Id,
-                            MentorId = mentor.Id,
-                            Name = "Build and Test Challenge - Team Alpha",
-                            Description = "Research module cohort focused on designing, building, and testing a robot prototype.",
-                            CreatedAt = seedTime,
-                            CreatedBy = Guid.Empty,
-                            IsDeleted = false
-                        });
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("Module MOD-ROBOTICS-03 not found. Skipping build challenge course seeding.");
-                    }
+                        Id = Guid.NewGuid(),
+                        Code = "CRS-STEAM-02",
+                        ModuleId = moduleSteam2.Id,
+                        Name = "Creative Prototyping - Workshop A",
+                        Description = "Hands-on workshop for rapid prototyping with recycled materials and simple circuits.",
+                        CreatedAt = seedTime,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Module MOD-STEAM-02 not found. Skipping creative prototyping course seeding.");
+                }
 
-                    if (moduleWebDev1 != null)
+                if (moduleIot1 != null)
+                {
+                    courses.Add(new Course
                     {
-                        courses.Add(new Course
-                        {
-                            Id = Guid.NewGuid(),
-                            Code = "CRS-WEBDEV-01",
-                            ModuleId = moduleWebDev1.Id,
-                            MentorId = mentor.Id,
-                            Name = "HTML & CSS - Evening Class",
-                            Description = "Evening cohort for HTML structure, semantic markup, and responsive CSS layouts.",
-                            CreatedAt = seedTime,
-                            CreatedBy = Guid.Empty,
-                            IsDeleted = false
-                        });
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("Module MOD-WEBDEV-01 not found. Skipping web foundations course seeding.");
-                    }
+                        Id = Guid.NewGuid(),
+                        Code = "CRS-IOT-01",
+                        ModuleId = moduleIot1.Id,
+                        Name = "Sensors 101 - Morning Class",
+                        Description = "Introduction to sensors, Arduino basics, and reading environmental data.",
+                        CreatedAt = seedTime,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Module MOD-IOT-01 not found. Skipping IoT sensors course seeding.");
+                }
 
-                    if (moduleWebDev2 != null)
+                if (moduleIot2 != null)
+                {
+                    courses.Add(new Course
                     {
-                        courses.Add(new Course
-                        {
-                            Id = Guid.NewGuid(),
-                            Code = "CRS-WEBDEV-02",
-                            ModuleId = moduleWebDev2.Id,
-                            MentorId = mentor.Id,
-                            Name = "JavaScript Basics - Weekend Bootcamp",
-                            Description = "Weekend intensive on variables, DOM manipulation, and simple interactive pages.",
-                            CreatedAt = seedTime,
-                            CreatedBy = Guid.Empty,
-                            IsDeleted = false
-                        });
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("Module MOD-WEBDEV-02 not found. Skipping JavaScript course seeding.");
-                    }
+                        Id = Guid.NewGuid(),
+                        Code = "CRS-IOT-02",
+                        ModuleId = moduleIot2.Id,
+                        Name = "Cloud Lab - Cohort Beta",
+                        Description = "Connect devices to the cloud using MQTT and visualize live sensor data.",
+                        CreatedAt = seedTime,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
+                }
+                else
+                {
+                    _loggerService.LogWarning("Module MOD-IOT-02 not found. Skipping IoT cloud course seeding.");
+                }
 
-                    if (moduleSteam1 != null)
-                    {
-                        courses.Add(new Course
-                        {
-                            Id = Guid.NewGuid(),
-                            Code = "CRS-STEAM-01",
-                            ModuleId = moduleSteam1.Id,
-                            MentorId = mentor.Id,
-                            Name = "STEAM Lab Kickoff - Cohort 1",
-                            Description = "Introductory STEAM lab exploring interdisciplinary project-based learning.",
-                            CreatedAt = seedTime,
-                            CreatedBy = Guid.Empty,
-                            IsDeleted = false
-                        });
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("Module MOD-STEAM-01 not found. Skipping STEAM kickoff course seeding.");
-                    }
-
-                    if (moduleSteam2 != null)
-                    {
-                        courses.Add(new Course
-                        {
-                            Id = Guid.NewGuid(),
-                            Code = "CRS-STEAM-02",
-                            ModuleId = moduleSteam2.Id,
-                            MentorId = mentor.Id,
-                            Name = "Creative Prototyping - Workshop A",
-                            Description = "Hands-on workshop for rapid prototyping with recycled materials and simple circuits.",
-                            CreatedAt = seedTime,
-                            CreatedBy = Guid.Empty,
-                            IsDeleted = false
-                        });
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("Module MOD-STEAM-02 not found. Skipping creative prototyping course seeding.");
-                    }
-
-                    if (moduleIot1 != null && mentor2 != null)
-                    {
-                        courses.Add(new Course
-                        {
-                            Id = Guid.NewGuid(),
-                            Code = "CRS-IOT-01",
-                            ModuleId = moduleIot1.Id,
-                            MentorId = mentor2.Id,
-                            Name = "Sensors 101 - Morning Class",
-                            Description = "Introduction to sensors, Arduino basics, and reading environmental data.",
-                            CreatedAt = seedTime,
-                            CreatedBy = Guid.Empty,
-                            IsDeleted = false
-                        });
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("Module MOD-IOT-01 or mentor MNT-002 not found. Skipping IoT sensors course seeding.");
-                    }
-
-                    if (moduleIot2 != null && mentor2 != null)
-                    {
-                        courses.Add(new Course
-                        {
-                            Id = Guid.NewGuid(),
-                            Code = "CRS-IOT-02",
-                            ModuleId = moduleIot2.Id,
-                            MentorId = mentor2.Id,
-                            Name = "Cloud Lab - Cohort Beta",
-                            Description = "Connect devices to the cloud using MQTT and visualize live sensor data.",
-                            CreatedAt = seedTime,
-                            CreatedBy = Guid.Empty,
-                            IsDeleted = false
-                        });
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("Module MOD-IOT-02 or mentor MNT-002 not found. Skipping IoT cloud course seeding.");
-                    }
-
-                    if (courses.Count > 0)
-                    {
-                        await _unitOfWork.Courses.AddRangeAsync(courses);
-                        await _unitOfWork.SaveChangesAsync();
-                        _loggerService.LogInformation("Finished seed courses — {Count} course(s) created.", courses.Count);
-                    }
-                    else
-                    {
-                        _loggerService.LogWarning("No courses seeded because required modules were not found.");
-                    }
+                if (courses.Count > 0)
+                {
+                    await _unitOfWork.Courses.AddRangeAsync(courses);
+                    await _unitOfWork.SaveChangesAsync();
+                    _loggerService.LogInformation("Finished seed courses — {Count} course(s) created.", courses.Count);
+                }
+                else
+                {
+                    _loggerService.LogWarning("No courses seeded because required modules were not found.");
                 }
             }
             else
@@ -2753,7 +2731,8 @@ namespace OboxSteam.Application.Services
                 _loggerService.LogInformation("Program reviews already exist, skipping seeding");
             }
 
-            await SeedClassFlowAsync();
+            await SeedMentorClassesAsync();
+            await SeedRoboticsClassSessionsAsync();
             await SeedResearchMilestoneDataAsync();
             await SeedResearchModuleEnrollmentsAsync();
             await SeedResearchActivityProgressAsync();
@@ -2766,333 +2745,170 @@ namespace OboxSteam.Application.Services
             _loggerService.LogInformation("Finished seed all data");
         }
 
-        private async Task SeedClassFlowAsync()
+        private async Task EnsureAdditionalMentorUsersAsync()
         {
-            _loggerService.LogInformation("Starting seed class flow");
-            var existingClass = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == "CLS-ROBOTICS-2026A");
-            if (existingClass != null)
-            {
-                _loggerService.LogInformation("Class flow already seeded, skipping");
-                return;
-            }
-
-            var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
-            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
-            var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
-            var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
-            var moduleRobotics1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01");
-            var activityLive = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-01-02");
-            var activityUpcoming = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-01-03");
-            var assignmentQuiz = await _unitOfWork.Assignments.FirstOrDefaultAsync(a => a.Code == "ASG-ROBOTICS-QUIZ-01");
-
-            if (programRobotics == null || mentor == null || student1 == null || student2 == null
-                || moduleRobotics1 == null || activityLive == null || activityUpcoming == null)
-            {
-                _loggerService.LogWarning("Required entities for class flow not found. Skipping.");
-                return;
-            }
-
-            var seedTime = DateTime.UtcNow;
-            var classStart = seedTime.AddDays(-14);
-            var classEnd = seedTime.AddDays(90);
-
-            var activeClass = new Class
-            {
-                Id = Guid.NewGuid(),
-                Code = "CLS-ROBOTICS-2026A",
-                Name = "Robotics Spring 2026 - Cohort A",
-                ProgramId = programRobotics.Id,
-                MentorId = mentor.Id,
-                StartDate = classStart,
-                EndDate = classEnd,
-                MaxCapacity = 25,
-                Status = ClassStatus.InProgress,
-                MinHoursBeforeAssignmentJoin = 48,
-                ScheduleSummary = "Every Saturday 9:00-12:00",
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false
-            };
-
-            var openClass = new Class
-            {
-                Id = Guid.NewGuid(),
-                Code = "CLS-ROBOTICS-2026B",
-                Name = "Robotics Summer 2026 - Cohort B",
-                ProgramId = programRobotics.Id,
-                MentorId = mentor.Id,
-                StartDate = seedTime.AddDays(21),
-                EndDate = seedTime.AddDays(120),
-                MaxCapacity = 20,
-                Status = ClassStatus.Open,
-                MinHoursBeforeAssignmentJoin = 48,
-                ScheduleSummary = "Every Sunday 14:00-17:00",
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false
-            };
-
-            await _unitOfWork.Classes.AddRangeAsync(new List<Class> { activeClass, openClass });
-            await _unitOfWork.SaveChangesAsync();
-
-            var student1ProgramEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                pe => pe.StudentId == student1.Id
-                      && pe.ProgramId == programRobotics.Id
-                      && !pe.IsDeleted);
-
-            if (student1ProgramEnrollment == null)
-            {
-                student1ProgramEnrollment = new ProgramEnrollment
-                {
-                    Id = Guid.NewGuid(),
-                    StudentId = student1.Id,
-                    ProgramId = programRobotics.Id,
-                    Status = EnrollmentStatus.Active,
-                    ProgressPercent = 25m,
-                    EnrolledAt = seedTime.AddDays(-14),
-                    StartedAt = seedTime.AddDays(-10),
-                    CreatedAt = seedTime,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false
-                };
-                await _unitOfWork.ProgramEnrollments.AddAsync(student1ProgramEnrollment);
-                await _unitOfWork.SaveChangesAsync();
-            }
-
-            var student2ProgramEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                pe => pe.StudentId == student2.Id
-                      && pe.ProgramId == programRobotics.Id
-                      && !pe.IsDeleted);
-
-            if (student2ProgramEnrollment == null)
-            {
-                student2ProgramEnrollment = new ProgramEnrollment
-                {
-                    Id = Guid.NewGuid(),
-                    StudentId = student2.Id,
-                    ProgramId = programRobotics.Id,
-                    Status = EnrollmentStatus.Active,
-                    ProgressPercent = 5m,
-                    EnrolledAt = seedTime.AddDays(-5),
-                    CreatedAt = seedTime,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false
-                };
-                await _unitOfWork.ProgramEnrollments.AddAsync(student2ProgramEnrollment);
-                await _unitOfWork.SaveChangesAsync();
-            }
-
-            var student1ModuleEnrollment = await EnsureModuleEnrollmentForClassAsync(
-                student1.Id,
-                moduleRobotics1.Id,
-                student1ProgramEnrollment.Id,
-                seedTime,
-                progressPercent: 40m);
-
-            var student2ModuleEnrollment = await EnsureModuleEnrollmentForClassAsync(
-                student2.Id,
-                moduleRobotics1.Id,
-                student2ProgramEnrollment.Id,
-                seedTime,
-                progressPercent: 10m);
-
-            var classEnrollments = new List<ClassEnrollment>
+            var additionalMentors = new List<User>
             {
                 new()
                 {
                     Id = Guid.NewGuid(),
-                    ClassId = activeClass.Id,
-                    StudentId = student1.Id,
-                    ProgramEnrollmentId = student1ProgramEnrollment.Id,
-                    Status = ClassEnrollmentStatus.Active,
-                    EnrolledAt = seedTime.AddDays(-10),
-                    CreatedAt = seedTime,
+                    Code = "MNT-003",
+                    Email = "mentor3@oboxsteam.com",
+                    PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                    FullName = "Michael Mentor",
+                    Phone = "0123456780",
+                    Role = RoleType.Mentor,
+                    Status = AccountStatus.Active,
+                    IsEmailVerified = true,
+                    CreatedAt = DateTime.UtcNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
                 new()
                 {
                     Id = Guid.NewGuid(),
-                    ClassId = activeClass.Id,
-                    StudentId = student2.Id,
-                    ProgramEnrollmentId = student2ProgramEnrollment.Id,
-                    Status = ClassEnrollmentStatus.Active,
-                    EnrolledAt = seedTime.AddDays(-8),
-                    CreatedAt = seedTime,
+                    Code = "MNT-004",
+                    Email = "mentor4@oboxsteam.com",
+                    PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                    FullName = "Emily Mentor",
+                    Phone = "0123456779",
+                    Role = RoleType.Mentor,
+                    Status = AccountStatus.Active,
+                    IsEmailVerified = true,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "MNT-005",
+                    Email = "mentor5@oboxsteam.com",
+                    PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                    FullName = "Chris Mentor",
+                    Phone = "0123456778",
+                    Role = RoleType.Mentor,
+                    Status = AccountStatus.Active,
+                    IsEmailVerified = true,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "MNT-006",
+                    Email = "mentor6@oboxsteam.com",
+                    PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                    FullName = "Lisa Mentor",
+                    Phone = "0123456777",
+                    Role = RoleType.Mentor,
+                    Status = AccountStatus.Active,
+                    IsEmailVerified = true,
+                    CreatedAt = DateTime.UtcNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 }
             };
 
-            await _unitOfWork.ClassEnrollments.AddRangeAsync(classEnrollments);
+            var mentorsToAdd = new List<User>();
+            foreach (var mentor in additionalMentors)
+            {
+                var exists = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == mentor.Code);
+                if (exists == null)
+                {
+                    mentorsToAdd.Add(mentor);
+                }
+            }
+
+            if (mentorsToAdd.Count == 0)
+            {
+                return;
+            }
+
+            await _unitOfWork.Users.AddRangeAsync(mentorsToAdd);
             await _unitOfWork.SaveChangesAsync();
+            _loggerService.LogInformation(
+                "Backfilled {Count} additional mentor user(s).",
+                mentorsToAdd.Count);
+        }
 
-            var sessionPast = new ClassSession
+        private async Task SeedMentorClassesAsync()
+        {
+            _loggerService.LogInformation("Starting seed mentor classes");
+
+            var seedTime = DateTime.UtcNow;
+            var classDefinitions = new List<(string MentorCode, string ProgramCode, string Code, string Name, ClassStatus Status, int StartDaysOffset, int EndDaysOffset, int MaxCapacity, string ScheduleSummary)>
             {
-                Id = Guid.NewGuid(),
-                ClassId = activeClass.Id,
-                ModuleId = moduleRobotics1.Id,
-                ActivityId = activityLive.Id,
-                SessionKind = SessionKind.LiveOnline,
-                Title = "Introduction Lecture",
-                Description = "Live online introduction to robotics for cohort A.",
-                StartTime = seedTime.AddDays(-7).Date.AddHours(9),
-                EndTime = seedTime.AddDays(-7).Date.AddHours(11),
-                Location = "https://meet.google.com/robotics-cohort-a-intro",
-                RequiresAttendance = true,
-                Status = ClassSessionStatus.Completed,
-                CreatedAt = seedTime,
-                CreatedBy = mentor.Id,
-                IsDeleted = false
+                ("MNT-001", "PRG-ROBOTICS", "CLS-ROBOTICS-2026A", "Robotics Spring 2026 - Cohort A", ClassStatus.InProgress, -14, 84, 24, "Tuesday & Saturday 09:00-11:30"),
+                ("MNT-001", "PRG-ROBOTICS", "CLS-ROBOTICS-2026B", "Robotics Summer 2026 - Cohort B", ClassStatus.Open, 7, 105, 20, "Wednesday & Saturday 14:00-16:30"),
+                ("MNT-002", "PRG-ROBOTICS", "CLS-ROBOTICS-2026C", "Robotics Fall 2026 - Cohort C", ClassStatus.Open, 21, 119, 22, "Every Thursday 18:00-20:30"),
+                ("MNT-003", "PRG-ROBOTICS", "CLS-ROBOTICS-2026D", "Robotics Winter 2026 - Cohort D", ClassStatus.Draft, 35, 133, 18, "Every Monday 09:00-11:30"),
+                ("MNT-002", "PRG-IOT", "CLS-IOT-2026A", "IoT Sensors Spring 2026 - Cohort A", ClassStatus.InProgress, -10, 90, 22, "Every Tuesday 18:00-20:30"),
+                ("MNT-002", "PRG-IOT", "CLS-IOT-2026B", "IoT Cloud Summer 2026 - Cohort B", ClassStatus.Open, 18, 115, 18, "Every Thursday 19:00-21:30"),
+                ("MNT-003", "PRG-WEBDEV", "CLS-WEBDEV-2026A", "Web Foundations Spring 2026 - Cohort A", ClassStatus.InProgress, -12, 88, 24, "Every Monday 18:30-21:00"),
+                ("MNT-003", "PRG-WEBDEV", "CLS-WEBDEV-2026B", "JavaScript Bootcamp Summer 2026 - Cohort B", ClassStatus.Open, 20, 118, 20, "Every Wednesday 18:30-21:00"),
+                ("MNT-004", "PRG-GAMEDEV", "CLS-GAMEDEV-2026A", "Game Design Spring 2026 - Cohort A", ClassStatus.InProgress, -8, 92, 20, "Every Friday 15:00-18:00"),
+                ("MNT-004", "PRG-GAMEDEV", "CLS-GAMEDEV-2026B", "Unity Prototype Summer 2026 - Cohort B", ClassStatus.Open, 25, 125, 16, "Every Saturday 13:00-16:00"),
+                ("MNT-005", "PRG-AIBASIC", "CLS-AIBASIC-2026A", "AI Basics Spring 2026 - Cohort A", ClassStatus.InProgress, -6, 94, 26, "Every Tuesday 16:00-18:30"),
+                ("MNT-005", "PRG-AIBASIC", "CLS-AIBASIC-2026B", "Machine Learning Intro Summer 2026 - Cohort B", ClassStatus.Open, 22, 122, 22, "Every Sunday 09:00-11:30"),
+                ("MNT-006", "PRG-3DDESIGN", "CLS-3DDESIGN-2026A", "3D Modeling Spring 2026 - Cohort A", ClassStatus.InProgress, -9, 91, 18, "Every Thursday 14:00-17:00"),
+                ("MNT-006", "PRG-3DDESIGN", "CLS-3DDESIGN-2026B", "3D Animation Summer 2026 - Cohort B", ClassStatus.Open, 19, 119, 15, "Every Saturday 10:00-13:00")
             };
 
-            var sessionUpcoming = new ClassSession
-            {
-                Id = Guid.NewGuid(),
-                ClassId = activeClass.Id,
-                ModuleId = moduleRobotics1.Id,
-                ActivityId = activityUpcoming.Id,
-                SessionKind = SessionKind.LiveOnline,
-                Title = "Chassis Design Workshop",
-                Description = "Live online workshop for robot chassis design and planning.",
-                StartTime = seedTime.AddDays(7).Date.AddHours(14),
-                EndTime = seedTime.AddDays(7).Date.AddHours(16),
-                Location = "https://meet.google.com/robotics-chassis-workshop",
-                RequiresAttendance = true,
-                Status = ClassSessionStatus.Scheduled,
-                CreatedAt = seedTime,
-                CreatedBy = mentor.Id,
-                IsDeleted = false
-            };
+            var classesToAdd = new List<Class>();
 
-            var sessions = new List<ClassSession> { sessionPast, sessionUpcoming };
-
-            if (assignmentQuiz != null)
+            foreach (var definition in classDefinitions)
             {
-                sessions.Add(new ClassSession
+                var existingClass = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == definition.Code);
+                if (existingClass != null)
+                {
+                    continue;
+                }
+
+                var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == definition.MentorCode);
+                var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == definition.ProgramCode);
+
+                if (mentor == null || program == null)
+                {
+                    _loggerService.LogWarning(
+                        "Skipping class {ClassCode}: mentor {MentorCode} or program {ProgramCode} not found.",
+                        definition.Code,
+                        definition.MentorCode,
+                        definition.ProgramCode);
+                    continue;
+                }
+
+                classesToAdd.Add(new Class
                 {
                     Id = Guid.NewGuid(),
-                    ClassId = activeClass.Id,
-                    ModuleId = moduleRobotics1.Id,
-                    AssignmentId = assignmentQuiz.Id,
-                    SessionKind = SessionKind.AssignmentWindow,
-                    Title = "Robotics Fundamentals Quiz Window",
-                    Description = "Assignment window for the module quiz.",
-                    StartTime = seedTime.AddDays(14).Date.AddHours(9),
-                    EndTime = seedTime.AddDays(14).Date.AddHours(12),
-                    RequiresAttendance = false,
-                    Status = ClassSessionStatus.Scheduled,
+                    Code = definition.Code,
+                    Name = definition.Name,
+                    ProgramId = program.Id,
+                    MentorId = mentor.Id,
+                    StartDate = seedTime.AddDays(definition.StartDaysOffset),
+                    EndDate = seedTime.AddDays(definition.EndDaysOffset),
+                    MaxCapacity = definition.MaxCapacity,
+                    Status = definition.Status,
+                    MinHoursBeforeAssignmentJoin = 48,
+                    ScheduleSummary = definition.ScheduleSummary,
                     CreatedAt = seedTime,
-                    CreatedBy = mentor.Id,
+                    CreatedBy = Guid.Empty,
                     IsDeleted = false
                 });
             }
 
-            await _unitOfWork.ClassSessions.AddRangeAsync(sessions);
-            await _unitOfWork.SaveChangesAsync();
-
-            var attendances = new List<SessionAttendance>
+            if (classesToAdd.Count == 0)
             {
-                new()
-                {
-                    Id = Guid.NewGuid(),
-                    ClassSessionId = sessionPast.Id,
-                    StudentId = student1.Id,
-                    ModuleEnrollmentId = student1ModuleEnrollment.Id,
-                    Status = AttendanceStatus.Present,
-                    CheckedInAt = sessionPast.StartTime.AddMinutes(5),
-                    RecordedBy = mentor.Id,
-                    CreatedAt = seedTime,
-                    CreatedBy = mentor.Id,
-                    IsDeleted = false
-                },
-                new()
-                {
-                    Id = Guid.NewGuid(),
-                    ClassSessionId = sessionPast.Id,
-                    StudentId = student2.Id,
-                    ModuleEnrollmentId = student2ModuleEnrollment.Id,
-                    Status = AttendanceStatus.Late,
-                    CheckedInAt = sessionPast.StartTime.AddMinutes(25),
-                    RecordedBy = mentor.Id,
-                    CreatedAt = seedTime,
-                    CreatedBy = mentor.Id,
-                    IsDeleted = false
-                },
-                new()
-                {
-                    Id = Guid.NewGuid(),
-                    ClassSessionId = sessionUpcoming.Id,
-                    StudentId = student1.Id,
-                    ModuleEnrollmentId = student1ModuleEnrollment.Id,
-                    Status = AttendanceStatus.Expected,
-                    CreatedAt = seedTime,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false
-                },
-                new()
-                {
-                    Id = Guid.NewGuid(),
-                    ClassSessionId = sessionUpcoming.Id,
-                    StudentId = student2.Id,
-                    ModuleEnrollmentId = student2ModuleEnrollment.Id,
-                    Status = AttendanceStatus.Expected,
-                    CreatedAt = seedTime,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false
-                }
-            };
+                _loggerService.LogInformation("Mentor classes already seeded, skipping");
+                return;
+            }
 
-            await _unitOfWork.SessionAttendances.AddRangeAsync(attendances);
+            await _unitOfWork.Classes.AddRangeAsync(classesToAdd);
             await _unitOfWork.SaveChangesAsync();
-
             _loggerService.LogInformation(
-                "Finished seed class flow — 2 class(es), 2 enrollment(s), {SessionCount} session(s), {AttendanceCount} attendance(s).",
-                sessions.Count,
-                attendances.Count);
-        }
-
-        private async Task<ModuleEnrollment> EnsureModuleEnrollmentForClassAsync(
-            Guid studentId,
-            Guid moduleId,
-            Guid programEnrollmentId,
-            DateTime seedTime,
-            decimal progressPercent)
-        {
-            var enrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                me => me.StudentId == studentId
-                      && me.ModuleId == moduleId
-                      && !me.IsDeleted);
-
-            if (enrollment == null)
-            {
-                enrollment = new ModuleEnrollment
-                {
-                    Id = Guid.NewGuid(),
-                    StudentId = studentId,
-                    ModuleId = moduleId,
-                    ProgramEnrollmentId = programEnrollmentId,
-                    Status = EnrollmentStatus.Active,
-                    ProgressPercent = progressPercent,
-                    EnrolledAt = seedTime.AddDays(-10),
-                    StartedAt = seedTime.AddDays(-8),
-                    CreatedAt = seedTime,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false
-                };
-                await _unitOfWork.ModuleEnrollments.AddAsync(enrollment);
-                await _unitOfWork.SaveChangesAsync();
-                return enrollment;
-            }
-
-            if (!enrollment.ProgramEnrollmentId.HasValue)
-            {
-                enrollment.ProgramEnrollmentId = programEnrollmentId;
-                await _unitOfWork.ModuleEnrollments.Update(enrollment);
-                await _unitOfWork.SaveChangesAsync();
-            }
-
-            return enrollment;
+                "Finished seed mentor classes — {Count} class(es) created.",
+                classesToAdd.Count);
         }
 
         private async Task SeedResearchMilestoneDataAsync()
@@ -3113,9 +2929,9 @@ namespace OboxSteam.Application.Services
                 return;
             }
 
-            var designBriefActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-01");
-            var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-02");
-            var finalPresentationActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-03");
+            var designBriefActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-01");
+            var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-02");
+            var finalPresentationActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-03");
 
             if (designBriefActivity == null || prototypeBuildActivity == null || finalPresentationActivity == null)
             {
@@ -3364,8 +3180,8 @@ namespace OboxSteam.Application.Services
                 return;
             }
 
-            var designBriefActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-01");
-            var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-02");
+            var designBriefActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-01");
+            var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-02");
             if (designBriefActivity == null || prototypeBuildActivity == null)
             {
                 _loggerService.LogWarning("Research activities not found. Skipping research activity progress seeding.");
@@ -3858,10 +3674,9 @@ namespace OboxSteam.Application.Services
             }
 
             var moduleWebDev3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-03");
-            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
-            if (moduleWebDev3 == null || mentor == null)
+            if (moduleWebDev3 == null)
             {
-                _loggerService.LogWarning("MOD-WEBDEV-03 or mentor not found. Skipping webdev research milestones.");
+                _loggerService.LogWarning("MOD-WEBDEV-03 not found. Skipping webdev research milestones.");
                 return;
             }
 
@@ -3874,7 +3689,6 @@ namespace OboxSteam.Application.Services
                     Id = Guid.NewGuid(),
                     Code = "CRS-WEBDEV-03",
                     ModuleId = moduleWebDev3.Id,
-                    MentorId = mentor.Id,
                     Name = "Responsive Design & Deployment - Capstone Cohort",
                     Description = "Research cohort for responsive design and deployment capstone work.",
                     CreatedAt = seedTime,
@@ -4424,18 +4238,7 @@ namespace OboxSteam.Application.Services
 
         private static IReadOnlyList<SeedMaterialDefinition> GetSeedMaterialDefinitions() =>
         [
-            new("ACT-ROBOTICS-01-01", "Pre-class Reading: What is a Robot?", MaterialType.Video,
-                "https://storage.oboxsteam.com/materials/video/what-is-a-robot.mp4", 48_500_000L),
-            new("ACT-ROBOTICS-01-04", "Reflection Journal Template", MaterialType.PDF,
-                "https://storage.oboxsteam.com/materials/pdf/robotics-reflection-journal.pdf", 245_000L),
-            new("ACT-ROBOTICS-02-02", "Block Programming Exercise Pack", MaterialType.PDF,
-                "https://storage.oboxsteam.com/materials/pdf/block-programming-exercises.pdf", 1_120_000L),
-            new("ACT-ROBOTICS-02-03", "Weekly Quiz Review Videos", MaterialType.Video,
-                "https://storage.oboxsteam.com/materials/video/robotics-quiz-review.mp4", 62_000_000L),
-            new("ACT-ROBOTICS-03-01", "Sensor Theory Overview", MaterialType.Video,
-                "https://storage.oboxsteam.com/materials/video/sensor-theory-overview.mp4", 55_800_000L),
-            new("ACT-ROBOTICS-04-01", "Build and Test Design Brief", MaterialType.PDF,
-                "https://storage.oboxsteam.com/materials/pdf/robotics-design-brief.pdf", 890_000L),
+            ..GetRoboticsSeedMaterialDefinitions(),
             new("ACT-WEBDEV-01-01", "HTML Structure Overview", MaterialType.Video,
                 "https://storage.oboxsteam.com/materials/video/html-structure-overview.mp4", 41_200_000L),
             new("ACT-WEBDEV-01-03", "Responsive Layout Exercise Workbook", MaterialType.PDF,
@@ -4552,61 +4355,7 @@ namespace OboxSteam.Application.Services
                 }
             }
 
-            AddActivities("CRS-ROBOTICS-01", new[]
-            {
-                NewActivity("ACT-ROBOTICS-01-01", "Pre-class Reading: Robot Basics", ActivityType.SelfPaced, 1,
-                    "Self-paced reading before the first live session.", null, null, null, null, false, false),
-                NewActivity("ACT-ROBOTICS-01-02", "Introduction Lecture", ActivityType.LiveOnline, 2,
-                    "Live online introduction to robotics.",
-                    "https://meet.google.com/robotics-intro",
-                    baseDate.AddDays(1).AddHours(9), baseDate.AddDays(1).AddHours(11), 30, false, false),
-                NewActivity("ACT-ROBOTICS-01-03", "Chassis Design Workshop", ActivityType.LiveOnline, 3,
-                    "Live online workshop for robot chassis design and planning.",
-                    "https://meet.google.com/robotics-chassis-workshop",
-                    baseDate.AddDays(3).AddHours(14), baseDate.AddDays(3).AddHours(16), 30, false, false),
-                NewActivity("ACT-ROBOTICS-01-04", "Reflection Journal", ActivityType.SelfPaced, 4,
-                    "Submit a short reflection on what you learned this week.", null, null, null, null, false, false),
-            });
-
-            AddActivities("CRS-ROBOTICS-02", new[]
-            {
-                NewActivity("ACT-ROBOTICS-02-01", "Cohort B Kickoff", ActivityType.LiveOnline, 1,
-                    "Welcome session for cohort B.",
-                    "https://meet.google.com/robotics-cohort-b",
-                    baseDate.AddDays(2).AddHours(10), baseDate.AddDays(2).AddHours(11), 25, false, false),
-                NewActivity("ACT-ROBOTICS-02-02", "Block Programming Exercises", ActivityType.SelfPaced, 2,
-                    "Self-paced block programming practice exercises.", null, null, null, null, false, false),
-                NewActivity("ACT-ROBOTICS-02-03", "Weekly Quiz Review", ActivityType.SelfPaced, 3,
-                    "Review quiz answers and supplementary videos.", null, null, null, null, false, false),
-            });
-
-            AddActivities("CRS-ROBOTICS-03", new[]
-            {
-                NewActivity("ACT-ROBOTICS-03-01", "Sensor Theory", ActivityType.SelfPaced, 1,
-                    "Learn how ultrasonic and infrared sensors work.", null, null, null, null, false, false),
-                NewActivity("ACT-ROBOTICS-03-02", "Movement Patterns Workshop", ActivityType.Offline, 2,
-                    "Hands-on workshop on programming movement patterns.",
-                    "Lab Room 103",
-                    baseDate.AddDays(7).AddHours(9), baseDate.AddDays(7).AddHours(11), 30, true, false),
-                NewActivity("ACT-ROBOTICS-03-03", "Sensor Calibration Lab", ActivityType.Offline, 3,
-                    "Calibrate sensors and test obstacle avoidance.",
-                    "Lab Room 103",
-                    baseDate.AddDays(10).AddHours(14), baseDate.AddDays(10).AddHours(17), 15, true, true),
-            });
-
-            AddActivities("CRS-ROBOTICS-04", new[]
-            {
-                NewActivity("ACT-ROBOTICS-04-01", "Design Brief", ActivityType.SelfPaced, 1,
-                    "Read the build-and-test challenge design brief.", null, null, null, null, false, false),
-                NewActivity("ACT-ROBOTICS-04-02", "Team Prototype Build", ActivityType.Offline, 2,
-                    "Full-day team session to assemble and test prototypes.",
-                    "Maker Space A",
-                    baseDate.AddDays(14).AddHours(9), baseDate.AddDays(14).AddHours(17), 12, true, true),
-                NewActivity("ACT-ROBOTICS-04-03", "Final Presentation", ActivityType.LiveOnline, 3,
-                    "Teams present their robot prototypes to mentors.",
-                    "https://meet.google.com/robotics-finals",
-                    baseDate.AddDays(21).AddHours(14), baseDate.AddDays(21).AddHours(16), 50, false, true),
-            });
+            AddRoboticsSeedActivities(activities, courseByCode, baseDate, seedTime);
 
             AddActivities("CRS-WEBDEV-01", new[]
             {
@@ -4717,5 +4466,433 @@ namespace OboxSteam.Application.Services
                 RequireQrCheckin = requireQrCheckin,
                 RequireMediaEvidence = requireMediaEvidence,
             };
+
+        private const string RoboticsTheoryMaterialUrl =
+            "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/Gi%C3%A1o+tr%C3%ACnh+k%E1%BB%B9+thu%E1%BA%ADt+robot+-+%C4%90%C3%A0o+V%C4%83n+Hi%E1%BB%87p.pdf";
+
+        private const string RoboticsExperientialMaterialUrl =
+            "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/Robotics+engineers+are+in+high+demand+%E2%80%94+but+what+is+the+job+really+like+-+CNBC+International+(720p%2C+h264).mp4";
+
+        private const string RoboticsResearchMaterialUrl =
+            "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/GI%C3%81O+TR%C3%8CNH+CH%E1%BB%A6+NGH%C4%A8A+X%C3%83+H%E1%BB%98I+KHOA+H%E1%BB%8CC+(Quoc+gia).pdf";
+
+        private static readonly string[] RoboticsClassCodes =
+        [
+            "CLS-ROBOTICS-2026A",
+            "CLS-ROBOTICS-2026B",
+            "CLS-ROBOTICS-2026C",
+            "CLS-ROBOTICS-2026D",
+        ];
+
+        private static readonly HashSet<string> Mentor1RoboticsClassCodes =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "CLS-ROBOTICS-2026A",
+                "CLS-ROBOTICS-2026B",
+            };
+
+        private static readonly Dictionary<int, int> Mentor1SharedSessionDayOffsets = new()
+        {
+            [1] = 21,
+            [3] = 49,
+        };
+
+        private static void AddRoboticsCourses(
+            List<Course> courses,
+            Module? moduleTheory,
+            Module? moduleExperiential,
+            Module? moduleResearch,
+            DateTime seedTime)
+        {
+            if (moduleTheory == null && moduleExperiential == null && moduleResearch == null)
+            {
+                return;
+            }
+
+            void AddCourse(Module? module, string code, string name, string description)
+            {
+                if (module == null)
+                {
+                    return;
+                }
+
+                courses.Add(new Course
+                {
+                    Id = Guid.NewGuid(),
+                    Code = code,
+                    ModuleId = module.Id,
+                    Name = name,
+                    Description = description,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
+            }
+
+            AddCourse(moduleTheory, "CRS-ROBOTICS-01", "Robot Fundamentals",
+                "Core theory on robotics components, systems, and engineering mindset.");
+            AddCourse(moduleTheory, "CRS-ROBOTICS-02", "Mechanics & Actuators",
+                "Theory course covering mechanical structures, motors, and actuators.");
+            AddCourse(moduleTheory, "CRS-ROBOTICS-03", "Safety & Lab Practice",
+                "Theory course on lab safety, documentation, and responsible prototyping.");
+
+            AddCourse(moduleExperiential, "CRS-ROBOTICS-04", "Sensor Exploration",
+                "Hands-on experiential course introducing common robot sensors.");
+            AddCourse(moduleExperiential, "CRS-ROBOTICS-05", "Movement Programming",
+                "Experiential course on programming movement patterns and motor control.");
+            AddCourse(moduleExperiential, "CRS-ROBOTICS-06", "Hands-on Calibration",
+                "Experiential lab course for sensor calibration and behavior tuning.");
+
+            AddCourse(moduleResearch, "CRS-ROBOTICS-07", "Research Design Brief",
+                "Research course for planning a team robotics capstone project.");
+            AddCourse(moduleResearch, "CRS-ROBOTICS-08", "Prototype Build Project",
+                "Research course focused on building and iterating a robot prototype.");
+            AddCourse(moduleResearch, "CRS-ROBOTICS-09", "Capstone Presentation",
+                "Research course for documenting outcomes and presenting results.");
+        }
+
+        private static IReadOnlyList<SeedMaterialDefinition> GetRoboticsSeedMaterialDefinitions()
+        {
+            var definitions = new List<SeedMaterialDefinition>();
+
+            void AddTheory(string activityCode, string title) =>
+                definitions.Add(new(activityCode, title, MaterialType.PDF, RoboticsTheoryMaterialUrl, 4_200_000L));
+
+            void AddExperiential(string activityCode, string title) =>
+                definitions.Add(new(activityCode, title, MaterialType.Video, RoboticsExperientialMaterialUrl, 85_000_000L));
+
+            void AddResearch(string activityCode, string title) =>
+                definitions.Add(new(activityCode, title, MaterialType.PDF, RoboticsResearchMaterialUrl, 3_800_000L));
+
+            AddTheory("ACT-ROBOTICS-01-01", "Giáo trình kỹ thuật robot - Đào Văn Hiệp");
+            AddTheory("ACT-ROBOTICS-02-01", "Giáo trình kỹ thuật robot - Đào Văn Hiệp");
+            AddTheory("ACT-ROBOTICS-03-01", "Giáo trình kỹ thuật robot - Đào Văn Hiệp");
+
+            AddExperiential("ACT-ROBOTICS-04-01", "Robotics Engineers — CNBC International");
+            AddExperiential("ACT-ROBOTICS-05-01", "Robotics Engineers — CNBC International");
+            AddExperiential("ACT-ROBOTICS-06-01", "Robotics Engineers — CNBC International");
+
+            AddResearch("ACT-ROBOTICS-07-01", "Giáo trình Chủ nghĩa xã hội khoa học (Quốc gia)");
+            AddResearch("ACT-ROBOTICS-08-01", "Giáo trình Chủ nghĩa xã hội khoa học (Quốc gia)");
+            AddResearch("ACT-ROBOTICS-09-01", "Giáo trình Chủ nghĩa xã hội khoa học (Quốc gia)");
+
+            return definitions;
+        }
+
+        private static void AddRoboticsSeedActivities(
+            List<Activity> activities,
+            Dictionary<string, Course> courseByCode,
+            DateTime baseDate,
+            DateTime seedTime)
+        {
+            void AddCourseActivities(string courseCode, IEnumerable<Activity> courseActivities)
+            {
+                if (!courseByCode.TryGetValue(courseCode, out var course))
+                {
+                    return;
+                }
+
+                foreach (var activity in courseActivities)
+                {
+                    activity.CourseId = course.Id;
+                    activity.CreatedAt = seedTime;
+                    activity.CreatedBy = Guid.Empty;
+                    activity.IsDeleted = false;
+                    activities.Add(activity);
+                }
+            }
+
+            AddCourseActivities("CRS-ROBOTICS-01", new[]
+            {
+                NewActivity("ACT-ROBOTICS-01-01", "Robot Fundamentals Reading", ActivityType.SelfPaced, 1,
+                    "Self-paced reading from the robotics techniques textbook.", null, null, null, null, false, false),
+                NewActivity("ACT-ROBOTICS-01-02", "Introduction to Robotics", ActivityType.LiveOnline, 2,
+                    "Live online introduction to robotics systems.",
+                    "https://meet.google.com/robotics-theory-intro",
+                    baseDate.AddDays(1).AddHours(9), baseDate.AddDays(1).AddHours(11), 30, false, false),
+                NewActivity("ACT-ROBOTICS-01-03", "Components Overview Workshop", ActivityType.LiveOnline, 3,
+                    "Live workshop reviewing core robot components.",
+                    "https://meet.google.com/robotics-components",
+                    baseDate.AddDays(4).AddHours(14), baseDate.AddDays(4).AddHours(16), 30, false, false),
+            });
+
+            AddCourseActivities("CRS-ROBOTICS-02", new[]
+            {
+                NewActivity("ACT-ROBOTICS-02-01", "Mechanics Reading", ActivityType.SelfPaced, 1,
+                    "Self-paced reading on mechanics and actuators.", null, null, null, null, false, false),
+                NewActivity("ACT-ROBOTICS-02-02", "Actuator Design Lecture", ActivityType.LiveOnline, 2,
+                    "Live lecture on actuator selection and torque planning.",
+                    "https://meet.google.com/robotics-actuators",
+                    baseDate.AddDays(2).AddHours(10), baseDate.AddDays(2).AddHours(12), 28, false, false),
+                NewActivity("ACT-ROBOTICS-02-03", "Mechanical Structures Lab", ActivityType.Offline, 3,
+                    "Offline lab on assembling simple mechanical structures.",
+                    "Lab Room 101",
+                    baseDate.AddDays(6).AddHours(9), baseDate.AddDays(6).AddHours(12), 20, true, false),
+            });
+
+            AddCourseActivities("CRS-ROBOTICS-03", new[]
+            {
+                NewActivity("ACT-ROBOTICS-03-01", "Safety Guidelines Reading", ActivityType.SelfPaced, 1,
+                    "Self-paced reading on robotics lab safety practices.", null, null, null, null, false, false),
+                NewActivity("ACT-ROBOTICS-03-02", "Lab Safety Briefing", ActivityType.LiveOnline, 2,
+                    "Live briefing on lab rules and emergency procedures.",
+                    "https://meet.google.com/robotics-safety",
+                    baseDate.AddDays(3).AddHours(9), baseDate.AddDays(3).AddHours(10), 35, false, false),
+                NewActivity("ACT-ROBOTICS-03-03", "Sensor Calibration Lab", ActivityType.Offline, 3,
+                    "Hands-on sensor calibration and obstacle-avoidance testing.",
+                    "Lab Room 103",
+                    baseDate.AddDays(10).AddHours(14), baseDate.AddDays(10).AddHours(17), 15, true, true),
+            });
+
+            AddCourseActivities("CRS-ROBOTICS-04", new[]
+            {
+                NewActivity("ACT-ROBOTICS-04-01", "Careers in Robotics Video", ActivityType.SelfPaced, 1,
+                    "Watch the CNBC feature on robotics engineering careers.", null, null, null, null, false, false),
+                NewActivity("ACT-ROBOTICS-04-02", "Sensor Exploration Lab", ActivityType.Offline, 2,
+                    "Hands-on lab exploring ultrasonic and infrared sensors.",
+                    "Electronics Lab 201",
+                    baseDate.AddDays(8).AddHours(9), baseDate.AddDays(8).AddHours(12), 24, true, false),
+                NewActivity("ACT-ROBOTICS-04-03", "Sensor Data Discussion", ActivityType.LiveOnline, 3,
+                    "Live discussion on interpreting sensor readings.",
+                    "https://meet.google.com/robotics-sensors",
+                    baseDate.AddDays(11).AddHours(15), baseDate.AddDays(11).AddHours(16), 30, false, false),
+            });
+
+            AddCourseActivities("CRS-ROBOTICS-05", new[]
+            {
+                NewActivity("ACT-ROBOTICS-05-01", "Industry Insights Video", ActivityType.SelfPaced, 1,
+                    "Self-paced CNBC video on real-world robotics engineering work.", null, null, null, null, false, false),
+                NewActivity("ACT-ROBOTICS-05-02", "Movement Patterns Workshop", ActivityType.LiveOnline, 2,
+                    "Live workshop on programming robot movement patterns.",
+                    "https://meet.google.com/robotics-movement",
+                    baseDate.AddDays(9).AddHours(10), baseDate.AddDays(9).AddHours(12), 28, false, false),
+                NewActivity("ACT-ROBOTICS-05-03", "Motor Control Challenge", ActivityType.Offline, 3,
+                    "Offline challenge to tune motor speed and direction control.",
+                    "Maker Space B",
+                    baseDate.AddDays(13).AddHours(9), baseDate.AddDays(13).AddHours(13), 18, true, true),
+            });
+
+            AddCourseActivities("CRS-ROBOTICS-06", new[]
+            {
+                NewActivity("ACT-ROBOTICS-06-01", "Field Insights Video", ActivityType.SelfPaced, 1,
+                    "Self-paced video on robotics careers and industry demand.", null, null, null, null, false, false),
+                NewActivity("ACT-ROBOTICS-06-02", "Calibration Techniques Lab", ActivityType.Offline, 2,
+                    "Hands-on calibration techniques for line-following robots.",
+                    "Lab Room 104",
+                    baseDate.AddDays(12).AddHours(14), baseDate.AddDays(12).AddHours(17), 16, true, true),
+                NewActivity("ACT-ROBOTICS-06-03", "Experiential Reflection", ActivityType.SelfPaced, 3,
+                    "Submit a reflection on experiential learning outcomes.", null, null, null, null, false, false),
+            });
+
+            AddCourseActivities("CRS-ROBOTICS-07", new[]
+            {
+                NewActivity("ACT-ROBOTICS-07-01", "Research Design Brief Reading", ActivityType.SelfPaced, 1,
+                    "Read the research design brief and project requirements.", null, null, null, null, false, false),
+                NewActivity("ACT-ROBOTICS-07-02", "Team Prototype Build", ActivityType.Offline, 2,
+                    "Full-day team session to assemble and test prototypes.",
+                    "Maker Space A",
+                    baseDate.AddDays(14).AddHours(9), baseDate.AddDays(14).AddHours(17), 12, true, true),
+                NewActivity("ACT-ROBOTICS-07-03", "Capstone Presentation", ActivityType.LiveOnline, 3,
+                    "Teams present robot prototypes and research findings.",
+                    "https://meet.google.com/robotics-finals",
+                    baseDate.AddDays(21).AddHours(14), baseDate.AddDays(21).AddHours(16), 50, false, true),
+            });
+
+            AddCourseActivities("CRS-ROBOTICS-08", new[]
+            {
+                NewActivity("ACT-ROBOTICS-08-01", "Research Methods Reading", ActivityType.SelfPaced, 1,
+                    "Self-paced reading on scientific research methodology.", null, null, null, null, false, false),
+                NewActivity("ACT-ROBOTICS-08-02", "Prototype Iteration Lab", ActivityType.Offline, 2,
+                    "Iterate on prototype design based on mentor feedback.",
+                    "Maker Space A",
+                    baseDate.AddDays(16).AddHours(9), baseDate.AddDays(16).AddHours(15), 12, true, true),
+                NewActivity("ACT-ROBOTICS-08-03", "Peer Review Session", ActivityType.LiveOnline, 3,
+                    "Live peer review of prototype progress and test results.",
+                    "https://meet.google.com/robotics-peer-review",
+                    baseDate.AddDays(19).AddHours(10), baseDate.AddDays(19).AddHours(12), 24, false, false),
+            });
+
+            AddCourseActivities("CRS-ROBOTICS-09", new[]
+            {
+                NewActivity("ACT-ROBOTICS-09-01", "Capstone Documentation Reading", ActivityType.SelfPaced, 1,
+                    "Self-paced guide for documenting capstone research outcomes.", null, null, null, null, false, false),
+                NewActivity("ACT-ROBOTICS-09-02", "Final Testing Lab", ActivityType.Offline, 2,
+                    "Final testing and performance validation for capstone robots.",
+                    "Maker Space A",
+                    baseDate.AddDays(20).AddHours(9), baseDate.AddDays(20).AddHours(13), 12, true, true),
+                NewActivity("ACT-ROBOTICS-09-03", "Research Showcase", ActivityType.LiveOnline, 3,
+                    "Public showcase of capstone research projects.",
+                    "https://meet.google.com/robotics-showcase",
+                    baseDate.AddDays(24).AddHours(14), baseDate.AddDays(24).AddHours(17), 40, false, true),
+            });
+        }
+
+        private async Task SeedRoboticsClassSessionsAsync()
+        {
+            _loggerService.LogInformation("Starting seed robotics class sessions");
+
+            var existingSession = await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
+                cs => RoboticsClassCodes.Contains(cs.Class.Code) && !cs.IsDeleted,
+                cs => cs.Class);
+
+            if (existingSession != null)
+            {
+                _loggerService.LogInformation("Robotics class sessions already exist, skipping seeding");
+                return;
+            }
+
+            var moduleTheory = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01");
+            var moduleExperiential = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-02");
+            var moduleResearch = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
+
+            if (moduleTheory == null || moduleExperiential == null || moduleResearch == null)
+            {
+                _loggerService.LogWarning("Robotics modules not found. Skipping robotics class session seeding.");
+                return;
+            }
+
+            var modulesByCode = new Dictionary<string, Module>(StringComparer.OrdinalIgnoreCase)
+            {
+                [moduleTheory.Code] = moduleTheory,
+                [moduleExperiential.Code] = moduleExperiential,
+                [moduleResearch.Code] = moduleResearch,
+            };
+
+            var sessionTemplates = GetRoboticsClassSessionTemplates();
+            var activitiesByCode = (await _unitOfWork.Activities.GetAllAsync(a => !a.IsDeleted))
+                .ToDictionary(a => a.Code, a => a, StringComparer.OrdinalIgnoreCase);
+
+            var seedTime = DateTime.UtcNow;
+            var sessionsToAdd = new List<ClassSession>();
+            var anchorDate = seedTime.Date;
+
+            foreach (var classCode in RoboticsClassCodes)
+            {
+                var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == classCode);
+                if (classEntity == null)
+                {
+                    _loggerService.LogWarning("Robotics class {ClassCode} not found. Skipping sessions.", classCode);
+                    continue;
+                }
+
+                var isMentor1Class = Mentor1RoboticsClassCodes.Contains(classCode);
+                var isMentor1ClassA = string.Equals(classCode, "CLS-ROBOTICS-2026A", StringComparison.OrdinalIgnoreCase);
+
+                for (var sessionIndex = 0; sessionIndex < sessionTemplates.Count; sessionIndex++)
+                {
+                    var template = sessionTemplates[sessionIndex];
+                    if (!modulesByCode.TryGetValue(template.ModuleCode, out var module))
+                    {
+                        continue;
+                    }
+
+                    if (!activitiesByCode.TryGetValue(template.ActivityCode, out var activity))
+                    {
+                        _loggerService.LogWarning(
+                            "Activity {ActivityCode} not found for robotics class session. Skipping.",
+                            template.ActivityCode);
+                        continue;
+                    }
+
+                    var (startTime, endTime) = ResolveRoboticsSessionTimes(
+                        classEntity,
+                        sessionIndex,
+                        isMentor1Class,
+                        isMentor1ClassA,
+                        anchorDate);
+
+                    sessionsToAdd.Add(new ClassSession
+                    {
+                        Id = Guid.NewGuid(),
+                        ClassId = classEntity.Id,
+                        ModuleId = module.Id,
+                        ActivityId = activity.Id,
+                        SessionKind = template.SessionKind,
+                        Title = template.Title,
+                        Description = template.Description,
+                        StartTime = startTime,
+                        EndTime = endTime,
+                        Location = activity.Location,
+                        RequiresAttendance = activity.ActivityType != ActivityType.SelfPaced,
+                        Status = ClassSessionStatus.Scheduled,
+                        CreatedAt = seedTime,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false,
+                    });
+                }
+            }
+
+            if (sessionsToAdd.Count == 0)
+            {
+                _loggerService.LogWarning("No robotics class sessions created.");
+                return;
+            }
+
+            await _unitOfWork.ClassSessions.AddRangeAsync(sessionsToAdd);
+            await _unitOfWork.SaveChangesAsync();
+
+            _loggerService.LogInformation(
+                "Finished seed robotics class sessions — {Count} session(s) created.",
+                sessionsToAdd.Count);
+        }
+
+        private static IReadOnlyList<RoboticsClassSessionTemplate> GetRoboticsClassSessionTemplates() =>
+        [
+            new("MOD-ROBOTICS-01", "ACT-ROBOTICS-01-02", SessionKind.LiveOnline,
+                "Theory Session 1: Introduction to Robotics",
+                "Live cohort session covering robotics fundamentals."),
+            new("MOD-ROBOTICS-01", "ACT-ROBOTICS-02-02", SessionKind.LiveOnline,
+                "Theory Session 2: Actuator Design",
+                "Live cohort session on actuators and mechanical design."),
+            new("MOD-ROBOTICS-02", "ACT-ROBOTICS-04-02", SessionKind.Lesson,
+                "Experiential Session 1: Sensor Exploration Lab",
+                "Hands-on sensor exploration in the electronics lab."),
+            new("MOD-ROBOTICS-02", "ACT-ROBOTICS-05-02", SessionKind.LiveOnline,
+                "Experiential Session 2: Movement Patterns Workshop",
+                "Live workshop on programming robot movement."),
+            new("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-02", SessionKind.Lesson,
+                "Research Session 1: Team Prototype Build",
+                "Full-day team build session for the capstone prototype."),
+            new("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-03", SessionKind.LiveOnline,
+                "Research Session 2: Capstone Presentation",
+                "Live capstone presentation and mentor Q&A."),
+        ];
+
+        private static (DateTime StartTime, DateTime EndTime) ResolveRoboticsSessionTimes(
+            Class classEntity,
+            int sessionIndex,
+            bool isMentor1Class,
+            bool isMentor1ClassA,
+            DateTime anchorDate)
+        {
+            if (isMentor1Class && Mentor1SharedSessionDayOffsets.TryGetValue(sessionIndex, out var sharedDayOffset))
+            {
+                var sharedDate = anchorDate.AddDays(sharedDayOffset);
+                var morningStart = sharedDate.AddHours(9);
+                var morningEnd = sharedDate.AddHours(11).AddMinutes(30);
+                var afternoonStart = sharedDate.AddHours(14);
+                var afternoonEnd = sharedDate.AddHours(16).AddMinutes(30);
+
+                return isMentor1ClassA
+                    ? (morningStart, morningEnd)
+                    : (afternoonStart, afternoonEnd);
+            }
+
+            var durationDays = Math.Max((classEntity.EndDate.Date - classEntity.StartDate.Date).TotalDays, 1);
+            var fractions = new[] { 0.08, 0.24, 0.40, 0.56, 0.72, 0.88 };
+            var fraction = fractions[Math.Min(sessionIndex, fractions.Length - 1)];
+            var sessionDate = classEntity.StartDate.Date.AddDays(durationDays * fraction);
+            var startHour = sessionIndex % 2 == 0 ? 9 : 14;
+            var startTime = sessionDate.AddHours(startHour);
+            var endTime = startTime.AddHours(2).AddMinutes(30);
+            return (startTime, endTime);
+        }
+
+        private sealed record RoboticsClassSessionTemplate(
+            string ModuleCode,
+            string ActivityCode,
+            SessionKind SessionKind,
+            string Title,
+            string Description);
     }
 }
