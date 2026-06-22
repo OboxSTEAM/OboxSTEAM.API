@@ -263,20 +263,30 @@ public class BlobService : IBlobService
     }
 
     /// <inheritdoc />
-    public async Task<(int Deleted, int Failed)> ClearAllObjectsAsync(CancellationToken cancellationToken = default)
+    public Task<(int Deleted, int Failed)> ClearAllObjectsAsync(CancellationToken cancellationToken = default) =>
+        ClearObjectsByPrefixAsync(string.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<(int Deleted, int Failed)> ClearObjectsByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default)
     {
         const int batchSize = 1000;
         var deleted = 0;
         var failed = 0;
         string? continuationToken = null;
 
-        _logger.LogInformation("Clearing all objects from bucket '{Bucket}'...", _bucketName);
+        _logger.LogInformation(
+            "Clearing objects from bucket '{Bucket}' with prefix '{Prefix}'...",
+            _bucketName,
+            string.IsNullOrEmpty(prefix) ? "(all)" : prefix);
 
         do
         {
             var listResponse = await _s3Client.ListObjectsV2Async(new ListObjectsV2Request
             {
                 BucketName = _bucketName,
+                Prefix = string.IsNullOrEmpty(prefix) ? null : prefix,
                 ContinuationToken = continuationToken
             }, cancellationToken);
 
@@ -330,8 +340,94 @@ public class BlobService : IBlobService
         } while (continuationToken != null);
 
         _logger.LogInformation(
-            "Bucket '{Bucket}' cleared. Deleted={Deleted}, Failed={Failed}",
-            _bucketName, deleted, failed);
+            "Bucket '{Bucket}' prefix '{Prefix}' cleared. Deleted={Deleted}, Failed={Failed}",
+            _bucketName,
+            string.IsNullOrEmpty(prefix) ? "(all)" : prefix,
+            deleted,
+            failed);
+
+        return (deleted, failed);
+    }
+
+    /// <inheritdoc />
+    public async Task<(int Deleted, int Failed)> ClearAllObjectsExceptPrefixAsync(
+        string excludedPrefix,
+        CancellationToken cancellationToken = default)
+    {
+        const int batchSize = 1000;
+        var deleted = 0;
+        var failed = 0;
+        string? continuationToken = null;
+
+        _logger.LogInformation(
+            "Clearing objects from bucket '{Bucket}' except prefix '{ExcludedPrefix}'...",
+            _bucketName,
+            excludedPrefix);
+
+        do
+        {
+            var listResponse = await _s3Client.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = _bucketName,
+                ContinuationToken = continuationToken
+            }, cancellationToken);
+
+            var keys = listResponse.S3Objects
+                .Select(o => o.Key)
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .Where(k => !k.StartsWith(excludedPrefix, StringComparison.Ordinal))
+                .ToList();
+
+            for (var i = 0; i < keys.Count; i += batchSize)
+            {
+                var batch = keys
+                    .Skip(i)
+                    .Take(batchSize)
+                    .Select(k => new KeyVersion { Key = k })
+                    .ToList();
+
+                if (batch.Count == 0)
+                    continue;
+
+                try
+                {
+                    var deleteResponse = await _s3Client.DeleteObjectsAsync(new DeleteObjectsRequest
+                    {
+                        BucketName = _bucketName,
+                        Objects = batch
+                    }, cancellationToken);
+
+                    deleted += deleteResponse.DeletedObjects?.Count ?? 0;
+
+                    if (deleteResponse.DeleteErrors?.Count > 0)
+                    {
+                        failed += deleteResponse.DeleteErrors.Count;
+                        foreach (var error in deleteResponse.DeleteErrors)
+                        {
+                            _logger.LogWarning(
+                                "Failed to delete S3 object: {Key} — {Code}: {Message}",
+                                error.Key, error.Code, error.Message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failed += batch.Count;
+                    _logger.LogWarning(ex, "Failed to delete S3 object batch ({Count} keys)", batch.Count);
+                }
+            }
+
+            continuationToken = listResponse.IsTruncated
+                ? listResponse.NextContinuationToken
+                : null;
+        } while (continuationToken != null);
+
+        _logger.LogInformation(
+            "Bucket '{Bucket}' cleared except '{ExcludedPrefix}'. Deleted={Deleted}, Failed={Failed}",
+            _bucketName,
+            excludedPrefix,
+            deleted,
+            failed);
 
         return (deleted, failed);
     }

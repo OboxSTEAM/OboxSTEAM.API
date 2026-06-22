@@ -33,4 +33,20 @@ public interface IBlobService
     /// Trả về số object đã xóa và số object xóa thất bại.
     /// </summary>
     Task<(int Deleted, int Failed)> ClearAllObjectsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Xóa objects có key bắt đầu bằng <paramref name="prefix"/> (e.g. "Seed/").
+    /// Trả về số object đã xóa và số object xóa thất bại.
+    /// </summary>
+    Task<(int Deleted, int Failed)> ClearObjectsByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Xóa toàn bộ objects trong bucket, trừ những object có key bắt đầu bằng
+    /// <paramref name="excludedPrefix"/> (e.g. "Seed/" để giữ seed assets).
+    /// </summary>
+    Task<(int Deleted, int Failed)> ClearAllObjectsExceptPrefixAsync(
+        string excludedPrefix,
+        CancellationToken cancellationToken = default);
 }
