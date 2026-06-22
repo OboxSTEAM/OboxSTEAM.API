@@ -249,13 +249,13 @@ public partial class SeedService
         };
 
     private const string RoboticsTheoryMaterialUrl =
-        "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/Gi%C3%A1o+tr%C3%ACnh+k%E1%BB%B9+thu%E1%BA%ADt+robot+-+%C4%90%C3%A0o+V%C4%83n+Hi%E1%BB%87p.pdf";
+        "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/GI%C3%81O+TR%C3%8CNH+CH%E1%BB%A6+NGH%C4%A8A+X%C3%83+H%E1%BB%98I+KHOA+H%E1%BB%8CC+(Quoc+gia).pdf";
 
     private const string RoboticsExperientialMaterialUrl =
         "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/Robotics+engineers+are+in+high+demand+%E2%80%94+but+what+is+the+job+really+like+-+CNBC+International+(720p%2C+h264).mp4";
 
     private const string RoboticsResearchMaterialUrl =
-        "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/GI%C3%81O+TR%C3%8CNH+CH%E1%BB%A6+NGH%C4%A8A+X%C3%83+H%E1%BB%98I+KHOA+H%E1%BB%8CC+(Quoc+gia).pdf";
+        "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/Gi%C3%A1o+tr%C3%ACnh+k%E1%BB%B9+thu%E1%BA%ADt+robot+-+%C4%90%C3%A0o+V%C4%83n+Hi%E1%BB%87p.pdf";
 
     private static readonly string[] RoboticsClassCodes =
     [
