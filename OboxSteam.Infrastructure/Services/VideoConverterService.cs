@@ -108,7 +108,7 @@ public class VideoConverterService : IVideoConverterService
         var roleArn = RequireEnv(EnvRoleArn);
         // Watermark URI is configurable via environment variable so it survives bucket/region changes.
         var watermarkUri = Environment.GetEnvironmentVariable("AWS_WATERMARK_URI")
-            ?? "https://oboxsteam-bucket.s3.ap-southeast-1.amazonaws.com/logo/obox-logo.png";
+            ?? "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/logo-obox.png";
 
         _logger.LogInformation(
             "SubmitPersonalVideoJobAsync: {ClipCount} input(s) → s3://{Bucket}/{Key}",
