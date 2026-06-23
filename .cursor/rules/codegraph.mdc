@@ -1,0 +1,75 @@
+---
+description: Mandatory CodeGraph MCP for code navigation when available; grep/Read fallback when not
+alwaysApply: true
+---
+
+# CodeGraph Navigation Policy
+
+Use CodeGraph MCP for **code structure** questions when it is available in the session.
+When CodeGraph is not set up on a machine, fall back to normal `Grep`, `Read`, and
+`SemanticSearch` — do not block work or insist teammates install CodeGraph.
+
+Harness intake, product docs, and trace obligations still apply. See
+`docs/CONTEXT_RULES.md` (CodeGraph Integration) for lane-by-lane detail.
+
+## Detect Availability (once per task)
+
+CodeGraph is **available** when the `user-codegraph` MCP server is listed in the
+session MCP file system (tools under `mcps/user-codegraph/tools/`) and
+`CallMcpTool` can reach it.
+
+CodeGraph is **unavailable** when any of the following is true:
+
+- The `user-codegraph` MCP server is not in the session MCP list
+- MCP calls fail with connection or auth errors after one retry
+- A tool response reports the project is not indexed (no `.codegraph/`)
+
+Do not run `codegraph init` on behalf of the user. Teammates without CodeGraph
+should use the fallback path below.
+
+## When Available — Mandatory
+
+For structure, flow, symbol location, callers, blast radius, or reading indexed
+source files, **must** use CodeGraph MCP tools via `CallMcpTool` — **not** `Grep`,
+`SemanticSearch`, or read loops that duplicate what CodeGraph already indexes.
+
+| Intent | Tool |
+| --- | --- |
+| How does X work, survey an area, find a flow | `codegraph_explore` (primary — usually one call) |
+| Locate a symbol by name | `codegraph_search` |
+| Who calls this / what breaks if I change it | `codegraph_callers` |
+| Read a symbol or file with dependents | `codegraph_node` |
+
+Rules when CodeGraph is available:
+
+1. **Read tool schema** under `mcps/user-codegraph/tools/` before the first MCP call.
+2. Prefer **one** `codegraph_explore` over chaining grep + multiple reads.
+3. Use `Read` only for non-indexed files (configs, docs), staleness-banner files
+   after edits, or the exact lines you are about to change.
+4. Do **not** re-verify graph output with `Grep` — trust the AST index unless a
+   staleness banner says otherwise.
+5. If a tool reports the project is not indexed, stop using CodeGraph for the rest
+   of the session and switch to the fallback path.
+
+## When Unavailable — Fallback
+
+Use standard tools with no CodeGraph requirement:
+
+- `Grep` for exact text and pattern searches
+- `SemanticSearch` for broad "where is this handled?" discovery
+- `Read` for file contents before editing
+
+Note in harness traces (`actions_taken`) when navigation used fallback because
+CodeGraph was inactive.
+
+## Setup (optional, per developer)
+
+Contributors who want CodeGraph locally:
+
+```bash
+codegraph init
+scripts/bin/harness-cli tool check
+```
+
+`.cursor/mcp.json` runs `codegraph serve --mcp`. Restart Cursor after changing
+MCP config.

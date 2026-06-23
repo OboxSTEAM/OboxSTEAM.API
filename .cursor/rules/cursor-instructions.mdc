@@ -41,5 +41,6 @@ It is **EXTREMELY important** that you follow the instructions in the rule files
 
 ## Related Rules
 
+- Code navigation: `codegraph.mdc` — CodeGraph MCP when available; `Grep`/`Read` fallback when not
 - C# style and API patterns: `coding-style-csharp.mdc` (applies to `**/*.cs`)
 - Confidence gate before changes: `follow-up-question.mdc`
