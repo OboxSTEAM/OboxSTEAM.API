@@ -516,12 +516,20 @@ public class PersonalVideoService : IPersonalVideoService
                 "[PersonalVideoService] Strengths filter fallback → face-only for MediaId={MediaId}", media.Id);
         }
 
-        // Standard face-timeline path (no strengths OR fallback from strengths filter)
-        var timeClips = MergeAndFormatTimeClips(faceSegments.Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0)));
+        // Standard face-timeline path (no strengths OR fallback from strengths filter).
+        // Union the student's face timeline with their mapped voice timeline (if available) so
+        // the highlight keeps "voice but no face" moments (e.g. the student speaking off-camera).
+        // MergeAndFormatTimeClips collapses any overlaps created by the union.
+        var voiceSegments = ReadVoiceSegments(media, studentId);
+        var combinedSegments = faceSegments
+            .Concat(voiceSegments)
+            .Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0));
+
+        var timeClips = MergeAndFormatTimeClips(combinedSegments);
 
         _logger.LogInformation(
-            "[PersonalVideoService] Case 3/4: {Raw} raw → {Merged} merged segment(s) for MediaId={MediaId}. Clips=[{Clips}]",
-            faceSegments.Count, timeClips.Count, media.Id,
+            "[PersonalVideoService] Case 3/4: {Face} face + {Voice} voice → {Merged} merged segment(s) for MediaId={MediaId}. Clips=[{Clips}]",
+            faceSegments.Count, voiceSegments.Count, timeClips.Count, media.Id,
             string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")));
 
         return new ClipInput(s3Key, timeClips);
@@ -551,6 +559,32 @@ public class PersonalVideoService : IPersonalVideoService
                 "[PersonalVideoService] Failed to deserialize FaceSegmentsJson for MediaId={MediaId}, StudentId={StudentId}.",
                 media.Id, studentId);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the student's mapped voice timeline from <see cref="MediaTag.VoiceSegmentsJson"/>
+    /// (populated at tagging time when AWS Transcribe diarization mapped a speaker to this
+    /// student). Returns an empty list when no voice data was captured (legacy media, Transcribe
+    /// disabled/failed, or no speaker could be mapped) so callers degrade to face-only clipping.
+    /// </summary>
+    private List<FaceTimestampSegment> ReadVoiceSegments(MediaAsset media, Guid studentId)
+    {
+        var tag = media.MediaTags.FirstOrDefault(t => t.StudentId == studentId);
+        if (tag?.VoiceSegmentsJson == null)
+            return new List<FaceTimestampSegment>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<FaceTimestampSegment>>(tag.VoiceSegmentsJson)
+                   ?? new List<FaceTimestampSegment>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[PersonalVideoService] Failed to deserialize VoiceSegmentsJson for MediaId={MediaId}, StudentId={StudentId}.",
+                media.Id, studentId);
+            return new List<FaceTimestampSegment>();
         }
     }
 

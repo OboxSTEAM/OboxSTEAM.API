@@ -111,6 +111,26 @@ public class AwsWebhookController : ControllerBase
                             jobId, status);
                     }
                 }
+                // EventBridge (Transcribe). Transcribe has no SNS NotificationChannel, so an
+                // EventBridge rule routes "Transcribe Job State Change" events to this SNS topic.
+                else if (msgRoot.TryGetProperty("detail-type", out var transcribeTypeProp) &&
+                         transcribeTypeProp.GetString() == "Transcribe Job State Change")
+                {
+                    var detail = msgRoot.GetProperty("detail");
+                    var jobName = detail.GetProperty("TranscriptionJobName").GetString();
+                    var status = detail.GetProperty("TranscriptionJobStatus").GetString();
+
+                    if (status == "COMPLETED" || status == "FAILED")
+                    {
+                        await ProcessTranscribeJobAsync(jobName!, status == "COMPLETED");
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "Transcribe JobName: {JobName} is in status: {Status}. No action required.",
+                            jobName, status);
+                    }
+                }
                 // Rekognition
                 else if (msgRoot.TryGetProperty("JobId", out var rekJobIdProp))
                 {
@@ -273,6 +293,14 @@ public class AwsWebhookController : ControllerBase
         // so the Controller doesn't depend on IUnitOfWork directly.
         await _personalVideoService.HandlePersonalVideoJobCompletionAsync(jobId, isSuccess);
         await _mediaService.HandleMediaConvertWebhookAsync(jobId, isSuccess);
+    }
+
+    private async Task ProcessTranscribeJobAsync(string jobName, bool isSuccess)
+    {
+        _logger.LogInformation(
+            "Processing Transcribe Webhook JobName: {JobName}, Success: {Success}", jobName, isSuccess);
+
+        await _mediaService.HandleTranscribeWebhookAsync(jobName, isSuccess);
     }
 
     private async Task ProcessRekognitionJobAsync(string jobId, bool isSuccess, string? api)

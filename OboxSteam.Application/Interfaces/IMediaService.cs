@@ -71,5 +71,13 @@ public interface IMediaService
     /// Handle Rekognition Label Detection job completion webhook.
     /// </summary>
     Task HandleLabelDetectionWebhookAsync(string jobId, bool isSuccess);
+
+    /// <summary>
+    /// Handle AWS Transcribe speaker-diarization job completion webhook.
+    /// Persists the speaker timeline and, once both face and speaker data are available,
+    /// maps anonymous speakers to students (overlap analysis) so the personal-video pipeline
+    /// can include "voice but no face" moments.
+    /// </summary>
+    Task HandleTranscribeWebhookAsync(string jobName, bool isSuccess);
 }
 

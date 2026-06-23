@@ -2,6 +2,7 @@
 using Amazon.MediaConvert;
 using Amazon.Rekognition;
 using Amazon.S3;
+using Amazon.TranscribeService;
 using OpenAI;
 using OpenAI.Chat;
 using System.ClientModel;
@@ -53,6 +54,7 @@ public static class IocContainer
         services.AddScoped<ICsvQuestionParserService, CsvQuestionParserService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IVideoConverterService, VideoConverterService>();
+        services.AddScoped<ITranscribeService, TranscribeService>();
 
         // In-process queue (singleton) shared between the personal-video trigger and its worker.
         services.AddSingleton<IPersonalVideoQueue, PersonalVideoQueue>();
@@ -78,6 +80,7 @@ public static class IocContainer
         services.SetupReSendService(configuration);
         services.SetupAwsRekognition();
         services.SetupAwsMediaConvert();
+        services.SetupAwsTranscribe();
         services.SetupBedrockMantle();
         services.SetupPaymentGateways(configuration);
 
@@ -221,6 +224,19 @@ public static class IocContainer
 
         services.AddSingleton<IAmazonRekognition>(_ =>
             new AmazonRekognitionClient(
+                Environment.GetEnvironmentVariable("AWS_ACCESS_KEY"),
+                Environment.GetEnvironmentVariable("AWS_SECRET_KEY"),
+                Amazon.RegionEndpoint.GetBySystemName(region)));
+
+        return services;
+    }
+
+    public static IServiceCollection SetupAwsTranscribe(this IServiceCollection services)
+    {
+        var region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "ap-southeast-1";
+
+        services.AddSingleton<IAmazonTranscribeService>(_ =>
+            new AmazonTranscribeServiceClient(
                 Environment.GetEnvironmentVariable("AWS_ACCESS_KEY"),
                 Environment.GetEnvironmentVariable("AWS_SECRET_KEY"),
                 Amazon.RegionEndpoint.GetBySystemName(region)));

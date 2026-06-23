@@ -31,6 +31,7 @@ public class MediaService : IMediaService
     private readonly IFaceRecognitionService _faceRecognitionService;
     private readonly ILogger<MediaService> _logger;
     private readonly IVideoConverterService _videoConverterService;
+    private readonly ITranscribeService _transcribeService;
 
     public MediaService(
         IClaimsService claimsService,
@@ -38,7 +39,8 @@ public class MediaService : IMediaService
         IBlobService blobService,
         IFaceRecognitionService faceRecognitionService,
         ILogger<MediaService> logger,
-        IVideoConverterService videoConverterService)
+        IVideoConverterService videoConverterService,
+        ITranscribeService transcribeService)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
@@ -46,6 +48,7 @@ public class MediaService : IMediaService
         _faceRecognitionService = faceRecognitionService;
         _logger = logger;
         _videoConverterService = videoConverterService;
+        _transcribeService = transcribeService;
     }
 
     /// <inheritdoc />
@@ -340,6 +343,29 @@ public class MediaService : IMediaService
                 "Strengths-based filtering will be unavailable for this video.", mediaId);
         }
 
+        // ── Start AWS Transcribe speaker diarization (for voice-based clipping) ────
+        // Fire-and-forget style: failures are non-fatal — the personal-video pipeline simply
+        // falls back to face-only clipping when TranscribeJobName is null or the job fails.
+        try
+        {
+            _logger.LogInformation(
+                "Starting Transcribe speaker diarization for MediaId={MediaId}, S3Key={Key}",
+                mediaId, outputS3Key);
+            var transcribeJobName = await _transcribeService.StartSpeakerDiarizationAsync(
+                _blobService.BucketName, outputS3Key, mediaId);
+            media.TranscribeJobName = transcribeJobName;
+            _logger.LogInformation(
+                "Transcribe job started: {TranscribeJobName} for MediaId={MediaId}",
+                transcribeJobName, mediaId);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: voice merge will be unavailable; clips fall back to face-only.
+            _logger.LogWarning(ex,
+                "TryCompleteTranscodeAsync: failed to start Transcribe for MediaId={MediaId}. " +
+                "Voice-based clipping will be unavailable for this video.", mediaId);
+        }
+
         // ── Persist state transition ──────────────────────────────────────────────
         media.FileUrl = fileUrl;
         media.FaceSearchJobId = rekJobId;
@@ -586,7 +612,181 @@ public class MediaService : IMediaService
         }
     }
 
+    /// <inheritdoc />
+    public async Task HandleTranscribeWebhookAsync(string jobName, bool isSuccess)
+    {
+        var media = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
+            m => m.TranscribeJobName == jobName && !m.IsDeleted, m => m.MediaTags);
+
+        if (media == null)
+        {
+            _logger.LogWarning(
+                "HandleTranscribeWebhookAsync: no MediaAsset found for Transcribe JobName={JobName}", jobName);
+            return;
+        }
+
+        if (!isSuccess)
+        {
+            // Non-fatal: clips fall back to face-only. Clear the job name so a future retrigger
+            // is not blocked, and so finalize knows speaker data is unavailable.
+            _logger.LogWarning(
+                "Transcribe job FAILED for MediaId={MediaId}, JobName={JobName}. " +
+                "Voice-based clipping will be unavailable for this video.", media.Id, jobName);
+            return;
+        }
+
+        try
+        {
+            var speakerSegments = await _transcribeService.GetSpeakerSegmentsAsync(jobName);
+
+            if (speakerSegments == null)
+            {
+                // Webhook reported COMPLETED but the query is not ready yet (rare race) —
+                // leave SpeakerSegmentsJson null; clips fall back to face-only.
+                _logger.LogWarning(
+                    "HandleTranscribeWebhookAsync: results not ready yet for MediaId={MediaId}, JobName={JobName}.",
+                    media.Id, jobName);
+                return;
+            }
+
+            media.SpeakerSegmentsJson = JsonSerializer.Serialize(speakerSegments);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Transcribe captured: {Count} speaker segment(s) persisted for MediaId={MediaId}, JobName={JobName}.",
+                speakerSegments.Count, media.Id, jobName);
+
+            await TryFinalizeSpeakerMappingAsync(media);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: voice merge will be unavailable; clips fall back to face-only.
+            _logger.LogWarning(ex,
+                "HandleTranscribeWebhookAsync: failed to capture speaker timeline for MediaId={MediaId}, JobName={JobName}.",
+                media.Id, jobName);
+        }
+    }
+
     // ── Private Helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Maps anonymous Transcribe speaker labels to students once BOTH the face timelines
+    /// (<see cref="MediaTag.FaceSegmentsJson"/>) and the speaker timeline
+    /// (<see cref="MediaAsset.SpeakerSegmentsJson"/>) are available. Whichever of the
+    /// face-search / transcribe webhooks completes last triggers the actual mapping; if either
+    /// dataset is missing this is a no-op (the other webhook will run it later).
+    ///
+    /// For each tagged student, the speaker whose voice segments overlap the student's face
+    /// segments the most (by total overlapping ms) is chosen, then that speaker's full voice
+    /// timeline is persisted onto the tag so the personal-video pipeline can union it with the
+    /// face timeline (keeping "voice but no face" moments).
+    /// </summary>
+    private async Task TryFinalizeSpeakerMappingAsync(MediaAsset media)
+    {
+        if (string.IsNullOrEmpty(media.SpeakerSegmentsJson))
+            return; // speaker data not ready yet
+
+        List<SpeakerSegment> speakerSegments;
+        try
+        {
+            speakerSegments = JsonSerializer.Deserialize<List<SpeakerSegment>>(media.SpeakerSegmentsJson)
+                              ?? new List<SpeakerSegment>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "TryFinalizeSpeakerMappingAsync: failed to deserialize SpeakerSegmentsJson for MediaId={MediaId}.",
+                media.Id);
+            return;
+        }
+
+        if (speakerSegments.Count == 0)
+            return;
+
+        // Need at least one tag with a face timeline to anchor the mapping.
+        var tagsWithFaces = media.MediaTags
+            .Where(t => !t.IsDeleted && !string.IsNullOrEmpty(t.FaceSegmentsJson))
+            .ToList();
+
+        if (tagsWithFaces.Count == 0)
+            return; // face data not ready yet
+
+        var anyMapped = false;
+
+        foreach (var tag in tagsWithFaces)
+        {
+            List<FaceTimestampSegment> faceSegments;
+            try
+            {
+                faceSegments = JsonSerializer.Deserialize<List<FaceTimestampSegment>>(tag.FaceSegmentsJson!)
+                               ?? new List<FaceTimestampSegment>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "TryFinalizeSpeakerMappingAsync: failed to deserialize FaceSegmentsJson for MediaId={MediaId}, StudentId={StudentId}.",
+                    media.Id, tag.StudentId);
+                continue;
+            }
+
+            if (faceSegments.Count == 0)
+                continue;
+
+            var mappedSpeaker = MapSpeakerToStudent(faceSegments, speakerSegments);
+            if (mappedSpeaker == null)
+                continue;
+
+            var voiceSegments = speakerSegments
+                .Where(s => s.SpeakerLabel == mappedSpeaker)
+                .Select(s => new FaceTimestampSegment(s.StartMs, s.EndMs))
+                .ToList();
+
+            tag.MappedSpeakerLabel = mappedSpeaker;
+            tag.VoiceSegmentsJson = JsonSerializer.Serialize(voiceSegments);
+            anyMapped = true;
+
+            _logger.LogInformation(
+                "Speaker mapped: StudentId={StudentId} -> {Speaker} ({Count} voice segment(s)) for MediaId={MediaId}.",
+                tag.StudentId, mappedSpeaker, voiceSegments.Count, media.Id);
+        }
+
+        if (anyMapped)
+            await _unitOfWork.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Picks the speaker label whose voice segments overlap the given face segments the most,
+    /// measured by total overlapping milliseconds. Returns <c>null</c> when there is no overlap
+    /// with any speaker (e.g. the student only appears silently).
+    /// </summary>
+    private static string? MapSpeakerToStudent(
+        IList<FaceTimestampSegment> faceSegments,
+        IList<SpeakerSegment> speakerSegments)
+    {
+        var overlapBySpeaker = new Dictionary<string, long>();
+
+        foreach (var face in faceSegments)
+        {
+            foreach (var voice in speakerSegments)
+            {
+                // Inclusive overlap: Rekognition face timelines are frequently single-sample
+                // points (StartMs == EndMs), so a strict interval-overlap (> 0) would score
+                // them as zero. Using >= 0 with a +1 bias lets a face point that falls inside a
+                // voice segment still cast a vote, while genuinely disjoint ranges are skipped.
+                var overlap = Math.Min(face.EndMs, voice.EndMs) - Math.Max(face.StartMs, voice.StartMs);
+                if (overlap < 0)
+                    continue;
+
+                overlapBySpeaker.TryGetValue(voice.SpeakerLabel, out var current);
+                overlapBySpeaker[voice.SpeakerLabel] = current + overlap + 1;
+            }
+        }
+
+        if (overlapBySpeaker.Count == 0)
+            return null;
+
+        return overlapBySpeaker.MaxBy(kv => kv.Value).Key;
+    }
 
     /// <summary>
     /// Core logic shared by <see cref="ProcessVideoTagsAsync"/> and <see cref="TryProcessVideoTagsAsync"/>.
@@ -678,6 +878,11 @@ public class MediaService : IMediaService
 
         media.VideoStatus = VideoProcessingStatus.TaggingComplete;
         await _unitOfWork.SaveChangesAsync();
+
+        // Now that face timelines are persisted, attempt speaker mapping. This is a no-op if the
+        // Transcribe job has not finished yet; whichever of the two webhooks completes last will
+        // be the one that actually computes the mapping (see HandleTranscribeWebhookAsync).
+        await TryFinalizeSpeakerMappingAsync(media);
 
         _logger.LogInformation("DoProcessVideoTagsAsync completed. {Count} new tag(s) for MediaId: {MediaId}",
             newTags.Count, media.Id);
