@@ -102,7 +102,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("CourseId");
 
-                    b.ToTable("Activities");
+                    b.ToTable("Activities", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ActivityBooking", b =>
@@ -155,7 +155,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("StudentId", "ActivityId")
                         .IsUnique();
 
-                    b.ToTable("ActivityBookings");
+                    b.ToTable("ActivityBookings", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ActivityProgress", b =>
@@ -225,7 +225,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("ActivityProgresses");
+                    b.ToTable("ActivityProgresses", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Assignment", b =>
@@ -334,7 +334,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("QuestionBankId");
 
-                    b.ToTable("Assignments");
+                    b.ToTable("Assignments", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.BankQuestion", b =>
@@ -389,7 +389,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("QuestionBankId");
 
-                    b.ToTable("BankQuestions");
+                    b.ToTable("BankQuestions", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.BankQuestionOption", b =>
@@ -433,7 +433,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("BankQuestionId");
 
-                    b.ToTable("BankQuestionOptions");
+                    b.ToTable("BankQuestionOptions", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Certificate", b =>
@@ -500,7 +500,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId");
 
-                    b.ToTable("Certificates");
+                    b.ToTable("Certificates", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Class", b =>
@@ -578,7 +578,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("Status", "StartDate")
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("Classes");
+                    b.ToTable("Classes", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ClassEnrollment", b =>
@@ -637,7 +637,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("ClassEnrollments");
+                    b.ToTable("ClassEnrollments", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSession", b =>
@@ -721,7 +721,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("ClassId", "StartTime");
 
-                    b.ToTable("ClassSessions");
+                    b.ToTable("ClassSessions", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Course", b =>
@@ -774,7 +774,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("ModuleId");
 
-                    b.ToTable("Courses");
+                    b.ToTable("Courses", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.CourseEnrollment", b =>
@@ -829,7 +829,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId");
 
-                    b.ToTable("CourseEnrollments");
+                    b.ToTable("CourseEnrollments", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Expert", b =>
@@ -900,7 +900,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("Experts");
+                    b.ToTable("Experts", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.FaceEmbedding", b =>
@@ -946,7 +946,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("StudentId")
                         .IsUnique();
 
-                    b.ToTable("FaceEmbeddings");
+                    b.ToTable("FaceEmbeddings", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.HighlightVideo", b =>
@@ -1012,7 +1012,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("HighlightVideos");
+                    b.ToTable("HighlightVideos", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Invoice", b =>
@@ -1091,7 +1091,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("PaymentId")
                         .IsUnique();
 
-                    b.ToTable("Invoices");
+                    b.ToTable("Invoices", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Material", b =>
@@ -1144,7 +1144,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("ActivityId")
                         .IsUnique();
 
-                    b.ToTable("Materials");
+                    b.ToTable("Materials", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.MediaAsset", b =>
@@ -1197,13 +1197,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
-                    b.Property<string>("SpeakerSegmentsJson")
-                        .HasColumnType("text");
-
-                    b.Property<string>("TranscribeJobName")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1226,7 +1219,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("UploaderId");
 
-                    b.ToTable("MediaAssets");
+                    b.ToTable("MediaAssets", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.MediaTag", b =>
@@ -1267,23 +1260,17 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<bool>("IsVerified")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("MappedSpeakerLabel")
-                        .HasColumnType("text");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("UpdatedBy")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("VoiceSegmentsJson")
-                        .HasColumnType("text");
-
                     b.HasKey("MediaId", "StudentId");
 
                     b.HasIndex("StudentId");
 
-                    b.ToTable("MediaTags");
+                    b.ToTable("MediaTags", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Module", b =>
@@ -1363,7 +1350,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("ProgramId");
 
-                    b.ToTable("Modules");
+                    b.ToTable("Modules", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ModuleEnrollment", b =>
@@ -1437,7 +1424,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("ModuleEnrollments");
+                    b.ToTable("ModuleEnrollments", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.OtpStorage", b =>
@@ -1489,7 +1476,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("OtpStorages");
+                    b.ToTable("OtpStorages", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ParentStudent", b =>
@@ -1531,7 +1518,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId");
 
-                    b.ToTable("ParentStudents");
+                    b.ToTable("ParentStudents", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Payment", b =>
@@ -1618,7 +1605,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId");
 
-                    b.ToTable("Payments");
+                    b.ToTable("Payments", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.PaymentRequest", b =>
@@ -1708,7 +1695,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("Token")
                         .IsUnique();
 
-                    b.ToTable("PaymentRequests");
+                    b.ToTable("PaymentRequests", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Portfolio", b =>
@@ -1787,7 +1774,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("Subdomain")
                         .IsUnique();
 
-                    b.ToTable("Portfolios");
+                    b.ToTable("Portfolios", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.PortfolioCustomItem", b =>
@@ -1885,7 +1872,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false AND \"ModuleEnrollmentId\" IS NOT NULL AND \"ItemType\" = 'CapstoneProject'");
 
-                    b.ToTable("PortfolioCustomItems");
+                    b.ToTable("PortfolioCustomItems", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.PortfolioItemSubmission", b =>
@@ -1937,7 +1924,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("PortfolioItemSubmissions");
+                    b.ToTable("PortfolioItemSubmissions", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Program", b =>
@@ -2017,7 +2004,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Programs");
+                    b.ToTable("Programs", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramBoard", b =>
@@ -2064,7 +2051,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("ProgramId", "ExpertId")
                         .IsUnique();
 
-                    b.ToTable("ProgramBoards");
+                    b.ToTable("ProgramBoards", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramEnrollment", b =>
@@ -2127,7 +2114,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("ProgramEnrollments");
+                    b.ToTable("ProgramEnrollments", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramReview", b =>
@@ -2178,7 +2165,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("ProgramReviews");
+                    b.ToTable("ProgramReviews", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.QuestionBank", b =>
@@ -2225,7 +2212,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("QuestionBanks");
+                    b.ToTable("QuestionBanks", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.QuizAnswer", b =>
@@ -2273,7 +2260,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("SubmissionId", "QuizQuestionId", "QuizOptionId")
                         .IsUnique();
 
-                    b.ToTable("QuizAnswers");
+                    b.ToTable("QuizAnswers", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.QuizOption", b =>
@@ -2317,7 +2304,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("QuestionId");
 
-                    b.ToTable("QuizOptions");
+                    b.ToTable("QuizOptions", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.QuizQuestion", b =>
@@ -2382,7 +2369,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("SubmissionId");
 
-                    b.ToTable("QuizQuestions");
+                    b.ToTable("QuizQuestions", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ResearchMilestone", b =>
@@ -2450,7 +2437,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("ResearchMilestones");
+                    b.ToTable("ResearchMilestones", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ResearchMilestoneActivity", b =>
@@ -2500,7 +2487,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("ResearchMilestoneActivities");
+                    b.ToTable("ResearchMilestoneActivities", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.SessionAttendance", b =>
@@ -2561,7 +2548,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.ToTable("SessionAttendances");
+                    b.ToTable("SessionAttendances", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.StandardizedTest", b =>
@@ -2610,7 +2597,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId");
 
-                    b.ToTable("StandardizedTests");
+                    b.ToTable("StandardizedTests", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.StudentProfile", b =>
@@ -2671,7 +2658,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("StudentId");
 
-                    b.ToTable("StudentProfiles");
+                    b.ToTable("StudentProfiles", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.StudentSkill", b =>
@@ -2721,7 +2708,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId");
 
-                    b.ToTable("StudentSkills");
+                    b.ToTable("StudentSkills", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Submission", b =>
@@ -2817,7 +2804,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("VerifiedBy");
 
-                    b.ToTable("Submissions");
+                    b.ToTable("Submissions", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.SubmissionEvidence", b =>
@@ -2856,7 +2843,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("MediaId");
 
-                    b.ToTable("SubmissionEvidences");
+                    b.ToTable("SubmissionEvidences", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.User", b =>
@@ -2936,7 +2923,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Activity", b =>

@@ -445,7 +445,7 @@ public class PersonalVideoService : IPersonalVideoService
                     { new FaceTimestampSegment(0, FullVideoEndMs) };
 
                 var filteredClips = await ApplyStrengthsFilterAsync(
-                    media, s3Key, fullVideoSegment, strengthDescription);
+                    media, s3Key, studentId, fullVideoSegment, strengthDescription);
 
                 if (filteredClips != null)
                 {
@@ -486,7 +486,8 @@ public class PersonalVideoService : IPersonalVideoService
             // they may only demonstrate the strength for part of the video.
             if (!string.IsNullOrWhiteSpace(strengthDescription) && timelineResult.Segments.Count > 0)
             {
-                var filteredClips = await ApplyStrengthsFilterAsync(media, s3Key, timelineResult.Segments, strengthDescription);
+                var filteredClips = await ApplyStrengthsFilterAsync(
+                    media, s3Key, studentId, timelineResult.Segments, strengthDescription);
                 if (filteredClips != null)
                     return filteredClips.Clips.Count == 0 ? null : filteredClips;
 
@@ -506,7 +507,8 @@ public class PersonalVideoService : IPersonalVideoService
         // ── Strengths Filtering (optional) ────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(strengthDescription))
         {
-            var filteredClips = await ApplyStrengthsFilterAsync(media, s3Key, faceSegments, strengthDescription);
+            var filteredClips = await ApplyStrengthsFilterAsync(
+                media, s3Key, studentId, faceSegments, strengthDescription);
             // null  → label data unavailable, fall back to face-only for this video.
             // empty → strengths checked but nothing matched, skip this video entirely.
             if (filteredClips != null)
@@ -597,7 +599,7 @@ public class PersonalVideoService : IPersonalVideoService
     /// Returns <c>null</c> when label data is unavailable — caller should fall back to face-only.
     /// </returns>
     private async Task<ClipInput?> ApplyStrengthsFilterAsync(
-        MediaAsset media, string s3Key,
+        MediaAsset media, string s3Key, Guid studentId,
         IList<FaceTimestampSegment> faceSegments,
         string strengthDescription)
     {
@@ -674,16 +676,46 @@ public class PersonalVideoService : IPersonalVideoService
             return new ClipInput(s3Key, new List<TimeClip>()); // empty → skipped by caller
         }
 
-        // Convert to TimeClips using the foolproof merge logic
-        var timeClips = MergeAndFormatTimeClips(matchResult.MatchedSegments);
+        // Union strength-matched on-camera moments with off-camera speech (voice segments that
+        // do not overlap the face timeline). Label Detection cannot see off-camera audio, so
+        // Bedrock only filters face windows; voice-only segments are appended here instead.
+        var voiceOnlySegments = GetVoiceOnlySegments(faceSegments, ReadVoiceSegments(media, studentId));
+        var combinedSegments = matchResult.MatchedSegments
+            .Concat(voiceOnlySegments.Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0)));
+
+        var timeClips = MergeAndFormatTimeClips(combinedSegments);
 
         _logger.LogInformation(
-            "[PersonalVideoService] Strengths filter: {Count} clip(s) for MediaId={MediaId}. Clips=[{Clips}]. Reasoning: {Reasoning}",
-            timeClips.Count, media.Id,
+            "[PersonalVideoService] Strengths filter: {Strength} strength + {Voice} voice-only → {Count} clip(s) for MediaId={MediaId}. Clips=[{Clips}]. Reasoning: {Reasoning}",
+            matchResult.MatchedSegments.Count, voiceOnlySegments.Count, timeClips.Count, media.Id,
             string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")),
             matchResult.Reasoning);
 
         return new ClipInput(s3Key, timeClips);
+    }
+
+    /// <summary>
+    /// Returns voice segments that do not overlap any face segment — i.e. the student is
+    /// speaking off-camera. Used to append context speech after strength filtering without
+    /// widening the label windows sent to Bedrock (which would risk false-positive matches).
+    /// </summary>
+    private static List<FaceTimestampSegment> GetVoiceOnlySegments(
+        IList<FaceTimestampSegment> faceSegments,
+        IList<FaceTimestampSegment> voiceSegments)
+    {
+        if (voiceSegments.Count == 0)
+            return new List<FaceTimestampSegment>();
+
+        return voiceSegments
+            .Where(v => !faceSegments.Any(f => SegmentsOverlap(f, v)))
+            .ToList();
+    }
+
+    private static bool SegmentsOverlap(FaceTimestampSegment a, FaceTimestampSegment b)
+    {
+        // Inclusive: Rekognition face samples are often single points (StartMs == EndMs).
+        var overlap = Math.Min(a.EndMs, b.EndMs) - Math.Max(a.StartMs, b.StartMs);
+        return overlap >= 0;
     }
 
     /// <summary>

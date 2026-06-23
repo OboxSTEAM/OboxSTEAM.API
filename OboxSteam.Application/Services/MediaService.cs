@@ -627,8 +627,11 @@ public class MediaService : IMediaService
 
         if (!isSuccess)
         {
-            // Non-fatal: clips fall back to face-only. Clear the job name so a future retrigger
-            // is not blocked, and so finalize knows speaker data is unavailable.
+            // Latch: transcribe pipeline resolved (failed). Voice clipping falls back to face-only.
+            media.SpeakerSegmentsJson = "[]";
+            await _unitOfWork.SaveChangesAsync();
+            await TryAdvanceToProcessingCompleteAsync(media);
+
             _logger.LogWarning(
                 "Transcribe job FAILED for MediaId={MediaId}, JobName={JobName}. " +
                 "Voice-based clipping will be unavailable for this video.", media.Id, jobName);
@@ -642,7 +645,7 @@ public class MediaService : IMediaService
             if (speakerSegments == null)
             {
                 // Webhook reported COMPLETED but the query is not ready yet (rare race) —
-                // leave SpeakerSegmentsJson null; clips fall back to face-only.
+                // keep TranscribeStatus Pending until a retry/webhook can capture results.
                 _logger.LogWarning(
                     "HandleTranscribeWebhookAsync: results not ready yet for MediaId={MediaId}, JobName={JobName}.",
                     media.Id, jobName);
@@ -656,11 +659,14 @@ public class MediaService : IMediaService
                 "Transcribe captured: {Count} speaker segment(s) persisted for MediaId={MediaId}, JobName={JobName}.",
                 speakerSegments.Count, media.Id, jobName);
 
-            await TryFinalizeSpeakerMappingAsync(media);
+            await TryAdvanceToProcessingCompleteAsync(media);
         }
         catch (Exception ex)
         {
-            // Non-fatal: voice merge will be unavailable; clips fall back to face-only.
+            media.SpeakerSegmentsJson = "[]";
+            await _unitOfWork.SaveChangesAsync();
+            await TryAdvanceToProcessingCompleteAsync(media);
+
             _logger.LogWarning(ex,
                 "HandleTranscribeWebhookAsync: failed to capture speaker timeline for MediaId={MediaId}, JobName={JobName}.",
                 media.Id, jobName);
@@ -668,6 +674,43 @@ public class MediaService : IMediaService
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Advances <see cref="MediaAsset.VideoStatus"/> to <see cref="VideoProcessingStatus.TaggingComplete"/>
+    /// once face tagging is persisted AND the Transcribe/speaker pipeline has resolved.
+    /// <see cref="MediaAsset.SpeakerSegmentsJson"/> acts as the transcribe latch:
+    /// <c>null</c> = still waiting; any value (including <c>"[]"</c>) = resolved.
+    /// </summary>
+    private async Task TryAdvanceToProcessingCompleteAsync(MediaAsset media)
+    {
+        if (media.VideoStatus == VideoProcessingStatus.Failed)
+            return;
+
+        if (string.IsNullOrEmpty(media.TranscribeJobName))
+        {
+            media.VideoStatus = VideoProcessingStatus.TaggingComplete;
+            await _unitOfWork.SaveChangesAsync();
+            _logger.LogInformation(
+                "VideoStatus=TaggingComplete for MediaId={MediaId} (Transcribe not submitted).", media.Id);
+            return;
+        }
+
+        if (media.SpeakerSegmentsJson == null)
+        {
+            media.VideoStatus = VideoProcessingStatus.PendingSpeakerMapping;
+            await _unitOfWork.SaveChangesAsync();
+            _logger.LogInformation(
+                "VideoStatus=PendingSpeakerMapping for MediaId={MediaId} (awaiting Transcribe).", media.Id);
+            return;
+        }
+
+        await TryFinalizeSpeakerMappingAsync(media);
+
+        media.VideoStatus = VideoProcessingStatus.TaggingComplete;
+        await _unitOfWork.SaveChangesAsync();
+        _logger.LogInformation(
+            "VideoStatus=TaggingComplete for MediaId={MediaId} (face + speaker pipeline done).", media.Id);
+    }
 
     /// <summary>
     /// Maps anonymous Transcribe speaker labels to students once BOTH the face timelines
@@ -684,7 +727,7 @@ public class MediaService : IMediaService
     private async Task TryFinalizeSpeakerMappingAsync(MediaAsset media)
     {
         if (string.IsNullOrEmpty(media.SpeakerSegmentsJson))
-            return; // speaker data not ready yet
+            return;
 
         List<SpeakerSegment> speakerSegments;
         try
@@ -703,15 +746,14 @@ public class MediaService : IMediaService
         if (speakerSegments.Count == 0)
             return;
 
-        // Need at least one tag with a face timeline to anchor the mapping.
         var tagsWithFaces = media.MediaTags
             .Where(t => !t.IsDeleted && !string.IsNullOrEmpty(t.FaceSegmentsJson))
             .ToList();
 
         if (tagsWithFaces.Count == 0)
-            return; // face data not ready yet
+            return;
 
-        var anyMapped = false;
+        var mappedCount = 0;
 
         foreach (var tag in tagsWithFaces)
         {
@@ -743,15 +785,19 @@ public class MediaService : IMediaService
 
             tag.MappedSpeakerLabel = mappedSpeaker;
             tag.VoiceSegmentsJson = JsonSerializer.Serialize(voiceSegments);
-            anyMapped = true;
+            mappedCount++;
 
             _logger.LogInformation(
                 "Speaker mapped: StudentId={StudentId} -> {Speaker} ({Count} voice segment(s)) for MediaId={MediaId}.",
                 tag.StudentId, mappedSpeaker, voiceSegments.Count, media.Id);
         }
 
-        if (anyMapped)
+        if (mappedCount > 0)
             await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Speaker mapping complete for MediaId={MediaId}. MappedTags={Mapped}/{Total}.",
+            media.Id, mappedCount, tagsWithFaces.Count);
     }
 
     /// <summary>
@@ -876,13 +922,9 @@ public class MediaService : IMediaService
             }
         }
 
-        media.VideoStatus = VideoProcessingStatus.TaggingComplete;
         await _unitOfWork.SaveChangesAsync();
 
-        // Now that face timelines are persisted, attempt speaker mapping. This is a no-op if the
-        // Transcribe job has not finished yet; whichever of the two webhooks completes last will
-        // be the one that actually computes the mapping (see HandleTranscribeWebhookAsync).
-        await TryFinalizeSpeakerMappingAsync(media);
+        await TryAdvanceToProcessingCompleteAsync(media);
 
         _logger.LogInformation("DoProcessVideoTagsAsync completed. {Count} new tag(s) for MediaId: {MediaId}",
             newTags.Count, media.Id);
