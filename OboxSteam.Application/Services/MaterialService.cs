@@ -39,17 +39,20 @@ public class MaterialService : IMaterialService
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork    _unitOfWork;
     private readonly IBlobService   _blobService;
+    private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
     private readonly ILogger<MaterialService> _logger;
 
     public MaterialService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
         IBlobService blobService,
+        IEnrollmentCurriculumService enrollmentCurriculumService,
         ILogger<MaterialService> logger)
     {
         _claimsService = claimsService;
         _unitOfWork    = unitOfWork;
         _blobService   = blobService;
+        _enrollmentCurriculumService = enrollmentCurriculumService;
         _logger        = logger;
     }
 
@@ -138,6 +141,35 @@ public class MaterialService : IMaterialService
             m => m.ActivityId == activityId && !m.IsDeleted);
 
         return material == null ? null : MapToDto(material);
+    }
+
+    /// <inheritdoc />
+    public async Task<MaterialResponseDto?> GetMaterialByActivityForEnrollmentAsync(
+        Guid activityId,
+        Guid programEnrollmentId)
+    {
+        _logger.LogInformation(
+            "GetMaterialByActivityForEnrollmentAsync: ActivityId={ActivityId}, EnrollmentId={EnrollmentId}",
+            activityId,
+            programEnrollmentId);
+
+        await _enrollmentCurriculumService.EnsureActivityAccessibleAsync(programEnrollmentId, activityId);
+
+        var activity = await _unitOfWork.Activities.GetByIdAsync(activityId);
+        MaterialValidator.ValidateActivityExists(activity, activityId);
+        MaterialValidator.ValidateSelfPacedOnly(activity!);
+
+        var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
+            m => m.ActivityId == activityId && !m.IsDeleted);
+
+        if (material == null)
+        {
+            return null;
+        }
+
+        var dto = MapToDto(material);
+        dto.FileUrl = await ResolvePresignedFileUrlAsync(material.FileUrl);
+        return dto;
     }
 
     // =========================================================================
@@ -235,6 +267,33 @@ public class MaterialService : IMaterialService
         UploaderId    = m.CreatedBy,
         UploadedAt    = m.CreatedAt
     };
+
+    private async Task<string?> ResolvePresignedFileUrlAsync(string? fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+        {
+            return fileUrl;
+        }
+
+        var s3Key = ExtractS3Key(fileUrl);
+        if (string.IsNullOrWhiteSpace(s3Key))
+        {
+            return fileUrl;
+        }
+
+        return await _blobService.GetFileUrlAsync(s3Key);
+    }
+
+    private static string? ExtractS3Key(string fileUrl)
+    {
+        if (fileUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            var uri = new Uri(fileUrl);
+            return uri.AbsolutePath.TrimStart('/');
+        }
+
+        return fileUrl;
+    }
 
     /// <summary>
     /// Returns MaterialType or null if extension is not supported.

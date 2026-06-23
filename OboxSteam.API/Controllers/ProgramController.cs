@@ -14,10 +14,14 @@ namespace OboxSteam.API.Controllers;
 public class ProgramController : ControllerBase
 {
     private readonly IProgramService _programService;
+    private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
 
-    public ProgramController(IProgramService programService)
+    public ProgramController(
+        IProgramService programService,
+        IEnrollmentCurriculumService enrollmentCurriculumService)
     {
         _programService = programService;
+        _enrollmentCurriculumService = enrollmentCurriculumService;
     }
 
     // =========================================================================
@@ -101,6 +105,7 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
     public async Task<IActionResult> GetProgramCurriculum([FromRoute] Guid id)
     {
+        await _enrollmentCurriculumService.EnsureStudentEnrolledInProgramAsync(id);
         var result = await _programService.GetProgramCurriculumAsync(id);
         return Ok(ApiResult<ProgramCurriculumDto>.Success(result, "200", "Program curriculum retrieved successfully."));
     }

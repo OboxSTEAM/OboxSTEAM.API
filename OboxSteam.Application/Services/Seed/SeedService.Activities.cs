@@ -13,8 +13,9 @@ public partial class SeedService
     private async Task SeedActivitiesAsync()
     {
         _loggerService.LogInformation("Starting seed activities");
-        var existingActivities = await _unitOfWork.Activities.GetAllAsync();
-        if (!existingActivities.Any())
+        var existingActivities = await _unitOfWork.Activities.AnyIncludingDeletedAsync();
+
+        if (!existingActivities)
         {
             var allCourses = await _unitOfWork.Courses.GetAllAsync();
             var courseByCode = allCourses.ToDictionary(c => c.Code, c => c);

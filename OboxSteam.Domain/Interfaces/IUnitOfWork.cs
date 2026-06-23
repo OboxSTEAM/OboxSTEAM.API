@@ -54,4 +54,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Invoice> Invoices { get; }
 
     Task<int> SaveChangesAsync();
+
+    /// <summary>Dev-only: truncate all application tables (keeps EF migration history).</summary>
+    Task TruncateAllApplicationTablesAsync();
 }

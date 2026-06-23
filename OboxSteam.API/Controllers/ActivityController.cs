@@ -14,10 +14,14 @@ namespace OboxSteam.API.Controllers;
 public class ActivityController : ControllerBase
 {
     private readonly IActivityService _activityService;
+    private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
 
-    public ActivityController(IActivityService activityService)
+    public ActivityController(
+        IActivityService activityService,
+        IEnrollmentCurriculumService enrollmentCurriculumService)
     {
         _activityService = activityService;
+        _enrollmentCurriculumService = enrollmentCurriculumService;
     }
 
     // =========================================================================
@@ -58,16 +62,41 @@ public class ActivityController : ControllerBase
     [HttpGet("{id:guid}")]
     [SwaggerOperation(
         Summary = "Get activity details",
-        Description = "Retrieve detailed information for a specific activity by its ID.")]
+        Description = "Retrieve detailed information for a specific activity by its ID. Students must pass programEnrollmentId.")]
     [ProducesResponseType(typeof(ApiResult<ActivitiesResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> GetActivityById([FromRoute] Guid id)
+    public async Task<IActionResult> GetActivityById(
+        [FromRoute] Guid id,
+        [FromQuery, SwaggerParameter(Description = "Required for students — scopes access to an active enrollment")] Guid? programEnrollmentId = null)
     {
+        if (User.IsInRole("Student"))
+        {
+            if (!programEnrollmentId.HasValue)
+            {
+                return BadRequest(ApiResult<object>.Failure(
+                    "400",
+                    "programEnrollmentId is required for student access."));
+            }
+
+            await _enrollmentCurriculumService.EnsureActivityAccessibleAsync(programEnrollmentId.Value, id);
+        }
+        else if (programEnrollmentId.HasValue)
+        {
+            await _enrollmentCurriculumService.EnsureActivityAccessibleAsync(programEnrollmentId.Value, id);
+        }
+
         var result = await _activityService.GetActivityByIdAsync(id);
 
         if (result == null)
         {
             return NotFound(ApiResult<object>.Failure("404", $"Activity with ID '{id}' not found."));
+        }
+
+        if (User.IsInRole("Student") && result.Material != null)
+        {
+            result.Material.FileUrl = null;
         }
 
         return Ok(ApiResult<ActivitiesResponseDto>.Success(result, "200", "Activity retrieved successfully."));

@@ -191,4 +191,121 @@ public sealed class ActivityProgressService : IActivityProgressService
             ProgramProgressPercent = programProgressPercent,
         };
     }
+
+    public async Task<ActivityProgressResponseDto> CompleteActivityForModuleEnrollmentAsync(
+        Guid moduleEnrollmentId,
+        Guid activityId,
+        Guid studentId)
+    {
+        ActivityProgressValidator.ValidateModuleEnrollmentIdRequired(moduleEnrollmentId);
+        ActivityProgressValidator.ValidateActivityIdRequired(activityId);
+
+        var moduleEnrollmentEntity = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId);
+        var moduleEnrollment = ActivityProgressValidator.ValidateModuleEnrollmentExists(
+            moduleEnrollmentEntity,
+            moduleEnrollmentId);
+        ActivityProgressValidator.ValidateModuleEnrollmentBelongsToStudent(moduleEnrollment, studentId);
+        ActivityProgressValidator.ValidateModuleEnrollmentActive(moduleEnrollment);
+
+        var activityEntity = await _unitOfWork.Activities.GetByIdAsync(activityId);
+        var activity = ActivityProgressValidator.ValidateActivityExists(activityEntity, activityId);
+
+        var courseEntity = await _unitOfWork.Courses.GetByIdAsync(activity.CourseId);
+        if (courseEntity == null || courseEntity.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Course for activity '{activity.Id}' not found.");
+        }
+
+        ActivityProgressValidator.ValidateActivityBelongsToModule(activity, courseEntity, moduleEnrollment.ModuleId);
+
+        var progressEntity = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+            ap => ap.ModuleEnrollmentId == moduleEnrollmentId
+                  && ap.ActivityId == activityId
+                  && !ap.IsDeleted);
+
+        var now = DateTime.UtcNow;
+        ActivityProgress progress;
+
+        if (progressEntity == null)
+        {
+            if (!moduleEnrollment.StartedAt.HasValue)
+            {
+                moduleEnrollment.StartedAt = now;
+                await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+            }
+
+            if (moduleEnrollment.ProgramEnrollmentId.HasValue)
+            {
+                var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                    moduleEnrollment.ProgramEnrollmentId.Value);
+                if (programEnrollment != null
+                    && !programEnrollment.IsDeleted
+                    && !programEnrollment.StartedAt.HasValue)
+                {
+                    programEnrollment.StartedAt = now;
+                    await _unitOfWork.ProgramEnrollments.Update(programEnrollment);
+                }
+            }
+
+            progress = new ActivityProgress
+            {
+                StudentId = studentId,
+                ActivityId = activityId,
+                ModuleEnrollmentId = moduleEnrollmentId,
+                ActivityStatus = ActivityStatus.Done,
+                IsCompleted = true,
+                CompletedAt = now,
+            };
+
+            await _unitOfWork.ActivityProgresses.AddAsync(progress);
+        }
+        else
+        {
+            progress = progressEntity;
+            progress.ActivityStatus = ActivityStatus.Done;
+            progress.IsCompleted = true;
+            progress.CompletedAt = now;
+            await _unitOfWork.ActivityProgresses.Update(progress);
+        }
+
+        var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+            _unitOfWork,
+            moduleEnrollment);
+
+        decimal? programProgressPercent = null;
+        if (moduleEnrollment.ProgramEnrollmentId.HasValue)
+        {
+            programProgressPercent = await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                _unitOfWork,
+                moduleEnrollment.ProgramEnrollmentId.Value,
+                moduleEnrollment);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[CompleteActivityForModuleEnrollmentAsync] Student {StudentId} completed activity {ActivityId}, progress {ProgressId}.",
+            studentId,
+            activityId,
+            progress.Id);
+
+        return new ActivityProgressResponseDto
+        {
+            Id = progress.Id,
+            StudentId = progress.StudentId,
+            ActivityId = progress.ActivityId,
+            ModuleEnrollmentId = progress.ModuleEnrollmentId,
+            ActivityStatus = progress.ActivityStatus,
+            IsCompleted = progress.IsCompleted,
+            CompletedAt = progress.CompletedAt,
+            CreatedAt = progress.CreatedAt,
+            UpdatedAt = progress.UpdatedAt,
+            ActivityCode = activity.Code,
+            ActivityName = activity.Name,
+            ActivityType = activity.ActivityType,
+            ActivityOrder = activity.ActivityOrder,
+            ModuleProgressPercent = moduleProgressPercent,
+            ProgramProgressPercent = programProgressPercent,
+        };
+    }
 }
