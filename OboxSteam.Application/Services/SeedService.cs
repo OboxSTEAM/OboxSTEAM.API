@@ -48,6 +48,7 @@ public partial class SeedService : ISeedService
         await BackfillActivityProgressStatusAsync();
         await SeedResearchSubmissionsAsync();
         await SeedExtendedResearchDataAsync();
+        await SyncRoboticsCurriculumAsync();
         await SeedMaterialsAsync();
 
         _loggerService.LogInformation("Finished seed all data");
