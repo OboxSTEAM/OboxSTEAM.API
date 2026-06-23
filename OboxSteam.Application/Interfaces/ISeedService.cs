@@ -3,6 +3,7 @@
     public interface ISeedService
     {
         Task SeedAllDataAsync();
+
         Task ClearAllDataAsync();
     }
 }

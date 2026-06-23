@@ -13,10 +13,14 @@ namespace OboxSteam.API.Controllers;
 public class ProgramEnrollmentController : ControllerBase
 {
     private readonly IProgramEnrollmentService _programEnrollmentService;
+    private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
 
-    public ProgramEnrollmentController(IProgramEnrollmentService programEnrollmentService)
+    public ProgramEnrollmentController(
+        IProgramEnrollmentService programEnrollmentService,
+        IEnrollmentCurriculumService enrollmentCurriculumService)
     {
         _programEnrollmentService = programEnrollmentService;
+        _enrollmentCurriculumService = enrollmentCurriculumService;
     }
 
     // =========================================================================
@@ -56,6 +60,7 @@ public class ProgramEnrollmentController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     public async Task<IActionResult> GetMyProgramEnrollments(
+        [FromQuery, SwaggerParameter(Description = "Filter by program ID (optional)")] Guid? programId = null,
         [FromQuery, SwaggerParameter(Description = "Sort by: enrolledAt, progressPercent, status, createdAt")] string? sortBy = null,
         [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
         [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
@@ -67,6 +72,7 @@ public class ProgramEnrollmentController : ControllerBase
         }
 
         var result = await _programEnrollmentService.GetMyProgramEnrollmentsAsync(
+            programId,
             sortBy,
             isDescending,
             page,
@@ -76,6 +82,89 @@ public class ProgramEnrollmentController : ControllerBase
             result,
             "200",
             "Program enrollments retrieved successfully."));
+    }
+
+    // =========================================================================
+    // GET CURRICULUM  —  GET /api/program-enrollments/{enrollmentId}/curriculum
+    // =========================================================================
+
+    [HttpGet("{enrollmentId:guid}/curriculum")]
+    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [SwaggerOperation(
+        Summary = "Get enrollment-scoped program curriculum",
+        Description = "Returns the curriculum tree with per-student activity status, module locks, and current activity.")]
+    [ProducesResponseType(typeof(ApiResult<EnrollmentCurriculumDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetEnrollmentCurriculum([FromRoute] Guid enrollmentId)
+    {
+        var result = await _enrollmentCurriculumService.GetEnrollmentCurriculumAsync(enrollmentId);
+
+        return Ok(ApiResult<EnrollmentCurriculumDto>.Success(
+            result,
+            "200",
+            "Enrollment curriculum retrieved successfully."));
+    }
+
+    // =========================================================================
+    // CHECKPOINT  —  PATCH /api/program-enrollments/{enrollmentId}/activities/{activityId}/checkpoint
+    // =========================================================================
+
+    [HttpPatch("{enrollmentId:guid}/activities/{activityId:guid}/checkpoint")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Save activity learning checkpoint",
+        Description = "Persists resume position (video time, PDF page, doc scroll) for an in-progress SelfPaced activity.")]
+    [ProducesResponseType(typeof(ApiResult<SaveActivityCheckpointResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> SaveActivityCheckpoint(
+        [FromRoute] Guid enrollmentId,
+        [FromRoute] Guid activityId,
+        [FromBody] SaveActivityCheckpointRequestDto request)
+    {
+        var result = await _enrollmentCurriculumService.SaveActivityCheckpointAsync(
+            enrollmentId,
+            activityId,
+            request);
+
+        return Ok(ApiResult<SaveActivityCheckpointResponseDto>.Success(
+            result,
+            "200",
+            "Activity checkpoint saved successfully."));
+    }
+
+    // =========================================================================
+    // COMPLETE ACTIVITY  —  POST /api/program-enrollments/{enrollmentId}/activities/{activityId}/complete
+    // =========================================================================
+
+    [HttpPost("{enrollmentId:guid}/activities/{activityId:guid}/complete")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Mark activity complete",
+        Description = "Marks a SelfPaced activity as done for the enrollment and returns updated progress.")]
+    [ProducesResponseType(typeof(ApiResult<CompleteActivityResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> CompleteActivity(
+        [FromRoute] Guid enrollmentId,
+        [FromRoute] Guid activityId,
+        [FromBody] CompleteActivityRequestDto? request = null)
+    {
+        var result = await _enrollmentCurriculumService.CompleteActivityAsync(
+            enrollmentId,
+            activityId,
+            request);
+
+        return Ok(ApiResult<CompleteActivityResponseDto>.Success(
+            result,
+            "200",
+            "Activity marked as complete."));
     }
 
     // =========================================================================

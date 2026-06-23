@@ -15,7 +15,7 @@ public static class ActivityProgressCalculationHelper
         IUnitOfWork unitOfWork,
         ModuleEnrollment moduleEnrollment)
     {
-        var activityIds = await ActivityProgressValidator.GetModuleActivityIdsAsync(
+        var activityIds = await GetModuleActivityIdsAsync(
             unitOfWork,
             moduleEnrollment.ModuleId);
         var totalActivities = activityIds.Count;
@@ -36,9 +36,42 @@ public static class ActivityProgressCalculationHelper
         var progressPercent = Math.Round((decimal)doneCount / totalActivities * 100m, 2);
 
         moduleEnrollment.ProgressPercent = progressPercent;
+
+        if (progressPercent >= 100m)
+        {
+            moduleEnrollment.Status = EnrollmentStatus.Completed;
+            moduleEnrollment.CompletedAt ??= DateTime.UtcNow;
+        }
+
         await unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
 
         return progressPercent;
+    }
+
+    public static async Task<List<Guid>> GetModuleActivityIdsAsync(IUnitOfWork unitOfWork, Guid moduleId)
+    {
+        var module = await unitOfWork.Modules.GetByIdAsync(moduleId);
+        var activityIds = await ActivityProgressValidator.GetModuleActivityIdsAsync(unitOfWork, moduleId);
+
+        if (module?.ModuleType != ModuleType.Research)
+        {
+            return activityIds;
+        }
+
+        var milestones = await unitOfWork.ResearchMilestones.GetAllAsync(
+            rm => rm.ModuleId == moduleId && !rm.IsDeleted);
+
+        if (milestones.Count == 0)
+        {
+            return activityIds;
+        }
+
+        var milestoneIds = milestones.Select(m => m.Id).ToList();
+        var links = await unitOfWork.ResearchMilestoneActivities.GetAllAsync(
+            rma => milestoneIds.Contains(rma.ResearchMilestoneId) && !rma.IsDeleted);
+
+        var researchActivityIds = links.Select(l => l.ActivityId).Distinct();
+        return activityIds.Concat(researchActivityIds).Distinct().ToList();
     }
 
     public static async Task<decimal> RecalculateProgramProgressAsync(

@@ -144,13 +144,15 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
     }
 
     public async Task<Pagination<ProgramEnrollmentResponseDto>> GetMyProgramEnrollmentsAsync(
+        Guid? programId,
         string? sortBy,
         bool isDescending,
         int page,
         int pageSize)
     {
         _logger.LogInformation(
-            "[GetMyProgramEnrollmentsAsync] Start — page: {Page}, pageSize: {PageSize}",
+            "[GetMyProgramEnrollmentsAsync] Start — programId: {ProgramId}, page: {Page}, pageSize: {PageSize}",
+            programId,
             page,
             pageSize);
 
@@ -164,6 +166,11 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
         var query = _unitOfWork.ProgramEnrollments
             .GetQueryable()
             .Where(pe => !pe.IsDeleted);
+
+        if (programId.HasValue)
+        {
+            query = query.Where(pe => pe.ProgramId == programId.Value);
+        }
 
         if (currentUser.Role == RoleType.Student)
         {

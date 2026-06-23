@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.DTOs.MaterialDTO;
 using OboxSteam.Application.Interfaces;
@@ -65,16 +66,43 @@ public class MaterialController : ControllerBase
     /// Get the material for a SelfPaced activity.
     /// </summary>
     [HttpGet("activity/{activityId:guid}")]
+    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
     [SwaggerOperation(
         Summary = "Get material by activity",
-        Description = "Returns the learning material for a SelfPaced activity, or 404 if none exists."
-    )]
+        Description = "Returns the learning material for a SelfPaced activity. Students must pass programEnrollmentId for enrollment-scoped access.")]
     [ProducesResponseType(typeof(ApiResult<MaterialResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> GetMaterialByActivity([FromRoute] Guid activityId)
+    public async Task<IActionResult> GetMaterialByActivity(
+        [FromRoute] Guid activityId,
+        [FromQuery, SwaggerParameter(Description = "Required for students — scopes access to an active enrollment")] Guid? programEnrollmentId = null)
     {
-        var result = await _materialService.GetMaterialByActivityAsync(activityId);
+        MaterialResponseDto? result;
+
+        if (User.IsInRole("Student"))
+        {
+            if (!programEnrollmentId.HasValue)
+            {
+                return BadRequest(ApiResult<object>.Failure(
+                    "400",
+                    "programEnrollmentId is required for student access."));
+            }
+
+            result = await _materialService.GetMaterialByActivityForEnrollmentAsync(
+                activityId,
+                programEnrollmentId.Value);
+        }
+        else if (programEnrollmentId.HasValue)
+        {
+            result = await _materialService.GetMaterialByActivityForEnrollmentAsync(
+                activityId,
+                programEnrollmentId.Value);
+        }
+        else
+        {
+            result = await _materialService.GetMaterialByActivityAsync(activityId);
+        }
 
         if (result == null)
         {

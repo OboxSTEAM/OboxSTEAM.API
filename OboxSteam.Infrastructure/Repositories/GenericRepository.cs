@@ -66,6 +66,36 @@ public class GenericRepository<TEntity> : Domain.Interfaces.IGenericRepository<T
         return query.ToListAsync();
     }
 
+    public Task<List<TEntity>> GetAllIncludingDeletedAsync(
+        Expression<Func<TEntity, bool>>? predicate = null,
+        params Expression<Func<TEntity, object>>[] includes)
+    {
+        IQueryable<TEntity> query = _dbSet.IgnoreQueryFilters();
+
+        if (predicate != null)
+        {
+            query = query.Where(predicate);
+        }
+
+        foreach (var include in includes)
+        {
+            query = query.Include(include);
+        }
+
+        return query.ToListAsync();
+    }
+
+    public Task<bool> AnyIncludingDeletedAsync(Expression<Func<TEntity, bool>>? predicate = null)
+    {
+        IQueryable<TEntity> query = _dbSet.IgnoreQueryFilters();
+        if (predicate != null)
+        {
+            query = query.Where(predicate);
+        }
+
+        return query.AnyAsync();
+    }
+
     public async Task<TEntity?> GetByIdAsync(Guid id, params Expression<Func<TEntity, object>>[] includes)
     {
         IQueryable<TEntity> query = _dbSet;

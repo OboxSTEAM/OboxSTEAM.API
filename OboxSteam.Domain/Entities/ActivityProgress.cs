@@ -26,4 +26,13 @@ public class ActivityProgress : BaseEntity
     public bool IsCompleted { get; set; }
 
     public DateTime? CompletedAt { get; set; }
+
+    /// <summary>How the student marked this activity complete (set on Done only).</summary>
+    public CompletionSource? CompletionSource { get; set; }
+
+    /// <summary>JSON resume payload (video position, PDF page, scroll ratio, etc.).</summary>
+    public string? ResumeState { get; set; }
+
+    /// <summary>Last time the student saved a learning checkpoint.</summary>
+    public DateTime? LastAccessedAt { get; set; }
 }

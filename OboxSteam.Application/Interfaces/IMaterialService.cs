@@ -16,6 +16,11 @@ public interface IMaterialService
     Task<MaterialResponseDto?> GetMaterialByActivityAsync(Guid activityId);
 
     /// <summary>
+    /// Get material for an enrolled student with a fresh presigned file URL.
+    /// </summary>
+    Task<MaterialResponseDto?> GetMaterialByActivityForEnrollmentAsync(Guid activityId, Guid programEnrollmentId);
+
+    /// <summary>
     /// Update material title.
     /// </summary>
     Task<MaterialResponseDto> UpdateMaterialAsync(Guid materialId, UpdateMaterialRequestDto request);

@@ -25,20 +25,13 @@ public class SeedController : ControllerBase
     [HttpPost("all")]
     [SwaggerOperation(
         Summary = "Seed all data",
-        Description = "Seeds all database tables with sample data."
+        Description = "Seeds all database tables with sample data. Run DELETE /api/seed/clear first when resetting dev data."
     )]
     [ProducesResponseType(typeof(ApiResult), 200)]
     [ProducesResponseType(typeof(ApiResult), 400)]
     [ProducesResponseType(typeof(ApiResult), 403)]
     public async Task<IActionResult> SeedAllData()
     {
-        // Check if in development mode
-        //var environment = _configuration["ASPNETCORE_ENVIRONMENT"];
-        //if (environment != "Development")
-        //{
-        //    return StatusCode(403, ApiResult.Failure("403", "Seeding is only allowed in Development environment."));
-        //}
-
         await _seedService.SeedAllDataAsync();
         return Ok(ApiResult.Success("200", "All data seeded successfully."));
     }
@@ -50,19 +43,13 @@ public class SeedController : ControllerBase
     [HttpDelete("clear")]
     [SwaggerOperation(
         Summary = "Clear all data",
-        Description = "Removes all data from the database."
+        Description = "Removes all application data from the database (PostgreSQL TRUNCATE CASCADE). EF migration history is preserved."
     )]
     [ProducesResponseType(typeof(ApiResult), 200)]
     [ProducesResponseType(typeof(ApiResult), 400)]
     [ProducesResponseType(typeof(ApiResult), 403)]
     public async Task<IActionResult> ClearAllData()
     {
-        //var environment = _configuration["ASPNETCORE_ENVIRONMENT"];
-        //if (environment != "Development")
-        //{
-        //    return StatusCode(403, ApiResult.Failure("403", "Clearing data is only allowed in Development environment."));
-        //}
-
         await _seedService.ClearAllDataAsync();
         return Ok(ApiResult.Success("200", "All data cleared successfully."));
     }

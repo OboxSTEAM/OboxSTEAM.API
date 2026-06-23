@@ -11,6 +11,7 @@ public interface IProgramEnrollmentService
     Task<ProgramEnrollmentResponseDto> GetProgramEnrollmentByIdAsync(Guid id);
 
     Task<Pagination<ProgramEnrollmentResponseDto>> GetMyProgramEnrollmentsAsync(
+        Guid? programId,
         string? sortBy,
         bool isDescending,
         int page,

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Interfaces;
@@ -80,6 +81,25 @@ public class UnitOfWork : IUnitOfWork
     public async Task<int> SaveChangesAsync()
     {
         return await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task TruncateAllApplicationTablesAsync()
+    {
+        const string sql = """
+            DO $$ DECLARE table_name text;
+            BEGIN
+              FOR table_name IN
+                SELECT quote_ident(tablename)
+                FROM pg_tables
+                WHERE schemaname = 'public'
+                  AND tablename <> '__EFMigrationsHistory'
+              LOOP
+                EXECUTE 'TRUNCATE TABLE ' || table_name || ' RESTART IDENTITY CASCADE';
+              END LOOP;
+            END $$;
+            """;
+
+        await _dbContext.Database.ExecuteSqlRawAsync(sql);
     }
 
     protected virtual void Dispose(bool disposing)
