@@ -99,6 +99,13 @@ public class ActivityController : ControllerBase
             result.Material.FileUrl = null;
         }
 
+        if (programEnrollmentId.HasValue)
+        {
+            result.LearningProgress = await _enrollmentCurriculumService.GetActivityLearningProgressAsync(
+                programEnrollmentId.Value,
+                id);
+        }
+
         return Ok(ApiResult<ActivitiesResponseDto>.Success(result, "200", "Activity retrieved successfully."));
     }
 

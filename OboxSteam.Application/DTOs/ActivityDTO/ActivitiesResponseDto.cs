@@ -1,5 +1,6 @@
-using OboxSteam.Domain.Enums;
 using OboxSteam.Application.DTOs.MaterialDTO;
+using OboxSteam.Application.DTOs.EnrollmentDTO;
+using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ActivityDTO;
 
@@ -23,4 +24,7 @@ public class ActivitiesResponseDto
 
     /// <summary>Learning material linked to this activity, when one exists.</summary>
     public MaterialResponseDto? Material { get; set; }
+
+    /// <summary>Resume checkpoint when programEnrollmentId is provided.</summary>
+    public ActivityLearningProgressDto? LearningProgress { get; set; }
 }

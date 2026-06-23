@@ -119,10 +119,13 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             .Select(m => m.Id)
             .ToHashSet();
 
+        var completionSource = ActivityResumeStateHelper.ParseCompletionSource(request?.Source);
+
         await _activityProgressService.CompleteActivityForModuleEnrollmentAsync(
             moduleEnrollment.Id,
             activityId,
-            student.Id);
+            student.Id,
+            completionSource);
 
         var refreshedEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(programEnrollmentId);
         var refreshedContext = await BuildCurriculumContextAsync(
@@ -228,6 +231,118 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         {
             throw ErrorHelper.Forbidden(CurriculumAccessValidator.CurriculumForbiddenMessage);
         }
+    }
+
+    public async Task<SaveActivityCheckpointResponseDto> SaveActivityCheckpointAsync(
+        Guid programEnrollmentId,
+        Guid activityId,
+        SaveActivityCheckpointRequestDto request)
+    {
+        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
+            _unitOfWork,
+            _claimsService,
+            ActivityProgressValidator.UpdateForbiddenMessage);
+
+        var enrollment = await CurriculumAccessValidator.GetProgramEnrollmentForStudentActionAsync(
+            _unitOfWork,
+            programEnrollmentId,
+            student.Id);
+
+        ActivityResumeStateHelper.ValidateResumeState(request.ResumeState);
+
+        var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, enrollment.ProgramId);
+
+        if (!snapshot.ActivitiesById.ContainsKey(activityId))
+        {
+            throw ErrorHelper.NotFound($"Activity with id '{activityId}' not found.");
+        }
+
+        if (!snapshot.ActivityModuleMap.TryGetValue(activityId, out var moduleId))
+        {
+            throw ErrorHelper.BadRequest("Activity does not belong to this program.");
+        }
+
+        var context = await BuildCurriculumContextAsync(enrollment, snapshot, provisionModuleEnrollments: true);
+
+        if (!IsActivityAccessible(activityId, snapshot, context))
+        {
+            throw ErrorHelper.Forbidden(CurriculumAccessValidator.ActivityLockedMessage);
+        }
+
+        var moduleEnrollment = await CurriculumAccessValidator.ResolveModuleEnrollmentAsync(
+            _unitOfWork,
+            programEnrollmentId,
+            student.Id,
+            moduleId);
+
+        var resumeStateJson = ActivityResumeStateHelper.Serialize(request.ResumeState);
+
+        var progress = await _activityProgressService.SaveCheckpointForModuleEnrollmentAsync(
+            moduleEnrollment.Id,
+            activityId,
+            student.Id,
+            resumeStateJson);
+
+        return new SaveActivityCheckpointResponseDto
+        {
+            ActivityId = activityId,
+            ActivityStatus = progress.ActivityStatus.ToString(),
+            ResumeState = progress.ResumeState,
+            LastAccessedAt = progress.LastAccessedAt,
+        };
+    }
+
+    public async Task<ActivityLearningProgressDto?> GetActivityLearningProgressAsync(
+        Guid programEnrollmentId,
+        Guid activityId)
+    {
+        await EnsureActivityAccessibleAsync(programEnrollmentId, activityId);
+
+        var enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(programEnrollmentId);
+        if (enrollment == null || enrollment.IsDeleted)
+        {
+            return null;
+        }
+
+        var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, enrollment.ProgramId);
+        if (!snapshot.ActivityModuleMap.TryGetValue(activityId, out var moduleId))
+        {
+            return null;
+        }
+
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.ProgramEnrollmentId == programEnrollmentId
+                  && me.StudentId == enrollment.StudentId
+                  && me.ModuleId == moduleId
+                  && !me.IsDeleted);
+
+        var moduleEnrollment = moduleEnrollments
+            .OrderByDescending(me => me.AttemptNumber)
+            .FirstOrDefault();
+
+        if (moduleEnrollment == null)
+        {
+            return null;
+        }
+
+        var progress = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+            ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
+                  && ap.ActivityId == activityId
+                  && !ap.IsDeleted);
+
+        return progress == null ? null : MapLearningProgress(progress);
+    }
+
+    private static ActivityLearningProgressDto MapLearningProgress(ActivityProgress progress)
+    {
+        return new ActivityLearningProgressDto
+        {
+            ActivityStatus = progress.ActivityStatus.ToString(),
+            ResumeState = ActivityResumeStateHelper.Deserialize(progress.ResumeState),
+            LastAccessedAt = progress.LastAccessedAt,
+            CompletedAt = progress.CompletedAt,
+            CompletionSource = ActivityResumeStateHelper.ToApiString(progress.CompletionSource),
+        };
     }
 
     private async Task<EnrollmentCurriculumContext> BuildCurriculumContextAsync(
@@ -405,7 +520,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
 
         var status = ResolveActivityStatus(activity.Id, snapshot, context, currentActivityId, moduleLocked);
 
-        return new EnrollmentCurriculumActivityDto
+        var activityDto = new EnrollmentCurriculumActivityDto
         {
             ActivityId = activity.Id,
             ActivityName = activity.Name,
@@ -421,6 +536,29 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                     MaterialType = material.MaterialType,
                 },
         };
+
+        ApplyResumeFields(activityDto, activity.Id, context, status);
+        return activityDto;
+    }
+
+    private static void ApplyResumeFields(
+        EnrollmentCurriculumActivityDto dto,
+        Guid activityId,
+        EnrollmentCurriculumContext context,
+        string status)
+    {
+        if (status is CurriculumStatusHelper.StatusLocked or CurriculumStatusHelper.StatusCompleted)
+        {
+            return;
+        }
+
+        if (!context.ProgressByActivityId.TryGetValue(activityId, out var progress))
+        {
+            return;
+        }
+
+        dto.ResumeState = ActivityResumeStateHelper.Deserialize(progress.ResumeState);
+        dto.LastAccessedAt = progress.LastAccessedAt;
     }
 
     private static string ResolveActivityStatus(

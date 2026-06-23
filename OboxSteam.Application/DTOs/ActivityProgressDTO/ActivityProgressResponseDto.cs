@@ -1,3 +1,4 @@
+using OboxSteam.Application.DTOs.EnrollmentDTO;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ActivityProgressDTO;
@@ -27,4 +28,8 @@ public class ActivityProgressResponseDto
     public string ActivityName { get; set; } = null!;
     public ActivityType ActivityType { get; set; }
     public int ActivityOrder { get; set; }
+
+    public ActivityResumeStateDto? ResumeState { get; set; }
+
+    public DateTime? LastAccessedAt { get; set; }
 }

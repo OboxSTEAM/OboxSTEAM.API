@@ -75,6 +75,10 @@ public class EnrollmentCurriculumActivityDto
     /// <summary>Nav state: completed, current, available, or locked.</summary>
     public string Status { get; set; } = null!;
 
+    public ActivityResumeStateDto? ResumeState { get; set; }
+
+    public DateTime? LastAccessedAt { get; set; }
+
     public EnrollmentCurriculumMaterialDto? Material { get; set; }
 }
 

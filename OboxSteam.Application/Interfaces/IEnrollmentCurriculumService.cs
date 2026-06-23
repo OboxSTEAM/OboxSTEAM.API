@@ -14,4 +14,13 @@ public interface IEnrollmentCurriculumService
     Task EnsureActivityAccessibleAsync(Guid programEnrollmentId, Guid activityId);
 
     Task EnsureStudentEnrolledInProgramAsync(Guid programId);
+
+    Task<SaveActivityCheckpointResponseDto> SaveActivityCheckpointAsync(
+        Guid programEnrollmentId,
+        Guid activityId,
+        SaveActivityCheckpointRequestDto request);
+
+    Task<ActivityLearningProgressDto?> GetActivityLearningProgressAsync(
+        Guid programEnrollmentId,
+        Guid activityId);
 }

@@ -2,7 +2,7 @@ namespace OboxSteam.Application.DTOs.EnrollmentDTO;
 
 public class CompleteActivityRequestDto
 {
-    /// <summary>Optional audit hint (not persisted until audit column exists).</summary>
+    /// <summary>Optional audit hint: manual, video, or reading.</summary>
     public string? Source { get; set; }
 }
 

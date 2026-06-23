@@ -108,6 +108,36 @@ public class ProgramEnrollmentController : ControllerBase
     }
 
     // =========================================================================
+    // CHECKPOINT  —  PATCH /api/program-enrollments/{enrollmentId}/activities/{activityId}/checkpoint
+    // =========================================================================
+
+    [HttpPatch("{enrollmentId:guid}/activities/{activityId:guid}/checkpoint")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Save activity learning checkpoint",
+        Description = "Persists resume position (video time, PDF page, doc scroll) for an in-progress SelfPaced activity.")]
+    [ProducesResponseType(typeof(ApiResult<SaveActivityCheckpointResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> SaveActivityCheckpoint(
+        [FromRoute] Guid enrollmentId,
+        [FromRoute] Guid activityId,
+        [FromBody] SaveActivityCheckpointRequestDto request)
+    {
+        var result = await _enrollmentCurriculumService.SaveActivityCheckpointAsync(
+            enrollmentId,
+            activityId,
+            request);
+
+        return Ok(ApiResult<SaveActivityCheckpointResponseDto>.Success(
+            result,
+            "200",
+            "Activity checkpoint saved successfully."));
+    }
+
+    // =========================================================================
     // COMPLETE ACTIVITY  —  POST /api/program-enrollments/{enrollmentId}/activities/{activityId}/complete
     // =========================================================================
 

@@ -195,7 +195,8 @@ public sealed class ActivityProgressService : IActivityProgressService
     public async Task<ActivityProgressResponseDto> CompleteActivityForModuleEnrollmentAsync(
         Guid moduleEnrollmentId,
         Guid activityId,
-        Guid studentId)
+        Guid studentId,
+        CompletionSource? completionSource = null)
     {
         ActivityProgressValidator.ValidateModuleEnrollmentIdRequired(moduleEnrollmentId);
         ActivityProgressValidator.ValidateActivityIdRequired(activityId);
@@ -255,6 +256,9 @@ public sealed class ActivityProgressService : IActivityProgressService
                 ActivityStatus = ActivityStatus.Done,
                 IsCompleted = true,
                 CompletedAt = now,
+                CompletionSource = completionSource,
+                ResumeState = null,
+                LastAccessedAt = now,
             };
 
             await _unitOfWork.ActivityProgresses.AddAsync(progress);
@@ -265,6 +269,9 @@ public sealed class ActivityProgressService : IActivityProgressService
             progress.ActivityStatus = ActivityStatus.Done;
             progress.IsCompleted = true;
             progress.CompletedAt = now;
+            progress.CompletionSource = completionSource;
+            progress.ResumeState = null;
+            progress.LastAccessedAt = now;
             await _unitOfWork.ActivityProgresses.Update(progress);
         }
 
@@ -306,6 +313,116 @@ public sealed class ActivityProgressService : IActivityProgressService
             ActivityOrder = activity.ActivityOrder,
             ModuleProgressPercent = moduleProgressPercent,
             ProgramProgressPercent = programProgressPercent,
+        };
+    }
+
+    public async Task<ActivityProgressResponseDto> SaveCheckpointForModuleEnrollmentAsync(
+        Guid moduleEnrollmentId,
+        Guid activityId,
+        Guid studentId,
+        string resumeStateJson)
+    {
+        ActivityProgressValidator.ValidateModuleEnrollmentIdRequired(moduleEnrollmentId);
+        ActivityProgressValidator.ValidateActivityIdRequired(activityId);
+
+        var moduleEnrollmentEntity = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId);
+        var moduleEnrollment = ActivityProgressValidator.ValidateModuleEnrollmentExists(
+            moduleEnrollmentEntity,
+            moduleEnrollmentId);
+        ActivityProgressValidator.ValidateModuleEnrollmentBelongsToStudent(moduleEnrollment, studentId);
+        ActivityProgressValidator.ValidateModuleEnrollmentActive(moduleEnrollment);
+
+        var activityEntity = await _unitOfWork.Activities.GetByIdAsync(activityId);
+        var activity = ActivityProgressValidator.ValidateActivityExists(activityEntity, activityId);
+        CurriculumAccessValidator.ValidateActivityTypeForManualComplete(activity);
+
+        var courseEntity = await _unitOfWork.Courses.GetByIdAsync(activity.CourseId);
+        if (courseEntity == null || courseEntity.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Course for activity '{activity.Id}' not found.");
+        }
+
+        ActivityProgressValidator.ValidateActivityBelongsToModule(activity, courseEntity, moduleEnrollment.ModuleId);
+
+        var progressEntity = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+            ap => ap.ModuleEnrollmentId == moduleEnrollmentId
+                  && ap.ActivityId == activityId
+                  && !ap.IsDeleted);
+
+        var now = DateTime.UtcNow;
+        ActivityProgress progress;
+
+        if (progressEntity == null)
+        {
+            if (!moduleEnrollment.StartedAt.HasValue)
+            {
+                moduleEnrollment.StartedAt = now;
+                await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+            }
+
+            if (moduleEnrollment.ProgramEnrollmentId.HasValue)
+            {
+                var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                    moduleEnrollment.ProgramEnrollmentId.Value);
+                if (programEnrollment != null
+                    && !programEnrollment.IsDeleted
+                    && !programEnrollment.StartedAt.HasValue)
+                {
+                    programEnrollment.StartedAt = now;
+                    await _unitOfWork.ProgramEnrollments.Update(programEnrollment);
+                }
+            }
+
+            progress = new ActivityProgress
+            {
+                StudentId = studentId,
+                ActivityId = activityId,
+                ModuleEnrollmentId = moduleEnrollmentId,
+                ActivityStatus = ActivityStatus.InProgress,
+                ResumeState = resumeStateJson,
+                LastAccessedAt = now,
+            };
+
+            await _unitOfWork.ActivityProgresses.AddAsync(progress);
+        }
+        else
+        {
+            if (progressEntity.ActivityStatus == ActivityStatus.Done || progressEntity.IsCompleted)
+            {
+                throw ErrorHelper.BadRequest("Activity is already completed.");
+            }
+
+            progress = progressEntity;
+            progress.ActivityStatus = ActivityStatus.InProgress;
+            progress.ResumeState = resumeStateJson;
+            progress.LastAccessedAt = now;
+            await _unitOfWork.ActivityProgresses.Update(progress);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[SaveCheckpointForModuleEnrollmentAsync] Student {StudentId} saved checkpoint for activity {ActivityId}.",
+            studentId,
+            activityId);
+
+        return new ActivityProgressResponseDto
+        {
+            Id = progress.Id,
+            StudentId = progress.StudentId,
+            ActivityId = progress.ActivityId,
+            ModuleEnrollmentId = progress.ModuleEnrollmentId,
+            ActivityStatus = progress.ActivityStatus,
+            IsCompleted = progress.IsCompleted,
+            CompletedAt = progress.CompletedAt,
+            CreatedAt = progress.CreatedAt,
+            UpdatedAt = progress.UpdatedAt,
+            ActivityCode = activity.Code,
+            ActivityName = activity.Name,
+            ActivityType = activity.ActivityType,
+            ActivityOrder = activity.ActivityOrder,
+            ResumeState = ActivityResumeStateHelper.Deserialize(progress.ResumeState),
+            LastAccessedAt = progress.LastAccessedAt,
         };
     }
 }
