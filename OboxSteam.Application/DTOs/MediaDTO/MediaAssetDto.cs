@@ -14,6 +14,8 @@ public class MediaAssetDto
     public string? FaceSearchJobId { get; set; }
     public string? LabelJobRef { get; set; }
     public string? LabelTimelineJson { get; set; }
+    public string? TranscribeJobName { get; set; }
+    public string? SpeakerSegmentsJson { get; set; }
     public VideoProcessingStatus VideoStatus { get; set; }
     public DateTime? UploadedAt { get; set; }
     public List<MediaTagDto> Tags { get; set; } = new();

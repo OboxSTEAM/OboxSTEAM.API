@@ -9,4 +9,6 @@ public class MediaTagDto
     public bool IsVerified { get; set; }
     public string? FaceSegmentsJson { get; set; }
     public bool HasOtherFaces { get; set; }
+    public string? MappedSpeakerLabel { get; set; }
+    public string? VoiceSegmentsJson { get; set; }
 }

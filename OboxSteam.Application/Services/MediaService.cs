@@ -957,6 +957,8 @@ public class MediaService : IMediaService
             FaceSearchJobId = media.FaceSearchJobId,
             LabelJobRef = media.LabelJobRef,
             LabelTimelineJson = media.LabelTimelineJson,
+            TranscribeJobName = media.TranscribeJobName,
+            SpeakerSegmentsJson = media.SpeakerSegmentsJson,
             VideoStatus = media.VideoStatus,
             UploadedAt = media.UploadedAt,
             Tags = tags.Select(t => MapTagToDto(t, studentMap)).ToList()
@@ -974,7 +976,9 @@ public class MediaService : IMediaService
             ConfidenceScore = tag.ConfidenceScore,
             IsVerified = tag.IsVerified,
             FaceSegmentsJson = tag.FaceSegmentsJson,
-            HasOtherFaces = tag.HasOtherFaces
+            HasOtherFaces = tag.HasOtherFaces,
+            MappedSpeakerLabel = tag.MappedSpeakerLabel,
+            VoiceSegmentsJson = tag.VoiceSegmentsJson
         };
     }
 }
