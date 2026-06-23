@@ -405,10 +405,10 @@ public partial class SeedService
                 "Live lecture on actuator selection and torque planning.",
                 "https://meet.google.com/robotics-actuators",
                 baseDate.AddDays(2).AddHours(10), baseDate.AddDays(2).AddHours(12), 28, false, false),
-            NewActivity("ACT-ROBOTICS-02-03", "Mechanical Structures Lab", ActivityType.Offline, 3,
-                "Offline lab on assembling simple mechanical structures.",
-                "Lab Room 101",
-                baseDate.AddDays(6).AddHours(9), baseDate.AddDays(6).AddHours(12), 20, true, false),
+            NewActivity("ACT-ROBOTICS-02-03", "Mechanical Structures Q&A", ActivityType.LiveOnline, 3,
+                "Live Q&A on mechanical structures and actuator integration.",
+                "https://meet.google.com/robotics-mechanics-qa",
+                baseDate.AddDays(6).AddHours(9), baseDate.AddDays(6).AddHours(10), 28, false, false),
         });
 
         AddCourseActivities("CRS-ROBOTICS-03", new[]
@@ -419,36 +419,36 @@ public partial class SeedService
                 "Live briefing on lab rules and emergency procedures.",
                 "https://meet.google.com/robotics-safety",
                 baseDate.AddDays(3).AddHours(9), baseDate.AddDays(3).AddHours(10), 35, false, false),
-            NewActivity("ACT-ROBOTICS-03-03", "Sensor Calibration Lab", ActivityType.Offline, 3,
-                "Hands-on sensor calibration and obstacle-avoidance testing.",
-                "Lab Room 103",
-                baseDate.AddDays(10).AddHours(14), baseDate.AddDays(10).AddHours(17), 15, true, true),
+            NewActivity("ACT-ROBOTICS-03-03", "Safety Case Study Review", ActivityType.LiveOnline, 3,
+                "Live review of lab safety case studies and documentation practices.",
+                "https://meet.google.com/robotics-safety-review",
+                baseDate.AddDays(10).AddHours(14), baseDate.AddDays(10).AddHours(15), 30, false, false),
         });
 
         AddCourseActivities("CRS-ROBOTICS-04", new[]
         {
             NewActivity("ACT-ROBOTICS-04-01", "Careers in Robotics Video", ActivityType.SelfPaced, 1,
                 "Watch the CNBC feature on robotics engineering careers.", null, null, null, null, false, false),
-            NewActivity("ACT-ROBOTICS-04-02", "Sensor Exploration Lab", ActivityType.Offline, 2,
-                "Hands-on lab exploring ultrasonic and infrared sensors.",
+            NewActivity("ACT-ROBOTICS-04-02", "Field Trip Preparation Briefing", ActivityType.LiveOnline, 2,
+                "Live briefing with your mentor on what to bring and safety rules for the sensor field trip.",
+                "https://meet.google.com/robotics-trip-prep",
+                baseDate.AddDays(7).AddHours(15), baseDate.AddDays(7).AddHours(16), 30, false, false),
+            NewActivity("ACT-ROBOTICS-04-03", "Sensor Exploration Field Trip", ActivityType.Offline, 3,
+                "On-site field trip exploring ultrasonic and infrared sensors in a real lab environment.",
                 "Electronics Lab 201",
-                baseDate.AddDays(8).AddHours(9), baseDate.AddDays(8).AddHours(12), 24, true, false),
-            NewActivity("ACT-ROBOTICS-04-03", "Sensor Data Discussion", ActivityType.LiveOnline, 3,
-                "Live discussion on interpreting sensor readings.",
-                "https://meet.google.com/robotics-sensors",
-                baseDate.AddDays(11).AddHours(15), baseDate.AddDays(11).AddHours(16), 30, false, false),
+                baseDate.AddDays(11).AddHours(9), baseDate.AddDays(11).AddHours(12), 24, true, true),
         });
 
         AddCourseActivities("CRS-ROBOTICS-05", new[]
         {
             NewActivity("ACT-ROBOTICS-05-01", "Industry Insights Video", ActivityType.SelfPaced, 1,
                 "Self-paced CNBC video on real-world robotics engineering work.", null, null, null, null, false, false),
-            NewActivity("ACT-ROBOTICS-05-02", "Movement Patterns Workshop", ActivityType.LiveOnline, 2,
-                "Live workshop on programming robot movement patterns.",
-                "https://meet.google.com/robotics-movement",
-                baseDate.AddDays(9).AddHours(10), baseDate.AddDays(9).AddHours(12), 28, false, false),
-            NewActivity("ACT-ROBOTICS-05-03", "Motor Control Challenge", ActivityType.Offline, 3,
-                "Offline challenge to tune motor speed and direction control.",
+            NewActivity("ACT-ROBOTICS-05-02", "Movement Trip Preparation", ActivityType.LiveOnline, 2,
+                "Live mentor session on preparing equipment and goals for the motor control field challenge.",
+                "https://meet.google.com/robotics-movement-prep",
+                baseDate.AddDays(9).AddHours(10), baseDate.AddDays(9).AddHours(11), 28, false, false),
+            NewActivity("ACT-ROBOTICS-05-03", "Motor Control Field Challenge", ActivityType.Offline, 3,
+                "On-site challenge to tune motor speed and direction control.",
                 "Maker Space B",
                 baseDate.AddDays(13).AddHours(9), baseDate.AddDays(13).AddHours(13), 18, true, true),
         });
@@ -457,54 +457,56 @@ public partial class SeedService
         {
             NewActivity("ACT-ROBOTICS-06-01", "Field Insights Video", ActivityType.SelfPaced, 1,
                 "Self-paced video on robotics careers and industry demand.", null, null, null, null, false, false),
-            NewActivity("ACT-ROBOTICS-06-02", "Calibration Techniques Lab", ActivityType.Offline, 2,
-                "Hands-on calibration techniques for line-following robots.",
+            NewActivity("ACT-ROBOTICS-06-02", "Calibration Trip Preparation", ActivityType.LiveOnline, 2,
+                "Live mentor briefing on calibration tools, clothing, and checklist before the field lab.",
+                "https://meet.google.com/robotics-calibration-prep",
+                baseDate.AddDays(12).AddHours(14), baseDate.AddDays(12).AddHours(15), 24, false, false),
+            NewActivity("ACT-ROBOTICS-06-03", "Calibration Techniques Field Lab", ActivityType.Offline, 3,
+                "On-site calibration techniques for line-following robots.",
                 "Lab Room 104",
-                baseDate.AddDays(12).AddHours(14), baseDate.AddDays(12).AddHours(17), 16, true, true),
-            NewActivity("ACT-ROBOTICS-06-03", "Experiential Reflection", ActivityType.SelfPaced, 3,
-                "Submit a reflection on experiential learning outcomes.", null, null, null, null, false, false),
+                baseDate.AddDays(15).AddHours(9), baseDate.AddDays(15).AddHours(12), 16, true, true),
         });
 
         AddCourseActivities("CRS-ROBOTICS-07", new[]
         {
             NewActivity("ACT-ROBOTICS-07-01", "Research Design Brief Reading", ActivityType.SelfPaced, 1,
                 "Read the research design brief and project requirements.", null, null, null, null, false, false),
-            NewActivity("ACT-ROBOTICS-07-02", "Team Prototype Build", ActivityType.Offline, 2,
+            NewActivity("ACT-ROBOTICS-07-02", "Prototype Build Preparation", ActivityType.LiveOnline, 2,
+                "Live mentor session on team roles, materials, and build-day logistics.",
+                "https://meet.google.com/robotics-build-prep",
+                baseDate.AddDays(14).AddHours(10), baseDate.AddDays(14).AddHours(11), 24, false, false),
+            NewActivity("ACT-ROBOTICS-07-03", "Team Prototype Build", ActivityType.Offline, 3,
                 "Full-day team session to assemble and test prototypes.",
                 "Maker Space A",
-                baseDate.AddDays(14).AddHours(9), baseDate.AddDays(14).AddHours(17), 12, true, true),
-            NewActivity("ACT-ROBOTICS-07-03", "Capstone Presentation", ActivityType.LiveOnline, 3,
-                "Teams present robot prototypes and research findings.",
-                "https://meet.google.com/robotics-finals",
-                baseDate.AddDays(21).AddHours(14), baseDate.AddDays(21).AddHours(16), 50, false, true),
+                baseDate.AddDays(16).AddHours(9), baseDate.AddDays(16).AddHours(17), 12, true, true),
         });
 
         AddCourseActivities("CRS-ROBOTICS-08", new[]
         {
             NewActivity("ACT-ROBOTICS-08-01", "Research Methods Reading", ActivityType.SelfPaced, 1,
                 "Self-paced reading on scientific research methodology.", null, null, null, null, false, false),
-            NewActivity("ACT-ROBOTICS-08-02", "Prototype Iteration Lab", ActivityType.Offline, 2,
-                "Iterate on prototype design based on mentor feedback.",
+            NewActivity("ACT-ROBOTICS-08-02", "Iteration Planning Session", ActivityType.LiveOnline, 2,
+                "Live session to plan prototype iterations based on mentor feedback.",
+                "https://meet.google.com/robotics-iteration-prep",
+                baseDate.AddDays(18).AddHours(10), baseDate.AddDays(18).AddHours(11), 24, false, false),
+            NewActivity("ACT-ROBOTICS-08-03", "Prototype Iteration Lab", ActivityType.Offline, 3,
+                "Iterate on prototype design and run bench tests.",
                 "Maker Space A",
-                baseDate.AddDays(16).AddHours(9), baseDate.AddDays(16).AddHours(15), 12, true, true),
-            NewActivity("ACT-ROBOTICS-08-03", "Peer Review Session", ActivityType.LiveOnline, 3,
-                "Live peer review of prototype progress and test results.",
-                "https://meet.google.com/robotics-peer-review",
-                baseDate.AddDays(19).AddHours(10), baseDate.AddDays(19).AddHours(12), 24, false, false),
+                baseDate.AddDays(20).AddHours(9), baseDate.AddDays(20).AddHours(15), 12, true, true),
         });
 
         AddCourseActivities("CRS-ROBOTICS-09", new[]
         {
             NewActivity("ACT-ROBOTICS-09-01", "Capstone Documentation Reading", ActivityType.SelfPaced, 1,
                 "Self-paced guide for documenting capstone research outcomes.", null, null, null, null, false, false),
-            NewActivity("ACT-ROBOTICS-09-02", "Final Testing Lab", ActivityType.Offline, 2,
-                "Final testing and performance validation for capstone robots.",
+            NewActivity("ACT-ROBOTICS-09-02", "Final Testing Preparation", ActivityType.LiveOnline, 2,
+                "Live briefing on final test procedures, safety checks, and demo setup.",
+                "https://meet.google.com/robotics-finals-prep",
+                baseDate.AddDays(22).AddHours(14), baseDate.AddDays(22).AddHours(15), 30, false, false),
+            NewActivity("ACT-ROBOTICS-09-03", "Final Testing & Showcase", ActivityType.Offline, 3,
+                "On-site final testing, performance validation, and capstone showcase.",
                 "Maker Space A",
-                baseDate.AddDays(20).AddHours(9), baseDate.AddDays(20).AddHours(13), 12, true, true),
-            NewActivity("ACT-ROBOTICS-09-03", "Research Showcase", ActivityType.LiveOnline, 3,
-                "Public showcase of capstone research projects.",
-                "https://meet.google.com/robotics-showcase",
-                baseDate.AddDays(24).AddHours(14), baseDate.AddDays(24).AddHours(17), 40, false, true),
+                baseDate.AddDays(24).AddHours(9), baseDate.AddDays(24).AddHours(15), 40, true, true),
         });
     }
 }

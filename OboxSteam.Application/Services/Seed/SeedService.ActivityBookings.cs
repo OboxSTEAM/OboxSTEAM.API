@@ -17,7 +17,7 @@ public partial class SeedService
         if (!existingBookings.Any())
         {
             var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
-            var offlineActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-03-03");
+            var offlineActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-04-03");
 
             if (student1 != null && offlineActivity != null)
             {

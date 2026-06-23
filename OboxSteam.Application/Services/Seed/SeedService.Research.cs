@@ -29,10 +29,18 @@ public partial class SeedService
         }
 
         var designBriefActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-01");
-        var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-02");
-        var finalPresentationActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-03");
+        var prototypePrepActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-02");
+        var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-03");
+        var researchMethodsActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-08-01");
+        var iterationPrepActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-08-02");
+        var iterationLabActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-08-03");
+        var capstoneReadingActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-09-01");
+        var finalTestPrepActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-09-02");
+        var finalShowcaseActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-09-03");
 
-        if (designBriefActivity == null || prototypeBuildActivity == null || finalPresentationActivity == null)
+        if (designBriefActivity == null || prototypePrepActivity == null || prototypeBuildActivity == null
+            || researchMethodsActivity == null || iterationPrepActivity == null || iterationLabActivity == null
+            || capstoneReadingActivity == null || finalTestPrepActivity == null || finalShowcaseActivity == null)
         {
             _loggerService.LogWarning(
                 "Research module activities not found. Skipping research milestone seeding.");
@@ -170,8 +178,63 @@ public partial class SeedService
             new()
             {
                 Id = Guid.NewGuid(),
-                ResearchMilestoneId = milestonePrototype.Id,
+                ResearchMilestoneId = milestoneDesign.Id,
+                ActivityId = prototypePrepActivity.Id,
+                IsRequiredForSubmission = true,
+                DisplayOrder = 2,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                ResearchMilestoneId = milestoneDesign.Id,
                 ActivityId = prototypeBuildActivity.Id,
+                IsRequiredForSubmission = true,
+                DisplayOrder = 3,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                ResearchMilestoneId = milestonePrototype.Id,
+                ActivityId = researchMethodsActivity.Id,
+                IsRequiredForSubmission = true,
+                DisplayOrder = 1,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                ResearchMilestoneId = milestonePrototype.Id,
+                ActivityId = iterationPrepActivity.Id,
+                IsRequiredForSubmission = true,
+                DisplayOrder = 2,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                ResearchMilestoneId = milestonePrototype.Id,
+                ActivityId = iterationLabActivity.Id,
+                IsRequiredForSubmission = true,
+                DisplayOrder = 3,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                ResearchMilestoneId = milestoneCapstone.Id,
+                ActivityId = capstoneReadingActivity.Id,
                 IsRequiredForSubmission = true,
                 DisplayOrder = 1,
                 CreatedAt = seedTime,
@@ -182,9 +245,20 @@ public partial class SeedService
             {
                 Id = Guid.NewGuid(),
                 ResearchMilestoneId = milestoneCapstone.Id,
-                ActivityId = finalPresentationActivity.Id,
+                ActivityId = finalTestPrepActivity.Id,
                 IsRequiredForSubmission = true,
-                DisplayOrder = 1,
+                DisplayOrder = 2,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                ResearchMilestoneId = milestoneCapstone.Id,
+                ActivityId = finalShowcaseActivity.Id,
+                IsRequiredForSubmission = true,
+                DisplayOrder = 3,
                 CreatedAt = seedTime,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
@@ -194,7 +268,7 @@ public partial class SeedService
         await _unitOfWork.ResearchMilestoneActivities.AddRangeAsync(milestoneActivities);
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Finished seed research milestones — 3 milestone(s) and 3 activity link(s) created.");
+            "Finished seed research milestones — 3 milestone(s) and 9 activity link(s) created.");
     }
 
     private async Task SeedResearchModuleEnrollmentsAsync()
@@ -280,7 +354,7 @@ public partial class SeedService
         }
 
         var designBriefActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-01");
-        var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-02");
+        var prototypeBuildActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == "ACT-ROBOTICS-07-03");
         if (designBriefActivity == null || prototypeBuildActivity == null)
         {
             _loggerService.LogWarning("Research activities not found. Skipping research activity progress seeding.");

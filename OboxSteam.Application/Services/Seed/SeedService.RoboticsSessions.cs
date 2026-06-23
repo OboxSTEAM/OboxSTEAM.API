@@ -127,18 +127,24 @@ public partial class SeedService
         new("MOD-ROBOTICS-01", "ACT-ROBOTICS-02-02", SessionKind.LiveOnline,
             "Theory Session 2: Actuator Design",
             "Live cohort session on actuators and mechanical design."),
-        new("MOD-ROBOTICS-02", "ACT-ROBOTICS-04-02", SessionKind.Lesson,
-            "Experiential Session 1: Sensor Exploration Lab",
-            "Hands-on sensor exploration in the electronics lab."),
+        new("MOD-ROBOTICS-02", "ACT-ROBOTICS-04-02", SessionKind.LiveOnline,
+            "Experiential Session 1: Field Trip Preparation",
+            "Live mentor briefing before the sensor exploration field trip."),
+        new("MOD-ROBOTICS-02", "ACT-ROBOTICS-04-03", SessionKind.Lesson,
+            "Experiential Session 2: Sensor Exploration Field Trip",
+            "On-site sensor exploration in the electronics lab."),
         new("MOD-ROBOTICS-02", "ACT-ROBOTICS-05-02", SessionKind.LiveOnline,
-            "Experiential Session 2: Movement Patterns Workshop",
-            "Live workshop on programming robot movement."),
-        new("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-02", SessionKind.Lesson,
-            "Research Session 1: Team Prototype Build",
+            "Experiential Session 3: Movement Trip Preparation",
+            "Live mentor session before the motor control field challenge."),
+        new("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-02", SessionKind.LiveOnline,
+            "Research Session 1: Prototype Build Preparation",
+            "Live mentor session on team roles and build-day logistics."),
+        new("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-03", SessionKind.Lesson,
+            "Research Session 2: Team Prototype Build",
             "Full-day team build session for the capstone prototype."),
-        new("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-03", SessionKind.LiveOnline,
-            "Research Session 2: Capstone Presentation",
-            "Live capstone presentation and mentor Q&A."),
+        new("MOD-ROBOTICS-03", "ACT-ROBOTICS-09-03", SessionKind.Lesson,
+            "Research Session 3: Final Testing & Showcase",
+            "On-site final testing and capstone showcase."),
     ];
 
     private static (DateTime StartTime, DateTime EndTime) ResolveRoboticsSessionTimes(
@@ -162,7 +168,7 @@ public partial class SeedService
         }
 
         var durationDays = Math.Max((classEntity.EndDate.Date - classEntity.StartDate.Date).TotalDays, 1);
-        var fractions = new[] { 0.08, 0.24, 0.40, 0.56, 0.72, 0.88 };
+        var fractions = new[] { 0.06, 0.18, 0.30, 0.42, 0.54, 0.66, 0.78, 0.90 };
         var fraction = fractions[Math.Min(sessionIndex, fractions.Length - 1)];
         var sessionDate = classEntity.StartDate.Date.AddDays(durationDays * fraction);
         var startHour = sessionIndex % 2 == 0 ? 9 : 14;

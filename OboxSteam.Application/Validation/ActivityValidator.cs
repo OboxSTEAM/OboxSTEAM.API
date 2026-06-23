@@ -14,7 +14,7 @@ public static class ActivityValidator
         moduleType switch
         {
             ModuleType.Theory => [ActivityType.SelfPaced, ActivityType.LiveOnline],
-            ModuleType.Experiential => [ActivityType.SelfPaced, ActivityType.Offline],
+            ModuleType.Experiential => [ActivityType.SelfPaced, ActivityType.LiveOnline, ActivityType.Offline],
             ModuleType.Research => [ActivityType.SelfPaced, ActivityType.LiveOnline, ActivityType.Offline],
             _ => throw ErrorHelper.BadRequest($"Unsupported module type '{moduleType}'.")
         };
