@@ -15,7 +15,9 @@ public record TriggerGenerationRequest
     /// <summary>
     /// Optional description of the student's strengths used to filter video segments
     /// by semantic matching. (e.g. "Sinh viên có thế mạnh trong thuyết trình và đánh cờ").
-    /// When null or empty, the standard face-timeline-only clipping is used.
+    /// When null or empty, the standard face/voice timeline clipping is used.
+    /// When provided, poll GET until <c>Completed</c> or <c>Failed</c>; failures include
+    /// <c>PersonalVideoFailureReason</c> (e.g. missing label data or no matching segments).
     /// </summary>
     public string? StrengthDescription { get; init; }
 }
@@ -46,16 +48,15 @@ public class HighlightVideoController : ControllerBase
     /// Clipping rules:
     /// - Scene-only video (no faces detected) → included in full.
     /// - Video where only the student's face appears → included in full.
-    /// - Video with multiple people → only the student's segments are extracted
-    ///   (2-second buffer; segments that overlap after buffering are merged;
-    ///   fallback to full video if AI cannot pinpoint the face).
+    /// - Video with multiple people → only the student's face + mapped voice segments
+    ///   (2-second buffer; overlapping segments merged after buffering).
     ///
     /// Strengths filtering (optional):
-    /// - When <c>Strengths</c> is provided, only segments where the student is
-    ///   demonstrating a matched strength are kept (via AWS Rekognition Label Detection
-    ///   cross-referenced by Claude on Bedrock).
-    /// - Supports Vietnamese and English strength names.
-    /// - Returns 400 if no segments match any of the specified strengths.
+    /// - When <c>StrengthDescription</c> is provided, only segments where visual labels
+    ///   demonstrate the described strength are kept (Rekognition Label Detection + Bedrock).
+    /// - Requires label detection data on all tagged videos; missing timelines fail the job.
+    /// - Poll GET for <c>Failed</c> status and read <c>PersonalVideoFailureReason</c>
+    ///   when no segments match or prerequisites are missing.
     /// </remarks>
     [HttpPost]
     [SwaggerOperation(
@@ -65,7 +66,6 @@ public class HighlightVideoController : ControllerBase
                       "Supply optional 'StrengthDescription' to filter segments by student strengths (e.g. 'Sinh viên giỏi đá bóng')."
     )]
     [ProducesResponseType(typeof(ApiResult<HighlightVideoDto>), 202)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> TriggerGeneration(
         [FromRoute] Guid programId,

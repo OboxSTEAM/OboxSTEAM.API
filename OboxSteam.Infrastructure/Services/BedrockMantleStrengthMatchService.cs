@@ -57,7 +57,42 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             faceSegments.Count, labelTimeline.Count, strengthDescription);
 
         var prompt = BuildPrompt(faceSegments, labelTimeline, strengthDescription);
+        return await CompleteMatchAsync(prompt, ct);
+    }
 
+    /// <inheritdoc />
+    public async Task<StrengthMatchResult> MatchStrengthsFromLabelsOnlyAsync(
+        IList<LabelDetectionEntry> labelTimeline,
+        string strengthDescription,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation(
+            "BedrockMantleStrengthMatchService (label-only): {Labels} label(s), StrengthDescription: {Desc}",
+            labelTimeline.Count, strengthDescription);
+
+        var prompt = BuildLabelOnlyPrompt(labelTimeline, strengthDescription);
+        return await CompleteMatchAsync(prompt, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<StrengthMatchResult> MatchStrengthsForVoiceOnlyAsync(
+        IList<FaceTimestampSegment> voiceOnlySegments,
+        IList<LabelDetectionEntry> labelTimeline,
+        string strengthDescription,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation(
+            "BedrockMantleStrengthMatchService (voice-only): {VoiceSegs} voice segment(s), {Labels} label(s), StrengthDescription: {Desc}",
+            voiceOnlySegments.Count, labelTimeline.Count, strengthDescription);
+
+        var prompt = BuildVoiceOnlyPrompt(voiceOnlySegments, labelTimeline, strengthDescription);
+        return await CompleteMatchAsync(prompt, ct);
+    }
+
+    // -- Private Helpers -------------------------------------------------------
+
+    private async Task<StrengthMatchResult> CompleteMatchAsync(string prompt, CancellationToken ct)
+    {
         ChatCompletion completion;
         try
         {
@@ -65,7 +100,7 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
                 [new UserChatMessage(prompt)],
                 new ChatCompletionOptions
                 {
-                    Temperature = 0f,   // deterministic - consistent matching
+                    Temperature = 0f,
                     MaxOutputTokenCount = 4096
                 },
                 ct);
@@ -88,7 +123,6 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             return new StrengthMatchResult(Array.Empty<MatchedSegment>(), "Mantle returned an empty response.");
         }
 
-        // Claude may wrap the JSON in markdown fences - extract the JSON block.
         var rawJson = ExtractJson(rawText);
 
         ClaudeMatchOutput output;
@@ -103,24 +137,17 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             return new StrengthMatchResult(Array.Empty<MatchedSegment>(), "Failed to parse response.");
         }
 
-        // Claude often copies the prompt example and returns end_ms=0 for point-in-time
-        // detections. Treat missing/invalid end_ms as a single-sample segment [start, start].
         var normalized = (output.MatchedSegments ?? Array.Empty<ClaudeSegment>())
             .Select(NormalizeClaudeSegment)
             .OrderByDescending(s => s.Score)
             .ToList();
 
-        // Log every raw (pre-threshold) segment so we can see exactly what the model returned
-        // and how long each clip would be: clip length ≈ (end-start) + 2×buffer applied later.
         foreach (var s in normalized)
             _logger.LogInformation(
                 "BedrockMantleStrengthMatchService: raw match [{Start}ms→{End}ms] span={Span}ms score={Score:0.00} strength={Strength} {Kept}",
                 s.StartMs, s.EndMs, s.EndMs - s.StartMs, s.Score, s.Strength,
                 s.Score >= MinMatchScore ? "KEPT" : "DROPPED(<threshold)");
 
-        // Enforce the score threshold in code as a safety net — the model sometimes returns
-        // speculative low-confidence matches (e.g. "Slapping suggests martial arts") despite
-        // the prompt asking it to exclude them.
         var matched = normalized
             .Where(s => s.Score >= MinMatchScore)
             .ToList();
@@ -131,8 +158,6 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
 
         return new StrengthMatchResult(matched, output.Reasoning ?? string.Empty);
     }
-
-    // -- Private Helpers -------------------------------------------------------
 
     /// <summary>
     /// Maps a Claude JSON segment to <see cref="MatchedSegment"/>, coercing invalid
@@ -168,26 +193,7 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             sb.AppendLine($"  - {seg.StartMs}ms to {seg.EndMs}ms");
 
         sb.AppendLine();
-        sb.AppendLine("LABEL DETECTION TIMELINE (timestamp_ms: label confidence):");
-
-        // Group labels by 1-second bucket, sample up to 200 groups evenly across the video.
-        const int MaxLabelGroups = 200;
-        var allLabelGroups = labelTimeline
-            .GroupBy(l => l.TimestampMs / 1000 * 1000)
-            .OrderBy(g => g.Key)
-            .ToList();
-
-        var sampledGroups = allLabelGroups.Count <= MaxLabelGroups
-            ? allLabelGroups
-            : Enumerable.Range(0, MaxLabelGroups)
-                .Select(i => allLabelGroups[(int)((double)i * allLabelGroups.Count / MaxLabelGroups)])
-                .ToList();
-
-        foreach (var grp in sampledGroups)
-        {
-            var labels = string.Join(", ", grp.Select(l => $"{l.LabelName} {l.Confidence:F0}pct"));
-            sb.AppendLine($"  {grp.Key}ms: {labels}");
-        }
+        AppendSampledLabelTimeline(sb, labelTimeline);
 
         sb.AppendLine();
         sb.AppendLine("INSTRUCTIONS:");
@@ -210,6 +216,108 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    private static string BuildLabelOnlyPrompt(
+        IList<LabelDetectionEntry> labelTimeline,
+        string strengthDescription)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("You are a video segment analyzer. The student's face was NOT detected in this video (scene-only / activity footage), but the video was tagged for this student.");
+        sb.AppendLine("Scan the full label detection timeline and identify time ranges where the VISUAL content demonstrates the student's described strength.");
+        sb.AppendLine();
+        sb.AppendLine("STUDENT STRENGTH DESCRIPTION:");
+        sb.AppendLine($"\"{strengthDescription}\"");
+        sb.AppendLine();
+        AppendSampledLabelTimeline(sb, labelTimeline);
+        sb.AppendLine();
+        sb.AppendLine("INSTRUCTIONS:");
+        sb.AppendLine("1. Find contiguous or nearby label timestamps where labels DIRECTLY and UNAMBIGUOUSLY represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
+        sb.AppendLine("2. Return matched_segments with start_ms and end_ms taken from the label timestamps (merge nearby matches into one range).");
+        sb.AppendLine("3. DO NOT match on weak, generic, or speculative evidence. A single ambiguous label (e.g. 'Person', 'Hand') is NOT enough.");
+        sb.AppendLine("4. Require multiple corroborating labels OR one strong, specific label that names the activity itself.");
+        sb.AppendLine("5. Assign score 0.0-1.0 per segment.");
+        sb.AppendLine($"6. Only include segments with score >= {MinMatchScore:0.0}. When in doubt, exclude.");
+        sb.AppendLine("7. If NO time range clearly demonstrates the strength, return an empty matched_segments array.");
+        sb.AppendLine("8. Keep reasoning to ONE short sentence, max 20 words.");
+        sb.AppendLine();
+        sb.AppendLine("Respond with ONLY valid JSON, no extra text, no markdown fences:");
+        sb.AppendLine("{");
+        sb.AppendLine("  \"matched_segments\": [");
+        sb.AppendLine("    { \"start_ms\": 6000, \"end_ms\": 12000, \"strength\": \"example\", \"score\": 0.9 }");
+        sb.AppendLine("  ],");
+        sb.AppendLine("  \"reasoning\": \"one short sentence\"");
+        sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
+    private static string BuildVoiceOnlyPrompt(
+        IList<FaceTimestampSegment> voiceOnlySegments,
+        IList<LabelDetectionEntry> labelTimeline,
+        string strengthDescription)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("You are a video segment analyzer. The mapped student is SPEAKING OFF-CAMERA during the voice windows below (their face is not visible, but diarization confirms it is their voice).");
+        sb.AppendLine("For each voice window, examine the VISUAL labels from the label detection timeline in the same time range and decide whether the on-screen scene demonstrates the student's described strength.");
+        sb.AppendLine("You are NOT evaluating what the student says — only whether the visuals during their speech match the strength.");
+        sb.AppendLine();
+        sb.AppendLine("STUDENT STRENGTH DESCRIPTION:");
+        sb.AppendLine($"\"{strengthDescription}\"");
+        sb.AppendLine();
+        sb.AppendLine("OFF-CAMERA VOICE WINDOWS (milliseconds):");
+
+        foreach (var seg in voiceOnlySegments)
+            sb.AppendLine($"  - {seg.StartMs}ms to {seg.EndMs}ms");
+
+        sb.AppendLine();
+        AppendSampledLabelTimeline(sb, labelTimeline);
+        sb.AppendLine();
+        sb.AppendLine("INSTRUCTIONS:");
+        sb.AppendLine("1. For each voice window, check which visual labels appear during that same time range.");
+        sb.AppendLine("2. Match ONLY when labels DIRECTLY and UNAMBIGUOUSLY represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
+        sb.AppendLine("3. DO NOT match on weak, generic, or speculative evidence. A single ambiguous label (e.g. 'Person', 'Hand', 'Microphone') is NOT enough.");
+        sb.AppendLine("4. Require multiple corroborating labels OR one strong, specific label that names the activity itself.");
+        sb.AppendLine("5. Return matched_segments using the VOICE window timestamps (start_ms/end_ms from the voice windows above) when labels in that window demonstrate the strength.");
+        sb.AppendLine("6. Assign score 0.0-1.0 per segment.");
+        sb.AppendLine($"7. Only include segments with score >= {MinMatchScore:0.0}. When in doubt, exclude.");
+        sb.AppendLine("8. If NO voice window has supporting visual labels, return an empty matched_segments array.");
+        sb.AppendLine("9. Keep reasoning to ONE short sentence, max 20 words.");
+        sb.AppendLine();
+        sb.AppendLine("Respond with ONLY valid JSON, no extra text, no markdown fences:");
+        sb.AppendLine("{");
+        sb.AppendLine("  \"matched_segments\": [");
+        sb.AppendLine("    { \"start_ms\": 6000, \"end_ms\": 12000, \"strength\": \"example\", \"score\": 0.9 }");
+        sb.AppendLine("  ],");
+        sb.AppendLine("  \"reasoning\": \"one short sentence\"");
+        sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
+    private static void AppendSampledLabelTimeline(StringBuilder sb, IList<LabelDetectionEntry> labelTimeline)
+    {
+        sb.AppendLine("LABEL DETECTION TIMELINE (timestamp_ms: label confidence):");
+
+        const int MaxLabelGroups = 200;
+        var allLabelGroups = labelTimeline
+            .GroupBy(l => l.TimestampMs / 1000 * 1000)
+            .OrderBy(g => g.Key)
+            .ToList();
+
+        var sampledGroups = allLabelGroups.Count <= MaxLabelGroups
+            ? allLabelGroups
+            : Enumerable.Range(0, MaxLabelGroups)
+                .Select(i => allLabelGroups[(int)((double)i * allLabelGroups.Count / MaxLabelGroups)])
+                .ToList();
+
+        foreach (var grp in sampledGroups)
+        {
+            var labels = string.Join(", ", grp.Select(l => $"{l.LabelName} {l.Confidence:F0}pct"));
+            sb.AppendLine($"  {grp.Key}ms: {labels}");
+        }
     }
 
     /// <summary>

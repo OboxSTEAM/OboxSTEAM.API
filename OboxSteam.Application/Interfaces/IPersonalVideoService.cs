@@ -18,8 +18,10 @@ public interface IPersonalVideoService
     /// <param name="strengthDescription">
     /// Optional description of student strengths used to filter video segments
     /// (e.g. "Thế mạnh trong thuyết trình và đánh cờ").
-    /// When non-empty, only segments where the student AND a matching label appear are included.
-    /// When null or empty, falls back to the standard face-timeline-only behaviour.
+    /// When non-empty, only segments where visual labels demonstrate the described strength are
+    /// included (via Bedrock + Rekognition Label Detection). Requires label timelines on all
+    /// tagged videos — missing data fails the background job with
+    /// <c>PersonalVideoFailureReason</c>. When null or empty, standard face/voice clipping applies.
     /// </param>
     Task<HighlightVideoDto> TriggerPersonalVideoGenerationAsync(
         Guid programId, Guid studentId, string? strengthDescription = null);

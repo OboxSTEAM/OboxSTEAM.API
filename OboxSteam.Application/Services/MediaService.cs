@@ -720,9 +720,11 @@ public class MediaService : IMediaService
     /// dataset is missing this is a no-op (the other webhook will run it later).
     ///
     /// For each tagged student, the speaker whose voice segments overlap the student's face
-    /// segments the most (by total overlapping ms) is chosen, then that speaker's full voice
-    /// timeline is persisted onto the tag so the personal-video pipeline can union it with the
-    /// face timeline (keeping "voice but no face" moments).
+    /// segments the most (by total overlapping ms) is chosen. When a student has no face
+    /// segments (Case 1 / scene-only) but is the sole tagged person and only one speaker exists,
+    /// that speaker is mapped directly. The speaker's full voice timeline is persisted onto the
+    /// tag so the personal-video pipeline can union it with the face timeline (keeping
+    /// "voice but no face" moments).
     /// </summary>
     private async Task TryFinalizeSpeakerMappingAsync(MediaAsset media)
     {
@@ -746,16 +748,19 @@ public class MediaService : IMediaService
         if (speakerSegments.Count == 0)
             return;
 
-        var tagsWithFaces = media.MediaTags
+        var eligibleTags = media.MediaTags
             .Where(t => !t.IsDeleted && !string.IsNullOrEmpty(t.FaceSegmentsJson))
             .ToList();
 
-        if (tagsWithFaces.Count == 0)
+        if (eligibleTags.Count == 0)
             return;
+
+        var distinctTaggedStudents = eligibleTags.Select(t => t.StudentId).Distinct().Count();
+        var soleSpeakerLabel = GetSoleSpeakerLabelIfUnique(speakerSegments);
 
         var mappedCount = 0;
 
-        foreach (var tag in tagsWithFaces)
+        foreach (var tag in eligibleTags)
         {
             List<FaceTimestampSegment> faceSegments;
             try
@@ -771,10 +776,23 @@ public class MediaService : IMediaService
                 continue;
             }
 
-            if (faceSegments.Count == 0)
+            string? mappedSpeaker;
+            if (faceSegments.Count > 0)
+            {
+                mappedSpeaker = MapSpeakerToStudent(faceSegments, speakerSegments);
+            }
+            else if (distinctTaggedStudents == 1 && soleSpeakerLabel != null)
+            {
+                mappedSpeaker = soleSpeakerLabel;
+                _logger.LogInformation(
+                    "Speaker mapped (no face / sole student + sole speaker): StudentId={StudentId} -> {Speaker} for MediaId={MediaId}.",
+                    tag.StudentId, soleSpeakerLabel, media.Id);
+            }
+            else
+            {
                 continue;
+            }
 
-            var mappedSpeaker = MapSpeakerToStudent(faceSegments, speakerSegments);
             if (mappedSpeaker == null)
                 continue;
 
@@ -787,9 +805,12 @@ public class MediaService : IMediaService
             tag.VoiceSegmentsJson = JsonSerializer.Serialize(voiceSegments);
             mappedCount++;
 
-            _logger.LogInformation(
-                "Speaker mapped: StudentId={StudentId} -> {Speaker} ({Count} voice segment(s)) for MediaId={MediaId}.",
-                tag.StudentId, mappedSpeaker, voiceSegments.Count, media.Id);
+            if (faceSegments.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Speaker mapped: StudentId={StudentId} -> {Speaker} ({Count} voice segment(s)) for MediaId={MediaId}.",
+                    tag.StudentId, mappedSpeaker, voiceSegments.Count, media.Id);
+            }
         }
 
         if (mappedCount > 0)
@@ -797,7 +818,16 @@ public class MediaService : IMediaService
 
         _logger.LogInformation(
             "Speaker mapping complete for MediaId={MediaId}. MappedTags={Mapped}/{Total}.",
-            media.Id, mappedCount, tagsWithFaces.Count);
+            media.Id, mappedCount, eligibleTags.Count);
+    }
+
+    /// <summary>
+    /// Returns the speaker label when exactly one distinct speaker exists in the diarization output.
+    /// </summary>
+    private static string? GetSoleSpeakerLabelIfUnique(IList<SpeakerSegment> speakerSegments)
+    {
+        var labels = speakerSegments.Select(s => s.SpeakerLabel).Distinct().ToList();
+        return labels.Count == 1 ? labels[0] : null;
     }
 
     /// <summary>

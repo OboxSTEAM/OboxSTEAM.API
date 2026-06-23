@@ -26,6 +26,27 @@ public interface IStrengthMatchService
         IList<LabelDetectionEntry> labelTimeline,
         string strengthDescription,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Scene-only path (no student face segments): scans the full label timeline and returns
+    /// time ranges where visual labels demonstrate the described strength. Used for Case 1
+    /// (tagged student, zero face detections) so clips are sub-ranges rather than the full video.
+    /// </summary>
+    Task<StrengthMatchResult> MatchStrengthsFromLabelsOnlyAsync(
+        IList<LabelDetectionEntry> labelTimeline,
+        string strengthDescription,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Off-camera speech path: the student is speaking during the given voice windows but their
+    /// face is not visible. Cross-references each voice window with visual labels from the same
+    /// (wider) time range to decide if the scene demonstrates the described strength.
+    /// </summary>
+    Task<StrengthMatchResult> MatchStrengthsForVoiceOnlyAsync(
+        IList<FaceTimestampSegment> voiceOnlySegments,
+        IList<LabelDetectionEntry> labelTimeline,
+        string strengthDescription,
+        CancellationToken ct = default);
 }
 
 /// <summary>
