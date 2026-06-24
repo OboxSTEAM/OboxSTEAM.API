@@ -57,6 +57,25 @@ namespace OboxSteam.API.Controllers
         }
 
         /// <summary>
+        /// Poll Rekognition face-search results and persist MediaTags (including late recovery
+        /// when the face webhook arrived after Transcribe already marked the video complete).
+        /// </summary>
+        [HttpPost("{mediaId:guid}/process-tags")]
+        [SwaggerOperation(
+            Summary = "Process video face tags",
+            Description = "Polls the Rekognition face-search job for a video and persists student MediaTags. " +
+                          "Safe to call when upload webhooks raced; also used when tags are still empty after processing."
+        )]
+        [ProducesResponseType(typeof(ApiResult<MediaAssetDto>), 200)]
+        [ProducesResponseType(typeof(ApiResult<object>), 400)]
+        [ProducesResponseType(typeof(ApiResult<object>), 404)]
+        public async Task<IActionResult> ProcessVideoTags([FromRoute] Guid mediaId)
+        {
+            var result = await _mediaService.ProcessVideoTagsAsync(mediaId);
+            return Ok(ApiResult<MediaAssetDto>.Success(result, "200", "Video tags processed successfully."));
+        }
+
+        /// <summary>
         /// Delete a media asset (soft delete + removes file from S3).
         /// </summary>
         [HttpDelete("{mediaId:guid}")]

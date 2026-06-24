@@ -406,9 +406,9 @@ public class MediaService : IMediaService
         if (media == null || media.IsDeleted)
             throw ErrorHelper.NotFound("Media not found.");
 
-        // Guard: must be in PendingTagging state
-        if (media.VideoStatus != VideoProcessingStatus.PendingTagging)
-            throw ErrorHelper.BadRequest("Video is not ready for tag processing yet.");
+        if (!ShouldProcessVideoFaceTags(media))
+            throw ErrorHelper.BadRequest(
+                "Video face tags are not ready to process, were already captured, or this media has no Rekognition job.");
 
         if (string.IsNullOrEmpty(media.FaceSearchJobId))
             throw ErrorHelper.BadRequest("This media has no pending Rekognition video job.");
@@ -428,9 +428,21 @@ public class MediaService : IMediaService
 
         var media = await _unitOfWork.MediaAssets.GetByIdAsync(mediaId, m => m.MediaTags);
         if (media == null || media.IsDeleted) return false;
-        // Only poll Rekognition once transcoding is done and a real job ID is stored
-        if (media.VideoStatus != VideoProcessingStatus.PendingTagging) return false;
-        if (string.IsNullOrEmpty(media.FaceSearchJobId)) return false;
+
+        if (!ShouldProcessVideoFaceTags(media))
+        {
+            _logger.LogInformation(
+                "TryProcessVideoTagsAsync skipped: MediaId={MediaId}, VideoStatus={Status}, ActiveTagCount={TagCount}",
+                mediaId, media.VideoStatus, media.MediaTags.Count(t => !t.IsDeleted));
+            return false;
+        }
+
+        if (media.VideoStatus == VideoProcessingStatus.TaggingComplete)
+        {
+            _logger.LogInformation(
+                "TryProcessVideoTagsAsync: late face-webhook recovery for MediaId={MediaId} (Transcribe finished before face tags were persisted).",
+                mediaId);
+        }
 
         var (success, _) = await DoProcessVideoTagsAsync(media);
         return success;
@@ -476,11 +488,8 @@ public class MediaService : IMediaService
     /// <inheritdoc />
     public async Task<bool> IsAwaitingTaggingAsync(Guid mediaId)
     {
-        var media = await _unitOfWork.MediaAssets.GetByIdAsync(mediaId);
-        return media != null
-               && !media.IsDeleted
-               && media.VideoStatus == VideoProcessingStatus.PendingTagging
-               && !string.IsNullOrEmpty(media.FaceSearchJobId);
+        var media = await _unitOfWork.MediaAssets.GetByIdAsync(mediaId, m => m.MediaTags);
+        return media != null && ShouldProcessVideoFaceTags(media);
     }
 
     /// <inheritdoc />
@@ -674,6 +683,35 @@ public class MediaService : IMediaService
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when Rekognition face-search results should be polled and <see cref="MediaTag"/> rows
+    /// (plus face timelines) persisted. Covers the normal <see cref="VideoProcessingStatus.PendingTagging"/>
+    /// path and late face-search webhooks that arrive after Transcribe already set
+    /// <see cref="VideoProcessingStatus.TaggingComplete"/> with zero tags.
+    /// </summary>
+    private static bool ShouldProcessVideoFaceTags(MediaAsset media)
+    {
+        if (media.IsDeleted || string.IsNullOrEmpty(media.FaceSearchJobId))
+            return false;
+
+        if (media.VideoStatus == VideoProcessingStatus.Failed)
+            return false;
+
+        var activeTags = media.MediaTags.Where(t => !t.IsDeleted).ToList();
+
+        if (media.VideoStatus is VideoProcessingStatus.PendingTagging
+            or VideoProcessingStatus.PendingSpeakerMapping)
+            return true;
+
+        if (media.VideoStatus != VideoProcessingStatus.TaggingComplete)
+            return false;
+
+        if (activeTags.Count == 0)
+            return true;
+
+        return activeTags.All(t => string.IsNullOrEmpty(t.FaceSegmentsJson));
+    }
 
     /// <summary>
     /// Advances <see cref="MediaAsset.VideoStatus"/> to <see cref="VideoProcessingStatus.TaggingComplete"/>
