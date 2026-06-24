@@ -26,7 +26,23 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
     /// and again in code as a safety net against speculative low-confidence matches.
     /// Raise toward 1.0 for stricter (fewer false positives) matching.
     /// </summary>
-    private const double MinMatchScore = 0.6;
+    private const double MinMatchScore = 0.75;
+
+    /// <summary>Max 1-second label buckets sent to the LLM across all segment windows.</summary>
+    private const int MaxLabelGroups = 400;
+
+    /// <summary>Each face/voice window receives at least this many label buckets when downsampling.</summary>
+    private const int MinGroupsPerSegment = 10;
+
+    /// <summary>Windows at or below this span always include every label second-group (no cap).</summary>
+    private const long SmallWindowMaxMs = 15_000;
+
+    private static readonly HashSet<string> GenericLabelNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Person", "People", "Human", "Hand", "Hands", "Finger", "Arm", "Head", "Face",
+        "Clothing", "Apparel", "Portrait", "Photography", "Microphone", "Indoors", "Room",
+        "Furniture", "Table", "Chair", "Wall", "Floor", "Ceiling", "Light", "Lighting"
+    };
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -144,8 +160,9 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
 
         foreach (var s in normalized)
             _logger.LogInformation(
-                "BedrockMantleStrengthMatchService: raw match [{Start}ms→{End}ms] span={Span}ms score={Score:0.00} strength={Strength} {Kept}",
+                "BedrockMantleStrengthMatchService: raw match [{Start}ms→{End}ms] span={Span}ms score={Score:0.00} strength={Strength} evidence=[{Evidence}] {Kept}",
                 s.StartMs, s.EndMs, s.EndMs - s.StartMs, s.Score, s.Strength,
+                string.Join(", ", s.EvidenceLabels),
                 s.Score >= MinMatchScore ? "KEPT" : "DROPPED(<threshold)");
 
         var matched = normalized
@@ -168,13 +185,33 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
     {
         var start = s.StartMs;
         var end = s.EndMs <= 0 || s.EndMs < start ? start : s.EndMs;
-        return new MatchedSegment(start, end, s.Strength ?? string.Empty, s.Score);
+        var evidence = (s.EvidenceLabels ?? Array.Empty<string>())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToList();
+
+        return new MatchedSegment(start, end, s.Strength ?? string.Empty, s.Score, evidence);
     }
 
-    /// <summary>
-    /// Builds the user prompt. Identical sampling logic to BedrockStrengthMatchService -
-    /// groups labels into 1-second buckets, samples up to 200 groups evenly.
-    /// </summary>
+    private static void AppendMatchResponseSchema(StringBuilder sb, string exampleEndMs)
+    {
+        sb.AppendLine("Respond with ONLY valid JSON, no extra text, no markdown fences:");
+        sb.AppendLine("{");
+        sb.AppendLine("  \"matched_segments\": [");
+        sb.AppendLine(
+            $"    {{ \"start_ms\": 6000, \"end_ms\": {exampleEndMs}, \"strength\": \"example\", \"score\": 0.9, \"evidence_labels\": [\"Eating\", \"Food\"] }}");
+        sb.AppendLine("  ],");
+        sb.AppendLine("  \"reasoning\": \"one short sentence\"");
+        sb.AppendLine("}");
+    }
+
+    private static void AppendEvidenceLabelInstructions(StringBuilder sb, int startIndex)
+    {
+        sb.AppendLine(
+            $"{startIndex}. evidence_labels: REQUIRED string array of EXACT label names copied from the LABEL DETECTION TIMELINE that justify the match (prefer two or more distinct activity labels; never use generic labels like Person or Hand).");
+        sb.AppendLine(
+            $"{startIndex + 1}. start_ms/end_ms may span a face or voice window, but evidence_labels must pinpoint which visual labels support the match — downstream clipping uses those label timestamps.");
+    }
+
     private static string BuildPrompt(
         IList<FaceTimestampSegment> faceSegments,
         IList<LabelDetectionEntry> labelTimeline,
@@ -193,27 +230,21 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             sb.AppendLine($"  - {seg.StartMs}ms to {seg.EndMs}ms");
 
         sb.AppendLine();
-        AppendSampledLabelTimeline(sb, labelTimeline);
+        AppendSegmentScopedLabelTimeline(sb, faceSegments, labelTimeline);
 
         sb.AppendLine();
         sb.AppendLine("INSTRUCTIONS:");
-        sb.AppendLine("1. For each face segment, check which labels appear during that time window.");
+        sb.AppendLine("1. Evaluate each WINDOW independently using ONLY the labels listed under that WINDOW. Do not infer from labels outside the window.");
         sb.AppendLine("2. Match a label to the strength ONLY when the label DIRECTLY and UNAMBIGUOUSLY represents that strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
         sb.AppendLine("3. DO NOT match on weak, generic, or speculative evidence. A single ambiguous label (e.g. 'Slapping', 'Hand', 'Person', 'People', 'Clothing') is NOT enough. If you find yourself reasoning that a label 'suggests', 'could be', 'might be', or 'is related to' the strength, treat it as NO match.");
-        sb.AppendLine("4. Require multiple corroborating labels OR one strong, specific label that names the activity itself before matching.");
+        sb.AppendLine("4. Require at least TWO distinct corroborating activity labels OR one strong, specific label that names the activity itself before matching.");
         sb.AppendLine("5. Assign a score 0.0-1.0 reflecting how directly and consistently the labels demonstrate the strength across the segment.");
-        sb.AppendLine($"6. Only include segments with score >= {MinMatchScore:0.0}. When in doubt, exclude the segment.");
+        sb.AppendLine($"6. Only include segments with score >= {MinMatchScore:0.00}. When in doubt, exclude the segment.");
         sb.AppendLine("7. If NO segment clearly demonstrates the strength, return an empty matched_segments array.");
         sb.AppendLine("8. Keep reasoning to ONE short sentence, max 20 words.");
+        AppendEvidenceLabelInstructions(sb, 9);
         sb.AppendLine();
-        sb.AppendLine("Respond with ONLY valid JSON, no extra text, no markdown fences:");
-        sb.AppendLine("{");
-        sb.AppendLine("  \"matched_segments\": [");
-        sb.AppendLine("    { \"start_ms\": 6000, \"end_ms\": 6000, \"strength\": \"example\", \"score\": 0.9 }");
-        sb.AppendLine("  ],");
-        sb.AppendLine("  NOTE: end_ms MUST equal start_ms for a single detection instant; never use end_ms=0.");
-        sb.AppendLine("  \"reasoning\": \"one short sentence\"");
-        sb.AppendLine("}");
+        AppendMatchResponseSchema(sb, "6000");
 
         return sb.ToString();
     }
@@ -230,25 +261,20 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         sb.AppendLine("STUDENT STRENGTH DESCRIPTION:");
         sb.AppendLine($"\"{strengthDescription}\"");
         sb.AppendLine();
-        AppendSampledLabelTimeline(sb, labelTimeline);
+        AppendActivityPrioritizedLabelTimeline(sb, labelTimeline);
         sb.AppendLine();
         sb.AppendLine("INSTRUCTIONS:");
         sb.AppendLine("1. Find contiguous or nearby label timestamps where labels DIRECTLY and UNAMBIGUOUSLY represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
         sb.AppendLine("2. Return matched_segments with start_ms and end_ms taken from the label timestamps (merge nearby matches into one range).");
         sb.AppendLine("3. DO NOT match on weak, generic, or speculative evidence. A single ambiguous label (e.g. 'Person', 'Hand') is NOT enough.");
-        sb.AppendLine("4. Require multiple corroborating labels OR one strong, specific label that names the activity itself.");
+        sb.AppendLine("4. Require at least TWO distinct corroborating activity labels OR one strong, specific label that names the activity itself.");
         sb.AppendLine("5. Assign score 0.0-1.0 per segment.");
-        sb.AppendLine($"6. Only include segments with score >= {MinMatchScore:0.0}. When in doubt, exclude.");
+        sb.AppendLine($"6. Only include segments with score >= {MinMatchScore:0.00}. When in doubt, exclude.");
         sb.AppendLine("7. If NO time range clearly demonstrates the strength, return an empty matched_segments array.");
         sb.AppendLine("8. Keep reasoning to ONE short sentence, max 20 words.");
+        AppendEvidenceLabelInstructions(sb, 9);
         sb.AppendLine();
-        sb.AppendLine("Respond with ONLY valid JSON, no extra text, no markdown fences:");
-        sb.AppendLine("{");
-        sb.AppendLine("  \"matched_segments\": [");
-        sb.AppendLine("    { \"start_ms\": 6000, \"end_ms\": 12000, \"strength\": \"example\", \"score\": 0.9 }");
-        sb.AppendLine("  ],");
-        sb.AppendLine("  \"reasoning\": \"one short sentence\"");
-        sb.AppendLine("}");
+        AppendMatchResponseSchema(sb, "12000");
 
         return sb.ToString();
     }
@@ -273,52 +299,197 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             sb.AppendLine($"  - {seg.StartMs}ms to {seg.EndMs}ms");
 
         sb.AppendLine();
-        AppendSampledLabelTimeline(sb, labelTimeline);
+        AppendSegmentScopedLabelTimeline(sb, voiceOnlySegments, labelTimeline);
+
         sb.AppendLine();
         sb.AppendLine("INSTRUCTIONS:");
-        sb.AppendLine("1. For each voice window, check which visual labels appear during that same time range.");
+        sb.AppendLine("1. Evaluate each WINDOW independently using ONLY the labels listed under that WINDOW. Do not infer from labels outside the window.");
         sb.AppendLine("2. Match ONLY when labels DIRECTLY and UNAMBIGUOUSLY represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
         sb.AppendLine("3. DO NOT match on weak, generic, or speculative evidence. A single ambiguous label (e.g. 'Person', 'Hand', 'Microphone') is NOT enough.");
-        sb.AppendLine("4. Require multiple corroborating labels OR one strong, specific label that names the activity itself.");
-        sb.AppendLine("5. Return matched_segments using the VOICE window timestamps (start_ms/end_ms from the voice windows above) when labels in that window demonstrate the strength.");
+        sb.AppendLine("4. Require at least TWO distinct corroborating activity labels OR one strong, specific label that names the activity itself.");
+        sb.AppendLine("5. Return matched_segments using timestamps where labels demonstrate the strength — prefer the narrowest range covering those labels, NOT the entire voice window unless labels span the full window.");
         sb.AppendLine("6. Assign score 0.0-1.0 per segment.");
-        sb.AppendLine($"7. Only include segments with score >= {MinMatchScore:0.0}. When in doubt, exclude.");
+        sb.AppendLine($"7. Only include segments with score >= {MinMatchScore:0.00}. When in doubt, exclude.");
         sb.AppendLine("8. If NO voice window has supporting visual labels, return an empty matched_segments array.");
         sb.AppendLine("9. Keep reasoning to ONE short sentence, max 20 words.");
+        AppendEvidenceLabelInstructions(sb, 10);
         sb.AppendLine();
-        sb.AppendLine("Respond with ONLY valid JSON, no extra text, no markdown fences:");
-        sb.AppendLine("{");
-        sb.AppendLine("  \"matched_segments\": [");
-        sb.AppendLine("    { \"start_ms\": 6000, \"end_ms\": 12000, \"strength\": \"example\", \"score\": 0.9 }");
-        sb.AppendLine("  ],");
-        sb.AppendLine("  \"reasoning\": \"one short sentence\"");
-        sb.AppendLine("}");
+        AppendMatchResponseSchema(sb, "12000");
 
         return sb.ToString();
     }
 
-    private static void AppendSampledLabelTimeline(StringBuilder sb, IList<LabelDetectionEntry> labelTimeline)
+    /// <summary>
+    /// Lists labels under each face/voice window so the LLM evaluates segments with local
+    /// context instead of a flat uniformly-sampled timeline.
+    /// </summary>
+    private static void AppendSegmentScopedLabelTimeline(
+        StringBuilder sb,
+        IList<FaceTimestampSegment> segments,
+        IList<LabelDetectionEntry> labelTimeline)
+    {
+        sb.AppendLine("LABEL DETECTION TIMELINE BY WINDOW (labels listed under each window only):");
+
+        var perSegment = segments
+            .Select(seg =>
+            {
+                var groups = labelTimeline
+                    .Where(l => l.TimestampMs >= seg.StartMs && l.TimestampMs <= seg.EndMs)
+                    .GroupBy(l => l.TimestampMs / 1000 * 1000)
+                    .OrderBy(g => g.Key)
+                    .ToList();
+                return (Seg: seg, Groups: groups);
+            })
+            .ToList();
+
+        var selected = AllocateSegmentLabelGroups(perSegment);
+
+        foreach (var (seg, groups) in selected)
+        {
+            sb.AppendLine($"WINDOW {seg.StartMs}ms → {seg.EndMs}ms:");
+            if (groups.Count == 0)
+            {
+                sb.AppendLine("  (no labels in this window)");
+                sb.AppendLine();
+                continue;
+            }
+
+            foreach (var grp in groups)
+            {
+                var labels = string.Join(", ", grp.Select(l => $"{l.LabelName} {l.Confidence:F0}pct"));
+                sb.AppendLine($"  {grp.Key}ms: {labels}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    /// <summary>Scene-only path: activity-priority sampling across the full timeline.</summary>
+    private static void AppendActivityPrioritizedLabelTimeline(
+        StringBuilder sb,
+        IList<LabelDetectionEntry> labelTimeline)
     {
         sb.AppendLine("LABEL DETECTION TIMELINE (timestamp_ms: label confidence):");
 
-        const int MaxLabelGroups = 200;
-        var allLabelGroups = labelTimeline
+        var allGroups = labelTimeline
             .GroupBy(l => l.TimestampMs / 1000 * 1000)
             .OrderBy(g => g.Key)
             .ToList();
 
-        var sampledGroups = allLabelGroups.Count <= MaxLabelGroups
-            ? allLabelGroups
-            : Enumerable.Range(0, MaxLabelGroups)
-                .Select(i => allLabelGroups[(int)((double)i * allLabelGroups.Count / MaxLabelGroups)])
+        var sampled = allGroups.Count <= MaxLabelGroups
+            ? allGroups
+            : RankSecondGroups(allGroups, null)
+                .Take(MaxLabelGroups)
+                .OrderBy(g => g.Key)
                 .ToList();
 
-        foreach (var grp in sampledGroups)
+        foreach (var grp in sampled)
         {
             var labels = string.Join(", ", grp.Select(l => $"{l.LabelName} {l.Confidence:F0}pct"));
             sb.AppendLine($"  {grp.Key}ms: {labels}");
         }
     }
+
+    private static List<(FaceTimestampSegment Seg, List<IGrouping<long, LabelDetectionEntry>> Groups)>
+        AllocateSegmentLabelGroups(
+            List<(FaceTimestampSegment Seg, List<IGrouping<long, LabelDetectionEntry>> Groups)> perSegment)
+    {
+        var totalAll = perSegment.Sum(p => p.Groups.Count);
+        if (totalAll <= MaxLabelGroups)
+            return perSegment;
+
+        var rankedPerSegment = perSegment
+            .Select(p => (p.Seg, Ranked: RankSecondGroups(p.Groups, p.Seg), p.Groups.Count))
+            .ToList();
+
+        var selected = Enumerable.Range(0, perSegment.Count)
+            .Select(_ => new List<IGrouping<long, LabelDetectionEntry>>())
+            .ToList();
+        var remaining = MaxLabelGroups;
+
+        // Pass 1: small windows and mandatory minimums
+        for (var i = 0; i < rankedPerSegment.Count; i++)
+        {
+            var (seg, ranked, count) = rankedPerSegment[i];
+            if (count == 0)
+                continue;
+
+            var span = seg.EndMs - seg.StartMs;
+            int take;
+            if (span <= SmallWindowMaxMs)
+                take = count;
+            else
+                take = Math.Min(MinGroupsPerSegment, count);
+
+            take = Math.Min(take, remaining);
+            selected[i] = ranked.Take(take).ToList();
+            remaining -= selected[i].Count;
+        }
+
+        // Pass 2: distribute leftover budget round-robin by priority
+        if (remaining > 0)
+        {
+            var cursors = rankedPerSegment
+                .Select((p, i) => (Index: i, Cursor: selected[i].Count, p.Ranked))
+                .Where(x => x.Cursor < x.Ranked.Count)
+                .ToList();
+
+            while (remaining > 0 && cursors.Count > 0)
+            {
+                var nextCursors = new List<(int Index, int Cursor, List<IGrouping<long, LabelDetectionEntry>> Ranked)>();
+                foreach (var (index, cursor, ranked) in cursors)
+                {
+                    if (remaining == 0)
+                        break;
+
+                    selected[index].Add(ranked[cursor]);
+                    remaining--;
+
+                    var next = cursor + 1;
+                    if (next < ranked.Count)
+                        nextCursors.Add((index, next, ranked));
+                }
+
+                cursors = nextCursors;
+            }
+        }
+
+        return perSegment
+            .Select((p, i) => (p.Seg, Groups: selected[i].OrderBy(g => g.Key).ToList()))
+            .ToList();
+    }
+
+    private static List<IGrouping<long, LabelDetectionEntry>> RankSecondGroups(
+        IList<IGrouping<long, LabelDetectionEntry>> groups,
+        FaceTimestampSegment? window)
+    {
+        var startSecond = window != null ? window.StartMs / 1000 * 1000 : (long?)null;
+        var endSecond = window != null ? window.EndMs / 1000 * 1000 : (long?)null;
+
+        return groups
+            .OrderByDescending(g => SecondGroupPriority(g, startSecond, endSecond))
+            .ThenBy(g => g.Key)
+            .ToList();
+    }
+
+    private static int SecondGroupPriority(
+        IGrouping<long, LabelDetectionEntry> group,
+        long? windowStartSecond,
+        long? windowEndSecond)
+    {
+        var isBoundary = windowStartSecond.HasValue && windowEndSecond.HasValue
+                         && (group.Key == windowStartSecond.Value || group.Key == windowEndSecond.Value);
+        var activityMax = group
+            .Where(l => !IsGenericLabel(l.LabelName))
+            .Select(l => l.Confidence)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        var hasActivity = activityMax >= 60;
+        return (isBoundary ? 10_000 : 0) + (hasActivity ? 5_000 : 0) + (int)activityMax;
+    }
+
+    private static bool IsGenericLabel(string labelName) => GenericLabelNames.Contains(labelName);
 
     /// <summary>
     /// Extracts the JSON object from response text.
@@ -371,5 +542,8 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
 
         [JsonPropertyName("score")]
         public double Score { get; init; }
+
+        [JsonPropertyName("evidence_labels")]
+        public string[]? EvidenceLabels { get; init; }
     }
 }

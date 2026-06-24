@@ -68,4 +68,13 @@ public record StrengthMatchResult(
 /// <param name="EndMs">Segment end in milliseconds.</param>
 /// <param name="Strength">The strength label this segment was matched to.</param>
 /// <param name="Score">Confidence score 0–1 assigned by Claude (higher = better match).</param>
-public record MatchedSegment(long StartMs, long EndMs, string Strength, double Score);
+/// <param name="EvidenceLabels">
+/// Exact Rekognition label name(s) the model used to justify the match; used downstream to
+/// anchor clip bounds without re-interpreting the strength description in code.
+/// </param>
+public record MatchedSegment(
+    long StartMs,
+    long EndMs,
+    string Strength,
+    double Score,
+    IReadOnlyList<string> EvidenceLabels);

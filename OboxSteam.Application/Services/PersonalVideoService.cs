@@ -65,8 +65,28 @@ public class PersonalVideoService : IPersonalVideoService
         string? FailureReason = null);
 
     // ── Clipping constants ───────────────────────────────────────────────────
-    /// <summary>Milliseconds of padding added before/after each detected face segment.</summary>
+    /// <summary>Padding before/after range segments (StartMs &lt; EndMs) from strength matching.</summary>
     private const long BufferMs = 2_000;
+
+    /// <summary>
+    /// Smaller padding for point detections (StartMs == EndMs) so a single label instant
+    /// does not expand into a 4-second clip.
+    /// </summary>
+    private const long PointBufferMs = 1_000;
+
+    /// <summary>After buffering, merge adjacent ranges when the gap between them is at most this.</summary>
+    private const long MergeGapMs = 500;
+
+    /// <summary>Labels within this gap (ms) are merged into one voice clip cluster.</summary>
+    private const long LabelClusterMaxGapMs = 5_000;
+
+    /// <summary>
+    /// Trim when the LLM time range is at least this many times wider than the evidence-label
+    /// cluster span (e.g. 1.5 → a 15 s LLM range shrinks if evidence spans ~10 s or less).
+    /// </summary>
+    private const double TrimWhenLlmSpanExceedsEvidenceRatio = 1.5;
+
+    private const float MinLabelConfidenceForTrim = 60f;
 
     /// <summary>
     /// When filtering label-detection entries for Claude, include labels within this
@@ -581,7 +601,7 @@ public class PersonalVideoService : IPersonalVideoService
         var voiceSegments = ReadVoiceSegments(media, studentId);
         var combinedSegments = faceSegments
             .Concat(voiceSegments)
-            .Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0));
+            .Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0, Array.Empty<string>()));
 
         var timeClips = MergeAndFormatTimeClips(combinedSegments);
 
@@ -728,6 +748,7 @@ public class PersonalVideoService : IPersonalVideoService
             media.Id, isSceneOnly, faceRelevantLabels.Count, voiceRelevantLabels.Count);
 
         var allMatched = new List<MatchedSegment>();
+        var faceMatched = new List<MatchedSegment>();
         string reasoning = "";
 
         // ── Scene-only: full label timeline (no face constraint) ──────────────
@@ -737,7 +758,9 @@ public class PersonalVideoService : IPersonalVideoService
             {
                 var labelOnlyMatch = await _strengthMatchService.MatchStrengthsFromLabelsOnlyAsync(
                     labelTimeline, strengthDescription);
-                allMatched.AddRange(labelOnlyMatch.MatchedSegments);
+                var trimmedLabelOnly = TrimMatchesToEvidenceLabels(
+                    labelOnlyMatch.MatchedSegments, labelTimeline, media.Id, "label-only");
+                allMatched.AddRange(trimmedLabelOnly);
                 reasoning = labelOnlyMatch.Reasoning;
             }
             catch (Exception ex)
@@ -764,7 +787,10 @@ public class PersonalVideoService : IPersonalVideoService
             {
                 var faceMatch = await _strengthMatchService.MatchStrengthsAsync(
                     faceSegments, faceRelevantLabels, strengthDescription);
-                allMatched.AddRange(faceMatch.MatchedSegments);
+                var trimmedFace = TrimMatchesToEvidenceLabels(
+                    faceMatch.MatchedSegments, labelTimeline, media.Id, "face");
+                faceMatched.AddRange(trimmedFace);
+                allMatched.AddRange(trimmedFace);
                 reasoning = faceMatch.Reasoning;
             }
             catch (Exception ex)
@@ -791,7 +817,10 @@ public class PersonalVideoService : IPersonalVideoService
             {
                 var voiceMatch = await _strengthMatchService.MatchStrengthsForVoiceOnlyAsync(
                     voiceOnlySegments, voiceRelevantLabels, strengthDescription);
-                allMatched.AddRange(voiceMatch.MatchedSegments);
+                var trimmedVoice = TrimMatchesToEvidenceLabels(
+                    voiceMatch.MatchedSegments, labelTimeline, media.Id, "voice", voiceOnlySegments);
+                var voiceKept = PreferFaceOverOverlappingVoice(faceMatched, trimmedVoice, media.Id);
+                allMatched.AddRange(voiceKept);
                 if (!string.IsNullOrWhiteSpace(voiceMatch.Reasoning))
                     reasoning = string.IsNullOrWhiteSpace(reasoning)
                         ? voiceMatch.Reasoning
@@ -852,63 +881,227 @@ public class PersonalVideoService : IPersonalVideoService
     }
 
     /// <summary>
-    /// Converts a list of raw segments into AWS MediaConvert-compatible TimeClips, mathematically guaranteeing 
-    /// strictly ascending and non-overlapping StartTimecodes to prevent ERROR 1040.
+    /// Drops voice matches that temporally overlap any on-camera face match — face is the
+    /// stronger signal when both paths would produce clips for the same moment.
     /// </summary>
-    private static List<TimeClip> MergeAndFormatTimeClips(IEnumerable<MatchedSegment> segments)
+    private List<MatchedSegment> PreferFaceOverOverlappingVoice(
+        IList<MatchedSegment> faceMatches,
+        IList<MatchedSegment> voiceMatches,
+        Guid mediaId)
     {
-        // 1. Convert to TimeClips.
-        //    IMPORTANT: face timelines are collapsed with a 500 ms gap while Rekognition samples
-        //    faces ~once per second, so MOST face segments are single-sample points where
-        //    StartMs == EndMs. We must keep those (StartMs <= EndMs) and only drop genuine
-        //    hallucinations where StartMs > EndMs. The buffer is applied AFTER this check so a
-        //    point [t, t] becomes a valid [t-BufferMs, t+BufferMs] clip — dropping points here
-        //    (the old `StartMs < EndMs`) emptied the clip list and fell back to the full video.
-        var timeClipsRaw = segments
-            .Where(s => s.StartMs <= s.EndMs) // keep point detections; drop EndMs < StartMs hallucinations
-                                              // Apply BufferMs padding on both sides (clamped to 0) for breathing room around each segment.
-            .Select(s => new { Start = Math.Max(0, s.StartMs - BufferMs), End = s.EndMs + BufferMs })
-            .Select(seg => new TimeClip(MsToTimecode(seg.Start), MsToTimecode(seg.End)))
-            .Where(t => t.StartTimecode != t.EndTimecode) // drop 0-duration clips
-            .OrderBy(t => t.StartTimecode)
-            .ToList();
+        if (faceMatches.Count == 0)
+            return voiceMatches.ToList();
 
-        // 2. Merge overlapping or identical StartTimecodes
-        var timeClips = new List<TimeClip>();
-        foreach (var tc in timeClipsRaw)
+        var kept = new List<MatchedSegment>(voiceMatches.Count);
+        foreach (var voice in voiceMatches)
         {
-            if (timeClips.Count == 0)
+            if (faceMatches.Any(f => SegmentsOverlapMs(f.StartMs, f.EndMs, voice.StartMs, voice.EndMs)))
             {
-                timeClips.Add(tc);
+                _logger.LogInformation(
+                    "[PersonalVideoService] Voice match dropped (overlaps face): [{Start}ms→{End}ms] score={Score:0.00} MediaId={MediaId}",
+                    voice.StartMs, voice.EndMs, voice.Score, mediaId);
                 continue;
             }
 
-            var last = timeClips[^1];
-            // If the start timecode is equal to or earlier than the previous one's start
-            if (string.Compare(tc.StartTimecode, last.StartTimecode) <= 0)
+            kept.Add(voice);
+        }
+
+        return kept;
+    }
+
+    /// <summary>
+    /// Converts matched segments into AWS MediaConvert-compatible <see cref="TimeClip"/>s:
+    /// applies per-segment buffer (smaller for point detections), merges overlaps and small
+    /// gaps in millisecond space, then formats strictly ascending non-overlapping timecodes.
+    /// </summary>
+    private static List<TimeClip> MergeAndFormatTimeClips(IEnumerable<MatchedSegment> segments)
+    {
+        var bufferedRanges = segments
+            .Where(s => s.StartMs <= s.EndMs)
+            .Select(s =>
             {
-                // Merge them by extending the EndTimecode of the last clip if needed
-                if (string.Compare(tc.EndTimecode, last.EndTimecode) > 0)
-                {
-                    timeClips[^1] = last with { EndTimecode = tc.EndTimecode };
-                }
-            }
-            // If it overlaps with the previous clip's end time
-            else if (string.Compare(tc.StartTimecode, last.EndTimecode) <= 0)
-            {
-                // Extend end time
-                if (string.Compare(tc.EndTimecode, last.EndTimecode) > 0)
-                {
-                    timeClips[^1] = last with { EndTimecode = tc.EndTimecode };
-                }
-            }
+                var buffer = s.StartMs == s.EndMs ? PointBufferMs : BufferMs;
+                return (Start: Math.Max(0, s.StartMs - buffer), End: s.EndMs + buffer);
+            })
+            .Where(r => r.End > r.Start)
+            .OrderBy(r => r.Start)
+            .ToList();
+
+        if (bufferedRanges.Count == 0)
+            return new List<TimeClip>();
+
+        var merged = new List<(long Start, long End)> { bufferedRanges[0] };
+        for (var i = 1; i < bufferedRanges.Count; i++)
+        {
+            var current = bufferedRanges[i];
+            var last = merged[^1];
+            if (current.Start <= last.End + MergeGapMs)
+                merged[^1] = (last.Start, Math.Max(last.End, current.End));
             else
+                merged.Add(current);
+        }
+
+        return merged
+            .Select(r => new TimeClip(MsToTimecode(r.Start), MsToTimecode(r.End)))
+            .Where(t => t.StartTimecode != t.EndTimecode)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Shrinks LLM segment bounds to Rekognition timestamps for the model's
+    /// <see cref="MatchedSegment.EvidenceLabels"/> when the LLM range is much wider than that
+    /// evidence cluster. Semantic matching stays with the LLM; this step is geometry only.
+    /// </summary>
+    private List<MatchedSegment> TrimMatchesToEvidenceLabels(
+        IList<MatchedSegment> matches,
+        IList<LabelDetectionEntry> labelTimeline,
+        Guid mediaId,
+        string path,
+        IList<FaceTimestampSegment>? clampWindows = null)
+    {
+        var result = new List<MatchedSegment>();
+
+        foreach (var match in matches)
+        {
+            var searchStart = match.StartMs;
+            var searchEnd = match.EndMs;
+
+            FaceTimestampSegment? clampWindow = null;
+            if (clampWindows is { Count: > 0 })
             {
-                timeClips.Add(tc);
+                clampWindow = clampWindows.FirstOrDefault(v =>
+                    SegmentsOverlapMs(v.StartMs, v.EndMs, match.StartMs, match.EndMs));
+
+                if (clampWindow == null)
+                {
+                    _logger.LogWarning(
+                        "[PersonalVideoService] Evidence trim ({Path}): no clamp window for [{Start}ms→{End}ms] MediaId={MediaId}; keeping LLM bounds",
+                        path, match.StartMs, match.EndMs, mediaId);
+                    result.Add(match);
+                    continue;
+                }
+
+                searchStart = Math.Max(searchStart, clampWindow.StartMs);
+                searchEnd = Math.Min(searchEnd, clampWindow.EndMs);
+            }
+
+            if (searchStart > searchEnd)
+                continue;
+
+            var llmSpan = searchEnd - searchStart;
+            var evidenceNames = match.EvidenceLabels
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (evidenceNames.Count == 0)
+            {
+                _logger.LogWarning(
+                    "[PersonalVideoService] Evidence trim ({Path}): no evidence_labels on match [{Start}ms→{End}ms] MediaId={MediaId}; keeping LLM bounds",
+                    path, searchStart, searchEnd, mediaId);
+                result.Add(match with { StartMs = searchStart, EndMs = searchEnd });
+                continue;
+            }
+
+            var evidenceSet = new HashSet<string>(evidenceNames, StringComparer.OrdinalIgnoreCase);
+            var evidenceInRange = labelTimeline
+                .Where(l => l.TimestampMs >= searchStart
+                            && l.TimestampMs <= searchEnd
+                            && l.Confidence >= MinLabelConfidenceForTrim
+                            && evidenceSet.Contains(l.LabelName))
+                .ToList();
+
+            if (evidenceInRange.Count == 0)
+            {
+                if (path == "voice" && clampWindow != null)
+                {
+                    var voiceSpan = clampWindow.EndMs - clampWindow.StartMs;
+                    var coversFullVoice = voiceSpan > 0 && llmSpan >= voiceSpan * 0.85;
+                    if (coversFullVoice)
+                    {
+                        _logger.LogInformation(
+                            "[PersonalVideoService] Evidence trim REJECTED ({Path}) [{Start}ms→{End}ms] MediaId={MediaId}: full voice span, evidence [{Evidence}] not found in timeline",
+                            path, searchStart, searchEnd, mediaId, string.Join(", ", evidenceNames));
+                        continue;
+                    }
+                }
+
+                _logger.LogWarning(
+                    "[PersonalVideoService] Evidence trim ({Path}): evidence [{Evidence}] not found in [{Start}ms→{End}ms] MediaId={MediaId}; keeping LLM bounds",
+                    path, string.Join(", ", evidenceNames), searchStart, searchEnd, mediaId);
+                result.Add(match with { StartMs = searchStart, EndMs = searchEnd });
+                continue;
+            }
+
+            var clusters = ClusterLabelsByTime(evidenceInRange, LabelClusterMaxGapMs);
+            var trimmedAny = false;
+
+            foreach (var cluster in clusters)
+            {
+                var clusterStart = cluster.Min(l => l.TimestampMs);
+                var clusterEnd = cluster.Max(l => l.TimestampMs);
+                var clusterSpan = clusterEnd - clusterStart;
+                var shouldTrim = llmSpan > Math.Max(clusterSpan, 1) * TrimWhenLlmSpanExceedsEvidenceRatio;
+
+                if (!shouldTrim)
+                    continue;
+
+                var outStart = clusterStart;
+                var outEnd = clusterEnd;
+                if (clampWindow != null)
+                {
+                    outStart = Math.Max(outStart, clampWindow.StartMs);
+                    outEnd = Math.Min(outEnd, clampWindow.EndMs);
+                }
+
+                if (outStart > outEnd)
+                    continue;
+
+                trimmedAny = true;
+                result.Add(new MatchedSegment(outStart, outEnd, match.Strength, match.Score, evidenceNames));
+
+                _logger.LogInformation(
+                    "[PersonalVideoService] Evidence trim ({Path}) [{LlmStart}ms→{LlmEnd}ms] span={LlmSpan}ms → [{Start}ms→{End}ms] span={OutSpan}ms MediaId={MediaId} evidence=[{Evidence}]",
+                    path, searchStart, searchEnd, llmSpan, outStart, outEnd, outEnd - outStart, mediaId,
+                    string.Join(", ", evidenceNames));
+            }
+
+            if (!trimmedAny)
+            {
+                result.Add(match with { StartMs = searchStart, EndMs = searchEnd });
+                _logger.LogInformation(
+                    "[PersonalVideoService] Evidence trim ({Path}): LLM range already tight [{Start}ms→{End}ms] MediaId={MediaId} evidence=[{Evidence}]",
+                    path, searchStart, searchEnd, mediaId, string.Join(", ", evidenceNames));
             }
         }
-        return timeClips;
+
+        return result;
     }
+
+    private static List<List<LabelDetectionEntry>> ClusterLabelsByTime(
+        IList<LabelDetectionEntry> labels,
+        long maxGapMs)
+    {
+        if (labels.Count == 0)
+            return new List<List<LabelDetectionEntry>>();
+
+        var sorted = labels.OrderBy(l => l.TimestampMs).ToList();
+        var clusters = new List<List<LabelDetectionEntry>> { new() { sorted[0] } };
+
+        foreach (var label in sorted.Skip(1))
+        {
+            var lastTs = clusters[^1][^1].TimestampMs;
+            if (label.TimestampMs - lastTs <= maxGapMs)
+                clusters[^1].Add(label);
+            else
+                clusters.Add(new List<LabelDetectionEntry> { label });
+        }
+
+        return clusters;
+    }
+
+    private static bool SegmentsOverlapMs(long aStart, long aEnd, long bStart, long bEnd) =>
+        Math.Min(aEnd, bEnd) - Math.Max(aStart, bStart) >= 0;
 
 
     // ─────────────────────────────────────────────────────────────────────────
