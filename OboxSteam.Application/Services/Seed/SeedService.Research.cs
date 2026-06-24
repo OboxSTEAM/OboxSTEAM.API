@@ -281,15 +281,8 @@ public partial class SeedService
             return;
         }
 
-        var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
         var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
         var student3 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-003");
-        ProgramEnrollment? programEnrollmentStudent1 = null;
-        if (student1 != null)
-        {
-            programEnrollmentStudent1 = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                pe => pe.StudentId == student1.Id && !pe.IsDeleted);
-        }
         var enrollTime = DateTime.UtcNow;
         var moduleEnrollments = new List<ModuleEnrollment>();
 
@@ -326,7 +319,6 @@ public partial class SeedService
             });
         }
 
-        await TryAddEnrollmentAsync(student1, programEnrollmentStudent1?.Id, 0m);
         await TryAddEnrollmentAsync(student2, null, 20m);
         await TryAddEnrollmentAsync(student3, null, 10m);
 
@@ -358,24 +350,32 @@ public partial class SeedService
 
         var modules = await _unitOfWork.Modules.GetAllAsync(
             m => m.ProgramId == program.Id && !m.IsDeleted);
-        var moduleIds = modules.Select(m => m.Id).ToList();
-        if (moduleIds.Count == 0)
+        if (modules.Count == 0)
         {
             return;
         }
 
-        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-            pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted);
-
-        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
-            me => me.StudentId == student.Id && moduleIds.Contains(me.ModuleId) && !me.IsDeleted);
+        var moduleIds = modules.Select(m => m.Id).ToList();
+        var programActivityIds = new HashSet<Guid>();
+        foreach (var module in modules)
+        {
+            var activityIds = await ActivityProgressCalculationHelper.GetModuleActivityIdsAsync(
+                _unitOfWork,
+                module.Id);
+            foreach (var activityId in activityIds)
+            {
+                programActivityIds.Add(activityId);
+            }
+        }
 
         var changed = false;
 
-        foreach (var moduleEnrollment in moduleEnrollments)
+        if (programActivityIds.Count > 0)
         {
             var activityProgresses = await _unitOfWork.ActivityProgresses.GetAllAsync(
-                ap => ap.ModuleEnrollmentId == moduleEnrollment.Id && !ap.IsDeleted);
+                ap => ap.StudentId == student.Id
+                      && programActivityIds.Contains(ap.ActivityId)
+                      && !ap.IsDeleted);
 
             foreach (var activityProgress in activityProgresses)
             {
@@ -383,26 +383,83 @@ public partial class SeedService
                 changed = true;
             }
 
+            var activityBookings = await _unitOfWork.ActivityBookings.GetAllAsync(
+                ab => ab.StudentId == student.Id
+                      && programActivityIds.Contains(ab.ActivityId)
+                      && !ab.IsDeleted);
+
+            foreach (var booking in activityBookings)
+            {
+                if (booking.Status != BookingStatus.CheckedIn && booking.CheckedInAt == null)
+                {
+                    continue;
+                }
+
+                booking.Status = BookingStatus.Booked;
+                booking.CheckedInAt = null;
+                await _unitOfWork.ActivityBookings.Update(booking);
+                changed = true;
+            }
+        }
+
+        var moduleRobotics1 = modules.FirstOrDefault(m => m.Code == "MOD-ROBOTICS-01");
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.StudentId == student.Id && moduleIds.Contains(me.ModuleId) && !me.IsDeleted);
+
+        var moduleEnrollmentIds = moduleEnrollments.Select(me => me.Id).ToList();
+        if (moduleEnrollmentIds.Count > 0)
+        {
+            var submissions = await _unitOfWork.Submissions.GetAllAsync(
+                s => s.StudentId == student.Id
+                      && s.ModuleEnrollmentId.HasValue
+                      && moduleEnrollmentIds.Contains(s.ModuleEnrollmentId.Value)
+                      && !s.IsDeleted);
+
+            foreach (var submission in submissions)
+            {
+                await _unitOfWork.Submissions.SoftRemove(submission);
+                changed = true;
+            }
+        }
+
+        foreach (var moduleEnrollment in moduleEnrollments)
+        {
+            var isPrimaryModule = moduleRobotics1 != null && moduleEnrollment.ModuleId == moduleRobotics1.Id;
+
+            if (!isPrimaryModule)
+            {
+                await _unitOfWork.ModuleEnrollments.SoftRemove(moduleEnrollment);
+                changed = true;
+                continue;
+            }
+
             if (moduleEnrollment.ProgressPercent != 0m
                 || moduleEnrollment.Status != EnrollmentStatus.Active
-                || moduleEnrollment.CompletedAt.HasValue)
+                || moduleEnrollment.CompletedAt.HasValue
+                || moduleEnrollment.StartedAt.HasValue)
             {
                 moduleEnrollment.ProgressPercent = 0m;
                 moduleEnrollment.Status = EnrollmentStatus.Active;
                 moduleEnrollment.CompletedAt = null;
+                moduleEnrollment.StartedAt = null;
                 await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
                 changed = true;
             }
         }
 
+        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+            pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted);
+
         if (programEnrollment != null
             && (programEnrollment.ProgressPercent != 0m
                 || programEnrollment.Status != EnrollmentStatus.Active
-                || programEnrollment.CompletedAt.HasValue))
+                || programEnrollment.CompletedAt.HasValue
+                || programEnrollment.StartedAt.HasValue))
         {
             programEnrollment.ProgressPercent = 0m;
             programEnrollment.Status = EnrollmentStatus.Active;
             programEnrollment.CompletedAt = null;
+            programEnrollment.StartedAt = null;
             await _unitOfWork.ProgramEnrollments.Update(programEnrollment);
             changed = true;
         }
@@ -414,7 +471,10 @@ public partial class SeedService
         }
 
         await _unitOfWork.SaveChangesAsync();
-        _loggerService.LogInformation("Introduction to Robotics FE test progress reset for STD-001");
+        _loggerService.LogInformation(
+            "Introduction to Robotics FE test progress reset for STD-001 — cleared {ActivityCount} program activities across {ModuleCount} module(s).",
+            programActivityIds.Count,
+            modules.Count);
     }
 
     private async Task SeedResearchActivityProgressAsync()
@@ -737,43 +797,33 @@ public partial class SeedService
         _loggerService.LogInformation("Starting seed research submissions");
 
         var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
-        var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
         var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
         var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
         var milestoneDesign = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
             rm => rm.Code == "RML-ROBOTICS-03-01" && !rm.IsDeleted);
-        var milestonePrototype = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
-            rm => rm.Code == "RML-ROBOTICS-03-02" && !rm.IsDeleted);
 
         if (mentor == null
-            || student1 == null
             || student2 == null
             || moduleRobotics3 == null
-            || milestoneDesign == null
-            || milestonePrototype == null)
+            || milestoneDesign == null)
         {
             _loggerService.LogWarning("Required research submission seed data not found. Skipping.");
             return;
         }
 
         var assignmentDesign = await _unitOfWork.Assignments.GetByIdAsync(milestoneDesign.AssignmentId);
-        var assignmentPrototype = await _unitOfWork.Assignments.GetByIdAsync(milestonePrototype.AssignmentId);
-        if (assignmentDesign == null || assignmentPrototype == null)
+        if (assignmentDesign == null)
         {
             _loggerService.LogWarning("Research milestone assignments not found. Skipping research submission seeding.");
             return;
         }
 
-        var enrollmentStudent1 = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-            me => me.StudentId == student1.Id
-                  && me.ModuleId == moduleRobotics3.Id
-                  && !me.IsDeleted);
         var enrollmentStudent2 = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
             me => me.StudentId == student2.Id
                   && me.ModuleId == moduleRobotics3.Id
                   && !me.IsDeleted);
 
-        if (enrollmentStudent1 == null || enrollmentStudent2 == null)
+        if (enrollmentStudent2 == null)
         {
             _loggerService.LogWarning("Research module enrollments not found. Skipping research submission seeding.");
             return;
@@ -781,49 +831,6 @@ public partial class SeedService
 
         var seedTime = DateTime.UtcNow;
         var submissions = new List<Submission>();
-
-        if (!await SubmissionCodeExistsAsync("SUB-RML0301A"))
-        {
-            submissions.Add(new Submission
-            {
-                Id = Guid.NewGuid(),
-                Code = "SUB-RML0301A",
-                AssignmentId = assignmentDesign.Id,
-                StudentId = student1.Id,
-                ModuleEnrollmentId = enrollmentStudent1.Id,
-                ResearchMilestoneId = milestoneDesign.Id,
-                AttemptNumber = 1,
-                Status = SubmissionStatus.Graded,
-                ContentText = "Our team chose a line-following chassis with ultrasonic obstacle detection.",
-                FileUrl = "https://storage.oboxsteam.com/submissions/robotics-design-brief-std001.pdf",
-                AssignedGrade = 85m,
-                MentorFeedback = "Strong design rationale. Consider adding a power budget table.",
-                VerifiedBy = mentor.Id,
-                SubmittedAt = seedTime.AddDays(-6),
-                GradedAt = seedTime.AddDays(-4),
-                CreatedAt = seedTime.AddDays(-8),
-                CreatedBy = mentor.Id,
-                IsDeleted = false
-            });
-        }
-
-        if (!await SubmissionCodeExistsAsync("SUB-RML0302A"))
-        {
-            submissions.Add(new Submission
-            {
-                Id = Guid.NewGuid(),
-                Code = "SUB-RML0302A",
-                AssignmentId = assignmentPrototype.Id,
-                StudentId = student1.Id,
-                ModuleEnrollmentId = enrollmentStudent1.Id,
-                ResearchMilestoneId = milestonePrototype.Id,
-                AttemptNumber = 0,
-                Status = SubmissionStatus.Pending,
-                CreatedAt = seedTime.AddDays(-1),
-                CreatedBy = mentor.Id,
-                IsDeleted = false
-            });
-        }
 
         if (!await SubmissionCodeExistsAsync("SUB-RML0301B"))
         {

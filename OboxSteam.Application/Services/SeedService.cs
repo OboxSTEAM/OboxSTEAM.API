@@ -44,13 +44,13 @@ public partial class SeedService : ISeedService
         await SeedRoboticsClassSessionsAsync();
         await SeedResearchMilestoneDataAsync();
         await SeedResearchModuleEnrollmentsAsync();
-        await ResetIntroductionToRoboticsFeTestProgressAsync();
         await SeedResearchActivityProgressAsync();
         await SeedEnrollmentActivityProgressAsync();
         await BackfillActivityProgressStatusAsync();
         await SeedResearchSubmissionsAsync();
         await SeedExtendedResearchDataAsync();
         await SeedMaterialsAsync();
+        await ResetIntroductionToRoboticsFeTestProgressAsync();
 
         _loggerService.LogInformation("Finished seed all data");
     }
