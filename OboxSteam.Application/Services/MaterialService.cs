@@ -220,17 +220,8 @@ public class MaterialService : IMaterialService
         {
             try
             {
-                string s3Key;
-                if (Uri.TryCreate(material.FileUrl, UriKind.Absolute, out var uri))
-                {
-                    s3Key = uri.AbsolutePath.TrimStart('/');
-                    var bucketPrefix = $"{_blobService.BucketName}/";
-                    if (s3Key.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
-                    {
-                        s3Key = s3Key[bucketPrefix.Length..];
-                    }
-                }
-                else
+                var s3Key = ExtractS3Key(material.FileUrl, _blobService.BucketName);
+                if (string.IsNullOrWhiteSpace(s3Key))
                 {
                     s3Key = material.FileUrl;
                 }
@@ -284,15 +275,42 @@ public class MaterialService : IMaterialService
         return await _blobService.GetFileUrlAsync(s3Key);
     }
 
-    private static string? ExtractS3Key(string fileUrl)
+    /// <summary>
+    /// Resolves the bucket-relative S3 key from a stored file URL or raw key.
+    /// Percent-decodes the path so presigned URL generation does not double-encode
+    /// seed assets whose <c>FileUrl</c> is a full public S3 link with UTF-8 escapes.
+    /// ASCII upload keys (e.g. <c>materials/pdf/{id}.pdf</c>) are unchanged.
+    /// </summary>
+    private static string? ExtractS3Key(string fileUrl, string? bucketName = null)
     {
-        if (fileUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(fileUrl))
         {
-            var uri = new Uri(fileUrl);
-            return uri.AbsolutePath.TrimStart('/');
+            return fileUrl;
         }
 
-        return fileUrl;
+        if (!fileUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            return fileUrl;
+        }
+
+        if (!Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri))
+        {
+            return fileUrl;
+        }
+
+        var path = uri.AbsolutePath.TrimStart('/');
+
+        if (!string.IsNullOrEmpty(bucketName))
+        {
+            var bucketPrefix = $"{bucketName}/";
+            if (path.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                path = path[bucketPrefix.Length..];
+            }
+        }
+
+        // '+' is space in S3 public URLs; '%XX' must be decoded once before presigning.
+        return Uri.UnescapeDataString(path.Replace('+', ' '));
     }
 
     /// <summary>
