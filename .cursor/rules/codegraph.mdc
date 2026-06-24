@@ -33,12 +33,12 @@ For structure, flow, symbol location, callers, blast radius, or reading indexed
 source files, **must** use CodeGraph MCP tools via `CallMcpTool` — **not** `Grep`,
 `SemanticSearch`, or read loops that duplicate what CodeGraph already indexes.
 
-| Intent | Tool |
-| --- | --- |
+| Intent                                       | Tool                                             |
+| ----------------------------------------------| --------------------------------------------------|
 | How does X work, survey an area, find a flow | `codegraph_explore` (primary — usually one call) |
-| Locate a symbol by name | `codegraph_search` |
-| Who calls this / what breaks if I change it | `codegraph_callers` |
-| Read a symbol or file with dependents | `codegraph_node` |
+| Locate a symbol by name                      | `codegraph_search`                               |
+| Who calls this / what breaks if I change it  | `codegraph_callers`                              |
+| Read a symbol or file with dependents        | `codegraph_node`                                 |
 
 Rules when CodeGraph is available:
 
