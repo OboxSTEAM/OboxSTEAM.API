@@ -150,12 +150,15 @@ public sealed class ActivityProgressService : IActivityProgressService
         progress.IsCompleted = true;
         progress.CompletedAt = DateTime.UtcNow;
 
+        await _unitOfWork.ActivityProgresses.Update(progress);
+        await _unitOfWork.SaveChangesAsync();
+
         var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
             _unitOfWork,
             moduleEnrollment);
 
         decimal? programProgressPercent = null;
-        if (moduleProgressPercent >= 100m && moduleEnrollment.ProgramEnrollmentId.HasValue)
+        if (moduleEnrollment.ProgramEnrollmentId.HasValue)
         {
             programProgressPercent = await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
                 _unitOfWork,
@@ -163,7 +166,6 @@ public sealed class ActivityProgressService : IActivityProgressService
                 moduleEnrollment);
         }
 
-        await _unitOfWork.ActivityProgresses.Update(progress);
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -274,6 +276,8 @@ public sealed class ActivityProgressService : IActivityProgressService
             progress.LastAccessedAt = now;
             await _unitOfWork.ActivityProgresses.Update(progress);
         }
+
+        await _unitOfWork.SaveChangesAsync();
 
         var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
             _unitOfWork,

@@ -8,6 +8,8 @@ namespace OboxSteam.Application.Commons;
 
 /// <summary>
 /// Recalculates module and program enrollment progress after activity completion.
+/// Module progress: done activities / total module activities.
+/// Program progress: done activities / total program activities across all modules.
 /// </summary>
 public static class ActivityProgressCalculationHelper
 {
@@ -88,8 +90,7 @@ public static class ActivityProgressCalculationHelper
         var modules = await unitOfWork.Modules.GetAllAsync(
             m => m.ProgramId == programEnrollmentEntity.ProgramId && !m.IsDeleted);
 
-        var totalModules = modules.Count;
-        if (totalModules == 0)
+        if (modules.Count == 0)
         {
             programEnrollmentEntity.ProgressPercent = 0m;
             await unitOfWork.ProgramEnrollments.Update(programEnrollmentEntity);
@@ -101,19 +102,43 @@ public static class ActivityProgressCalculationHelper
                   && me.StudentId == programEnrollmentEntity.StudentId
                   && !me.IsDeleted);
 
-        var latestEnrollmentByModule = moduleEnrollments
+        var latestEnrollmentByModuleId = moduleEnrollments
             .GroupBy(me => me.ModuleId)
             .ToDictionary(
                 g => g.Key,
                 g => g.OrderByDescending(me => me.AttemptNumber).First());
 
-        latestEnrollmentByModule[updatedModuleEnrollment.ModuleId] = updatedModuleEnrollment;
+        latestEnrollmentByModuleId[updatedModuleEnrollment.ModuleId] = updatedModuleEnrollment;
 
-        var completedModules = modules.Count(module =>
-            latestEnrollmentByModule.TryGetValue(module.Id, out var enrollment)
-            && enrollment.ProgressPercent >= 100m);
+        var totalActivities = 0;
+        var doneActivities = 0;
 
-        var progressPercent = Math.Round((decimal)completedModules / totalModules * 100m, 2);
+        foreach (var module in modules)
+        {
+            var activityIds = await GetModuleActivityIdsAsync(unitOfWork, module.Id);
+            totalActivities += activityIds.Count;
+
+            if (!latestEnrollmentByModuleId.TryGetValue(module.Id, out var moduleEnrollment))
+            {
+                continue;
+            }
+
+            var doneProgresses = await unitOfWork.ActivityProgresses.GetAllAsync(
+                ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
+                      && ap.ActivityStatus == ActivityStatus.Done
+                      && !ap.IsDeleted);
+
+            doneActivities += doneProgresses.Count;
+        }
+
+        if (totalActivities == 0)
+        {
+            programEnrollmentEntity.ProgressPercent = 0m;
+            await unitOfWork.ProgramEnrollments.Update(programEnrollmentEntity);
+            return 0m;
+        }
+
+        var progressPercent = Math.Round((decimal)doneActivities / totalActivities * 100m, 2);
 
         programEnrollmentEntity.ProgressPercent = progressPercent;
         await unitOfWork.ProgramEnrollments.Update(programEnrollmentEntity);

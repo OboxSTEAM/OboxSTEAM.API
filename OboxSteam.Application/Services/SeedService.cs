@@ -44,6 +44,7 @@ public partial class SeedService : ISeedService
         await SeedRoboticsClassSessionsAsync();
         await SeedResearchMilestoneDataAsync();
         await SeedResearchModuleEnrollmentsAsync();
+        await ResetIntroductionToRoboticsFeTestProgressAsync();
         await SeedResearchActivityProgressAsync();
         await SeedEnrollmentActivityProgressAsync();
         await BackfillActivityProgressStatusAsync();
