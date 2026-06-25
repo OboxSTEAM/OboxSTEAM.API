@@ -109,6 +109,10 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
 
     private async Task<StrengthMatchResult> CompleteMatchAsync(string prompt, CancellationToken ct)
     {
+        _logger.LogInformation(
+            "BedrockMantleStrengthMatchService: sending prompt ({Chars} chars, ~{EstTokens} est. tokens)",
+            prompt.Length, prompt.Length / 4);
+
         ChatCompletion completion;
         try
         {
@@ -212,7 +216,7 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             $"{startIndex + 1}. start_ms/end_ms may span a face or voice window, but evidence_labels must pinpoint which visual labels support the match — downstream clipping uses those label timestamps.");
     }
 
-    private static string BuildPrompt(
+    private string BuildPrompt(
         IList<FaceTimestampSegment> faceSegments,
         IList<LabelDetectionEntry> labelTimeline,
         string strengthDescription)
@@ -279,7 +283,7 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         return sb.ToString();
     }
 
-    private static string BuildVoiceOnlyPrompt(
+    private string BuildVoiceOnlyPrompt(
         IList<FaceTimestampSegment> voiceOnlySegments,
         IList<LabelDetectionEntry> labelTimeline,
         string strengthDescription)
@@ -323,7 +327,7 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
     /// Lists labels under each face/voice window so the LLM evaluates segments with local
     /// context instead of a flat uniformly-sampled timeline.
     /// </summary>
-    private static void AppendSegmentScopedLabelTimeline(
+    private void AppendSegmentScopedLabelTimeline(
         StringBuilder sb,
         IList<FaceTimestampSegment> segments,
         IList<LabelDetectionEntry> labelTimeline)
@@ -390,13 +394,22 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         }
     }
 
-    private static List<(FaceTimestampSegment Seg, List<IGrouping<long, LabelDetectionEntry>> Groups)>
+    private List<(FaceTimestampSegment Seg, List<IGrouping<long, LabelDetectionEntry>> Groups)>
         AllocateSegmentLabelGroups(
             List<(FaceTimestampSegment Seg, List<IGrouping<long, LabelDetectionEntry>> Groups)> perSegment)
     {
         var totalAll = perSegment.Sum(p => p.Groups.Count);
         if (totalAll <= MaxLabelGroups)
+        {
+            _logger.LogDebug(
+                "AllocateSegmentLabelGroups: {Total} total groups within budget ({Budget}), no downsampling needed",
+                totalAll, MaxLabelGroups);
             return perSegment;
+        }
+
+        _logger.LogInformation(
+            "AllocateSegmentLabelGroups: downsampling {Total} total groups to budget={Budget} across {Segments} segment(s)",
+            totalAll, MaxLabelGroups, perSegment.Count);
 
         var rankedPerSegment = perSegment
             .Select(p => (p.Seg, Ranked: RankSecondGroups(p.Groups, p.Seg), p.Groups.Count))

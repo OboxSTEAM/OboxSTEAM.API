@@ -489,6 +489,11 @@ public class PersonalVideoService : IPersonalVideoService
     private async Task<MediaClipBuildResult> BuildClipInputForMediaAsync(
         MediaAsset media, string s3Key, Guid studentId, string? strengthDescription = null)
     {
+        var voiceSegs = ReadVoiceSegments(media, studentId);
+        _logger.LogInformation(
+            "[PersonalVideoService] BuildClipInputForMediaAsync entry: MediaId={MediaId}, StudentId={StudentId}, " +
+            "S3Key={S3Key}, HasStrength={HasStrength}, VoiceSegments={VoiceCount}",
+            media.Id, studentId, s3Key, !string.IsNullOrWhiteSpace(strengthDescription), voiceSegs.Count);
 
         var timelineResult = ReadPersistedTimeline(media, studentId);
 
@@ -520,6 +525,10 @@ public class PersonalVideoService : IPersonalVideoService
         // ── Case 1: No student face detected (AI fallback / scene-only) ─────────
         if (timelineResult.Segments.Count == 0)
         {
+            _logger.LogInformation(
+                "[PersonalVideoService] Case 1 selected: zero face segments, HasOtherFaces={HasOtherFaces}. MediaId={MediaId}",
+                timelineResult.HasOtherFaces, media.Id);
+
             if (!string.IsNullOrWhiteSpace(strengthDescription))
             {
                 // Empty face list → label-only Bedrock path + mapped voice segments (if any).
@@ -725,13 +734,21 @@ public class PersonalVideoService : IPersonalVideoService
         // Scene-only (Case 1): no face windows — scan full label timeline via label-only Bedrock.
         // Otherwise send labels within face windows and, separately, within off-camera voice windows.
         var isSceneOnly = faceSegments.Count == 0;
-        var voiceOnlySegments = GetVoiceOnlySegments(faceSegments, ReadVoiceSegments(media, studentId));
+        var allVoiceSegments = ReadVoiceSegments(media, studentId);
+        var voiceOnlySegments = GetVoiceOnlySegments(faceSegments, allVoiceSegments);
         var faceRelevantLabels = isSceneOnly
             ? new List<LabelDetectionEntry>()
             : FilterLabelsToSegmentWindows(labelTimeline, faceSegments);
         var voiceRelevantLabels = voiceOnlySegments.Count > 0
             ? FilterLabelsToSegmentWindows(labelTimeline, voiceOnlySegments)
             : new List<LabelDetectionEntry>();
+
+        _logger.LogInformation(
+            "[PersonalVideoService] ApplyStrengthsFilter path: MediaId={MediaId}, sceneOnly={SceneOnly}, " +
+            "faceSegments={FaceCount}, totalVoice={TotalVoice}, voiceOnly={VoiceOnlyCount}, " +
+            "totalLabels={TotalLabels}, faceLabels={FaceLabels}, voiceLabels={VoiceLabels}",
+            media.Id, isSceneOnly, faceSegments.Count, allVoiceSegments.Count,
+            voiceOnlySegments.Count, labelTimeline.Count, faceRelevantLabels.Count, voiceRelevantLabels.Count);
 
         if (!isSceneOnly && faceRelevantLabels.Count == 0 && voiceRelevantLabels.Count == 0)
         {
@@ -835,6 +852,10 @@ public class PersonalVideoService : IPersonalVideoService
             }
         }
 
+        _logger.LogInformation(
+            "[PersonalVideoService] ApplyStrengthsFilter result: MediaId={MediaId}, faceMatched={FaceMatched}, totalMatched={TotalMatched}",
+            media.Id, faceMatched.Count, allMatched.Count);
+
         if (allMatched.Count == 0)
         {
             _logger.LogInformation(
@@ -861,16 +882,22 @@ public class PersonalVideoService : IPersonalVideoService
     /// speaking off-camera. These are evaluated separately by <see cref="ApplyStrengthsFilterAsync"/>
     /// using labels that fall within the voice-only time windows.
     /// </summary>
-    private static List<FaceTimestampSegment> GetVoiceOnlySegments(
+    private List<FaceTimestampSegment> GetVoiceOnlySegments(
         IList<FaceTimestampSegment> faceSegments,
         IList<FaceTimestampSegment> voiceSegments)
     {
         if (voiceSegments.Count == 0)
             return new List<FaceTimestampSegment>();
 
-        return voiceSegments
+        var result = voiceSegments
             .Where(v => !faceSegments.Any(f => SegmentsOverlap(f, v)))
             .ToList();
+
+        _logger.LogDebug(
+            "[PersonalVideoService] GetVoiceOnlySegments: {InputVoice} voice segment(s) in, {FaceCount} face segment(s), {OutputVoice} voice-only survived (dropped {Dropped} overlapping)",
+            voiceSegments.Count, faceSegments.Count, result.Count, voiceSegments.Count - result.Count);
+
+        return result;
     }
 
     private static bool SegmentsOverlap(FaceTimestampSegment a, FaceTimestampSegment b)
@@ -981,6 +1008,10 @@ public class PersonalVideoService : IPersonalVideoService
                     continue;
                 }
 
+                _logger.LogDebug(
+                    "[PersonalVideoService] Evidence trim ({Path}): clamping [{OrigStart}ms→{OrigEnd}ms] to window [{WinStart}ms→{WinEnd}ms] MediaId={MediaId}",
+                    path, match.StartMs, match.EndMs, clampWindow.StartMs, clampWindow.EndMs, mediaId);
+
                 searchStart = Math.Max(searchStart, clampWindow.StartMs);
                 searchEnd = Math.Min(searchEnd, clampWindow.EndMs);
             }
@@ -1034,6 +1065,11 @@ public class PersonalVideoService : IPersonalVideoService
             }
 
             var clusters = ClusterLabelsByTime(evidenceInRange, LabelClusterMaxGapMs);
+            _logger.LogDebug(
+                "[PersonalVideoService] Evidence trim ({Path}): {ClusterCount} cluster(s) from {EvidenceCount} evidence label(s) in [{Start}ms→{End}ms] MediaId={MediaId}. " +
+                "Cluster spans: [{Spans}]",
+                path, clusters.Count, evidenceInRange.Count, searchStart, searchEnd, mediaId,
+                string.Join(", ", clusters.Select(c => $"{c.Min(l => l.TimestampMs)}→{c.Max(l => l.TimestampMs)}ms")));
             var trimmedAny = false;
 
             foreach (var cluster in clusters)

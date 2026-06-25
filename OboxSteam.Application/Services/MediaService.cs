@@ -527,6 +527,10 @@ public class MediaService : IMediaService
 
         if (mediaAsset != null)
         {
+            _logger.LogInformation(
+                "HandleFaceSearchWebhookAsync: JobId={JobId}, MediaId={MediaId}, VideoStatus={Status}, IsSuccess={Success}",
+                jobId, mediaAsset.Id, mediaAsset.VideoStatus, isSuccess);
+
             if (isSuccess)
             {
                 try
@@ -636,6 +640,10 @@ public class MediaService : IMediaService
 
         if (!isSuccess)
         {
+            _logger.LogInformation(
+                "HandleTranscribeWebhookAsync: JobName={JobName}, MediaId={MediaId}, VideoStatus={Status}, IsSuccess=false",
+                jobName, media.Id, media.VideoStatus);
+
             // Latch: transcribe pipeline resolved (failed). Voice clipping falls back to face-only.
             media.SpeakerSegmentsJson = "[]";
             await _unitOfWork.SaveChangesAsync();
@@ -649,6 +657,10 @@ public class MediaService : IMediaService
 
         try
         {
+            _logger.LogInformation(
+                "HandleTranscribeWebhookAsync: JobName={JobName}, MediaId={MediaId}, VideoStatus={Status}, IsSuccess=true",
+                jobName, media.Id, media.VideoStatus);
+
             var speakerSegments = await _transcribeService.GetSpeakerSegmentsAsync(jobName);
 
             if (speakerSegments == null)
@@ -690,27 +702,56 @@ public class MediaService : IMediaService
     /// path and late face-search webhooks that arrive after Transcribe already set
     /// <see cref="VideoProcessingStatus.TaggingComplete"/> with zero tags.
     /// </summary>
-    private static bool ShouldProcessVideoFaceTags(MediaAsset media)
+    private bool ShouldProcessVideoFaceTags(MediaAsset media)
     {
         if (media.IsDeleted || string.IsNullOrEmpty(media.FaceSearchJobId))
+        {
+            _logger.LogDebug(
+                "ShouldProcessVideoFaceTags=false: MediaId={MediaId}, IsDeleted={Deleted}, HasJobId={HasJobId}",
+                media.Id, media.IsDeleted, !string.IsNullOrEmpty(media.FaceSearchJobId));
             return false;
+        }
 
         if (media.VideoStatus == VideoProcessingStatus.Failed)
+        {
+            _logger.LogDebug(
+                "ShouldProcessVideoFaceTags=false: MediaId={MediaId}, VideoStatus=Failed",
+                media.Id);
             return false;
+        }
 
         var activeTags = media.MediaTags.Where(t => !t.IsDeleted).ToList();
 
         if (media.VideoStatus is VideoProcessingStatus.PendingTagging
             or VideoProcessingStatus.PendingSpeakerMapping)
+        {
+            _logger.LogDebug(
+                "ShouldProcessVideoFaceTags=true: MediaId={MediaId}, VideoStatus={Status}",
+                media.Id, media.VideoStatus);
             return true;
+        }
 
         if (media.VideoStatus != VideoProcessingStatus.TaggingComplete)
+        {
+            _logger.LogDebug(
+                "ShouldProcessVideoFaceTags=false: MediaId={MediaId}, VideoStatus={Status} (not TaggingComplete)",
+                media.Id, media.VideoStatus);
             return false;
+        }
 
         if (activeTags.Count == 0)
+        {
+            _logger.LogDebug(
+                "ShouldProcessVideoFaceTags=true: MediaId={MediaId}, TaggingComplete with zero active tags (late recovery)",
+                media.Id);
             return true;
+        }
 
-        return activeTags.All(t => string.IsNullOrEmpty(t.FaceSegmentsJson));
+        var allMissingTimeline = activeTags.All(t => string.IsNullOrEmpty(t.FaceSegmentsJson));
+        _logger.LogDebug(
+            "ShouldProcessVideoFaceTags={Result}: MediaId={MediaId}, TaggingComplete, ActiveTags={Count}, AllMissingTimeline={Missing}",
+            allMissingTimeline, media.Id, activeTags.Count, allMissingTimeline);
+        return allMissingTimeline;
     }
 
     /// <summary>
@@ -873,7 +914,7 @@ public class MediaService : IMediaService
     /// measured by total overlapping milliseconds. Returns <c>null</c> when there is no overlap
     /// with any speaker (e.g. the student only appears silently).
     /// </summary>
-    private static string? MapSpeakerToStudent(
+    private string? MapSpeakerToStudent(
         IList<FaceTimestampSegment> faceSegments,
         IList<SpeakerSegment> speakerSegments)
     {
@@ -899,7 +940,12 @@ public class MediaService : IMediaService
         if (overlapBySpeaker.Count == 0)
             return null;
 
-        return overlapBySpeaker.MaxBy(kv => kv.Value).Key;
+        var best = overlapBySpeaker.MaxBy(kv => kv.Value);
+        _logger.LogDebug(
+            "MapSpeakerToStudent: best={Speaker} (overlap={Overlap}ms), candidates=[{All}]",
+            best.Key, best.Value,
+            string.Join(", ", overlapBySpeaker.Select(kv => $"{kv.Key}:{kv.Value}ms")));
+        return best.Key;
     }
 
     /// <summary>
@@ -957,7 +1003,12 @@ public class MediaService : IMediaService
         {
             // Skip duplicates already in DB
             if (media.MediaTags.Any(t => t.StudentId == match.UserId))
+            {
+                _logger.LogDebug(
+                    "DoProcessVideoTagsAsync: skipping duplicate tag for StudentId={StudentId}, MediaId={MediaId}",
+                    match.UserId, media.Id);
                 continue;
+            }
 
             if (!studentMap.TryGetValue(match.UserId, out var student))
             {
@@ -986,6 +1037,10 @@ public class MediaService : IMediaService
                 {
                     tag.FaceSegmentsJson = JsonSerializer.Serialize(timeline.Segments);
                     tag.HasOtherFaces = timeline.HasOtherFaces;
+                    _logger.LogInformation(
+                        "DoProcessVideoTagsAsync: persisted timeline for StudentId={StudentId}, MediaId={MediaId}: " +
+                        "{SegmentCount} face segment(s), HasOtherFaces={HasOtherFaces}",
+                        tag.StudentId, media.Id, timeline.Segments.Count, timeline.HasOtherFaces);
                 }
             }
         }
