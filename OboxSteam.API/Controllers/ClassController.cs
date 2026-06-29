@@ -27,7 +27,7 @@ public class ClassController : ControllerBase
     [HttpGet]
     [SwaggerOperation(
         Summary = "Get all classes",
-        Description = "Retrieve a paginated list of cohort classes with optional search, filter, and sort options.")]
+        Description = "Retrieve a paginated list of cohort classes with basic information only. Use GET /api/classes/{id} for full details including SeatsTaken.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ClassResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     public async Task<IActionResult> GetAllClasses(
@@ -59,13 +59,33 @@ public class ClassController : ControllerBase
     }
 
     // =========================================================================
+    // GET WITH STUDENTS  —  GET /api/classes/with-students/{classId}
+    // =========================================================================
+
+    [HttpGet("with-students/{classId:guid}")]
+    [Authorize(Roles = "Mentor,SuperAdmin,Manager")]
+    [SwaggerOperation(
+        Summary = "Get class with active student roster",
+        Description = "Retrieve class details including active enrolled students. SuperAdmin and Manager may view any class roster. Mentors may only view classes they own. Students and other roles cannot access this endpoint.")]
+    [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetClassWithStudents([FromRoute] Guid classId)
+    {
+        var result = await _classService.GetClassWithStudentsAsync(classId);
+
+        return Ok(ApiResult<ClassResponseDto>.Success(result, "200", "Class students retrieved successfully."));
+    }
+
+    // =========================================================================
     // GET BY ID  —  GET /api/classes/{id}
     // =========================================================================
 
     [HttpGet("{id:guid}")]
     [SwaggerOperation(
         Summary = "Get class details",
-        Description = "Retrieve detailed information for a specific class cohort by its ID.")]
+        Description = "Retrieve detailed information for a specific class cohort by its ID, including SeatsTaken.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetClassById([FromRoute] Guid id)

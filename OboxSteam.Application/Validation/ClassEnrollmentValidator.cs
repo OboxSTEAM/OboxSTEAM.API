@@ -137,17 +137,24 @@ public static class ClassEnrollmentValidator
         }
     }
 
-    public static async Task ValidateClassHasCapacityAsync(
-        IUnitOfWork unitOfWork,
-        Guid classId,
-        int maxCapacity)
+    public static async Task<int> GetActiveSeatsTakenAsync(IUnitOfWork unitOfWork, Guid classId)
     {
         var activeEnrollments = await unitOfWork.ClassEnrollments.GetAllAsync(
             ce => ce.ClassId == classId
                   && ce.Status == ClassEnrollmentStatus.Active
                   && !ce.IsDeleted);
 
-        if (activeEnrollments.Count >= maxCapacity)
+        return activeEnrollments.Count;
+    }
+
+    public static async Task ValidateClassHasCapacityAsync(
+        IUnitOfWork unitOfWork,
+        Guid classId,
+        int maxCapacity)
+    {
+        var activeEnrollmentCount = await GetActiveSeatsTakenAsync(unitOfWork, classId);
+
+        if (activeEnrollmentCount >= maxCapacity)
         {
             throw ErrorHelper.Conflict("Class has reached maximum capacity.");
         }
