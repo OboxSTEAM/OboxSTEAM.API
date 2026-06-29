@@ -12,9 +12,11 @@ public class ClassResponseDto
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public int MaxCapacity { get; set; }
+    public int SeatsTaken { get; set; }
     public ClassStatus Status { get; set; }
     public int MinHoursBeforeAssignmentJoin { get; set; }
     public string? ScheduleSummary { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    public List<ClassStudentResponseDto> Students { get; set; } = new();
 }

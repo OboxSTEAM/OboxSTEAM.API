@@ -13,11 +13,16 @@ namespace OboxSteam.Application.Services;
 public sealed class ClassService : IClassService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IClaimsService _claimsService;
     private readonly ILogger<ClassService> _logger;
 
-    public ClassService(IUnitOfWork unitOfWork, ILogger<ClassService> logger)
+    public ClassService(
+        IUnitOfWork unitOfWork,
+        IClaimsService claimsService,
+        ILogger<ClassService> logger)
     {
         _unitOfWork = unitOfWork;
+        _claimsService = claimsService;
         _logger = logger;
     }
 
@@ -114,6 +119,8 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[GetClassByIdAsync] Class with Id {Id} retrieved successfully.", id);
 
+        var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+
         return new ClassResponseDto
         {
             Id = entity!.Id,
@@ -124,11 +131,80 @@ public sealed class ClassService : IClassService
             StartDate = entity.StartDate,
             EndDate = entity.EndDate,
             MaxCapacity = entity.MaxCapacity,
+            SeatsTaken = seatsTaken,
             Status = entity.Status,
             MinHoursBeforeAssignmentJoin = entity.MinHoursBeforeAssignmentJoin,
             ScheduleSummary = entity.ScheduleSummary,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
+        };
+    }
+
+    public async Task<ClassResponseDto> GetClassWithStudentsAsync(Guid classId)
+    {
+        _logger.LogInformation("[GetClassWithStudentsAsync] Fetching class roster for Id: {ClassId}", classId);
+
+        var entity = await _unitOfWork.Classes.GetByIdAsync(classId);
+        ClassValidator.ValidateClassExists(entity, classId);
+
+        await ClassRosterValidator.EnsureCanViewClassRosterAsync(_unitOfWork, _claimsService, entity!);
+
+        var enrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ClassId == classId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        var studentIds = enrollments.Select(ce => ce.StudentId).Distinct().ToList();
+        var students = studentIds.Any()
+            ? await _unitOfWork.Users.GetAllAsync(u => studentIds.Contains(u.Id) && !u.IsDeleted)
+            : new List<User>();
+
+        var studentsById = students.ToDictionary(u => u.Id);
+
+        var studentDtos = enrollments
+            .Where(ce => studentsById.ContainsKey(ce.StudentId))
+            .OrderBy(ce => ce.EnrolledAt)
+            .ThenBy(ce => ce.CreatedAt)
+            .Select(ce =>
+            {
+                var student = studentsById[ce.StudentId];
+                return new ClassStudentResponseDto
+                {
+                    ClassEnrollmentId = ce.Id,
+                    StudentId = student.Id,
+                    StudentCode = student.Code,
+                    StudentName = student.FullName,
+                    Email = student.Email,
+                    Phone = student.Phone,
+                    AvatarUrl = student.AvatarUrl,
+                    EnrollmentStatus = ce.Status,
+                    EnrolledAt = ce.EnrolledAt,
+                };
+            })
+            .ToList();
+
+        _logger.LogInformation(
+            "[GetClassWithStudentsAsync] Class {ClassId} roster retrieved — {StudentCount} active student(s).",
+            classId,
+            studentDtos.Count);
+
+        return new ClassResponseDto
+        {
+            Id = entity!.Id,
+            Code = entity.Code,
+            Name = entity.Name,
+            ProgramId = entity.ProgramId,
+            MentorId = entity.MentorId,
+            StartDate = entity.StartDate,
+            EndDate = entity.EndDate,
+            MaxCapacity = entity.MaxCapacity,
+            SeatsTaken = enrollments.Count,
+            Status = entity.Status,
+            MinHoursBeforeAssignmentJoin = entity.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = entity.ScheduleSummary,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt,
+            Students = studentDtos,
         };
     }
 
@@ -183,6 +259,7 @@ public sealed class ClassService : IClassService
             StartDate = entity.StartDate,
             EndDate = entity.EndDate,
             MaxCapacity = entity.MaxCapacity,
+            SeatsTaken = 0,
             Status = entity.Status,
             MinHoursBeforeAssignmentJoin = entity.MinHoursBeforeAssignmentJoin,
             ScheduleSummary = entity.ScheduleSummary,
@@ -267,12 +344,9 @@ public sealed class ClassService : IClassService
         {
             ClassValidator.ValidateMaxCapacity(request.MaxCapacity.Value);
 
-            var enrolledCount = await _unitOfWork.ClassEnrollments.GetAllAsync(
-                e => e.ClassId == id &&
-                     !e.IsDeleted &&
-                     e.Status == ClassEnrollmentStatus.Active);
+            var enrolledCount = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
 
-            ClassValidator.ValidateCapacityNotBelowEnrollment(request.MaxCapacity.Value, enrolledCount.Count);
+            ClassValidator.ValidateCapacityNotBelowEnrollment(request.MaxCapacity.Value, enrolledCount);
             classEntity.MaxCapacity = request.MaxCapacity.Value;
             isUpdated = true;
         }
@@ -296,6 +370,9 @@ public sealed class ClassService : IClassService
         if (!isUpdated)
         {
             _logger.LogInformation("[UpdateClassAsync] No changes detected for class {Id}.", id);
+
+            var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+
             return new ClassResponseDto
             {
                 Id = classEntity.Id,
@@ -306,6 +383,7 @@ public sealed class ClassService : IClassService
                 StartDate = classEntity.StartDate,
                 EndDate = classEntity.EndDate,
                 MaxCapacity = classEntity.MaxCapacity,
+                SeatsTaken = seatsTaken,
                 Status = classEntity.Status,
                 MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
                 ScheduleSummary = classEntity.ScheduleSummary,
@@ -319,6 +397,8 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[UpdateClassAsync] Class {Id} updated successfully.", id);
 
+        var updatedSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+
         return new ClassResponseDto
         {
             Id = classEntity.Id,
@@ -329,6 +409,7 @@ public sealed class ClassService : IClassService
             StartDate = classEntity.StartDate,
             EndDate = classEntity.EndDate,
             MaxCapacity = classEntity.MaxCapacity,
+            SeatsTaken = updatedSeatsTaken,
             Status = classEntity.Status,
             MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
             ScheduleSummary = classEntity.ScheduleSummary,
@@ -352,6 +433,8 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[OpenClassAsync] class {Id} is now Open.", id);
 
+        var openSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+
         return new ClassResponseDto
         {
             Id = classEntity.Id,
@@ -362,6 +445,7 @@ public sealed class ClassService : IClassService
             StartDate = classEntity.StartDate,
             EndDate = classEntity.EndDate,
             MaxCapacity = classEntity.MaxCapacity,
+            SeatsTaken = openSeatsTaken,
             Status = classEntity.Status,
             MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
             ScheduleSummary = classEntity.ScheduleSummary,
@@ -385,6 +469,8 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[StartClassAsync] class {Id} is now InProgress.", id);
 
+        var startSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+
         return new ClassResponseDto
         {
             Id = classEntity.Id,
@@ -395,6 +481,7 @@ public sealed class ClassService : IClassService
             StartDate = classEntity.StartDate,
             EndDate = classEntity.EndDate,
             MaxCapacity = classEntity.MaxCapacity,
+            SeatsTaken = startSeatsTaken,
             Status = classEntity.Status,
             MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
             ScheduleSummary = classEntity.ScheduleSummary,
@@ -611,6 +698,8 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[CompleteClassAsync] class {Id} is now Completed.", id);
 
+        var completeSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+
         return new ClassResponseDto
         {
             Id = classEntity.Id,
@@ -621,6 +710,7 @@ public sealed class ClassService : IClassService
             StartDate = classEntity.StartDate,
             EndDate = classEntity.EndDate,
             MaxCapacity = classEntity.MaxCapacity,
+            SeatsTaken = completeSeatsTaken,
             Status = classEntity.Status,
             MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
             ScheduleSummary = classEntity.ScheduleSummary,

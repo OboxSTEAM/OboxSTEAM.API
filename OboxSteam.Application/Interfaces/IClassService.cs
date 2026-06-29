@@ -18,6 +18,8 @@ public interface IClassService
 
     Task<ClassResponseDto> GetClassByIdAsync(Guid id);
 
+    Task<ClassResponseDto> GetClassWithStudentsAsync(Guid classId);
+
     Task<ClassResponseDto> CreateClassAsync(CreateClassRequestDto request);
 
     Task<ClassResponseDto> UpdateClassAsync(Guid id, UpdateClassRequestDto request);
