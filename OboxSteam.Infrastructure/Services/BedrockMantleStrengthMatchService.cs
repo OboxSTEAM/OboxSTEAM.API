@@ -26,7 +26,7 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
     /// and again in code as a safety net against speculative low-confidence matches.
     /// Raise toward 1.0 for stricter (fewer false positives) matching.
     /// </summary>
-    private const double MinMatchScore = 0.75;
+    private const double MinMatchScore = 0.55;
 
     /// <summary>Max 1-second label buckets sent to the LLM across all segment windows.</summary>
     private const int MaxLabelGroups = 400;
@@ -211,9 +211,9 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
     private static void AppendEvidenceLabelInstructions(StringBuilder sb, int startIndex)
     {
         sb.AppendLine(
-            $"{startIndex}. evidence_labels: REQUIRED string array of EXACT label names copied from the LABEL DETECTION TIMELINE that justify the match (prefer two or more distinct activity labels; never use generic labels like Person or Hand).");
+            $"{startIndex}. evidence_labels: string array of label names from the LABEL DETECTION TIMELINE when available (prefer activity labels over generic Person/Hand).");
         sb.AppendLine(
-            $"{startIndex + 1}. start_ms/end_ms may span a face or voice window, but evidence_labels must pinpoint which visual labels support the match — downstream clipping uses those label timestamps.");
+            $"{startIndex + 1}. start_ms/end_ms should cover the matched activity; evidence_labels help justify the range when present.");
     }
 
     private string BuildPrompt(
@@ -239,14 +239,13 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         sb.AppendLine();
         sb.AppendLine("INSTRUCTIONS:");
         sb.AppendLine("1. Evaluate each WINDOW independently using ONLY the labels listed under that WINDOW. Do not infer from labels outside the window.");
-        sb.AppendLine("2. Match a label to the strength ONLY when the label DIRECTLY and UNAMBIGUOUSLY represents that strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
-        sb.AppendLine("3. DO NOT match on weak, generic, or speculative evidence. A single ambiguous label (e.g. 'Slapping', 'Hand', 'Person', 'People', 'Clothing') is NOT enough. If you find yourself reasoning that a label 'suggests', 'could be', 'might be', or 'is related to' the strength, treat it as NO match.");
-        sb.AppendLine("4. Require at least TWO distinct corroborating activity labels OR one strong, specific label that names the activity itself before matching.");
-        sb.AppendLine("5. Assign a score 0.0-1.0 reflecting how directly and consistently the labels demonstrate the strength across the segment.");
-        sb.AppendLine($"6. Only include segments with score >= {MinMatchScore:0.00}. When in doubt, exclude the segment.");
-        sb.AppendLine("7. If NO segment clearly demonstrates the strength, return an empty matched_segments array.");
-        sb.AppendLine("8. Keep reasoning to ONE short sentence, max 20 words.");
-        AppendEvidenceLabelInstructions(sb, 9);
+        sb.AppendLine("2. Match a label to the strength when the label reasonably represents that strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat). Prefer recall — include segments with plausible visual evidence.");
+        sb.AppendLine("3. A single specific activity label can be enough. Generic labels alone (Person, Hand, Clothing) are weak evidence — pair with an activity label when possible.");
+        sb.AppendLine("4. Assign a score 0.0-1.0 reflecting how well the labels support the strength.");
+        sb.AppendLine($"5. Include segments with score >= {MinMatchScore:0.00}. When evidence is partial but relevant, include rather than exclude.");
+        sb.AppendLine("6. If NO segment plausibly demonstrates the strength, return an empty matched_segments array.");
+        sb.AppendLine("7. Keep reasoning to ONE short sentence, max 20 words.");
+        AppendEvidenceLabelInstructions(sb, 8);
         sb.AppendLine();
         AppendMatchResponseSchema(sb, "6000");
 
@@ -268,15 +267,14 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         AppendActivityPrioritizedLabelTimeline(sb, labelTimeline);
         sb.AppendLine();
         sb.AppendLine("INSTRUCTIONS:");
-        sb.AppendLine("1. Find contiguous or nearby label timestamps where labels DIRECTLY and UNAMBIGUOUSLY represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
+        sb.AppendLine("1. Find contiguous or nearby label timestamps where labels reasonably represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
         sb.AppendLine("2. Return matched_segments with start_ms and end_ms taken from the label timestamps (merge nearby matches into one range).");
-        sb.AppendLine("3. DO NOT match on weak, generic, or speculative evidence. A single ambiguous label (e.g. 'Person', 'Hand') is NOT enough.");
-        sb.AppendLine("4. Require at least TWO distinct corroborating activity labels OR one strong, specific label that names the activity itself.");
-        sb.AppendLine("5. Assign score 0.0-1.0 per segment.");
-        sb.AppendLine($"6. Only include segments with score >= {MinMatchScore:0.00}. When in doubt, exclude.");
-        sb.AppendLine("7. If NO time range clearly demonstrates the strength, return an empty matched_segments array.");
-        sb.AppendLine("8. Keep reasoning to ONE short sentence, max 20 words.");
-        AppendEvidenceLabelInstructions(sb, 9);
+        sb.AppendLine("3. A single specific activity label can be enough. Prefer recall over precision.");
+        sb.AppendLine("4. Assign score 0.0-1.0 per segment.");
+        sb.AppendLine($"5. Include segments with score >= {MinMatchScore:0.00}.");
+        sb.AppendLine("6. If NO time range plausibly demonstrates the strength, return an empty matched_segments array.");
+        sb.AppendLine("7. Keep reasoning to ONE short sentence, max 20 words.");
+        AppendEvidenceLabelInstructions(sb, 8);
         sb.AppendLine();
         AppendMatchResponseSchema(sb, "12000");
 
@@ -307,16 +305,15 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
 
         sb.AppendLine();
         sb.AppendLine("INSTRUCTIONS:");
-        sb.AppendLine("1. Evaluate each WINDOW independently using ONLY the labels listed under that WINDOW. Do not infer from labels outside the window.");
-        sb.AppendLine("2. Match ONLY when labels DIRECTLY and UNAMBIGUOUSLY represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
-        sb.AppendLine("3. DO NOT match on weak, generic, or speculative evidence. A single ambiguous label (e.g. 'Person', 'Hand', 'Microphone') is NOT enough.");
-        sb.AppendLine("4. Require at least TWO distinct corroborating activity labels OR one strong, specific label that names the activity itself.");
-        sb.AppendLine("5. Return matched_segments using timestamps where labels demonstrate the strength — prefer the narrowest range covering those labels, NOT the entire voice window unless labels span the full window.");
-        sb.AppendLine("6. Assign score 0.0-1.0 per segment.");
-        sb.AppendLine($"7. Only include segments with score >= {MinMatchScore:0.00}. When in doubt, exclude.");
-        sb.AppendLine("8. If NO voice window has supporting visual labels, return an empty matched_segments array.");
-        sb.AppendLine("9. Keep reasoning to ONE short sentence, max 20 words.");
-        AppendEvidenceLabelInstructions(sb, 10);
+        sb.AppendLine("1. Evaluate each WINDOW independently using ONLY the labels listed under that WINDOW.");
+        sb.AppendLine("2. Match when labels reasonably represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat). Prefer recall.");
+        sb.AppendLine("3. A single specific activity label can be enough.");
+        sb.AppendLine("4. Return matched_segments using timestamps where labels demonstrate the strength — prefer a focused range, not necessarily the entire voice window.");
+        sb.AppendLine("5. Assign score 0.0-1.0 per segment.");
+        sb.AppendLine($"6. Include segments with score >= {MinMatchScore:0.00}.");
+        sb.AppendLine("7. If NO voice window has supporting visual labels, return an empty matched_segments array.");
+        sb.AppendLine("8. Keep reasoning to ONE short sentence, max 20 words.");
+        AppendEvidenceLabelInstructions(sb, 9);
         sb.AppendLine();
         AppendMatchResponseSchema(sb, "12000");
 

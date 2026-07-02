@@ -98,6 +98,12 @@ public class PersonalVideoService : IPersonalVideoService
 
     private const string PersonalVideoFolder = "personal-videos";
 
+    private const int MaxStacksPerStudentProgram = 3;
+    private const int MaxItemsPerStack = 4;
+
+    /// <summary>When false, LLM segment bounds are used as-is (user trims manually later).</summary>
+    private const bool UseEvidenceTrim = false;
+
     /// <summary>
     /// A HighlightVideo stuck in <see cref="HighlightVideoStatus.Processing"/> longer than this
     /// is treated as stale (e.g. the MediaConvert completion webhook never arrived) and may be
@@ -138,178 +144,260 @@ public class PersonalVideoService : IPersonalVideoService
     public async Task<HighlightVideoDto> TriggerPersonalVideoGenerationAsync(
         Guid programId, Guid studentId, string? strengthDescription = null)
     {
-        _logger.LogInformation(
-            "[PersonalVideoService] TriggerPersonalVideoGenerationAsync: ProgramId={ProgramId}, StudentId={StudentId}, StrengthDescription={StrengthDescription}",
-            programId, studentId, strengthDescription);
+        var stack = await CreateStackAsync(programId, studentId, strengthDescription);
+        return MapLegacyDto(stack);
+    }
 
-        // ── 1. Validate program & student ────────────────────────────────────
-        var program = await _unitOfWork.Programs.GetByIdAsync(programId);
-        if (program == null || program.IsDeleted)
-            throw ErrorHelper.NotFound($"Program '{programId}' not found.");
+    /// <inheritdoc />
+    public async Task<HighlightVideoDto?> GetHighlightVideoAsync(Guid programId, Guid studentId)
+    {
+        var normalized = NormalizeStrengthDescription(strengthDescription: null);
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
+            s => s.ProgramId == programId
+                 && s.StudentId == studentId
+                 && s.StrengthDescription == normalized);
 
-        var student = await _unitOfWork.Users.GetByIdAsync(studentId);
-        if (student == null || student.IsDeleted)
-            throw ErrorHelper.NotFound($"Student '{studentId}' not found.");
+        if (stack == null)
+            return null;
 
-        // ── 2. Guard: do not re-trigger while already processing ────────────
-        var existing = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
-            hv => hv.ProgramId == programId && hv.StudentId == studentId && !hv.IsDeleted);
+        var items = await LoadStackItemsAsync(stack.Id);
+        return MapLegacyDto(MapStackToDto(stack, items));
+    }
 
-        if (existing?.PersonalVideoStatus == HighlightVideoStatus.Processing)
+    /// <inheritdoc />
+    public async Task<HighlightVideoStackDto> CreateStackAsync(
+        Guid programId, Guid studentId, string? strengthDescription = null)
+    {
+        await ValidateProgramAndStudentAsync(programId, studentId);
+
+        var normalizedStrength = NormalizeStrengthDescription(strengthDescription);
+
+        var existingStack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
+            s => s.ProgramId == programId
+                 && s.StudentId == studentId
+                 && s.StrengthDescription == normalizedStrength);
+
+        if (existingStack != null)
         {
-            var requestedAt = existing.PersonalVideoRequestedAt ?? existing.CreatedAt;
-            var isStale = DateTime.UtcNow - requestedAt > ProcessingStaleThreshold;
-
-            if (!isStale)
+            var existingItems = await LoadStackItemsAsync(existingStack.Id);
+            if (existingItems.Any(i => i.Status == HighlightVideoStatus.Processing))
             {
-                _logger.LogInformation(
-                    "[PersonalVideoService] Job already in progress for ProgramId={ProgramId}, StudentId={StudentId}",
-                    programId, studentId);
-                return MapToDto(existing);
+                var requestedAt = existingItems
+                    .Where(i => i.Status == HighlightVideoStatus.Processing)
+                    .Select(i => i.RequestedAt ?? i.CreatedAt)
+                    .Max();
+                if (DateTime.UtcNow - requestedAt <= ProcessingStaleThreshold)
+                    return MapStackToDto(existingStack, existingItems);
             }
 
-            // The previous job has been Processing past the stale threshold — assume its
-            // completion webhook was lost and allow a fresh job to be submitted below.
-            _logger.LogWarning(
-                "[PersonalVideoService] Existing Processing job is stale (requested at {RequestedAt:o}); " +
-                "allowing re-trigger. ProgramId={ProgramId}, StudentId={StudentId}",
-                requestedAt, programId, studentId);
+            if (existingItems.Count >= MaxItemsPerStack)
+                throw ErrorHelper.Conflict(
+                    $"Stack already has {MaxItemsPerStack} videos. Delete an item before generating again.");
+
+            await CreateAndEnqueueInitialItemAsync(existingStack, normalizedStrength);
+            var refreshedItems = await LoadStackItemsAsync(existingStack.Id);
+            return MapStackToDto(existingStack, refreshedItems);
         }
 
-        // ── 3. Create / reset the HighlightVideo record in Processing state ──
-        //
-        // The record is persisted as Processing BEFORE any heavy work (clip building, Bedrock,
-        // MediaConvert). This lets the API return 202 immediately (no request-thread timeout)
-        // and — together with the guard above and the unique (ProgramId, StudentId) index —
-        // collapses the window for duplicate job submission from rapid double-clicks.
-        if (existing == null)
+        var stacks = await _unitOfWork.HighlightVideoStacks.GetAllAsync(
+            s => s.ProgramId == programId && s.StudentId == studentId);
+
+        if (stacks.Count >= MaxStacksPerStudentProgram)
+            throw ErrorHelper.Conflict(
+                $"Maximum of {MaxStacksPerStudentProgram} highlight stacks allowed per student and program. Delete an existing stack first.");
+
+        var stack = new HighlightVideoStack
         {
-            existing = new HighlightVideo
-            {
-                StudentId = studentId,
-                ProgramId = programId,
-                PersonalVideoStatus = HighlightVideoStatus.Processing,
-                PersonalVideoRequestedAt = DateTime.UtcNow,
-            };
-            await _unitOfWork.HighlightVideos.AddAsync(existing);
+            ProgramId = programId,
+            StudentId = studentId,
+            StrengthDescription = normalizedStrength,
+        };
+        await _unitOfWork.HighlightVideoStacks.AddAsync(stack);
+        await _unitOfWork.SaveChangesAsync();
 
-            try
-            {
-                await _unitOfWork.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                // A concurrent request inserted the row first → unique index violation.
-                // Return that winning record instead of submitting a duplicate job.
-                _logger.LogWarning(ex,
-                    "[PersonalVideoService] Concurrent trigger for ProgramId={ProgramId}, StudentId={StudentId}; returning existing record.",
-                    programId, studentId);
+        await CreateAndEnqueueInitialItemAsync(stack, normalizedStrength);
+        var items = await LoadStackItemsAsync(stack.Id);
+        return MapStackToDto(stack, items);
+    }
 
-                var winner = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
-                    hv => hv.ProgramId == programId && hv.StudentId == studentId && !hv.IsDeleted);
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<HighlightVideoStackDto>> GetStacksAsync(Guid programId, Guid studentId)
+    {
+        await ValidateProgramAndStudentAsync(programId, studentId);
 
-                if (winner != null)
-                    return MapToDto(winner);
+        var stacks = await _unitOfWork.HighlightVideoStacks.GetAllAsync(
+            s => s.ProgramId == programId && s.StudentId == studentId);
 
-                throw;
-            }
-        }
-        else
+        var result = new List<HighlightVideoStackDto>();
+        foreach (var stack in stacks.OrderBy(s => s.CreatedAt))
         {
-            // Regenerate: keep the previous VideoUrl so the old video stays available until the
-            // new job completes; reset the stale job ref / failure reason.
-            existing.PersonalVideoStatus = HighlightVideoStatus.Processing;
-            existing.PersonalVideoRequestedAt = DateTime.UtcNow;
-            existing.PersonalVideoJobRef = null;
-            existing.PersonalVideoFailureReason = null;
-            await _unitOfWork.SaveChangesAsync();
+            var items = await LoadStackItemsAsync(stack.Id);
+            result.Add(MapStackToDto(stack, items));
         }
 
-        // ── 4. Hand off the heavy work (clip build + MediaConvert) to the worker ──
-        _queue.Enqueue(new PersonalVideoJob(existing.Id, programId, studentId, strengthDescription));
+        return result;
+    }
 
-        _logger.LogInformation(
-            "[PersonalVideoService] Generation queued. HighlightVideoId={Id}, ProgramId={ProgramId}, StudentId={StudentId}",
-            existing.Id, programId, studentId);
+    /// <inheritdoc />
+    public async Task<HighlightVideoStackDto?> GetStackAsync(Guid programId, Guid studentId, Guid stackId)
+    {
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
+            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId);
 
-        return MapToDto(existing);
+        if (stack == null)
+            return null;
+
+        var items = await LoadStackItemsAsync(stack.Id);
+        return MapStackToDto(stack, items);
+    }
+
+    /// <inheritdoc />
+    public async Task<HighlightVideoItemDto> TrimItemAsync(
+        Guid programId,
+        Guid studentId,
+        Guid stackId,
+        Guid parentItemId,
+        TrimHighlightVideoRequest request)
+    {
+        await ValidateProgramAndStudentAsync(programId, studentId);
+
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
+            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId)
+            ?? throw ErrorHelper.NotFound($"Highlight stack '{stackId}' not found.");
+
+        var items = await LoadStackItemsAsync(stack.Id);
+        if (items.Count >= MaxItemsPerStack)
+            throw ErrorHelper.Conflict(
+                $"Stack already has {MaxItemsPerStack} videos. Delete an item before trimming again.");
+
+        if (items.Any(i => i.Status == HighlightVideoStatus.Processing))
+            throw ErrorHelper.Conflict("A video in this stack is still processing.");
+
+        var parent = items.FirstOrDefault(i => i.Id == parentItemId)
+            ?? throw ErrorHelper.NotFound($"Highlight video item '{parentItemId}' not found in stack.");
+
+        if (parent.Status != HighlightVideoStatus.Completed)
+            throw ErrorHelper.BadRequest("Parent video must be completed before trimming.");
+
+        if (string.IsNullOrWhiteSpace(parent.OutputS3Key) || parent.DurationMs is null or <= 0)
+            throw ErrorHelper.BadRequest("Parent video output metadata is missing; cannot trim.");
+
+        if (request.ExcludeRanges.Count == 0)
+            throw ErrorHelper.BadRequest("At least one exclude range is required.");
+
+        var excludeRanges = request.ExcludeRanges
+            .Select(r => (
+                StartMs: HighlightVideoTimeHelper.ParseTimecodeToMs(r.Start),
+                EndMs: HighlightVideoTimeHelper.ParseTimecodeToMs(r.End)))
+            .ToList();
+
+        foreach (var (start, end) in excludeRanges)
+        {
+            if (start < 0 || end > parent.DurationMs.Value || end <= start)
+                throw ErrorHelper.BadRequest(
+                    $"Exclude range must lie within 00:00:00 and the video duration ({parent.DurationMs}ms).");
+        }
+
+        HighlightVideoTimeHelper.ComputeKeepSegments(parent.DurationMs.Value, excludeRanges);
+
+        var trimItem = new HighlightVideoItem
+        {
+            StackId = stack.Id,
+            ParentItemId = parent.Id,
+            GenerationKind = HighlightVideoGenerationKind.Trim,
+            Status = HighlightVideoStatus.Processing,
+            RequestedAt = DateTime.UtcNow,
+            TrimDescription = request.TrimDescription,
+            TrimExcludeRangesJson = JsonSerializer.Serialize(request.ExcludeRanges),
+        };
+        await _unitOfWork.HighlightVideoItems.AddAsync(trimItem);
+        await _unitOfWork.SaveChangesAsync();
+
+        _queue.Enqueue(new PersonalVideoJob(
+            trimItem.Id,
+            PersonalVideoJobKind.OutputTrim,
+            programId,
+            studentId,
+            StrengthDescription: null,
+            ParentOutputS3Key: parent.OutputS3Key,
+            ParentDurationMs: parent.DurationMs,
+            ExcludeRanges: excludeRanges
+                .Select(r => new OutputExcludeRange(r.StartMs, r.EndMs))
+                .ToList()));
+
+        return MapItemToDto(trimItem, request.ExcludeRanges);
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteItemAsync(Guid programId, Guid studentId, Guid stackId, Guid itemId)
+    {
+        await ValidateProgramAndStudentAsync(programId, studentId);
+
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
+            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId)
+            ?? throw ErrorHelper.NotFound($"Highlight stack '{stackId}' not found.");
+
+        var item = await _unitOfWork.HighlightVideoItems.FirstOrDefaultAsync(
+            i => i.Id == itemId && i.StackId == stack.Id)
+            ?? throw ErrorHelper.NotFound($"Highlight video item '{itemId}' not found.");
+
+        if (item.Status == HighlightVideoStatus.Processing)
+            throw ErrorHelper.Conflict("Cannot delete a video while it is processing.");
+
+        await _unitOfWork.HighlightVideoItems.SoftRemove(item);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteStackAsync(Guid programId, Guid studentId, Guid stackId)
+    {
+        await ValidateProgramAndStudentAsync(programId, studentId);
+
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
+            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId)
+            ?? throw ErrorHelper.NotFound($"Highlight stack '{stackId}' not found.");
+
+        var items = await _unitOfWork.HighlightVideoItems.GetAllAsync(i => i.StackId == stack.Id);
+        if (items.Any(i => i.Status == HighlightVideoStatus.Processing))
+            throw ErrorHelper.Conflict("Cannot delete a stack while a video is processing.");
+
+        foreach (var item in items)
+            await _unitOfWork.HighlightVideoItems.SoftRemove(item);
+
+        await _unitOfWork.HighlightVideoStacks.SoftRemove(stack);
+        await _unitOfWork.SaveChangesAsync();
     }
 
     /// <inheritdoc />
     public async Task ProcessGenerationAsync(PersonalVideoJob job)
     {
-        var record = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
-            hv => hv.Id == job.HighlightVideoId && !hv.IsDeleted);
+        var item = await _unitOfWork.HighlightVideoItems.FirstOrDefaultAsync(
+            i => i.Id == job.ItemId && !i.IsDeleted);
 
-        if (record == null)
+        if (item == null)
         {
             _logger.LogWarning(
-                "[PersonalVideoService] ProcessGenerationAsync: HighlightVideo {Id} not found; skipping.",
-                job.HighlightVideoId);
+                "[PersonalVideoService] ProcessGenerationAsync: item {Id} not found; skipping.", job.ItemId);
             return;
         }
 
         try
         {
-            // ── Collect all tagged, fully-processed videos in this Program ──
-            var buildResult = await BuildClipInputsAsync(
-                job.ProgramId, job.StudentId, job.StrengthDescription);
-
-            if (buildResult.FailureReason != null)
+            if (job.Kind == PersonalVideoJobKind.OutputTrim)
             {
-                _logger.LogWarning(
-                    "[PersonalVideoService] Clip build failed for HighlightVideoId={Id}: {Reason}",
-                    record.Id, buildResult.FailureReason);
-
-                record.PersonalVideoStatus = HighlightVideoStatus.Failed;
-                record.PersonalVideoFailureReason = buildResult.FailureReason;
-                await _unitOfWork.SaveChangesAsync();
+                await ProcessOutputTrimAsync(item, job);
                 return;
             }
 
-            var clipInputs = buildResult.Clips;
-
-            if (clipInputs.Count == 0)
-            {
-                var reason = !string.IsNullOrWhiteSpace(job.StrengthDescription)
-                    ? $"No video segments matched the specified strengths: '{job.StrengthDescription}'. " +
-                      "Ensure the student's strengths are visible in the tagged videos and label detection has completed."
-                    : "No processed video assets tagged for this student were found in the program.";
-
-                _logger.LogInformation(
-                    "[PersonalVideoService] No clips for HighlightVideoId={Id}: {Reason}", record.Id, reason);
-
-                record.PersonalVideoStatus = HighlightVideoStatus.Failed;
-                record.PersonalVideoFailureReason = reason;
-                await _unitOfWork.SaveChangesAsync();
-                return;
-            }
-
-            // ── Submit MediaConvert job ──
-            var outputKey = $"{PersonalVideoFolder}/{job.StudentId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
-
-            _logger.LogInformation(
-                "[PersonalVideoService] Submitting personal video job: {ClipCount} clip(s) → {OutputKey}",
-                clipInputs.Count, outputKey);
-
-            var mcJobId = await _videoConverterService.SubmitPersonalVideoJobAsync(clipInputs.ToList(), outputKey);
-
-            record.PersonalVideoJobRef = mcJobId;
-            record.PersonalVideoStatus = HighlightVideoStatus.Processing;
-            record.PersonalVideoFailureReason = null;
-            await _unitOfWork.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "[PersonalVideoService] Job submitted. HighlightVideoId={Id}, McJobId={McJobId}. Awaiting MediaConvert webhook.",
-                record.Id, mcJobId);
+            await ProcessInitialGenerationAsync(item, job);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex,
-                "[PersonalVideoService] Generation failed for HighlightVideoId={Id}.", record.Id);
+                "[PersonalVideoService] Generation failed for item {Id}.", item.Id);
 
-            record.PersonalVideoStatus = HighlightVideoStatus.Failed;
-            record.PersonalVideoFailureReason =
+            item.Status = HighlightVideoStatus.Failed;
+            item.FailureReason =
                 "An internal error occurred during video generation. Please try again later.";
             try
             {
@@ -318,18 +406,9 @@ public class PersonalVideoService : IPersonalVideoService
             catch (Exception saveEx)
             {
                 _logger.LogError(saveEx,
-                    "[PersonalVideoService] Failed to persist Failed status for HighlightVideoId={Id}.", record.Id);
+                    "[PersonalVideoService] Failed to persist Failed status for item {Id}.", item.Id);
             }
         }
-    }
-
-    /// <inheritdoc />
-    public async Task<HighlightVideoDto?> GetHighlightVideoAsync(Guid programId, Guid studentId)
-    {
-        var record = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
-            hv => hv.ProgramId == programId && hv.StudentId == studentId && !hv.IsDeleted);
-
-        return record == null ? null : MapToDto(record);
     }
 
     /// <inheritdoc />
@@ -338,10 +417,10 @@ public class PersonalVideoService : IPersonalVideoService
         _logger.LogInformation(
             "[PersonalVideoService] Handling MediaConvert Webhook JobId: {JobId}, Success: {Success}", jobId, isSuccess);
 
-        var highlightVideo = await _unitOfWork.HighlightVideos.FirstOrDefaultAsync(
-            h => h.PersonalVideoJobRef == jobId && !h.IsDeleted);
+        var item = await _unitOfWork.HighlightVideoItems.FirstOrDefaultAsync(
+            i => i.PersonalVideoJobRef == jobId && !i.IsDeleted);
 
-        if (highlightVideo == null)
+        if (item == null)
             return;
 
         if (isSuccess)
@@ -350,22 +429,159 @@ public class PersonalVideoService : IPersonalVideoService
             {
                 var outputS3Key = await _videoConverterService.GetOutputS3KeyAsync(jobId);
                 var videoUrl = await _blobService.GetPreviewUrlAsync(outputS3Key);
+                var durationMs = await _videoConverterService.GetOutputDurationMsAsync(jobId);
 
-                highlightVideo.VideoUrl = videoUrl;
-                highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Completed;
+                item.OutputS3Key = outputS3Key;
+                item.VideoUrl = videoUrl;
+                item.DurationMs = durationMs ?? item.DurationMs;
+                item.Status = HighlightVideoStatus.Completed;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex,
-                    "[PersonalVideoService] Failed to resolve MediaConvert output for HighlightVideo {Id}", highlightVideo.Id);
-                highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Failed;
+                    "[PersonalVideoService] Failed to resolve MediaConvert output for item {Id}", item.Id);
+                item.Status = HighlightVideoStatus.Failed;
+                item.FailureReason = "Failed to resolve transcoded output.";
             }
         }
         else
         {
-            highlightVideo.PersonalVideoStatus = HighlightVideoStatus.Failed;
+            item.Status = HighlightVideoStatus.Failed;
+            item.FailureReason = "MediaConvert job failed.";
         }
 
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task ValidateProgramAndStudentAsync(Guid programId, Guid studentId)
+    {
+        var program = await _unitOfWork.Programs.GetByIdAsync(programId);
+        if (program == null || program.IsDeleted)
+            throw ErrorHelper.NotFound($"Program '{programId}' not found.");
+
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId);
+        if (student == null || student.IsDeleted)
+            throw ErrorHelper.NotFound($"Student '{studentId}' not found.");
+    }
+
+    private static string NormalizeStrengthDescription(string? strengthDescription) =>
+        string.IsNullOrWhiteSpace(strengthDescription)
+            ? string.Empty
+            : strengthDescription.Trim();
+
+    private async Task<List<HighlightVideoItem>> LoadStackItemsAsync(Guid stackId)
+    {
+        var items = await _unitOfWork.HighlightVideoItems.GetAllAsync(i => i.StackId == stackId);
+        return items.OrderBy(i => i.CreatedAt).ToList();
+    }
+
+    private async Task<HighlightVideoItem> CreateAndEnqueueInitialItemAsync(
+        HighlightVideoStack stack,
+        string normalizedStrength)
+    {
+        var item = new HighlightVideoItem
+        {
+            StackId = stack.Id,
+            GenerationKind = HighlightVideoGenerationKind.Initial,
+            Status = HighlightVideoStatus.Processing,
+            RequestedAt = DateTime.UtcNow,
+        };
+        await _unitOfWork.HighlightVideoItems.AddAsync(item);
+        await _unitOfWork.SaveChangesAsync();
+
+        var strengthForJob = string.IsNullOrEmpty(normalizedStrength) ? null : normalizedStrength;
+        _queue.Enqueue(new PersonalVideoJob(
+            item.Id,
+            PersonalVideoJobKind.InitialGeneration,
+            stack.ProgramId,
+            stack.StudentId,
+            strengthForJob,
+            ParentOutputS3Key: null,
+            ParentDurationMs: null,
+            ExcludeRanges: null));
+
+        _logger.LogInformation(
+            "[PersonalVideoService] Initial generation queued. StackId={StackId}, ItemId={ItemId}",
+            stack.Id, item.Id);
+
+        return item;
+    }
+
+    private async Task ProcessInitialGenerationAsync(HighlightVideoItem item, PersonalVideoJob job)
+    {
+        var buildResult = await BuildClipInputsAsync(job.ProgramId, job.StudentId, job.StrengthDescription);
+
+        if (buildResult.FailureReason != null)
+        {
+            _logger.LogWarning(
+                "[PersonalVideoService] Clip build failed for item {Id}: {Reason}",
+                item.Id, buildResult.FailureReason);
+
+            item.Status = HighlightVideoStatus.Failed;
+            item.FailureReason = buildResult.FailureReason;
+            await _unitOfWork.SaveChangesAsync();
+            return;
+        }
+
+        var clipInputs = buildResult.Clips;
+        if (clipInputs.Count == 0)
+        {
+            var reason = !string.IsNullOrWhiteSpace(job.StrengthDescription)
+                ? $"No video segments matched the specified strengths: '{job.StrengthDescription}'. " +
+                  "Ensure the student's strengths are visible in the tagged videos."
+                : "No processed video assets tagged for this student were found in the program.";
+
+            item.Status = HighlightVideoStatus.Failed;
+            item.FailureReason = reason;
+            await _unitOfWork.SaveChangesAsync();
+            return;
+        }
+
+        var outputKey = $"{PersonalVideoFolder}/{job.StudentId}_{item.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
+        var mcJobId = await _videoConverterService.SubmitPersonalVideoJobAsync(clipInputs.ToList(), outputKey);
+
+        item.PersonalVideoJobRef = mcJobId;
+        item.Status = HighlightVideoStatus.Processing;
+        item.FailureReason = null;
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task ProcessOutputTrimAsync(HighlightVideoItem item, PersonalVideoJob job)
+    {
+        if (string.IsNullOrWhiteSpace(job.ParentOutputS3Key) || job.ParentDurationMs is null or <= 0)
+        {
+            item.Status = HighlightVideoStatus.Failed;
+            item.FailureReason = "Trim job is missing parent output metadata.";
+            await _unitOfWork.SaveChangesAsync();
+            return;
+        }
+
+        if (job.ExcludeRanges is not { Count: > 0 })
+        {
+            item.Status = HighlightVideoStatus.Failed;
+            item.FailureReason = "Trim job is missing exclude ranges.";
+            await _unitOfWork.SaveChangesAsync();
+            return;
+        }
+
+        var excludeTuples = job.ExcludeRanges
+            .Select(r => (r.StartMs, r.EndMs))
+            .ToList();
+        var keepSegments = HighlightVideoTimeHelper.ComputeKeepSegments(job.ParentDurationMs.Value, excludeTuples);
+        var keepClips = HighlightVideoTimeHelper.ToTimeClips(keepSegments);
+
+        var stack = await _unitOfWork.HighlightVideoStacks.GetByIdAsync(item.StackId)
+            ?? throw new InvalidOperationException($"Stack {item.StackId} not found for trim item.");
+
+        var outputKey =
+            $"{PersonalVideoFolder}/{stack.StudentId}_{item.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
+        var mcJobId = await _videoConverterService.SubmitOutputTrimJobAsync(
+            job.ParentOutputS3Key, keepClips, outputKey);
+
+        item.PersonalVideoJobRef = mcJobId;
+        item.Status = HighlightVideoStatus.Processing;
+        item.FailureReason = null;
+        item.DurationMs = keepSegments.Sum(s => s.EndMs - s.StartMs);
         await _unitOfWork.SaveChangesAsync();
     }
 
@@ -458,15 +674,9 @@ public class PersonalVideoService : IPersonalVideoService
 
         if (strengthFilteringEnabled && strengthPrerequisiteErrors.Count > 0)
         {
-            var reason =
-                "Strength-based filtering requires Rekognition Label Detection data for all tagged videos. " +
-                "One or more videos are missing label timelines or strength matching failed: " +
-                string.Join("; ", strengthPrerequisiteErrors);
-
             _logger.LogWarning(
-                "[PersonalVideoService] BuildClipInputsAsync aborted: {Reason}", reason);
-
-            return new ClipBuildResult(clips, reason);
+                "[PersonalVideoService] Strength prerequisites missing for some videos; continuing with available clips: {Details}",
+                string.Join("; ", strengthPrerequisiteErrors));
         }
 
         _logger.LogInformation(
@@ -531,24 +741,22 @@ public class PersonalVideoService : IPersonalVideoService
 
             if (!string.IsNullOrWhiteSpace(strengthDescription))
             {
-                // Empty face list → label-only Bedrock path + mapped voice segments (if any).
                 var filteredResult = await ApplyStrengthsFilterAsync(
                     media, s3Key, studentId, timelineResult.Segments, strengthDescription);
 
-                if (filteredResult.Error is StrengthFilterError.LabelUnavailable or StrengthFilterError.MatchingFailed)
-                    return new MediaClipBuildResult(null, filteredResult.Error, filteredResult.Detail);
-
-                if (filteredResult.Error == StrengthFilterError.NoMatch || filteredResult.Clip!.Clips.Count == 0)
+                if (filteredResult.Error == StrengthFilterError.None
+                    && filteredResult.Clip != null
+                    && filteredResult.Clip.Clips.Count > 0)
                 {
                     _logger.LogInformation(
-                        "[PersonalVideoService] Case 1 + strengths: no matching strength labels → skipping. MediaId={MediaId}", media.Id);
-                    return new MediaClipBuildResult(null);
+                        "[PersonalVideoService] Case 1 + strengths: {Count} sub-clip(s). MediaId={MediaId}",
+                        filteredResult.Clip.Clips.Count, media.Id);
+                    return new MediaClipBuildResult(filteredResult.Clip);
                 }
 
-                _logger.LogInformation(
-                    "[PersonalVideoService] Case 1 + strengths: {Count} sub-clip(s). MediaId={MediaId}",
-                    filteredResult.Clip.Clips.Count, media.Id);
-                return new MediaClipBuildResult(filteredResult.Clip);
+                _logger.LogWarning(
+                    "[PersonalVideoService] Case 1 + strengths: no LLM match → full video fallback. MediaId={MediaId}",
+                    media.Id);
             }
 
             _logger.LogInformation(
@@ -570,13 +778,14 @@ public class PersonalVideoService : IPersonalVideoService
                 var filteredResult = await ApplyStrengthsFilterAsync(
                     media, s3Key, studentId, timelineResult.Segments, strengthDescription);
 
-                if (filteredResult.Error is StrengthFilterError.LabelUnavailable or StrengthFilterError.MatchingFailed)
-                    return new MediaClipBuildResult(null, filteredResult.Error, filteredResult.Detail);
+                if (filteredResult.Error == StrengthFilterError.None
+                    && filteredResult.Clip != null
+                    && filteredResult.Clip.Clips.Count > 0)
+                    return new MediaClipBuildResult(filteredResult.Clip);
 
-                if (filteredResult.Error == StrengthFilterError.NoMatch || filteredResult.Clip!.Clips.Count == 0)
-                    return new MediaClipBuildResult(null);
-
-                return new MediaClipBuildResult(filteredResult.Clip);
+                _logger.LogWarning(
+                    "[PersonalVideoService] Case 2 + strengths: no LLM match → full video fallback. MediaId={MediaId}",
+                    media.Id);
             }
 
             return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()));
@@ -594,13 +803,14 @@ public class PersonalVideoService : IPersonalVideoService
             var filteredResult = await ApplyStrengthsFilterAsync(
                 media, s3Key, studentId, faceSegments, strengthDescription);
 
-            if (filteredResult.Error is StrengthFilterError.LabelUnavailable or StrengthFilterError.MatchingFailed)
-                return new MediaClipBuildResult(null, filteredResult.Error, filteredResult.Detail);
+            if (filteredResult.Error == StrengthFilterError.None
+                && filteredResult.Clip != null
+                && filteredResult.Clip.Clips.Count > 0)
+                return new MediaClipBuildResult(filteredResult.Clip);
 
-            if (filteredResult.Error == StrengthFilterError.NoMatch || filteredResult.Clip!.Clips.Count == 0)
-                return new MediaClipBuildResult(null);
-
-            return new MediaClipBuildResult(filteredResult.Clip);
+            _logger.LogWarning(
+                "[PersonalVideoService] Case 3/4 + strengths: no LLM match → face/voice fallback. MediaId={MediaId}",
+                media.Id);
         }
 
         // Standard face-timeline path (no strengths).
@@ -775,7 +985,7 @@ public class PersonalVideoService : IPersonalVideoService
             {
                 var labelOnlyMatch = await _strengthMatchService.MatchStrengthsFromLabelsOnlyAsync(
                     labelTimeline, strengthDescription);
-                var trimmedLabelOnly = TrimMatchesToEvidenceLabels(
+                var trimmedLabelOnly = MaybeTrimEvidenceLabels(
                     labelOnlyMatch.MatchedSegments, labelTimeline, media.Id, "label-only");
                 allMatched.AddRange(trimmedLabelOnly);
                 reasoning = labelOnlyMatch.Reasoning;
@@ -804,7 +1014,7 @@ public class PersonalVideoService : IPersonalVideoService
             {
                 var faceMatch = await _strengthMatchService.MatchStrengthsAsync(
                     faceSegments, faceRelevantLabels, strengthDescription);
-                var trimmedFace = TrimMatchesToEvidenceLabels(
+                var trimmedFace = MaybeTrimEvidenceLabels(
                     faceMatch.MatchedSegments, labelTimeline, media.Id, "face");
                 faceMatched.AddRange(trimmedFace);
                 allMatched.AddRange(trimmedFace);
@@ -834,7 +1044,7 @@ public class PersonalVideoService : IPersonalVideoService
             {
                 var voiceMatch = await _strengthMatchService.MatchStrengthsForVoiceOnlyAsync(
                     voiceOnlySegments, voiceRelevantLabels, strengthDescription);
-                var trimmedVoice = TrimMatchesToEvidenceLabels(
+                var trimmedVoice = MaybeTrimEvidenceLabels(
                     voiceMatch.MatchedSegments, labelTimeline, media.Id, "voice", voiceOnlySegments);
                 var voiceKept = PreferFaceOverOverlappingVoice(faceMatched, trimmedVoice, media.Id);
                 allMatched.AddRange(voiceKept);
@@ -1114,6 +1324,16 @@ public class PersonalVideoService : IPersonalVideoService
         return result;
     }
 
+    private List<MatchedSegment> MaybeTrimEvidenceLabels(
+        IList<MatchedSegment> matches,
+        IList<LabelDetectionEntry> labelTimeline,
+        Guid mediaId,
+        string path,
+        IList<FaceTimestampSegment>? clampWindows = null) =>
+        UseEvidenceTrim
+            ? TrimMatchesToEvidenceLabels(matches, labelTimeline, mediaId, path, clampWindows)
+            : matches.ToList();
+
     private static List<List<LabelDetectionEntry>> ClusterLabelsByTime(
         IList<LabelDetectionEntry> labels,
         long maxGapMs)
@@ -1210,14 +1430,75 @@ public class PersonalVideoService : IPersonalVideoService
     // DTO mapping
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static HighlightVideoDto MapToDto(HighlightVideo hv) => new()
+    private static HighlightVideoStackDto MapStackToDto(
+        HighlightVideoStack stack,
+        IReadOnlyList<HighlightVideoItem> items) =>
+        new()
+        {
+            Id = stack.Id,
+            ProgramId = stack.ProgramId,
+            StudentId = stack.StudentId,
+            StrengthDescription = string.IsNullOrEmpty(stack.StrengthDescription)
+                ? null
+                : stack.StrengthDescription,
+            CreatedAt = stack.CreatedAt,
+            Items = items.Select(i => MapItemToDto(i)).ToList(),
+        };
+
+    private static HighlightVideoItemDto MapItemToDto(
+        HighlightVideoItem item,
+        IReadOnlyList<TimeRangeDto>? excludeRanges = null)
     {
-        Id = hv.Id,
-        StudentId = hv.StudentId,
-        ProgramId = hv.ProgramId,
-        VideoUrl = hv.VideoUrl,
-        PersonalVideoStatus = hv.PersonalVideoStatus,
-        PersonalVideoRequestedAt = hv.PersonalVideoRequestedAt,
-        PersonalVideoFailureReason = hv.PersonalVideoFailureReason,
-    };
+        IReadOnlyList<TimeRangeDto>? ranges = excludeRanges;
+        if (ranges == null && !string.IsNullOrWhiteSpace(item.TrimExcludeRangesJson))
+        {
+            ranges = JsonSerializer.Deserialize<List<TimeRangeDto>>(item.TrimExcludeRangesJson)
+                     ?? new List<TimeRangeDto>();
+        }
+
+        return new HighlightVideoItemDto
+        {
+            Id = item.Id,
+            StackId = item.StackId,
+            ParentItemId = item.ParentItemId,
+            GenerationKind = item.GenerationKind,
+            VideoUrl = item.VideoUrl,
+            DurationMs = item.DurationMs,
+            Status = item.Status,
+            RequestedAt = item.RequestedAt,
+            FailureReason = item.FailureReason,
+            TrimDescription = item.TrimDescription,
+            TrimExcludeRanges = ranges,
+        };
+    }
+
+    private static HighlightVideoDto MapLegacyDto(HighlightVideoStackDto stack)
+    {
+        var latest = stack.Items
+            .OrderByDescending(i => i.RequestedAt ?? DateTime.MinValue)
+            .ThenByDescending(i => i.Id)
+            .FirstOrDefault();
+
+        if (latest == null)
+        {
+            return new HighlightVideoDto
+            {
+                Id = stack.Id,
+                StudentId = stack.StudentId,
+                ProgramId = stack.ProgramId,
+                PersonalVideoStatus = HighlightVideoStatus.None,
+            };
+        }
+
+        return new HighlightVideoDto
+        {
+            Id = latest.Id,
+            StudentId = stack.StudentId,
+            ProgramId = stack.ProgramId,
+            VideoUrl = latest.VideoUrl,
+            PersonalVideoStatus = latest.Status,
+            PersonalVideoRequestedAt = latest.RequestedAt,
+            PersonalVideoFailureReason = latest.FailureReason,
+        };
+    }
 }

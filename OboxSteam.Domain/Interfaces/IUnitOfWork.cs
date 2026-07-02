@@ -32,6 +32,8 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<MediaAsset> MediaAssets { get; }
     IGenericRepository<MediaTag> MediaTags { get; }
     IGenericRepository<HighlightVideo> HighlightVideos { get; }
+    IGenericRepository<HighlightVideoStack> HighlightVideoStacks { get; }
+    IGenericRepository<HighlightVideoItem> HighlightVideoItems { get; }
     IGenericRepository<FaceEmbedding> FaceEmbeddings { get; }
     IGenericRepository<Portfolio> Portfolios { get; }
     IGenericRepository<PortfolioCustomItem> PortfolioCustomItems { get; }

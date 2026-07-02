@@ -192,6 +192,103 @@ public class VideoConverterService : IVideoConverterService
     }
 
     /// <inheritdoc />
+    public async Task<string> SubmitOutputTrimJobAsync(
+        string inputS3Key,
+        List<TimeClip> keepClips,
+        string outputS3Key)
+    {
+        var bucket = RequireEnv(EnvS3Bucket);
+        var roleArn = RequireEnv(EnvRoleArn);
+        var watermarkUri = Environment.GetEnvironmentVariable("AWS_WATERMARK_URI")
+            ?? "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/logo-obox.png";
+
+        _logger.LogInformation(
+            "SubmitOutputTrimJobAsync: input={Input}, {ClipCount} keep segment(s) → s3://{Bucket}/{Key}",
+            inputS3Key, keepClips.Count, bucket, outputS3Key);
+
+        var input = new Input
+        {
+            FileInput = $"s3://{bucket}/{inputS3Key}",
+            TimecodeSource = InputTimecodeSource.ZEROBASED,
+            AudioSelectors = new Dictionary<string, AudioSelector>
+            {
+                ["Audio Selector 1"] = new AudioSelector
+                {
+                    DefaultSelection = AudioDefaultSelection.DEFAULT
+                }
+            },
+            InputClippings = keepClips
+                .Select(c => new InputClipping
+                {
+                    StartTimecode = c.StartTimecode,
+                    EndTimecode = c.EndTimecode
+                })
+                .ToList()
+        };
+
+        var outputFolder = Path.GetDirectoryName(outputS3Key)?.Replace('\\', '/') ?? PersonalVideoFolder;
+        var outputFileName = Path.GetFileNameWithoutExtension(outputS3Key);
+        var destUri = $"s3://{bucket}/{outputFolder}/{outputFileName}";
+
+        var request = new CreateJobRequest
+        {
+            Role = roleArn,
+            Settings = new JobSettings
+            {
+                Inputs = [input],
+                OutputGroups =
+                [
+                    new OutputGroup
+                    {
+                        Name = "Personal Video Trim MP4",
+                        OutputGroupSettings = new OutputGroupSettings
+                        {
+                            Type = OutputGroupType.FILE_GROUP_SETTINGS,
+                            FileGroupSettings = new FileGroupSettings
+                            {
+                                Destination = destUri
+                            }
+                        },
+                        Outputs =
+                        [
+                            new Output
+                            {
+                                VideoDescription = BuildVideoDescription(watermarkUri),
+                                AudioDescriptions = BuildAudioDescriptions(),
+                                ContainerSettings = BuildContainerSettings()
+                            }
+                        ]
+                    }
+                ]
+            }
+        };
+
+        var response = await _mediaConvert.CreateJobAsync(request);
+        _logger.LogInformation(
+            "SubmitOutputTrimJobAsync: job submitted. JobId={JobId}", response.Job.Id);
+        return response.Job.Id;
+    }
+
+    /// <inheritdoc />
+    public async Task<long?> GetOutputDurationMsAsync(string jobId)
+    {
+        var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });
+        var durationMs = response.Job.OutputGroupDetails?
+            .SelectMany(g => g.OutputDetails ?? [])
+            .Select(o => o.DurationInMs)
+            .FirstOrDefault(d => d > 0);
+
+        if (durationMs is > 0)
+        {
+            _logger.LogInformation(
+                "GetOutputDurationMsAsync: job {JobId} duration={DurationMs}ms", jobId, durationMs);
+            return durationMs;
+        }
+
+        return null;
+    }
+
+    /// <inheritdoc />
     public async Task<MediaConvertJobStatus> GetJobStatusAsync(string jobId)
     {
         var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });

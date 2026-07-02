@@ -53,8 +53,8 @@ public class PersonalVideoGenerationWorker : BackgroundService
                 // ProcessGenerationAsync handles its own failures (marks the record Failed);
                 // this catch is a last-resort guard so one bad job never kills the worker loop.
                 _logger.LogError(ex,
-                    "PersonalVideoGenerationWorker: unhandled error processing HighlightVideoId={Id}",
-                    job.HighlightVideoId);
+                    "PersonalVideoGenerationWorker: unhandled error processing ItemId={Id}",
+                    job.ItemId);
             }
         }
 

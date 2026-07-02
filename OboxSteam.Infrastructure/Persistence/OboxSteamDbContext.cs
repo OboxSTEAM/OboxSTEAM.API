@@ -71,6 +71,8 @@ public class OboxSteamDbContext : DbContext
     public DbSet<MediaAsset> MediaAssets { get; set; }
     public DbSet<MediaTag> MediaTags { get; set; }
     public DbSet<HighlightVideo> HighlightVideos { get; set; }
+    public DbSet<HighlightVideoStack> HighlightVideoStacks { get; set; }
+    public DbSet<HighlightVideoItem> HighlightVideoItems { get; set; }
 
     // ── 9. Payments ──
     public DbSet<Payment> Payments { get; set; }
@@ -127,6 +129,8 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<FaceEmbedding>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<MediaAsset>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<HighlightVideo>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<HighlightVideoStack>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<HighlightVideoItem>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Payment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<PaymentRequest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Invoice>().HasQueryFilter(e => !e.IsDeleted);
@@ -581,13 +585,43 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
-        // HIGHLIGHT VIDEO (one personal video per student per program)
+        // HIGHLIGHT VIDEO (legacy table — migrated to stacks)
         // =============================================
         modelBuilder.Entity<HighlightVideo>(entity =>
         {
             entity.HasIndex(hv => new { hv.ProgramId, hv.StudentId })
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false");
+        });
+
+        modelBuilder.Entity<HighlightVideoStack>(entity =>
+        {
+            entity.HasIndex(s => new { s.ProgramId, s.StudentId, s.StrengthDescription })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(s => s.Program)
+                .WithMany()
+                .HasForeignKey(s => s.ProgramId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.Student)
+                .WithMany()
+                .HasForeignKey(s => s.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<HighlightVideoItem>(entity =>
+        {
+            entity.HasOne(i => i.Stack)
+                .WithMany(s => s.Items)
+                .HasForeignKey(i => i.StackId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(i => i.ParentItem)
+                .WithMany()
+                .HasForeignKey(i => i.ParentItemId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // =============================================

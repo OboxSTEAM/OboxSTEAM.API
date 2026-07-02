@@ -30,6 +30,16 @@ public interface IVideoConverterService
     Task<string> SubmitPersonalVideoJobAsync(List<ClipInput> clips, string outputS3Key);
 
     /// <summary>
+    /// Clips keep-segments from an existing output MP4 into a new personal highlight file.
+    /// </summary>
+    Task<string> SubmitOutputTrimJobAsync(string inputS3Key, List<TimeClip> keepClips, string outputS3Key);
+
+    /// <summary>
+    /// Returns output duration in milliseconds for a completed MediaConvert job, if reported.
+    /// </summary>
+    Task<long?> GetOutputDurationMsAsync(string jobId);
+
+    /// <summary>
     /// Polls the status of a previously submitted MediaConvert job.
     /// </summary>
     /// <param name="jobId">The MediaConvert Job ID returned by <see cref="SubmitTranscodeJobAsync"/>.</param>

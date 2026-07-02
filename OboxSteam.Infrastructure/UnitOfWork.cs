@@ -58,6 +58,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();
     public IGenericRepository<MediaTag> MediaTags => Repository<MediaTag>();
     public IGenericRepository<HighlightVideo> HighlightVideos => Repository<HighlightVideo>();
+    public IGenericRepository<HighlightVideoStack> HighlightVideoStacks => Repository<HighlightVideoStack>();
+    public IGenericRepository<HighlightVideoItem> HighlightVideoItems => Repository<HighlightVideoItem>();
     public IGenericRepository<FaceEmbedding> FaceEmbeddings => Repository<FaceEmbedding>();
     public IGenericRepository<Portfolio> Portfolios => Repository<Portfolio>();
     public IGenericRepository<PortfolioCustomItem> PortfolioCustomItems => Repository<PortfolioCustomItem>();
