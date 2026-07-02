@@ -1,28 +1,28 @@
 namespace OboxSteam.Application.Interfaces;
 
 /// <summary>
-/// Service nhận diện giọng nói (speaker diarization) qua AWS Transcribe.
-/// Luồng: StartSpeakerDiarization (sau khi transcode xong) → EventBridge/SNS webhook báo
-/// hoàn thành → GetSpeakerSegments (đọc transcript JSON từ S3) → map speaker với student.
+/// Speaker diarization via AWS Transcribe.
+/// Flow: <see cref="StartSpeakerDiarizationAsync"/> (after transcode) → EventBridge
+/// "Transcribe Job State Change" → SNS → <see cref="IMediaService.HandleTranscribeWebhookAsync"/>
+/// → <see cref="GetSpeakerSegmentsAsync"/> reads transcript JSON from S3.
 /// </summary>
 public interface ITranscribeService
 {
     /// <summary>
-    /// Start một Transcribe job có bật speaker diarization trên video/audio đã có trong S3.
-    /// Dùng IdentifyLanguage (vi-VN / en-US) vì nội dung có thể lẫn Việt + Anh.
-    /// Trả về job name để tra cứu kết quả sau qua webhook.
+    /// Starts a Transcribe job with speaker diarization on media already in S3.
+    /// Uses IdentifyLanguage (vi-VN / en-US) for mixed Vietnamese/English content.
+    /// Returns the job name for webhook correlation and result lookup.
     /// </summary>
     Task<string> StartSpeakerDiarizationAsync(string s3Bucket, string s3Key, Guid mediaId);
 
     /// <summary>
-    /// Đọc kết quả speaker diarization của một job đã hoàn thành.
-    /// Trả về <c>null</c> nếu job còn QUEUED/IN_PROGRESS.
-    /// Trả về danh sách rỗng nếu job FAILED hoặc không có speaker label nào.
+    /// Reads speaker diarization results for a completed job.
+    /// Returns <c>null</c> while QUEUED/IN_PROGRESS; an empty list on FAILED or no speakers.
     /// </summary>
     Task<List<SpeakerSegment>?> GetSpeakerSegmentsAsync(string jobName);
 }
 
 /// <summary>
-/// Một đoạn thời gian (ms) mà một speaker (ẩn danh: "spk_0", "spk_1", ...) đang nói.
+/// A time range (ms) where an anonymous speaker (e.g. "spk_0") is talking.
 /// </summary>
 public record SpeakerSegment(string SpeakerLabel, long StartMs, long EndMs);

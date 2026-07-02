@@ -3,8 +3,8 @@ namespace OboxSteam.Application.Interfaces;
 /// <summary>
 /// A unit of background work for generating a student's personal highlight video.
 /// Enqueued by <see cref="IPersonalVideoService.TriggerPersonalVideoGenerationAsync"/> after the
-/// HighlightVideo record has been created in <c>Processing</c> state, and consumed by the
-/// background worker which calls <see cref="IPersonalVideoService.ProcessGenerationAsync"/>.
+/// HighlightVideo record has been created in <c>Processing</c> state, and consumed by
+/// <c>PersonalVideoGenerationWorker</c> which calls <see cref="IPersonalVideoService.ProcessGenerationAsync"/>.
 /// </summary>
 /// <param name="HighlightVideoId">The HighlightVideo record to update with the result.</param>
 /// <param name="ProgramId">Target program.</param>

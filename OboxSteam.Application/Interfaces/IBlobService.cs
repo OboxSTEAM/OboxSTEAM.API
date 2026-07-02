@@ -16,7 +16,11 @@ public interface IBlobService
         string folder,
         CancellationToken cancellationToken = default);
 
-    Task<string> GetPreviewUrlAsync(string fileName);
+    /// <summary>
+    /// Builds a public HTTPS URL for an object in the bucket.
+    /// <paramref name="s3Key"/> is the bucket-relative key (e.g. <c>media/file_conv.mp4</c>).
+    /// </summary>
+    Task<string> GetPreviewUrlAsync(string s3Key);
 
     Task<string> GetFileUrlAsync(string fileName, CancellationToken cancellationToken = default);
 

@@ -8,9 +8,10 @@ namespace OboxSteam.Application.Interfaces;
 public interface IPersonalVideoService
 {
     /// <summary>
-    /// Triggers an asynchronous personal video generation job for the given student + program.
-    /// Collects all tagged videos, applies the Logic Core clipping rules, submits a
-    /// multi-input MediaConvert job, and returns immediately with the pending HighlightVideo record.
+    /// Queues personal highlight video generation for a student + program.
+    /// Creates or resets a <c>Processing</c> HighlightVideo record and enqueues
+    /// <see cref="PersonalVideoJob"/> for <c>PersonalVideoGenerationWorker</c> (clip build +
+    /// MediaConvert submit). Returns immediately; completion arrives via MediaConvert webhook.
     /// If a job is already in progress for this student/program, returns the existing record.
     /// </summary>
     /// <param name="programId">Target program.</param>

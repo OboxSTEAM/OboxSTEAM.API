@@ -8,6 +8,13 @@ using System.Text.Json;
 
 namespace OboxSteam.API.Controllers;
 
+/// <summary>
+/// Receives AWS SNS notifications for activity media and personal highlight videos.
+/// Verifies SNS signatures, confirms subscriptions, and routes:
+/// MediaConvert / Transcribe (EventBridge) and Rekognition (SNS) events to
+/// <see cref="IMediaService"/> and <see cref="IPersonalVideoService"/>.
+/// No JWT — security relies on SNS signature verification.
+/// </summary>
 [ApiController]
 [Route("api/webhooks/aws")]
 public class AwsWebhookController : ControllerBase

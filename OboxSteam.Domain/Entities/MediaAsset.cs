@@ -29,7 +29,7 @@ public class MediaAsset : BaseEntity
     public VideoProcessingStatus VideoStatus { get; set; } = VideoProcessingStatus.None;
 
     /// <summary>
-    /// Rekognition Label Detection job ID, populated alongside <see cref="VideoJobRef"/>
+    /// Rekognition Label Detection job ID, populated alongside <see cref="FaceSearchJobId"/>
     /// once transcoding completes. Null until label detection has been triggered.
     /// Used by the strengths-based highlight filtering pipeline to retrieve a
     /// per-frame label timeline (Soccer, Chess, Presentation, …).

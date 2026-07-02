@@ -21,7 +21,9 @@ namespace OboxSteam.API.Controllers
 
         /// <summary>
         /// Upload an image or video to an activity. Auto face-tagging is applied.
-        /// Images are tagged synchronously; videos start an async Rekognition job.
+        /// Images are tagged synchronously. Videos upload raw to S3, submit MediaConvert in this
+        /// request, then AWS webhooks drive transcode, face search, and transcribe. Poll
+        /// POST /api/media/{mediaId}/process-tags if tags are not ready yet.
         /// </summary>
         [HttpPost("upload")]
         [RequestSizeLimit(3L * 1024 * 1024 * 1024)]
@@ -29,8 +31,9 @@ namespace OboxSteam.API.Controllers
         [SwaggerOperation(
             Summary = "Upload media to activity",
             Description = "Uploads an image (.jpg, .jpeg, .png) or video (.mp4, .mov) to an activity. " +
-                          "Images are auto face-tagged immediately. Videos start an async Rekognition job — " +
-                          "call POST /api/media/{mediaId}/process-tags later to retrieve results."
+                          "Images are auto face-tagged immediately. Videos: raw upload + MediaConvert submit " +
+                          "in one request; AWS SNS webhooks complete transcode and start Rekognition/Transcribe. " +
+                          "Call POST /api/media/{mediaId}/process-tags to poll face tags if webhooks are delayed."
         )]
         [ProducesResponseType(typeof(ApiResult<MediaAssetDto>), 200)]
         [ProducesResponseType(typeof(ApiResult<object>), 400)]

@@ -158,10 +158,13 @@ public class BlobService : IBlobService
         _logger.LogInformation("Upload completed: {Object}", objectKey);
     }
 
-    /// <summary>Tạo 1 cái preview URL cho file đã upload lên S3.</summary>
-    public Task<string> GetPreviewUrlAsync(string fileName)
+    /// <summary>
+    /// Builds a public HTTPS URL for an object already in S3.
+    /// <paramref name="s3Key"/> is the bucket-relative key (e.g. <c>media/file_conv.mp4</c>).
+    /// </summary>
+    public Task<string> GetPreviewUrlAsync(string s3Key)
     {
-        var previewUrl = $"https://{_bucketName}.s3.{_region}.amazonaws.com/{fileName}";
+        var previewUrl = $"https://{_bucketName}.s3.{_region}.amazonaws.com/{s3Key}";
         _logger.LogInformation("Preview URL: {Url}", previewUrl);
         return Task.FromResult(previewUrl);
     }

@@ -40,9 +40,8 @@ public class HighlightVideoController : ControllerBase
     /// Trigger personal video generation for a student in a program.
     /// </summary>
     /// <remarks>
-    /// Collects all tagged, processed videos belonging to the program, applies the
-    /// clipping Logic Core rules, and submits a MediaConvert stitching job.
-    /// The endpoint returns immediately with a <c>Processing</c> status.
+    /// Creates or resets a <c>Processing</c> HighlightVideo record and enqueues clip building
+    /// for <c>PersonalVideoGenerationWorker</c> (MediaConvert submit runs off the HTTP thread).
     /// Poll GET to check progress.
     ///
     /// Clipping rules:
@@ -61,8 +60,8 @@ public class HighlightVideoController : ControllerBase
     [HttpPost]
     [SwaggerOperation(
         Summary = "Trigger personal video generation",
-        Description = "Starts an asynchronous MediaConvert job that stitches a personalised highlight reel " +
-                      "for the given student from all tagged videos in the program. Returns immediately with status=Processing. " +
+        Description = "Queues personal highlight video generation: clip building and MediaConvert " +
+                      "submission run in PersonalVideoGenerationWorker. Returns immediately with status=Processing. " +
                       "Supply optional 'StrengthDescription' to filter segments by student strengths (e.g. 'Sinh viên giỏi đá bóng')."
     )]
     [ProducesResponseType(typeof(ApiResult<HighlightVideoDto>), 202)]

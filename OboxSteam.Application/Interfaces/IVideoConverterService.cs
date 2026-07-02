@@ -2,6 +2,8 @@ namespace OboxSteam.Application.Interfaces;
 
 /// <summary>
 /// Submits and polls AWS MediaConvert transcoding jobs.
+/// Activity uploads and personal highlight videos share the same service; completion is
+/// delivered via SNS/EventBridge to <c>AwsWebhookController</c>.
 /// All transcoding runs in the cloud — no local FFmpeg required.
 /// </summary>
 public interface IVideoConverterService

@@ -105,7 +105,7 @@ public class MediaService : IMediaService
                     "Please upload a clear photo where a registered student's face is visible.");
             }
         }
-        else // isVideo — upload raw to S3; worker submits MediaConvert job
+        else // isVideo — upload raw to S3; StartVideoTranscodeAsync submits MediaConvert below
         {
             var rawS3Key = $"{RawFolder}/{fileName}";
             _logger.LogInformation("Uploading raw video to S3: {RawKey}", rawS3Key);
@@ -127,7 +127,7 @@ public class MediaService : IMediaService
         };
 
         await _unitOfWork.MediaAssets.AddAsync(media);
-        await _unitOfWork.SaveChangesAsync(); // persist before enqueue
+        await _unitOfWork.SaveChangesAsync(); // persist MediaAsset id before submitting transcode job
 
         // ── Face Tagging ──────────────────────────────────────────────────────
         if (isImage)
@@ -137,7 +137,7 @@ public class MediaService : IMediaService
         }
         else // isVideo — submit MediaConvert job directly
         {
-            // Store raw S3 key so the worker can locate the source video.
+            // Store raw S3 key for StartVideoTranscodeAsync and webhook completion handlers.
             media.RawVideoS3Key = videoLocalPath;
             await _unitOfWork.SaveChangesAsync();
 
@@ -218,7 +218,7 @@ public class MediaService : IMediaService
             var mcJobId = await _videoConverterService.SubmitTranscodeJobAsync(
                 rawS3Key, $"{MediaFolder}/");
 
-            // ── Persist MC job ID so the worker can poll it ───────────────────
+            // ── Persist MC job ID for HandleMediaConvertWebhookAsync correlation ─
             media.MediaConvertJobId = mcJobId;
             await _unitOfWork.SaveChangesAsync();
 
@@ -666,7 +666,7 @@ public class MediaService : IMediaService
             if (speakerSegments == null)
             {
                 // Webhook reported COMPLETED but the query is not ready yet (rare race) —
-                // keep TranscribeStatus Pending until a retry/webhook can capture results.
+                // leave SpeakerSegmentsJson null until a retry/webhook can capture results.
                 _logger.LogWarning(
                     "HandleTranscribeWebhookAsync: results not ready yet for MediaId={MediaId}, JobName={JobName}.",
                     media.Id, jobName);

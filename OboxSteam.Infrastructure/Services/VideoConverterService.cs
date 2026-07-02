@@ -7,8 +7,9 @@ namespace OboxSteam.Infrastructure.Services;
 
 /// <summary>
 /// Transcodes video using AWS MediaConvert (fully managed cloud service).
-/// Workflow: raw video already in S3 → submit MediaConvert job → poll until complete.
-/// No local FFmpeg or /tmp files required.
+/// Workflow: raw video already in S3 → submit MediaConvert job → callers poll status via
+/// <see cref="GetJobStatusAsync"/> when handling SNS/EventBridge completion (see
+/// <c>MediaService.TryCompleteTranscodeAsync</c>). No local FFmpeg or /tmp files required.
 /// </summary>
 public class VideoConverterService : IVideoConverterService
 {
