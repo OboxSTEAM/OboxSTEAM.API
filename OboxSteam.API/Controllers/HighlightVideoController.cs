@@ -7,18 +7,6 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace OboxSteam.API.Controllers;
 
 /// <summary>
-/// Request body for triggering highlight video generation (legacy endpoint).
-/// </summary>
-public record TriggerGenerationRequest
-{
-    /// <summary>
-    /// Optional description of the student's strengths used to filter video segments.
-    /// When null or empty, standard face/voice timeline clipping is used.
-    /// </summary>
-    public string? StrengthDescription { get; init; }
-}
-
-/// <summary>
 /// Manages personal highlight video stacks for a student within a Program.
 /// </summary>
 [Route("api/programs/{programId:guid}/students/{studentId:guid}/highlight-video")]
@@ -30,43 +18,6 @@ public class HighlightVideoController : ControllerBase
     public HighlightVideoController(IPersonalVideoService personalVideoService)
     {
         _personalVideoService = personalVideoService;
-    }
-
-    /// <summary>
-    /// Legacy trigger — creates or re-triggers the default (no-spec) stack.
-    /// Prefer POST <c>/stacks</c> for new clients.
-    /// </summary>
-    [HttpPost]
-    [SwaggerOperation(Summary = "Trigger personal video generation (legacy)")]
-    [ProducesResponseType(typeof(ApiResult<HighlightVideoDto>), 202)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> TriggerGeneration(
-        [FromRoute] Guid programId,
-        [FromRoute] Guid studentId,
-        [FromBody] TriggerGenerationRequest? request = null)
-    {
-        var result = await _personalVideoService.TriggerPersonalVideoGenerationAsync(
-            programId, studentId, request?.StrengthDescription);
-        return Accepted(ApiResult<HighlightVideoDto>.Success(result, "202", "Personal video generation started."));
-    }
-
-    /// <summary>
-    /// Legacy status — returns the latest item from the default (no-spec) stack.
-    /// </summary>
-    [HttpGet]
-    [SwaggerOperation(Summary = "Get personal highlight video status (legacy)")]
-    [ProducesResponseType(typeof(ApiResult<HighlightVideoDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> GetHighlightVideo(
-        [FromRoute] Guid programId,
-        [FromRoute] Guid studentId)
-    {
-        var result = await _personalVideoService.GetHighlightVideoAsync(programId, studentId);
-
-        if (result == null)
-            return NotFound(ApiResult<object>.Failure("404", "No highlight video found for this student and program."));
-
-        return Ok(ApiResult<HighlightVideoDto>.Success(result, "200", "Highlight video retrieved."));
     }
 
     /// <summary>

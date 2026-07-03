@@ -68,8 +68,9 @@ public interface IMediaService
 
     /// <summary>
     /// Handles MediaConvert job completion from SNS/EventBridge (activity media uploads).
+    /// Returns <c>true</c> when a matching <c>MediaAsset</c> was found for <paramref name="jobId"/>.
     /// </summary>
-    Task HandleMediaConvertWebhookAsync(string jobId, bool isSuccess);
+    Task<bool> HandleMediaConvertWebhookAsync(string jobId, bool isSuccess);
 
     /// <summary>
     /// Handles Rekognition Face Search job completion from SNS.

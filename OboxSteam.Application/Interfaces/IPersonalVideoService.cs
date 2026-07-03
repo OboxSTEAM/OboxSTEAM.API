@@ -7,13 +7,6 @@ namespace OboxSteam.Application.Interfaces;
 /// </summary>
 public interface IPersonalVideoService
 {
-    /// <summary>Legacy: triggers or returns the default (no-spec) stack's latest item state.</summary>
-    Task<HighlightVideoDto> TriggerPersonalVideoGenerationAsync(
-        Guid programId, Guid studentId, string? strengthDescription = null);
-
-    /// <summary>Legacy: returns the default stack's most recent item mapped to HighlightVideoDto.</summary>
-    Task<HighlightVideoDto?> GetHighlightVideoAsync(Guid programId, Guid studentId);
-
     Task<HighlightVideoStackDto> CreateStackAsync(
         Guid programId, Guid studentId, string? strengthDescription = null);
 

@@ -296,10 +296,11 @@ public class AwsWebhookController : ControllerBase
         _logger.LogInformation(
             "Processing MediaConvert Webhook JobId: {JobId}, Success: {Success}", jobId, isSuccess);
 
-        // We delegate the DB lookups and updates to the domain services
-        // so the Controller doesn't depend on IUnitOfWork directly.
-        await _personalVideoService.HandlePersonalVideoJobCompletionAsync(jobId, isSuccess);
-        await _mediaService.HandleMediaConvertWebhookAsync(jobId, isSuccess);
+        // Activity media and personal highlight videos both use MediaConvert but correlate
+        // via different tables (MediaAssets vs HighlightVideoItems). Route by job match.
+        var handledByMedia = await _mediaService.HandleMediaConvertWebhookAsync(jobId, isSuccess);
+        if (!handledByMedia)
+            await _personalVideoService.HandlePersonalVideoJobCompletionAsync(jobId, isSuccess);
     }
 
     private async Task ProcessTranscribeJobAsync(string jobName, bool isSuccess)

@@ -141,30 +141,6 @@ public class PersonalVideoService : IPersonalVideoService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<HighlightVideoDto> TriggerPersonalVideoGenerationAsync(
-        Guid programId, Guid studentId, string? strengthDescription = null)
-    {
-        var stack = await CreateStackAsync(programId, studentId, strengthDescription);
-        return MapLegacyDto(stack);
-    }
-
-    /// <inheritdoc />
-    public async Task<HighlightVideoDto?> GetHighlightVideoAsync(Guid programId, Guid studentId)
-    {
-        var normalized = NormalizeStrengthDescription(strengthDescription: null);
-        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
-            s => s.ProgramId == programId
-                 && s.StudentId == studentId
-                 && s.StrengthDescription == normalized);
-
-        if (stack == null)
-            return null;
-
-        var items = await LoadStackItemsAsync(stack.Id);
-        return MapLegacyDto(MapStackToDto(stack, items));
-    }
-
-    /// <inheritdoc />
     public async Task<HighlightVideoStackDto> CreateStackAsync(
         Guid programId, Guid studentId, string? strengthDescription = null)
     {
@@ -1472,33 +1448,4 @@ public class PersonalVideoService : IPersonalVideoService
         };
     }
 
-    private static HighlightVideoDto MapLegacyDto(HighlightVideoStackDto stack)
-    {
-        var latest = stack.Items
-            .OrderByDescending(i => i.RequestedAt ?? DateTime.MinValue)
-            .ThenByDescending(i => i.Id)
-            .FirstOrDefault();
-
-        if (latest == null)
-        {
-            return new HighlightVideoDto
-            {
-                Id = stack.Id,
-                StudentId = stack.StudentId,
-                ProgramId = stack.ProgramId,
-                PersonalVideoStatus = HighlightVideoStatus.None,
-            };
-        }
-
-        return new HighlightVideoDto
-        {
-            Id = latest.Id,
-            StudentId = stack.StudentId,
-            ProgramId = stack.ProgramId,
-            VideoUrl = latest.VideoUrl,
-            PersonalVideoStatus = latest.Status,
-            PersonalVideoRequestedAt = latest.RequestedAt,
-            PersonalVideoFailureReason = latest.FailureReason,
-        };
-    }
 }

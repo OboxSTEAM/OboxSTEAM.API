@@ -493,30 +493,32 @@ public class MediaService : IMediaService
     }
 
     /// <inheritdoc />
-    public async Task HandleMediaConvertWebhookAsync(string jobId, bool isSuccess)
+    public async Task<bool> HandleMediaConvertWebhookAsync(string jobId, bool isSuccess)
     {
         var mediaAsset = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
             m => m.MediaConvertJobId == jobId && !m.IsDeleted);
 
-        if (mediaAsset != null)
+        if (mediaAsset == null)
+            return false;
+
+        if (isSuccess)
         {
-            if (isSuccess)
+            try
             {
-                try
-                {
-                    await TryCompleteTranscodeAsync(mediaAsset.Id);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "TryCompleteTranscodeAsync failed for MediaId {Id}", mediaAsset.Id);
-                }
+                await TryCompleteTranscodeAsync(mediaAsset.Id);
             }
-            else
+            catch (Exception ex)
             {
-                mediaAsset.VideoStatus = VideoProcessingStatus.Failed;
-                await _unitOfWork.SaveChangesAsync();
+                _logger.LogError(ex, "TryCompleteTranscodeAsync failed for MediaId {Id}", mediaAsset.Id);
             }
         }
+        else
+        {
+            mediaAsset.VideoStatus = VideoProcessingStatus.Failed;
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        return true;
     }
 
     /// <inheritdoc />
