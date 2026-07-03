@@ -21,7 +21,7 @@ namespace OboxSteam.Application.Services;
 ///   Case 1 — Video has ZERO recorded face segments for the student (scene-only / activity
 ///             footage) but was tagged for the student → include the ENTIRE video without
 ///             strength filtering; with strength filtering use label-only Bedrock sub-clips
-///             plus mapped voice segments (sole student + sole speaker).
+///             when strength filtering is enabled.
 ///   Case 2 — Video has no other faces besides the target student → include ENTIRE video.
 ///   Case 3 — Video has multiple people → extract only the student's segments from the timeline
 ///             using 2-second buffers; segments that overlap after buffering are merged.
@@ -30,8 +30,8 @@ namespace OboxSteam.Application.Services;
 ///              avoid leaking other people's faces.
 ///
 /// Strengths Filtering (optional — triggered when caller supplies a strength description):
-///   Cross-references on-camera face segments and off-camera voice-only windows with the
-///   persisted Label Detection timeline via an LLM (AWS Bedrock). Only segments where visual
+///   Cross-references on-camera face segments with the persisted Label Detection timeline via
+///   an LLM (AWS Bedrock). Only segments where visual
 ///   labels demonstrate the described strength are kept. Label data must be present for every
 ///   video that enters the strength path — missing timelines fail the job with an explicit reason
 ///   (no silent fallback to face-only / full-video clipping). When no segment matches across
@@ -77,7 +77,7 @@ public class PersonalVideoService : IPersonalVideoService
     /// <summary>After buffering, merge adjacent ranges when the gap between them is at most this.</summary>
     private const long MergeGapMs = 500;
 
-    /// <summary>Labels within this gap (ms) are merged into one voice clip cluster.</summary>
+    /// <summary>Labels within this gap (ms) are merged into one evidence-label cluster.</summary>
     private const long LabelClusterMaxGapMs = 5_000;
 
     /// <summary>
@@ -570,8 +570,8 @@ public class PersonalVideoService : IPersonalVideoService
     /// <c>TaggingComplete</c> video assets that have a <see cref="MediaTag"/> for
     /// <paramref name="studentId"/>, then applies the Logic Core rules to build the
     /// ordered list of <see cref="ClipInput"/> objects for the MediaConvert job.
-    /// When <paramref name="strengthDescription"/> is provided, each video's face and voice-only
-    /// segments are filtered via Bedrock against the label detection timeline. Missing label data
+    /// When <paramref name="strengthDescription"/> is provided, each video's face segments are
+    /// filtered via Bedrock against the label detection timeline. Missing label data
     /// for any such video fails the whole build with an explicit <see cref="ClipBuildResult.FailureReason"/>.
     /// </summary>
     private async Task<ClipBuildResult> BuildClipInputsAsync(
@@ -665,9 +665,8 @@ public class PersonalVideoService : IPersonalVideoService
     /// <summary>
     /// Applies Logic Core rules to a single <see cref="MediaAsset"/> and returns the
     /// corresponding <see cref="ClipInput"/> (with or without <see cref="TimeClip"/>s).
-    /// When <paramref name="strengthDescription"/> is provided, on-camera face segments and
-    /// off-camera voice-only windows are cross-referenced against the Label Detection timeline
-    /// via Bedrock before being used as clips.
+    /// When <paramref name="strengthDescription"/> is provided, on-camera face segments are
+    /// cross-referenced against the Label Detection timeline via Bedrock before being used as clips.
     /// Returns a skipped video (<c>Clip</c> null, no error) when strengths filtering yields no
     /// matched segments. Returns <see cref="StrengthFilterError.LabelUnavailable"/> or
     /// <see cref="StrengthFilterError.MatchingFailed"/> when strength filtering cannot run.
@@ -675,11 +674,10 @@ public class PersonalVideoService : IPersonalVideoService
     private async Task<MediaClipBuildResult> BuildClipInputForMediaAsync(
         MediaAsset media, string s3Key, Guid studentId, string? strengthDescription = null)
     {
-        var voiceSegs = ReadVoiceSegments(media, studentId);
         _logger.LogInformation(
             "[PersonalVideoService] BuildClipInputForMediaAsync entry: MediaId={MediaId}, StudentId={StudentId}, " +
-            "S3Key={S3Key}, HasStrength={HasStrength}, VoiceSegments={VoiceCount}",
-            media.Id, studentId, s3Key, !string.IsNullOrWhiteSpace(strengthDescription), voiceSegs.Count);
+            "S3Key={S3Key}, HasStrength={HasStrength}",
+            media.Id, studentId, s3Key, !string.IsNullOrWhiteSpace(strengthDescription));
 
         var timelineResult = ReadPersistedTimeline(media, studentId);
 
@@ -718,7 +716,7 @@ public class PersonalVideoService : IPersonalVideoService
             if (!string.IsNullOrWhiteSpace(strengthDescription))
             {
                 var filteredResult = await ApplyStrengthsFilterAsync(
-                    media, s3Key, studentId, timelineResult.Segments, strengthDescription);
+                    media, s3Key, timelineResult.Segments, strengthDescription);
 
                 if (filteredResult.Error == StrengthFilterError.None
                     && filteredResult.Clip != null
@@ -752,7 +750,7 @@ public class PersonalVideoService : IPersonalVideoService
             if (!string.IsNullOrWhiteSpace(strengthDescription) && timelineResult.Segments.Count > 0)
             {
                 var filteredResult = await ApplyStrengthsFilterAsync(
-                    media, s3Key, studentId, timelineResult.Segments, strengthDescription);
+                    media, s3Key, timelineResult.Segments, strengthDescription);
 
                 if (filteredResult.Error == StrengthFilterError.None
                     && filteredResult.Clip != null
@@ -777,7 +775,7 @@ public class PersonalVideoService : IPersonalVideoService
         if (!string.IsNullOrWhiteSpace(strengthDescription))
         {
             var filteredResult = await ApplyStrengthsFilterAsync(
-                media, s3Key, studentId, faceSegments, strengthDescription);
+                media, s3Key, faceSegments, strengthDescription);
 
             if (filteredResult.Error == StrengthFilterError.None
                 && filteredResult.Clip != null
@@ -785,24 +783,17 @@ public class PersonalVideoService : IPersonalVideoService
                 return new MediaClipBuildResult(filteredResult.Clip);
 
             _logger.LogWarning(
-                "[PersonalVideoService] Case 3/4 + strengths: no LLM match → face/voice fallback. MediaId={MediaId}",
+                "[PersonalVideoService] Case 3/4 + strengths: no LLM match → face fallback. MediaId={MediaId}",
                 media.Id);
         }
 
         // Standard face-timeline path (no strengths).
-        // Union the student's face timeline with their mapped voice timeline (if available) so
-        // the highlight keeps "voice but no face" moments (e.g. the student speaking off-camera).
-        // MergeAndFormatTimeClips collapses any overlaps created by the union.
-        var voiceSegments = ReadVoiceSegments(media, studentId);
-        var combinedSegments = faceSegments
-            .Concat(voiceSegments)
-            .Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0, Array.Empty<string>()));
-
-        var timeClips = MergeAndFormatTimeClips(combinedSegments);
+        var timeClips = MergeAndFormatTimeClips(
+            faceSegments.Select(s => new MatchedSegment(s.StartMs, s.EndMs, "", 0, Array.Empty<string>())));
 
         _logger.LogInformation(
-            "[PersonalVideoService] Case 3/4: {Face} face + {Voice} voice → {Merged} merged segment(s) for MediaId={MediaId}. Clips=[{Clips}]",
-            faceSegments.Count, voiceSegments.Count, timeClips.Count, media.Id,
+            "[PersonalVideoService] Case 3/4: {Face} face segment(s) → {Merged} merged clip(s) for MediaId={MediaId}. Clips=[{Clips}]",
+            faceSegments.Count, timeClips.Count, media.Id,
             string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")));
 
         return new MediaClipBuildResult(new ClipInput(s3Key, timeClips));
@@ -836,37 +827,10 @@ public class PersonalVideoService : IPersonalVideoService
     }
 
     /// <summary>
-    /// Reads the student's mapped voice timeline from <see cref="MediaTag.VoiceSegmentsJson"/>
-    /// (populated at tagging time when AWS Transcribe diarization mapped a speaker to this
-    /// student). Returns an empty list when no voice data was captured (legacy media, Transcribe
-    /// disabled/failed, or no speaker could be mapped) so callers degrade to face-only clipping.
-    /// </summary>
-    private List<FaceTimestampSegment> ReadVoiceSegments(MediaAsset media, Guid studentId)
-    {
-        var tag = media.MediaTags.FirstOrDefault(t => t.StudentId == studentId);
-        if (tag?.VoiceSegmentsJson == null)
-            return new List<FaceTimestampSegment>();
-
-        try
-        {
-            return JsonSerializer.Deserialize<List<FaceTimestampSegment>>(tag.VoiceSegmentsJson)
-                   ?? new List<FaceTimestampSegment>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "[PersonalVideoService] Failed to deserialize VoiceSegmentsJson for MediaId={MediaId}, StudentId={StudentId}.",
-                media.Id, studentId);
-            return new List<FaceTimestampSegment>();
-        }
-    }
-
-    /// <summary>
     /// Loads the Label Detection timeline for <paramref name="media"/> then calls
-    /// <see cref="IStrengthMatchService.MatchStrengthsAsync"/> for on-camera face windows,
+    /// <see cref="IStrengthMatchService.MatchStrengthsAsync"/> for on-camera face windows, or
     /// <see cref="IStrengthMatchService.MatchStrengthsFromLabelsOnlyAsync"/> when there are no
-    /// face segments (Case 1), and <see cref="IStrengthMatchService.MatchStrengthsForVoiceOnlyAsync"/>
-    /// for off-camera voice windows (same ±<see cref="LabelContextWindowMs"/> label context as face).
+    /// face segments (Case 1).
     /// </summary>
     /// <returns>
     /// <see cref="StrengthFilterError.None"/> with a populated <c>Clip</c> on success;
@@ -875,7 +839,7 @@ public class PersonalVideoService : IPersonalVideoService
     /// when strength filtering cannot be honoured.
     /// </returns>
     private async Task<StrengthFilterResult> ApplyStrengthsFilterAsync(
-        MediaAsset media, string s3Key, Guid studentId,
+        MediaAsset media, string s3Key,
         IList<FaceTimestampSegment> faceSegments,
         string strengthDescription)
     {
@@ -918,28 +882,21 @@ public class PersonalVideoService : IPersonalVideoService
 
         // ── Token optimisation ────────────────────────────────────────────────
         // Scene-only (Case 1): no face windows — scan full label timeline via label-only Bedrock.
-        // Otherwise send labels within face windows and, separately, within off-camera voice windows.
+        // Otherwise send labels within face windows only.
         var isSceneOnly = faceSegments.Count == 0;
-        var allVoiceSegments = ReadVoiceSegments(media, studentId);
-        var voiceOnlySegments = GetVoiceOnlySegments(faceSegments, allVoiceSegments);
         var faceRelevantLabels = isSceneOnly
             ? new List<LabelDetectionEntry>()
             : FilterLabelsToSegmentWindows(labelTimeline, faceSegments);
-        var voiceRelevantLabels = voiceOnlySegments.Count > 0
-            ? FilterLabelsToSegmentWindows(labelTimeline, voiceOnlySegments)
-            : new List<LabelDetectionEntry>();
 
         _logger.LogInformation(
             "[PersonalVideoService] ApplyStrengthsFilter path: MediaId={MediaId}, sceneOnly={SceneOnly}, " +
-            "faceSegments={FaceCount}, totalVoice={TotalVoice}, voiceOnly={VoiceOnlyCount}, " +
-            "totalLabels={TotalLabels}, faceLabels={FaceLabels}, voiceLabels={VoiceLabels}",
-            media.Id, isSceneOnly, faceSegments.Count, allVoiceSegments.Count,
-            voiceOnlySegments.Count, labelTimeline.Count, faceRelevantLabels.Count, voiceRelevantLabels.Count);
+            "faceSegments={FaceCount}, totalLabels={TotalLabels}, faceLabels={FaceLabels}",
+            media.Id, isSceneOnly, faceSegments.Count, labelTimeline.Count, faceRelevantLabels.Count);
 
-        if (!isSceneOnly && faceRelevantLabels.Count == 0 && voiceRelevantLabels.Count == 0)
+        if (!isSceneOnly && faceRelevantLabels.Count == 0)
         {
             _logger.LogInformation(
-                "[PersonalVideoService] No labels within face or voice-only windows for MediaId={MediaId}. Skipping video.",
+                "[PersonalVideoService] No labels within face windows for MediaId={MediaId}. Skipping video.",
                 media.Id);
             return new StrengthFilterResult(
                 new ClipInput(s3Key, new List<TimeClip>()),
@@ -947,11 +904,10 @@ public class PersonalVideoService : IPersonalVideoService
         }
 
         _logger.LogInformation(
-            "[PersonalVideoService] Label timeline filtered for MediaId={MediaId}: sceneOnly={SceneOnly}, face {FaceLabels} label(s), voice-only {VoiceLabels} label(s).",
-            media.Id, isSceneOnly, faceRelevantLabels.Count, voiceRelevantLabels.Count);
+            "[PersonalVideoService] Label timeline filtered for MediaId={MediaId}: sceneOnly={SceneOnly}, face {FaceLabels} label(s).",
+            media.Id, isSceneOnly, faceRelevantLabels.Count);
 
         var allMatched = new List<MatchedSegment>();
-        var faceMatched = new List<MatchedSegment>();
         string reasoning = "";
 
         // ── Scene-only: full label timeline (no face constraint) ──────────────
@@ -968,18 +924,11 @@ public class PersonalVideoService : IPersonalVideoService
             }
             catch (Exception ex)
             {
-                if (voiceRelevantLabels.Count == 0)
-                {
-                    var detail = $"MediaId={media.Id}: label-only strength matching failed (scene-only / Case 1).";
-                    _logger.LogWarning(ex,
-                        "[PersonalVideoService] Label-only strength matching failed for MediaId={MediaId}.",
-                        media.Id);
-                    return new StrengthFilterResult(null, StrengthFilterError.MatchingFailed, detail);
-                }
-
+                var detail = $"MediaId={media.Id}: label-only strength matching failed (scene-only / Case 1).";
                 _logger.LogWarning(ex,
-                    "[PersonalVideoService] Label-only strength matching failed for MediaId={MediaId}; continuing with voice-only path.",
+                    "[PersonalVideoService] Label-only strength matching failed for MediaId={MediaId}.",
                     media.Id);
+                return new StrengthFilterResult(null, StrengthFilterError.MatchingFailed, detail);
             }
         }
 
@@ -992,60 +941,27 @@ public class PersonalVideoService : IPersonalVideoService
                     faceSegments, faceRelevantLabels, strengthDescription);
                 var trimmedFace = MaybeTrimEvidenceLabels(
                     faceMatch.MatchedSegments, labelTimeline, media.Id, "face");
-                faceMatched.AddRange(trimmedFace);
                 allMatched.AddRange(trimmedFace);
                 reasoning = faceMatch.Reasoning;
             }
             catch (Exception ex)
             {
-                if (voiceRelevantLabels.Count == 0)
-                {
-                    var detail = $"MediaId={media.Id}: strength matching failed for on-camera segments.";
-                    _logger.LogWarning(ex,
-                        "[PersonalVideoService] Claude strength matching (face) failed for MediaId={MediaId}.",
-                        media.Id);
-                    return new StrengthFilterResult(null, StrengthFilterError.MatchingFailed, detail);
-                }
-
+                var detail = $"MediaId={media.Id}: strength matching failed for on-camera segments.";
                 _logger.LogWarning(ex,
-                    "[PersonalVideoService] Claude strength matching (face) failed for MediaId={MediaId}; continuing with voice-only path.",
+                    "[PersonalVideoService] Claude strength matching (face) failed for MediaId={MediaId}.",
                     media.Id);
-            }
-        }
-
-        // ── Off-camera: voice windows + visual labels in wider padded windows ──
-        if (voiceOnlySegments.Count > 0 && voiceRelevantLabels.Count > 0)
-        {
-            try
-            {
-                var voiceMatch = await _strengthMatchService.MatchStrengthsForVoiceOnlyAsync(
-                    voiceOnlySegments, voiceRelevantLabels, strengthDescription);
-                var trimmedVoice = MaybeTrimEvidenceLabels(
-                    voiceMatch.MatchedSegments, labelTimeline, media.Id, "voice", voiceOnlySegments);
-                var voiceKept = PreferFaceOverOverlappingVoice(faceMatched, trimmedVoice, media.Id);
-                allMatched.AddRange(voiceKept);
-                if (!string.IsNullOrWhiteSpace(voiceMatch.Reasoning))
-                    reasoning = string.IsNullOrWhiteSpace(reasoning)
-                        ? voiceMatch.Reasoning
-                        : $"{reasoning} | voice-only: {voiceMatch.Reasoning}";
-            }
-            catch (Exception ex)
-            {
-                // Non-fatal: keep any on-camera matches already collected.
-                _logger.LogWarning(ex,
-                    "[PersonalVideoService] Claude strength matching (voice-only) failed for MediaId={MediaId}. Using face matches only.",
-                    media.Id);
+                return new StrengthFilterResult(null, StrengthFilterError.MatchingFailed, detail);
             }
         }
 
         _logger.LogInformation(
-            "[PersonalVideoService] ApplyStrengthsFilter result: MediaId={MediaId}, faceMatched={FaceMatched}, totalMatched={TotalMatched}",
-            media.Id, faceMatched.Count, allMatched.Count);
+            "[PersonalVideoService] ApplyStrengthsFilter result: MediaId={MediaId}, totalMatched={TotalMatched}",
+            media.Id, allMatched.Count);
 
         if (allMatched.Count == 0)
         {
             _logger.LogInformation(
-                "[PersonalVideoService] No strength matches (face or voice-only) for MediaId={MediaId}. Reasoning: {Reasoning}",
+                "[PersonalVideoService] No strength matches for MediaId={MediaId}. Reasoning: {Reasoning}",
                 media.Id, reasoning);
             return new StrengthFilterResult(
                 new ClipInput(s3Key, new List<TimeClip>()),
@@ -1061,65 +977,6 @@ public class PersonalVideoService : IPersonalVideoService
             reasoning);
 
         return new StrengthFilterResult(new ClipInput(s3Key, timeClips));
-    }
-
-    /// <summary>
-    /// Returns voice segments that do not overlap any face segment — i.e. the student is
-    /// speaking off-camera. These are evaluated separately by <see cref="ApplyStrengthsFilterAsync"/>
-    /// using labels that fall within the voice-only time windows.
-    /// </summary>
-    private List<FaceTimestampSegment> GetVoiceOnlySegments(
-        IList<FaceTimestampSegment> faceSegments,
-        IList<FaceTimestampSegment> voiceSegments)
-    {
-        if (voiceSegments.Count == 0)
-            return new List<FaceTimestampSegment>();
-
-        var result = voiceSegments
-            .Where(v => !faceSegments.Any(f => SegmentsOverlap(f, v)))
-            .ToList();
-
-        _logger.LogDebug(
-            "[PersonalVideoService] GetVoiceOnlySegments: {InputVoice} voice segment(s) in, {FaceCount} face segment(s), {OutputVoice} voice-only survived (dropped {Dropped} overlapping)",
-            voiceSegments.Count, faceSegments.Count, result.Count, voiceSegments.Count - result.Count);
-
-        return result;
-    }
-
-    private static bool SegmentsOverlap(FaceTimestampSegment a, FaceTimestampSegment b)
-    {
-        // Inclusive: Rekognition face samples are often single points (StartMs == EndMs).
-        var overlap = Math.Min(a.EndMs, b.EndMs) - Math.Max(a.StartMs, b.StartMs);
-        return overlap >= 0;
-    }
-
-    /// <summary>
-    /// Drops voice matches that temporally overlap any on-camera face match — face is the
-    /// stronger signal when both paths would produce clips for the same moment.
-    /// </summary>
-    private List<MatchedSegment> PreferFaceOverOverlappingVoice(
-        IList<MatchedSegment> faceMatches,
-        IList<MatchedSegment> voiceMatches,
-        Guid mediaId)
-    {
-        if (faceMatches.Count == 0)
-            return voiceMatches.ToList();
-
-        var kept = new List<MatchedSegment>(voiceMatches.Count);
-        foreach (var voice in voiceMatches)
-        {
-            if (faceMatches.Any(f => SegmentsOverlapMs(f.StartMs, f.EndMs, voice.StartMs, voice.EndMs)))
-            {
-                _logger.LogInformation(
-                    "[PersonalVideoService] Voice match dropped (overlaps face): [{Start}ms→{End}ms] score={Score:0.00} MediaId={MediaId}",
-                    voice.StartMs, voice.EndMs, voice.Score, mediaId);
-                continue;
-            }
-
-            kept.Add(voice);
-        }
-
-        return kept;
     }
 
     /// <summary>
@@ -1169,8 +1026,7 @@ public class PersonalVideoService : IPersonalVideoService
         IList<MatchedSegment> matches,
         IList<LabelDetectionEntry> labelTimeline,
         Guid mediaId,
-        string path,
-        IList<FaceTimestampSegment>? clampWindows = null)
+        string path)
     {
         var result = new List<MatchedSegment>();
 
@@ -1178,29 +1034,6 @@ public class PersonalVideoService : IPersonalVideoService
         {
             var searchStart = match.StartMs;
             var searchEnd = match.EndMs;
-
-            FaceTimestampSegment? clampWindow = null;
-            if (clampWindows is { Count: > 0 })
-            {
-                clampWindow = clampWindows.FirstOrDefault(v =>
-                    SegmentsOverlapMs(v.StartMs, v.EndMs, match.StartMs, match.EndMs));
-
-                if (clampWindow == null)
-                {
-                    _logger.LogWarning(
-                        "[PersonalVideoService] Evidence trim ({Path}): no clamp window for [{Start}ms→{End}ms] MediaId={MediaId}; keeping LLM bounds",
-                        path, match.StartMs, match.EndMs, mediaId);
-                    result.Add(match);
-                    continue;
-                }
-
-                _logger.LogDebug(
-                    "[PersonalVideoService] Evidence trim ({Path}): clamping [{OrigStart}ms→{OrigEnd}ms] to window [{WinStart}ms→{WinEnd}ms] MediaId={MediaId}",
-                    path, match.StartMs, match.EndMs, clampWindow.StartMs, clampWindow.EndMs, mediaId);
-
-                searchStart = Math.Max(searchStart, clampWindow.StartMs);
-                searchEnd = Math.Min(searchEnd, clampWindow.EndMs);
-            }
 
             if (searchStart > searchEnd)
                 continue;
@@ -1230,19 +1063,6 @@ public class PersonalVideoService : IPersonalVideoService
 
             if (evidenceInRange.Count == 0)
             {
-                if (path == "voice" && clampWindow != null)
-                {
-                    var voiceSpan = clampWindow.EndMs - clampWindow.StartMs;
-                    var coversFullVoice = voiceSpan > 0 && llmSpan >= voiceSpan * 0.85;
-                    if (coversFullVoice)
-                    {
-                        _logger.LogInformation(
-                            "[PersonalVideoService] Evidence trim REJECTED ({Path}) [{Start}ms→{End}ms] MediaId={MediaId}: full voice span, evidence [{Evidence}] not found in timeline",
-                            path, searchStart, searchEnd, mediaId, string.Join(", ", evidenceNames));
-                        continue;
-                    }
-                }
-
                 _logger.LogWarning(
                     "[PersonalVideoService] Evidence trim ({Path}): evidence [{Evidence}] not found in [{Start}ms→{End}ms] MediaId={MediaId}; keeping LLM bounds",
                     path, string.Join(", ", evidenceNames), searchStart, searchEnd, mediaId);
@@ -1270,11 +1090,6 @@ public class PersonalVideoService : IPersonalVideoService
 
                 var outStart = clusterStart;
                 var outEnd = clusterEnd;
-                if (clampWindow != null)
-                {
-                    outStart = Math.Max(outStart, clampWindow.StartMs);
-                    outEnd = Math.Min(outEnd, clampWindow.EndMs);
-                }
 
                 if (outStart > outEnd)
                     continue;
@@ -1304,10 +1119,9 @@ public class PersonalVideoService : IPersonalVideoService
         IList<MatchedSegment> matches,
         IList<LabelDetectionEntry> labelTimeline,
         Guid mediaId,
-        string path,
-        IList<FaceTimestampSegment>? clampWindows = null) =>
+        string path) =>
         UseEvidenceTrim
-            ? TrimMatchesToEvidenceLabels(matches, labelTimeline, mediaId, path, clampWindows)
+            ? TrimMatchesToEvidenceLabels(matches, labelTimeline, mediaId, path)
             : matches.ToList();
 
     private static List<List<LabelDetectionEntry>> ClusterLabelsByTime(
@@ -1331,10 +1145,6 @@ public class PersonalVideoService : IPersonalVideoService
 
         return clusters;
     }
-
-    private static bool SegmentsOverlapMs(long aStart, long aEnd, long bStart, long bEnd) =>
-        Math.Min(aEnd, bEnd) - Math.Max(aStart, bStart) >= 0;
-
 
     // ─────────────────────────────────────────────────────────────────────────
     // Segment processing helpers

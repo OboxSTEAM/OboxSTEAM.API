@@ -83,10 +83,8 @@ public interface IMediaService
     Task HandleLabelDetectionWebhookAsync(string jobId, bool isSuccess);
 
     /// <summary>
-    /// Handles AWS Transcribe speaker-diarization job completion from SNS/EventBridge.
-    /// Persists the speaker timeline and, once both face and speaker data are available,
-    /// maps anonymous speakers to students (overlap analysis) so the personal-video pipeline
-    /// can include "voice but no face" moments.
+    /// Legacy AWS Transcribe webhook handler. Voice diarization is disabled; this only unblocks
+    /// videos stuck in <see cref="VideoProcessingStatus.PendingSpeakerMapping"/> from before the pipeline was removed.
     /// </summary>
     Task HandleTranscribeWebhookAsync(string jobName, bool isSuccess);
 }
