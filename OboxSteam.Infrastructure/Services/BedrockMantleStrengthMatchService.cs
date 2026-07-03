@@ -24,9 +24,19 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
     /// <summary>
     /// Minimum score for a segment to count as a strength match. Enforced both in the prompt
     /// and again in code as a safety net against speculative low-confidence matches.
-    /// Raise toward 1.0 for stricter (fewer false positives) matching.
     /// </summary>
-    private const double MinMatchScore = 0.55;
+    private const double MinMatchScore = 0.65;
+
+    /// <summary>Instant/point detections need a higher score — avoids single-label false positives.</summary>
+    private const double MinPointDetectionScore = 0.75;
+
+    /// <summary>Range matches shorter than this (ms) are dropped unless score is very high.</summary>
+    private const long MinMatchSpanMs = 1_000;
+
+    private static readonly HashSet<string> WeakEvidenceLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Slapping", "Contact", "Hand", "Hands", "Finger", "Arm", "Person", "People", "Human"
+    };
 
     /// <summary>Max 1-second label buckets sent to the LLM across all segment windows.</summary>
     private const int MaxLabelGroups = 400;
@@ -171,7 +181,13 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
 
         var matched = normalized
             .Where(s => s.Score >= MinMatchScore)
+            .Where(PassesEvidenceQualityGate)
             .ToList();
+
+        foreach (var s in normalized.Where(s => s.Score >= MinMatchScore && !PassesEvidenceQualityGate(s)))
+            _logger.LogInformation(
+                "BedrockMantleStrengthMatchService: match [{Start}ms→{End}ms] score={Score:0.00} evidence=[{Evidence}] DROPPED(weak evidence)",
+                s.StartMs, s.EndMs, s.Score, string.Join(", ", s.EvidenceLabels));
 
         _logger.LogInformation(
             "BedrockMantleStrengthMatchService: {Matched} matched segment(s) (>= {Threshold}). Reasoning: {Reasoning}",
@@ -194,6 +210,49 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             .ToList();
 
         return new MatchedSegment(start, end, s.Strength ?? string.Empty, s.Score, evidence);
+    }
+
+    private static bool PassesEvidenceQualityGate(MatchedSegment segment)
+    {
+        var spanMs = segment.EndMs - segment.StartMs;
+        if (spanMs >= MinMatchSpanMs)
+            return true;
+
+        if (segment.Score < MinPointDetectionScore)
+            return false;
+
+        var evidence = segment.EvidenceLabels
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToList();
+
+        if (evidence.Count == 0)
+            return false;
+
+        return !evidence.All(l => WeakEvidenceLabels.Contains(l) || IsGenericLabel(l));
+    }
+
+    private static void AppendStrengthSynonymGuidance(StringBuilder sb)
+    {
+        sb.AppendLine("STRENGTH / LABEL MAPPING (apply to Vietnamese and English descriptions):");
+        sb.AppendLine("- Soccer / Football / da bong → soccer");
+        sb.AppendLine("- Chess / co vua / danh co → chess");
+        sb.AppendLine("- Presentation / thuyet trinh → presentation");
+        sb.AppendLine("- Vo thuat / võ thuật / martial arts → Karate, Taekwondo, Judo, Kung Fu, Kickboxing, Wrestling, MMA, Fighting, Combat Sport, Self Defense, Martial Arts, Sport, Exercise, Physical Fitness, Athlete, Gym, Training");
+        sb.AppendLine("- For martial arts: Sport/Exercise/Athlete/Training labels CAN support a match when no unrelated specialty dominates.");
+        sb.AppendLine("- Do NOT treat Basketball-only, Dancing-only, Swimming-only, Music-only, or Chess-only windows as martial arts.");
+        sb.AppendLine("- Slapping, Contact, Hand, or Person alone are NOT sufficient evidence for martial arts.");
+        sb.AppendLine();
+    }
+
+    private static void AppendPrecisionMatchingRules(StringBuilder sb, int startIndex)
+    {
+        sb.AppendLine($"{startIndex}. Prefer precision over recall — only include segments with clear visual evidence for the strength.");
+        sb.AppendLine($"{startIndex + 1}. Match labels to the strength when they reasonably represent it (see mapping above).");
+        sb.AppendLine($"{startIndex + 2}. Generic labels alone (Person, Hand, Clothing) are NOT enough — require a specific activity label.");
+        sb.AppendLine($"{startIndex + 3}. Assign score 0.0-1.0. Include only when evidence is plausible, not speculative.");
+        sb.AppendLine($"{startIndex + 4}. Include segments with score >= {MinMatchScore:0.00}. Point/instant matches need score >= {MinPointDetectionScore:0.00} and specific activity evidence.");
+        sb.AppendLine($"{startIndex + 5}. If NO segment plausibly demonstrates the strength, return an empty matched_segments array.");
+        sb.AppendLine($"{startIndex + 6}. Keep reasoning to ONE short sentence, max 20 words.");
     }
 
     private static void AppendMatchResponseSchema(StringBuilder sb, string exampleEndMs)
@@ -237,15 +296,11 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         AppendSegmentScopedLabelTimeline(sb, faceSegments, labelTimeline);
 
         sb.AppendLine();
+        AppendStrengthSynonymGuidance(sb);
         sb.AppendLine("INSTRUCTIONS:");
-        sb.AppendLine("1. Evaluate each WINDOW independently using ONLY the labels listed under that WINDOW. Do not infer from labels outside the window.");
-        sb.AppendLine("2. Match a label to the strength when the label reasonably represents that strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat). Prefer recall — include segments with plausible visual evidence.");
-        sb.AppendLine("3. A single specific activity label can be enough. Generic labels alone (Person, Hand, Clothing) are weak evidence — pair with an activity label when possible.");
-        sb.AppendLine("4. Assign a score 0.0-1.0 reflecting how well the labels support the strength.");
-        sb.AppendLine($"5. Include segments with score >= {MinMatchScore:0.00}. When evidence is partial but relevant, include rather than exclude.");
-        sb.AppendLine("6. If NO segment plausibly demonstrates the strength, return an empty matched_segments array.");
-        sb.AppendLine("7. Keep reasoning to ONE short sentence, max 20 words.");
-        AppendEvidenceLabelInstructions(sb, 8);
+        sb.AppendLine("1. Evaluate each WINDOW independently using ONLY the labels listed under that WINDOW.");
+        AppendPrecisionMatchingRules(sb, 2);
+        AppendEvidenceLabelInstructions(sb, 9);
         sb.AppendLine();
         AppendMatchResponseSchema(sb, "6000");
 
@@ -266,15 +321,12 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         sb.AppendLine();
         AppendActivityPrioritizedLabelTimeline(sb, labelTimeline);
         sb.AppendLine();
+        AppendStrengthSynonymGuidance(sb);
         sb.AppendLine("INSTRUCTIONS:");
-        sb.AppendLine("1. Find contiguous or nearby label timestamps where labels reasonably represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat).");
+        sb.AppendLine("1. Find contiguous or nearby label timestamps where labels reasonably represent the strength.");
         sb.AppendLine("2. Return matched_segments with start_ms and end_ms taken from the label timestamps (merge nearby matches into one range).");
-        sb.AppendLine("3. A single specific activity label can be enough. Prefer recall over precision.");
-        sb.AppendLine("4. Assign score 0.0-1.0 per segment.");
-        sb.AppendLine($"5. Include segments with score >= {MinMatchScore:0.00}.");
-        sb.AppendLine("6. If NO time range plausibly demonstrates the strength, return an empty matched_segments array.");
-        sb.AppendLine("7. Keep reasoning to ONE short sentence, max 20 words.");
-        AppendEvidenceLabelInstructions(sb, 8);
+        AppendPrecisionMatchingRules(sb, 3);
+        AppendEvidenceLabelInstructions(sb, 10);
         sb.AppendLine();
         AppendMatchResponseSchema(sb, "12000");
 
@@ -304,16 +356,12 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         AppendSegmentScopedLabelTimeline(sb, voiceOnlySegments, labelTimeline);
 
         sb.AppendLine();
+        AppendStrengthSynonymGuidance(sb);
         sb.AppendLine("INSTRUCTIONS:");
         sb.AppendLine("1. Evaluate each WINDOW independently using ONLY the labels listed under that WINDOW.");
-        sb.AppendLine("2. Match when labels reasonably represent the strength (Soccer=football=da bong, Chess=danh co, Presentation=thuyet trinh, Karate/Boxing/Martial Arts=vo thuat). Prefer recall.");
-        sb.AppendLine("3. A single specific activity label can be enough.");
-        sb.AppendLine("4. Return matched_segments using timestamps where labels demonstrate the strength — prefer a focused range, not necessarily the entire voice window.");
-        sb.AppendLine("5. Assign score 0.0-1.0 per segment.");
-        sb.AppendLine($"6. Include segments with score >= {MinMatchScore:0.00}.");
-        sb.AppendLine("7. If NO voice window has supporting visual labels, return an empty matched_segments array.");
-        sb.AppendLine("8. Keep reasoning to ONE short sentence, max 20 words.");
-        AppendEvidenceLabelInstructions(sb, 9);
+        sb.AppendLine("2. Return matched_segments using timestamps where labels demonstrate the strength — prefer a focused range, not necessarily the entire voice window.");
+        AppendPrecisionMatchingRules(sb, 3);
+        AppendEvidenceLabelInstructions(sb, 10);
         sb.AppendLine();
         AppendMatchResponseSchema(sb, "12000");
 

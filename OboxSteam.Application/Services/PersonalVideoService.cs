@@ -714,24 +714,8 @@ public class PersonalVideoService : IPersonalVideoService
                 timelineResult.HasOtherFaces, media.Id);
 
             if (!string.IsNullOrWhiteSpace(strengthDescription))
-            {
-                var filteredResult = await ApplyStrengthsFilterAsync(
-                    media, s3Key, timelineResult.Segments, strengthDescription);
-
-                if (filteredResult.Error == StrengthFilterError.None
-                    && filteredResult.Clip != null
-                    && filteredResult.Clip.Clips.Count > 0)
-                {
-                    _logger.LogInformation(
-                        "[PersonalVideoService] Case 1 + strengths: {Count} sub-clip(s). MediaId={MediaId}",
-                        filteredResult.Clip.Clips.Count, media.Id);
-                    return new MediaClipBuildResult(filteredResult.Clip);
-                }
-
-                _logger.LogWarning(
-                    "[PersonalVideoService] Case 1 + strengths: no LLM match → full video fallback. MediaId={MediaId}",
-                    media.Id);
-            }
+                return await ResolveStrengthFilterOrSkipAsync(
+                    media, s3Key, timelineResult.Segments, strengthDescription, "Case 1");
 
             _logger.LogInformation(
                 "[PersonalVideoService] Case 1 (no student face detected by AI) → full video. MediaId={MediaId}", media.Id);
@@ -747,20 +731,9 @@ public class PersonalVideoService : IPersonalVideoService
 
             // Even when the student is the only person, apply strengths filter if requested —
             // they may only demonstrate the strength for part of the video.
-            if (!string.IsNullOrWhiteSpace(strengthDescription) && timelineResult.Segments.Count > 0)
-            {
-                var filteredResult = await ApplyStrengthsFilterAsync(
-                    media, s3Key, timelineResult.Segments, strengthDescription);
-
-                if (filteredResult.Error == StrengthFilterError.None
-                    && filteredResult.Clip != null
-                    && filteredResult.Clip.Clips.Count > 0)
-                    return new MediaClipBuildResult(filteredResult.Clip);
-
-                _logger.LogWarning(
-                    "[PersonalVideoService] Case 2 + strengths: no LLM match → full video fallback. MediaId={MediaId}",
-                    media.Id);
-            }
+            if (!string.IsNullOrWhiteSpace(strengthDescription))
+                return await ResolveStrengthFilterOrSkipAsync(
+                    media, s3Key, timelineResult.Segments, strengthDescription, "Case 2");
 
             return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()));
         }
@@ -773,19 +746,8 @@ public class PersonalVideoService : IPersonalVideoService
 
         // ── Strengths Filtering (optional) ────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(strengthDescription))
-        {
-            var filteredResult = await ApplyStrengthsFilterAsync(
-                media, s3Key, faceSegments, strengthDescription);
-
-            if (filteredResult.Error == StrengthFilterError.None
-                && filteredResult.Clip != null
-                && filteredResult.Clip.Clips.Count > 0)
-                return new MediaClipBuildResult(filteredResult.Clip);
-
-            _logger.LogWarning(
-                "[PersonalVideoService] Case 3/4 + strengths: no LLM match → face fallback. MediaId={MediaId}",
-                media.Id);
-        }
+            return await ResolveStrengthFilterOrSkipAsync(
+                media, s3Key, faceSegments, strengthDescription, "Case 3/4");
 
         // Standard face-timeline path (no strengths).
         var timeClips = MergeAndFormatTimeClips(
@@ -824,6 +786,41 @@ public class PersonalVideoService : IPersonalVideoService
                 media.Id, studentId);
             return null;
         }
+    }
+
+    /// <summary>
+    /// When strength filtering is active, returns matched sub-clips on success or skips the
+    /// video on no match — never falls back to full-video / face-only clipping.
+    /// </summary>
+    private async Task<MediaClipBuildResult> ResolveStrengthFilterOrSkipAsync(
+        MediaAsset media,
+        string s3Key,
+        IList<FaceTimestampSegment> faceSegments,
+        string strengthDescription,
+        string caseLabel)
+    {
+        var filteredResult = await ApplyStrengthsFilterAsync(
+            media, s3Key, faceSegments, strengthDescription);
+
+        if (filteredResult.Error is StrengthFilterError.LabelUnavailable or StrengthFilterError.MatchingFailed)
+        {
+            return new MediaClipBuildResult(null, filteredResult.Error, filteredResult.Detail);
+        }
+
+        if (filteredResult.Error == StrengthFilterError.None
+            && filteredResult.Clip != null
+            && filteredResult.Clip.Clips.Count > 0)
+        {
+            _logger.LogInformation(
+                "[PersonalVideoService] {Case} + strengths: {Count} sub-clip(s). MediaId={MediaId}",
+                caseLabel, filteredResult.Clip.Clips.Count, media.Id);
+            return new MediaClipBuildResult(filteredResult.Clip);
+        }
+
+        _logger.LogInformation(
+            "[PersonalVideoService] {Case} + strengths: no LLM match → skipping video. MediaId={MediaId}",
+            caseLabel, media.Id);
+        return new MediaClipBuildResult(null);
     }
 
     /// <summary>
