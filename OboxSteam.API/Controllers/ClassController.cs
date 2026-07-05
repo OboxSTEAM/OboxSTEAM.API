@@ -79,6 +79,23 @@ public class ClassController : ControllerBase
     }
 
     // =========================================================================
+    // GET WITH SESSIONS  —  GET /api/classes/with-sessions/{classId}
+    // =========================================================================
+
+    [HttpGet("with-sessions/{classId:guid}")]
+    [SwaggerOperation(
+        Summary = "Get class with scheduled sessions",
+        Description = "Retrieve class details including all scheduled sessions for the cohort, ordered by start time.")]
+    [ProducesResponseType(typeof(ApiResult<ClassWithSessionsResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetClassWithSessions([FromRoute] Guid classId)
+    {
+        var result = await _classService.GetClassWithSessionsAsync(classId);
+
+        return Ok(ApiResult<ClassWithSessionsResponseDto>.Success(result, "200", "Class sessions retrieved successfully."));
+    }
+
+    // =========================================================================
     // GET BY ID  —  GET /api/classes/{id}
     // =========================================================================
 
