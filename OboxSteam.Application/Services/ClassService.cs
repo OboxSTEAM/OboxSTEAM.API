@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
+using OboxSteam.Application.DTOs.ClassSessionDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
@@ -205,6 +206,65 @@ public sealed class ClassService : IClassService
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
             Students = studentDtos,
+        };
+    }
+
+    public async Task<ClassWithSessionsResponseDto> GetClassWithSessionsAsync(Guid classId)
+    {
+        _logger.LogInformation("[GetClassWithSessionsAsync] Fetching class sessions for Id: {ClassId}", classId);
+
+        var entity = await _unitOfWork.Classes.GetByIdAsync(classId);
+        ClassValidator.ValidateClassExists(entity, classId);
+
+        var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, classId);
+
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classId && !cs.IsDeleted);
+
+        var sessionDtos = sessions
+            .OrderBy(cs => cs.StartTime)
+            .ThenBy(cs => cs.CreatedAt)
+            .Select(cs => new ClassSessionResponseDto
+            {
+                Id = cs.Id,
+                ClassId = cs.ClassId,
+                ModuleId = cs.ModuleId,
+                ActivityId = cs.ActivityId,
+                AssignmentId = cs.AssignmentId,
+                SessionKind = cs.SessionKind,
+                Title = cs.Title,
+                Description = cs.Description,
+                StartTime = cs.StartTime,
+                EndTime = cs.EndTime,
+                Location = cs.Location,
+                MaxCapacity = cs.MaxCapacity,
+                RequiresAttendance = cs.RequiresAttendance,
+                Status = cs.Status,
+                CreatedAt = cs.CreatedAt,
+                UpdatedAt = cs.UpdatedAt,
+            })
+            .ToList();
+
+        _logger.LogInformation(
+            "[GetClassWithSessionsAsync] Class {ClassId} retrieved — {SessionCount} session(s).",
+            classId,
+            sessionDtos.Count);
+
+        return new ClassWithSessionsResponseDto
+        {
+            Id = entity!.Id,
+            Code = entity.Code,
+            Name = entity.Name,
+            ProgramId = entity.ProgramId,
+            MentorId = entity.MentorId,
+            StartDate = entity.StartDate,
+            EndDate = entity.EndDate,
+            MaxCapacity = entity.MaxCapacity,
+            SeatsTaken = seatsTaken,
+            Status = entity.Status,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt,
+            Sessions = sessionDtos,
         };
     }
 

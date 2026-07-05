@@ -8,7 +8,7 @@ namespace OboxSteam.Application.DTOs.SessionAttendanceDTO;
 /// Only Mentor, Manager, and SuperAdmin may submit this request.
 /// <c>RecordedBy</c> is set from the authenticated user in the service layer.
 /// </summary>
-public sealed class UpdateSessionAttendanceRequestDto
+public class UpdateSessionAttendanceRequestDto
 {
     [Required(ErrorMessage = "Status is required.")]
     public AttendanceStatus Status { get; set; }

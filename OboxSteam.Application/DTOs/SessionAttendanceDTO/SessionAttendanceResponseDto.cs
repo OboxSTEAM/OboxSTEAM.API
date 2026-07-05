@@ -5,7 +5,7 @@ namespace OboxSteam.Application.DTOs.SessionAttendanceDTO;
 /// <summary>
 /// Roster attendance record for a student in a class session.
 /// </summary>
-public sealed class SessionAttendanceResponseDto
+public class SessionAttendanceResponseDto
 {
     public Guid Id { get; set; }
     public Guid ClassSessionId { get; set; }
