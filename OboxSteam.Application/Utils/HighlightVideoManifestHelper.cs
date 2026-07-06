@@ -11,6 +11,9 @@ namespace OboxSteam.Application.Utils;
 /// </summary>
 public static class HighlightVideoManifestHelper
 {
+    public const int RawManifestVersion = 2;
+    public const int LegacyMergedManifestVersion = 1;
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -18,30 +21,44 @@ public static class HighlightVideoManifestHelper
     };
 
     public static string SerializeManifest(IReadOnlyList<HighlightSourceClipGroup> groups) =>
-        JsonSerializer.Serialize(groups, JsonOpts);
+        JsonSerializer.Serialize(new HighlightSourceManifestDocument(RawManifestVersion, groups), JsonOpts);
 
     public static List<HighlightSourceClipGroup> DeserializeManifest(string json) =>
-        JsonSerializer.Deserialize<List<HighlightSourceClipGroup>>(json, JsonOpts)
-        ?? throw new InvalidOperationException("Failed to deserialize source segment manifest.");
+        ParseManifest(json).Groups;
+
+    public static ParsedHighlightManifest ParseManifest(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            throw new InvalidOperationException("Source segment manifest is empty.");
+
+        var trimmed = json.TrimStart();
+        if (trimmed.StartsWith('['))
+        {
+            var legacy = JsonSerializer.Deserialize<List<HighlightSourceClipGroup>>(json, JsonOpts)
+                         ?? throw new InvalidOperationException("Failed to deserialize source segment manifest.");
+            return new ParsedHighlightManifest(LegacyMergedManifestVersion, legacy);
+        }
+
+        var document = JsonSerializer.Deserialize<HighlightSourceManifestDocument>(json, JsonOpts)
+                       ?? throw new InvalidOperationException("Failed to deserialize source segment manifest.");
+
+        return new ParsedHighlightManifest(
+            document.Version <= 0 ? LegacyMergedManifestVersion : document.Version,
+            document.Groups?.ToList() ?? throw new InvalidOperationException("Source segment manifest has no groups."));
+    }
 
     /// <summary>
-    /// Builds manifest groups from generation output. <paramref name="clipsWithMedia"/> must
-    /// already be ordered by <see cref="HighlightClipMediaPair.MediaCreatedAt"/> ascending.
+    /// Builds manifest groups from pre-merge/pre-buffer source ranges captured during generation.
     /// </summary>
-    public static List<HighlightSourceClipGroup> BuildFromGeneration(
+    public static List<HighlightSourceClipGroup> BuildFromRawSourceSegments(
         IReadOnlyList<HighlightClipMediaPair> clipsWithMedia)
     {
         var groups = new List<HighlightSourceClipGroup>();
 
         foreach (var pair in clipsWithMedia)
         {
-            var segments = pair.Clip.Clips is { Count: > 0 }
-                ? pair.Clip.Clips
-                    .Select(c => new HighlightSourceSegmentMs(
-                        ParseMediaConvertTimecode(c.StartTimecode),
-                        ParseMediaConvertTimecode(c.EndTimecode)))
-                    .OrderBy(s => s.StartMs)
-                    .ToList()
+            var segments = pair.RawSourceSegments.Count > 0
+                ? pair.RawSourceSegments.ToList()
                 : new List<HighlightSourceSegmentMs> { new(0, null) };
 
             groups.Add(new HighlightSourceClipGroup(
@@ -54,8 +71,7 @@ public static class HighlightVideoManifestHelper
     }
 
     /// <summary>
-    /// Appends a source segment as a new clip group at the end of the manifest so the
-    /// stitched highlight keeps existing content first, then plays the new segment.
+    /// Appends a user-selected source segment as a new clip group at the end of the manifest.
     /// Clears stale output-timeline stamps because the output layout changes after re-render.
     /// </summary>
     public static List<HighlightSourceClipGroup> AppendSegment(
@@ -67,6 +83,26 @@ public static class HighlightVideoManifestHelper
     {
         if (startMs < 0 || endMs <= startMs)
             throw new ArgumentException("Segment startMs/endMs are invalid.");
+
+        return AppendSourceClipGroup(
+            manifest,
+            mediaId,
+            sourceS3Key,
+            new List<HighlightSourceSegmentMs> { new(startMs, endMs) });
+    }
+
+    /// <summary>
+    /// Appends a full source clip group (raw segments) at the end of the manifest.
+    /// Clears stale output-timeline stamps because the output layout changes after re-render.
+    /// </summary>
+    public static List<HighlightSourceClipGroup> AppendSourceClipGroup(
+        IReadOnlyList<HighlightSourceClipGroup> manifest,
+        Guid mediaId,
+        string sourceS3Key,
+        IReadOnlyList<HighlightSourceSegmentMs> rawSegments)
+    {
+        if (rawSegments.Count == 0)
+            throw new ArgumentException("Raw source segments cannot be empty.");
 
         var result = manifest
             .Select(g => g with
@@ -80,7 +116,7 @@ public static class HighlightVideoManifestHelper
         result.Add(new HighlightSourceClipGroup(
             mediaId,
             sourceS3Key,
-            new List<HighlightSourceSegmentMs> { new(startMs, endMs) }));
+            rawSegments.ToList()));
 
         return result;
     }
@@ -92,7 +128,6 @@ public static class HighlightVideoManifestHelper
             if (group.Segments.Count == 0)
                 throw new InvalidOperationException($"Source clip {group.MediaId} has no segments.");
 
-            long? prevStart = null;
             foreach (var seg in group.Segments)
             {
                 if (seg.StartMs < 0)
@@ -100,11 +135,6 @@ public static class HighlightVideoManifestHelper
 
                 if (seg.EndMs.HasValue && seg.EndMs.Value <= seg.StartMs)
                     throw new InvalidOperationException("Segment endMs must be greater than startMs.");
-
-                if (prevStart.HasValue && seg.StartMs < prevStart.Value)
-                    throw new InvalidOperationException("Segments within a source clip must be ordered by startMs.");
-
-                prevStart = seg.StartMs;
             }
         }
     }
@@ -275,9 +305,12 @@ public static class HighlightVideoManifestHelper
             $"Cannot resolve output duration for {unknownMediaIds.Count} full-length source videos.");
     }
 
-    public static List<ClipInput> ToClipInputs(IReadOnlyList<HighlightSourceClipGroup> manifest)
+    public static List<ClipInput> ToClipInputs(
+        IReadOnlyList<HighlightSourceClipGroup> manifest,
+        int manifestVersion = RawManifestVersion)
     {
         var clipInputs = new List<ClipInput>();
+        var applyMerge = manifestVersion >= RawManifestVersion;
 
         foreach (var group in manifest)
         {
@@ -293,13 +326,21 @@ public static class HighlightVideoManifestHelper
                 continue;
             }
 
-            var timeClips = group.Segments
-                .Where(s => s.EndMs.HasValue)
-                .Select(s => new TimeClip(
-                    HighlightVideoTimeHelper.MsToMediaConvertTimecode(s.StartMs),
-                    HighlightVideoTimeHelper.MsToMediaConvertTimecode(s.EndMs!.Value)))
-                .Where(t => t.StartTimecode != t.EndTimecode)
-                .ToList();
+            List<TimeClip> timeClips;
+            if (applyMerge)
+            {
+                timeClips = HighlightVideoClipMergeHelper.MergeAndFormatToTimeClips(group.Segments);
+            }
+            else
+            {
+                timeClips = group.Segments
+                    .Where(s => s.EndMs.HasValue)
+                    .Select(s => new TimeClip(
+                        HighlightVideoTimeHelper.MsToMediaConvertTimecode(s.StartMs),
+                        HighlightVideoTimeHelper.MsToMediaConvertTimecode(s.EndMs!.Value)))
+                    .Where(t => t.StartTimecode != t.EndTimecode)
+                    .ToList();
+            }
 
             clipInputs.Add(new ClipInput(group.SourceS3Key, timeClips));
         }
@@ -499,7 +540,16 @@ public static class HighlightVideoManifestHelper
 public sealed record HighlightClipMediaPair(
     Guid MediaId,
     DateTime MediaCreatedAt,
-    ClipInput Clip);
+    ClipInput Clip,
+    IReadOnlyList<HighlightSourceSegmentMs> RawSourceSegments);
+
+public sealed record ParsedHighlightManifest(
+    int Version,
+    List<HighlightSourceClipGroup> Groups);
+
+public sealed record HighlightSourceManifestDocument(
+    int Version,
+    IReadOnlyList<HighlightSourceClipGroup> Groups);
 
 public sealed record HighlightSourceSegmentMs(
     long StartMs,

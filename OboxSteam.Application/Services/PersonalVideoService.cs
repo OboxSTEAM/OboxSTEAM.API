@@ -52,11 +52,13 @@ public class PersonalVideoService : IPersonalVideoService
 
     private sealed record StrengthFilterResult(
         ClipInput? Clip,
+        IReadOnlyList<HighlightSourceSegmentMs>? RawSourceSegments = null,
         StrengthFilterError Error = StrengthFilterError.None,
         string? Detail = null);
 
     private sealed record MediaClipBuildResult(
         ClipInput? Clip,
+        IReadOnlyList<HighlightSourceSegmentMs>? RawSourceSegments = null,
         StrengthFilterError StrengthError = StrengthFilterError.None,
         string? StrengthErrorDetail = null);
 
@@ -65,19 +67,7 @@ public class PersonalVideoService : IPersonalVideoService
         IReadOnlyList<HighlightSourceClipGroup> SourceClips,
         string? FailureReason = null);
 
-    // ── Clipping constants ───────────────────────────────────────────────────
-    /// <summary>Padding before/after range segments (StartMs &lt; EndMs) from strength matching.</summary>
-    private const long BufferMs = 2_000;
-
-    /// <summary>
-    /// Smaller padding for point detections (StartMs == EndMs) so a single label instant
-    /// does not expand into a 4-second clip.
-    /// </summary>
-    private const long PointBufferMs = 1_000;
-
-    /// <summary>After buffering, merge adjacent ranges when the gap between them is at most this.</summary>
-    private const long MergeGapMs = 500;
-
+    // ── Clipping constants (merge/buffer lives in HighlightVideoClipMergeHelper) ──
     /// <summary>Labels within this gap (ms) are merged into one evidence-label cluster.</summary>
     private const long LabelClusterMaxGapMs = 5_000;
 
@@ -376,7 +366,7 @@ public class PersonalVideoService : IPersonalVideoService
             throw ErrorHelper.BadRequest("Cannot resolve source video key for the selected media.");
 
         var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(new[] { media.Id });
-        if (sourceDurations.TryGetValue(media.Id, out var sourceDurationMs))
+        if (sourceDurations.TryGetValue(media.Id, out var sourceDurationMs) && sourceDurationMs > 0)
         {
             if (startMs >= sourceDurationMs)
                 throw ErrorHelper.BadRequest(
@@ -716,11 +706,11 @@ public class PersonalVideoService : IPersonalVideoService
             return;
         }
 
-        List<HighlightSourceClipGroup> manifest;
+        ParsedHighlightManifest parsed;
         try
         {
-            manifest = HighlightVideoManifestHelper.DeserializeManifest(item.SourceSegmentsJson);
-            HighlightVideoManifestHelper.ValidateSegmentOrder(manifest);
+            parsed = HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson);
+            HighlightVideoManifestHelper.ValidateSegmentOrder(parsed.Groups);
         }
         catch (Exception ex)
         {
@@ -732,7 +722,7 @@ public class PersonalVideoService : IPersonalVideoService
             return;
         }
 
-        var clipInputs = HighlightVideoManifestHelper.ToClipInputs(manifest);
+        var clipInputs = HighlightVideoManifestHelper.ToClipInputs(parsed.Groups, parsed.Version);
         if (clipInputs.Count == 0)
         {
             item.Status = HighlightVideoStatus.Failed;
@@ -838,7 +828,11 @@ public class PersonalVideoService : IPersonalVideoService
             if (result.Clip != null)
             {
                 clips.Add(result.Clip);
-                clipsWithMedia.Add(new HighlightClipMediaPair(media.Id, media.CreatedAt, result.Clip));
+                clipsWithMedia.Add(new HighlightClipMediaPair(
+                    media.Id,
+                    media.CreatedAt,
+                    result.Clip,
+                    result.RawSourceSegments ?? FullVideoRawSegments()));
             }
         }
 
@@ -853,7 +847,7 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] BuildClipInputsAsync completed: {Count} ClipInput(s) built.",
             clips.Count);
 
-        var sourceClips = HighlightVideoManifestHelper.BuildFromGeneration(clipsWithMedia);
+        var sourceClips = HighlightVideoManifestHelper.BuildFromRawSourceSegments(clipsWithMedia);
         return new ClipBuildResult(clips, sourceClips);
     }
 
@@ -898,7 +892,7 @@ public class PersonalVideoService : IPersonalVideoService
             _logger.LogWarning(
                 "[PersonalVideoService] No persisted timeline; sole tagged student → full video. MediaId={MediaId}",
                 media.Id);
-            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()));
+            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()), FullVideoRawSegments());
         }
 
         // ── Case 1: No student face detected (AI fallback / scene-only) ─────────
@@ -915,7 +909,7 @@ public class PersonalVideoService : IPersonalVideoService
             _logger.LogInformation(
                 "[PersonalVideoService] Case 1 (no student face detected by AI) → full video. MediaId={MediaId}", media.Id);
 
-            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()));
+            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()), FullVideoRawSegments());
         }
 
         // ── Case 2: Only this student's face in the video ────────────
@@ -930,7 +924,7 @@ public class PersonalVideoService : IPersonalVideoService
                 return await ResolveStrengthFilterOrSkipAsync(
                     media, s3Key, timelineResult.Segments, strengthDescription, "Case 2");
 
-            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()));
+            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()), FullVideoRawSegments());
         }
 
         // ── Case 3 & 4: Multiple people — extract student's timeline ──────────────
@@ -938,6 +932,7 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] Case 3 & 4 (mixed faces per persisted timeline) → extracting timeline. MediaId={MediaId}", media.Id);
 
         var faceSegments = timelineResult.Segments;
+        var rawFaceSegments = FromFaceSegments(faceSegments);
 
         // ── Strengths Filtering (optional) ────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(strengthDescription))
@@ -953,7 +948,7 @@ public class PersonalVideoService : IPersonalVideoService
             faceSegments.Count, timeClips.Count, media.Id,
             string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")));
 
-        return new MediaClipBuildResult(new ClipInput(s3Key, timeClips));
+        return new MediaClipBuildResult(new ClipInput(s3Key, timeClips), rawFaceSegments);
     }
 
     /// <summary>
@@ -999,7 +994,10 @@ public class PersonalVideoService : IPersonalVideoService
 
         if (filteredResult.Error is StrengthFilterError.LabelUnavailable or StrengthFilterError.MatchingFailed)
         {
-            return new MediaClipBuildResult(null, filteredResult.Error, filteredResult.Detail);
+            return new MediaClipBuildResult(
+                null,
+                StrengthError: filteredResult.Error,
+                StrengthErrorDetail: filteredResult.Detail);
         }
 
         if (filteredResult.Error == StrengthFilterError.None
@@ -1009,7 +1007,7 @@ public class PersonalVideoService : IPersonalVideoService
             _logger.LogInformation(
                 "[PersonalVideoService] {Case} + strengths: {Count} sub-clip(s). MediaId={MediaId}",
                 caseLabel, filteredResult.Clip.Clips.Count, media.Id);
-            return new MediaClipBuildResult(filteredResult.Clip);
+            return new MediaClipBuildResult(filteredResult.Clip, filteredResult.RawSourceSegments);
         }
 
         _logger.LogInformation(
@@ -1043,7 +1041,7 @@ public class PersonalVideoService : IPersonalVideoService
                 $"MediaId={media.Id}: label detection timeline is missing (job may still be running or failed).";
             _logger.LogWarning(
                 "[PersonalVideoService] {Detail}", detail);
-            return new StrengthFilterResult(null, StrengthFilterError.LabelUnavailable, detail);
+            return new StrengthFilterResult(null, Error: StrengthFilterError.LabelUnavailable, Detail: detail);
         }
 
         List<LabelDetectionEntry>? labelTimeline;
@@ -1057,7 +1055,7 @@ public class PersonalVideoService : IPersonalVideoService
             _logger.LogWarning(ex,
                 "[PersonalVideoService] Failed to deserialize LabelTimelineJson for MediaId={MediaId}.",
                 media.Id);
-            return new StrengthFilterResult(null, StrengthFilterError.LabelUnavailable, detail);
+            return new StrengthFilterResult(null, Error: StrengthFilterError.LabelUnavailable, Detail: detail);
         }
 
         if (labelTimeline == null || labelTimeline.Count == 0)
@@ -1068,8 +1066,8 @@ public class PersonalVideoService : IPersonalVideoService
                 media.Id);
             return new StrengthFilterResult(
                 new ClipInput(s3Key, new List<TimeClip>()),
-                StrengthFilterError.NoMatch,
-                detail);
+                Error: StrengthFilterError.NoMatch,
+                Detail: detail);
         }
 
         // ── Token optimisation ────────────────────────────────────────────────
@@ -1092,7 +1090,7 @@ public class PersonalVideoService : IPersonalVideoService
                 media.Id);
             return new StrengthFilterResult(
                 new ClipInput(s3Key, new List<TimeClip>()),
-                StrengthFilterError.NoMatch);
+                Error: StrengthFilterError.NoMatch);
         }
 
         _logger.LogInformation(
@@ -1120,7 +1118,7 @@ public class PersonalVideoService : IPersonalVideoService
                 _logger.LogWarning(ex,
                     "[PersonalVideoService] Label-only strength matching failed for MediaId={MediaId}.",
                     media.Id);
-                return new StrengthFilterResult(null, StrengthFilterError.MatchingFailed, detail);
+                return new StrengthFilterResult(null, Error: StrengthFilterError.MatchingFailed, Detail: detail);
             }
         }
 
@@ -1142,7 +1140,7 @@ public class PersonalVideoService : IPersonalVideoService
                 _logger.LogWarning(ex,
                     "[PersonalVideoService] Claude strength matching (face) failed for MediaId={MediaId}.",
                     media.Id);
-                return new StrengthFilterResult(null, StrengthFilterError.MatchingFailed, detail);
+                return new StrengthFilterResult(null, Error: StrengthFilterError.MatchingFailed, Detail: detail);
             }
         }
 
@@ -1157,9 +1155,10 @@ public class PersonalVideoService : IPersonalVideoService
                 media.Id, reasoning);
             return new StrengthFilterResult(
                 new ClipInput(s3Key, new List<TimeClip>()),
-                StrengthFilterError.NoMatch);
+                Error: StrengthFilterError.NoMatch);
         }
 
+        var rawSourceSegments = FromMatchedSegments(allMatched);
         var timeClips = MergeAndFormatTimeClips(allMatched);
 
         _logger.LogInformation(
@@ -1168,46 +1167,23 @@ public class PersonalVideoService : IPersonalVideoService
             string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")),
             reasoning);
 
-        return new StrengthFilterResult(new ClipInput(s3Key, timeClips));
+        return new StrengthFilterResult(new ClipInput(s3Key, timeClips), rawSourceSegments);
     }
 
-    /// <summary>
-    /// Converts matched segments into AWS MediaConvert-compatible <see cref="TimeClip"/>s:
-    /// applies per-segment buffer (smaller for point detections), merges overlaps and small
-    /// gaps in millisecond space, then formats strictly ascending non-overlapping timecodes.
-    /// </summary>
-    private static List<TimeClip> MergeAndFormatTimeClips(IEnumerable<MatchedSegment> segments)
-    {
-        var bufferedRanges = segments
-            .Where(s => s.StartMs <= s.EndMs)
-            .Select(s =>
-            {
-                var buffer = s.StartMs == s.EndMs ? PointBufferMs : BufferMs;
-                return (Start: Math.Max(0, s.StartMs - buffer), End: s.EndMs + buffer);
-            })
-            .Where(r => r.End > r.Start)
-            .OrderBy(r => r.Start)
-            .ToList();
+    private static List<TimeClip> MergeAndFormatTimeClips(IEnumerable<MatchedSegment> segments) =>
+        HighlightVideoClipMergeHelper.MergeAndFormatToTimeClips(
+            segments.Select(s => (s.StartMs, s.EndMs)));
 
-        if (bufferedRanges.Count == 0)
-            return new List<TimeClip>();
+    private static IReadOnlyList<HighlightSourceSegmentMs> FullVideoRawSegments() =>
+        new List<HighlightSourceSegmentMs> { new(0, null) };
 
-        var merged = new List<(long Start, long End)> { bufferedRanges[0] };
-        for (var i = 1; i < bufferedRanges.Count; i++)
-        {
-            var current = bufferedRanges[i];
-            var last = merged[^1];
-            if (current.Start <= last.End + MergeGapMs)
-                merged[^1] = (last.Start, Math.Max(last.End, current.End));
-            else
-                merged.Add(current);
-        }
+    private static IReadOnlyList<HighlightSourceSegmentMs> FromFaceSegments(
+        IEnumerable<FaceTimestampSegment> segments) =>
+        segments.Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs)).ToList();
 
-        return merged
-            .Select(r => new TimeClip(MsToTimecode(r.Start), MsToTimecode(r.End)))
-            .Where(t => t.StartTimecode != t.EndTimecode)
-            .ToList();
-    }
+    private static IReadOnlyList<HighlightSourceSegmentMs> FromMatchedSegments(
+        IEnumerable<MatchedSegment> segments) =>
+        segments.Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs)).ToList();
 
     /// <summary>
     /// Shrinks LLM segment bounds to Rekognition timestamps for the model's
@@ -1360,20 +1336,6 @@ public class PersonalVideoService : IPersonalVideoService
         return allLabels
             .Where(label => windows.Any(w => label.TimestampMs >= w.Start && label.TimestampMs <= w.End))
             .ToList();
-    }
-
-    /// <summary>
-    /// Converts milliseconds to AWS MediaConvert InputClipping timecode format: <c>HH:MM:SS:00</c>
-    /// using TimecodeSource.ZEROBASED. Rounds to the nearest second.
-    /// </summary>
-    private static string MsToTimecode(long totalMs)
-    {
-        // Round to nearest second (+500 before integer division).
-        var totalSec = (totalMs + 500) / 1000;
-        var sec = (int)(totalSec % 60);
-        var min = (int)(totalSec / 60 % 60);
-        var hr = (int)(totalSec / 3_600);
-        return $"{hr:D2}:{min:D2}:{sec:D2}:00";
     }
 
     /// <summary>
