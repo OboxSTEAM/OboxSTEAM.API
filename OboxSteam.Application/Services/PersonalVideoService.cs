@@ -1183,11 +1183,17 @@ public class PersonalVideoService : IPersonalVideoService
 
     private static IReadOnlyList<HighlightSourceSegmentMs> FromFaceSegments(
         IEnumerable<FaceTimestampSegment> segments) =>
-        segments.Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs)).ToList();
+        segments
+            .Where(s => s.EndMs > s.StartMs)
+            .Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs))
+            .ToList();
 
     private static IReadOnlyList<HighlightSourceSegmentMs> FromMatchedSegments(
         IEnumerable<MatchedSegment> segments) =>
-        segments.Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs)).ToList();
+        segments
+            .Where(s => s.EndMs > s.StartMs)
+            .Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs))
+            .ToList();
 
     /// <summary>
     /// Shrinks LLM segment bounds to Rekognition timestamps for the model's

@@ -36,7 +36,7 @@ public static class HighlightVideoManifestHelper
         {
             var legacy = JsonSerializer.Deserialize<List<HighlightSourceClipGroup>>(json, JsonOpts)
                          ?? throw new InvalidOperationException("Failed to deserialize source segment manifest.");
-            return new ParsedHighlightManifest(LegacyMergedManifestVersion, legacy);
+            return new ParsedHighlightManifest(LegacyMergedManifestVersion, SanitizeManifest(legacy));
         }
 
         var document = JsonSerializer.Deserialize<HighlightSourceManifestDocument>(json, JsonOpts)
@@ -44,7 +44,9 @@ public static class HighlightVideoManifestHelper
 
         return new ParsedHighlightManifest(
             document.Version <= 0 ? LegacyMergedManifestVersion : document.Version,
-            document.Groups?.ToList() ?? throw new InvalidOperationException("Source segment manifest has no groups."));
+            SanitizeManifest(
+                document.Groups?.ToList()
+                ?? throw new InvalidOperationException("Source segment manifest has no groups.")));
     }
 
     /// <summary>
@@ -64,10 +66,10 @@ public static class HighlightVideoManifestHelper
             groups.Add(new HighlightSourceClipGroup(
                 pair.MediaId,
                 pair.Clip.S3Key,
-                segments));
+                FilterDegenerateSegments(segments)));
         }
 
-        return groups;
+        return SanitizeManifest(groups);
     }
 
     /// <summary>
@@ -157,6 +159,31 @@ public static class HighlightVideoManifestHelper
     private static List<HighlightSourceSegmentMs> SortSegmentsByStartMs(
         IEnumerable<HighlightSourceSegmentMs> segments) =>
         segments.OrderBy(s => s.StartMs).ToList();
+
+    /// <summary>
+    /// Drops zero-length source ranges (<c>endMs &lt;= startMs</c>) and empty clip groups.
+    /// Face-timeline capture can persist degenerate segments that break stamping and add-segment.
+    /// </summary>
+    public static List<HighlightSourceClipGroup> SanitizeManifest(
+        IReadOnlyList<HighlightSourceClipGroup> manifest)
+    {
+        var result = new List<HighlightSourceClipGroup>();
+
+        foreach (var group in manifest)
+        {
+            var segments = FilterDegenerateSegments(group.Segments);
+            if (segments.Count > 0)
+                result.Add(group with { Segments = segments });
+        }
+
+        return result;
+    }
+
+    private static List<HighlightSourceSegmentMs> FilterDegenerateSegments(
+        IEnumerable<HighlightSourceSegmentMs> segments) =>
+        segments
+            .Where(s => !s.EndMs.HasValue || s.EndMs.Value > s.StartMs)
+            .ToList();
 
     public static void ValidateSegmentOrder(IReadOnlyList<HighlightSourceClipGroup> manifest)
     {
