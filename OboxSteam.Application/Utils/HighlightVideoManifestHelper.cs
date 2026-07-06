@@ -72,7 +72,7 @@ public static class HighlightVideoManifestHelper
 
     /// <summary>
     /// Appends a user-selected source segment as a new clip group at the end of the manifest.
-    /// Clears stale output-timeline stamps because the output layout changes after re-render.
+    /// Preserves output-timeline stamps on existing segments so regeneration keeps prior clip boundaries.
     /// </summary>
     public static List<HighlightSourceClipGroup> AppendSegment(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
@@ -93,7 +93,7 @@ public static class HighlightVideoManifestHelper
 
     /// <summary>
     /// Appends a full source clip group (raw segments) at the end of the manifest.
-    /// Clears stale output-timeline stamps because the output layout changes after re-render.
+    /// Preserves output-timeline stamps on existing segments; the appended group is unstamped until re-render.
     /// </summary>
     public static List<HighlightSourceClipGroup> AppendSourceClipGroup(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
@@ -108,7 +108,11 @@ public static class HighlightVideoManifestHelper
             .Select(g => g with
             {
                 Segments = g.Segments
-                    .Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs))
+                    .Select(s => new HighlightSourceSegmentMs(
+                        s.StartMs,
+                        s.EndMs,
+                        s.OutputStartMs,
+                        s.OutputEndMs))
                     .ToList()
             })
             .ToList();
@@ -326,27 +330,63 @@ public static class HighlightVideoManifestHelper
                 continue;
             }
 
-            List<TimeClip> timeClips;
-            if (applyMerge)
-            {
-                timeClips = HighlightVideoClipMergeHelper.MergeAndFormatToTimeClips(group.Segments);
-            }
-            else
-            {
-                timeClips = group.Segments
-                    .Where(s => s.EndMs.HasValue)
-                    .Select(s => new TimeClip(
-                        HighlightVideoTimeHelper.MsToMediaConvertTimecode(s.StartMs),
-                        HighlightVideoTimeHelper.MsToMediaConvertTimecode(s.EndMs!.Value)))
-                    .Where(t => t.StartTimecode != t.EndTimecode)
-                    .ToList();
-            }
-
+            var timeClips = BuildTimeClipsForGroup(group.Segments, applyMerge);
             clipInputs.Add(new ClipInput(group.SourceS3Key, timeClips));
         }
 
         return clipInputs;
     }
+
+    /// <summary>
+    /// Stamped segments were already rendered; re-applying buffer/merge shrinks the output on regeneration.
+    /// Only unstamped segments (e.g. a newly appended clip) receive merge/buffer.
+    /// </summary>
+    private static List<TimeClip> BuildTimeClipsForGroup(
+        IReadOnlyList<HighlightSourceSegmentMs> segments,
+        bool applyMergeForUnstamped)
+    {
+        if (segments.Count == 0)
+            return new List<TimeClip>();
+
+        if (segments.All(IsStampedSegment))
+            return FormatSegmentsDirectly(segments);
+
+        if (segments.All(s => !IsStampedSegment(s)))
+        {
+            return applyMergeForUnstamped
+                ? HighlightVideoClipMergeHelper.MergeAndFormatToTimeClips(segments)
+                : FormatSegmentsDirectly(segments);
+        }
+
+        var timeClips = new List<TimeClip>();
+        foreach (var segment in segments)
+        {
+            if (IsStampedSegment(segment))
+            {
+                timeClips.AddRange(FormatSegmentsDirectly(new[] { segment }));
+                continue;
+            }
+
+            timeClips.AddRange(
+                applyMergeForUnstamped
+                    ? HighlightVideoClipMergeHelper.MergeAndFormatToTimeClips(new[] { segment })
+                    : FormatSegmentsDirectly(new[] { segment }));
+        }
+
+        return timeClips;
+    }
+
+    private static bool IsStampedSegment(HighlightSourceSegmentMs segment) =>
+        segment.OutputStartMs is >= 0 && segment.OutputEndMs is > 0;
+
+    private static List<TimeClip> FormatSegmentsDirectly(IReadOnlyList<HighlightSourceSegmentMs> segments) =>
+        segments
+            .Where(s => s.EndMs.HasValue)
+            .Select(s => new TimeClip(
+                HighlightVideoTimeHelper.MsToMediaConvertTimecode(s.StartMs),
+                HighlightVideoTimeHelper.MsToMediaConvertTimecode(s.EndMs!.Value)))
+            .Where(t => t.StartTimecode != t.EndTimecode)
+            .ToList();
 
     private static List<OutputBlock> BuildOutputBlocks(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
