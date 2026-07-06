@@ -375,18 +375,25 @@ public class PersonalVideoService : IPersonalVideoService
         if (string.IsNullOrEmpty(s3Key))
             throw ErrorHelper.BadRequest("Cannot resolve source video key for the selected media.");
 
-        var manifest = HighlightVideoManifestHelper.DeserializeManifest(parent.SourceSegmentsJson);
-        var createdAtByMediaId = await LoadMediaCreatedAtMapAsync(manifest.Select(g => g.MediaId));
-        createdAtByMediaId[media.Id] = media.CreatedAt;
+        var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(new[] { media.Id });
+        if (sourceDurations.TryGetValue(media.Id, out var sourceDurationMs))
+        {
+            if (startMs >= sourceDurationMs)
+                throw ErrorHelper.BadRequest(
+                    $"Segment start must be before the source video duration ({sourceDurationMs}ms).");
+            if (endMs > sourceDurationMs)
+                throw ErrorHelper.BadRequest(
+                    $"Segment end must not exceed the source video duration ({sourceDurationMs}ms).");
+        }
 
-        var updatedManifest = HighlightVideoManifestHelper.InsertSegment(
+        var manifest = HighlightVideoManifestHelper.DeserializeManifest(parent.SourceSegmentsJson);
+
+        var updatedManifest = HighlightVideoManifestHelper.AppendSegment(
             manifest,
             media.Id,
             s3Key,
             startMs,
-            endMs,
-            media.CreatedAt,
-            createdAtByMediaId);
+            endMs);
 
         HighlightVideoManifestHelper.ValidateSegmentOrder(updatedManifest);
 
@@ -1428,16 +1435,6 @@ public class PersonalVideoService : IPersonalVideoService
             throw ErrorHelper.BadRequest("Source video does not belong to this program.");
 
         return media;
-    }
-
-    private async Task<Dictionary<Guid, DateTime>> LoadMediaCreatedAtMapAsync(IEnumerable<Guid> mediaIds)
-    {
-        var ids = mediaIds.Distinct().ToList();
-        if (ids.Count == 0)
-            return new Dictionary<Guid, DateTime>();
-
-        var assets = await _unitOfWork.MediaAssets.GetAllAsync(m => ids.Contains(m.Id));
-        return assets.ToDictionary(m => m.Id, m => m.CreatedAt);
     }
 
     private async Task<Dictionary<Guid, long>> LoadSourceDurationMsByMediaIdAsync(IEnumerable<Guid> mediaIds)

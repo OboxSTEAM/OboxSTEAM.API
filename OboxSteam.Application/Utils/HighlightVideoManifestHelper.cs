@@ -54,63 +54,33 @@ public static class HighlightVideoManifestHelper
     }
 
     /// <summary>
-    /// Inserts a segment into an existing group (by <c>startMs</c>) or creates a new group
-    /// at the top-level index determined by <paramref name="sourceCreatedAt"/>.
+    /// Appends a source segment as a new clip group at the end of the manifest so the
+    /// stitched highlight keeps existing content first, then plays the new segment.
+    /// Clears stale output-timeline stamps because the output layout changes after re-render.
     /// </summary>
-    public static List<HighlightSourceClipGroup> InsertSegment(
+    public static List<HighlightSourceClipGroup> AppendSegment(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
         Guid mediaId,
         string sourceS3Key,
         long startMs,
-        long endMs,
-        DateTime sourceCreatedAt,
-        IReadOnlyDictionary<Guid, DateTime> existingCreatedAtByMediaId)
+        long endMs)
     {
         if (startMs < 0 || endMs <= startMs)
             throw new ArgumentException("Segment startMs/endMs are invalid.");
 
-        var result = manifest.Select(g => g with
-        {
-            Segments = g.Segments.ToList()
-        }).ToList();
-
-        var existingIndex = result.FindIndex(g => g.MediaId == mediaId);
-        if (existingIndex >= 0)
-        {
-            var group = result[existingIndex];
-            var segments = group.Segments.ToList();
-            var newSegment = new HighlightSourceSegmentMs(startMs, endMs);
-            var insertAt = segments.FindIndex(s => s.StartMs > startMs);
-            if (insertAt < 0)
-                segments.Add(newSegment);
-            else
-                segments.Insert(insertAt, newSegment);
-
-            result[existingIndex] = group with
+        var result = manifest
+            .Select(g => g with
             {
-                SourceS3Key = sourceS3Key,
-                Segments = segments
-            };
-            return result;
-        }
+                Segments = g.Segments
+                    .Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs))
+                    .ToList()
+            })
+            .ToList();
 
-        var newGroup = new HighlightSourceClipGroup(
+        result.Add(new HighlightSourceClipGroup(
             mediaId,
             sourceS3Key,
-            new List<HighlightSourceSegmentMs> { new(startMs, endMs) });
-
-        var topLevelInsert = result.FindIndex(g =>
-        {
-            if (!existingCreatedAtByMediaId.TryGetValue(g.MediaId, out var existingCreatedAt))
-                return false;
-            return sourceCreatedAt < existingCreatedAt
-                   || (sourceCreatedAt == existingCreatedAt && mediaId.CompareTo(g.MediaId) < 0);
-        });
-
-        if (topLevelInsert < 0)
-            result.Add(newGroup);
-        else
-            result.Insert(topLevelInsert, newGroup);
+            new List<HighlightSourceSegmentMs> { new(startMs, endMs) }));
 
         return result;
     }
