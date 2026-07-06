@@ -71,8 +71,9 @@ public static class HighlightVideoManifestHelper
     }
 
     /// <summary>
-    /// Appends a user-selected source segment as a new clip group at the end of the manifest.
-    /// Preserves output-timeline stamps on existing segments so regeneration keeps prior clip boundaries.
+    /// Inserts a user-selected source segment into the manifest. When <paramref name="mediaId"/>
+    /// already exists, the segment is placed in that group sorted by <c>startMs</c>; otherwise a
+    /// new group is appended. Preserves output-timeline stamps on existing segments.
     /// </summary>
     public static List<HighlightSourceClipGroup> AppendSegment(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
@@ -84,16 +85,16 @@ public static class HighlightVideoManifestHelper
         if (startMs < 0 || endMs <= startMs)
             throw new ArgumentException("Segment startMs/endMs are invalid.");
 
-        return AppendSourceClipGroup(
+        return InsertSegmentsIntoManifest(
             manifest,
             mediaId,
             sourceS3Key,
-            new List<HighlightSourceSegmentMs> { new(startMs, endMs) });
+            new[] { new HighlightSourceSegmentMs(startMs, endMs) });
     }
 
     /// <summary>
-    /// Appends a full source clip group (raw segments) at the end of the manifest.
-    /// Preserves output-timeline stamps on existing segments; the appended group is unstamped until re-render.
+    /// Inserts raw source segments into the manifest using the same mediaId placement rules as
+    /// <see cref="AppendSegment"/>.
     /// </summary>
     public static List<HighlightSourceClipGroup> AppendSourceClipGroup(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
@@ -104,26 +105,58 @@ public static class HighlightVideoManifestHelper
         if (rawSegments.Count == 0)
             throw new ArgumentException("Raw source segments cannot be empty.");
 
+        return InsertSegmentsIntoManifest(manifest, mediaId, sourceS3Key, rawSegments);
+    }
+
+    private static List<HighlightSourceClipGroup> InsertSegmentsIntoManifest(
+        IReadOnlyList<HighlightSourceClipGroup> manifest,
+        Guid mediaId,
+        string sourceS3Key,
+        IReadOnlyList<HighlightSourceSegmentMs> newSegments)
+    {
         var result = manifest
-            .Select(g => g with
-            {
-                Segments = g.Segments
-                    .Select(s => new HighlightSourceSegmentMs(
-                        s.StartMs,
-                        s.EndMs,
-                        s.OutputStartMs,
-                        s.OutputEndMs))
-                    .ToList()
-            })
+            .Select(CloneGroupPreservingStamps)
             .ToList();
+
+        var groupIndex = result.FindIndex(g => g.MediaId == mediaId);
+        if (groupIndex >= 0)
+        {
+            var group = result[groupIndex];
+            if (!string.Equals(group.SourceS3Key, sourceS3Key, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"Source S3 key does not match the existing clip group for media {mediaId}.");
+            }
+
+            var segments = group.Segments.ToList();
+            segments.AddRange(newSegments);
+            result[groupIndex] = group with { Segments = SortSegmentsByStartMs(segments) };
+            return result;
+        }
 
         result.Add(new HighlightSourceClipGroup(
             mediaId,
             sourceS3Key,
-            rawSegments.ToList()));
+            SortSegmentsByStartMs(newSegments)));
 
         return result;
     }
+
+    private static HighlightSourceClipGroup CloneGroupPreservingStamps(HighlightSourceClipGroup group) =>
+        group with
+        {
+            Segments = group.Segments
+                .Select(s => new HighlightSourceSegmentMs(
+                    s.StartMs,
+                    s.EndMs,
+                    s.OutputStartMs,
+                    s.OutputEndMs))
+                .ToList()
+        };
+
+    private static List<HighlightSourceSegmentMs> SortSegmentsByStartMs(
+        IEnumerable<HighlightSourceSegmentMs> segments) =>
+        segments.OrderBy(s => s.StartMs).ToList();
 
     public static void ValidateSegmentOrder(IReadOnlyList<HighlightSourceClipGroup> manifest)
     {
@@ -141,6 +174,37 @@ public static class HighlightVideoManifestHelper
                     throw new InvalidOperationException("Segment endMs must be greater than startMs.");
             }
         }
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="startMs"/>–<paramref name="endMs"/> on
+    /// <paramref name="mediaId"/> overlaps any segment already stored in the manifest.
+    /// </summary>
+    public static bool SegmentOverlapsExisting(
+        IReadOnlyList<HighlightSourceClipGroup> manifest,
+        Guid mediaId,
+        long startMs,
+        long endMs)
+    {
+        foreach (var group in manifest.Where(g => g.MediaId == mediaId))
+        {
+            foreach (var segment in group.Segments)
+            {
+                if (SourceRangesOverlap(startMs, endMs, segment))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool SourceRangesOverlap(long startMs, long endMs, HighlightSourceSegmentMs existing)
+    {
+        if (existing.StartMs == 0 && existing.EndMs is null)
+            return true;
+
+        var existingEnd = existing.EndMs ?? existing.StartMs;
+        return startMs < existingEnd && existing.StartMs < endMs;
     }
 
     /// <summary>

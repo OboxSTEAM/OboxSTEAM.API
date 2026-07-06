@@ -89,10 +89,10 @@ public class HighlightVideoController : ControllerBase
     }
 
     /// <summary>
-    /// Appends a user-selected source segment onto a completed highlight and re-renders.
+    /// Inserts a user-selected source segment into the highlight manifest by source timeline order and re-renders.
     /// </summary>
     [HttpPost("stacks/{stackId:guid}/items/{itemId:guid}/add-segment")]
-    [SwaggerOperation(Summary = "Add user-selected source segment to highlight video")]
+    [SwaggerOperation(Summary = "Insert user-selected source segment into highlight video")]
     [ProducesResponseType(typeof(ApiResult<HighlightVideoItemDto>), 202)]
     public async Task<IActionResult> AddSegment(
         [FromRoute] Guid programId,

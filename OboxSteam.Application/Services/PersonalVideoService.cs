@@ -378,6 +378,10 @@ public class PersonalVideoService : IPersonalVideoService
 
         var manifest = HighlightVideoManifestHelper.DeserializeManifest(parent.SourceSegmentsJson);
 
+        if (HighlightVideoManifestHelper.SegmentOverlapsExisting(manifest, media.Id, startMs, endMs))
+            throw ErrorHelper.Conflict(
+                "This source segment overlaps a clip already included in the highlight video.");
+
         var updatedManifest = HighlightVideoManifestHelper.AppendSegment(
             manifest,
             media.Id,
