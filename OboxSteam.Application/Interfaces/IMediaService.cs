@@ -38,10 +38,9 @@ public interface IMediaService
     Task<bool> TryCompleteTranscodeAsync(Guid mediaId);
 
     /// <summary>
-    /// Polls Rekognition face-search results and persists <c>MediaTag</c> rows.
-    /// Called from <c>POST /api/media/{mediaId}/process-tags</c> for manual recovery or
-    /// client-side polling when webhooks are delayed.
-    /// Throws if the job is still in progress or tagging is not applicable.
+    /// Restarts Rekognition face search (and label detection) on the transcoded output,
+    /// then polls once for immediate completion. Call again while
+    /// <see cref="Domain.Enums.VideoProcessingStatus.PendingTagging"/> until tags are ready.
     /// </summary>
     Task<MediaAssetDto> ProcessVideoTagsAsync(Guid mediaId);
 

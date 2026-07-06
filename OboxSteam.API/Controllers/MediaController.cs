@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.DTOs.MediaDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using OboxSteam.Domain.Enums;
 using Swashbuckle.AspNetCore.Annotations;
 
 namespace OboxSteam.API.Controllers
@@ -60,21 +61,31 @@ namespace OboxSteam.API.Controllers
         }
 
         /// <summary>
-        /// Poll Rekognition face-search results and persist MediaTags (including late recovery
-        /// when the face webhook arrived after Transcribe already marked the video complete).
+        /// Restart Rekognition face search on the transcoded video and persist MediaTags when ready.
         /// </summary>
         [HttpPost("{mediaId:guid}/process-tags")]
         [SwaggerOperation(
             Summary = "Process video face tags",
-            Description = "Polls the Rekognition face-search job for a video and persists student MediaTags. " +
-                          "Safe to call when upload webhooks raced; also used when tags are still empty after processing."
+            Description = "Submits a new Rekognition face-search job on the transcoded video output, " +
+                          "restarts label detection, then polls once for results. " +
+                          "Returns 202 while VideoStatus is PendingTagging; call again until TaggingComplete."
         )]
         [ProducesResponseType(typeof(ApiResult<MediaAssetDto>), 200)]
+        [ProducesResponseType(typeof(ApiResult<MediaAssetDto>), 202)]
         [ProducesResponseType(typeof(ApiResult<object>), 400)]
         [ProducesResponseType(typeof(ApiResult<object>), 404)]
         public async Task<IActionResult> ProcessVideoTags([FromRoute] Guid mediaId)
         {
             var result = await _mediaService.ProcessVideoTagsAsync(mediaId);
+
+            if (result.VideoStatus == VideoProcessingStatus.PendingTagging)
+            {
+                return Accepted(ApiResult<MediaAssetDto>.Success(
+                    result,
+                    "202",
+                    "Rekognition face search started. Call again when processing completes."));
+            }
+
             return Ok(ApiResult<MediaAssetDto>.Success(result, "200", "Video tags processed successfully."));
         }
 

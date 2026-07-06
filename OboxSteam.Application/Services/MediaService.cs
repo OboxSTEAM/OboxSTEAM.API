@@ -380,19 +380,23 @@ public class MediaService : IMediaService
         if (media == null || media.IsDeleted)
             throw ErrorHelper.NotFound("Media not found.");
 
-        if (!ShouldProcessVideoFaceTags(media))
+        if (!CanRestartVideoFaceSearch(media))
+        {
             throw ErrorHelper.BadRequest(
-                "Video face tags are not ready to process, were already captured, or this media has no Rekognition job.");
+                media.FileType != "video"
+                    ? "Face tag processing applies to video media only."
+                    : media.VideoStatus == VideoProcessingStatus.Transcoding
+                        ? "Video is still transcoding. Try again after transcoding completes."
+                        : "Transcoded video output is not available yet.");
+        }
 
-        if (string.IsNullOrEmpty(media.FaceSearchJobId))
-            throw ErrorHelper.BadRequest("This media has no pending Rekognition video job.");
+        await RestartVideoFaceSearchAsync(media);
 
         var (success, newTags) = await DoProcessVideoTagsAsync(media);
+        if (success)
+            return await MapToDto(media, media.MediaTags.Concat(newTags).ToList());
 
-        if (!success)
-            throw ErrorHelper.BadRequest("Video processing is still in progress. Please try again later.");
-
-        return await MapToDto(media, media.MediaTags.Concat(newTags).ToList());
+        return await MapToDto(media, media.MediaTags.Where(t => !t.IsDeleted).ToList());
     }
 
     /// <inheritdoc />
@@ -620,6 +624,96 @@ public class MediaService : IMediaService
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when the manual <c>process-tags</c> endpoint may submit a new Rekognition job
+    /// against the transcoded output in S3.
+    /// </summary>
+    private bool CanRestartVideoFaceSearch(MediaAsset media)
+    {
+        if (media.IsDeleted || !string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (media.VideoStatus == VideoProcessingStatus.Transcoding)
+            return false;
+
+        return !string.IsNullOrWhiteSpace(ExtractS3KeyFromFileUrl(media.FileUrl));
+    }
+
+    /// <summary>
+    /// Submits fresh Rekognition face-search and label-detection jobs for the transcoded MP4.
+    /// </summary>
+    private async Task RestartVideoFaceSearchAsync(MediaAsset media)
+    {
+        var s3Key = ExtractS3KeyFromFileUrl(media.FileUrl);
+        if (string.IsNullOrWhiteSpace(s3Key))
+            throw ErrorHelper.BadRequest("Transcoded video output is not available.");
+
+        _logger.LogInformation(
+            "RestartVideoFaceSearchAsync: MediaId={MediaId}, S3Key={Key}, PreviousJobId={PreviousJobId}",
+            media.Id, s3Key, media.FaceSearchJobId);
+
+        string rekJobId;
+        try
+        {
+            rekJobId = await _faceRecognitionService.StartVideoFaceSearchAsync(
+                _blobService.BucketName, s3Key);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "RestartVideoFaceSearchAsync: failed to start Rekognition for MediaId={MediaId}", media.Id);
+            media.VideoStatus = VideoProcessingStatus.Failed;
+            await _unitOfWork.SaveChangesAsync();
+            throw;
+        }
+
+        media.FaceSearchJobId = rekJobId;
+        media.VideoStatus = VideoProcessingStatus.PendingTagging;
+
+        try
+        {
+            var labelJobId = await _faceRecognitionService.StartLabelDetectionAsync(
+                _blobService.BucketName, s3Key);
+            media.LabelJobRef = labelJobId;
+            media.LabelTimelineJson = null;
+            _logger.LogInformation(
+                "RestartVideoFaceSearchAsync: label detection restarted. JobId={LabelJobId}, MediaId={MediaId}",
+                labelJobId, media.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "RestartVideoFaceSearchAsync: failed to restart label detection for MediaId={MediaId}.",
+                media.Id);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "RestartVideoFaceSearchAsync: Rekognition job started. JobId={JobId}, MediaId={MediaId}",
+            rekJobId, media.Id);
+    }
+
+    private string? ExtractS3KeyFromFileUrl(string? fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+            return null;
+
+        try
+        {
+            var uri = new Uri(fileUrl);
+            var s3Key = uri.AbsolutePath.TrimStart('/');
+            var bucketPrefix = $"{_blobService.BucketName}/";
+            if (s3Key.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
+                s3Key = s3Key[bucketPrefix.Length..];
+            return s3Key;
+        }
+        catch (UriFormatException)
+        {
+            return fileUrl.Trim();
+        }
+    }
 
     /// <summary>
     /// True when Rekognition face-search results should be polled and <see cref="MediaTag"/> rows
