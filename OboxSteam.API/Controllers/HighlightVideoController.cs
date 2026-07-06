@@ -89,6 +89,24 @@ public class HighlightVideoController : ControllerBase
     }
 
     /// <summary>
+    /// Adds a segment from a source activity video into a completed highlight and re-renders.
+    /// </summary>
+    [HttpPost("stacks/{stackId:guid}/items/{itemId:guid}/add-segment")]
+    [SwaggerOperation(Summary = "Add source segment to highlight video")]
+    [ProducesResponseType(typeof(ApiResult<HighlightVideoItemDto>), 202)]
+    public async Task<IActionResult> AddSegment(
+        [FromRoute] Guid programId,
+        [FromRoute] Guid studentId,
+        [FromRoute] Guid stackId,
+        [FromRoute] Guid itemId,
+        [FromBody] AddHighlightSegmentRequest request)
+    {
+        var result = await _personalVideoService.AddSegmentAsync(
+            programId, studentId, stackId, itemId, request);
+        return Accepted(ApiResult<HighlightVideoItemDto>.Success(result, "202", "Segment add job started."));
+    }
+
+    /// <summary>
     /// Soft-deletes one video item to free a slot in the stack (max 4 items).
     /// </summary>
     [HttpDelete("stacks/{stackId:guid}/items/{itemId:guid}")]

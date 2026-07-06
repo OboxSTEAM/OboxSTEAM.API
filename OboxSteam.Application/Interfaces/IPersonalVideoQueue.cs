@@ -4,7 +4,8 @@ namespace OboxSteam.Application.Interfaces;
 public enum PersonalVideoJobKind
 {
     InitialGeneration,
-    OutputTrim
+    OutputTrim,
+    ManifestRegeneration
 }
 
 /// <summary>Exclude range on an output highlight video timeline (milliseconds).</summary>

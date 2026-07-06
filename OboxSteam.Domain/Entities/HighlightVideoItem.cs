@@ -39,4 +39,10 @@ public class HighlightVideoItem : BaseEntity
 
     /// <summary>JSON array of exclude ranges on the parent output timeline (trim jobs only).</summary>
     public string? TrimExcludeRangesJson { get; set; }
+
+    /// <summary>
+    /// JSON-serialized source clip groups used to build this output (mediaId, sourceS3Key, segments).
+    /// Populated on initial generation and segment-add regeneration; read by manifest regen jobs.
+    /// </summary>
+    public string? SourceSegmentsJson { get; set; }
 }

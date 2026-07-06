@@ -62,6 +62,7 @@ public class PersonalVideoService : IPersonalVideoService
 
     private sealed record ClipBuildResult(
         IReadOnlyList<ClipInput> Clips,
+        IReadOnlyList<HighlightSourceClipGroup> SourceClips,
         string? FailureReason = null);
 
     // ── Clipping constants ───────────────────────────────────────────────────
@@ -163,7 +164,7 @@ public class PersonalVideoService : IPersonalVideoService
                     .Select(i => i.RequestedAt ?? i.CreatedAt)
                     .Max();
                 if (DateTime.UtcNow - requestedAt <= ProcessingStaleThreshold)
-                    return MapStackToDto(existingStack, existingItems);
+                    return await MapStackToDtoAsync(existingStack, existingItems);
             }
 
             if (existingItems.Count >= MaxItemsPerStack)
@@ -172,7 +173,7 @@ public class PersonalVideoService : IPersonalVideoService
 
             await CreateAndEnqueueInitialItemAsync(existingStack, normalizedStrength);
             var refreshedItems = await LoadStackItemsAsync(existingStack.Id);
-            return MapStackToDto(existingStack, refreshedItems);
+            return await MapStackToDtoAsync(existingStack, refreshedItems);
         }
 
         var stacks = await _unitOfWork.HighlightVideoStacks.GetAllAsync(
@@ -193,7 +194,7 @@ public class PersonalVideoService : IPersonalVideoService
 
         await CreateAndEnqueueInitialItemAsync(stack, normalizedStrength);
         var items = await LoadStackItemsAsync(stack.Id);
-        return MapStackToDto(stack, items);
+        return await MapStackToDtoAsync(stack, items);
     }
 
     /// <inheritdoc />
@@ -208,7 +209,7 @@ public class PersonalVideoService : IPersonalVideoService
         foreach (var stack in stacks.OrderBy(s => s.CreatedAt))
         {
             var items = await LoadStackItemsAsync(stack.Id);
-            result.Add(MapStackToDto(stack, items));
+            result.Add(await MapStackToDtoAsync(stack, items));
         }
 
         return result;
@@ -224,7 +225,7 @@ public class PersonalVideoService : IPersonalVideoService
             return null;
 
         var items = await LoadStackItemsAsync(stack.Id);
-        return MapStackToDto(stack, items);
+        return await MapStackToDtoAsync(stack, items);
     }
 
     /// <inheritdoc />
@@ -276,6 +277,33 @@ public class PersonalVideoService : IPersonalVideoService
 
         HighlightVideoTimeHelper.ComputeKeepSegments(parent.DurationMs.Value, excludeRanges);
 
+        string? transformedManifestJson = null;
+        if (!string.IsNullOrWhiteSpace(parent.SourceSegmentsJson))
+        {
+            try
+            {
+                var manifest = HighlightVideoManifestHelper.DeserializeManifest(parent.SourceSegmentsJson);
+                IReadOnlyDictionary<Guid, long>? fullVideoDurations = null;
+                if (!HighlightVideoManifestHelper.HasStampedOutputTimeline(manifest))
+                {
+                    fullVideoDurations = HighlightVideoManifestHelper.ResolveFullVideoOutputDurations(
+                        manifest, parent.DurationMs.Value);
+                }
+
+                var transformed = HighlightVideoManifestHelper.TransformForOutputTrim(
+                    manifest,
+                    parent.DurationMs.Value,
+                    excludeRanges,
+                    fullVideoDurations);
+                transformedManifestJson = HighlightVideoManifestHelper.SerializeManifest(transformed);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw ErrorHelper.BadRequest(
+                    $"Cannot derive source segments for trim: {ex.Message}");
+            }
+        }
+
         var trimItem = new HighlightVideoItem
         {
             StackId = stack.Id,
@@ -285,6 +313,7 @@ public class PersonalVideoService : IPersonalVideoService
             RequestedAt = DateTime.UtcNow,
             TrimDescription = request.TrimDescription,
             TrimExcludeRangesJson = JsonSerializer.Serialize(request.ExcludeRanges),
+            SourceSegmentsJson = transformedManifestJson,
         };
         await _unitOfWork.HighlightVideoItems.AddAsync(trimItem);
         await _unitOfWork.SaveChangesAsync();
@@ -301,7 +330,90 @@ public class PersonalVideoService : IPersonalVideoService
                 .Select(r => new OutputExcludeRange(r.StartMs, r.EndMs))
                 .ToList()));
 
-        return MapItemToDto(trimItem, request.ExcludeRanges);
+        return await MapItemToDtoAsync(trimItem, request.ExcludeRanges);
+    }
+
+    /// <inheritdoc />
+    public async Task<HighlightVideoItemDto> AddSegmentAsync(
+        Guid programId,
+        Guid studentId,
+        Guid stackId,
+        Guid parentItemId,
+        AddHighlightSegmentRequest request)
+    {
+        await ValidateProgramAndStudentAsync(programId, studentId);
+
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
+            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId)
+            ?? throw ErrorHelper.NotFound($"Highlight stack '{stackId}' not found.");
+
+        var items = await LoadStackItemsAsync(stack.Id);
+        if (items.Count >= MaxItemsPerStack)
+            throw ErrorHelper.Conflict(
+                $"Stack already has {MaxItemsPerStack} videos. Delete an item before adding a segment.");
+
+        if (items.Any(i => i.Status == HighlightVideoStatus.Processing))
+            throw ErrorHelper.Conflict("A video in this stack is still processing.");
+
+        var parent = items.FirstOrDefault(i => i.Id == parentItemId)
+            ?? throw ErrorHelper.NotFound($"Highlight video item '{parentItemId}' not found in stack.");
+
+        if (parent.Status != HighlightVideoStatus.Completed)
+            throw ErrorHelper.BadRequest("Parent video must be completed before adding a segment.");
+
+        if (string.IsNullOrWhiteSpace(parent.SourceSegmentsJson))
+            throw ErrorHelper.BadRequest(
+                "Source segment manifest is not available for this item. Regenerate the highlight first.");
+
+        var startMs = HighlightVideoTimeHelper.ParseTimecodeToMs(request.Start);
+        var endMs = HighlightVideoTimeHelper.ParseTimecodeToMs(request.End);
+        if (startMs < 0 || endMs <= startMs)
+            throw ErrorHelper.BadRequest("Segment start must be before end and non-negative.");
+
+        var media = await ValidateSegmentMediaAsync(programId, studentId, request.MediaId);
+        var s3Key = ExtractS3KeyFromUrl(media.FileUrl);
+        if (string.IsNullOrEmpty(s3Key))
+            throw ErrorHelper.BadRequest("Cannot resolve source video key for the selected media.");
+
+        var manifest = HighlightVideoManifestHelper.DeserializeManifest(parent.SourceSegmentsJson);
+        var createdAtByMediaId = await LoadMediaCreatedAtMapAsync(manifest.Select(g => g.MediaId));
+        createdAtByMediaId[media.Id] = media.CreatedAt;
+
+        var updatedManifest = HighlightVideoManifestHelper.InsertSegment(
+            manifest,
+            media.Id,
+            s3Key,
+            startMs,
+            endMs,
+            media.CreatedAt,
+            createdAtByMediaId);
+
+        HighlightVideoManifestHelper.ValidateSegmentOrder(updatedManifest);
+
+        var segmentItem = new HighlightVideoItem
+        {
+            StackId = stack.Id,
+            ParentItemId = parent.Id,
+            GenerationKind = HighlightVideoGenerationKind.SegmentAdd,
+            Status = HighlightVideoStatus.Processing,
+            RequestedAt = DateTime.UtcNow,
+            TrimDescription = request.Description,
+            SourceSegmentsJson = HighlightVideoManifestHelper.SerializeManifest(updatedManifest),
+        };
+        await _unitOfWork.HighlightVideoItems.AddAsync(segmentItem);
+        await _unitOfWork.SaveChangesAsync();
+
+        _queue.Enqueue(new PersonalVideoJob(
+            segmentItem.Id,
+            PersonalVideoJobKind.ManifestRegeneration,
+            programId,
+            studentId,
+            StrengthDescription: null,
+            ParentOutputS3Key: null,
+            ParentDurationMs: null,
+            ExcludeRanges: null));
+
+        return await MapItemToDtoAsync(segmentItem);
     }
 
     /// <inheritdoc />
@@ -365,6 +477,12 @@ public class PersonalVideoService : IPersonalVideoService
                 return;
             }
 
+            if (job.Kind == PersonalVideoJobKind.ManifestRegeneration)
+            {
+                await ProcessManifestRegenerationAsync(item, job);
+                return;
+            }
+
             await ProcessInitialGenerationAsync(item, job);
         }
         catch (Exception ex)
@@ -411,6 +529,24 @@ public class PersonalVideoService : IPersonalVideoService
                 item.VideoUrl = videoUrl;
                 item.DurationMs = durationMs ?? item.DurationMs;
                 item.Status = HighlightVideoStatus.Completed;
+
+                if (!string.IsNullOrWhiteSpace(item.SourceSegmentsJson) && item.DurationMs is > 0)
+                {
+                    try
+                    {
+                        var manifest = HighlightVideoManifestHelper.DeserializeManifest(item.SourceSegmentsJson);
+                        var mediaIds = manifest.Select(g => g.MediaId);
+                        var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(mediaIds);
+                        var stamped = HighlightVideoManifestHelper.StampOutputTimeline(
+                            manifest, item.DurationMs.Value, sourceDurations);
+                        item.SourceSegmentsJson = HighlightVideoManifestHelper.SerializeManifest(stamped);
+                    }
+                    catch (Exception stampEx)
+                    {
+                        _logger.LogWarning(stampEx,
+                            "[PersonalVideoService] Failed to stamp output timeline for item {Id}.", item.Id);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -513,6 +649,8 @@ public class PersonalVideoService : IPersonalVideoService
             return;
         }
 
+        item.SourceSegmentsJson = HighlightVideoManifestHelper.SerializeManifest(buildResult.SourceClips);
+
         var outputKey = $"{PersonalVideoFolder}/{job.StudentId}_{item.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
         var mcJobId = await _videoConverterService.SubmitPersonalVideoJobAsync(clipInputs.ToList(), outputKey);
 
@@ -558,6 +696,51 @@ public class PersonalVideoService : IPersonalVideoService
         item.Status = HighlightVideoStatus.Processing;
         item.FailureReason = null;
         item.DurationMs = keepSegments.Sum(s => s.EndMs - s.StartMs);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task ProcessManifestRegenerationAsync(HighlightVideoItem item, PersonalVideoJob job)
+    {
+        if (string.IsNullOrWhiteSpace(item.SourceSegmentsJson))
+        {
+            item.Status = HighlightVideoStatus.Failed;
+            item.FailureReason = "Manifest regeneration is missing source segment data.";
+            await _unitOfWork.SaveChangesAsync();
+            return;
+        }
+
+        List<HighlightSourceClipGroup> manifest;
+        try
+        {
+            manifest = HighlightVideoManifestHelper.DeserializeManifest(item.SourceSegmentsJson);
+            HighlightVideoManifestHelper.ValidateSegmentOrder(manifest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[PersonalVideoService] Invalid source manifest for item {Id}.", item.Id);
+            item.Status = HighlightVideoStatus.Failed;
+            item.FailureReason = "Source segment manifest is invalid.";
+            await _unitOfWork.SaveChangesAsync();
+            return;
+        }
+
+        var clipInputs = HighlightVideoManifestHelper.ToClipInputs(manifest);
+        if (clipInputs.Count == 0)
+        {
+            item.Status = HighlightVideoStatus.Failed;
+            item.FailureReason = "Source segment manifest produced no clips.";
+            await _unitOfWork.SaveChangesAsync();
+            return;
+        }
+
+        var outputKey =
+            $"{PersonalVideoFolder}/{job.StudentId}_{item.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
+        var mcJobId = await _videoConverterService.SubmitPersonalVideoJobAsync(clipInputs, outputKey);
+
+        item.PersonalVideoJobRef = mcJobId;
+        item.Status = HighlightVideoStatus.Processing;
+        item.FailureReason = null;
         await _unitOfWork.SaveChangesAsync();
     }
 
@@ -607,7 +790,7 @@ public class PersonalVideoService : IPersonalVideoService
 
         var taggedMedia = allMedia
             .Where(m => m.MediaTags.Any(t => t.StudentId == studentId))
-            .OrderBy(m => m.UploadedAt)
+            .OrderBy(m => m.CreatedAt)
             .ToList();
 
         _logger.LogInformation(
@@ -623,6 +806,7 @@ public class PersonalVideoService : IPersonalVideoService
         // so there are NO Rekognition calls in this loop — the no-strengths path is pure
         // DB reads and is effectively instant.
         var clips = new List<ClipInput>();
+        var clipsWithMedia = new List<HighlightClipMediaPair>();
         var strengthPrerequisiteErrors = new List<string>();
         var strengthFilteringEnabled = !string.IsNullOrWhiteSpace(strengthDescription);
 
@@ -645,7 +829,10 @@ public class PersonalVideoService : IPersonalVideoService
             }
 
             if (result.Clip != null)
+            {
                 clips.Add(result.Clip);
+                clipsWithMedia.Add(new HighlightClipMediaPair(media.Id, media.CreatedAt, result.Clip));
+            }
         }
 
         if (strengthFilteringEnabled && strengthPrerequisiteErrors.Count > 0)
@@ -659,7 +846,8 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] BuildClipInputsAsync completed: {Count} ClipInput(s) built.",
             clips.Count);
 
-        return new ClipBuildResult(clips);
+        var sourceClips = HighlightVideoManifestHelper.BuildFromGeneration(clipsWithMedia);
+        return new ClipBuildResult(clips, sourceClips);
     }
 
     /// <summary>
@@ -1213,10 +1401,75 @@ public class PersonalVideoService : IPersonalVideoService
     // DTO mapping
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static HighlightVideoStackDto MapStackToDto(
+    private async Task<MediaAsset> ValidateSegmentMediaAsync(Guid programId, Guid studentId, Guid mediaId)
+    {
+        var media = await _unitOfWork.MediaAssets.GetByIdAsync(mediaId, m => m.MediaTags);
+        if (media == null || media.IsDeleted || media.FileType != "video")
+            throw ErrorHelper.NotFound($"Media '{mediaId}' not found.");
+
+        if (media.VideoStatus != VideoProcessingStatus.TaggingComplete)
+            throw ErrorHelper.BadRequest("Source video must finish tagging before it can be added.");
+
+        if (!media.MediaTags.Any(t => !t.IsDeleted && t.StudentId == studentId))
+            throw ErrorHelper.BadRequest("The selected source video is not tagged for this student.");
+
+        if (media.ActivityId is null)
+            throw ErrorHelper.BadRequest("Source video is not linked to an activity.");
+
+        var modules = await _unitOfWork.Modules.GetAllAsync(m => m.ProgramId == programId && !m.IsDeleted);
+        var moduleIds = modules.Select(m => m.Id).ToList();
+        var courses = await _unitOfWork.Courses.GetAllAsync(c => moduleIds.Contains(c.ModuleId) && !c.IsDeleted);
+        var courseIds = courses.Select(c => c.Id).ToList();
+        var activities = await _unitOfWork.Activities.GetAllAsync(
+            a => courseIds.Contains(a.CourseId) && !a.IsDeleted);
+        var activityIds = activities.Select(a => a.Id).ToHashSet();
+
+        if (!activityIds.Contains(media.ActivityId.Value))
+            throw ErrorHelper.BadRequest("Source video does not belong to this program.");
+
+        return media;
+    }
+
+    private async Task<Dictionary<Guid, DateTime>> LoadMediaCreatedAtMapAsync(IEnumerable<Guid> mediaIds)
+    {
+        var ids = mediaIds.Distinct().ToList();
+        if (ids.Count == 0)
+            return new Dictionary<Guid, DateTime>();
+
+        var assets = await _unitOfWork.MediaAssets.GetAllAsync(m => ids.Contains(m.Id));
+        return assets.ToDictionary(m => m.Id, m => m.CreatedAt);
+    }
+
+    private async Task<Dictionary<Guid, long>> LoadSourceDurationMsByMediaIdAsync(IEnumerable<Guid> mediaIds)
+    {
+        var ids = mediaIds.Distinct().ToList();
+        var result = new Dictionary<Guid, long>();
+        if (ids.Count == 0)
+            return result;
+
+        var assets = await _unitOfWork.MediaAssets.GetAllAsync(m => ids.Contains(m.Id));
+        foreach (var asset in assets)
+        {
+            if (string.IsNullOrWhiteSpace(asset.MediaConvertJobId))
+                continue;
+
+            var durationMs = await _videoConverterService.GetOutputDurationMsAsync(asset.MediaConvertJobId);
+            if (durationMs is > 0)
+                result[asset.Id] = durationMs.Value;
+        }
+
+        return result;
+    }
+
+    private async Task<HighlightVideoStackDto> MapStackToDtoAsync(
         HighlightVideoStack stack,
-        IReadOnlyList<HighlightVideoItem> items) =>
-        new()
+        IReadOnlyList<HighlightVideoItem> items)
+    {
+        var mappedItems = new List<HighlightVideoItemDto>();
+        foreach (var item in items)
+            mappedItems.Add(await MapItemToDtoAsync(item));
+
+        return new HighlightVideoStackDto
         {
             Id = stack.Id,
             ProgramId = stack.ProgramId,
@@ -1225,10 +1478,11 @@ public class PersonalVideoService : IPersonalVideoService
                 ? null
                 : stack.StrengthDescription,
             CreatedAt = stack.CreatedAt,
-            Items = items.Select(i => MapItemToDto(i)).ToList(),
+            Items = mappedItems,
         };
+    }
 
-    private static HighlightVideoItemDto MapItemToDto(
+    private async Task<HighlightVideoItemDto> MapItemToDtoAsync(
         HighlightVideoItem item,
         IReadOnlyList<TimeRangeDto>? excludeRanges = null)
     {
@@ -1238,6 +1492,8 @@ public class PersonalVideoService : IPersonalVideoService
             ranges = JsonSerializer.Deserialize<List<TimeRangeDto>>(item.TrimExcludeRangesJson)
                      ?? new List<TimeRangeDto>();
         }
+
+        var sourceClips = await MapSourceClipsToDtoAsync(item.SourceSegmentsJson);
 
         return new HighlightVideoItemDto
         {
@@ -1252,7 +1508,64 @@ public class PersonalVideoService : IPersonalVideoService
             FailureReason = item.FailureReason,
             TrimDescription = item.TrimDescription,
             TrimExcludeRanges = ranges,
+            SourceClips = sourceClips,
         };
+    }
+
+    private async Task<IReadOnlyList<HighlightSourceClipDto>> MapSourceClipsToDtoAsync(string? sourceSegmentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(sourceSegmentsJson))
+            return Array.Empty<HighlightSourceClipDto>();
+
+        List<HighlightSourceClipGroup> groups;
+        try
+        {
+            groups = HighlightVideoManifestHelper.DeserializeManifest(sourceSegmentsJson);
+        }
+        catch
+        {
+            return Array.Empty<HighlightSourceClipDto>();
+        }
+
+        var mediaIds = groups.Select(g => g.MediaId).Distinct().ToList();
+        var mediaAssets = mediaIds.Count > 0
+            ? await _unitOfWork.MediaAssets.GetAllAsync(m => mediaIds.Contains(m.Id))
+            : new List<MediaAsset>();
+        var mediaMap = mediaAssets.ToDictionary(m => m.Id);
+
+        var activityIds = mediaAssets
+            .Where(m => m.ActivityId.HasValue)
+            .Select(m => m.ActivityId!.Value)
+            .Distinct()
+            .ToList();
+        var activities = activityIds.Count > 0
+            ? await _unitOfWork.Activities.GetAllAsync(a => activityIds.Contains(a.Id))
+            : new List<Activity>();
+        var activityMap = activities.ToDictionary(a => a.Id);
+
+        return groups.Select(g =>
+        {
+            mediaMap.TryGetValue(g.MediaId, out var media);
+            Activity? activity = null;
+            if (media?.ActivityId is Guid activityId)
+                activityMap.TryGetValue(activityId, out activity);
+
+            return new HighlightSourceClipDto
+            {
+                MediaId = g.MediaId,
+                ActivityId = media?.ActivityId,
+                ActivityName = activity?.Name,
+                Segments = g.Segments
+                    .Select(s => new HighlightSourceSegmentDto
+                    {
+                        StartMs = s.StartMs,
+                        EndMs = s.EndMs,
+                        OutputStartMs = s.OutputStartMs,
+                        OutputEndMs = s.OutputEndMs,
+                    })
+                    .ToList(),
+            };
+        }).ToList();
     }
 
 }

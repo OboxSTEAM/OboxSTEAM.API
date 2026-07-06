@@ -6,5 +6,6 @@ namespace OboxSteam.Domain.Enums;
 public enum HighlightVideoGenerationKind
 {
     Initial,
-    Trim
+    Trim,
+    SegmentAdd
 }

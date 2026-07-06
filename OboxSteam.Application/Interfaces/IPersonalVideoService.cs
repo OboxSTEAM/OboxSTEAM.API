@@ -21,6 +21,13 @@ public interface IPersonalVideoService
         Guid parentItemId,
         TrimHighlightVideoRequest request);
 
+    Task<HighlightVideoItemDto> AddSegmentAsync(
+        Guid programId,
+        Guid studentId,
+        Guid stackId,
+        Guid parentItemId,
+        AddHighlightSegmentRequest request);
+
     Task DeleteItemAsync(Guid programId, Guid studentId, Guid stackId, Guid itemId);
 
     Task DeleteStackAsync(Guid programId, Guid studentId, Guid stackId);

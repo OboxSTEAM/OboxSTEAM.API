@@ -15,6 +15,23 @@ public class HighlightVideoItemDto
     public string? FailureReason { get; set; }
     public string? TrimDescription { get; set; }
     public IReadOnlyList<TimeRangeDto>? TrimExcludeRanges { get; set; }
+    public IReadOnlyList<HighlightSourceClipDto> SourceClips { get; set; } = Array.Empty<HighlightSourceClipDto>();
+}
+
+public class HighlightSourceSegmentDto
+{
+    public long StartMs { get; set; }
+    public long? EndMs { get; set; }
+    public long? OutputStartMs { get; set; }
+    public long? OutputEndMs { get; set; }
+}
+
+public class HighlightSourceClipDto
+{
+    public Guid MediaId { get; set; }
+    public Guid? ActivityId { get; set; }
+    public string? ActivityName { get; set; }
+    public IReadOnlyList<HighlightSourceSegmentDto> Segments { get; set; } = Array.Empty<HighlightSourceSegmentDto>();
 }
 
 public class HighlightVideoStackDto
@@ -42,4 +59,12 @@ public class TrimHighlightVideoRequest
 {
     public string? TrimDescription { get; init; }
     public IReadOnlyList<TimeRangeDto> ExcludeRanges { get; init; } = Array.Empty<TimeRangeDto>();
+}
+
+public class AddHighlightSegmentRequest
+{
+    public Guid MediaId { get; init; }
+    public string Start { get; init; } = string.Empty;
+    public string End { get; init; } = string.Empty;
+    public string? Description { get; init; }
 }
