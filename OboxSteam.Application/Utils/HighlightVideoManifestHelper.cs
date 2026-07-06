@@ -133,7 +133,7 @@ public static class HighlightVideoManifestHelper
             var segments = group.Segments.ToList();
             segments.AddRange(newSegments);
             result[groupIndex] = group with { Segments = SortSegmentsByStartMs(segments) };
-            return result;
+            return SanitizeManifest(result);
         }
 
         result.Add(new HighlightSourceClipGroup(
@@ -141,7 +141,7 @@ public static class HighlightVideoManifestHelper
             sourceS3Key,
             SortSegmentsByStartMs(newSegments)));
 
-        return result;
+        return SanitizeManifest(result);
     }
 
     private static HighlightSourceClipGroup CloneGroupPreservingStamps(HighlightSourceClipGroup group) =>
@@ -289,9 +289,10 @@ public static class HighlightVideoManifestHelper
         if (actualOutputDurationMs <= 0)
             throw new ArgumentException("Actual output duration must be positive.", nameof(actualOutputDurationMs));
 
-        var flat = FlattenSegments(manifest);
+        var sanitized = SanitizeManifest(manifest.ToList());
+        var flat = FlattenSegments(sanitized);
         if (flat.Count == 0)
-            return manifest.Select(g => g with { Segments = g.Segments.ToList() }).ToList();
+            return sanitized;
 
         var weights = flat
             .Select(entry => ResolveSegmentWeight(entry.Group.MediaId, entry.Segment, sourceDurationMsByMediaId))
@@ -315,7 +316,7 @@ public static class HighlightVideoManifestHelper
             boundaries[i + 1] = allocated;
         }
 
-        var result = manifest
+        var result = sanitized
             .Select(g => g with { Segments = g.Segments.ToList() })
             .ToList();
 
@@ -329,10 +330,11 @@ public static class HighlightVideoManifestHelper
             var seg = entry.Segment;
             var outputStart = boundaries[i];
             var outputEnd = boundaries[i + 1];
-
-            long? endMs = seg.EndMs;
-            if (!endMs.HasValue)
-                endMs = seg.StartMs + weights[i];
+            var endMs = ResolveStampedSourceEndMs(
+                entry.Group.MediaId,
+                seg,
+                weights[i],
+                sourceDurationMsByMediaId);
 
             var group = result[groupIndex];
             var segments = group.Segments.ToList();
@@ -590,6 +592,30 @@ public static class HighlightVideoManifestHelper
 
         throw new InvalidOperationException(
             $"Source duration is unknown for full-length segment on media {mediaId}.");
+    }
+
+    /// <summary>
+    /// Resolves a concrete source <c>endMs</c> for stamping. Open-ended segments use source
+    /// duration when available; otherwise fall back to weight with a 1ms minimum span.
+    /// </summary>
+    private static long ResolveStampedSourceEndMs(
+        Guid mediaId,
+        HighlightSourceSegmentMs segment,
+        long weight,
+        IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId)
+    {
+        if (segment.EndMs is long closedEnd && closedEnd > segment.StartMs)
+            return closedEnd;
+
+        if (sourceDurationMsByMediaId != null
+            && sourceDurationMsByMediaId.TryGetValue(mediaId, out var sourceDurationMs)
+            && sourceDurationMs > segment.StartMs)
+        {
+            return sourceDurationMs;
+        }
+
+        var computedEnd = segment.StartMs + weight;
+        return computedEnd > segment.StartMs ? computedEnd : segment.StartMs + 1;
     }
 
     private static List<HighlightSourceClipGroup> RebuildManifestFromPieces(
