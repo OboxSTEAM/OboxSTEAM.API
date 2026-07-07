@@ -13,29 +13,6 @@ public partial class SeedService
         "MOD-ROBOTICS-03",
     ];
 
-    private static readonly (string ModuleCode, string ActivityCode, SessionKind SessionKind, string Title, string Description)[]
-        OpenClassSessionTemplatesPerModule =
-        [
-            ("MOD-ROBOTICS-01", "ACT-ROBOTICS-01-02", SessionKind.LiveOnline,
-                "Module 1 Session 1: Introduction to Robotics",
-                "Live cohort session covering robotics fundamentals."),
-            ("MOD-ROBOTICS-01", "ACT-ROBOTICS-02-02", SessionKind.LiveOnline,
-                "Module 1 Session 2: Actuator Design",
-                "Live cohort session on actuators and mechanical design."),
-            ("MOD-ROBOTICS-02", "ACT-ROBOTICS-04-02", SessionKind.LiveOnline,
-                "Module 2 Session 1: Field Trip Preparation",
-                "Live mentor briefing before the sensor exploration field trip."),
-            ("MOD-ROBOTICS-02", "ACT-ROBOTICS-05-02", SessionKind.LiveOnline,
-                "Module 2 Session 2: Movement Trip Preparation",
-                "Live mentor session before the motor control field challenge."),
-            ("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-02", SessionKind.LiveOnline,
-                "Module 3 Session 1: Prototype Build Preparation",
-                "Live mentor session on team roles and build-day logistics."),
-            ("MOD-ROBOTICS-03", "ACT-ROBOTICS-09-02", SessionKind.LiveOnline,
-                "Module 3 Session 2: Final Testing Preparation",
-                "Live mentor session before the capstone showcase."),
-        ];
-
     private async Task SeedClassSessionsAsync()
     {
         _loggerService.LogInformation("Starting seed class sessions for open classes");
@@ -79,7 +56,7 @@ public partial class SeedService
             }
 
             var sessionIndex = 0;
-            foreach (var template in OpenClassSessionTemplatesPerModule)
+            foreach (var template in IntroductionToRoboticsClassSessionTemplates)
             {
                 if (!modulesByCode.TryGetValue(template.ModuleCode, out var module))
                 {
@@ -95,7 +72,10 @@ public partial class SeedService
                     continue;
                 }
 
-                var (startTime, endTime) = ResolveOpenClassSessionTimes(classEntity, sessionIndex);
+                var (startTime, endTime) = ResolveIntroductionToRoboticsSessionTimes(
+                    classEntity,
+                    sessionIndex,
+                    IntroductionToRoboticsClassSessionTemplates.Length);
 
                 sessionsToAdd.Add(new ClassSession
                 {
@@ -132,19 +112,5 @@ public partial class SeedService
         _loggerService.LogInformation(
             "Finished seed class sessions — {Count} session(s) created.",
             sessionsToAdd.Count);
-    }
-
-    private static (DateTime StartTime, DateTime EndTime) ResolveOpenClassSessionTimes(
-        Class classEntity,
-        int sessionIndex)
-    {
-        var durationDays = Math.Max((classEntity.EndDate.Date - classEntity.StartDate.Date).TotalDays, 1);
-        var fractions = new[] { 0.10, 0.22, 0.34, 0.46, 0.58, 0.70 };
-        var fraction = fractions[Math.Min(sessionIndex, fractions.Length - 1)];
-        var sessionDate = classEntity.StartDate.Date.AddDays(durationDays * fraction);
-        var startHour = sessionIndex % 2 == 0 ? 9 : 14;
-        var startTime = sessionDate.AddHours(startHour);
-        var endTime = startTime.AddHours(2).AddMinutes(30);
-        return (startTime, endTime);
     }
 }

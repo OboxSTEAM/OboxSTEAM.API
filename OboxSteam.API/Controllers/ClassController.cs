@@ -63,10 +63,10 @@ public class ClassController : ControllerBase
     // =========================================================================
 
     [HttpGet("with-students/{classId:guid}")]
-    [Authorize(Roles = "Mentor,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Mentor,SuperAdmin,Manager")]
     [SwaggerOperation(
         Summary = "Get class with active student roster",
-        Description = "Retrieve class details including active enrolled students. SuperAdmin and Manager may view any class roster. Mentors may only view classes they own. Students and other roles cannot access this endpoint.")]
+        Description = "Retrieve class details including active enrolled students. Students may view the roster only for a class they are actively enrolled in. SuperAdmin and Manager may view any class roster. Mentors may only view classes they own.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

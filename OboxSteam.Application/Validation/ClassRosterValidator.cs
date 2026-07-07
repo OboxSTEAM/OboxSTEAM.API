@@ -33,7 +33,18 @@ public static class ClassRosterValidator
 
         if (user.Role == RoleType.Student)
         {
-            throw ErrorHelper.Forbidden(ViewClassRosterForbiddenMessage);
+            var activeEnrollment = await unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+                ce => ce.ClassId == classEntity.Id
+                      && ce.StudentId == user.Id
+                      && ce.Status == ClassEnrollmentStatus.Active
+                      && !ce.IsDeleted);
+
+            if (activeEnrollment == null)
+            {
+                throw ErrorHelper.Forbidden(ViewClassRosterForbiddenMessage);
+            }
+
+            return;
         }
 
         if (user.Role is RoleType.SuperAdmin or RoleType.Manager)

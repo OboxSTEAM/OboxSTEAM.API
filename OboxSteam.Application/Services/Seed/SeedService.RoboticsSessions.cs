@@ -41,7 +41,7 @@ public partial class SeedService
             [moduleResearch.Code] = moduleResearch,
         };
 
-        var sessionTemplates = GetRoboticsClassSessionTemplates();
+        var sessionTemplates = IntroductionToRoboticsClassSessionTemplates;
         var activitiesByCode = (await _unitOfWork.Activities.GetAllAsync(a => !a.IsDeleted))
             .ToDictionary(a => a.Code, a => a, StringComparer.OrdinalIgnoreCase);
 
@@ -61,7 +61,7 @@ public partial class SeedService
             var isMentor1Class = Mentor1RoboticsClassCodes.Contains(classCode);
             var isMentor1ClassA = string.Equals(classCode, "CLS-ROBOTICS-2026A", StringComparison.OrdinalIgnoreCase);
 
-            for (var sessionIndex = 0; sessionIndex < sessionTemplates.Count; sessionIndex++)
+            for (var sessionIndex = 0; sessionIndex < sessionTemplates.Length; sessionIndex++)
             {
                 var template = sessionTemplates[sessionIndex];
                 if (!modulesByCode.TryGetValue(template.ModuleCode, out var module))
@@ -119,34 +119,6 @@ public partial class SeedService
             sessionsToAdd.Count);
     }
 
-    private static IReadOnlyList<RoboticsClassSessionTemplate> GetRoboticsClassSessionTemplates() =>
-    [
-        new("MOD-ROBOTICS-01", "ACT-ROBOTICS-01-02", SessionKind.LiveOnline,
-            "Theory Session 1: Introduction to Robotics",
-            "Live cohort session covering robotics fundamentals."),
-        new("MOD-ROBOTICS-01", "ACT-ROBOTICS-02-02", SessionKind.LiveOnline,
-            "Theory Session 2: Actuator Design",
-            "Live cohort session on actuators and mechanical design."),
-        new("MOD-ROBOTICS-02", "ACT-ROBOTICS-04-02", SessionKind.LiveOnline,
-            "Experiential Session 1: Field Trip Preparation",
-            "Live mentor briefing before the sensor exploration field trip."),
-        new("MOD-ROBOTICS-02", "ACT-ROBOTICS-04-03", SessionKind.Lesson,
-            "Experiential Session 2: Sensor Exploration Field Trip",
-            "On-site sensor exploration in the electronics lab."),
-        new("MOD-ROBOTICS-02", "ACT-ROBOTICS-05-02", SessionKind.LiveOnline,
-            "Experiential Session 3: Movement Trip Preparation",
-            "Live mentor session before the motor control field challenge."),
-        new("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-02", SessionKind.LiveOnline,
-            "Research Session 1: Prototype Build Preparation",
-            "Live mentor session on team roles and build-day logistics."),
-        new("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-03", SessionKind.Lesson,
-            "Research Session 2: Team Prototype Build",
-            "Full-day team build session for the capstone prototype."),
-        new("MOD-ROBOTICS-03", "ACT-ROBOTICS-09-03", SessionKind.Lesson,
-            "Research Session 3: Final Testing & Showcase",
-            "On-site final testing and capstone showcase."),
-    ];
-
     private static (DateTime StartTime, DateTime EndTime) ResolveRoboticsSessionTimes(
         Class classEntity,
         int sessionIndex,
@@ -168,20 +140,13 @@ public partial class SeedService
         }
 
         var durationDays = Math.Max((classEntity.EndDate.Date - classEntity.StartDate.Date).TotalDays, 1);
-        var fractions = new[] { 0.06, 0.18, 0.30, 0.42, 0.54, 0.66, 0.78, 0.90 };
-        var fraction = fractions[Math.Min(sessionIndex, fractions.Length - 1)];
+        var sessionCount = IntroductionToRoboticsClassSessionTemplates.Length;
+        var fraction = (sessionIndex + 1) / (double)(sessionCount + 1);
         var sessionDate = classEntity.StartDate.Date.AddDays(durationDays * fraction);
         var startHour = sessionIndex % 2 == 0 ? 9 : 14;
         var startTime = sessionDate.AddHours(startHour);
         var endTime = startTime.AddHours(2).AddMinutes(30);
         return (startTime, endTime);
     }
-
-    private sealed record RoboticsClassSessionTemplate(
-        string ModuleCode,
-        string ActivityCode,
-        SessionKind SessionKind,
-        string Title,
-        string Description);
 }
 
