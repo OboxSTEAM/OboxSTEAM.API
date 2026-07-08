@@ -33,19 +33,4 @@ public class MediaTag : BaseEntity
     /// segment-only clipping without re-querying Rekognition.
     /// </summary>
     public bool HasOtherFaces { get; set; }
-
-    /// <summary>
-    /// The anonymous AWS Transcribe speaker label (e.g. "spk_0") mapped to this student via
-    /// overlap analysis between the student's face timeline and the speaker timeline.
-    /// Null when no speaker could be mapped (no face/voice overlap, or no speaker data).
-    /// </summary>
-    public string? MappedSpeakerLabel { get; set; }
-
-    /// <summary>
-    /// JSON-serialized list of voice segments belonging to <see cref="MappedSpeakerLabel"/>,
-    /// i.e. the time ranges where this student is speaking (including off-camera moments).
-    /// Format: <c>[{"StartMs":1000,"EndMs":4500}, ...]</c>. The personal-video pipeline unions
-    /// these with the face segments so highlights keep "voice but no face" moments.
-    /// </summary>
-    public string? VoiceSegmentsJson { get; set; }
 }

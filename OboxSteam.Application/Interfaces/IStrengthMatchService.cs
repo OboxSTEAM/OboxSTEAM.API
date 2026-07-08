@@ -36,17 +36,6 @@ public interface IStrengthMatchService
         IList<LabelDetectionEntry> labelTimeline,
         string strengthDescription,
         CancellationToken ct = default);
-
-    /// <summary>
-    /// Off-camera speech path: the student is speaking during the given voice windows but their
-    /// face is not visible. Cross-references each voice window with visual labels from the same
-    /// (wider) time range to decide if the scene demonstrates the described strength.
-    /// </summary>
-    Task<StrengthMatchResult> MatchStrengthsForVoiceOnlyAsync(
-        IList<FaceTimestampSegment> voiceOnlySegments,
-        IList<LabelDetectionEntry> labelTimeline,
-        string strengthDescription,
-        CancellationToken ct = default);
 }
 
 /// <summary>

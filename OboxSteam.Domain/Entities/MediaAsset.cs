@@ -47,22 +47,6 @@ public class MediaAsset : BaseEntity
     /// </summary>
     public string? LabelTimelineJson { get; set; }
 
-    /// <summary>
-    /// AWS Transcribe job name for speaker diarization, populated alongside the Rekognition
-    /// jobs once transcoding completes. Null until diarization has been triggered.
-    /// </summary>
-    [MaxLength(512)]
-    public string? TranscribeJobName { get; set; }
-
-    /// <summary>
-    /// JSON-serialized raw speaker timeline from AWS Transcribe, captured when the Transcribe
-    /// completion webhook arrives. Format:
-    /// <c>[{"SpeakerLabel":"spk_0","StartMs":1000,"EndMs":4500}, ...]</c>.
-    /// Used (together with each tag's face timeline) to map anonymous speakers to students.
-    /// Null until the Transcribe job completes, or if capture failed.
-    /// </summary>
-    public string? SpeakerSegmentsJson { get; set; }
-
     public DateTime? UploadedAt { get; set; }
 
     // Navigation

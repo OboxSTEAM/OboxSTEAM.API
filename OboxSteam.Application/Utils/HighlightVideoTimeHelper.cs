@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using OboxSteam.Application.DTOs.MediaDTO;
 using OboxSteam.Application.Interfaces;
 
 namespace OboxSteam.Application.Utils;
@@ -39,7 +40,7 @@ public static partial class HighlightVideoTimeHelper
         return hours * MsPerHour + minutes * MsPerMinute + seconds * MsPerSecond + millis;
     }
 
-    /// <summary>Formats milliseconds as MediaConvert timecode <c>HH:MM:SS:00</c> (frame field 00).</summary>
+    /// <summary>Formats milliseconds as MediaConvert timecode <c>HH:MM:SS:00</c> (truncates sub-second).</summary>
     public static string MsToMediaConvertTimecode(long ms)
     {
         if (ms < 0)
@@ -53,6 +54,29 @@ public static partial class HighlightVideoTimeHelper
 
         return $"{hours:D2}:{minutes:D2}:{seconds:D2}:00";
     }
+
+    /// <summary>
+    /// Formats milliseconds as MediaConvert timecode, rounding to the nearest second.
+    /// Used when encoding source clips with buffer/merge so clip bounds align with MediaConvert.
+    /// </summary>
+    public static string MsToMediaConvertTimecodeRounded(long ms)
+    {
+        if (ms < 0)
+            ms = 0;
+
+        var totalSec = (ms + 500) / MsPerSecond;
+        var sec = (int)(totalSec % 60);
+        var min = (int)(totalSec / 60 % 60);
+        var hr = (int)(totalSec / 3_600);
+        return $"{hr:D2}:{min:D2}:{sec:D2}:00";
+    }
+
+    /// <summary>Parses UI exclude ranges into millisecond tuples.</summary>
+    public static List<(long StartMs, long EndMs)> ParseExcludeRanges(
+        IEnumerable<TimeRangeDto> excludeRanges) =>
+        excludeRanges
+            .Select(r => (StartMs: ParseTimecodeToMs(r.Start), EndMs: ParseTimecodeToMs(r.End)))
+            .ToList();
 
     /// <summary>
     /// Normalizes exclude ranges to [0, durationMs] and merges overlaps/adjacent spans.

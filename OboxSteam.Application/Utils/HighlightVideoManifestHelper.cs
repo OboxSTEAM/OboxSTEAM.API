@@ -94,22 +94,6 @@ public static class HighlightVideoManifestHelper
             new[] { new HighlightSourceSegmentMs(startMs, endMs) });
     }
 
-    /// <summary>
-    /// Inserts raw source segments into the manifest using the same mediaId placement rules as
-    /// <see cref="AppendSegment"/>.
-    /// </summary>
-    public static List<HighlightSourceClipGroup> AppendSourceClipGroup(
-        IReadOnlyList<HighlightSourceClipGroup> manifest,
-        Guid mediaId,
-        string sourceS3Key,
-        IReadOnlyList<HighlightSourceSegmentMs> rawSegments)
-    {
-        if (rawSegments.Count == 0)
-            throw new ArgumentException("Raw source segments cannot be empty.");
-
-        return InsertSegmentsIntoManifest(manifest, mediaId, sourceS3Key, rawSegments);
-    }
-
     private static List<HighlightSourceClipGroup> InsertSegmentsIntoManifest(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
         Guid mediaId,
@@ -285,6 +269,30 @@ public static class HighlightVideoManifestHelper
         var transformed = RebuildManifestFromPieces(pieces, manifest);
         ValidateSegmentOrder(transformed);
         return transformed;
+    }
+
+    /// <summary>
+    /// Applies output-timeline exclude ranges to a parsed manifest, resolving legacy durations when needed.
+    /// </summary>
+    public static List<HighlightSourceClipGroup> ApplyOutputTrimToManifest(
+        ParsedHighlightManifest parsed,
+        long outputDurationMs,
+        IReadOnlyList<(long StartMs, long EndMs)> excludeRanges,
+        IReadOnlyDictionary<Guid, long> sourceDurationMsByMediaId)
+    {
+        IReadOnlyDictionary<Guid, long>? fullVideoDurations = null;
+        if (!HasStampedOutputTimeline(parsed.Groups))
+        {
+            fullVideoDurations = ResolveFullVideoOutputDurations(parsed.Groups, outputDurationMs);
+        }
+
+        return TransformForOutputTrim(
+            parsed.Groups,
+            outputDurationMs,
+            excludeRanges,
+            fullVideoDurations,
+            parsed.Version,
+            sourceDurationMsByMediaId);
     }
 
     /// <summary>

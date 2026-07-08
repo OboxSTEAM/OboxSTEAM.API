@@ -100,21 +100,6 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         return await CompleteMatchAsync(prompt, ct);
     }
 
-    /// <inheritdoc />
-    public async Task<StrengthMatchResult> MatchStrengthsForVoiceOnlyAsync(
-        IList<FaceTimestampSegment> voiceOnlySegments,
-        IList<LabelDetectionEntry> labelTimeline,
-        string strengthDescription,
-        CancellationToken ct = default)
-    {
-        _logger.LogInformation(
-            "BedrockMantleStrengthMatchService (voice-only): {VoiceSegs} voice segment(s), {Labels} label(s), StrengthDescription: {Desc}",
-            voiceOnlySegments.Count, labelTimeline.Count, strengthDescription);
-
-        var prompt = BuildVoiceOnlyPrompt(voiceOnlySegments, labelTimeline, strengthDescription);
-        return await CompleteMatchAsync(prompt, ct);
-    }
-
     // -- Private Helpers -------------------------------------------------------
 
     private async Task<StrengthMatchResult> CompleteMatchAsync(string prompt, CancellationToken ct)
@@ -333,43 +318,8 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
         return sb.ToString();
     }
 
-    private string BuildVoiceOnlyPrompt(
-        IList<FaceTimestampSegment> voiceOnlySegments,
-        IList<LabelDetectionEntry> labelTimeline,
-        string strengthDescription)
-    {
-        var sb = new StringBuilder();
-
-        sb.AppendLine("You are a video segment analyzer. The mapped student is SPEAKING OFF-CAMERA during the voice windows below (their face is not visible, but diarization confirms it is their voice).");
-        sb.AppendLine("For each voice window, examine the VISUAL labels from the label detection timeline in the same time range and decide whether the on-screen scene demonstrates the student's described strength.");
-        sb.AppendLine("You are NOT evaluating what the student says — only whether the visuals during their speech match the strength.");
-        sb.AppendLine();
-        sb.AppendLine("STUDENT STRENGTH DESCRIPTION:");
-        sb.AppendLine($"\"{strengthDescription}\"");
-        sb.AppendLine();
-        sb.AppendLine("OFF-CAMERA VOICE WINDOWS (milliseconds):");
-
-        foreach (var seg in voiceOnlySegments)
-            sb.AppendLine($"  - {seg.StartMs}ms to {seg.EndMs}ms");
-
-        sb.AppendLine();
-        AppendSegmentScopedLabelTimeline(sb, voiceOnlySegments, labelTimeline);
-
-        sb.AppendLine();
-        AppendStrengthSynonymGuidance(sb);
-        sb.AppendLine("INSTRUCTIONS:");
-        sb.AppendLine("1. Evaluate each WINDOW independently using ONLY the labels listed under that WINDOW.");
-        sb.AppendLine("2. Return matched_segments using timestamps where labels demonstrate the strength — prefer a focused range, not necessarily the entire voice window.");
-        AppendPrecisionMatchingRules(sb, 3);
-        AppendEvidenceLabelInstructions(sb, 10);
-        sb.AppendLine();
-        AppendMatchResponseSchema(sb, "12000");
-
-        return sb.ToString();
-    }
-
     /// <summary>
-    /// Lists labels under each face/voice window so the LLM evaluates segments with local
+    /// Lists labels under each face window so the LLM evaluates segments with local
     /// context instead of a flat uniformly-sampled timeline.
     /// </summary>
     private void AppendSegmentScopedLabelTimeline(

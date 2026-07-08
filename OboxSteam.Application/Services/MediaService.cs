@@ -605,24 +605,6 @@ public class MediaService : IMediaService
         }
     }
 
-    /// <inheritdoc />
-    public async Task HandleTranscribeWebhookAsync(string jobName, bool isSuccess)
-    {
-        _logger.LogInformation(
-            "HandleTranscribeWebhookAsync: voice pipeline disabled; ignoring JobName={JobName}, Success={Success}",
-            jobName, isSuccess);
-
-        // Unblock legacy uploads that were waiting on Transcribe before this pipeline was removed.
-        var media = await _unitOfWork.MediaAssets.FirstOrDefaultAsync(
-            m => m.TranscribeJobName == jobName && !m.IsDeleted);
-
-        if (media == null)
-            return;
-
-        if (media.VideoStatus == VideoProcessingStatus.PendingSpeakerMapping)
-            await TryAdvanceToProcessingCompleteAsync(media);
-    }
-
     // ── Private Helpers ───────────────────────────────────────────────────────
 
     /// <summary>
@@ -740,8 +722,7 @@ public class MediaService : IMediaService
 
         var activeTags = media.MediaTags.Where(t => !t.IsDeleted).ToList();
 
-        if (media.VideoStatus is VideoProcessingStatus.PendingTagging
-            or VideoProcessingStatus.PendingSpeakerMapping)
+        if (media.VideoStatus is VideoProcessingStatus.PendingTagging)
         {
             _logger.LogDebug(
                 "ShouldProcessVideoFaceTags=true: MediaId={MediaId}, VideoStatus={Status}",
@@ -961,8 +942,6 @@ public class MediaService : IMediaService
             FaceSearchJobId = media.FaceSearchJobId,
             LabelJobRef = media.LabelJobRef,
             LabelTimelineJson = media.LabelTimelineJson,
-            TranscribeJobName = media.TranscribeJobName,
-            SpeakerSegmentsJson = media.SpeakerSegmentsJson,
             VideoStatus = media.VideoStatus,
             UploadedAt = media.UploadedAt,
             Tags = tags.Select(t => MapTagToDto(t, studentMap)).ToList()
@@ -980,9 +959,7 @@ public class MediaService : IMediaService
             ConfidenceScore = tag.ConfidenceScore,
             IsVerified = tag.IsVerified,
             FaceSegmentsJson = tag.FaceSegmentsJson,
-            HasOtherFaces = tag.HasOtherFaces,
-            MappedSpeakerLabel = tag.MappedSpeakerLabel,
-            VoiceSegmentsJson = tag.VoiceSegmentsJson
+            HasOtherFaces = tag.HasOtherFaces
         };
     }
 }

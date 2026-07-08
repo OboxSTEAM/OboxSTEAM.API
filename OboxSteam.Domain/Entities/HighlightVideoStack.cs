@@ -15,7 +15,7 @@ public class HighlightVideoStack : BaseEntity
     public User Student { get; set; } = null!;
 
     /// <summary>
-    /// Strength filter for this stack. Empty string means face/voice-only (no LLM filter).
+    /// Strength filter for this stack. Empty string means face-only (no LLM filter).
     /// </summary>
     [MaxLength(2000)]
     public string StrengthDescription { get; set; } = string.Empty;

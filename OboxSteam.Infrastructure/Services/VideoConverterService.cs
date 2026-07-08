@@ -2,6 +2,7 @@ using Amazon.MediaConvert;
 using Amazon.MediaConvert.Model;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Utils;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -15,7 +16,6 @@ public class VideoConverterService : IVideoConverterService
 {
     private const string EnvS3Bucket = "AWS_S3_BUCKET";
     private const string EnvRoleArn = "AWS_MEDIACONVERT_ROLE_ARN";
-    private const string PersonalVideoFolder = "personal-videos";
 
     private readonly IAmazonMediaConvert _mediaConvert;
     private readonly ILogger<VideoConverterService> _logger;
@@ -108,49 +108,13 @@ public class VideoConverterService : IVideoConverterService
         var bucket = RequireEnv(EnvS3Bucket);
         var roleArn = RequireEnv(EnvRoleArn);
         // Watermark URI is configurable via environment variable so it survives bucket/region changes.
-        var watermarkUri = Environment.GetEnvironmentVariable("AWS_WATERMARK_URI")
-            ?? "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/logo-obox.png";
+        var watermarkUri = ResolveWatermarkUri();
 
         _logger.LogInformation(
             "SubmitPersonalVideoJobAsync: {ClipCount} input(s) → s3://{Bucket}/{Key}",
             clips.Count, bucket, outputS3Key);
 
-        // Build one MediaConvert Input per source video
-        var inputs = clips.Select(clip =>
-        {
-            var input = new Input
-            {
-                FileInput = $"s3://{bucket}/{clip.S3Key}",
-                // ZEROBASED so timecodes in InputClippings are relative to 00:00:00:000
-                TimecodeSource = InputTimecodeSource.ZEROBASED,
-                AudioSelectors = new Dictionary<string, AudioSelector>
-                {
-                    ["Audio Selector 1"] = new AudioSelector
-                    {
-                        DefaultSelection = AudioDefaultSelection.DEFAULT
-                    }
-                }
-            };
-
-            // If time clips are specified, add InputClippings
-            if (clip.Clips is { Count: > 0 })
-            {
-                input.InputClippings = clip.Clips
-                    .Select(c => new InputClipping
-                    {
-                        StartTimecode = c.StartTimecode,
-                        EndTimecode = c.EndTimecode
-                    })
-                    .ToList();
-            }
-
-            return input;
-        }).ToList();
-
-        // Derive destination prefix and filename from the output S3 key
-        var outputFolder = Path.GetDirectoryName(outputS3Key)?.Replace('\\', '/') ?? PersonalVideoFolder;
-        var outputFileName = Path.GetFileNameWithoutExtension(outputS3Key);
-        var destUri = $"s3://{bucket}/{outputFolder}/{outputFileName}";
+        var inputs = BuildPersonalVideoInputs(clips, bucket);
 
         var request = new CreateJobRequest
         {
@@ -158,30 +122,7 @@ public class VideoConverterService : IVideoConverterService
             Settings = new JobSettings
             {
                 Inputs = inputs,
-                OutputGroups = new List<OutputGroup>
-                {
-                    new OutputGroup
-                    {
-                        Name                = "Personal Video MP4",
-                        OutputGroupSettings = new OutputGroupSettings
-                        {
-                            Type              = OutputGroupType.FILE_GROUP_SETTINGS,
-                            FileGroupSettings = new FileGroupSettings
-                            {
-                                Destination = destUri
-                            }
-                        },
-                        Outputs = new List<Output>
-                        {
-                            new Output
-                            {
-                                VideoDescription  = BuildVideoDescription(watermarkUri),
-                                AudioDescriptions = BuildAudioDescriptions(),
-                                ContainerSettings = BuildContainerSettings()
-                            }
-                        }
-                    }
-                }
+                OutputGroups = [BuildPersonalVideoOutputGroup(bucket, outputS3Key, watermarkUri, "Personal Video MP4")]
             }
         };
 
@@ -199,8 +140,7 @@ public class VideoConverterService : IVideoConverterService
     {
         var bucket = RequireEnv(EnvS3Bucket);
         var roleArn = RequireEnv(EnvRoleArn);
-        var watermarkUri = Environment.GetEnvironmentVariable("AWS_WATERMARK_URI")
-            ?? "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/logo-obox.png";
+        var watermarkUri = ResolveWatermarkUri();
 
         _logger.LogInformation(
             "SubmitOutputTrimJobAsync: input={Input}, {ClipCount} keep segment(s) → s3://{Bucket}/{Key}",
@@ -226,10 +166,6 @@ public class VideoConverterService : IVideoConverterService
                 .ToList()
         };
 
-        var outputFolder = Path.GetDirectoryName(outputS3Key)?.Replace('\\', '/') ?? PersonalVideoFolder;
-        var outputFileName = Path.GetFileNameWithoutExtension(outputS3Key);
-        var destUri = $"s3://{bucket}/{outputFolder}/{outputFileName}";
-
         var request = new CreateJobRequest
         {
             Role = roleArn,
@@ -238,27 +174,7 @@ public class VideoConverterService : IVideoConverterService
                 Inputs = [input],
                 OutputGroups =
                 [
-                    new OutputGroup
-                    {
-                        Name = "Personal Video Trim MP4",
-                        OutputGroupSettings = new OutputGroupSettings
-                        {
-                            Type = OutputGroupType.FILE_GROUP_SETTINGS,
-                            FileGroupSettings = new FileGroupSettings
-                            {
-                                Destination = destUri
-                            }
-                        },
-                        Outputs =
-                        [
-                            new Output
-                            {
-                                VideoDescription = BuildVideoDescription(watermarkUri),
-                                AudioDescriptions = BuildAudioDescriptions(),
-                                ContainerSettings = BuildContainerSettings()
-                            }
-                        ]
-                    }
+                    BuildPersonalVideoOutputGroup(bucket, outputS3Key, watermarkUri, "Personal Video Trim MP4")
                 ]
             }
         };
@@ -359,6 +275,76 @@ public class VideoConverterService : IVideoConverterService
         _logger.LogInformation(
             "Resolved input S3 key for job {JobId}: {S3Key}", jobId, s3Key);
         return s3Key;
+    }
+
+    // ── Personal highlight video job builders ────────────────────────────────
+
+    private static string ResolveWatermarkUri() =>
+        Environment.GetEnvironmentVariable("AWS_WATERMARK_URI")
+        ?? "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/logo-obox.png";
+
+    private static List<Input> BuildPersonalVideoInputs(IReadOnlyList<ClipInput> clips, string bucket) =>
+        clips.Select(clip =>
+        {
+            var input = new Input
+            {
+                FileInput = $"s3://{bucket}/{clip.S3Key}",
+                TimecodeSource = InputTimecodeSource.ZEROBASED,
+                AudioSelectors = new Dictionary<string, AudioSelector>
+                {
+                    ["Audio Selector 1"] = new AudioSelector
+                    {
+                        DefaultSelection = AudioDefaultSelection.DEFAULT
+                    }
+                }
+            };
+
+            if (clip.Clips is { Count: > 0 })
+            {
+                input.InputClippings = clip.Clips
+                    .Select(c => new InputClipping
+                    {
+                        StartTimecode = c.StartTimecode,
+                        EndTimecode = c.EndTimecode
+                    })
+                    .ToList();
+            }
+
+            return input;
+        }).ToList();
+
+    private static OutputGroup BuildPersonalVideoOutputGroup(
+        string bucket,
+        string outputS3Key,
+        string watermarkUri,
+        string groupName)
+    {
+        var outputFolder = Path.GetDirectoryName(outputS3Key)?.Replace('\\', '/')
+                           ?? HighlightVideoConstants.OutputFolder;
+        var outputFileName = Path.GetFileNameWithoutExtension(outputS3Key);
+        var destUri = $"s3://{bucket}/{outputFolder}/{outputFileName}";
+
+        return new OutputGroup
+        {
+            Name = groupName,
+            OutputGroupSettings = new OutputGroupSettings
+            {
+                Type = OutputGroupType.FILE_GROUP_SETTINGS,
+                FileGroupSettings = new FileGroupSettings
+                {
+                    Destination = destUri
+                }
+            },
+            Outputs =
+            [
+                new Output
+                {
+                    VideoDescription = BuildVideoDescription(watermarkUri),
+                    AudioDescriptions = BuildAudioDescriptions(),
+                    ContainerSettings = BuildContainerSettings()
+                }
+            ]
+        };
     }
 
     // ── Shared codec/container builders ──────────────────────────────────────

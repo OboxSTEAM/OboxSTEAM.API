@@ -42,8 +42,8 @@ public static class HighlightVideoClipMergeHelper
 
         return merged
             .Select(r => new TimeClip(
-                MsToMediaConvertTimecode(r.Start),
-                MsToMediaConvertTimecode(r.End)))
+                HighlightVideoTimeHelper.MsToMediaConvertTimecodeRounded(r.Start),
+                HighlightVideoTimeHelper.MsToMediaConvertTimecodeRounded(r.End)))
             .Where(t => t.StartTimecode != t.EndTimecode)
             .ToList();
     }
@@ -56,14 +56,5 @@ public static class HighlightVideoClipMergeHelper
             .ToList();
 
         return MergeAndFormatToTimeClips(ranges);
-    }
-
-    private static string MsToMediaConvertTimecode(long ms)
-    {
-        var totalSec = (ms + 500) / 1_000;
-        var sec = (int)(totalSec % 60);
-        var min = (int)(totalSec / 60 % 60);
-        var hr = (int)(totalSec / 3_600);
-        return $"{hr:D2}:{min:D2}:{sec:D2}:00";
     }
 }

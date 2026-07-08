@@ -32,10 +32,10 @@ namespace OboxSteam.Application.Services;
 /// Strengths Filtering (optional — triggered when caller supplies a strength description):
 ///   Cross-references on-camera face segments with the persisted Label Detection timeline via
 ///   an LLM (AWS Bedrock). Only segments where visual
-///   labels demonstrate the described strength are kept. Label data must be present for every
-///   video that enters the strength path — missing timelines fail the job with an explicit reason
-///   (no silent fallback to face-only / full-video clipping). When no segment matches across
-///   all videos the background job is marked <see cref="HighlightVideoStatus.Failed"/>.
+///   labels demonstrate the described strength are kept. Missing label timelines for a video
+///   are logged and that video is skipped; the job continues with remaining clips. When no
+///   segment matches across all videos the background job is marked
+///   <see cref="HighlightVideoStatus.Failed"/>.
 /// </summary>
 public class PersonalVideoService : IPersonalVideoService
 {
@@ -64,22 +64,9 @@ public class PersonalVideoService : IPersonalVideoService
 
     private sealed record ClipBuildResult(
         IReadOnlyList<ClipInput> Clips,
-        IReadOnlyList<HighlightSourceClipGroup> SourceClips,
-        string? FailureReason = null);
+        IReadOnlyList<HighlightSourceClipGroup> SourceClips);
 
     // ── Clipping constants (merge/buffer lives in HighlightVideoClipMergeHelper) ──
-    /// <summary>Labels within this gap (ms) are merged into one evidence-label cluster.</summary>
-    private const long LabelClusterMaxGapMs = 5_000;
-
-    /// <summary>
-    /// Trim when the LLM time range is at least this many times wider than the evidence-label
-    /// cluster span (e.g. 1.5 → a 15 s LLM range shrinks if evidence spans ~10 s or less).
-    /// </summary>
-    private const double TrimWhenLlmSpanExceedsEvidenceRatio = 1.5;
-
-    private const float MinLabelConfidenceForTrim = 60f;
-
-    /// <summary>
     /// When filtering label-detection entries for Claude, include labels within this
     /// window around each face segment (before StartMs and after EndMs).
     /// 5 seconds of extra context helps Claude detect activities that start just
@@ -87,13 +74,8 @@ public class PersonalVideoService : IPersonalVideoService
     /// </summary>
     private const long LabelContextWindowMs = 5_000;
 
-    private const string PersonalVideoFolder = "personal-videos";
-
     private const int MaxStacksPerStudentProgram = 3;
     private const int MaxItemsPerStack = 4;
-
-    /// <summary>When false, LLM segment bounds are used as-is (user trims manually later).</summary>
-    private const bool UseEvidenceTrim = false;
 
     /// <summary>
     /// A HighlightVideo stuck in <see cref="HighlightVideoStatus.Processing"/> longer than this
@@ -252,11 +234,7 @@ public class PersonalVideoService : IPersonalVideoService
         if (request.ExcludeRanges.Count == 0)
             throw ErrorHelper.BadRequest("At least one exclude range is required.");
 
-        var excludeRanges = request.ExcludeRanges
-            .Select(r => (
-                StartMs: HighlightVideoTimeHelper.ParseTimecodeToMs(r.Start),
-                EndMs: HighlightVideoTimeHelper.ParseTimecodeToMs(r.End)))
-            .ToList();
+        var excludeRanges = HighlightVideoTimeHelper.ParseExcludeRanges(request.ExcludeRanges);
 
         foreach (var (start, end) in excludeRanges)
         {
@@ -272,24 +250,10 @@ public class PersonalVideoService : IPersonalVideoService
         {
             try
             {
-                var parsed = HighlightVideoManifestHelper.ParseManifest(parent.SourceSegmentsJson);
-                IReadOnlyDictionary<Guid, long>? fullVideoDurations = null;
-                if (!HighlightVideoManifestHelper.HasStampedOutputTimeline(parsed.Groups))
-                {
-                    fullVideoDurations = HighlightVideoManifestHelper.ResolveFullVideoOutputDurations(
-                        parsed.Groups, parent.DurationMs.Value);
-                }
-
-                var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(
-                    parsed.Groups.Select(g => g.MediaId));
-                var transformed = HighlightVideoManifestHelper.TransformForOutputTrim(
-                    parsed.Groups,
+                transformedManifestJson = await TransformStoredManifestForTrimAsync(
+                    parent.SourceSegmentsJson,
                     parent.DurationMs.Value,
-                    excludeRanges,
-                    fullVideoDurations,
-                    parsed.Version,
-                    sourceDurations);
-                transformedManifestJson = HighlightVideoManifestHelper.SerializeManifest(transformed);
+                    excludeRanges);
             }
             catch (InvalidOperationException ex)
             {
@@ -543,8 +507,7 @@ public class PersonalVideoService : IPersonalVideoService
                         var parsed = HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson);
                         var mediaIds = parsed.Groups.Select(g => g.MediaId);
                         var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(mediaIds);
-                        var useTrimStyleClips = item.GenerationKind == HighlightVideoGenerationKind.Trim
-                            || await IsTrimDerivedManifestChainAsync(item);
+                        var useTrimStyleClips = await IsTrimDerivedManifestChainAsync(item);
                         var stamped = HighlightVideoManifestHelper.StampOutputTimeline(
                             parsed.Groups,
                             item.DurationMs.Value,
@@ -635,18 +598,6 @@ public class PersonalVideoService : IPersonalVideoService
     {
         var buildResult = await BuildClipInputsAsync(job.ProgramId, job.StudentId, job.StrengthDescription);
 
-        if (buildResult.FailureReason != null)
-        {
-            _logger.LogWarning(
-                "[PersonalVideoService] Clip build failed for item {Id}: {Reason}",
-                item.Id, buildResult.FailureReason);
-
-            item.Status = HighlightVideoStatus.Failed;
-            item.FailureReason = buildResult.FailureReason;
-            await _unitOfWork.SaveChangesAsync();
-            return;
-        }
-
         var clipInputs = buildResult.Clips;
         if (clipInputs.Count == 0)
         {
@@ -663,7 +614,7 @@ public class PersonalVideoService : IPersonalVideoService
 
         item.SourceSegmentsJson = HighlightVideoManifestHelper.SerializeManifest(buildResult.SourceClips);
 
-        var outputKey = $"{PersonalVideoFolder}/{job.StudentId}_{item.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
+        var outputKey = BuildOutputS3Key(job.StudentId, item.Id);
         var mcJobId = await _videoConverterService.SubmitPersonalVideoJobAsync(clipInputs.ToList(), outputKey);
 
         item.PersonalVideoJobRef = mcJobId;
@@ -699,8 +650,7 @@ public class PersonalVideoService : IPersonalVideoService
         var stack = await _unitOfWork.HighlightVideoStacks.GetByIdAsync(item.StackId)
             ?? throw new InvalidOperationException($"Stack {item.StackId} not found for trim item.");
 
-        var outputKey =
-            $"{PersonalVideoFolder}/{stack.StudentId}_{item.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
+        var outputKey = BuildOutputS3Key(stack.StudentId, item.Id);
         var mcJobId = await _videoConverterService.SubmitOutputTrimJobAsync(
             job.ParentOutputS3Key, keepClips, outputKey);
 
@@ -760,8 +710,7 @@ public class PersonalVideoService : IPersonalVideoService
             return;
         }
 
-        var outputKey =
-            $"{PersonalVideoFolder}/{job.StudentId}_{item.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
+        var outputKey = BuildOutputS3Key(job.StudentId, item.Id);
         var mcJobId = await _videoConverterService.SubmitPersonalVideoJobAsync(clipInputs, outputKey);
 
         item.PersonalVideoJobRef = mcJobId;
@@ -770,23 +719,8 @@ public class PersonalVideoService : IPersonalVideoService
         await _unitOfWork.SaveChangesAsync();
     }
 
-    private async Task<bool> IsTrimDerivedManifestChainAsync(HighlightVideoItem item)
-    {
-        var parentId = item.ParentItemId;
-        while (parentId is Guid id)
-        {
-            var parent = await _unitOfWork.HighlightVideoItems.GetByIdAsync(id);
-            if (parent == null || parent.IsDeleted)
-                break;
-
-            if (parent.GenerationKind == HighlightVideoGenerationKind.Trim)
-                return true;
-
-            parentId = parent.ParentItemId;
-        }
-
-        return false;
-    }
+    private async Task<bool> IsTrimDerivedManifestChainAsync(HighlightVideoItem item) =>
+        await FindTrimAncestorAsync(item) != null;
 
     /// <summary>
     /// Rebuilds manifest for trim-derived regeneration from the initial stamped manifest and
@@ -794,13 +728,12 @@ public class PersonalVideoService : IPersonalVideoService
     /// </summary>
     private async Task<ParsedHighlightManifest?> BuildRegenerationManifestAsync(HighlightVideoItem item)
     {
-        if (!await IsTrimDerivedManifestChainAsync(item))
+        var trimAncestor = await FindTrimAncestorAsync(item);
+        if (trimAncestor == null)
             return null;
 
-        var trimAncestor = await FindTrimAncestorAsync(item);
         var initialAncestor = await FindInitialAncestorAsync(item);
-        if (trimAncestor == null
-            || initialAncestor == null
+        if (initialAncestor == null
             || string.IsNullOrWhiteSpace(initialAncestor.SourceSegmentsJson)
             || string.IsNullOrWhiteSpace(trimAncestor.TrimExcludeRangesJson)
             || initialAncestor.DurationMs is not > 0)
@@ -810,23 +743,13 @@ public class PersonalVideoService : IPersonalVideoService
 
         var excludeRanges = ParseTrimExcludeRanges(trimAncestor.TrimExcludeRangesJson);
         var initialParsed = HighlightVideoManifestHelper.ParseManifest(initialAncestor.SourceSegmentsJson);
-
-        IReadOnlyDictionary<Guid, long>? fullVideoDurations = null;
-        if (!HighlightVideoManifestHelper.HasStampedOutputTimeline(initialParsed.Groups))
-        {
-            fullVideoDurations = HighlightVideoManifestHelper.ResolveFullVideoOutputDurations(
-                initialParsed.Groups, initialAncestor.DurationMs.Value);
-        }
-
         var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(
             initialParsed.Groups.Select(g => g.MediaId));
 
-        var trimmedGroups = HighlightVideoManifestHelper.TransformForOutputTrim(
-            initialParsed.Groups,
+        var trimmedGroups = HighlightVideoManifestHelper.ApplyOutputTrimToManifest(
+            initialParsed,
             initialAncestor.DurationMs.Value,
             excludeRanges,
-            fullVideoDurations,
-            initialParsed.Version,
             sourceDurations);
 
         var currentParsed = HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson!);
@@ -835,6 +758,24 @@ public class PersonalVideoService : IPersonalVideoService
 
         return new ParsedHighlightManifest(initialParsed.Version, mergedGroups);
     }
+
+    private async Task<string> TransformStoredManifestForTrimAsync(
+        string sourceSegmentsJson,
+        long outputDurationMs,
+        IReadOnlyList<(long StartMs, long EndMs)> excludeRanges)
+    {
+        var parsed = HighlightVideoManifestHelper.ParseManifest(sourceSegmentsJson);
+        var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(parsed.Groups.Select(g => g.MediaId));
+        var transformed = HighlightVideoManifestHelper.ApplyOutputTrimToManifest(
+            parsed,
+            outputDurationMs,
+            excludeRanges,
+            sourceDurations);
+        return HighlightVideoManifestHelper.SerializeManifest(transformed);
+    }
+
+    private static string BuildOutputS3Key(Guid studentId, Guid itemId) =>
+        $"{HighlightVideoConstants.OutputFolder}/{studentId}_{itemId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
 
     private async Task<HighlightVideoItem?> FindInitialAncestorAsync(HighlightVideoItem item)
     {
@@ -881,11 +822,7 @@ public class PersonalVideoService : IPersonalVideoService
         if (ranges.Count == 0)
             throw new InvalidOperationException("Trim exclude ranges are empty.");
 
-        return ranges
-            .Select(r => (
-                StartMs: HighlightVideoTimeHelper.ParseTimecodeToMs(r.Start),
-                EndMs: HighlightVideoTimeHelper.ParseTimecodeToMs(r.End)))
-            .ToList();
+        return HighlightVideoTimeHelper.ParseExcludeRanges(ranges);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -899,7 +836,8 @@ public class PersonalVideoService : IPersonalVideoService
     /// ordered list of <see cref="ClipInput"/> objects for the MediaConvert job.
     /// When <paramref name="strengthDescription"/> is provided, each video's face segments are
     /// filtered via Bedrock against the label detection timeline. Missing label data
-    /// for any such video fails the whole build with an explicit <see cref="ClipBuildResult.FailureReason"/>.
+    /// filtered via Bedrock against the label detection timeline. Missing label data for a video
+    /// causes that video to be skipped while the build continues with available clips.
     /// </summary>
     private async Task<ClipBuildResult> BuildClipInputsAsync(
         Guid programId, Guid studentId, string? strengthDescription = null)
@@ -1254,9 +1192,7 @@ public class PersonalVideoService : IPersonalVideoService
             {
                 var labelOnlyMatch = await _strengthMatchService.MatchStrengthsFromLabelsOnlyAsync(
                     labelTimeline, strengthDescription);
-                var trimmedLabelOnly = MaybeTrimEvidenceLabels(
-                    labelOnlyMatch.MatchedSegments, labelTimeline, media.Id, "label-only");
-                allMatched.AddRange(trimmedLabelOnly);
+                allMatched.AddRange(labelOnlyMatch.MatchedSegments);
                 reasoning = labelOnlyMatch.Reasoning;
             }
             catch (Exception ex)
@@ -1276,9 +1212,7 @@ public class PersonalVideoService : IPersonalVideoService
             {
                 var faceMatch = await _strengthMatchService.MatchStrengthsAsync(
                     faceSegments, faceRelevantLabels, strengthDescription);
-                var trimmedFace = MaybeTrimEvidenceLabels(
-                    faceMatch.MatchedSegments, labelTimeline, media.Id, "face");
-                allMatched.AddRange(trimmedFace);
+                allMatched.AddRange(faceMatch.MatchedSegments);
                 reasoning = faceMatch.Reasoning;
             }
             catch (Exception ex)
@@ -1337,135 +1271,6 @@ public class PersonalVideoService : IPersonalVideoService
             .Where(s => s.EndMs > s.StartMs)
             .Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs))
             .ToList();
-
-    /// <summary>
-    /// Shrinks LLM segment bounds to Rekognition timestamps for the model's
-    /// <see cref="MatchedSegment.EvidenceLabels"/> when the LLM range is much wider than that
-    /// evidence cluster. Semantic matching stays with the LLM; this step is geometry only.
-    /// </summary>
-    private List<MatchedSegment> TrimMatchesToEvidenceLabels(
-        IList<MatchedSegment> matches,
-        IList<LabelDetectionEntry> labelTimeline,
-        Guid mediaId,
-        string path)
-    {
-        var result = new List<MatchedSegment>();
-
-        foreach (var match in matches)
-        {
-            var searchStart = match.StartMs;
-            var searchEnd = match.EndMs;
-
-            if (searchStart > searchEnd)
-                continue;
-
-            var llmSpan = searchEnd - searchStart;
-            var evidenceNames = match.EvidenceLabels
-                .Where(n => !string.IsNullOrWhiteSpace(n))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            if (evidenceNames.Count == 0)
-            {
-                _logger.LogWarning(
-                    "[PersonalVideoService] Evidence trim ({Path}): no evidence_labels on match [{Start}ms→{End}ms] MediaId={MediaId}; keeping LLM bounds",
-                    path, searchStart, searchEnd, mediaId);
-                result.Add(match with { StartMs = searchStart, EndMs = searchEnd });
-                continue;
-            }
-
-            var evidenceSet = new HashSet<string>(evidenceNames, StringComparer.OrdinalIgnoreCase);
-            var evidenceInRange = labelTimeline
-                .Where(l => l.TimestampMs >= searchStart
-                            && l.TimestampMs <= searchEnd
-                            && l.Confidence >= MinLabelConfidenceForTrim
-                            && evidenceSet.Contains(l.LabelName))
-                .ToList();
-
-            if (evidenceInRange.Count == 0)
-            {
-                _logger.LogWarning(
-                    "[PersonalVideoService] Evidence trim ({Path}): evidence [{Evidence}] not found in [{Start}ms→{End}ms] MediaId={MediaId}; keeping LLM bounds",
-                    path, string.Join(", ", evidenceNames), searchStart, searchEnd, mediaId);
-                result.Add(match with { StartMs = searchStart, EndMs = searchEnd });
-                continue;
-            }
-
-            var clusters = ClusterLabelsByTime(evidenceInRange, LabelClusterMaxGapMs);
-            _logger.LogDebug(
-                "[PersonalVideoService] Evidence trim ({Path}): {ClusterCount} cluster(s) from {EvidenceCount} evidence label(s) in [{Start}ms→{End}ms] MediaId={MediaId}. " +
-                "Cluster spans: [{Spans}]",
-                path, clusters.Count, evidenceInRange.Count, searchStart, searchEnd, mediaId,
-                string.Join(", ", clusters.Select(c => $"{c.Min(l => l.TimestampMs)}→{c.Max(l => l.TimestampMs)}ms")));
-            var trimmedAny = false;
-
-            foreach (var cluster in clusters)
-            {
-                var clusterStart = cluster.Min(l => l.TimestampMs);
-                var clusterEnd = cluster.Max(l => l.TimestampMs);
-                var clusterSpan = clusterEnd - clusterStart;
-                var shouldTrim = llmSpan > Math.Max(clusterSpan, 1) * TrimWhenLlmSpanExceedsEvidenceRatio;
-
-                if (!shouldTrim)
-                    continue;
-
-                var outStart = clusterStart;
-                var outEnd = clusterEnd;
-
-                if (outStart > outEnd)
-                    continue;
-
-                trimmedAny = true;
-                result.Add(new MatchedSegment(outStart, outEnd, match.Strength, match.Score, evidenceNames));
-
-                _logger.LogInformation(
-                    "[PersonalVideoService] Evidence trim ({Path}) [{LlmStart}ms→{LlmEnd}ms] span={LlmSpan}ms → [{Start}ms→{End}ms] span={OutSpan}ms MediaId={MediaId} evidence=[{Evidence}]",
-                    path, searchStart, searchEnd, llmSpan, outStart, outEnd, outEnd - outStart, mediaId,
-                    string.Join(", ", evidenceNames));
-            }
-
-            if (!trimmedAny)
-            {
-                result.Add(match with { StartMs = searchStart, EndMs = searchEnd });
-                _logger.LogInformation(
-                    "[PersonalVideoService] Evidence trim ({Path}): LLM range already tight [{Start}ms→{End}ms] MediaId={MediaId} evidence=[{Evidence}]",
-                    path, searchStart, searchEnd, mediaId, string.Join(", ", evidenceNames));
-            }
-        }
-
-        return result;
-    }
-
-    private List<MatchedSegment> MaybeTrimEvidenceLabels(
-        IList<MatchedSegment> matches,
-        IList<LabelDetectionEntry> labelTimeline,
-        Guid mediaId,
-        string path) =>
-        UseEvidenceTrim
-            ? TrimMatchesToEvidenceLabels(matches, labelTimeline, mediaId, path)
-            : matches.ToList();
-
-    private static List<List<LabelDetectionEntry>> ClusterLabelsByTime(
-        IList<LabelDetectionEntry> labels,
-        long maxGapMs)
-    {
-        if (labels.Count == 0)
-            return new List<List<LabelDetectionEntry>>();
-
-        var sorted = labels.OrderBy(l => l.TimestampMs).ToList();
-        var clusters = new List<List<LabelDetectionEntry>> { new() { sorted[0] } };
-
-        foreach (var label in sorted.Skip(1))
-        {
-            var lastTs = clusters[^1][^1].TimestampMs;
-            if (label.TimestampMs - lastTs <= maxGapMs)
-                clusters[^1].Add(label);
-            else
-                clusters.Add(new List<LabelDetectionEntry> { label });
-        }
-
-        return clusters;
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Segment processing helpers

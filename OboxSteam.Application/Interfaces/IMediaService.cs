@@ -29,7 +29,7 @@ public interface IMediaService
     Task StartVideoTranscodeAsync(Guid mediaId);
 
     /// <summary>
-    /// Polls MediaConvert job status and, when complete, starts Rekognition / Transcribe jobs.
+    /// Polls MediaConvert job status and, when complete, starts Rekognition jobs.
     /// Primary caller: <see cref="HandleMediaConvertWebhookAsync"/>.
     /// Returns <c>true</c> when the job completed (FileUrl set, VideoStatus = PendingTagging).
     /// Returns <c>false</c> while the job is still in progress.
@@ -80,10 +80,4 @@ public interface IMediaService
     /// Handles Rekognition Label Detection job completion from SNS.
     /// </summary>
     Task HandleLabelDetectionWebhookAsync(string jobId, bool isSuccess);
-
-    /// <summary>
-    /// Legacy AWS Transcribe webhook handler. Voice diarization is disabled; this only unblocks
-    /// videos stuck in <see cref="VideoProcessingStatus.PendingSpeakerMapping"/> from before the pipeline was removed.
-    /// </summary>
-    Task HandleTranscribeWebhookAsync(string jobName, bool isSuccess);
 }
