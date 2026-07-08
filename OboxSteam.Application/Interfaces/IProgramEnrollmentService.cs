@@ -23,4 +23,6 @@ public interface IProgramEnrollmentService
         bool isDescending,
         int page,
         int pageSize);
+
+    Task<ProgramEnrollmentClassDto> GetProgramEnrollmentClassAsync(Guid enrollmentId);
 }

@@ -85,6 +85,31 @@ public class ProgramEnrollmentController : ControllerBase
     }
 
     // =========================================================================
+    // GET CLASS  —  GET /api/program-enrollments/{enrollmentId}/class
+    // =========================================================================
+
+    [HttpGet("{enrollmentId:guid}/class")]
+    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [SwaggerOperation(
+        Summary = "Get class for a program enrollment",
+        Description = "Returns the active class cohort linked to this program enrollment. "
+            + "ClassId is null when the student has not joined a class yet. "
+            + "Students see their own; parents see linked students; admins see all.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramEnrollmentClassDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetProgramEnrollmentClass([FromRoute] Guid enrollmentId)
+    {
+        var result = await _programEnrollmentService.GetProgramEnrollmentClassAsync(enrollmentId);
+
+        return Ok(ApiResult<ProgramEnrollmentClassDto>.Success(
+            result,
+            "200",
+            "Program enrollment class retrieved successfully."));
+    }
+
+    // =========================================================================
     // GET CURRICULUM  —  GET /api/program-enrollments/{enrollmentId}/curriculum
     // =========================================================================
 

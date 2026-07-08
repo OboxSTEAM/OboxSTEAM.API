@@ -355,6 +355,50 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
         return new Pagination<ProgramEnrollmentResponseDto>(dtos, totalCount, page, pageSize);
     }
 
+    public async Task<ProgramEnrollmentClassDto> GetProgramEnrollmentClassAsync(Guid enrollmentId)
+    {
+        _logger.LogInformation(
+            "[GetProgramEnrollmentClassAsync] Start — enrollmentId: {EnrollmentId}",
+            enrollmentId);
+
+        await EnrollmentAccessValidator.GetCurrentUserForGetAsync(
+            _unitOfWork,
+            _claimsService,
+            ProgramEnrollmentValidator.ViewListForbiddenMessage);
+
+        var enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollmentId);
+        if (enrollment == null || enrollment.IsDeleted)
+        {
+            _logger.LogWarning("[GetProgramEnrollmentClassAsync] Enrollment {Id} not found.", enrollmentId);
+            throw ErrorHelper.NotFound($"Program enrollment with id '{enrollmentId}' not found.");
+        }
+
+        await EnrollmentAccessValidator.EnsureCanViewEnrollmentAsync(
+            _unitOfWork,
+            _claimsService,
+            enrollment.StudentId,
+            ProgramEnrollmentValidator.ViewEnrollmentForbiddenMessage);
+
+        var activeClassEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ProgramEnrollmentId == enrollmentId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        var result = new ProgramEnrollmentClassDto
+        {
+            ProgramEnrollmentId = enrollmentId,
+            ClassId = activeClassEnrollment?.ClassId,
+            ClassEnrollmentId = activeClassEnrollment?.Id,
+        };
+
+        _logger.LogInformation(
+            "[GetProgramEnrollmentClassAsync] Enrollment {EnrollmentId} classId: {ClassId}",
+            enrollmentId,
+            result.ClassId);
+
+        return result;
+    }
+
     private async Task<IQueryable<ProgramEnrollment>> ApplyParentStudentFilterAsync(
         IQueryable<ProgramEnrollment> query,
         Guid parentId)
