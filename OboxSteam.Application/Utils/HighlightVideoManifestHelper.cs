@@ -278,21 +278,73 @@ public static class HighlightVideoManifestHelper
 
     /// <summary>
     /// Stamps each segment with its span on the stitched output timeline using the actual
-    /// MediaConvert output duration. Full-length source entries require
-    /// <paramref name="sourceDurationMsByMediaId"/> (typically from each media asset's transcode job).
+    /// MediaConvert output duration. Clip spans follow the same merge/buffer rules as
+    /// <see cref="ToClipInputs"/> so output stamps align with encoded segments.
     /// </summary>
     public static List<HighlightSourceClipGroup> StampOutputTimeline(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
         long actualOutputDurationMs,
-        IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId = null)
+        IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId = null,
+        int manifestVersion = RawManifestVersion,
+        bool useTrimStyleClips = false)
     {
         if (actualOutputDurationMs <= 0)
             throw new ArgumentException("Actual output duration must be positive.", nameof(actualOutputDurationMs));
 
         var sanitized = SanitizeManifest(manifest.ToList());
-        var flat = FlattenSegments(sanitized);
+        var clipSpans = BuildRenderClipSpans(
+            sanitized, manifestVersion, useTrimStyleClips, sourceDurationMsByMediaId);
+
+        if (clipSpans.Count == 0)
+            return StampOutputTimelineByRawWeight(sanitized, actualOutputDurationMs, sourceDurationMsByMediaId);
+
+        AllocateOutputTimeline(clipSpans, actualOutputDurationMs);
+
+        var result = sanitized
+            .Select(g => g with { Segments = g.Segments.ToList() })
+            .ToList();
+
+        foreach (var group in sanitized)
+        {
+            var groupIndex = result.FindIndex(g => g.MediaId == group.MediaId);
+            if (groupIndex < 0)
+                continue;
+
+            var updatedSegments = result[groupIndex].Segments.ToList();
+            for (var i = 0; i < group.Segments.Count; i++)
+            {
+                var seg = group.Segments[i];
+                var outputSpan = ResolveOutputSpanForSegment(
+                    group.MediaId, seg, clipSpans, sourceDurationMsByMediaId);
+
+                var endMs = ResolveStampedSourceEndMs(
+                    group.MediaId,
+                    seg,
+                    outputSpan.SourceWeight,
+                    sourceDurationMsByMediaId);
+
+                updatedSegments[i] = new HighlightSourceSegmentMs(
+                    seg.StartMs,
+                    endMs,
+                    outputSpan.OutputStartMs,
+                    outputSpan.OutputEndMs);
+            }
+
+            result[groupIndex] = result[groupIndex] with { Segments = updatedSegments };
+        }
+
+        ValidateSegmentOrder(result);
+        return result;
+    }
+
+    private static List<HighlightSourceClipGroup> StampOutputTimelineByRawWeight(
+        IReadOnlyList<HighlightSourceClipGroup> manifest,
+        long actualOutputDurationMs,
+        IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId)
+    {
+        var flat = FlattenSegments(manifest);
         if (flat.Count == 0)
-            return sanitized;
+            return manifest.ToList();
 
         var weights = flat
             .Select(entry => ResolveSegmentWeight(entry.Group.MediaId, entry.Segment, sourceDurationMsByMediaId))
@@ -300,9 +352,7 @@ public static class HighlightVideoManifestHelper
 
         var totalWeight = weights.Sum();
         if (totalWeight <= 0)
-        {
             throw new InvalidOperationException("Cannot stamp output timeline: no segment weights.");
-        }
 
         var boundaries = new long[flat.Count + 1];
         boundaries[0] = 0;
@@ -311,12 +361,11 @@ public static class HighlightVideoManifestHelper
         long allocated = 0;
         for (var i = 0; i < flat.Count - 1; i++)
         {
-            var share = weights[i] * actualOutputDurationMs / totalWeight;
-            allocated += share;
+            allocated += weights[i] * actualOutputDurationMs / totalWeight;
             boundaries[i + 1] = allocated;
         }
 
-        var result = sanitized
+        var result = manifest
             .Select(g => g with { Segments = g.Segments.ToList() })
             .ToList();
 
@@ -328,8 +377,6 @@ public static class HighlightVideoManifestHelper
                 continue;
 
             var seg = entry.Segment;
-            var outputStart = boundaries[i];
-            var outputEnd = boundaries[i + 1];
             var endMs = ResolveStampedSourceEndMs(
                 entry.Group.MediaId,
                 seg,
@@ -341,8 +388,8 @@ public static class HighlightVideoManifestHelper
             segments[entry.SegmentIndex] = new HighlightSourceSegmentMs(
                 seg.StartMs,
                 endMs,
-                outputStart,
-                outputEnd);
+                boundaries[i],
+                boundaries[i + 1]);
             result[groupIndex] = group with { Segments = segments };
         }
 
@@ -404,7 +451,8 @@ public static class HighlightVideoManifestHelper
 
     public static List<ClipInput> ToClipInputs(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
-        int manifestVersion = RawManifestVersion)
+        int manifestVersion = RawManifestVersion,
+        bool useTrimStyleClips = false)
     {
         var clipInputs = new List<ClipInput>();
         var applyMerge = manifestVersion >= RawManifestVersion;
@@ -413,17 +461,13 @@ public static class HighlightVideoManifestHelper
         {
             ValidateSegmentOrder(new[] { group });
 
-            var isFullVideo = group.Segments.Count == 1
-                              && group.Segments[0].StartMs == 0
-                              && group.Segments[0].EndMs is null;
-
-            if (isFullVideo)
+            if (IsFullVideoGroup(group))
             {
                 clipInputs.Add(new ClipInput(group.SourceS3Key, new List<TimeClip>()));
                 continue;
             }
 
-            var timeClips = BuildTimeClipsForGroup(group.Segments, applyMerge);
+            var timeClips = BuildTimeClipsForGroup(group.Segments, applyMerge, useTrimStyleClips);
             clipInputs.Add(new ClipInput(group.SourceS3Key, timeClips));
         }
 
@@ -431,15 +475,23 @@ public static class HighlightVideoManifestHelper
     }
 
     /// <summary>
-    /// Stamped segments were already rendered; re-applying buffer/merge shrinks the output on regeneration.
-    /// Only unstamped segments (e.g. a newly appended clip) receive merge/buffer.
+    /// When <paramref name="useTrimStyleClips"/> is false, the whole group is merged/buffered the
+    /// same way as initial generation. Trim-derived manifests keep stamped pieces direct and only
+    /// merge newly appended unstamped segments.
     /// </summary>
     private static List<TimeClip> BuildTimeClipsForGroup(
         IReadOnlyList<HighlightSourceSegmentMs> segments,
-        bool applyMergeForUnstamped)
+        bool applyMergeForUnstamped,
+        bool useTrimStyleClips = false)
     {
         if (segments.Count == 0)
             return new List<TimeClip>();
+
+        if (!useTrimStyleClips && applyMergeForUnstamped)
+            return HighlightVideoClipMergeHelper.MergeAndFormatToTimeClips(segments);
+
+        if (!useTrimStyleClips)
+            return FormatSegmentsDirectly(segments);
 
         if (segments.All(IsStampedSegment))
             return FormatSegmentsDirectly(segments);
@@ -467,6 +519,113 @@ public static class HighlightVideoManifestHelper
         }
 
         return timeClips;
+    }
+
+    private static bool IsFullVideoGroup(HighlightSourceClipGroup group) =>
+        group.Segments.Count == 1
+        && group.Segments[0].StartMs == 0
+        && group.Segments[0].EndMs is null;
+
+    private static List<RenderClipSpan> BuildRenderClipSpans(
+        IReadOnlyList<HighlightSourceClipGroup> manifest,
+        int manifestVersion,
+        bool useTrimStyleClips,
+        IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId)
+    {
+        var applyMerge = manifestVersion >= RawManifestVersion;
+        var spans = new List<RenderClipSpan>();
+
+        foreach (var group in manifest)
+        {
+            if (IsFullVideoGroup(group))
+            {
+                if (sourceDurationMsByMediaId == null
+                    || !sourceDurationMsByMediaId.TryGetValue(group.MediaId, out var sourceDurationMs)
+                    || sourceDurationMs <= 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Source duration is unknown for full-length source clip {group.MediaId}.");
+                }
+
+                spans.Add(new RenderClipSpan(group.MediaId, 0, sourceDurationMs, 0, 0));
+                continue;
+            }
+
+            var clips = BuildTimeClipsForGroup(group.Segments, applyMerge, useTrimStyleClips);
+            foreach (var clip in clips)
+            {
+                var start = ParseMediaConvertTimecode(clip.StartTimecode);
+                var end = ParseMediaConvertTimecode(clip.EndTimecode);
+                if (end <= start)
+                    continue;
+
+                spans.Add(new RenderClipSpan(group.MediaId, start, end, 0, 0));
+            }
+        }
+
+        return spans;
+    }
+
+    private static void AllocateOutputTimeline(List<RenderClipSpan> spans, long actualOutputDurationMs)
+    {
+        var totalSourceMs = spans.Sum(s => s.SourceEndMs - s.SourceStartMs);
+        if (totalSourceMs <= 0)
+            throw new InvalidOperationException("Cannot stamp output timeline: no render clip duration.");
+
+        long cursor = 0;
+        for (var i = 0; i < spans.Count; i++)
+        {
+            var sourceDuration = spans[i].SourceEndMs - spans[i].SourceStartMs;
+            long outputEnd;
+            if (i == spans.Count - 1)
+            {
+                outputEnd = actualOutputDurationMs;
+            }
+            else
+            {
+                outputEnd = cursor + sourceDuration * actualOutputDurationMs / totalSourceMs;
+                if (outputEnd <= cursor)
+                    outputEnd = cursor + 1;
+            }
+
+            spans[i] = spans[i] with { OutputStartMs = cursor, OutputEndMs = outputEnd };
+            cursor = outputEnd;
+        }
+    }
+
+    private static (long OutputStartMs, long OutputEndMs, long SourceWeight) ResolveOutputSpanForSegment(
+        Guid mediaId,
+        HighlightSourceSegmentMs segment,
+        IReadOnlyList<RenderClipSpan> clipSpans,
+        IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId)
+    {
+        var segmentEndMs = segment.EndMs
+            ?? sourceDurationMsByMediaId?.GetValueOrDefault(mediaId)
+            ?? segment.StartMs;
+
+        RenderClipSpan? best = null;
+        long bestOverlap = 0;
+
+        foreach (var span in clipSpans.Where(s => s.MediaId == mediaId))
+        {
+            var overlapStart = Math.Max(segment.StartMs, span.SourceStartMs);
+            var overlapEnd = Math.Min(segmentEndMs, span.SourceEndMs);
+            var overlap = overlapEnd - overlapStart;
+            if (overlap > bestOverlap)
+            {
+                bestOverlap = overlap;
+                best = span;
+            }
+        }
+
+        if (best is null || bestOverlap <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot map segment on media {mediaId} to a render clip span.");
+        }
+
+        var sourceWeight = Math.Max(1, segmentEndMs - segment.StartMs);
+        return (best.OutputStartMs, best.OutputEndMs, sourceWeight);
     }
 
     private static bool IsStampedSegment(HighlightSourceSegmentMs segment) =>
@@ -672,6 +831,13 @@ public static class HighlightVideoManifestHelper
     private sealed record SourcePiece(
         Guid MediaId,
         string SourceS3Key,
+        long SourceStartMs,
+        long SourceEndMs,
+        long OutputStartMs,
+        long OutputEndMs);
+
+    private sealed record RenderClipSpan(
+        Guid MediaId,
         long SourceStartMs,
         long SourceEndMs,
         long OutputStartMs,

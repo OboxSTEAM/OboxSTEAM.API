@@ -535,11 +535,17 @@ public class PersonalVideoService : IPersonalVideoService
                 {
                     try
                     {
-                        var manifest = HighlightVideoManifestHelper.DeserializeManifest(item.SourceSegmentsJson);
-                        var mediaIds = manifest.Select(g => g.MediaId);
+                        var parsed = HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson);
+                        var mediaIds = parsed.Groups.Select(g => g.MediaId);
                         var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(mediaIds);
+                        var useTrimStyleClips = item.GenerationKind == HighlightVideoGenerationKind.Trim
+                            || await IsTrimDerivedManifestChainAsync(item);
                         var stamped = HighlightVideoManifestHelper.StampOutputTimeline(
-                            manifest, item.DurationMs.Value, sourceDurations);
+                            parsed.Groups,
+                            item.DurationMs.Value,
+                            sourceDurations,
+                            parsed.Version,
+                            useTrimStyleClips);
                         item.SourceSegmentsJson = HighlightVideoManifestHelper.SerializeManifest(stamped);
                     }
                     catch (Exception stampEx)
@@ -726,7 +732,9 @@ public class PersonalVideoService : IPersonalVideoService
             return;
         }
 
-        var clipInputs = HighlightVideoManifestHelper.ToClipInputs(parsed.Groups, parsed.Version);
+        var useTrimStyleClips = await IsTrimDerivedManifestChainAsync(item);
+        var clipInputs = HighlightVideoManifestHelper.ToClipInputs(
+            parsed.Groups, parsed.Version, useTrimStyleClips);
         if (clipInputs.Count == 0)
         {
             item.Status = HighlightVideoStatus.Failed;
@@ -743,6 +751,24 @@ public class PersonalVideoService : IPersonalVideoService
         item.Status = HighlightVideoStatus.Processing;
         item.FailureReason = null;
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task<bool> IsTrimDerivedManifestChainAsync(HighlightVideoItem item)
+    {
+        var parentId = item.ParentItemId;
+        while (parentId is Guid id)
+        {
+            var parent = await _unitOfWork.HighlightVideoItems.GetByIdAsync(id);
+            if (parent == null || parent.IsDeleted)
+                break;
+
+            if (parent.GenerationKind == HighlightVideoGenerationKind.Trim)
+                return true;
+
+            parentId = parent.ParentItemId;
+        }
+
+        return false;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
