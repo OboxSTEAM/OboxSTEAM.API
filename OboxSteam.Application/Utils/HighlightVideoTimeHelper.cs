@@ -55,9 +55,9 @@ public static partial class HighlightVideoTimeHelper
     }
 
     /// <summary>
-    /// Computes keep segments as the complement of exclude ranges within [0, durationMs].
+    /// Normalizes exclude ranges to [0, durationMs] and merges overlaps/adjacent spans.
     /// </summary>
-    public static IReadOnlyList<(long StartMs, long EndMs)> ComputeKeepSegments(
+    public static IReadOnlyList<(long StartMs, long EndMs)> NormalizeMergedExcludeRanges(
         long durationMs,
         IReadOnlyList<(long StartMs, long EndMs)> excludeRanges)
     {
@@ -82,6 +82,18 @@ public static partial class HighlightVideoTimeHelper
 
         if (mergedExcludes.Count == 0)
             throw ErrorHelper.BadRequest("Exclude ranges are invalid or empty after normalization.");
+
+        return mergedExcludes;
+    }
+
+    /// <summary>
+    /// Computes keep segments as the complement of exclude ranges within [0, durationMs].
+    /// </summary>
+    public static IReadOnlyList<(long StartMs, long EndMs)> ComputeKeepSegments(
+        long durationMs,
+        IReadOnlyList<(long StartMs, long EndMs)> excludeRanges)
+    {
+        var mergedExcludes = NormalizeMergedExcludeRanges(durationMs, excludeRanges);
 
         var keep = new List<(long StartMs, long EndMs)>();
         var cursor = 0L;

@@ -535,7 +535,8 @@ public class PersonalVideoService : IPersonalVideoService
                 item.DurationMs = durationMs ?? item.DurationMs;
                 item.Status = HighlightVideoStatus.Completed;
 
-                if (!string.IsNullOrWhiteSpace(item.SourceSegmentsJson) && item.DurationMs is > 0)
+                if (!string.IsNullOrWhiteSpace(item.SourceSegmentsJson) && item.DurationMs is > 0
+                    && item.GenerationKind != HighlightVideoGenerationKind.Trim)
                 {
                     try
                     {
@@ -712,7 +713,19 @@ public class PersonalVideoService : IPersonalVideoService
 
     private async Task ProcessManifestRegenerationAsync(HighlightVideoItem item, PersonalVideoJob job)
     {
-        if (string.IsNullOrWhiteSpace(item.SourceSegmentsJson))
+        ParsedHighlightManifest? regenManifest = null;
+        try
+        {
+            regenManifest = await BuildRegenerationManifestAsync(item);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[PersonalVideoService] Failed to rebuild regeneration manifest for item {Id}; using stored manifest.",
+                item.Id);
+        }
+
+        if (regenManifest == null && string.IsNullOrWhiteSpace(item.SourceSegmentsJson))
         {
             item.Status = HighlightVideoStatus.Failed;
             item.FailureReason = "Manifest regeneration is missing source segment data.";
@@ -723,7 +736,7 @@ public class PersonalVideoService : IPersonalVideoService
         ParsedHighlightManifest parsed;
         try
         {
-            parsed = HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson);
+            parsed = regenManifest ?? HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson!);
             HighlightVideoManifestHelper.ValidateSegmentOrder(parsed.Groups);
         }
         catch (Exception ex)
@@ -773,6 +786,106 @@ public class PersonalVideoService : IPersonalVideoService
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Rebuilds manifest for trim-derived regeneration from the initial stamped manifest and
+    /// trim exclude ranges, then merges unstamped add-segment clips from the current item.
+    /// </summary>
+    private async Task<ParsedHighlightManifest?> BuildRegenerationManifestAsync(HighlightVideoItem item)
+    {
+        if (!await IsTrimDerivedManifestChainAsync(item))
+            return null;
+
+        var trimAncestor = await FindTrimAncestorAsync(item);
+        var initialAncestor = await FindInitialAncestorAsync(item);
+        if (trimAncestor == null
+            || initialAncestor == null
+            || string.IsNullOrWhiteSpace(initialAncestor.SourceSegmentsJson)
+            || string.IsNullOrWhiteSpace(trimAncestor.TrimExcludeRangesJson)
+            || initialAncestor.DurationMs is not > 0)
+        {
+            return null;
+        }
+
+        var excludeRanges = ParseTrimExcludeRanges(trimAncestor.TrimExcludeRangesJson);
+        var initialParsed = HighlightVideoManifestHelper.ParseManifest(initialAncestor.SourceSegmentsJson);
+
+        IReadOnlyDictionary<Guid, long>? fullVideoDurations = null;
+        if (!HighlightVideoManifestHelper.HasStampedOutputTimeline(initialParsed.Groups))
+        {
+            fullVideoDurations = HighlightVideoManifestHelper.ResolveFullVideoOutputDurations(
+                initialParsed.Groups, initialAncestor.DurationMs.Value);
+        }
+
+        var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(
+            initialParsed.Groups.Select(g => g.MediaId));
+
+        var trimmedGroups = HighlightVideoManifestHelper.TransformForOutputTrim(
+            initialParsed.Groups,
+            initialAncestor.DurationMs.Value,
+            excludeRanges,
+            fullVideoDurations,
+            initialParsed.Version,
+            sourceDurations);
+
+        var currentParsed = HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson!);
+        var mergedGroups = HighlightVideoManifestHelper.MergeTrimManifestWithUnstampedSegments(
+            trimmedGroups, currentParsed.Groups);
+
+        return new ParsedHighlightManifest(initialParsed.Version, mergedGroups);
+    }
+
+    private async Task<HighlightVideoItem?> FindInitialAncestorAsync(HighlightVideoItem item)
+    {
+        var current = item;
+        while (true)
+        {
+            if (current.GenerationKind == HighlightVideoGenerationKind.Initial)
+                return current;
+
+            if (current.ParentItemId is not Guid parentId)
+                return null;
+
+            var parent = await _unitOfWork.HighlightVideoItems.GetByIdAsync(parentId);
+            if (parent == null || parent.IsDeleted)
+                return null;
+
+            current = parent;
+        }
+    }
+
+    private async Task<HighlightVideoItem?> FindTrimAncestorAsync(HighlightVideoItem item)
+    {
+        var parentId = item.ParentItemId;
+        while (parentId is Guid id)
+        {
+            var parent = await _unitOfWork.HighlightVideoItems.GetByIdAsync(id);
+            if (parent == null || parent.IsDeleted)
+                break;
+
+            if (parent.GenerationKind == HighlightVideoGenerationKind.Trim)
+                return parent;
+
+            parentId = parent.ParentItemId;
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<(long StartMs, long EndMs)> ParseTrimExcludeRanges(string trimExcludeRangesJson)
+    {
+        var ranges = JsonSerializer.Deserialize<List<TimeRangeDto>>(trimExcludeRangesJson)
+                     ?? throw new InvalidOperationException("Trim exclude ranges are missing.");
+
+        if (ranges.Count == 0)
+            throw new InvalidOperationException("Trim exclude ranges are empty.");
+
+        return ranges
+            .Select(r => (
+                StartMs: HighlightVideoTimeHelper.ParseTimecodeToMs(r.Start),
+                EndMs: HighlightVideoTimeHelper.ParseTimecodeToMs(r.End)))
+            .ToList();
     }
 
     // ─────────────────────────────────────────────────────────────────────────

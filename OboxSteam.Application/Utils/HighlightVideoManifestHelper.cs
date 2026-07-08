@@ -144,6 +144,33 @@ public static class HighlightVideoManifestHelper
         return SanitizeManifest(result);
     }
 
+    /// <summary>
+    /// Re-applies trim mapping from <paramref name="trimmedManifest"/> and appends any unstamped
+    /// segments (e.g. from add-segment) from <paramref name="currentManifest"/>.
+    /// </summary>
+    public static List<HighlightSourceClipGroup> MergeTrimManifestWithUnstampedSegments(
+        IReadOnlyList<HighlightSourceClipGroup> trimmedManifest,
+        IReadOnlyList<HighlightSourceClipGroup> currentManifest)
+    {
+        var result = trimmedManifest
+            .Select(CloneGroupPreservingStamps)
+            .ToList();
+
+        foreach (var group in currentManifest)
+        {
+            foreach (var segment in group.Segments.Where(s => !IsStampedOutputSegment(s)))
+            {
+                result = InsertSegmentsIntoManifest(result, group.MediaId, group.SourceS3Key, new[] { segment });
+            }
+        }
+
+        ValidateSegmentOrder(result);
+        return result;
+    }
+
+    public static bool IsStampedOutputSegment(HighlightSourceSegmentMs segment) =>
+        segment.OutputStartMs is >= 0 && segment.OutputEndMs is > 0;
+
     private static HighlightSourceClipGroup CloneGroupPreservingStamps(HighlightSourceClipGroup group) =>
         group with
         {
@@ -252,7 +279,7 @@ public static class HighlightVideoManifestHelper
         var keepSegments = HighlightVideoTimeHelper.ComputeKeepSegments(outputDurationMs, excludeRanges);
         var pieces = HasStampedOutputTimeline(manifest)
             ? BuildTrimPiecesFromRenderClipSpans(
-                manifest, keepSegments, outputDurationMs, manifestVersion, sourceDurationMsByMediaId, useTrimStyleClips)
+                manifest, excludeRanges, outputDurationMs, manifestVersion, sourceDurationMsByMediaId, useTrimStyleClips)
             : BuildTrimPiecesFromLegacyBlocks(manifest, keepSegments, fullVideoOutputDurationMsByMediaId, outputDurationMs);
 
         var transformed = RebuildManifestFromPieces(pieces, manifest);
@@ -266,7 +293,7 @@ public static class HighlightVideoManifestHelper
     /// </summary>
     private static List<SourcePiece> BuildTrimPiecesFromRenderClipSpans(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
-        IReadOnlyList<(long StartMs, long EndMs)> keepSegments,
+        IReadOnlyList<(long StartMs, long EndMs)> excludeRanges,
         long outputDurationMs,
         int manifestVersion,
         IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId,
@@ -277,26 +304,24 @@ public static class HighlightVideoManifestHelper
             return new List<SourcePiece>();
 
         AssignOutputTimelineToRenderClipSpans(spans, manifest, outputDurationMs);
+        RescaleRenderClipOutputTimeline(spans, outputDurationMs);
 
+        var mergedExcludes = HighlightVideoTimeHelper.NormalizeMergedExcludeRanges(outputDurationMs, excludeRanges);
         var s3KeyByMediaId = manifest.ToDictionary(g => g.MediaId, g => g.SourceS3Key);
         var pieces = new List<SourcePiece>();
 
-        foreach (var (keepStart, keepEnd) in keepSegments)
+        foreach (var span in spans)
         {
-            foreach (var span in spans)
+            foreach (var (keepStart, keepEnd) in SubtractExcludesFromOutputRange(
+                         span.OutputStartMs, span.OutputEndMs, mergedExcludes))
             {
-                var intersectStart = Math.Max(keepStart, span.OutputStartMs);
-                var intersectEnd = Math.Min(keepEnd, span.OutputEndMs);
-                if (intersectEnd <= intersectStart)
-                    continue;
-
                 var outputSpanMs = span.OutputEndMs - span.OutputStartMs;
                 var sourceSpanMs = span.SourceEndMs - span.SourceStartMs;
                 if (outputSpanMs <= 0 || sourceSpanMs <= 0)
                     continue;
 
-                var offsetStart = intersectStart - span.OutputStartMs;
-                var offsetEnd = intersectEnd - span.OutputStartMs;
+                var offsetStart = keepStart - span.OutputStartMs;
+                var offsetEnd = keepEnd - span.OutputStartMs;
                 var sourceStart = span.SourceStartMs + offsetStart * sourceSpanMs / outputSpanMs;
                 var sourceEnd = span.SourceStartMs + offsetEnd * sourceSpanMs / outputSpanMs;
                 if (sourceEnd <= sourceStart)
@@ -307,12 +332,75 @@ public static class HighlightVideoManifestHelper
                     s3KeyByMediaId[span.MediaId],
                     sourceStart,
                     sourceEnd,
-                    intersectStart,
-                    intersectEnd));
+                    keepStart,
+                    keepEnd));
             }
         }
 
         return pieces;
+    }
+
+    /// <summary>
+    /// Stretches stamped render-clip output spans so the last span ends at the actual video duration.
+    /// Exclude positions from the UI are on the encoded file; stamps can drift from keyframe rounding.
+    /// </summary>
+    private static void RescaleRenderClipOutputTimeline(List<RenderClipSpan> spans, long outputDurationMs)
+    {
+        if (spans.Count == 0 || outputDurationMs <= 0)
+            return;
+
+        var maxEnd = spans.Max(s => s.OutputEndMs);
+        if (maxEnd <= 0)
+        {
+            AllocateOutputTimeline(spans, outputDurationMs);
+            return;
+        }
+
+        if (maxEnd != outputDurationMs)
+        {
+            for (var i = 0; i < spans.Count; i++)
+            {
+                var span = spans[i];
+                spans[i] = span with
+                {
+                    OutputStartMs = span.OutputStartMs * outputDurationMs / maxEnd,
+                    OutputEndMs = span.OutputEndMs * outputDurationMs / maxEnd
+                };
+            }
+        }
+
+        spans[0] = spans[0] with { OutputStartMs = 0 };
+        spans[^1] = spans[^1] with { OutputEndMs = outputDurationMs };
+    }
+
+    private static List<(long StartMs, long EndMs)> SubtractExcludesFromOutputRange(
+        long rangeStartMs,
+        long rangeEndMs,
+        IReadOnlyList<(long StartMs, long EndMs)> mergedExcludes)
+    {
+        var kept = new List<(long StartMs, long EndMs)> { (rangeStartMs, rangeEndMs) };
+
+        foreach (var (excludeStart, excludeEnd) in mergedExcludes)
+        {
+            var next = new List<(long StartMs, long EndMs)>();
+            foreach (var (keepStart, keepEnd) in kept)
+            {
+                if (excludeEnd <= keepStart || excludeStart >= keepEnd)
+                {
+                    next.Add((keepStart, keepEnd));
+                    continue;
+                }
+
+                if (excludeStart > keepStart)
+                    next.Add((keepStart, excludeStart));
+                if (excludeEnd < keepEnd)
+                    next.Add((excludeEnd, keepEnd));
+            }
+
+            kept = next;
+        }
+
+        return kept.Where(r => r.EndMs > r.StartMs).ToList();
     }
 
     /// <summary>
@@ -759,7 +847,7 @@ public static class HighlightVideoManifestHelper
     }
 
     private static bool IsStampedSegment(HighlightSourceSegmentMs segment) =>
-        segment.OutputStartMs is >= 0 && segment.OutputEndMs is > 0;
+        IsStampedOutputSegment(segment);
 
     private static List<TimeClip> FormatSegmentsDirectly(IReadOnlyList<HighlightSourceSegmentMs> segments) =>
         segments
