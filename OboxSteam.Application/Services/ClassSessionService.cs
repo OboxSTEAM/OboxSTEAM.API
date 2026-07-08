@@ -13,11 +13,16 @@ namespace OboxSteam.Application.Services;
 public sealed class ClassSessionService : IClassSessionService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IClaimsService _claimsService;
     private readonly ILogger<ClassSessionService> _logger;
 
-    public ClassSessionService(IUnitOfWork unitOfWork, ILogger<ClassSessionService> logger)
+    public ClassSessionService(
+        IUnitOfWork unitOfWork,
+        IClaimsService claimsService,
+        ILogger<ClassSessionService> logger)
     {
         _unitOfWork = unitOfWork;
+        _claimsService = claimsService;
         _logger = logger;
     }
 
@@ -147,6 +152,118 @@ public sealed class ClassSessionService : IClassSessionService
             Status = entity.Status,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
+        };
+    }
+
+    public async Task<ClassSessionWithStudentsResponseDto> GetClassSessionWithStudentsAsync(Guid id)
+    {
+        _logger.LogInformation("[GetClassSessionWithStudentsAsync] Fetching class session roster for Id: {Id}", id);
+
+        var entity = await _unitOfWork.ClassSessions.GetByIdAsync(id);
+        ClassSessionValidator.ValidateClassSessionExists(entity, id);
+
+        var session = entity!;
+
+        var currentUser = await SessionAttendanceValidator.EnsureCanViewSessionRosterAsync(
+            _unitOfWork,
+            _claimsService,
+            session);
+
+        var classEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ClassId == session.ClassId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        if (currentUser.Role == RoleType.Student)
+        {
+            classEnrollments = classEnrollments
+                .Where(ce => ce.StudentId == currentUser.Id)
+                .ToList();
+        }
+
+        var attendances = await _unitOfWork.SessionAttendances.GetAllAsync(
+            sa => sa.ClassSessionId == id && !sa.IsDeleted);
+        var attendanceByStudentId = attendances.ToDictionary(sa => sa.StudentId);
+
+        var studentIds = classEnrollments.Select(ce => ce.StudentId).Distinct().ToList();
+        var students = studentIds.Any()
+            ? await _unitOfWork.Users.GetAllAsync(u => studentIds.Contains(u.Id) && !u.IsDeleted)
+            : new List<User>();
+
+        var studentsById = students.ToDictionary(u => u.Id);
+
+        var programEnrollmentIds = classEnrollments.Select(ce => ce.ProgramEnrollmentId).Distinct().ToList();
+        var moduleEnrollments = studentIds.Any()
+            ? await _unitOfWork.ModuleEnrollments.GetAllAsync(
+                me => studentIds.Contains(me.StudentId)
+                      && me.ModuleId == session.ModuleId
+                      && me.ProgramEnrollmentId.HasValue
+                      && programEnrollmentIds.Contains(me.ProgramEnrollmentId.Value)
+                      && me.Status == EnrollmentStatus.Active
+                      && !me.IsDeleted)
+            : new List<ModuleEnrollment>();
+
+        var moduleEnrollmentByStudentAndProgram = moduleEnrollments
+            .Where(me => me.ProgramEnrollmentId.HasValue)
+            .ToDictionary(me => (me.StudentId, me.ProgramEnrollmentId!.Value));
+
+        var studentDtos = classEnrollments
+            .Where(ce => studentsById.ContainsKey(ce.StudentId))
+            .OrderBy(ce => studentsById[ce.StudentId].FullName)
+            .ThenBy(ce => studentsById[ce.StudentId].Code)
+            .Select(ce =>
+            {
+                var student = studentsById[ce.StudentId];
+                attendanceByStudentId.TryGetValue(ce.StudentId, out var attendance);
+
+                var moduleEnrollmentId = attendance?.ModuleEnrollmentId
+                    ?? (moduleEnrollmentByStudentAndProgram.TryGetValue(
+                            (ce.StudentId, ce.ProgramEnrollmentId),
+                            out var moduleEnrollment)
+                        ? moduleEnrollment.Id
+                        : Guid.Empty);
+
+                return new ClassSessionStudentResponseDto
+                {
+                    ClassSessionId = session.Id,
+                    StudentId = student.Id,
+                    StudentCode = student.Code,
+                    StudentName = student.FullName,
+                    Email = student.Email,
+                    Phone = student.Phone,
+                    AvatarUrl = student.AvatarUrl,
+                    ModuleEnrollmentId = moduleEnrollmentId,
+                    AttendanceStatus = attendance?.Status ?? AttendanceStatus.Expected,
+                    CheckedInAt = attendance?.CheckedInAt,
+                    RecordedBy = attendance?.RecordedBy,
+                };
+            })
+            .ToList();
+
+        _logger.LogInformation(
+            "[GetClassSessionWithStudentsAsync] Class session {Id} roster retrieved — {StudentCount} student(s).",
+            id,
+            studentDtos.Count);
+
+        return new ClassSessionWithStudentsResponseDto
+        {
+            Id = session.Id,
+            ClassId = session.ClassId,
+            ModuleId = session.ModuleId,
+            ActivityId = session.ActivityId,
+            AssignmentId = session.AssignmentId,
+            SessionKind = session.SessionKind,
+            Title = session.Title,
+            Description = session.Description,
+            StartTime = session.StartTime,
+            EndTime = session.EndTime,
+            Location = session.Location,
+            MaxCapacity = session.MaxCapacity,
+            RequiresAttendance = session.RequiresAttendance,
+            Status = session.Status,
+            CreatedAt = session.CreatedAt,
+            UpdatedAt = session.UpdatedAt,
+            Students = studentDtos,
         };
     }
 

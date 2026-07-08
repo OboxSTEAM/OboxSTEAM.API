@@ -32,7 +32,7 @@ public sealed class SessionAttendanceController : ControllerBase
     [Authorize(Roles = "Student,Mentor,Manager,SuperAdmin")]
     [SwaggerOperation(
         Summary = "Get session attendance roster",
-        Description = "Returns attendance for a class session. Students receive only their own record; "
+        Description = "Returns attendance records for a class session. Students receive only their own record; "
             + "mentors, managers, and super admins receive the full roster.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<SessionAttendanceResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
@@ -46,7 +46,8 @@ public sealed class SessionAttendanceController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
         [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
         [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
-        [FromQuery, SwaggerParameter(Description = "Filter by attendance status (optional)")] AttendanceStatus? status = null)
+        [FromQuery, SwaggerParameter(Description = "Filter by attendance status (optional)")] AttendanceStatus? status = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by student ID (optional)")] Guid? studentId = null)
     {
         if (page < 1 || pageSize < 1)
         {
@@ -65,7 +66,8 @@ public sealed class SessionAttendanceController : ControllerBase
             isDescending,
             page,
             pageSize,
-            status);
+            status,
+            studentId);
 
         return Ok(ApiResult<Pagination<SessionAttendanceResponseDto>>.Success(
             result,
@@ -74,51 +76,15 @@ public sealed class SessionAttendanceController : ControllerBase
     }
 
     // =========================================================================
-    // GET BY ID  —  GET /api/classes/{classId}/sessions/{sessionId}/attendance/{id}
+    // UPDATE (UPSERT BY STUDENT)
+    // PUT /api/classes/{classId}/sessions/{sessionId}/attendance/students/{studentId}
     // =========================================================================
 
-    [HttpGet("{id:guid}")]
-    [Authorize(Roles = "Student,Mentor,Manager,SuperAdmin")]
-    [SwaggerOperation(
-        Summary = "Get session attendance by ID",
-        Description = "Returns one attendance record. Students may only retrieve their own row.")]
-    [ProducesResponseType(typeof(ApiResult<SessionAttendanceResponseDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> GetSessionAttendanceById(
-        [FromRoute] Guid classId,
-        [FromRoute] Guid sessionId,
-        [FromRoute] Guid id)
-    {
-        var classSession = await _classSessionService.GetClassSessionByIdAsync(sessionId);
-        if (classSession.ClassId != classId)
-        {
-            return NotFound(ApiResult<object>.Failure("404", $"Class session with ID '{sessionId}' not found."));
-        }
-
-        var result = await _sessionAttendanceService.GetSessionAttendanceByIdAsync(id);
-
-        if (result.ClassSessionId != sessionId)
-        {
-            return NotFound(ApiResult<object>.Failure("404", $"Session attendance with ID '{id}' not found."));
-        }
-
-        return Ok(ApiResult<SessionAttendanceResponseDto>.Success(
-            result,
-            "200",
-            "Session attendance retrieved successfully."));
-    }
-
-    // =========================================================================
-    // UPDATE  —  PUT /api/classes/{classId}/sessions/{sessionId}/attendance/{id}
-    // =========================================================================
-
-    [HttpPut("{id:guid}")]
+    [HttpPut("students/{studentId:guid}")]
     [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
     [SwaggerOperation(
-        Summary = "Update session attendance",
-        Description = "Records or updates attendance for a roster entry. Requires Mentor, Manager, or SuperAdmin role.")]
+        Summary = "Update session attendance (by student)",
+        Description = "Upserts one student's attendance for a class session. Requires Mentor, Manager, or SuperAdmin role.")]
     [ProducesResponseType(typeof(ApiResult<SessionAttendanceResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -127,7 +93,7 @@ public sealed class SessionAttendanceController : ControllerBase
     public async Task<IActionResult> UpdateSessionAttendance(
         [FromRoute] Guid classId,
         [FromRoute] Guid sessionId,
-        [FromRoute] Guid id,
+        [FromRoute] Guid studentId,
         [FromBody, SwaggerParameter("Attendance update data")] UpdateSessionAttendanceRequestDto dto)
     {
         if (dto == null)
@@ -135,59 +101,11 @@ public sealed class SessionAttendanceController : ControllerBase
             return BadRequest(ApiResult<object>.Failure("400", "Session attendance update data is required."));
         }
 
-        var classSession = await _classSessionService.GetClassSessionByIdAsync(sessionId);
-        if (classSession.ClassId != classId)
-        {
-            return NotFound(ApiResult<object>.Failure("404", $"Class session with ID '{sessionId}' not found."));
-        }
-
-        var existing = await _sessionAttendanceService.GetSessionAttendanceByIdAsync(id);
-        if (existing.ClassSessionId != sessionId)
-        {
-            return NotFound(ApiResult<object>.Failure("404", $"Session attendance with ID '{id}' not found."));
-        }
-
-        var result = await _sessionAttendanceService.UpdateSessionAttendanceAsync(id, dto);
+        var result = await _sessionAttendanceService.UpdateSessionAttendanceAsync(classId, sessionId, studentId, dto);
 
         return Ok(ApiResult<SessionAttendanceResponseDto>.Success(
             result,
             "200",
             "Session attendance updated successfully."));
-    }
-
-    // =========================================================================
-    // GENERATE ROSTER  —  POST /api/classes/{classId}/sessions/{sessionId}/attendance/generate
-    // =========================================================================
-
-    [HttpPost("generate")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
-    [SwaggerOperation(
-        Summary = "Generate session attendance roster",
-        Description = "Creates Expected attendance rows for enrolled students in the session's class cohort. "
-            + "Requires Mentor, Manager, or SuperAdmin role.")]
-    [ProducesResponseType(typeof(ApiResult<List<SessionAttendanceResponseDto>>), 201)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> GenerateSessionAttendanceRoster(
-        [FromRoute] Guid classId,
-        [FromRoute] Guid sessionId)
-    {
-        var classSession = await _classSessionService.GetClassSessionByIdAsync(sessionId);
-        if (classSession.ClassId != classId)
-        {
-            return NotFound(ApiResult<object>.Failure("404", $"Class session with ID '{sessionId}' not found."));
-        }
-
-        var result = await _sessionAttendanceService.GenerateSessionAttendanceRosterAsync(sessionId);
-
-        return CreatedAtAction(
-            nameof(GetSessionAttendances),
-            new { classId, sessionId },
-            ApiResult<List<SessionAttendanceResponseDto>>.Success(
-                result,
-                "201",
-                "Session attendance roster generated successfully."));
     }
 }

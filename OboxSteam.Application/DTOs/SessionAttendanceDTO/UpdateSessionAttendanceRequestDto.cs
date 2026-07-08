@@ -12,10 +12,4 @@ public class UpdateSessionAttendanceRequestDto
 {
     [Required(ErrorMessage = "Status is required.")]
     public AttendanceStatus Status { get; set; }
-
-    /// <summary>
-    /// Optional check-in timestamp override. When null, the service may set it automatically
-    /// for <see cref="AttendanceStatus.Present"/> or <see cref="AttendanceStatus.Late"/>.
-    /// </summary>
-    public DateTime? CheckedInAt { get; set; }
 }
