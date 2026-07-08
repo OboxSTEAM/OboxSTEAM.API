@@ -20,6 +20,8 @@ public interface IClassSessionService
 
     Task<ClassSessionResponseDto> GetClassSessionByIdAsync(Guid id);
 
+    Task<ClassSessionWithStudentsResponseDto> GetClassSessionWithStudentsAsync(Guid id);
+
     Task<ClassSessionResponseDto> CreateClassSessionAsync(CreateClassSessionRequestDto request);
 
     Task<ClassSessionResponseDto> UpdateClassSessionAsync(Guid id, UpdateClassSessionRequestDto request);

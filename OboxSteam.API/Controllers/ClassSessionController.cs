@@ -67,6 +67,37 @@ public class ClassSessionController : ControllerBase
     }
 
     // =========================================================================
+    // GET WITH STUDENTS  —  GET /api/classes/{classId}/sessions/with-students/{sessionId}
+    // =========================================================================
+
+    [HttpGet("with-students/{sessionId:guid}")]
+    [Authorize(Roles = "Student,Mentor,Manager,SuperAdmin")]
+    [SwaggerOperation(
+        Summary = "Get class session with student roster",
+        Description = "Retrieve class session details including attendance roster. Students receive only their own row; "
+            + "mentors, managers, and super admins receive the full roster.")]
+    [ProducesResponseType(typeof(ApiResult<ClassSessionWithStudentsResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetClassSessionWithStudents(
+        [FromRoute] Guid classId,
+        [FromRoute] Guid sessionId)
+    {
+        var result = await _classSessionService.GetClassSessionWithStudentsAsync(sessionId);
+
+        if (result.ClassId != classId)
+        {
+            return NotFound(ApiResult<object>.Failure("404", $"Class session with ID '{sessionId}' not found."));
+        }
+
+        return Ok(ApiResult<ClassSessionWithStudentsResponseDto>.Success(
+            result,
+            "200",
+            "Class session students retrieved successfully."));
+    }
+
+    // =========================================================================
     // GET BY ID  —  GET /api/classes/{classId}/sessions/{id}
     // =========================================================================
 

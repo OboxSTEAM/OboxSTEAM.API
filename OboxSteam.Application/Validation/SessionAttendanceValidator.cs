@@ -21,14 +21,6 @@ public static class SessionAttendanceValidator
     public const string UpdateSessionAttendanceForbiddenMessage =
         "Only Mentor, Manager, and SuperAdmin can update session attendance.";
 
-    public const string GenerateRosterForbiddenMessage =
-        "Only Mentor, Manager, and SuperAdmin can generate session attendance rosters.";
-
-    public static void ValidatePagination(int page, int pageSize)
-    {
-        ClassSessionValidator.ValidatePagination(page, pageSize);
-    }
-
     public static void ValidateSessionAttendanceExists(SessionAttendance? entity, Guid id)
     {
         if (entity == null || entity.IsDeleted)
@@ -126,7 +118,6 @@ public static class SessionAttendanceValidator
     public static async Task<User> EnsureCanUpdateSessionAttendanceAsync(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
-        SessionAttendance attendance,
         ClassSession classSession)
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
@@ -143,27 +134,6 @@ public static class SessionAttendanceValidator
         }
 
         throw ErrorHelper.Forbidden(UpdateSessionAttendanceForbiddenMessage);
-    }
-
-    public static async Task<User> EnsureCanGenerateRosterAsync(
-        IUnitOfWork unitOfWork,
-        IClaimsService claimsService,
-        ClassSession classSession)
-    {
-        var user = await GetCurrentUserAsync(unitOfWork, claimsService);
-
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
-        {
-            return user;
-        }
-
-        if (user.Role == RoleType.Mentor)
-        {
-            await EnsureMentorCanManageClassSessionAsync(unitOfWork, user.Id, classSession);
-            return user;
-        }
-
-        throw ErrorHelper.Forbidden(GenerateRosterForbiddenMessage);
     }
 
     public static async Task EnsureMentorCanManageClassSessionAsync(
