@@ -252,7 +252,7 @@ public static class HighlightVideoManifestHelper
         var keepSegments = HighlightVideoTimeHelper.ComputeKeepSegments(outputDurationMs, excludeRanges);
         var pieces = HasStampedOutputTimeline(manifest)
             ? BuildTrimPiecesFromRenderClipSpans(
-                manifest, keepSegments, manifestVersion, sourceDurationMsByMediaId, useTrimStyleClips)
+                manifest, keepSegments, outputDurationMs, manifestVersion, sourceDurationMsByMediaId, useTrimStyleClips)
             : BuildTrimPiecesFromLegacyBlocks(manifest, keepSegments, fullVideoOutputDurationMsByMediaId, outputDurationMs);
 
         var transformed = RebuildManifestFromPieces(pieces, manifest);
@@ -267,11 +267,17 @@ public static class HighlightVideoManifestHelper
     private static List<SourcePiece> BuildTrimPiecesFromRenderClipSpans(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
         IReadOnlyList<(long StartMs, long EndMs)> keepSegments,
+        long outputDurationMs,
         int manifestVersion,
         IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId,
         bool useTrimStyleClips)
     {
         var spans = BuildRenderClipSpans(manifest, manifestVersion, useTrimStyleClips, sourceDurationMsByMediaId);
+        if (spans.Count == 0)
+            return new List<SourcePiece>();
+
+        AssignOutputTimelineToRenderClipSpans(spans, manifest, outputDurationMs);
+
         var s3KeyByMediaId = manifest.ToDictionary(g => g.MediaId, g => g.SourceS3Key);
         var pieces = new List<SourcePiece>();
 
@@ -308,6 +314,54 @@ public static class HighlightVideoManifestHelper
 
         return pieces;
     }
+
+    /// <summary>
+    /// Binds each render clip to its stitched-output span using stamped segment metadata.
+    /// Falls back to proportional allocation when stamps are missing for a clip.
+    /// </summary>
+    private static void AssignOutputTimelineToRenderClipSpans(
+        List<RenderClipSpan> spans,
+        IReadOnlyList<HighlightSourceClipGroup> manifest,
+        long outputDurationMs)
+    {
+        var assignedCount = 0;
+
+        for (var i = 0; i < spans.Count; i++)
+        {
+            var span = spans[i];
+            var group = manifest.First(g => g.MediaId == span.MediaId);
+            long? outputStart = null;
+            long? outputEnd = null;
+
+            foreach (var seg in group.Segments)
+            {
+                var segEnd = seg.EndMs ?? seg.StartMs;
+                if (segEnd <= seg.StartMs)
+                    continue;
+
+                if (!SourceRangesOverlap(seg.StartMs, segEnd, span.SourceStartMs, span.SourceEndMs))
+                    continue;
+
+                if (seg.OutputStartMs is not long os || seg.OutputEndMs is not long oe || oe <= os)
+                    continue;
+
+                outputStart = outputStart.HasValue ? Math.Min(outputStart.Value, os) : os;
+                outputEnd = outputEnd.HasValue ? Math.Max(outputEnd.Value, oe) : oe;
+            }
+
+            if (outputStart is not long assignedStart || outputEnd is not long assignedEnd || assignedEnd <= assignedStart)
+                continue;
+
+            spans[i] = span with { OutputStartMs = assignedStart, OutputEndMs = assignedEnd };
+            assignedCount++;
+        }
+
+        if (assignedCount < spans.Count)
+            AllocateOutputTimeline(spans, outputDurationMs);
+    }
+
+    private static bool SourceRangesOverlap(long startMs, long endMs, long rangeStartMs, long rangeEndMs) =>
+        startMs < rangeEndMs && rangeStartMs < endMs;
 
     private static List<SourcePiece> BuildTrimPiecesFromLegacyBlocks(
         IReadOnlyList<HighlightSourceClipGroup> manifest,
