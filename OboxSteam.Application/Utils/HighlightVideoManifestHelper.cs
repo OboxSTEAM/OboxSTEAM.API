@@ -244,12 +244,80 @@ public static class HighlightVideoManifestHelper
         IReadOnlyList<HighlightSourceClipGroup> manifest,
         long outputDurationMs,
         IReadOnlyList<(long StartMs, long EndMs)> excludeRanges,
-        IReadOnlyDictionary<Guid, long>? fullVideoOutputDurationMsByMediaId = null)
+        IReadOnlyDictionary<Guid, long>? fullVideoOutputDurationMsByMediaId = null,
+        int manifestVersion = RawManifestVersion,
+        IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId = null,
+        bool useTrimStyleClips = false)
     {
         var keepSegments = HighlightVideoTimeHelper.ComputeKeepSegments(outputDurationMs, excludeRanges);
-        var blocks = BuildOutputBlocks(manifest, fullVideoOutputDurationMsByMediaId, outputDurationMs);
+        var pieces = HasStampedOutputTimeline(manifest)
+            ? BuildTrimPiecesFromRenderClipSpans(
+                manifest, keepSegments, manifestVersion, sourceDurationMsByMediaId, useTrimStyleClips)
+            : BuildTrimPiecesFromLegacyBlocks(manifest, keepSegments, fullVideoOutputDurationMsByMediaId, outputDurationMs);
 
+        var transformed = RebuildManifestFromPieces(pieces, manifest);
+        ValidateSegmentOrder(transformed);
+        return transformed;
+    }
+
+    /// <summary>
+    /// Maps output keep ranges onto source using merged render-clip spans (same pipeline as encode).
+    /// Raw face segments share one output span per merged clip; proportional mapping is required.
+    /// </summary>
+    private static List<SourcePiece> BuildTrimPiecesFromRenderClipSpans(
+        IReadOnlyList<HighlightSourceClipGroup> manifest,
+        IReadOnlyList<(long StartMs, long EndMs)> keepSegments,
+        int manifestVersion,
+        IReadOnlyDictionary<Guid, long>? sourceDurationMsByMediaId,
+        bool useTrimStyleClips)
+    {
+        var spans = BuildRenderClipSpans(manifest, manifestVersion, useTrimStyleClips, sourceDurationMsByMediaId);
+        var s3KeyByMediaId = manifest.ToDictionary(g => g.MediaId, g => g.SourceS3Key);
         var pieces = new List<SourcePiece>();
+
+        foreach (var (keepStart, keepEnd) in keepSegments)
+        {
+            foreach (var span in spans)
+            {
+                var intersectStart = Math.Max(keepStart, span.OutputStartMs);
+                var intersectEnd = Math.Min(keepEnd, span.OutputEndMs);
+                if (intersectEnd <= intersectStart)
+                    continue;
+
+                var outputSpanMs = span.OutputEndMs - span.OutputStartMs;
+                var sourceSpanMs = span.SourceEndMs - span.SourceStartMs;
+                if (outputSpanMs <= 0 || sourceSpanMs <= 0)
+                    continue;
+
+                var offsetStart = intersectStart - span.OutputStartMs;
+                var offsetEnd = intersectEnd - span.OutputStartMs;
+                var sourceStart = span.SourceStartMs + offsetStart * sourceSpanMs / outputSpanMs;
+                var sourceEnd = span.SourceStartMs + offsetEnd * sourceSpanMs / outputSpanMs;
+                if (sourceEnd <= sourceStart)
+                    continue;
+
+                pieces.Add(new SourcePiece(
+                    span.MediaId,
+                    s3KeyByMediaId[span.MediaId],
+                    sourceStart,
+                    sourceEnd,
+                    intersectStart,
+                    intersectEnd));
+            }
+        }
+
+        return pieces;
+    }
+
+    private static List<SourcePiece> BuildTrimPiecesFromLegacyBlocks(
+        IReadOnlyList<HighlightSourceClipGroup> manifest,
+        IReadOnlyList<(long StartMs, long EndMs)> keepSegments,
+        IReadOnlyDictionary<Guid, long>? fullVideoOutputDurationMsByMediaId,
+        long outputDurationMs)
+    {
+        var blocks = BuildOutputBlocks(manifest, fullVideoOutputDurationMsByMediaId, outputDurationMs);
+        var pieces = new List<SourcePiece>();
+
         foreach (var (keepStart, keepEnd) in keepSegments)
         {
             foreach (var block in blocks)
@@ -259,21 +327,29 @@ public static class HighlightVideoManifestHelper
                 if (intersectEnd <= intersectStart)
                     continue;
 
+                var blockOutputMs = block.OutputEndMs - block.OutputStartMs;
+                var blockSourceMs = block.SourceEndMs - block.SourceStartMs;
+                if (blockOutputMs <= 0 || blockSourceMs <= 0)
+                    continue;
+
                 var offsetStart = intersectStart - block.OutputStartMs;
                 var offsetEnd = intersectEnd - block.OutputStartMs;
+                var sourceStart = block.SourceStartMs + offsetStart * blockSourceMs / blockOutputMs;
+                var sourceEnd = block.SourceStartMs + offsetEnd * blockSourceMs / blockOutputMs;
+                if (sourceEnd <= sourceStart)
+                    continue;
+
                 pieces.Add(new SourcePiece(
                     block.MediaId,
                     block.SourceS3Key,
-                    block.SourceStartMs + offsetStart,
-                    block.SourceStartMs + offsetEnd,
+                    sourceStart,
+                    sourceEnd,
                     intersectStart,
                     intersectEnd));
             }
         }
 
-        var transformed = RebuildManifestFromPieces(pieces, manifest);
-        ValidateSegmentOrder(transformed);
-        return transformed;
+        return pieces;
     }
 
     /// <summary>

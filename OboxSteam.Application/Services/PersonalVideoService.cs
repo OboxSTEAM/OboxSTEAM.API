@@ -272,19 +272,23 @@ public class PersonalVideoService : IPersonalVideoService
         {
             try
             {
-                var manifest = HighlightVideoManifestHelper.DeserializeManifest(parent.SourceSegmentsJson);
+                var parsed = HighlightVideoManifestHelper.ParseManifest(parent.SourceSegmentsJson);
                 IReadOnlyDictionary<Guid, long>? fullVideoDurations = null;
-                if (!HighlightVideoManifestHelper.HasStampedOutputTimeline(manifest))
+                if (!HighlightVideoManifestHelper.HasStampedOutputTimeline(parsed.Groups))
                 {
                     fullVideoDurations = HighlightVideoManifestHelper.ResolveFullVideoOutputDurations(
-                        manifest, parent.DurationMs.Value);
+                        parsed.Groups, parent.DurationMs.Value);
                 }
 
+                var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(
+                    parsed.Groups.Select(g => g.MediaId));
                 var transformed = HighlightVideoManifestHelper.TransformForOutputTrim(
-                    manifest,
+                    parsed.Groups,
                     parent.DurationMs.Value,
                     excludeRanges,
-                    fullVideoDurations);
+                    fullVideoDurations,
+                    parsed.Version,
+                    sourceDurations);
                 transformedManifestJson = HighlightVideoManifestHelper.SerializeManifest(transformed);
             }
             catch (InvalidOperationException ex)
