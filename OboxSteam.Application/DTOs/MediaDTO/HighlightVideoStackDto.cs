@@ -11,6 +11,7 @@ public class HighlightVideoItemDto
     public string? VideoUrl { get; set; }
     public long? DurationMs { get; set; }
     public HighlightVideoStatus Status { get; set; }
+    public string StatusLabel { get; set; } = string.Empty;
     public DateTime? RequestedAt { get; set; }
     public string? FailureReason { get; set; }
     public string? TrimDescription { get; set; }
@@ -41,6 +42,10 @@ public class HighlightVideoStackDto
     public Guid StudentId { get; set; }
     public string? StrengthDescription { get; set; }
     public DateTime CreatedAt { get; set; }
+    public int ItemCount { get; set; }
+    public int MaxItems { get; set; }
+    public bool HasProcessingItem { get; set; }
+    public bool CanCreateItem { get; set; }
     public IReadOnlyList<HighlightVideoItemDto> Items { get; set; } = Array.Empty<HighlightVideoItemDto>();
 }
 

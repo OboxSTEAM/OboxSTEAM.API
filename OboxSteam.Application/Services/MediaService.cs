@@ -930,6 +930,9 @@ public class MediaService : IMediaService
         IEnumerable<MediaTag> tags,
         IReadOnlyDictionary<Guid, User> studentMap)
     {
+        var isVideo = string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase);
+        var isReady = !isVideo || media.VideoStatus == VideoProcessingStatus.TaggingComplete;
+
         return new MediaAssetDto
         {
             Id = media.Id,
@@ -937,13 +940,11 @@ public class MediaService : IMediaService
             ActivityId = media.ActivityId,
             FileUrl = media.FileUrl,
             FileType = media.FileType,
-            RawVideoS3Key = media.RawVideoS3Key,
-            MediaConvertJobId = media.MediaConvertJobId,
-            FaceSearchJobId = media.FaceSearchJobId,
-            LabelJobRef = media.LabelJobRef,
-            LabelTimelineJson = media.LabelTimelineJson,
             VideoStatus = media.VideoStatus,
+            StatusLabel = GetVideoStatusLabel(media.FileType, media.VideoStatus),
+            IsReady = isReady,
             UploadedAt = media.UploadedAt,
+            LabelTimeline = ParseLabelTimeline(media.LabelTimelineJson),
             Tags = tags.Select(t => MapTagToDto(t, studentMap)).ToList()
         };
     }
@@ -958,8 +959,71 @@ public class MediaService : IMediaService
             StudentName = student?.FullName,
             ConfidenceScore = tag.ConfidenceScore,
             IsVerified = tag.IsVerified,
-            FaceSegmentsJson = tag.FaceSegmentsJson,
-            HasOtherFaces = tag.HasOtherFaces
+            HasOtherFaces = tag.HasOtherFaces,
+            FaceSegments = ParseFaceSegments(tag.FaceSegmentsJson)
         };
+    }
+
+    private static string GetVideoStatusLabel(string? fileType, VideoProcessingStatus status)
+    {
+        if (!string.Equals(fileType, "video", StringComparison.OrdinalIgnoreCase))
+            return "Ready";
+
+        return status switch
+        {
+            VideoProcessingStatus.None => "Ready",
+            VideoProcessingStatus.Transcoding => "Transcoding",
+            VideoProcessingStatus.PendingTagging => "Tagging faces",
+            VideoProcessingStatus.TaggingComplete => "Ready",
+            VideoProcessingStatus.Failed => "Failed",
+            _ => status.ToString()
+        };
+    }
+
+    private static List<LabelTimelineEntryDto> ParseLabelTimeline(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new List<LabelTimelineEntryDto>();
+
+        try
+        {
+            var entries = JsonSerializer.Deserialize<List<LabelDetectionEntry>>(json);
+            if (entries == null || entries.Count == 0)
+                return new List<LabelTimelineEntryDto>();
+
+            return entries.Select(e => new LabelTimelineEntryDto
+            {
+                TimestampMs = e.TimestampMs,
+                LabelName = e.LabelName,
+                Confidence = e.Confidence
+            }).ToList();
+        }
+        catch (JsonException)
+        {
+            return new List<LabelTimelineEntryDto>();
+        }
+    }
+
+    private static List<FaceSegmentDto> ParseFaceSegments(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new List<FaceSegmentDto>();
+
+        try
+        {
+            var segments = JsonSerializer.Deserialize<List<FaceTimestampSegment>>(json);
+            if (segments == null || segments.Count == 0)
+                return new List<FaceSegmentDto>();
+
+            return segments.Select(s => new FaceSegmentDto
+            {
+                StartMs = s.StartMs,
+                EndMs = s.EndMs
+            }).ToList();
+        }
+        catch (JsonException)
+        {
+            return new List<FaceSegmentDto>();
+        }
     }
 }

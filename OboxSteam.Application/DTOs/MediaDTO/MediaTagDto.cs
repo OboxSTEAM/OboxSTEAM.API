@@ -7,6 +7,12 @@ public class MediaTagDto
     public string? StudentName { get; set; }
     public decimal ConfidenceScore { get; set; }
     public bool IsVerified { get; set; }
-    public string? FaceSegmentsJson { get; set; }
     public bool HasOtherFaces { get; set; }
+    public List<FaceSegmentDto> FaceSegments { get; set; } = new();
+}
+
+public class FaceSegmentDto
+{
+    public long StartMs { get; set; }
+    public long EndMs { get; set; }
 }

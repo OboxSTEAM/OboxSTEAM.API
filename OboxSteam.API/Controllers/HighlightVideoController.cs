@@ -33,7 +33,8 @@ public class HighlightVideoController : ControllerBase
     {
         var result = await _personalVideoService.CreateStackAsync(
             programId, studentId, request?.StrengthDescription);
-        return Accepted(ApiResult<HighlightVideoStackDto>.Success(result, "202", "Highlight stack created."));
+        return Accepted(ApiResult<HighlightVideoStackDto>.Success(
+            result, "202", "Highlight stack created; video generation started."));
     }
 
     /// <summary>
@@ -47,7 +48,8 @@ public class HighlightVideoController : ControllerBase
         [FromRoute] Guid studentId)
     {
         var result = await _personalVideoService.GetStacksAsync(programId, studentId);
-        return Ok(ApiResult<IReadOnlyList<HighlightVideoStackDto>>.Success(result, "200", "Stacks retrieved."));
+        return Ok(ApiResult<IReadOnlyList<HighlightVideoStackDto>>.Success(
+            result, "200", "Stacks retrieved."));
     }
 
     /// <summary>
@@ -85,14 +87,14 @@ public class HighlightVideoController : ControllerBase
     {
         var result = await _personalVideoService.TrimItemAsync(
             programId, studentId, stackId, itemId, request);
-        return Accepted(ApiResult<HighlightVideoItemDto>.Success(result, "202", "Trim job started."));
+        return Accepted(ApiResult<HighlightVideoItemDto>.Success(result, "202", "Trim started."));
     }
 
     /// <summary>
     /// Inserts a user-selected source segment into the highlight manifest by source timeline order and re-renders.
     /// </summary>
     [HttpPost("stacks/{stackId:guid}/items/{itemId:guid}/add-segment")]
-    [SwaggerOperation(Summary = "Insert user-selected source segment into highlight video")]
+    [SwaggerOperation(Summary = "Add segment to highlight video")]
     [ProducesResponseType(typeof(ApiResult<HighlightVideoItemDto>), 202)]
     public async Task<IActionResult> AddSegment(
         [FromRoute] Guid programId,
@@ -103,7 +105,7 @@ public class HighlightVideoController : ControllerBase
     {
         var result = await _personalVideoService.AddSegmentAsync(
             programId, studentId, stackId, itemId, request);
-        return Accepted(ApiResult<HighlightVideoItemDto>.Success(result, "202", "Segment add job started."));
+        return Accepted(ApiResult<HighlightVideoItemDto>.Success(result, "202", "Segment add started."));
     }
 
     /// <summary>
@@ -111,7 +113,7 @@ public class HighlightVideoController : ControllerBase
     /// </summary>
     [HttpDelete("stacks/{stackId:guid}/items/{itemId:guid}")]
     [SwaggerOperation(Summary = "Delete highlight video item")]
-    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    [ProducesResponseType(typeof(ApiResult), 200)]
     public async Task<IActionResult> DeleteItem(
         [FromRoute] Guid programId,
         [FromRoute] Guid studentId,
@@ -119,7 +121,7 @@ public class HighlightVideoController : ControllerBase
         [FromRoute] Guid itemId)
     {
         await _personalVideoService.DeleteItemAsync(programId, studentId, stackId, itemId);
-        return Ok(ApiResult<object>.Success(null, "200", "Highlight video item deleted."));
+        return Ok(ApiResult.Success("200", "Highlight video item deleted."));
     }
 
     /// <summary>
@@ -127,13 +129,13 @@ public class HighlightVideoController : ControllerBase
     /// </summary>
     [HttpDelete("stacks/{stackId:guid}")]
     [SwaggerOperation(Summary = "Delete highlight video stack")]
-    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    [ProducesResponseType(typeof(ApiResult), 200)]
     public async Task<IActionResult> DeleteStack(
         [FromRoute] Guid programId,
         [FromRoute] Guid studentId,
         [FromRoute] Guid stackId)
     {
         await _personalVideoService.DeleteStackAsync(programId, studentId, stackId);
-        return Ok(ApiResult<object>.Success(null, "200", "Highlight stack deleted."));
+        return Ok(ApiResult.Success("200", "Highlight stack deleted."));
     }
 }

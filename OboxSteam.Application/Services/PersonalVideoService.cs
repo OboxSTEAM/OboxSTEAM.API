@@ -1217,6 +1217,9 @@ public class PersonalVideoService : IPersonalVideoService
         HighlightVideoStack stack,
         IReadOnlyList<HighlightVideoItem> items)
     {
+        var hasProcessingItem = items.Any(i => i.Status == HighlightVideoStatus.Processing);
+        var remainingSlots = Math.Max(0, MaxItemsPerStack - items.Count);
+
         var mappedItems = new List<HighlightVideoItemDto>();
         foreach (var item in items)
             mappedItems.Add(await MapItemToDtoAsync(item));
@@ -1230,6 +1233,10 @@ public class PersonalVideoService : IPersonalVideoService
                 ? null
                 : stack.StrengthDescription,
             CreatedAt = stack.CreatedAt,
+            ItemCount = items.Count,
+            MaxItems = MaxItemsPerStack,
+            HasProcessingItem = hasProcessingItem,
+            CanCreateItem = remainingSlots > 0 && !hasProcessingItem,
             Items = mappedItems,
         };
     }
@@ -1256,6 +1263,7 @@ public class PersonalVideoService : IPersonalVideoService
             VideoUrl = item.VideoUrl,
             DurationMs = item.DurationMs,
             Status = item.Status,
+            StatusLabel = GetHighlightStatusLabel(item.Status),
             RequestedAt = item.RequestedAt,
             FailureReason = item.FailureReason,
             TrimDescription = item.TrimDescription,
@@ -1263,6 +1271,15 @@ public class PersonalVideoService : IPersonalVideoService
             SourceClips = sourceClips,
         };
     }
+
+    private static string GetHighlightStatusLabel(HighlightVideoStatus status) => status switch
+    {
+        HighlightVideoStatus.None => "None",
+        HighlightVideoStatus.Processing => "Processing",
+        HighlightVideoStatus.Completed => "Ready",
+        HighlightVideoStatus.Failed => "Failed",
+        _ => status.ToString()
+    };
 
     private async Task<IReadOnlyList<HighlightSourceClipDto>> MapSourceClipsToDtoAsync(string? sourceSegmentsJson)
     {
