@@ -41,8 +41,8 @@ public class HighlightVideoItem : BaseEntity
     public string? TrimExcludeRangesJson { get; set; }
 
     /// <summary>
-    /// JSON-serialized source clip groups used to build this output (mediaId, sourceS3Key, segments).
-    /// Populated on initial generation and segment-add regeneration; read by manifest regen jobs.
+    /// JSON render-clip manifest (version 3): mediaId, sourceS3Key, and exact encode bounds
+    /// (post buffer/merge). Used by initial generation, trim, and add-segment encode jobs.
     /// </summary>
     public string? SourceSegmentsJson { get; set; }
 }

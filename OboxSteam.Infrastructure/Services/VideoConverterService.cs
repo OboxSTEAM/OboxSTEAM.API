@@ -133,59 +133,6 @@ public class VideoConverterService : IVideoConverterService
     }
 
     /// <inheritdoc />
-    public async Task<string> SubmitOutputTrimJobAsync(
-        string inputS3Key,
-        List<TimeClip> keepClips,
-        string outputS3Key)
-    {
-        var bucket = RequireEnv(EnvS3Bucket);
-        var roleArn = RequireEnv(EnvRoleArn);
-        var watermarkUri = ResolveWatermarkUri();
-
-        _logger.LogInformation(
-            "SubmitOutputTrimJobAsync: input={Input}, {ClipCount} keep segment(s) → s3://{Bucket}/{Key}",
-            inputS3Key, keepClips.Count, bucket, outputS3Key);
-
-        var input = new Input
-        {
-            FileInput = $"s3://{bucket}/{inputS3Key}",
-            TimecodeSource = InputTimecodeSource.ZEROBASED,
-            AudioSelectors = new Dictionary<string, AudioSelector>
-            {
-                ["Audio Selector 1"] = new AudioSelector
-                {
-                    DefaultSelection = AudioDefaultSelection.DEFAULT
-                }
-            },
-            InputClippings = keepClips
-                .Select(c => new InputClipping
-                {
-                    StartTimecode = c.StartTimecode,
-                    EndTimecode = c.EndTimecode
-                })
-                .ToList()
-        };
-
-        var request = new CreateJobRequest
-        {
-            Role = roleArn,
-            Settings = new JobSettings
-            {
-                Inputs = [input],
-                OutputGroups =
-                [
-                    BuildPersonalVideoOutputGroup(bucket, outputS3Key, watermarkUri, "Personal Video Trim MP4")
-                ]
-            }
-        };
-
-        var response = await _mediaConvert.CreateJobAsync(request);
-        _logger.LogInformation(
-            "SubmitOutputTrimJobAsync: job submitted. JobId={JobId}", response.Job.Id);
-        return response.Job.Id;
-    }
-
-    /// <inheritdoc />
     public async Task<long?> GetOutputDurationMsAsync(string jobId)
     {
         var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });

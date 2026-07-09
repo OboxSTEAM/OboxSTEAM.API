@@ -52,19 +52,17 @@ public class PersonalVideoService : IPersonalVideoService
 
     private sealed record StrengthFilterResult(
         ClipInput? Clip,
-        IReadOnlyList<HighlightSourceSegmentMs>? RawSourceSegments = null,
         StrengthFilterError Error = StrengthFilterError.None,
         string? Detail = null);
 
     private sealed record MediaClipBuildResult(
         ClipInput? Clip,
-        IReadOnlyList<HighlightSourceSegmentMs>? RawSourceSegments = null,
         StrengthFilterError StrengthError = StrengthFilterError.None,
         string? StrengthErrorDetail = null);
 
     private sealed record ClipBuildResult(
         IReadOnlyList<ClipInput> Clips,
-        IReadOnlyList<HighlightSourceClipGroup> SourceClips);
+        IReadOnlyList<HighlightSourceClipGroup> RenderClips);
 
     // ── Clipping constants (merge/buffer lives in HighlightVideoClipMergeHelper) ──
     /// When filtering label-detection entries for Claude, include labels within this
@@ -228,8 +226,12 @@ public class PersonalVideoService : IPersonalVideoService
         if (parent.Status != HighlightVideoStatus.Completed)
             throw ErrorHelper.BadRequest("Parent video must be completed before trimming.");
 
-        if (string.IsNullOrWhiteSpace(parent.OutputS3Key) || parent.DurationMs is null or <= 0)
+        if (parent.DurationMs is null or <= 0)
             throw ErrorHelper.BadRequest("Parent video output metadata is missing; cannot trim.");
+
+        if (string.IsNullOrWhiteSpace(parent.SourceSegmentsJson))
+            throw ErrorHelper.BadRequest(
+                "Render clip manifest is not available for this item. Regenerate the highlight first.");
 
         if (request.ExcludeRanges.Count == 0)
             throw ErrorHelper.BadRequest("At least one exclude range is required.");
@@ -245,21 +247,31 @@ public class PersonalVideoService : IPersonalVideoService
 
         HighlightVideoTimeHelper.ComputeKeepSegments(parent.DurationMs.Value, excludeRanges);
 
-        string? transformedManifestJson = null;
-        if (!string.IsNullOrWhiteSpace(parent.SourceSegmentsJson))
+        string transformedManifestJson;
+        try
         {
-            try
-            {
-                transformedManifestJson = await TransformStoredManifestForTrimAsync(
-                    parent.SourceSegmentsJson,
-                    parent.DurationMs.Value,
-                    excludeRanges);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw ErrorHelper.BadRequest(
-                    $"Cannot derive source segments for trim: {ex.Message}");
-            }
+            var parsed = HighlightVideoManifestHelper.ParseManifest(parent.SourceSegmentsJson);
+            var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(
+                parsed.Groups.Select(g => g.MediaId));
+            var trimmedGroups = HighlightVideoManifestHelper.ApplyOutputTrim(
+                parsed.Groups,
+                parent.DurationMs.Value,
+                excludeRanges,
+                sourceDurations);
+            // Clear output stamps — they will be re-stamped after the new encode completes.
+            var cleared = trimmedGroups
+                .Select(g => g with
+                {
+                    Segments = g.Segments
+                        .Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs))
+                        .ToList()
+                })
+                .ToList();
+            transformedManifestJson = HighlightVideoManifestHelper.SerializeManifest(cleared);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw ErrorHelper.BadRequest($"Cannot derive render clips for trim: {ex.Message}");
         }
 
         var trimItem = new HighlightVideoItem
@@ -278,15 +290,10 @@ public class PersonalVideoService : IPersonalVideoService
 
         _queue.Enqueue(new PersonalVideoJob(
             trimItem.Id,
-            PersonalVideoJobKind.OutputTrim,
+            PersonalVideoJobKind.ManifestEncode,
             programId,
             studentId,
-            StrengthDescription: null,
-            ParentOutputS3Key: parent.OutputS3Key,
-            ParentDurationMs: parent.DurationMs,
-            ExcludeRanges: excludeRanges
-                .Select(r => new OutputExcludeRange(r.StartMs, r.EndMs))
-                .ToList()));
+            StrengthDescription: null));
 
         return await MapItemToDtoAsync(trimItem, request.ExcludeRanges);
     }
@@ -350,14 +357,30 @@ public class PersonalVideoService : IPersonalVideoService
             throw ErrorHelper.Conflict(
                 "This source segment overlaps a clip already included in the highlight video.");
 
-        var updatedManifest = HighlightVideoManifestHelper.AppendSegment(
-            manifest,
-            media.Id,
-            s3Key,
-            startMs,
-            endMs);
-
-        HighlightVideoManifestHelper.ValidateSegmentOrder(updatedManifest);
+        List<HighlightSourceClipGroup> updatedManifest;
+        try
+        {
+            updatedManifest = HighlightVideoManifestHelper.AppendBufferedSegment(
+                manifest,
+                media.Id,
+                s3Key,
+                startMs,
+                endMs);
+            // Clear output stamps — re-stamped after the new encode completes.
+            updatedManifest = updatedManifest
+                .Select(g => g with
+                {
+                    Segments = g.Segments
+                        .Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs))
+                        .ToList()
+                })
+                .ToList();
+            HighlightVideoManifestHelper.ValidateSegmentOrder(updatedManifest);
+        }
+        catch (ArgumentException ex)
+        {
+            throw ErrorHelper.BadRequest(ex.Message);
+        }
 
         var segmentItem = new HighlightVideoItem
         {
@@ -374,13 +397,10 @@ public class PersonalVideoService : IPersonalVideoService
 
         _queue.Enqueue(new PersonalVideoJob(
             segmentItem.Id,
-            PersonalVideoJobKind.ManifestRegeneration,
+            PersonalVideoJobKind.ManifestEncode,
             programId,
             studentId,
-            StrengthDescription: null,
-            ParentOutputS3Key: null,
-            ParentDurationMs: null,
-            ExcludeRanges: null));
+            StrengthDescription: null));
 
         return await MapItemToDtoAsync(segmentItem);
     }
@@ -440,15 +460,9 @@ public class PersonalVideoService : IPersonalVideoService
 
         try
         {
-            if (job.Kind == PersonalVideoJobKind.OutputTrim)
+            if (job.Kind == PersonalVideoJobKind.ManifestEncode)
             {
-                await ProcessOutputTrimAsync(item, job);
-                return;
-            }
-
-            if (job.Kind == PersonalVideoJobKind.ManifestRegeneration)
-            {
-                await ProcessManifestRegenerationAsync(item, job);
+                await ProcessManifestEncodeAsync(item, job);
                 return;
             }
 
@@ -499,21 +513,17 @@ public class PersonalVideoService : IPersonalVideoService
                 item.DurationMs = durationMs ?? item.DurationMs;
                 item.Status = HighlightVideoStatus.Completed;
 
-                if (!string.IsNullOrWhiteSpace(item.SourceSegmentsJson) && item.DurationMs is > 0
-                    && item.GenerationKind != HighlightVideoGenerationKind.Trim)
+                if (!string.IsNullOrWhiteSpace(item.SourceSegmentsJson) && item.DurationMs is > 0)
                 {
                     try
                     {
                         var parsed = HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson);
                         var mediaIds = parsed.Groups.Select(g => g.MediaId);
                         var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(mediaIds);
-                        var useTrimStyleClips = await IsTrimDerivedManifestChainAsync(item);
                         var stamped = HighlightVideoManifestHelper.StampOutputTimeline(
                             parsed.Groups,
                             item.DurationMs.Value,
-                            sourceDurations,
-                            parsed.Version,
-                            useTrimStyleClips);
+                            sourceDurations);
                         item.SourceSegmentsJson = HighlightVideoManifestHelper.SerializeManifest(stamped);
                     }
                     catch (Exception stampEx)
@@ -582,10 +592,7 @@ public class PersonalVideoService : IPersonalVideoService
             PersonalVideoJobKind.InitialGeneration,
             stack.ProgramId,
             stack.StudentId,
-            strengthForJob,
-            ParentOutputS3Key: null,
-            ParentDurationMs: null,
-            ExcludeRanges: null));
+            strengthForJob));
 
         _logger.LogInformation(
             "[PersonalVideoService] Initial generation queued. StackId={StackId}, ItemId={ItemId}",
@@ -612,7 +619,7 @@ public class PersonalVideoService : IPersonalVideoService
             return;
         }
 
-        item.SourceSegmentsJson = HighlightVideoManifestHelper.SerializeManifest(buildResult.SourceClips);
+        item.SourceSegmentsJson = HighlightVideoManifestHelper.SerializeManifest(buildResult.RenderClips);
 
         var outputKey = BuildOutputS3Key(job.StudentId, item.Id);
         var mcJobId = await _videoConverterService.SubmitPersonalVideoJobAsync(clipInputs.ToList(), outputKey);
@@ -623,62 +630,12 @@ public class PersonalVideoService : IPersonalVideoService
         await _unitOfWork.SaveChangesAsync();
     }
 
-    private async Task ProcessOutputTrimAsync(HighlightVideoItem item, PersonalVideoJob job)
+    private async Task ProcessManifestEncodeAsync(HighlightVideoItem item, PersonalVideoJob job)
     {
-        if (string.IsNullOrWhiteSpace(job.ParentOutputS3Key) || job.ParentDurationMs is null or <= 0)
+        if (string.IsNullOrWhiteSpace(item.SourceSegmentsJson))
         {
             item.Status = HighlightVideoStatus.Failed;
-            item.FailureReason = "Trim job is missing parent output metadata.";
-            await _unitOfWork.SaveChangesAsync();
-            return;
-        }
-
-        if (job.ExcludeRanges is not { Count: > 0 })
-        {
-            item.Status = HighlightVideoStatus.Failed;
-            item.FailureReason = "Trim job is missing exclude ranges.";
-            await _unitOfWork.SaveChangesAsync();
-            return;
-        }
-
-        var excludeTuples = job.ExcludeRanges
-            .Select(r => (r.StartMs, r.EndMs))
-            .ToList();
-        var keepSegments = HighlightVideoTimeHelper.ComputeKeepSegments(job.ParentDurationMs.Value, excludeTuples);
-        var keepClips = HighlightVideoTimeHelper.ToTimeClips(keepSegments);
-
-        var stack = await _unitOfWork.HighlightVideoStacks.GetByIdAsync(item.StackId)
-            ?? throw new InvalidOperationException($"Stack {item.StackId} not found for trim item.");
-
-        var outputKey = BuildOutputS3Key(stack.StudentId, item.Id);
-        var mcJobId = await _videoConverterService.SubmitOutputTrimJobAsync(
-            job.ParentOutputS3Key, keepClips, outputKey);
-
-        item.PersonalVideoJobRef = mcJobId;
-        item.Status = HighlightVideoStatus.Processing;
-        item.FailureReason = null;
-        item.DurationMs = keepSegments.Sum(s => s.EndMs - s.StartMs);
-        await _unitOfWork.SaveChangesAsync();
-    }
-
-    private async Task ProcessManifestRegenerationAsync(HighlightVideoItem item, PersonalVideoJob job)
-    {
-        ParsedHighlightManifest? regenManifest = null;
-        try
-        {
-            regenManifest = await BuildRegenerationManifestAsync(item);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "[PersonalVideoService] Failed to rebuild regeneration manifest for item {Id}; using stored manifest.",
-                item.Id);
-        }
-
-        if (regenManifest == null && string.IsNullOrWhiteSpace(item.SourceSegmentsJson))
-        {
-            item.Status = HighlightVideoStatus.Failed;
-            item.FailureReason = "Manifest regeneration is missing source segment data.";
+            item.FailureReason = "Render clip manifest is missing.";
             await _unitOfWork.SaveChangesAsync();
             return;
         }
@@ -686,26 +643,27 @@ public class PersonalVideoService : IPersonalVideoService
         ParsedHighlightManifest parsed;
         try
         {
-            parsed = regenManifest ?? HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson!);
+            parsed = HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson);
             HighlightVideoManifestHelper.ValidateSegmentOrder(parsed.Groups);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
-                "[PersonalVideoService] Invalid source manifest for item {Id}.", item.Id);
+                "[PersonalVideoService] Invalid render manifest for item {Id}.", item.Id);
             item.Status = HighlightVideoStatus.Failed;
-            item.FailureReason = "Source segment manifest is invalid.";
+            item.FailureReason = "Render clip manifest is invalid.";
             await _unitOfWork.SaveChangesAsync();
             return;
         }
 
-        var useTrimStyleClips = await IsTrimDerivedManifestChainAsync(item);
-        var clipInputs = HighlightVideoManifestHelper.ToClipInputs(
-            parsed.Groups, parsed.Version, useTrimStyleClips);
+        // Persist upgraded v3 form when reading legacy manifests.
+        item.SourceSegmentsJson = HighlightVideoManifestHelper.SerializeManifest(parsed.Groups);
+
+        var clipInputs = HighlightVideoManifestHelper.ToClipInputs(parsed.Groups);
         if (clipInputs.Count == 0)
         {
             item.Status = HighlightVideoStatus.Failed;
-            item.FailureReason = "Source segment manifest produced no clips.";
+            item.FailureReason = "Render clip manifest produced no clips.";
             await _unitOfWork.SaveChangesAsync();
             return;
         }
@@ -719,111 +677,8 @@ public class PersonalVideoService : IPersonalVideoService
         await _unitOfWork.SaveChangesAsync();
     }
 
-    private async Task<bool> IsTrimDerivedManifestChainAsync(HighlightVideoItem item) =>
-        await FindTrimAncestorAsync(item) != null;
-
-    /// <summary>
-    /// Rebuilds manifest for trim-derived regeneration from the initial stamped manifest and
-    /// trim exclude ranges, then merges unstamped add-segment clips from the current item.
-    /// </summary>
-    private async Task<ParsedHighlightManifest?> BuildRegenerationManifestAsync(HighlightVideoItem item)
-    {
-        var trimAncestor = await FindTrimAncestorAsync(item);
-        if (trimAncestor == null)
-            return null;
-
-        var initialAncestor = await FindInitialAncestorAsync(item);
-        if (initialAncestor == null
-            || string.IsNullOrWhiteSpace(initialAncestor.SourceSegmentsJson)
-            || string.IsNullOrWhiteSpace(trimAncestor.TrimExcludeRangesJson)
-            || initialAncestor.DurationMs is not > 0)
-        {
-            return null;
-        }
-
-        var excludeRanges = ParseTrimExcludeRanges(trimAncestor.TrimExcludeRangesJson);
-        var initialParsed = HighlightVideoManifestHelper.ParseManifest(initialAncestor.SourceSegmentsJson);
-        var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(
-            initialParsed.Groups.Select(g => g.MediaId));
-
-        var trimmedGroups = HighlightVideoManifestHelper.ApplyOutputTrimToManifest(
-            initialParsed,
-            initialAncestor.DurationMs.Value,
-            excludeRanges,
-            sourceDurations);
-
-        var currentParsed = HighlightVideoManifestHelper.ParseManifest(item.SourceSegmentsJson!);
-        var mergedGroups = HighlightVideoManifestHelper.MergeTrimManifestWithUnstampedSegments(
-            trimmedGroups, currentParsed.Groups);
-
-        return new ParsedHighlightManifest(initialParsed.Version, mergedGroups);
-    }
-
-    private async Task<string> TransformStoredManifestForTrimAsync(
-        string sourceSegmentsJson,
-        long outputDurationMs,
-        IReadOnlyList<(long StartMs, long EndMs)> excludeRanges)
-    {
-        var parsed = HighlightVideoManifestHelper.ParseManifest(sourceSegmentsJson);
-        var sourceDurations = await LoadSourceDurationMsByMediaIdAsync(parsed.Groups.Select(g => g.MediaId));
-        var transformed = HighlightVideoManifestHelper.ApplyOutputTrimToManifest(
-            parsed,
-            outputDurationMs,
-            excludeRanges,
-            sourceDurations);
-        return HighlightVideoManifestHelper.SerializeManifest(transformed);
-    }
-
     private static string BuildOutputS3Key(Guid studentId, Guid itemId) =>
         $"{HighlightVideoConstants.OutputFolder}/{studentId}_{itemId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
-
-    private async Task<HighlightVideoItem?> FindInitialAncestorAsync(HighlightVideoItem item)
-    {
-        var current = item;
-        while (true)
-        {
-            if (current.GenerationKind == HighlightVideoGenerationKind.Initial)
-                return current;
-
-            if (current.ParentItemId is not Guid parentId)
-                return null;
-
-            var parent = await _unitOfWork.HighlightVideoItems.GetByIdAsync(parentId);
-            if (parent == null || parent.IsDeleted)
-                return null;
-
-            current = parent;
-        }
-    }
-
-    private async Task<HighlightVideoItem?> FindTrimAncestorAsync(HighlightVideoItem item)
-    {
-        var parentId = item.ParentItemId;
-        while (parentId is Guid id)
-        {
-            var parent = await _unitOfWork.HighlightVideoItems.GetByIdAsync(id);
-            if (parent == null || parent.IsDeleted)
-                break;
-
-            if (parent.GenerationKind == HighlightVideoGenerationKind.Trim)
-                return parent;
-
-            parentId = parent.ParentItemId;
-        }
-
-        return null;
-    }
-
-    private static IReadOnlyList<(long StartMs, long EndMs)> ParseTrimExcludeRanges(string trimExcludeRangesJson)
-    {
-        var ranges = JsonSerializer.Deserialize<List<TimeRangeDto>>(trimExcludeRangesJson)
-                     ?? throw new InvalidOperationException("Trim exclude ranges are missing.");
-
-        if (ranges.Count == 0)
-            throw new InvalidOperationException("Trim exclude ranges are empty.");
-
-        return HighlightVideoTimeHelper.ParseExcludeRanges(ranges);
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Logic Core
@@ -916,8 +771,7 @@ public class PersonalVideoService : IPersonalVideoService
                 clipsWithMedia.Add(new HighlightClipMediaPair(
                     media.Id,
                     media.CreatedAt,
-                    result.Clip,
-                    result.RawSourceSegments ?? FullVideoRawSegments()));
+                    result.Clip));
             }
         }
 
@@ -932,8 +786,8 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] BuildClipInputsAsync completed: {Count} ClipInput(s) built.",
             clips.Count);
 
-        var sourceClips = HighlightVideoManifestHelper.BuildFromRawSourceSegments(clipsWithMedia);
-        return new ClipBuildResult(clips, sourceClips);
+        var renderClips = HighlightVideoManifestHelper.BuildFromRenderClipInputs(clipsWithMedia);
+        return new ClipBuildResult(clips, renderClips);
     }
 
     /// <summary>
@@ -977,7 +831,7 @@ public class PersonalVideoService : IPersonalVideoService
             _logger.LogWarning(
                 "[PersonalVideoService] No persisted timeline; sole tagged student → full video. MediaId={MediaId}",
                 media.Id);
-            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()), FullVideoRawSegments());
+            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()));
         }
 
         // ── Case 1: No student face detected (AI fallback / scene-only) ─────────
@@ -994,7 +848,7 @@ public class PersonalVideoService : IPersonalVideoService
             _logger.LogInformation(
                 "[PersonalVideoService] Case 1 (no student face detected by AI) → full video. MediaId={MediaId}", media.Id);
 
-            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()), FullVideoRawSegments());
+            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()));
         }
 
         // ── Case 2: Only this student's face in the video ────────────
@@ -1009,7 +863,7 @@ public class PersonalVideoService : IPersonalVideoService
                 return await ResolveStrengthFilterOrSkipAsync(
                     media, s3Key, timelineResult.Segments, strengthDescription, "Case 2");
 
-            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()), FullVideoRawSegments());
+            return new MediaClipBuildResult(new ClipInput(s3Key, new List<TimeClip>()));
         }
 
         // ── Case 3 & 4: Multiple people — extract student's timeline ──────────────
@@ -1017,7 +871,6 @@ public class PersonalVideoService : IPersonalVideoService
             "[PersonalVideoService] Case 3 & 4 (mixed faces per persisted timeline) → extracting timeline. MediaId={MediaId}", media.Id);
 
         var faceSegments = timelineResult.Segments;
-        var rawFaceSegments = FromFaceSegments(faceSegments);
 
         // ── Strengths Filtering (optional) ────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(strengthDescription))
@@ -1033,7 +886,7 @@ public class PersonalVideoService : IPersonalVideoService
             faceSegments.Count, timeClips.Count, media.Id,
             string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")));
 
-        return new MediaClipBuildResult(new ClipInput(s3Key, timeClips), rawFaceSegments);
+        return new MediaClipBuildResult(new ClipInput(s3Key, timeClips));
     }
 
     /// <summary>
@@ -1092,7 +945,7 @@ public class PersonalVideoService : IPersonalVideoService
             _logger.LogInformation(
                 "[PersonalVideoService] {Case} + strengths: {Count} sub-clip(s). MediaId={MediaId}",
                 caseLabel, filteredResult.Clip.Clips.Count, media.Id);
-            return new MediaClipBuildResult(filteredResult.Clip, filteredResult.RawSourceSegments);
+            return new MediaClipBuildResult(filteredResult.Clip);
         }
 
         _logger.LogInformation(
@@ -1239,7 +1092,6 @@ public class PersonalVideoService : IPersonalVideoService
                 Error: StrengthFilterError.NoMatch);
         }
 
-        var rawSourceSegments = FromMatchedSegments(allMatched);
         var timeClips = MergeAndFormatTimeClips(allMatched);
 
         _logger.LogInformation(
@@ -1248,29 +1100,12 @@ public class PersonalVideoService : IPersonalVideoService
             string.Join(", ", timeClips.Select(c => $"{c.StartTimecode}→{c.EndTimecode}")),
             reasoning);
 
-        return new StrengthFilterResult(new ClipInput(s3Key, timeClips), rawSourceSegments);
+        return new StrengthFilterResult(new ClipInput(s3Key, timeClips));
     }
 
     private static List<TimeClip> MergeAndFormatTimeClips(IEnumerable<MatchedSegment> segments) =>
         HighlightVideoClipMergeHelper.MergeAndFormatToTimeClips(
             segments.Select(s => (s.StartMs, s.EndMs)));
-
-    private static IReadOnlyList<HighlightSourceSegmentMs> FullVideoRawSegments() =>
-        new List<HighlightSourceSegmentMs> { new(0, null) };
-
-    private static IReadOnlyList<HighlightSourceSegmentMs> FromFaceSegments(
-        IEnumerable<FaceTimestampSegment> segments) =>
-        segments
-            .Where(s => s.EndMs > s.StartMs)
-            .Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs))
-            .ToList();
-
-    private static IReadOnlyList<HighlightSourceSegmentMs> FromMatchedSegments(
-        IEnumerable<MatchedSegment> segments) =>
-        segments
-            .Where(s => s.EndMs > s.StartMs)
-            .Select(s => new HighlightSourceSegmentMs(s.StartMs, s.EndMs))
-            .ToList();
 
     // ─────────────────────────────────────────────────────────────────────────
     // Segment processing helpers

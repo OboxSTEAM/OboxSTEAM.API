@@ -3,7 +3,9 @@ using OboxSteam.Application.DTOs.MediaDTO;
 namespace OboxSteam.Application.Interfaces;
 
 /// <summary>
-/// Orchestrates personal highlight video generation and semi-automatic trimming for a student within a Program.
+/// Orchestrates personal highlight video generation and editing (trim / add-segment)
+/// for a student within a Program. All edits mutate a render-clip manifest and re-encode
+/// via MediaConvert stitch jobs.
 /// </summary>
 public interface IPersonalVideoService
 {

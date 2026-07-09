@@ -4,7 +4,8 @@ namespace OboxSteam.Application.Utils;
 
 /// <summary>
 /// Applies buffer + gap-merge to raw source ranges before formatting MediaConvert timecodes.
-/// Used when rendering highlight videos; raw ranges are persisted separately in the manifest.
+/// Used only when building the initial render list or buffering a newly added segment.
+/// Persisted manifests store post-merge render bounds and must not be re-buffered.
 /// </summary>
 public static class HighlightVideoClipMergeHelper
 {
