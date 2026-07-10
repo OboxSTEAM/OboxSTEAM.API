@@ -40,7 +40,9 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<PortfolioItemSubmission> PortfolioItemSubmissions { get; }
     IGenericRepository<ResearchMilestone> ResearchMilestones { get; }
     IGenericRepository<ResearchMilestoneActivity> ResearchMilestoneActivities { get; }
+    IGenericRepository<Skill> Skills { get; }
     IGenericRepository<StudentSkill> StudentSkills { get; }
+    IGenericRepository<StudentSkillEvidence> StudentSkillEvidences { get; }
     IGenericRepository<StandardizedTest> StandardizedTests { get; }
     IGenericRepository<StudentProfile> StudentProfiles { get; }
     IGenericRepository<SubmissionEvidence> SubmissionEvidences { get; }

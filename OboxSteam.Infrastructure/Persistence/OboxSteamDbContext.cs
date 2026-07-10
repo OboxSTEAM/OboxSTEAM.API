@@ -21,7 +21,9 @@ public class OboxSteamDbContext : DbContext
 
     // ── 3. Student Academic Profile ──
     public DbSet<StudentProfile> StudentProfiles { get; set; }
+    public DbSet<Skill> Skills { get; set; }
     public DbSet<StudentSkill> StudentSkills { get; set; }
+    public DbSet<StudentSkillEvidence> StudentSkillEvidences { get; set; }
     public DbSet<StandardizedTest> StandardizedTests { get; set; }
 
     // ── 4. LMS Hierarchy ──
@@ -96,7 +98,9 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<User>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<OtpStorage>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Expert>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Skill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StudentSkill>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<StudentSkillEvidence>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StandardizedTest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Program>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Module>().HasQueryFilter(e => !e.IsDeleted);
@@ -187,6 +191,77 @@ public class OboxSteamDbContext : DbContext
                 .WithOne(u => u.StudentProfile)
                 .HasForeignKey<StudentProfile>(sp => sp.StudentId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
+        // SKILL CATALOG
+        // =============================================
+        modelBuilder.Entity<Skill>(entity =>
+        {
+            entity.HasIndex(s => s.Code).IsUnique();
+        });
+
+        // =============================================
+        // STUDENT SKILL (current proficiency snapshot)
+        // =============================================
+        modelBuilder.Entity<StudentSkill>(entity =>
+        {
+            entity.HasIndex(ss => new { ss.StudentId, ss.SkillId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(ss => ss.Student)
+                .WithMany(u => u.StudentSkills)
+                .HasForeignKey(ss => ss.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ss => ss.Skill)
+                .WithMany(s => s.StudentSkills)
+                .HasForeignKey(ss => ss.SkillId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ss => ss.Verifier)
+                .WithMany(u => u.VerifiedStudentSkills)
+                .HasForeignKey(ss => ss.VerifiedBy)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // STUDENT SKILL EVIDENCE
+        // =============================================
+        modelBuilder.Entity<StudentSkillEvidence>(entity =>
+        {
+            entity.HasOne(e => e.StudentSkill)
+                .WithMany(ss => ss.Evidences)
+                .HasForeignKey(e => e.StudentSkillId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Submission)
+                .WithMany()
+                .HasForeignKey(e => e.SubmissionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Certificate)
+                .WithMany()
+                .HasForeignKey(e => e.CertificateId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.MediaAsset)
+                .WithMany()
+                .HasForeignKey(e => e.MediaAssetId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.StudentSkillId, e.SubmissionId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"SubmissionId\" IS NOT NULL");
+
+            entity.HasIndex(e => new { e.StudentSkillId, e.CertificateId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"CertificateId\" IS NOT NULL");
+
+            entity.HasIndex(e => new { e.StudentSkillId, e.MediaAssetId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"MediaAssetId\" IS NOT NULL");
         });
 
         // =============================================

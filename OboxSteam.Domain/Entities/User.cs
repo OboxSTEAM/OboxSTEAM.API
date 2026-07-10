@@ -38,6 +38,7 @@ public class User : BaseEntity
     public ICollection<ParentStudent> StudentRelations { get; set; } = new List<ParentStudent>();
     public StudentProfile? StudentProfile { get; set; }
     public ICollection<StudentSkill> StudentSkills { get; set; } = new List<StudentSkill>();
+    public ICollection<StudentSkill> VerifiedStudentSkills { get; set; } = new List<StudentSkill>();
     public ICollection<StandardizedTest> StandardizedTests { get; set; } = new List<StandardizedTest>();
     public Expert? Expert { get; set; }
     public FaceEmbedding? FaceEmbedding { get; set; }
