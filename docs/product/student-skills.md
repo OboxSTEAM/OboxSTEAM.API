@@ -14,7 +14,11 @@ Shared taxonomy entries with:
 - `Category`: Science | Technology | Engineering | Arts | Math | SoftSkill
 - Optional `Subcategory` and `Description`
 
-Catalog seed and admin CRUD are not in the schema-only slice.
+Seeded via `SeedService.SeedSkillsAsync` (idempotent by `Code`) as part of
+`SeedAllDataAsync`.
+
+Module `LearningOutcomes` stay as free-text on `Module`. Mapping outcome → skill
+is deferred (LLM or a future join table when product needs a durable map).
 
 ## Student snapshot (`StudentSkill`)
 
@@ -43,4 +47,5 @@ Application services must require at least one FK when creating evidence.
 
 - REST endpoints
 - Automatic LLM assessment
-- Seed of the full STEAM skill list
+- Durable LearningOutcome → Skill join table
+- Seeding per-student `StudentSkill` rows
