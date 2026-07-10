@@ -57,6 +57,8 @@ public class TimeRangeDto
 
 public class CreateHighlightStackRequest
 {
+    public Guid ProgramId { get; init; }
+    public Guid? StudentId { get; init; }
     public string? StrengthDescription { get; init; }
 }
 

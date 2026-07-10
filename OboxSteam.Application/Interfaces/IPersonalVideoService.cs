@@ -9,30 +9,32 @@ namespace OboxSteam.Application.Interfaces;
 /// </summary>
 public interface IPersonalVideoService
 {
+    /// <param name="studentId">
+    /// Target student. When null, uses the authenticated user from JWT claims.
+    /// </param>
     Task<HighlightVideoStackDto> CreateStackAsync(
-        Guid programId, Guid studentId, string? strengthDescription = null);
+        Guid programId, Guid? studentId = null, string? strengthDescription = null);
 
-    Task<IReadOnlyList<HighlightVideoStackDto>> GetStacksAsync(Guid programId, Guid studentId);
+    /// <param name="studentId">
+    /// Target student. When null, uses the authenticated user from JWT claims.
+    /// </param>
+    Task<IReadOnlyList<HighlightVideoStackDto>> GetStacksAsync(Guid programId, Guid? studentId = null);
 
-    Task<HighlightVideoStackDto?> GetStackAsync(Guid programId, Guid studentId, Guid stackId);
+    Task<HighlightVideoStackDto?> GetStackAsync(Guid stackId);
 
     Task<HighlightVideoItemDto> TrimItemAsync(
-        Guid programId,
-        Guid studentId,
         Guid stackId,
         Guid parentItemId,
         TrimHighlightVideoRequest request);
 
     Task<HighlightVideoItemDto> AddSegmentAsync(
-        Guid programId,
-        Guid studentId,
         Guid stackId,
         Guid parentItemId,
         AddHighlightSegmentRequest request);
 
-    Task DeleteItemAsync(Guid programId, Guid studentId, Guid stackId, Guid itemId);
+    Task DeleteItemAsync(Guid stackId, Guid itemId);
 
-    Task DeleteStackAsync(Guid programId, Guid studentId, Guid stackId);
+    Task DeleteStackAsync(Guid stackId);
 
     Task HandlePersonalVideoJobCompletionAsync(string jobId, bool isSuccess);
 

@@ -88,6 +88,7 @@ public class PersonalVideoService : IPersonalVideoService
     private readonly IStrengthMatchService _strengthMatchService;
     private readonly IBlobService _blobService;
     private readonly IPersonalVideoQueue _queue;
+    private readonly IClaimsService _claimsService;
     private readonly ILogger<PersonalVideoService> _logger;
 
     public PersonalVideoService(
@@ -96,6 +97,7 @@ public class PersonalVideoService : IPersonalVideoService
         IStrengthMatchService strengthMatchService,
         IBlobService blobService,
         IPersonalVideoQueue queue,
+        IClaimsService claimsService,
         ILogger<PersonalVideoService> logger)
     {
         _unitOfWork = unitOfWork;
@@ -103,6 +105,7 @@ public class PersonalVideoService : IPersonalVideoService
         _strengthMatchService = strengthMatchService;
         _blobService = blobService;
         _queue = queue;
+        _claimsService = claimsService;
         _logger = logger;
         _s3Bucket = blobService.BucketName;
     }
@@ -113,15 +116,16 @@ public class PersonalVideoService : IPersonalVideoService
 
     /// <inheritdoc />
     public async Task<HighlightVideoStackDto> CreateStackAsync(
-        Guid programId, Guid studentId, string? strengthDescription = null)
+        Guid programId, Guid? studentId = null, string? strengthDescription = null)
     {
-        await ValidateProgramAndStudentAsync(programId, studentId);
+        var resolvedStudentId = ResolveStudentId(studentId);
+        await ValidateProgramAndStudentAsync(programId, resolvedStudentId);
 
         var normalizedStrength = NormalizeStrengthDescription(strengthDescription);
 
         var existingStack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
             s => s.ProgramId == programId
-                 && s.StudentId == studentId
+                 && s.StudentId == resolvedStudentId
                  && s.StrengthDescription == normalizedStrength);
 
         if (existingStack != null)
@@ -147,7 +151,7 @@ public class PersonalVideoService : IPersonalVideoService
         }
 
         var stacks = await _unitOfWork.HighlightVideoStacks.GetAllAsync(
-            s => s.ProgramId == programId && s.StudentId == studentId);
+            s => s.ProgramId == programId && s.StudentId == resolvedStudentId);
 
         if (stacks.Count >= MaxStacksPerStudentProgram)
             throw ErrorHelper.Conflict(
@@ -156,7 +160,7 @@ public class PersonalVideoService : IPersonalVideoService
         var stack = new HighlightVideoStack
         {
             ProgramId = programId,
-            StudentId = studentId,
+            StudentId = resolvedStudentId,
             StrengthDescription = normalizedStrength,
         };
         await _unitOfWork.HighlightVideoStacks.AddAsync(stack);
@@ -168,12 +172,14 @@ public class PersonalVideoService : IPersonalVideoService
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<HighlightVideoStackDto>> GetStacksAsync(Guid programId, Guid studentId)
+    public async Task<IReadOnlyList<HighlightVideoStackDto>> GetStacksAsync(
+        Guid programId, Guid? studentId = null)
     {
-        await ValidateProgramAndStudentAsync(programId, studentId);
+        var resolvedStudentId = ResolveStudentId(studentId);
+        await ValidateProgramAndStudentAsync(programId, resolvedStudentId);
 
         var stacks = await _unitOfWork.HighlightVideoStacks.GetAllAsync(
-            s => s.ProgramId == programId && s.StudentId == studentId);
+            s => s.ProgramId == programId && s.StudentId == resolvedStudentId);
 
         var result = new List<HighlightVideoStackDto>();
         foreach (var stack in stacks.OrderBy(s => s.CreatedAt))
@@ -186,10 +192,9 @@ public class PersonalVideoService : IPersonalVideoService
     }
 
     /// <inheritdoc />
-    public async Task<HighlightVideoStackDto?> GetStackAsync(Guid programId, Guid studentId, Guid stackId)
+    public async Task<HighlightVideoStackDto?> GetStackAsync(Guid stackId)
     {
-        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
-            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId);
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(s => s.Id == stackId);
 
         if (stack == null)
             return null;
@@ -200,16 +205,11 @@ public class PersonalVideoService : IPersonalVideoService
 
     /// <inheritdoc />
     public async Task<HighlightVideoItemDto> TrimItemAsync(
-        Guid programId,
-        Guid studentId,
         Guid stackId,
         Guid parentItemId,
         TrimHighlightVideoRequest request)
     {
-        await ValidateProgramAndStudentAsync(programId, studentId);
-
-        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
-            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId)
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(s => s.Id == stackId)
             ?? throw ErrorHelper.NotFound($"Highlight stack '{stackId}' not found.");
 
         var items = await LoadStackItemsAsync(stack.Id);
@@ -291,8 +291,8 @@ public class PersonalVideoService : IPersonalVideoService
         _queue.Enqueue(new PersonalVideoJob(
             trimItem.Id,
             PersonalVideoJobKind.ManifestEncode,
-            programId,
-            studentId,
+            stack.ProgramId,
+            stack.StudentId,
             StrengthDescription: null));
 
         return await MapItemToDtoAsync(trimItem, request.ExcludeRanges);
@@ -300,16 +300,11 @@ public class PersonalVideoService : IPersonalVideoService
 
     /// <inheritdoc />
     public async Task<HighlightVideoItemDto> AddSegmentAsync(
-        Guid programId,
-        Guid studentId,
         Guid stackId,
         Guid parentItemId,
         AddHighlightSegmentRequest request)
     {
-        await ValidateProgramAndStudentAsync(programId, studentId);
-
-        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
-            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId)
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(s => s.Id == stackId)
             ?? throw ErrorHelper.NotFound($"Highlight stack '{stackId}' not found.");
 
         var items = await LoadStackItemsAsync(stack.Id);
@@ -335,7 +330,7 @@ public class PersonalVideoService : IPersonalVideoService
         if (startMs < 0 || endMs <= startMs)
             throw ErrorHelper.BadRequest("Segment start must be before end and non-negative.");
 
-        var media = await ValidateSegmentMediaAsync(programId, studentId, request.MediaId);
+        var media = await ValidateSegmentMediaAsync(stack.ProgramId, stack.StudentId, request.MediaId);
         var s3Key = ExtractS3KeyFromUrl(media.FileUrl);
         if (string.IsNullOrEmpty(s3Key))
             throw ErrorHelper.BadRequest("Cannot resolve source video key for the selected media.");
@@ -398,20 +393,17 @@ public class PersonalVideoService : IPersonalVideoService
         _queue.Enqueue(new PersonalVideoJob(
             segmentItem.Id,
             PersonalVideoJobKind.ManifestEncode,
-            programId,
-            studentId,
+            stack.ProgramId,
+            stack.StudentId,
             StrengthDescription: null));
 
         return await MapItemToDtoAsync(segmentItem);
     }
 
     /// <inheritdoc />
-    public async Task DeleteItemAsync(Guid programId, Guid studentId, Guid stackId, Guid itemId)
+    public async Task DeleteItemAsync(Guid stackId, Guid itemId)
     {
-        await ValidateProgramAndStudentAsync(programId, studentId);
-
-        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
-            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId)
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(s => s.Id == stackId)
             ?? throw ErrorHelper.NotFound($"Highlight stack '{stackId}' not found.");
 
         var item = await _unitOfWork.HighlightVideoItems.FirstOrDefaultAsync(
@@ -426,12 +418,9 @@ public class PersonalVideoService : IPersonalVideoService
     }
 
     /// <inheritdoc />
-    public async Task DeleteStackAsync(Guid programId, Guid studentId, Guid stackId)
+    public async Task DeleteStackAsync(Guid stackId)
     {
-        await ValidateProgramAndStudentAsync(programId, studentId);
-
-        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
-            s => s.Id == stackId && s.ProgramId == programId && s.StudentId == studentId)
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(s => s.Id == stackId)
             ?? throw ErrorHelper.NotFound($"Highlight stack '{stackId}' not found.");
 
         var items = await _unitOfWork.HighlightVideoItems.GetAllAsync(i => i.StackId == stack.Id);
@@ -548,6 +537,18 @@ public class PersonalVideoService : IPersonalVideoService
         }
 
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    private Guid ResolveStudentId(Guid? studentId)
+    {
+        if (studentId.HasValue && studentId.Value != Guid.Empty)
+            return studentId.Value;
+
+        var currentUserId = _claimsService.GetCurrentUserId;
+        if (currentUserId == Guid.Empty)
+            throw ErrorHelper.Unauthorized("StudentId is required when the caller is not authenticated.");
+
+        return currentUserId;
     }
 
     private async Task ValidateProgramAndStudentAsync(Guid programId, Guid studentId)
