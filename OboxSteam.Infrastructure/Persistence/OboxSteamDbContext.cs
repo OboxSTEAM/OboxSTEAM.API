@@ -84,6 +84,9 @@ public class OboxSteamDbContext : DbContext
     // ── 10. Reviews ──
     public DbSet<ProgramReview> ProgramReviews { get; set; }
 
+    // ── 11. Notifications ──
+    public DbSet<Notification> Notifications { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -139,6 +142,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<PaymentRequest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Invoice>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramReview>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Notification>().HasQueryFilter(e => !e.IsDeleted);
 
         // =============================================
         // 1. USER
@@ -885,6 +889,20 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(u => u.ProgramReviews)
                 .HasForeignKey(pr => pr.StudentId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // NOTIFICATION (in-app inbox per recipient)
+        // =============================================
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasIndex(n => new { n.RecipientUserId, n.ReadAt, n.CreatedAt });
+            entity.HasIndex(n => new { n.RecipientUserId, n.Type, n.EntityId });
+
+            entity.HasOne(n => n.Recipient)
+                .WithMany(u => u.Notifications)
+                .HasForeignKey(n => n.RecipientUserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // =============================================

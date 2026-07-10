@@ -64,4 +64,5 @@ public class User : BaseEntity
     public ICollection<SessionAttendance> SessionAttendances { get; set; } = new List<SessionAttendance>();
     public ICollection<SessionAttendance> RecordedSessionAttendances { get; set; } = new List<SessionAttendance>();
     public ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
+    public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
 }

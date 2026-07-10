@@ -56,6 +56,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<ProgramReview> ProgramReviews { get; }
     IGenericRepository<PaymentRequest> PaymentRequests { get; }
     IGenericRepository<Invoice> Invoices { get; }
+    IGenericRepository<Notification> Notifications { get; }
 
     Task<int> SaveChangesAsync();
 
