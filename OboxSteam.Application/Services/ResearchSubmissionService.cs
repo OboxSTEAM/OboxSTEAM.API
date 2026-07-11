@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ResearchSubmissionDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -405,6 +406,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         await _unitOfWork.Submissions.Update(submission);
         await _unitOfWork.SaveChangesAsync();
 
+        await RecalculateEnrollmentProgressAsync(submission);
+
         _logger.LogInformation(
             "GradeSubmission completed. SubmissionId={SubmissionId}, Status={Status}, GradedBy={GradedBy}",
             submission.Id,
@@ -440,5 +443,35 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             CreatedAt = submission.CreatedAt,
             UpdatedAt = submission.UpdatedAt
         };
+    }
+
+    /// <summary>
+    /// Recomputes module and program progress for the enrollment behind a graded submission,
+    /// so passing a research milestone immediately advances the curriculum progress.
+    /// </summary>
+    private async Task RecalculateEnrollmentProgressAsync(Submission submission)
+    {
+        if (!submission.ModuleEnrollmentId.HasValue)
+        {
+            return;
+        }
+
+        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(submission.ModuleEnrollmentId.Value);
+        if (moduleEnrollment == null || moduleEnrollment.IsDeleted)
+        {
+            return;
+        }
+
+        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, moduleEnrollment);
+
+        if (moduleEnrollment.ProgramEnrollmentId.HasValue)
+        {
+            await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                _unitOfWork,
+                moduleEnrollment.ProgramEnrollmentId.Value,
+                moduleEnrollment);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
     }
 }

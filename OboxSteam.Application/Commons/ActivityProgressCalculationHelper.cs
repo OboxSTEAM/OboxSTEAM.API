@@ -7,9 +7,13 @@ using OboxSteam.Domain.Interfaces;
 namespace OboxSteam.Application.Commons;
 
 /// <summary>
-/// Recalculates module and program enrollment progress after activity completion.
-/// Module progress: done activities / total module activities.
-/// Program progress: done activities / total program activities across all modules.
+/// Recalculates module and program enrollment progress after activity or assignment changes.
+/// Progress is measured in "units": each activity is one unit and each required assignment
+/// (<see cref="Assignment.IsRequiredForModulePass"/>) is one unit.
+/// Module progress: (done activities + passed required assignments) / total module units.
+/// Program progress: the same ratio aggregated across every module in the program.
+/// An assignment counts as done when it has a graded submission whose grade meets the
+/// assignment's <see cref="Assignment.PassScore"/> for that module enrollment attempt.
 /// </summary>
 public static class ActivityProgressCalculationHelper
 {
@@ -20,22 +24,27 @@ public static class ActivityProgressCalculationHelper
         var activityIds = await GetModuleActivityIdsAsync(
             unitOfWork,
             moduleEnrollment.ModuleId);
-        var totalActivities = activityIds.Count;
+        var requiredAssignments = await GetRequiredModuleAssignmentsAsync(
+            unitOfWork,
+            moduleEnrollment.ModuleId);
 
-        if (totalActivities == 0)
+        var totalUnits = activityIds.Count + requiredAssignments.Count;
+
+        if (totalUnits == 0)
         {
             moduleEnrollment.ProgressPercent = 0m;
             await unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
             return 0m;
         }
 
-        var doneProgresses = await unitOfWork.ActivityProgresses.GetAllAsync(
-            ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
-                  && ap.ActivityStatus == ActivityStatus.Done
-                  && !ap.IsDeleted);
+        var doneActivities = await CountDoneActivitiesAsync(unitOfWork, moduleEnrollment.Id);
+        var passedAssignments = await CountPassedAssignmentsAsync(
+            unitOfWork,
+            moduleEnrollment.Id,
+            requiredAssignments);
 
-        var doneCount = doneProgresses.Count;
-        var progressPercent = Math.Round((decimal)doneCount / totalActivities * 100m, 2);
+        var doneUnits = doneActivities + passedAssignments;
+        var progressPercent = Math.Round((decimal)doneUnits / totalUnits * 100m, 2);
 
         moduleEnrollment.ProgressPercent = progressPercent;
 
@@ -76,6 +85,23 @@ public static class ActivityProgressCalculationHelper
         return activityIds.Concat(researchActivityIds).Distinct().ToList();
     }
 
+    /// <summary>
+    /// Returns the assignments in a module that must be passed for the module to complete
+    /// (covers course-scoped, module-scoped, and research-milestone assignments, since every
+    /// assignment carries the owning <see cref="Assignment.ModuleId"/>).
+    /// </summary>
+    public static async Task<List<Assignment>> GetRequiredModuleAssignmentsAsync(
+        IUnitOfWork unitOfWork,
+        Guid moduleId)
+    {
+        var assignments = await unitOfWork.Assignments.GetAllAsync(
+            a => a.ModuleId == moduleId
+                 && a.IsRequiredForModulePass
+                 && !a.IsDeleted);
+
+        return assignments;
+    }
+
     public static async Task<decimal> RecalculateProgramProgressAsync(
         IUnitOfWork unitOfWork,
         Guid programEnrollmentId,
@@ -110,39 +136,83 @@ public static class ActivityProgressCalculationHelper
 
         latestEnrollmentByModuleId[updatedModuleEnrollment.ModuleId] = updatedModuleEnrollment;
 
-        var totalActivities = 0;
-        var doneActivities = 0;
+        var totalUnits = 0;
+        var doneUnits = 0;
 
         foreach (var module in modules)
         {
             var activityIds = await GetModuleActivityIdsAsync(unitOfWork, module.Id);
-            totalActivities += activityIds.Count;
+            var requiredAssignments = await GetRequiredModuleAssignmentsAsync(unitOfWork, module.Id);
+            totalUnits += activityIds.Count + requiredAssignments.Count;
 
             if (!latestEnrollmentByModuleId.TryGetValue(module.Id, out var moduleEnrollment))
             {
                 continue;
             }
 
-            var doneProgresses = await unitOfWork.ActivityProgresses.GetAllAsync(
-                ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
-                      && ap.ActivityStatus == ActivityStatus.Done
-                      && !ap.IsDeleted);
+            var doneActivities = await CountDoneActivitiesAsync(unitOfWork, moduleEnrollment.Id);
+            var passedAssignments = await CountPassedAssignmentsAsync(
+                unitOfWork,
+                moduleEnrollment.Id,
+                requiredAssignments);
 
-            doneActivities += doneProgresses.Count;
+            doneUnits += doneActivities + passedAssignments;
         }
 
-        if (totalActivities == 0)
+        if (totalUnits == 0)
         {
             programEnrollmentEntity.ProgressPercent = 0m;
             await unitOfWork.ProgramEnrollments.Update(programEnrollmentEntity);
             return 0m;
         }
 
-        var progressPercent = Math.Round((decimal)doneActivities / totalActivities * 100m, 2);
+        var progressPercent = Math.Round((decimal)doneUnits / totalUnits * 100m, 2);
 
         programEnrollmentEntity.ProgressPercent = progressPercent;
         await unitOfWork.ProgramEnrollments.Update(programEnrollmentEntity);
 
         return progressPercent;
+    }
+
+    private static async Task<int> CountDoneActivitiesAsync(IUnitOfWork unitOfWork, Guid moduleEnrollmentId)
+    {
+        var doneProgresses = await unitOfWork.ActivityProgresses.GetAllAsync(
+            ap => ap.ModuleEnrollmentId == moduleEnrollmentId
+                  && ap.ActivityStatus == ActivityStatus.Done
+                  && !ap.IsDeleted);
+
+        return doneProgresses.Count;
+    }
+
+    /// <summary>
+    /// Counts how many of the given required assignments have a passing graded submission
+    /// under this module enrollment attempt (grade meets the assignment's PassScore).
+    /// </summary>
+    private static async Task<int> CountPassedAssignmentsAsync(
+        IUnitOfWork unitOfWork,
+        Guid moduleEnrollmentId,
+        IReadOnlyList<Assignment> requiredAssignments)
+    {
+        if (requiredAssignments.Count == 0)
+        {
+            return 0;
+        }
+
+        var assignmentById = requiredAssignments.ToDictionary(a => a.Id);
+        var assignmentIds = assignmentById.Keys.ToList();
+
+        var gradedSubmissions = await unitOfWork.Submissions.GetAllAsync(
+            s => s.ModuleEnrollmentId == moduleEnrollmentId
+                 && assignmentIds.Contains(s.AssignmentId)
+                 && s.Status == SubmissionStatus.Graded
+                 && s.AssignedGrade != null
+                 && !s.IsDeleted);
+
+        return gradedSubmissions
+            .Where(s => assignmentById.TryGetValue(s.AssignmentId, out var assignment)
+                        && s.AssignedGrade!.Value >= assignment.PassScore)
+            .Select(s => s.AssignmentId)
+            .Distinct()
+            .Count();
     }
 }

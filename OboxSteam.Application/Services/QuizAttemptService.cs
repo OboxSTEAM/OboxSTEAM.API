@@ -339,6 +339,8 @@ public sealed class QuizAttemptService : IQuizAttemptService
         await _unitOfWork.Submissions.Update(submission);
         await _unitOfWork.SaveChangesAsync();
 
+        await RecalculateEnrollmentProgressAsync(submission);
+
         _logger.LogInformation(
             "SubmitQuiz graded submission. SubmissionId={SubmissionId}, Grade={Grade}, Passed={Passed}",
             submissionId, grade.AssignedGrade, grade.Passed);
@@ -584,4 +586,34 @@ public sealed class QuizAttemptService : IQuizAttemptService
 
     private static string GenerateSubmissionCode()
         => $"SUB-{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+
+    /// <summary>
+    /// Recomputes module and program progress for the enrollment behind a graded submission,
+    /// so passing an assignment immediately advances the curriculum progress.
+    /// </summary>
+    private async Task RecalculateEnrollmentProgressAsync(Submission submission)
+    {
+        if (!submission.ModuleEnrollmentId.HasValue)
+        {
+            return;
+        }
+
+        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(submission.ModuleEnrollmentId.Value);
+        if (moduleEnrollment == null || moduleEnrollment.IsDeleted)
+        {
+            return;
+        }
+
+        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, moduleEnrollment);
+
+        if (moduleEnrollment.ProgramEnrollmentId.HasValue)
+        {
+            await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                _unitOfWork,
+                moduleEnrollment.ProgramEnrollmentId.Value,
+                moduleEnrollment);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+    }
 }
