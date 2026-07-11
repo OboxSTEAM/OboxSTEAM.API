@@ -38,6 +38,7 @@ public partial class SeedService : ISeedService
         await SeedModuleEnrollmentsAsync();
         await SeedCourseEnrollmentsAsync();
         await SeedActivityBookingsAsync();
+        await SeedRoboticsQuestionBanksAsync();
         await SeedAssignmentsAsync();
         await SeedPaymentsAsync();
         await SeedProgramReviewsAsync();
