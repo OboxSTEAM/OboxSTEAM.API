@@ -14,6 +14,7 @@ public static class CurriculumStatusHelper
     public const string StatusCurrent = "current";
     public const string StatusAvailable = "available";
     public const string StatusLocked = "locked";
+    public const string StatusSubmitted = "submitted";
 
     public static bool IsActivityCompleted(
         Guid activityId,

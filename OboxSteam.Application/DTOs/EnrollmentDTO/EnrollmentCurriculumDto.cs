@@ -38,6 +38,9 @@ public class EnrollmentCurriculumModuleDto
     public List<EnrollmentCurriculumCourseDto> Courses { get; set; } = [];
 
     public List<EnrollmentCurriculumMilestoneDto> Milestones { get; set; } = [];
+
+    /// <summary>Module-scoped assignments (not tied to a specific course).</summary>
+    public List<EnrollmentCurriculumAssignmentDto> Assignments { get; set; } = [];
 }
 
 public class EnrollmentCurriculumCourseDto
@@ -49,6 +52,8 @@ public class EnrollmentCurriculumCourseDto
     public int CourseOrder { get; set; }
 
     public List<EnrollmentCurriculumActivityDto> Activities { get; set; } = [];
+
+    public List<EnrollmentCurriculumAssignmentDto> Assignments { get; set; } = [];
 }
 
 public class EnrollmentCurriculumMilestoneDto
@@ -60,6 +65,9 @@ public class EnrollmentCurriculumMilestoneDto
     public int MilestoneOrder { get; set; }
 
     public List<EnrollmentCurriculumActivityDto> Activities { get; set; } = [];
+
+    /// <summary>The graded deliverable submitted for this milestone.</summary>
+    public EnrollmentCurriculumAssignmentDto? Assignment { get; set; }
 }
 
 public class EnrollmentCurriculumActivityDto
@@ -89,4 +97,26 @@ public class EnrollmentCurriculumMaterialDto
     public string MaterialName { get; set; } = null!;
 
     public MaterialType MaterialType { get; set; }
+}
+
+public class EnrollmentCurriculumAssignmentDto
+{
+    public Guid AssignmentId { get; set; }
+
+    public string AssignmentCode { get; set; } = null!;
+
+    public string Title { get; set; } = null!;
+
+    public AssignmentType AssignmentType { get; set; }
+
+    public int MaxPoints { get; set; }
+
+    public decimal PassScore { get; set; }
+
+    public bool IsRequiredForModulePass { get; set; }
+
+    public DateTime? DueDate { get; set; }
+
+    /// <summary>Nav state: completed, submitted, available, or locked.</summary>
+    public string Status { get; set; } = null!;
 }

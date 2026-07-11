@@ -79,6 +79,33 @@ public static class ProgramCurriculumTreeLoader
                 m => allActivityIds.Contains(m.ActivityId) && !m.IsDeleted)
             : new List<Material>();
 
+        var moduleIds = modules.Select(m => m.Id).ToList();
+        var assignments = moduleIds.Count > 0
+            ? await unitOfWork.Assignments.GetAllAsync(
+                a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted)
+            : new List<Assignment>();
+
+        var courseIdSet = courseIds.ToHashSet();
+        var researchModuleIdSet = researchModuleIds.ToHashSet();
+
+        var assignmentsByCourseId = assignments
+            .Where(a => a.CourseId.HasValue && courseIdSet.Contains(a.CourseId.Value))
+            .GroupBy(a => a.CourseId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(a => a.Code).ToList());
+
+        var moduleScopedAssignmentsByModuleId = assignments
+            .Where(a => !a.CourseId.HasValue && !researchModuleIdSet.Contains(a.ModuleId))
+            .GroupBy(a => a.ModuleId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(a => a.Code).ToList());
+
+        var assignmentsById = assignments
+            .GroupBy(a => a.Id)
+            .ToDictionary(g => g.Key, g => g.First());
+
         var activitiesByCourseId = courseActivities
             .GroupBy(a => a.CourseId)
             .ToDictionary(
@@ -177,6 +204,9 @@ public static class ProgramCurriculumTreeLoader
             GlobalActivityOrder = globalActivityOrder,
             OrderedActivitiesByCourseId = orderedActivitiesByCourseId,
             OrderedActivitiesByMilestoneId = orderedActivitiesByMilestoneId,
+            AssignmentsByCourseId = assignmentsByCourseId,
+            ModuleScopedAssignmentsByModuleId = moduleScopedAssignmentsByModuleId,
+            AssignmentsById = assignmentsById,
         };
     }
 }

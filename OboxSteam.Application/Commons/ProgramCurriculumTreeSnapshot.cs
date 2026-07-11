@@ -34,4 +34,13 @@ public sealed class ProgramCurriculumTreeSnapshot
 
     /// <summary>Ordered activity IDs within each research milestone (key = milestoneId).</summary>
     public Dictionary<Guid, List<Guid>> OrderedActivitiesByMilestoneId { get; init; } = new();
+
+    /// <summary>Course-scoped assignments for non-research modules (key = courseId).</summary>
+    public Dictionary<Guid, List<Assignment>> AssignmentsByCourseId { get; init; } = new();
+
+    /// <summary>Module-scoped assignments (CourseId null) for non-research modules (key = moduleId).</summary>
+    public Dictionary<Guid, List<Assignment>> ModuleScopedAssignmentsByModuleId { get; init; } = new();
+
+    /// <summary>All loaded assignments by id (includes research milestone deliverables).</summary>
+    public Dictionary<Guid, Assignment> AssignmentsById { get; init; } = new();
 }
