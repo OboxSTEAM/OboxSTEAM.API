@@ -68,4 +68,32 @@ public class ActivityProgressController : ControllerBase
             "200",
             "Activity marked as done successfully."));
     }
+
+    // =========================================================================
+    // FORCE COMPLETE (TEST)  —  POST /api/activity-progresses/force-complete
+    // [Mentor, Manager]
+    // =========================================================================
+
+    [HttpPost("force-complete")]
+    [Authorize(Roles = "Mentor,Manager")]
+    [SwaggerOperation(
+        Summary = "Force an activity to Done (test only)",
+        Description = "Test-only endpoint that forces any activity to Done for a given student, bypassing all "
+            + "business rules (enrollment status, ownership, activity type, sequential lock, schedule windows). "
+            + "The module enrollment is resolved automatically. Requires Mentor or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<ActivityProgressResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> ForceCompleteActivity(
+        [FromBody, SwaggerParameter("Force complete activity request")] ForceCompleteActivityRequestDto dto)
+    {
+        var result = await _activityProgressService.ForceCompleteActivityAsync(dto.StudentId, dto.ActivityId);
+
+        return Ok(ApiResult<ActivityProgressResponseDto>.Success(
+            result,
+            "200",
+            "Activity force-completed successfully."));
+    }
 }

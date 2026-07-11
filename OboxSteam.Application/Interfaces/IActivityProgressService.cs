@@ -15,6 +15,13 @@ public interface IActivityProgressService
         Guid studentId,
         CompletionSource? completionSource = null);
 
+    /// <summary>
+    /// Test-only: forces an activity to Done for a student, bypassing all business
+    /// rules. Resolves the module enrollment automatically from the activity module
+    /// and the student's latest attempt, then recalculates module/program progress.
+    /// </summary>
+    Task<ActivityProgressResponseDto> ForceCompleteActivityAsync(Guid studentId, Guid activityId);
+
     Task<ActivityProgressResponseDto> SaveCheckpointForModuleEnrollmentAsync(
         Guid moduleEnrollmentId,
         Guid activityId,

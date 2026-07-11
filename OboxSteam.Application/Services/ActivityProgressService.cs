@@ -429,4 +429,118 @@ public sealed class ActivityProgressService : IActivityProgressService
             LastAccessedAt = progress.LastAccessedAt,
         };
     }
+
+    public async Task<ActivityProgressResponseDto> ForceCompleteActivityAsync(Guid studentId, Guid activityId)
+    {
+        ActivityProgressValidator.ValidateActivityIdRequired(activityId);
+
+        if (studentId == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("StudentId is required.");
+        }
+
+        var activityEntity = await _unitOfWork.Activities.GetByIdAsync(activityId);
+        var activity = ActivityProgressValidator.ValidateActivityExists(activityEntity, activityId);
+
+        var courseEntity = await _unitOfWork.Courses.GetByIdAsync(activity.CourseId);
+        if (courseEntity == null || courseEntity.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Course for activity '{activity.Id}' not found.");
+        }
+
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.StudentId == studentId
+                  && me.ModuleId == courseEntity.ModuleId
+                  && !me.IsDeleted);
+
+        var moduleEnrollment = moduleEnrollments
+            .OrderByDescending(me => me.AttemptNumber)
+            .FirstOrDefault();
+
+        if (moduleEnrollment == null)
+        {
+            throw ErrorHelper.NotFound(
+                $"No module enrollment found for student '{studentId}' on module '{courseEntity.ModuleId}'.");
+        }
+
+        var now = DateTime.UtcNow;
+
+        var progressEntity = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+            ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
+                  && ap.ActivityId == activityId
+                  && !ap.IsDeleted);
+
+        ActivityProgress progress;
+
+        if (progressEntity == null)
+        {
+            progress = new ActivityProgress
+            {
+                StudentId = studentId,
+                ActivityId = activityId,
+                ModuleEnrollmentId = moduleEnrollment.Id,
+                ActivityStatus = ActivityStatus.Done,
+                IsCompleted = true,
+                CompletedAt = now,
+                CompletionSource = CompletionSource.Manual,
+                ResumeState = null,
+                LastAccessedAt = now,
+            };
+
+            await _unitOfWork.ActivityProgresses.AddAsync(progress);
+        }
+        else
+        {
+            progress = progressEntity;
+            progress.ActivityStatus = ActivityStatus.Done;
+            progress.IsCompleted = true;
+            progress.CompletedAt = now;
+            progress.CompletionSource = CompletionSource.Manual;
+            progress.ResumeState = null;
+            progress.LastAccessedAt = now;
+            await _unitOfWork.ActivityProgresses.Update(progress);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+            _unitOfWork,
+            moduleEnrollment);
+
+        decimal? programProgressPercent = null;
+        if (moduleEnrollment.ProgramEnrollmentId.HasValue)
+        {
+            programProgressPercent = await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                _unitOfWork,
+                moduleEnrollment.ProgramEnrollmentId.Value,
+                moduleEnrollment);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogWarning(
+            "[ForceCompleteActivityAsync] TEST bypass — activity {ActivityId} forced to Done for student {StudentId}, progress {ProgressId}.",
+            activityId,
+            studentId,
+            progress.Id);
+
+        return new ActivityProgressResponseDto
+        {
+            Id = progress.Id,
+            StudentId = progress.StudentId,
+            ActivityId = progress.ActivityId,
+            ModuleEnrollmentId = progress.ModuleEnrollmentId,
+            ActivityStatus = progress.ActivityStatus,
+            IsCompleted = progress.IsCompleted,
+            CompletedAt = progress.CompletedAt,
+            CreatedAt = progress.CreatedAt,
+            UpdatedAt = progress.UpdatedAt,
+            ActivityCode = activity.Code,
+            ActivityName = activity.Name,
+            ActivityType = activity.ActivityType,
+            ActivityOrder = activity.ActivityOrder,
+            ModuleProgressPercent = moduleProgressPercent,
+            ProgramProgressPercent = programProgressPercent,
+        };
+    }
 }
