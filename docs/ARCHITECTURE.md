@@ -120,6 +120,7 @@ operations own validation and side effects; queries return DTOs.
 | AssignmentController | `/api/assignments` | Assignments |
 | QuestionBankController | `/api/question-banks` | Question banks |
 | QuizController | `/api` | Quiz attempt lifecycle |
+| RetrospectiveController | `/api` | Retrospective draft and submit |
 | ProgramEnrollmentController | `/api/program-enrollments` | Program enrollment |
 | ModuleEnrollmentController | `/api/module-enrollments` | Module enrollment |
 | ParentController | `/api/parent` | Parent–student linking |

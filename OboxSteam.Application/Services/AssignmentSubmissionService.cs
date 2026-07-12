@@ -12,7 +12,7 @@ using OboxSteam.Domain.Interfaces;
 namespace OboxSteam.Application.Services;
 
 /// <summary>
-/// Submission and grading flow for non-research assignments (FileUpload, Retrospective, Practical).
+/// Submission and grading flow for FileUpload assignments.
 /// A student turns in work; a mentor/manager grades it with a flexible pass score. Grading
 /// recalculates module and program progress so the assignment counts toward completion.
 /// </summary>
@@ -24,9 +24,7 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
 
     private static readonly HashSet<AssignmentType> SupportedTypes =
     [
-        AssignmentType.FileUpload,
-        AssignmentType.Retrospective,
-        AssignmentType.Practical
+        AssignmentType.FileUpload
     ];
 
     private readonly IClaimsService _claimsService;
@@ -260,6 +258,12 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         if (assignment.AssignmentType == AssignmentType.Quiz)
         {
             throw ErrorHelper.BadRequest("Quiz assignments are submitted through the quiz endpoints.");
+        }
+
+        if (assignment.AssignmentType == AssignmentType.Retrospective)
+        {
+            throw ErrorHelper.BadRequest(
+                "Retrospective assignments are submitted through the retrospective endpoints.");
         }
 
         if (!SupportedTypes.Contains(assignment.AssignmentType))

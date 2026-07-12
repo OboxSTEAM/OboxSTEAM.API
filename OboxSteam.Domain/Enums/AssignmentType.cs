@@ -4,6 +4,5 @@ public enum AssignmentType
 {
     Retrospective,
     FileUpload,
-    Quiz,
-    Practical
+    Quiz
 }

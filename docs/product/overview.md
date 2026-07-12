@@ -33,7 +33,7 @@ Program
   └── Module (Theory | Experiential | Research)
         ├── Course (mentor-owned)
         │     └── Activity (SelfPaced | LiveOnline | Offline)
-        ├── Assignment (Quiz | FileUpload | Practical | Retrospective)
+        ├── Assignment (Quiz | FileUpload | Retrospective)
         └── Material
 Class (cohort / đợt học)
   └── ClassSession (scheduled sessions tied to activities)

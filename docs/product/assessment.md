@@ -6,15 +6,17 @@
 | --- | --- |
 | Quiz | Auto-graded question flow via quiz endpoints |
 | FileUpload | Student uploads evidence files |
-| Practical | Hands-on work with submission review |
-| Retrospective | Reflective submission |
+| Retrospective | Plain-text reflective submission via retrospective endpoints |
+
+Hands-on session evidence is captured through activities and media upload (see
+`curriculum.md`); it is not an assignment type.
 
 Assignments belong to a `Module` and optionally a `Course`. Fields include
 `MaxPoints`, `PassScore`, `IsRequiredForModulePass`, availability window, and
 `DueDate`.
 
 API: `/api/assignments` — CRUD for Manager/SuperAdmin; student submission
-flows via assignment and quiz services.
+flows via assignment, quiz, and retrospective services.
 
 ## Question Banks
 
@@ -60,6 +62,25 @@ Flow:
 2. Draft answers stored in `QuizAnswer`.
 3. Submit merges drafts, validates completeness, auto-grades, sets Graded status.
 4. Result returns score against `PassScore` and `MaxPoints`.
+
+## Retrospective Lifecycle (Student)
+
+Endpoints on `RetrospectiveController` (`/api`):
+
+| Step | Endpoint |
+| --- | --- |
+| Start or resume draft | `POST /api/assignments/{assignmentId}/retrospective/start` |
+| Get submission | `GET /api/submissions/{submissionId}/retrospective` |
+| Save draft | `PUT /api/submissions/{submissionId}/retrospective/draft` |
+| Submit | `POST /api/submissions/{submissionId}/retrospective/submit` |
+
+Flow:
+
+1. Student starts → creates or resumes `Submission` in Pending (or
+   `ReturnedForRevision`) with plain-text `ContentText`.
+2. Draft saves update `ContentText` while in progress.
+3. Submit requires non-empty text, sets `TurnedIn` for mentor grading.
+4. Grading uses `POST /api/assignment-submissions/{submissionId}/grade`.
 
 ## Submissions and Evidence
 

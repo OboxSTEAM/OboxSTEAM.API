@@ -22,8 +22,8 @@ public sealed class AssignmentSubmissionController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Submit work for a non-research assignment",
-        Description = "Student turns in a FileUpload, Retrospective, or Practical assignment. "
-            + "Quizzes and research milestones use their dedicated endpoints. "
+        Description = "Student turns in a FileUpload assignment. "
+            + "Quizzes and retrospectives use their dedicated endpoints. "
             + "Provide ContentText and/or FileUrl.")]
     [ProducesResponseType(typeof(ApiResult<AssignmentSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
@@ -46,7 +46,7 @@ public sealed class AssignmentSubmissionController : ControllerBase
     [Authorize(Roles = "Student,Parent,Mentor,Manager,SuperAdmin")]
     [SwaggerOperation(
         Summary = "Get a non-research assignment submission by ID",
-        Description = "Returns a FileUpload, Retrospective, or Practical submission. Access is enforced per role.")]
+        Description = "Returns a FileUpload submission. Access is enforced per role.")]
     [ProducesResponseType(typeof(ApiResult<AssignmentSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

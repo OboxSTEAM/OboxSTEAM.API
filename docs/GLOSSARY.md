@@ -29,7 +29,7 @@ A cohort (đợt học) running a program on a shared schedule with a mentor.
 
 ## Assignment
 
-Graded work attached to a module or course (`Quiz`, `FileUpload`, `Practical`,
+Graded work attached to a module or course (`Quiz`, `FileUpload`,
 `Retrospective`).
 
 ## Question Bank
