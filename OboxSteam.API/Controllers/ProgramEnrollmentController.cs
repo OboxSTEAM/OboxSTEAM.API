@@ -117,7 +117,7 @@ public class ProgramEnrollmentController : ControllerBase
     [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
     [SwaggerOperation(
         Summary = "Get enrollment-scoped program curriculum",
-        Description = "Returns the curriculum tree with per-student activity status, module locks, and current activity.")]
+        Description = "Returns the curriculum tree with per-student activity and assignment status, module locks, and current activity.")]
     [ProducesResponseType(typeof(ApiResult<EnrollmentCurriculumDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

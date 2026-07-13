@@ -30,6 +30,24 @@ Parents and managers can view enrollment state on shared read endpoints
 - Quiz and assignment access require active module enrollment (enforced in
   `IQuizAttemptService` and assignment services).
 
+## Enrollment curriculum tree
+
+`GET /api/program-enrollments/{enrollmentId}/curriculum` returns per-student
+nav status for activities and assignments (`locked`, `available`, `current`,
+`completed`, `submitted`).
+
+Assignment locking mirrors activity gating:
+
+- **Module locked** — prerequisite module not complete → `locked`.
+- **Course assignment** — locked until all activities in that course are done.
+- **Module-scoped assignment** — locked until all activities in the module are done.
+- **Research milestone deliverable** — locked until the previous milestone is
+  passed (if any) and required milestone activities are completed.
+
+Assignments with an in-progress draft (`Pending` / `ReturnedForRevision`) stay
+`available` when prerequisites are met. Turned-in work shows `submitted`; a
+passing grade shows `completed`.
+
 ## Progress
 
 `ActivityProgress` tracks completion per student per activity.

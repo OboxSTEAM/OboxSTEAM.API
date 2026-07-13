@@ -438,6 +438,13 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             .GroupBy(s => s.AssignmentId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        var submissionsByMilestoneId = submissions
+            .Where(s => s.ResearchMilestoneId.HasValue)
+            .GroupBy(s => s.ResearchMilestoneId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(s => s.AttemptNumber).ThenByDescending(s => s.CreatedAt).First());
+
         return new EnrollmentCurriculumContext
         {
             LatestEnrollmentByModuleId = latestEnrollmentByModuleId,
@@ -445,6 +452,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             ProgressByActivityId = progressByActivityId,
             CheckedInActivityIds = checkedInActivityIds,
             SubmissionsByAssignmentId = submissionsByAssignmentId,
+            SubmissionsByMilestoneId = submissionsByMilestoneId,
         };
     }
 
@@ -476,34 +484,61 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         };
 
         moduleDto.Assignments = snapshot.ModuleScopedAssignmentsByModuleId.TryGetValue(module.Id, out var moduleAssignments)
-            ? moduleAssignments.Select(assignment => MapEnrollmentAssignment(assignment, context, isLocked)).ToList()
+            ? moduleAssignments.Select(assignment => MapEnrollmentAssignment(
+                assignment,
+                snapshot,
+                context,
+                module.Id,
+                isLocked)).ToList()
             : [];
 
         if (module.ModuleType == ModuleType.Research)
         {
-            moduleDto.Milestones = snapshot.MilestonesByModuleId.TryGetValue(module.Id, out var moduleMilestones)
-                ? moduleMilestones.Select(milestone => new EnrollmentCurriculumMilestoneDto
+            if (snapshot.MilestonesByModuleId.TryGetValue(module.Id, out var moduleMilestones))
+            {
+                var milestoneDtos = new List<EnrollmentCurriculumMilestoneDto>();
+                ResearchMilestone? previousMilestone = null;
+
+                foreach (var milestone in moduleMilestones)
                 {
-                    MilestoneId = milestone.Id,
-                    MilestoneName = milestone.Title,
-                    MilestoneOrder = milestone.MilestoneOrder,
-                    Activities = snapshot.LinksByMilestoneId.TryGetValue(milestone.Id, out var links)
-                        ? links
-                            .Select(link => snapshot.ActivitiesById.GetValueOrDefault(link.ActivityId))
-                            .Where(activity => activity != null)
-                            .Select(activity => MapEnrollmentActivity(
-                                activity!,
+                    milestoneDtos.Add(new EnrollmentCurriculumMilestoneDto
+                    {
+                        MilestoneId = milestone.Id,
+                        MilestoneName = milestone.Title,
+                        MilestoneOrder = milestone.MilestoneOrder,
+                        Activities = snapshot.LinksByMilestoneId.TryGetValue(milestone.Id, out var links)
+                            ? links
+                                .Select(link => snapshot.ActivitiesById.GetValueOrDefault(link.ActivityId))
+                                .Where(activity => activity != null)
+                                .Select(activity => MapEnrollmentActivity(
+                                    activity!,
+                                    snapshot,
+                                    context,
+                                    currentActivityId,
+                                    isLocked))
+                                .ToList()
+                            : [],
+                        Assignment = snapshot.AssignmentsById.TryGetValue(milestone.AssignmentId, out var milestoneAssignment)
+                            ? MapEnrollmentAssignment(
+                                milestoneAssignment,
                                 snapshot,
                                 context,
-                                currentActivityId,
-                                isLocked))
-                            .ToList()
-                        : [],
-                    Assignment = snapshot.AssignmentsById.TryGetValue(milestone.AssignmentId, out var milestoneAssignment)
-                        ? MapEnrollmentAssignment(milestoneAssignment, context, isLocked)
-                        : null,
-                }).ToList()
-                : [];
+                                module.Id,
+                                isLocked,
+                                milestone,
+                                previousMilestone)
+                            : null,
+                    });
+
+                    previousMilestone = milestone;
+                }
+
+                moduleDto.Milestones = milestoneDtos;
+            }
+            else
+            {
+                moduleDto.Milestones = [];
+            }
         }
         else if (snapshot.CoursesByModuleId.TryGetValue(module.Id, out var moduleCourses))
         {
@@ -525,7 +560,12 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                     : [],
                 Assignments = snapshot.AssignmentsByCourseId.TryGetValue(course.Id, out var courseAssignments)
                     ? courseAssignments
-                        .Select(assignment => MapEnrollmentAssignment(assignment, context, isLocked))
+                        .Select(assignment => MapEnrollmentAssignment(
+                            assignment,
+                            snapshot,
+                            context,
+                            module.Id,
+                            isLocked))
                         .ToList()
                     : [],
             }).ToList();
@@ -536,8 +576,12 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
 
     private static EnrollmentCurriculumAssignmentDto MapEnrollmentAssignment(
         Assignment assignment,
+        ProgramCurriculumTreeSnapshot snapshot,
         EnrollmentCurriculumContext context,
-        bool moduleLocked)
+        Guid moduleId,
+        bool moduleLocked,
+        ResearchMilestone? researchMilestone = null,
+        ResearchMilestone? previousResearchMilestone = null)
     {
         return new EnrollmentCurriculumAssignmentDto
         {
@@ -549,32 +593,83 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             PassScore = assignment.PassScore,
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
             DueDate = assignment.DueDate,
-            Status = ResolveAssignmentStatus(assignment, context, moduleLocked),
+            Status = ResolveAssignmentStatus(
+                assignment,
+                snapshot,
+                context,
+                moduleId,
+                moduleLocked,
+                researchMilestone,
+                previousResearchMilestone),
         };
     }
 
     private static string ResolveAssignmentStatus(
         Assignment assignment,
+        ProgramCurriculumTreeSnapshot snapshot,
         EnrollmentCurriculumContext context,
-        bool moduleLocked)
+        Guid moduleId,
+        bool moduleLocked,
+        ResearchMilestone? researchMilestone = null,
+        ResearchMilestone? previousResearchMilestone = null)
     {
         if (moduleLocked)
         {
             return CurriculumStatusHelper.StatusLocked;
         }
 
-        if (!context.SubmissionsByAssignmentId.TryGetValue(assignment.Id, out var submissions)
-            || submissions.Count == 0)
+        if (context.SubmissionsByAssignmentId.TryGetValue(assignment.Id, out var submissions)
+            && submissions.Count > 0)
         {
-            return CurriculumStatusHelper.StatusAvailable;
+            var passed = submissions.Any(s =>
+                s.Status == SubmissionStatus.Graded
+                && s.AssignedGrade.HasValue
+                && s.AssignedGrade.Value >= assignment.PassScore);
+
+            if (passed)
+            {
+                return CurriculumStatusHelper.StatusCompleted;
+            }
+
+            var inProgress = submissions.Any(s =>
+                s.Status is SubmissionStatus.Pending or SubmissionStatus.ReturnedForRevision);
+
+            if (!inProgress)
+            {
+                return CurriculumStatusHelper.StatusSubmitted;
+            }
         }
 
-        var passed = submissions.Any(s =>
-            s.Status == SubmissionStatus.Graded
-            && s.AssignedGrade.HasValue
-            && s.AssignedGrade.Value >= assignment.PassScore);
+        if (!IsAssignmentAccessible(
+                assignment,
+                moduleId,
+                snapshot,
+                context,
+                researchMilestone,
+                previousResearchMilestone))
+        {
+            return CurriculumStatusHelper.StatusLocked;
+        }
 
-        return passed ? CurriculumStatusHelper.StatusCompleted : CurriculumStatusHelper.StatusSubmitted;
+        return CurriculumStatusHelper.StatusAvailable;
+    }
+
+    private static bool IsAssignmentAccessible(
+        Assignment assignment,
+        Guid moduleId,
+        ProgramCurriculumTreeSnapshot snapshot,
+        EnrollmentCurriculumContext context,
+        ResearchMilestone? researchMilestone,
+        ResearchMilestone? previousResearchMilestone)
+    {
+        return CurriculumStatusHelper.IsAssignmentAccessible(
+            assignment,
+            moduleId,
+            snapshot,
+            activityId => IsActivityCompleted(activityId, snapshot, context),
+            researchMilestone,
+            previousResearchMilestone,
+            context.SubmissionsByMilestoneId);
     }
 
     private static EnrollmentCurriculumActivityDto MapEnrollmentActivity(
@@ -717,5 +812,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         public HashSet<Guid> CheckedInActivityIds { get; init; } = [];
 
         public Dictionary<Guid, List<Submission>> SubmissionsByAssignmentId { get; init; } = new();
+
+        public Dictionary<Guid, Submission> SubmissionsByMilestoneId { get; init; } = new();
     }
 }

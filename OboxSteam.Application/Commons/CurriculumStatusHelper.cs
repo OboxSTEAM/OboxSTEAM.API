@@ -1,4 +1,5 @@
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
@@ -179,5 +180,101 @@ public static class CurriculumStatusHelper
             .Where(m => IsModuleUnlocked(m, latestEnrollmentByModuleId, modulesById))
             .Select(m => m.Id)
             .ToList();
+    }
+
+    /// <summary>
+    /// Course-scoped assignments unlock once every activity in the course is completed.
+    /// Module-scoped assignments unlock once every activity in the module is completed.
+    /// Research milestone deliverables use <see cref="IsResearchMilestoneAssignmentAccessible"/>.
+    /// </summary>
+    public static bool IsAssignmentAccessible(
+        Assignment assignment,
+        Guid moduleId,
+        ProgramCurriculumTreeSnapshot snapshot,
+        Func<Guid, bool> isActivityCompleted,
+        ResearchMilestone? researchMilestone = null,
+        ResearchMilestone? previousResearchMilestone = null,
+        IReadOnlyDictionary<Guid, Submission>? submissionsByMilestoneId = null)
+    {
+        if (researchMilestone != null)
+        {
+            return IsResearchMilestoneAssignmentAccessible(
+                researchMilestone,
+                previousResearchMilestone,
+                snapshot,
+                submissionsByMilestoneId ?? new Dictionary<Guid, Submission>(),
+                isActivityCompleted);
+        }
+
+        if (assignment.CourseId.HasValue)
+        {
+            return AreAllCourseActivitiesCompleted(assignment.CourseId.Value, snapshot, isActivityCompleted);
+        }
+
+        return AreAllModuleActivitiesCompleted(moduleId, snapshot, isActivityCompleted);
+    }
+
+    public static bool AreAllCourseActivitiesCompleted(
+        Guid courseId,
+        ProgramCurriculumTreeSnapshot snapshot,
+        Func<Guid, bool> isActivityCompleted)
+    {
+        if (!snapshot.OrderedActivitiesByCourseId.TryGetValue(courseId, out var activityIds)
+            || activityIds.Count == 0)
+        {
+            return true;
+        }
+
+        return activityIds.All(isActivityCompleted);
+    }
+
+    public static bool AreAllModuleActivitiesCompleted(
+        Guid moduleId,
+        ProgramCurriculumTreeSnapshot snapshot,
+        Func<Guid, bool> isActivityCompleted)
+    {
+        var activityIds = snapshot.ActivityModuleMap
+            .Where(kvp => kvp.Value == moduleId)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        if (activityIds.Count == 0)
+        {
+            return true;
+        }
+
+        return activityIds.All(isActivityCompleted);
+    }
+
+    public static bool IsResearchMilestoneAssignmentAccessible(
+        ResearchMilestone milestone,
+        ResearchMilestone? previousMilestone,
+        ProgramCurriculumTreeSnapshot snapshot,
+        IReadOnlyDictionary<Guid, Submission> submissionsByMilestoneId,
+        Func<Guid, bool> isActivityCompleted)
+    {
+        if (previousMilestone != null
+            && !ResearchMilestoneValidator.HasPassedSubmission(
+                previousMilestone,
+                submissionsByMilestoneId,
+                snapshot.AssignmentsById))
+        {
+            return false;
+        }
+
+        if (!snapshot.LinksByMilestoneId.TryGetValue(milestone.Id, out var links))
+        {
+            return true;
+        }
+
+        foreach (var link in links.Where(link => link.IsRequiredForSubmission))
+        {
+            if (!isActivityCompleted(link.ActivityId))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
