@@ -181,9 +181,56 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
             enrollment.StudentId,
             ModuleEnrollmentValidator.ViewEnrollmentForbiddenMessage);
 
+        var module = enrollment.Module;
+        return MapToResponseDto(enrollment, module);
+    }
+
+    public async Task<List<ModuleEnrollmentResponseDto>> GetModuleEnrollmentsByProgramEnrollmentIdAsync(
+        Guid programEnrollmentId)
+    {
+        ModuleEnrollmentValidator.ValidateProgramEnrollmentIdRequired(programEnrollmentId);
+
+        await EnrollmentAccessValidator.GetCurrentUserForGetAsync(
+            _unitOfWork,
+            _claimsService,
+            ModuleEnrollmentValidator.ViewListForbiddenMessage);
+
+        var programEnrollmentEntity = await _unitOfWork.ProgramEnrollments.GetByIdAsync(programEnrollmentId);
+        var programEnrollment = ModuleEnrollmentValidator.ValidateProgramEnrollmentExists(
+            programEnrollmentEntity,
+            programEnrollmentId);
+
+        await EnrollmentAccessValidator.EnsureCanViewEnrollmentAsync(
+            _unitOfWork,
+            _claimsService,
+            programEnrollment.StudentId,
+            ModuleEnrollmentValidator.ViewEnrollmentForbiddenMessage);
+
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.ProgramEnrollmentId == programEnrollmentId && !me.IsDeleted,
+            me => me.Module);
+
+        var latestPerModule = moduleEnrollments
+            .Where(me => me.Module != null && !me.Module.IsDeleted)
+            .GroupBy(me => me.ModuleId)
+            .Select(group => group.OrderByDescending(me => me.AttemptNumber).First())
+            .OrderBy(me => me.Module!.ModuleOrder)
+            .ToList();
+
+        _logger.LogInformation(
+            "[GetModuleEnrollmentsByProgramEnrollmentIdAsync] Retrieved {Count} module enrollments for program enrollment {ProgramEnrollmentId}.",
+            latestPerModule.Count,
+            programEnrollmentId);
+
+        return latestPerModule
+            .Select(enrollment => MapToResponseDto(enrollment, enrollment.Module!))
+            .ToList();
+    }
+
+    private static ModuleEnrollmentResponseDto MapToResponseDto(ModuleEnrollment enrollment, Module module)
+    {
         var programEnrollmentId = ModuleEnrollmentValidator.ValidateProgramEnrollmentLink(enrollment.ProgramEnrollmentId);
 
-        var module = enrollment.Module;
         return new ModuleEnrollmentResponseDto
         {
             Id = enrollment.Id,

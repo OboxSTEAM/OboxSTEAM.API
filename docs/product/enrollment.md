@@ -22,6 +22,11 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 Parents and managers can view enrollment state on shared read endpoints
 (Student, Parent, SuperAdmin, Manager).
 
+`GET /api/program-enrollments/{programEnrollmentId}/module-enrollments` returns
+the latest module enrollment per module (ordered by `ModuleOrder`). Use the
+returned `id` as `moduleEnrollmentId` for flows such as research milestone
+progress.
+
 ## Gating Rules
 
 - Module prerequisites: `PrerequisiteModuleId` must be satisfied before access.

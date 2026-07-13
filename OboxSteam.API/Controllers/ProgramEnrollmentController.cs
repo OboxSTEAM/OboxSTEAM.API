@@ -14,13 +14,16 @@ public class ProgramEnrollmentController : ControllerBase
 {
     private readonly IProgramEnrollmentService _programEnrollmentService;
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
+    private readonly IModuleEnrollmentService _moduleEnrollmentService;
 
     public ProgramEnrollmentController(
         IProgramEnrollmentService programEnrollmentService,
-        IEnrollmentCurriculumService enrollmentCurriculumService)
+        IEnrollmentCurriculumService enrollmentCurriculumService,
+        IModuleEnrollmentService moduleEnrollmentService)
     {
         _programEnrollmentService = programEnrollmentService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
+        _moduleEnrollmentService = moduleEnrollmentService;
     }
 
     // =========================================================================
@@ -107,6 +110,30 @@ public class ProgramEnrollmentController : ControllerBase
             result,
             "200",
             "Program enrollment class retrieved successfully."));
+    }
+
+    // =========================================================================
+    // GET MODULE ENROLLMENTS  —  GET /api/program-enrollments/{enrollmentId}/module-enrollments
+    // =========================================================================
+
+    [HttpGet("{enrollmentId:guid}/module-enrollments")]
+    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [SwaggerOperation(
+        Summary = "List module enrollments for a program enrollment",
+        Description = "Returns the latest module enrollment per module for the program enrollment. "
+            + "Use the returned Id as moduleEnrollmentId for module-scoped flows such as research milestone progress.")]
+    [ProducesResponseType(typeof(ApiResult<List<ModuleEnrollmentResponseDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetModuleEnrollments([FromRoute] Guid enrollmentId)
+    {
+        var result = await _moduleEnrollmentService.GetModuleEnrollmentsByProgramEnrollmentIdAsync(enrollmentId);
+
+        return Ok(ApiResult<List<ModuleEnrollmentResponseDto>>.Success(
+            result,
+            "200",
+            "Module enrollments retrieved successfully."));
     }
 
     // =========================================================================
