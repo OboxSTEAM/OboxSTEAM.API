@@ -156,7 +156,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
         c.HeadContent = $@"
             <style>{SwaggerTheme.GetSwaggerThemeCss(Theme.Dracula)}</style>";
         c.ConfigObject.AdditionalItems.Add("persistAuthorization", "true");
-        c.InjectJavascript("/custom-swagger.js");
+        c.InjectJavascript($"/custom-swagger.js?v={DateTime.UtcNow:yyyyMMddHHmmss}");
     });
 }
 
