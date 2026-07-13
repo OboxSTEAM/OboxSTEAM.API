@@ -28,33 +28,56 @@ jobs:
                   context: .
                   file: OboxSteam.API/Dockerfile
                   push: true
-                  tags: ${{ secrets.DOCKERHUB_USERNAME }}/oboxsteam-api:latest
+                  tags: |
+                      ${{ secrets.DOCKERHUB_USERNAME }}/oboxsteam-api:latest
+                      ${{ secrets.DOCKERHUB_USERNAME }}/oboxsteam-api:${{ github.sha }}
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
 
             - name: Deploy to VPS via SSH
               uses: appleboy/ssh-action@v1.0.3
+              env:
+                  IMAGE_TAG: ${{ github.sha }}
+                  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
               with:
                   host: ${{ secrets.VPS_HOST }}
                   username: ${{ secrets.VPS_USER }}
                   key: ${{ secrets.VPS_SSH_KEY }}
                   port: 22
+                  envs: IMAGE_TAG,DOCKERHUB_USERNAME
                   script: |
                     set -e
                     cd /root/apps/oboxsteam/oboxsteam-be
-                    
+
                     echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-                    
-                    echo "Pulling latest image..."
+
+                    if grep -q '^IMAGE_TAG=' .env 2>/dev/null; then
+                      sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${IMAGE_TAG}/" .env
+                    else
+                      echo "IMAGE_TAG=${IMAGE_TAG}" >> .env
+                    fi
+
+                    if grep -q '^DOCKERHUB_USERNAME=' .env 2>/dev/null; then
+                      sed -i "s/^DOCKERHUB_USERNAME=.*/DOCKERHUB_USERNAME=${DOCKERHUB_USERNAME}/" .env
+                    else
+                      echo "DOCKERHUB_USERNAME=${DOCKERHUB_USERNAME}" >> .env
+                    fi
+
+                    # Ensure compose pins the exact image tag built by this workflow run.
+                    sed -i 's|^[[:space:]]*image:.*oboxsteam-api.*|    image: ${DOCKERHUB_USERNAME:-ch1mple}/oboxsteam-api:${IMAGE_TAG:-latest}|' docker-compose.yml
+
+                    echo "Pulling image ${DOCKERHUB_USERNAME}/oboxsteam-api:${IMAGE_TAG}..."
                     docker compose pull obox-backend
-                    
-                    echo "Recreating container..."
-                    # Added --force-recreate to ensure Docker drops the old container entirely
+
+                    echo "Recreating container with pinned image tag ${IMAGE_TAG}..."
                     docker compose up -d --force-recreate obox-backend
-                    
+
+                    echo "Verifying deployed image..."
+                    docker inspect obox-backend --format 'Running image: {{.Config.Image}} ({{.Image}})'
+
                     echo "Cleaning up old images..."
                     docker image prune -af
-                    
+
                     echo "Checking container status and logs..."
                     sleep 3
                     docker ps -a --filter name=obox-backend

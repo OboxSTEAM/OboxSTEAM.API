@@ -1,6 +1,6 @@
 services:
   obox-backend:
-    image: ${DOCKER_REGISTRY-}oboxsteamapi
+    image: ${DOCKERHUB_USERNAME:-ch1mple}/oboxsteam-api:${IMAGE_TAG:-latest}
     container_name: obox-backend
     build:
       context: .
