@@ -14,6 +14,51 @@ const InitFunction = () => {
     title.style.fontWeight = "900";
     searchDiv.appendChild(title);
 
+    // Expand / Collapse controls
+    const controlsDiv = document.createElement("div");
+    controlsDiv.style.display = "flex";
+    controlsDiv.style.gap = "12px";
+    controlsDiv.style.flexWrap = "wrap";
+
+    const styleButton = (btn) => {
+        btn.type = "button";
+        btn.style.height = "44px";
+        btn.style.padding = "0 20px";
+        btn.style.borderRadius = "10px";
+        btn.style.border = "2px solid #3b82f6";
+        btn.style.background = "#3b82f6";
+        btn.style.color = "#ffffff";
+        btn.style.fontSize = "16px";
+        btn.style.fontWeight = "700";
+        btn.style.cursor = "pointer";
+        btn.style.transition = "background 0.2s, opacity 0.2s";
+        btn.addEventListener("mouseover", () => { btn.style.opacity = "0.85"; });
+        btn.addEventListener("mouseout", () => { btn.style.opacity = "1"; });
+    };
+
+    // Collapse All: close any expanded endpoint details, then collapse tag groups
+    const collapseAllBtn = document.createElement("button");
+    collapseAllBtn.textContent = "Collapse All";
+    styleButton(collapseAllBtn);
+    collapseAllBtn.addEventListener("click", () => {
+        document.querySelectorAll(".opblock.is-open .opblock-summary").forEach(summary => summary.click());
+        document.querySelectorAll(".opblock-tag-section.is-open .opblock-tag").forEach(tag => tag.click());
+    });
+    controlsDiv.appendChild(collapseAllBtn);
+
+    // Expand All: expand all tag groups so endpoints are listed
+    const expandAllBtn = document.createElement("button");
+    expandAllBtn.textContent = "Expand All";
+    styleButton(expandAllBtn);
+    expandAllBtn.style.background = "#ffffff";
+    expandAllBtn.style.color = "#3b82f6";
+    expandAllBtn.addEventListener("click", () => {
+        document.querySelectorAll(".opblock-tag-section:not(.is-open) .opblock-tag").forEach(tag => tag.click());
+    });
+    controlsDiv.appendChild(expandAllBtn);
+
+    searchDiv.appendChild(controlsDiv);
+
     // Search input
     const input = document.createElement("input");
     input.type = "text";
