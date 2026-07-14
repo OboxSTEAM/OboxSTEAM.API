@@ -144,32 +144,164 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             enrollment.StudentId,
             opener.Id);
 
-        var evidenceUrls = await ResearchSubmissionValidator.LoadEvidenceUrlsAsync(_unitOfWork, submission.Id);
+        return await MapSubmissionToResponseDtoAsync(submission, assignment);
+    }
 
-        return new ResearchSubmissionResponseDto
+    public async Task<StartResearchSubmissionForClassResponseDto> StartSubmissionForClass(
+        StartResearchSubmissionForClassRequestDto request)
+    {
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
+        ClassValidator.ValidateClassExists(classEntity, request.ClassId);
+
+        var milestone = await _unitOfWork.ResearchMilestones.GetByIdAsync(request.ResearchMilestoneId);
+        ResearchMilestoneValidator.ValidateMilestoneExists(milestone, request.ResearchMilestoneId);
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(milestone!.ModuleId);
+        ResearchMilestoneValidator.ValidateResearchModule(module, milestone.ModuleId);
+
+        if (module!.ProgramId != classEntity!.ProgramId)
         {
-            Id = submission.Id,
-            Code = submission.Code,
-            AssignmentId = submission.AssignmentId,
-            ResearchMilestoneId = submission.ResearchMilestoneId!.Value,
-            ModuleEnrollmentId = submission.ModuleEnrollmentId,
-            StudentId = submission.StudentId,
-            AttemptNumber = submission.AttemptNumber,
-            Status = submission.Status,
-            ContentText = submission.ContentText,
-            FileUrl = submission.FileUrl,
-            EvidenceUrls = evidenceUrls,
-            AssignedGrade = submission.AssignedGrade,
-            PassScore = assignment.PassScore,
-            MaxPoints = assignment.MaxPoints,
-            Passed = null,
-            MentorFeedback = submission.MentorFeedback,
-            VerifiedBy = submission.VerifiedBy,
-            SubmittedAt = submission.SubmittedAt,
-            GradedAt = submission.GradedAt,
-            CreatedAt = submission.CreatedAt,
-            UpdatedAt = submission.UpdatedAt
+            throw ErrorHelper.BadRequest(MentorScopeValidator.ClassProgramMismatchMessage);
+        }
+
+        var opener = await ResearchSubmissionValidator.EnsureCanStartSubmissionForClassAsync(
+            _unitOfWork,
+            _claimsService,
+            request.ClassId,
+            milestone.ModuleId);
+
+        var assignment = await _unitOfWork.Assignments.GetByIdAsync(milestone.AssignmentId);
+        if (assignment == null || assignment.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Assignment with id '{milestone.AssignmentId}' not found.");
+        }
+
+        var now = DateTime.UtcNow;
+        ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now);
+
+        var classEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ClassId == request.ClassId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        var response = new StartResearchSubmissionForClassResponseDto
+        {
+            ClassId = request.ClassId,
+            ResearchMilestoneId = request.ResearchMilestoneId,
+            TotalClassStudents = classEnrollments.Count
         };
+
+        if (classEnrollments.Count == 0)
+        {
+            return response;
+        }
+
+        var studentIds = classEnrollments.Select(ce => ce.StudentId).Distinct().ToList();
+        var programEnrollmentIds = classEnrollments
+            .Select(ce => ce.ProgramEnrollmentId)
+            .Distinct()
+            .ToList();
+
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => studentIds.Contains(me.StudentId)
+                  && me.ModuleId == milestone.ModuleId
+                  && me.Status == EnrollmentStatus.Active
+                  && !me.IsDeleted
+                  && me.ProgramEnrollmentId.HasValue
+                  && programEnrollmentIds.Contains(me.ProgramEnrollmentId.Value));
+
+        var moduleEnrollmentByStudentProgram = moduleEnrollments
+            .GroupBy(me => (me.StudentId, me.ProgramEnrollmentId!.Value))
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(me => me.AttemptNumber).ThenByDescending(me => me.CreatedAt).First());
+
+        var matchedModuleEnrollmentIds = classEnrollments
+            .Select(ce => moduleEnrollmentByStudentProgram.TryGetValue(
+                (ce.StudentId, ce.ProgramEnrollmentId),
+                out var enrollment)
+                ? enrollment.Id
+                : (Guid?)null)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .ToList();
+
+        var existingSubmissions = matchedModuleEnrollmentIds.Count == 0
+            ? []
+            : await _unitOfWork.Submissions.GetAllAsync(
+                s => s.ModuleEnrollmentId.HasValue
+                     && matchedModuleEnrollmentIds.Contains(s.ModuleEnrollmentId.Value)
+                     && s.ResearchMilestoneId == request.ResearchMilestoneId
+                     && !s.IsDeleted);
+
+        var existingSubmissionByEnrollmentId = existingSubmissions
+            .GroupBy(s => s.ModuleEnrollmentId!.Value)
+            .ToDictionary(group => group.Key, group => group.First());
+
+        var submissionsToAdd = new List<Submission>();
+
+        foreach (var classEnrollment in classEnrollments)
+        {
+            if (!moduleEnrollmentByStudentProgram.TryGetValue(
+                    (classEnrollment.StudentId, classEnrollment.ProgramEnrollmentId),
+                    out var moduleEnrollment))
+            {
+                response.Skipped.Add(new StartResearchSubmissionForClassSkippedDto
+                {
+                    StudentId = classEnrollment.StudentId,
+                    Reason = "No active module enrollment for this research module."
+                });
+                continue;
+            }
+
+            if (existingSubmissionByEnrollmentId.ContainsKey(moduleEnrollment.Id))
+            {
+                response.Skipped.Add(new StartResearchSubmissionForClassSkippedDto
+                {
+                    StudentId = classEnrollment.StudentId,
+                    Reason = "A research submission already exists for this enrollment and milestone."
+                });
+                continue;
+            }
+
+            submissionsToAdd.Add(new Submission
+            {
+                Id = Guid.NewGuid(),
+                Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
+                AssignmentId = assignment.Id,
+                StudentId = moduleEnrollment.StudentId,
+                ModuleEnrollmentId = moduleEnrollment.Id,
+                ResearchMilestoneId = milestone.Id,
+                AttemptNumber = 0,
+                Status = SubmissionStatus.Pending,
+                CreatedAt = now,
+                CreatedBy = opener.Id,
+                IsDeleted = false
+            });
+        }
+
+        if (submissionsToAdd.Count > 0)
+        {
+            await _unitOfWork.Submissions.AddRangeAsync(submissionsToAdd);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "StartSubmissionForClass opened {OpenedCount} research submission(s). ClassId={ClassId}, MilestoneId={MilestoneId}, OpenedBy={OpenedBy}",
+                submissionsToAdd.Count,
+                request.ClassId,
+                milestone.Id,
+                opener.Id);
+        }
+
+        foreach (var submission in submissionsToAdd)
+        {
+            response.Opened.Add(await MapSubmissionToResponseDtoAsync(submission, assignment));
+        }
+
+        response.OpenedCount = response.Opened.Count;
+        response.SkippedCount = response.Skipped.Count;
+
+        return response;
     }
 
     public async Task<CreateResearchSubmissionRequestDto> UploadSubmissionFile(
@@ -473,5 +605,38 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         }
 
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task<ResearchSubmissionResponseDto> MapSubmissionToResponseDtoAsync(
+        Submission submission,
+        Assignment assignment,
+        bool? passed = null)
+    {
+        var evidenceUrls = await ResearchSubmissionValidator.LoadEvidenceUrlsAsync(_unitOfWork, submission.Id);
+
+        return new ResearchSubmissionResponseDto
+        {
+            Id = submission.Id,
+            Code = submission.Code,
+            AssignmentId = submission.AssignmentId,
+            ResearchMilestoneId = submission.ResearchMilestoneId!.Value,
+            ModuleEnrollmentId = submission.ModuleEnrollmentId,
+            StudentId = submission.StudentId,
+            AttemptNumber = submission.AttemptNumber,
+            Status = submission.Status,
+            ContentText = submission.ContentText,
+            FileUrl = submission.FileUrl,
+            EvidenceUrls = evidenceUrls,
+            AssignedGrade = submission.AssignedGrade,
+            PassScore = assignment.PassScore,
+            MaxPoints = assignment.MaxPoints,
+            Passed = passed,
+            MentorFeedback = submission.MentorFeedback,
+            VerifiedBy = submission.VerifiedBy,
+            SubmittedAt = submission.SubmittedAt,
+            GradedAt = submission.GradedAt,
+            CreatedAt = submission.CreatedAt,
+            UpdatedAt = submission.UpdatedAt
+        };
     }
 }

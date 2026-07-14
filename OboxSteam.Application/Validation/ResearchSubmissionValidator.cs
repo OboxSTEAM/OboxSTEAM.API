@@ -249,6 +249,32 @@ public static class ResearchSubmissionValidator
         throw ErrorHelper.Forbidden(StartSubmissionForbiddenMessage);
     }
 
+    public static async Task<User> EnsureCanStartSubmissionForClassAsync(
+        IUnitOfWork unitOfWork,
+        IClaimsService claimsService,
+        Guid classId,
+        Guid moduleId)
+    {
+        var user = await GetCurrentUserAsync(unitOfWork, claimsService);
+
+        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        {
+            return user;
+        }
+
+        if (user.Role == RoleType.Mentor)
+        {
+            await MentorScopeValidator.EnsureMentorOwnsClassForModuleAsync(
+                unitOfWork,
+                user.Id,
+                classId,
+                moduleId);
+            return user;
+        }
+
+        throw ErrorHelper.Forbidden(StartSubmissionForbiddenMessage);
+    }
+
     public static async Task<User> EnsureCanGradeSubmissionAsync(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,

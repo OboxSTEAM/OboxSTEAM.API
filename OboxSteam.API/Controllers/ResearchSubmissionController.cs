@@ -44,6 +44,42 @@ public sealed class ResearchSubmissionController : ControllerBase
                 "Research submission opened successfully."));
     }
 
+    [HttpPost("research-submissions/start-for-class")]
+    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [SwaggerOperation(
+        Summary = "Open research submissions for a class",
+        Description = "Mentor, Manager, or SuperAdmin opens submission slots for all active students in a class "
+            + "on a research milestone. Students without an active module enrollment or an existing submission are skipped.")]
+    [ProducesResponseType(typeof(ApiResult<StartResearchSubmissionForClassResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<StartResearchSubmissionForClassResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> StartSubmissionForClass(
+        [FromBody, SwaggerParameter("Start class submission request")]
+        StartResearchSubmissionForClassRequestDto request)
+    {
+        var result = await _researchSubmissionService.StartSubmissionForClass(request);
+
+        if (result.OpenedCount > 0)
+        {
+            return StatusCode(
+                StatusCodes.Status201Created,
+                ApiResult<StartResearchSubmissionForClassResponseDto>.Success(
+                    result,
+                    "201",
+                    $"Opened {result.OpenedCount} research submission(s) for the class."));
+        }
+
+        return Ok(ApiResult<StartResearchSubmissionForClassResponseDto>.Success(
+            result,
+            "200",
+            result.TotalClassStudents == 0
+                ? "No active students in this class."
+                : "No new research submissions were opened. See skipped details."));
+    }
+
     [HttpGet("research-submissions/{submissionId:guid}")]
     [Authorize(Roles = "Student,Parent,Mentor,Manager,SuperAdmin")]
     [SwaggerOperation(

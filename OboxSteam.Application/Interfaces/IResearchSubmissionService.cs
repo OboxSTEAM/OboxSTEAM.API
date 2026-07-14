@@ -13,6 +13,14 @@ public interface IResearchSubmissionService
     /// </summary>
     Task<ResearchSubmissionResponseDto> StartSubmission(StartResearchSubmissionRequestDto request);
 
+    /// <summary>
+    /// Opens <c>Pending</c> submissions for all active students in a class on a milestone.
+    /// Per-student eligibility gates are not applied; students without a module enrollment or
+    /// an existing submission are skipped.
+    /// </summary>
+    Task<StartResearchSubmissionForClassResponseDto> StartSubmissionForClass(
+        StartResearchSubmissionForClassRequestDto request);
+
     Task<ResearchSubmissionResponseDto?> GetSubmission(Guid submissionId);
 
     /// <summary>
