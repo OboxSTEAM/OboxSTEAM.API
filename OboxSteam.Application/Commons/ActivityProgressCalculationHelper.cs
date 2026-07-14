@@ -169,6 +169,13 @@ public static class ActivityProgressCalculationHelper
         var progressPercent = Math.Round((decimal)doneUnits / totalUnits * 100m, 2);
 
         programEnrollmentEntity.ProgressPercent = progressPercent;
+
+        if (progressPercent >= 100m)
+        {
+            programEnrollmentEntity.Status = EnrollmentStatus.Completed;
+            programEnrollmentEntity.CompletedAt ??= DateTime.UtcNow;
+        }
+
         await unitOfWork.ProgramEnrollments.Update(programEnrollmentEntity);
 
         return progressPercent;

@@ -523,6 +523,11 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Certificate>(entity =>
         {
             entity.HasIndex(c => c.Code).IsUnique();
+
+            // One program-level certificate per student (module certificates out of scope for v1).
+            entity.HasIndex(c => new { c.StudentId, c.ProgramId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"ModuleId\" IS NULL AND \"ProgramId\" IS NOT NULL");
         });
 
         // =============================================

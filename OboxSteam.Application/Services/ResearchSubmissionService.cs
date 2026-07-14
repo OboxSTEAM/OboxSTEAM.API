@@ -18,17 +18,20 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
+    private readonly ICertificateService _certificateService;
     private readonly ILogger<ResearchSubmissionService> _logger;
 
     public ResearchSubmissionService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
         IBlobService blobService,
+        ICertificateService certificateService,
         ILogger<ResearchSubmissionService> logger)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _blobService = blobService;
+        _certificateService = certificateService;
         _logger = logger;
     }
 
@@ -602,9 +605,25 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
                 _unitOfWork,
                 moduleEnrollment.ProgramEnrollmentId.Value,
                 moduleEnrollment);
+            await TryEnsureProgramCertificateAsync(moduleEnrollment.ProgramEnrollmentId.Value);
         }
 
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task TryEnsureProgramCertificateAsync(Guid programEnrollmentId)
+    {
+        try
+        {
+            await _certificateService.EnsureProgramCertificateAsync(programEnrollmentId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[TryEnsureProgramCertificateAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
+                programEnrollmentId);
+        }
     }
 
     private async Task<ResearchSubmissionResponseDto> MapSubmissionToResponseDtoAsync(

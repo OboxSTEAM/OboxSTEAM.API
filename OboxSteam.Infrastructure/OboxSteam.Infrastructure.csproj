@@ -21,6 +21,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.4" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
     <PackageReference Include="AWSSDK.S3" Version="3.7.*" />
+    <PackageReference Include="QuestPDF" Version="2025.7.0" />
     <PackageReference Include="Resend" Version="0.4.0" />
     <PackageReference Include="AWSSDK.Rekognition" Version="3.7.*" />
     <PackageReference Include="AWSSDK.MediaConvert" Version="3.7.*" />

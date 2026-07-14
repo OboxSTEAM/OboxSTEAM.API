@@ -11,20 +11,23 @@ using OboxSteam.Domain.Interfaces;
 namespace OboxSteam.Application.Services;
 
 public sealed class ActivityProgressService : IActivityProgressService
-{
-    private readonly IUnitOfWork _unitOfWork;
-    private readonly IClaimsService _claimsService;
-    private readonly ILogger<ActivityProgressService> _logger;
-
-    public ActivityProgressService(
-        IUnitOfWork unitOfWork,
-        IClaimsService claimsService,
-        ILogger<ActivityProgressService> logger)
     {
-        _unitOfWork = unitOfWork;
-        _claimsService = claimsService;
-        _logger = logger;
-    }
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly IClaimsService _claimsService;
+        private readonly ICertificateService _certificateService;
+        private readonly ILogger<ActivityProgressService> _logger;
+
+        public ActivityProgressService(
+            IUnitOfWork unitOfWork,
+            IClaimsService claimsService,
+            ICertificateService certificateService,
+            ILogger<ActivityProgressService> logger)
+        {
+            _unitOfWork = unitOfWork;
+            _claimsService = claimsService;
+            _certificateService = certificateService;
+            _logger = logger;
+        }
 
     public async Task<ActivityProgressResponseDto> StartActivityProgressAsync(CreateActivityProgressRequestDto request)
     {
@@ -164,6 +167,7 @@ public sealed class ActivityProgressService : IActivityProgressService
                 _unitOfWork,
                 moduleEnrollment.ProgramEnrollmentId.Value,
                 moduleEnrollment);
+            await TryEnsureProgramCertificateAsync(moduleEnrollment.ProgramEnrollmentId.Value);
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -290,6 +294,7 @@ public sealed class ActivityProgressService : IActivityProgressService
                 _unitOfWork,
                 moduleEnrollment.ProgramEnrollmentId.Value,
                 moduleEnrollment);
+            await TryEnsureProgramCertificateAsync(moduleEnrollment.ProgramEnrollmentId.Value);
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -514,6 +519,7 @@ public sealed class ActivityProgressService : IActivityProgressService
                 _unitOfWork,
                 moduleEnrollment.ProgramEnrollmentId.Value,
                 moduleEnrollment);
+            await TryEnsureProgramCertificateAsync(moduleEnrollment.ProgramEnrollmentId.Value);
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -542,5 +548,20 @@ public sealed class ActivityProgressService : IActivityProgressService
             ModuleProgressPercent = moduleProgressPercent,
             ProgramProgressPercent = programProgressPercent,
         };
+    }
+
+    private async Task TryEnsureProgramCertificateAsync(Guid programEnrollmentId)
+    {
+        try
+        {
+            await _certificateService.EnsureProgramCertificateAsync(programEnrollmentId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[TryEnsureProgramCertificateAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
+                programEnrollmentId);
+        }
     }
 }

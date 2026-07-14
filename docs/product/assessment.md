@@ -89,8 +89,28 @@ Mentors or staff may verify submissions (`VerifiedSubmissions` on User).
 
 ## Certificates
 
-`Certificate` entity links completion credentials to users, programs, and
-modules.
+Program certificates are issued automatically when every activity in the
+program is `Done` for the enrollment (including research-milestone activities).
+Required assignments and `ProgressPercent == 100` are **not** required for
+issuance. Separately, `ProgramEnrollment` becomes `Completed` only when
+progress reaches 100% (activities + required assignments).
+
+Issuance is program-only in v1 (`ModuleId` is null). The API generates a PDF
+(QuestPDF), uploads it to S3 at
+`certificates/{programId}/{studentId}/{code}.pdf`, and stores `PdfUrl` plus a
+public `VerificationUrl` built from `APP_FRONTEND_URL` / `APP_BASE_URL`.
+
+Endpoints under `/api/certificates`:
+
+- `GET /me` — list certificates for the current user scope
+- `GET /{id}` — show-page detail (auth)
+- `GET /by-enrollment/{programEnrollmentId}` — resolve cert for a learning enrollment
+- `GET /verify/{code}` — public verify payload for the FE share page
+- `POST /program-enrollments/{programEnrollmentId}/ensure` — idempotent issue/retry PDF
+
+The FE owns share UI and PDF download UX using `pdfUrl` and `verificationUrl`.
+Skills and learning outcomes come from existing `Program.SkillsGained` and
+module `LearningOutcomes` text arrays.
 
 ## Validation Expectations
 

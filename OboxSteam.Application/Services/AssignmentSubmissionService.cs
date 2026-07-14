@@ -30,17 +30,20 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
+    private readonly ICertificateService _certificateService;
     private readonly ILogger<AssignmentSubmissionService> _logger;
 
     public AssignmentSubmissionService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
         IBlobService blobService,
+        ICertificateService certificateService,
         ILogger<AssignmentSubmissionService> logger)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _blobService = blobService;
+        _certificateService = certificateService;
         _logger = logger;
     }
 
@@ -303,9 +306,25 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
                 _unitOfWork,
                 moduleEnrollment.ProgramEnrollmentId.Value,
                 moduleEnrollment);
+            await TryEnsureProgramCertificateAsync(moduleEnrollment.ProgramEnrollmentId.Value);
         }
 
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task TryEnsureProgramCertificateAsync(Guid programEnrollmentId)
+    {
+        try
+        {
+            await _certificateService.EnsureProgramCertificateAsync(programEnrollmentId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[TryEnsureProgramCertificateAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
+                programEnrollmentId);
+        }
     }
 
     private static AssignmentSubmissionResponseDto MapToDto(Submission submission, Assignment assignment)

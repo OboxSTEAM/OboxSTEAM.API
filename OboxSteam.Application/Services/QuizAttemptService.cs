@@ -14,15 +14,18 @@ public sealed class QuizAttemptService : IQuizAttemptService
 {
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICertificateService _certificateService;
     private readonly ILogger<QuizAttemptService> _logger;
 
     public QuizAttemptService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
+        ICertificateService certificateService,
         ILogger<QuizAttemptService> logger)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
+        _certificateService = certificateService;
         _logger = logger;
     }
 
@@ -612,8 +615,24 @@ public sealed class QuizAttemptService : IQuizAttemptService
                 _unitOfWork,
                 moduleEnrollment.ProgramEnrollmentId.Value,
                 moduleEnrollment);
+            await TryEnsureProgramCertificateAsync(moduleEnrollment.ProgramEnrollmentId.Value);
         }
 
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task TryEnsureProgramCertificateAsync(Guid programEnrollmentId)
+    {
+        try
+        {
+            await _certificateService.EnsureProgramCertificateAsync(programEnrollmentId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[TryEnsureProgramCertificateAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
+                programEnrollmentId);
+        }
     }
 }
