@@ -598,6 +598,15 @@ public partial class SeedService
                 ("ACT-WEBDEV-01-02", ActivityStatus.InProgress, null),
             ]);
 
+        // STD-025 completed the only cert-test activity; STD-024 remains with no progress.
+        await TrySeedModuleActivityProgressAsync(
+            "STD-025",
+            "MOD-CERT-TEST-01",
+            "PRG-CERT-TEST",
+            [
+                ("ACT-CERT-TEST-01-01", ActivityStatus.Done, DateTime.UtcNow.AddDays(-1)),
+            ]);
+
         _loggerService.LogInformation("Finished seed enrollment activity progress");
     }
 

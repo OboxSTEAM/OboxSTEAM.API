@@ -27,6 +27,9 @@ public partial class SeedService
             ("CLS-OPEN-005", "Robotics Open Cohort 5", "MNT-005", 42, 126, "Every Friday 09:00-11:30"),
         ];
 
+    private const string CertificateTestProgramCode = "PRG-CERT-TEST";
+    private const string CertificateTestClassCode = "CLS-CERT-TEST-01";
+
     private async Task SeedClassesAsync()
     {
         _loggerService.LogInformation("Starting seed open classes");
@@ -37,63 +40,119 @@ public partial class SeedService
         if (existingClass != null)
         {
             _loggerService.LogInformation("Open classes already seeded, skipping");
+        }
+        else
+        {
+            var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == OpenClassProgramCode);
+            if (program == null)
+            {
+                _loggerService.LogWarning(
+                    "Program {ProgramCode} not found. Skipping open class seeding.",
+                    OpenClassProgramCode);
+            }
+            else
+            {
+                var seedTime = DateTime.UtcNow;
+                var classesToAdd = new List<Class>();
+
+                foreach (var definition in OpenClassDefinitions)
+                {
+                    var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == definition.MentorCode);
+                    if (mentor == null)
+                    {
+                        _loggerService.LogWarning(
+                            "Skipping class {ClassCode}: mentor {MentorCode} not found.",
+                            definition.Code,
+                            definition.MentorCode);
+                        continue;
+                    }
+
+                    classesToAdd.Add(new Class
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = definition.Code,
+                        Name = definition.Name,
+                        ProgramId = program.Id,
+                        MentorId = mentor.Id,
+                        StartDate = seedTime.AddDays(definition.StartDaysOffset),
+                        EndDate = seedTime.AddDays(definition.EndDaysOffset),
+                        MaxCapacity = 5,
+                        Status = ClassStatus.Open,
+                        MinHoursBeforeAssignmentJoin = 48,
+                        ScheduleSummary = definition.ScheduleSummary,
+                        CreatedAt = seedTime,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false,
+                    });
+                }
+
+                if (classesToAdd.Count == 0)
+                {
+                    _loggerService.LogWarning("No open classes created.");
+                }
+                else
+                {
+                    await _unitOfWork.Classes.AddRangeAsync(classesToAdd);
+                    await _unitOfWork.SaveChangesAsync();
+
+                    _loggerService.LogInformation(
+                        "Finished seed open classes — {Count} class(es) created.",
+                        classesToAdd.Count);
+                }
+            }
+        }
+
+        await SeedCertificateTestClassAsync();
+    }
+
+    private async Task SeedCertificateTestClassAsync()
+    {
+        var existing = await _unitOfWork.Classes.FirstOrDefaultAsync(
+            c => c.Code == CertificateTestClassCode && !c.IsDeleted);
+        if (existing != null)
+        {
+            _loggerService.LogInformation("Certificate test class already seeded, skipping");
             return;
         }
 
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == OpenClassProgramCode);
+        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == CertificateTestProgramCode);
         if (program == null)
         {
             _loggerService.LogWarning(
-                "Program {ProgramCode} not found. Skipping open class seeding.",
-                OpenClassProgramCode);
+                "Program {ProgramCode} not found. Skipping certificate test class seeding.",
+                CertificateTestProgramCode);
+            return;
+        }
+
+        var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
+        if (mentor == null)
+        {
+            _loggerService.LogWarning("Mentor MNT-001 not found. Skipping certificate test class seeding.");
             return;
         }
 
         var seedTime = DateTime.UtcNow;
-        var classesToAdd = new List<Class>();
-
-        foreach (var definition in OpenClassDefinitions)
+        await _unitOfWork.Classes.AddAsync(new Class
         {
-            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == definition.MentorCode);
-            if (mentor == null)
-            {
-                _loggerService.LogWarning(
-                    "Skipping class {ClassCode}: mentor {MentorCode} not found.",
-                    definition.Code,
-                    definition.MentorCode);
-                continue;
-            }
-
-            classesToAdd.Add(new Class
-            {
-                Id = Guid.NewGuid(),
-                Code = definition.Code,
-                Name = definition.Name,
-                ProgramId = program.Id,
-                MentorId = mentor.Id,
-                StartDate = seedTime.AddDays(definition.StartDaysOffset),
-                EndDate = seedTime.AddDays(definition.EndDaysOffset),
-                MaxCapacity = 5,
-                Status = ClassStatus.Open,
-                MinHoursBeforeAssignmentJoin = 48,
-                ScheduleSummary = definition.ScheduleSummary,
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
-        }
-
-        if (classesToAdd.Count == 0)
-        {
-            _loggerService.LogWarning("No open classes created.");
-            return;
-        }
-
-        await _unitOfWork.Classes.AddRangeAsync(classesToAdd);
+            Id = Guid.NewGuid(),
+            Code = CertificateTestClassCode,
+            Name = "Certificate Test Cohort",
+            ProgramId = program.Id,
+            MentorId = mentor.Id,
+            StartDate = seedTime.AddDays(7),
+            EndDate = seedTime.AddDays(28),
+            MaxCapacity = 5,
+            Status = ClassStatus.Open,
+            MinHoursBeforeAssignmentJoin = 24,
+            ScheduleSummary = "Self-paced reading cohort",
+            CreatedAt = seedTime,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        });
         await _unitOfWork.SaveChangesAsync();
 
         _loggerService.LogInformation(
-            "Finished seed open classes — {Count} class(es) created.",
-            classesToAdd.Count);
+            "Finished seed certificate test class — {ClassCode}.",
+            CertificateTestClassCode);
     }
 }

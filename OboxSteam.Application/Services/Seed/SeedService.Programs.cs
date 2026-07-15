@@ -279,6 +279,27 @@ public partial class SeedService
                     CreatedAt = DateTime.UtcNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
+                },
+                // Minimal program for certificate generation testing (1 module / 1 course / 1 activity).
+                new Program
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "PRG-CERT-TEST",
+                    Name = "Certificate Test Program",
+                    SeriesName = "QA Fixtures",
+                    Description = "Minimal single-module program used to test program certificate PDF generation.",
+                    Level = DifficultyLevel.Beginner,
+                    Category = ProgramCategory.Technology,
+                    EstimatedDuration = "1 week at 1 hour a week",
+                    SkillsGained = "Certificate testing, self-paced reading, progress completion",
+                    Rating = 5.0m,
+                    TotalReviews = 1,
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                    Status = "Active",
+                    Price = 100_000m,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
                 }
             };
 

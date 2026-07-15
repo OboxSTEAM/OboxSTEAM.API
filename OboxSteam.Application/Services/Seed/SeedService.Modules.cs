@@ -30,6 +30,7 @@ public partial class SeedService
             var programGameDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV");
             var programMusicTech = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-MUSICTECH");
             var programDataMath = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DATAMATH");
+            var programCertTest = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-CERT-TEST");
 
             var modules = new List<Module>();
 
@@ -786,6 +787,28 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-DATAMATH not found. Skipping Data Math module seeding.");
             }
 
+            if (programCertTest != null)
+            {
+                modules.Add(new Module
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "MOD-CERT-TEST-01",
+                    ProgramId = programCertTest.Id,
+                    Name = "Certificate Test Module",
+                    ModuleType = ModuleType.Theory,
+                    ModuleOrder = 1,
+                    IsMandatory = true,
+                    Price = 50_000m,
+                    RetakeFee = 10_000m,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = Guid.Empty
+                });
+            }
+            else
+            {
+                _loggerService.LogWarning("Program PRG-CERT-TEST not found. Skipping certificate test module seeding.");
+            }
+
             if (modules.Count > 0)
             {
                 foreach (var module in modules)
@@ -797,6 +820,12 @@ public partial class SeedService
 
                     module.LearningOutcomes = module.Code switch
                     {
+                        "MOD-CERT-TEST-01" => new[]
+                        {
+                            "Complete a single self-paced reading activity",
+                            "Demonstrate program progress completion",
+                            "Validate certificate eligibility rules"
+                        },
                         "MOD-ROBOTICS-01" => new[]
                         {
                             "Understand core robotics concepts and components",

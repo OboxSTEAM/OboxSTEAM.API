@@ -25,6 +25,7 @@ public partial class SeedService
             var moduleSteam2 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-STEAM-02");
             var moduleIot1 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-IOT-01");
             var moduleIot2 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-IOT-02");
+            var moduleCertTest = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-CERT-TEST-01");
 
             var courses = new List<Course>();
             var seedTime = DateTime.UtcNow;
@@ -148,6 +149,25 @@ public partial class SeedService
             else
             {
                 _loggerService.LogWarning("Module MOD-IOT-02 not found. Skipping IoT cloud course seeding.");
+            }
+
+            if (moduleCertTest != null)
+            {
+                courses.Add(new Course
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "CRS-CERT-TEST-01",
+                    ModuleId = moduleCertTest.Id,
+                    Name = "Certificate Test Course",
+                    Description = "Single-course fixture for certificate generation testing.",
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+            else
+            {
+                _loggerService.LogWarning("Module MOD-CERT-TEST-01 not found. Skipping certificate test course seeding.");
             }
 
             if (courses.Count > 0)

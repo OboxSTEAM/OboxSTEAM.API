@@ -20,10 +20,13 @@ public partial class SeedService
             var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
             var student3 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-003");
             var student4 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-004");
+            var studentCertIncomplete = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-024");
+            var studentCertComplete = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-025");
             var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
             var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
             var programSteam = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-STEAM-01");
             var programIot = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
+            var programCertTest = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-CERT-TEST");
             var enrollTime = DateTime.UtcNow;
 
             var programEnrollments = new List<ProgramEnrollment>();
@@ -89,6 +92,41 @@ public partial class SeedService
                     Status = EnrollmentStatus.Active,
                     ProgressPercent = 0m,
                     EnrolledAt = enrollTime.AddDays(-2),
+                    CreatedAt = enrollTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+
+            // Certificate test program: STD-024 has no progress; STD-025 completes all activities.
+            if (studentCertIncomplete != null && programCertTest != null)
+            {
+                programEnrollments.Add(new ProgramEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = studentCertIncomplete.Id,
+                    ProgramId = programCertTest.Id,
+                    Status = EnrollmentStatus.Active,
+                    ProgressPercent = 0m,
+                    EnrolledAt = enrollTime.AddDays(-3),
+                    StartedAt = enrollTime.AddDays(-2),
+                    CreatedAt = enrollTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+
+            if (studentCertComplete != null && programCertTest != null)
+            {
+                programEnrollments.Add(new ProgramEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = studentCertComplete.Id,
+                    ProgramId = programCertTest.Id,
+                    Status = EnrollmentStatus.Active,
+                    ProgressPercent = 0m,
+                    EnrolledAt = enrollTime.AddDays(-5),
+                    StartedAt = enrollTime.AddDays(-4),
                     CreatedAt = enrollTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false

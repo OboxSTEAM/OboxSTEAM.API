@@ -46,6 +46,8 @@ public partial class SeedService
             "https://storage.oboxsteam.com/materials/video/mqtt-concepts.mp4", 36_700_000L),
         new("ACT-IOT-02-02", "Cloud Dashboard Setup Guide", MaterialType.PDF,
             "https://storage.oboxsteam.com/materials/pdf/cloud-dashboard-setup.pdf", 945_000L),
+        new("ACT-CERT-TEST-01-01", "Certificate Test Reading Guide", MaterialType.PDF,
+            "https://storage.oboxsteam.com/materials/pdf/certificate-test-reading-guide.pdf", 128_000L),
     ];
 
     private async Task SeedMaterialsAsync()
@@ -216,6 +218,13 @@ public partial class SeedService
                 "Deploy a device and verify cloud connectivity.",
                 "Electronics Lab 302",
                 baseDate.AddDays(13).AddHours(9), baseDate.AddDays(13).AddHours(13), 12, true, true),
+        });
+
+        AddActivities("CRS-CERT-TEST-01", new[]
+        {
+            NewActivity("ACT-CERT-TEST-01-01", "Certificate Test Reading", ActivityType.SelfPaced, 1,
+                "Self-paced reading activity for certificate generation testing.",
+                null, null, null, null, false, false),
         });
 
         return activities;
