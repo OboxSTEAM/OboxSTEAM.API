@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.CertificateDTO;
 using OboxSteam.Application.Interfaces;
 using QuestPDF.Fluent;
@@ -8,9 +9,27 @@ namespace OboxSteam.Infrastructure.Services;
 
 public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
 {
+    /// <summary>Hosted Obox brand mark used on certificates (same asset as MediaConvert branding).</summary>
+    private const string LogoUrl =
+        "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/logo-obox.png";
+
+    private static readonly SemaphoreSlim LogoLock = new(1, 1);
+    private static byte[]? _cachedLogoBytes;
+
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<CertificatePdfGenerator> _logger;
+
     static CertificatePdfGenerator()
     {
         QuestPDF.Settings.License = LicenseType.Community;
+    }
+
+    public CertificatePdfGenerator(
+        IHttpClientFactory httpClientFactory,
+        ILogger<CertificatePdfGenerator> logger)
+    {
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
     }
 
     public byte[] Generate(CertificatePdfModel model)
@@ -18,6 +37,7 @@ public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
         var issueDateText = model.IssueDate.ToString("MMM d, yyyy");
         var moduleCount = model.ModuleNames.Count;
         var modulesLabel = moduleCount == 1 ? "1 Module" : $"{moduleCount} Modules";
+        var logoBytes = GetLogoBytes();
 
         var document = Document.Create(container =>
         {
@@ -31,7 +51,14 @@ public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
                 {
                     row.ConstantItem(180).Background(Colors.Grey.Lighten3).Padding(20).Column(sidebar =>
                     {
-                        sidebar.Item().AlignCenter().Text("OboxSTEAM")
+                        if (logoBytes is { Length: > 0 })
+                        {
+                            sidebar.Item().AlignCenter().Width(72).Height(72)
+                                .Image(logoBytes)
+                                .FitArea();
+                        }
+
+                        sidebar.Item().PaddingTop(8).AlignCenter().Text("OboxSTEAM")
                             .FontSize(18).Bold().FontColor(Colors.Blue.Darken3);
 
                         sidebar.Item().PaddingTop(6).AlignCenter().Text("PROGRAM CERTIFICATE")
@@ -71,11 +98,21 @@ public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
 
                         main.Item().PaddingTop(28).Row(footer =>
                         {
-                            footer.RelativeItem().Column(brand =>
+                            footer.RelativeItem().Row(brand =>
                             {
-                                brand.Item().Text("OboxSTEAM").FontSize(14).Bold()
-                                    .FontColor(Colors.Blue.Darken3);
-                                brand.Item().Text("STEAM Education Platform").FontSize(9);
+                                if (logoBytes is { Length: > 0 })
+                                {
+                                    brand.ConstantItem(40).AlignMiddle().Width(36).Height(36)
+                                        .Image(logoBytes)
+                                        .FitArea();
+                                }
+
+                                brand.RelativeItem().PaddingLeft(8).AlignMiddle().Column(text =>
+                                {
+                                    text.Item().Text("OboxSTEAM").FontSize(14).Bold()
+                                        .FontColor(Colors.Blue.Darken3);
+                                    text.Item().Text("STEAM Education Platform").FontSize(9);
+                                });
                             });
 
                             footer.RelativeItem().AlignRight().Column(verify =>
@@ -97,5 +134,41 @@ public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
         });
 
         return document.GeneratePdf();
+    }
+
+    private byte[] GetLogoBytes()
+    {
+        if (_cachedLogoBytes is { Length: > 0 })
+        {
+            return _cachedLogoBytes;
+        }
+
+        LogoLock.Wait();
+        try
+        {
+            if (_cachedLogoBytes is { Length: > 0 })
+            {
+                return _cachedLogoBytes;
+            }
+
+            var client = _httpClientFactory.CreateClient();
+            using var response = client.GetAsync(LogoUrl).GetAwaiter().GetResult();
+            response.EnsureSuccessStatusCode();
+            _cachedLogoBytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            _logger.LogInformation(
+                "[CertificatePdfGenerator] Loaded Obox logo from {LogoUrl} ({Bytes} bytes).",
+                LogoUrl,
+                _cachedLogoBytes.Length);
+            return _cachedLogoBytes;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[CertificatePdfGenerator] Failed to load logo from {LogoUrl}.", LogoUrl);
+            return [];
+        }
+        finally
+        {
+            LogoLock.Release();
+        }
     }
 }
