@@ -208,7 +208,6 @@ public static class IocContainer
         services.AddScoped<INotificationPublisher, NotificationPublisher>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<INotificationRecipientResolver, NotificationRecipientResolver>();
-        services.AddScoped<INotificationSmokeTestService, NotificationSmokeTestService>();
         services.AddSingleton<INotificationDispatcher, SignalRNotificationDispatcher>();
         return services;
     }
