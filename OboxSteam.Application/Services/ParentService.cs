@@ -5,6 +5,7 @@ using OboxSteam.Application.DTOs.AuthDTO;
 using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.ParentDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -18,13 +19,20 @@ public class ParentService : IParentService
     private readonly IEmailService _emailService;
     private readonly IClaimsService _claimsService;
     private readonly ILogger<ParentService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
-    public ParentService(IUnitOfWork unitOfWork, IEmailService emailService, IClaimsService claimsService, ILogger<ParentService> logger)
+    public ParentService(
+        IUnitOfWork unitOfWork,
+        IEmailService emailService,
+        IClaimsService claimsService,
+        ILogger<ParentService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
         _claimsService = claimsService;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<bool> RequestParentLinkAsync(RequestLinkDto dto, IConfiguration configuration)
@@ -76,6 +84,9 @@ public class ParentService : IParentService
             
             await _unitOfWork.ParentStudents.AddAsync(parentStudentEntity);
             await _unitOfWork.SaveChangesAsync();
+
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.ParentLinkRequested(parent.Id, studentId, actorUserId: studentId));
 
             _logger.LogInformation("Created shadow account and pending link for parent {ParentEmail} (ParentId: {ParentId}).", parentEmail, parent.Id);
 
@@ -131,6 +142,9 @@ public class ParentService : IParentService
             var parentStudentEntity = new ParentStudent { ParentId = parentStudentDto.ParentId, StudentId = parentStudentDto.StudentId, IsVerified = parentStudentDto.IsVerified };
             await _unitOfWork.ParentStudents.AddAsync(parentStudentEntity);
             await _unitOfWork.SaveChangesAsync();
+
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.ParentLinkRequested(parent.Id, studentId, actorUserId: studentId));
         }
 
         // Vô hiệu hóa các OTP MagicLink/ApproveLink cũ của email này tạo bởi học sinh này nếu có
@@ -277,6 +291,15 @@ public class ParentService : IParentService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        if (activeOtp?.CreatedBy is Guid verifiedStudentId && verifiedStudentId != Guid.Empty)
+        {
+            await _notificationPublisher.PublishManyAsync(new[]
+            {
+                NotificationCatalog.ParentLinkVerified(parent.Id, verifiedStudentId),
+                NotificationCatalog.ParentLinkApproved(verifiedStudentId, parent.Id, actorUserId: parent.Id)
+            });
+        }
         
         _logger.LogInformation("Profile successfully completed and activated for Parent ID {ParentId}.", parentId);
         return true;
@@ -332,6 +355,16 @@ public class ParentService : IParentService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        if (targetStudentId != Guid.Empty)
+        {
+            await _notificationPublisher.PublishManyAsync(new[]
+            {
+                NotificationCatalog.ParentLinkVerified(parent.Id, targetStudentId),
+                NotificationCatalog.ParentLinkApproved(targetStudentId, parent.Id, actorUserId: parent.Id)
+            });
+        }
+
         return true;
     }
 

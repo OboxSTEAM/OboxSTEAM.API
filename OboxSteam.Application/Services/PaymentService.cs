@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.PaymentDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -19,6 +20,7 @@ public class PaymentService : IPaymentService
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<PaymentService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public PaymentService(
         IUnitOfWork unitOfWork,
@@ -27,7 +29,8 @@ public class PaymentService : IPaymentService
         IStripePaymentService stripe,
         IEmailService emailService,
         IConfiguration configuration,
-        ILogger<PaymentService> logger)
+        ILogger<PaymentService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
@@ -36,6 +39,7 @@ public class PaymentService : IPaymentService
         _emailService = emailService;
         _configuration = configuration;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -199,6 +203,14 @@ public class PaymentService : IPaymentService
         await _unitOfWork.PaymentRequests.AddAsync(paymentRequest);
         await _unitOfWork.SaveChangesAsync();
 
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ParentPaymentRequested(
+                parentId,
+                studentId,
+                paymentRequest.Id,
+                programId,
+                enrollment.Id));
+
         // Build payment link for parent
         var frontendBaseUrl = (_configuration["APP_FRONTEND_URL"] ?? _configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
         var paymentLink = $"{frontendBaseUrl}/payment/parent-checkout?token={token}";
@@ -273,6 +285,13 @@ public class PaymentService : IPaymentService
         };
         await _unitOfWork.PaymentRequests.AddAsync(paymentRequest);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ParentModuleRetakeRequested(
+                parentId,
+                studentId,
+                paymentRequest.Id,
+                module.Id));
 
         // Build payment link for parent
         var frontendBaseUrl = (_configuration["APP_FRONTEND_URL"] ?? _configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
@@ -473,6 +492,10 @@ public class PaymentService : IPaymentService
 
         await _unitOfWork.SaveChangesAsync();
 
+        var cancelledProgramId = await ResolveProgramIdForPaymentAsync(payment);
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.PaymentCancelled(payment.StudentId, payment.Id, cancelledProgramId));
+
         _logger.LogInformation("[CancelPayment] Payment {Id} marked Cancelled.", payment.Id);
     }
 
@@ -546,6 +569,10 @@ public class PaymentService : IPaymentService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        var failedProgramId = await ResolveProgramIdForPaymentAsync(payment);
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.PaymentFailed(payment.StudentId, payment.Id, failedProgramId));
 
         _logger.LogWarning("[HandlePaymentFailed] Payment {Id} marked Failed.", payment.Id);
     }
@@ -654,6 +681,27 @@ public class PaymentService : IPaymentService
         // 6. Save all changes atomically
         await _unitOfWork.SaveChangesAsync();
 
+        var successNotifications = new List<NotificationCommand>
+        {
+            NotificationCatalog.PaymentSucceeded(
+                payment.StudentId,
+                payment.Id,
+                enrollment?.ProgramId,
+                payment.ProgramEnrollmentId)
+        };
+
+        if (enrollment != null)
+        {
+            successNotifications.Add(
+                NotificationCatalog.ProgramActivated(
+                    payment.StudentId,
+                    enrollment.ProgramId,
+                    enrollment.Id,
+                    programName));
+        }
+
+        await _notificationPublisher.PublishManyAsync(successNotifications);
+
         // 7. Send invoice email to payer
         if (payer != null)
         {
@@ -686,6 +734,17 @@ public class PaymentService : IPaymentService
         _logger.LogInformation(
             "[HandlePaymentSuccess] Payment {PaymentId} confirmed. Invoice={InvoiceNumber}. Student={StudentId}",
             payment.Id, invoice.InvoiceNumber, payment.StudentId);
+    }
+
+    private async Task<Guid?> ResolveProgramIdForPaymentAsync(Payment payment)
+    {
+        if (!payment.ProgramEnrollmentId.HasValue)
+        {
+            return null;
+        }
+
+        var enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(payment.ProgramEnrollmentId.Value);
+        return enrollment?.ProgramId;
     }
 
     private async Task<(string checkoutUrl, string sessionId)> CreateGatewayCheckout(

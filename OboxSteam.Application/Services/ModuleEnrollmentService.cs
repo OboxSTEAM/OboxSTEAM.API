@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.EnrollmentDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -13,15 +14,18 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly ILogger<ModuleEnrollmentService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public ModuleEnrollmentService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
-        ILogger<ModuleEnrollmentService> logger)
+        ILogger<ModuleEnrollmentService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<ModuleEnrollmentResponseDto> RetakeModuleAsync(UpdateModuleEnrollmentRequestDto request)
@@ -122,6 +126,20 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
 
         await _unitOfWork.ModuleEnrollments.AddAsync(newEnrollment);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishManyAsync(new[]
+        {
+            NotificationCatalog.ModuleRetakePendingPayment(
+                student.Id,
+                request.ModuleId,
+                newEnrollment.Id,
+                module.Name),
+            NotificationCatalog.ModuleRetakeInitiated(
+                student.Id,
+                request.ModuleId,
+                newEnrollment.Id,
+                module.Name)
+        });
 
         _logger.LogInformation(
             "[RetakeModuleAsync] Student {StudentId} retaking module {ModuleId}, attempt {AttemptNumber}, enrollment {EnrollmentId}.",

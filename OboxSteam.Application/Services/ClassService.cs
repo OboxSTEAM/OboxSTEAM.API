@@ -3,6 +3,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.ClassSessionDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -16,15 +17,18 @@ public sealed class ClassService : IClassService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly ILogger<ClassService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public ClassService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
-        ILogger<ClassService> logger)
+        ILogger<ClassService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<Pagination<ClassResponseDto>> GetAllClassesAsync(
@@ -307,6 +311,9 @@ public sealed class ClassService : IClassService
         await _unitOfWork.Classes.AddAsync(entity);
         await _unitOfWork.SaveChangesAsync();
 
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassCreated(entity.Id, entity.ProgramId, entity.Name));
+
         _logger.LogInformation("[CreateClassAsync] Class '{Code}' created with Id {Id}.", entity.Code, entity.Id);
 
         return new ClassResponseDto
@@ -455,6 +462,9 @@ public sealed class ClassService : IClassService
         await _unitOfWork.Classes.Update(classEntity);
         await _unitOfWork.SaveChangesAsync();
 
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassUpdated(classEntity.Id, classEntity.ProgramId, classEntity.Name));
+
         _logger.LogInformation("[UpdateClassAsync] Class {Id} updated successfully.", id);
 
         var updatedSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
@@ -491,6 +501,9 @@ public sealed class ClassService : IClassService
         await _unitOfWork.Classes.Update(classEntity);
         await _unitOfWork.SaveChangesAsync();
 
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassOpenForEnrollment(classEntity.Id, classEntity.ProgramId, classEntity.Name));
+
         _logger.LogInformation("[OpenClassAsync] class {Id} is now Open.", id);
 
         var openSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
@@ -526,6 +539,9 @@ public sealed class ClassService : IClassService
 
         await _unitOfWork.Classes.Update(classEntity);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassStarted(classEntity.Id, classEntity.ProgramId, classEntity.Name));
 
         _logger.LogInformation("[StartClassAsync] class {Id} is now InProgress.", id);
 
@@ -573,6 +589,9 @@ public sealed class ClassService : IClassService
 
         await _unitOfWork.Classes.Update(entity);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassAutoStarted(entity.Id, entity.ProgramId, entity.Name));
 
         _logger.LogInformation(
             "[TryAutoStartClassIfReadyAsync] class {Id} auto-started to InProgress (capacity {Count}/{Max}, start {StartDate}).",
@@ -713,6 +732,7 @@ public sealed class ClassService : IClassService
             .ToDictionary(x => x.ClassId, x => x.Count);
 
         var startedCount = 0;
+        var startedClasses = new List<Class>();
 
         foreach (var classEntity in openClasses)
         {
@@ -725,6 +745,7 @@ public sealed class ClassService : IClassService
 
             classEntity.Status = ClassStatus.InProgress;
             await _unitOfWork.Classes.Update(classEntity);
+            startedClasses.Add(classEntity);
             startedCount++;
 
             _logger.LogInformation(
@@ -738,6 +759,11 @@ public sealed class ClassService : IClassService
         if (startedCount > 0)
         {
             await _unitOfWork.SaveChangesAsync();
+
+            var notifications = startedClasses
+                .Select(c => NotificationCatalog.ClassAutoStarted(c.Id, c.ProgramId, c.Name))
+                .ToList();
+            await _notificationPublisher.PublishManyAsync(notifications);
         }
 
         return startedCount;
@@ -755,6 +781,9 @@ public sealed class ClassService : IClassService
 
         await _unitOfWork.Classes.Update(classEntity);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassCompleted(classEntity.Id, classEntity.ProgramId, classEntity.Name));
 
         _logger.LogInformation("[CompleteClassAsync] class {Id} is now Completed.", id);
 

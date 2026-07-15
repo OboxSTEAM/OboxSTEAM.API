@@ -4,6 +4,7 @@ using OboxSteam.Application.DTOs.AuthDTO;
 using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.UserDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -21,19 +22,22 @@ public class AuthService : IAuthService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly IConfiguration _configuration;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IEmailService emailService,
         ILogger<AuthService> logger,
         IClaimsService claimsService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
         _logger = logger;
         _claimsService = claimsService;
         _configuration = configuration;
+        _notificationPublisher = notificationPublisher;
     }
 
     /// <summary>Register a new user.</summary>
@@ -88,6 +92,8 @@ public class AuthService : IAuthService
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation("User {Email} created successfully with role {Role}.", user.Email, user.Role);
+
+        await _notificationPublisher.PublishAsync(NotificationCatalog.AccountRegistered(user.Id));
 
         await GenerateAndSendOtpAsync(user, OtpPurpose.Register);
 
@@ -235,6 +241,8 @@ public class AuthService : IAuthService
         await _unitOfWork.OtpStorages.Update(otpRecord);
         await _unitOfWork.SaveChangesAsync();
 
+        await _notificationPublisher.PublishAsync(NotificationCatalog.EmailVerified(user.Id));
+
         await _emailService.SendRegistrationSuccessEmailAsync(new EmailRequestDto
         {
             To = user.Email,
@@ -322,6 +330,8 @@ public class AuthService : IAuthService
         await _unitOfWork.Users.Update(user);
         await _unitOfWork.OtpStorages.Update(otpRecord);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(NotificationCatalog.PasswordChanged(user.Id));
 
         await _emailService.SendPasswordChangeSuccessAsync(new EmailRequestDto
         {

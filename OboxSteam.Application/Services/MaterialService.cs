@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.MaterialDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -40,6 +41,7 @@ public class MaterialService : IMaterialService
     private readonly IUnitOfWork    _unitOfWork;
     private readonly IBlobService   _blobService;
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
+    private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<MaterialService> _logger;
 
     public MaterialService(
@@ -47,12 +49,14 @@ public class MaterialService : IMaterialService
         IUnitOfWork unitOfWork,
         IBlobService blobService,
         IEnrollmentCurriculumService enrollmentCurriculumService,
+        INotificationPublisher notificationPublisher,
         ILogger<MaterialService> logger)
     {
         _claimsService = claimsService;
         _unitOfWork    = unitOfWork;
         _blobService   = blobService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
+        _notificationPublisher = notificationPublisher;
         _logger        = logger;
     }
 
@@ -116,6 +120,8 @@ public class MaterialService : IMaterialService
 
         await _unitOfWork.Materials.AddAsync(material);
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishMaterialUpdatedAsync(material, activity!);
 
         _logger.LogInformation(
             "UploadMaterialAsync completed. MaterialId={MaterialId}, Type={Type}, Size={Size}B",
@@ -197,6 +203,12 @@ public class MaterialService : IMaterialService
 
         await _unitOfWork.SaveChangesAsync();
 
+        var activity = await _unitOfWork.Activities.GetByIdAsync(material.ActivityId);
+        if (activity != null)
+        {
+            await PublishMaterialUpdatedAsync(material, activity);
+        }
+
         _logger.LogInformation("UpdateMaterialAsync completed. MaterialId={MaterialId}", materialId);
         return MapToDto(material);
     }
@@ -246,6 +258,45 @@ public class MaterialService : IMaterialService
     // =========================================================================
     // Private helpers
     // =========================================================================
+
+    /// <summary>
+    /// Notifies Open/InProgress class rosters for the material's program.
+    /// Skips when no active cohort can be resolved (e.g. SelfPaced-only programs with no class yet).
+    /// </summary>
+    private async Task PublishMaterialUpdatedAsync(Material material, Activity activity)
+    {
+        var course = await _unitOfWork.Courses.GetByIdAsync(activity.CourseId);
+        if (course == null)
+        {
+            return;
+        }
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(course.ModuleId);
+        if (module == null)
+        {
+            return;
+        }
+
+        var activeClasses = await _unitOfWork.Classes.GetAllAsync(
+            c => c.ProgramId == module.ProgramId
+                 && (c.Status == ClassStatus.Open || c.Status == ClassStatus.InProgress));
+
+        if (activeClasses.Count == 0)
+        {
+            return;
+        }
+
+        var commands = activeClasses
+            .Select(c => NotificationCatalog.MaterialUpdated(
+                c.Id,
+                material.Id,
+                activity.Id,
+                module.ProgramId,
+                material.Title))
+            .ToList();
+
+        await _notificationPublisher.PublishManyAsync(commands);
+    }
 
     internal static MaterialResponseDto MapToDto(Material m) => new()
     {
