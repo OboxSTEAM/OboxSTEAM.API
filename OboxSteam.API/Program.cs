@@ -2,6 +2,7 @@ using Amazon.Rekognition;
 using Amazon.Rekognition.Model;
 using OboxSteam.API.Architecture;
 using OboxSteam.API.Converters;
+using OboxSteam.API.Hubs;
 using OboxSteam.API.Middlewares;
 using OboxSteam.Application.Interfaces;
 using SwaggerThemes;
@@ -164,6 +165,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseSession();
 app.MapControllers();
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Logger.LogInformation("OboxSteam API is running on http://0.0.0.0:5000");
 app.Run();

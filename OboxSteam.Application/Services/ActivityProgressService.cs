@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ActivityProgressDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -15,17 +16,20 @@ public sealed class ActivityProgressService : IActivityProgressService
         private readonly IUnitOfWork _unitOfWork;
         private readonly IClaimsService _claimsService;
         private readonly ICertificateService _certificateService;
+        private readonly INotificationPublisher _notificationPublisher;
         private readonly ILogger<ActivityProgressService> _logger;
 
         public ActivityProgressService(
             IUnitOfWork unitOfWork,
             IClaimsService claimsService,
             ICertificateService certificateService,
+            INotificationPublisher notificationPublisher,
             ILogger<ActivityProgressService> logger)
         {
             _unitOfWork = unitOfWork;
             _claimsService = claimsService;
             _certificateService = certificateService;
+            _notificationPublisher = notificationPublisher;
             _logger = logger;
         }
 
@@ -156,6 +160,8 @@ public sealed class ActivityProgressService : IActivityProgressService
         await _unitOfWork.ActivityProgresses.Update(progress);
         await _unitOfWork.SaveChangesAsync();
 
+        var previousModuleStatus = moduleEnrollment.Status;
+
         var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
             _unitOfWork,
             moduleEnrollment);
@@ -171,6 +177,12 @@ public sealed class ActivityProgressService : IActivityProgressService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishActivityCompletionNotificationsAsync(
+            moduleEnrollment,
+            previousModuleStatus,
+            activity,
+            student.Id);
 
         _logger.LogInformation(
             "[UpdateActivityProgressAsync] Student {StudentId} marked activity {ActivityId} as Done, progress {ProgressId}.",
@@ -283,6 +295,8 @@ public sealed class ActivityProgressService : IActivityProgressService
 
         await _unitOfWork.SaveChangesAsync();
 
+        var previousModuleStatus = moduleEnrollment.Status;
+
         var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
             _unitOfWork,
             moduleEnrollment);
@@ -298,6 +312,12 @@ public sealed class ActivityProgressService : IActivityProgressService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishActivityCompletionNotificationsAsync(
+            moduleEnrollment,
+            previousModuleStatus,
+            activity,
+            studentId);
 
         _logger.LogInformation(
             "[CompleteActivityForModuleEnrollmentAsync] Student {StudentId} completed activity {ActivityId}, progress {ProgressId}.",
@@ -508,6 +528,8 @@ public sealed class ActivityProgressService : IActivityProgressService
 
         await _unitOfWork.SaveChangesAsync();
 
+        var previousModuleStatus = moduleEnrollment.Status;
+
         var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
             _unitOfWork,
             moduleEnrollment);
@@ -523,6 +545,12 @@ public sealed class ActivityProgressService : IActivityProgressService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishActivityCompletionNotificationsAsync(
+            moduleEnrollment,
+            previousModuleStatus,
+            activity,
+            studentId);
 
         _logger.LogWarning(
             "[ForceCompleteActivityAsync] TEST bypass — activity {ActivityId} forced to Done for student {StudentId}, progress {ProgressId}.",
@@ -562,6 +590,60 @@ public sealed class ActivityProgressService : IActivityProgressService
                 ex,
                 "[TryEnsureProgramCertificateAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
                 programEnrollmentId);
+        }
+    }
+
+    /// <summary>
+    /// Publishes <see cref="NotificationCatalog.ActivityCompleted"/> for the just-completed
+    /// activity, plus <see cref="NotificationCatalog.ModuleCompleted"/> and any
+    /// <see cref="NotificationCatalog.ModuleUnlocked"/> notifications when the recalculated
+    /// module progress (already persisted by the caller) transitioned the enrollment to Completed.
+    /// </summary>
+    private async Task PublishActivityCompletionNotificationsAsync(
+        ModuleEnrollment moduleEnrollment,
+        EnrollmentStatus previousModuleStatus,
+        Activity activity,
+        Guid studentId)
+    {
+        var module = await _unitOfWork.Modules.GetByIdAsync(moduleEnrollment.ModuleId);
+
+        await _notificationPublisher.PublishAsync(NotificationCatalog.ActivityCompleted(
+            studentId,
+            activity.Id,
+            moduleEnrollment.ModuleId,
+            module?.ProgramId,
+            activity.Name));
+
+        var justCompletedModule = moduleEnrollment.Status == EnrollmentStatus.Completed
+            && previousModuleStatus != EnrollmentStatus.Completed;
+
+        if (!justCompletedModule)
+        {
+            return;
+        }
+
+        await _notificationPublisher.PublishAsync(NotificationCatalog.ModuleCompleted(
+            studentId,
+            moduleEnrollment.ModuleId,
+            moduleEnrollment.Id,
+            module?.ProgramId,
+            module?.Name));
+
+        if (module == null)
+        {
+            return;
+        }
+
+        var unlockedModules = await _unitOfWork.Modules.GetAllAsync(
+            m => m.PrerequisiteModuleId == module.Id && m.ProgramId == module.ProgramId && !m.IsDeleted);
+
+        foreach (var unlockedModule in unlockedModules)
+        {
+            await _notificationPublisher.PublishAsync(NotificationCatalog.ModuleUnlocked(
+                studentId,
+                unlockedModule.Id,
+                unlockedModule.ProgramId,
+                unlockedModule.Name));
         }
     }
 }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.MediaDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -29,6 +30,7 @@ public class MediaService : IMediaService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
     private readonly IFaceRecognitionService _faceRecognitionService;
+    private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<MediaService> _logger;
     private readonly IVideoConverterService _videoConverterService;
 
@@ -37,6 +39,7 @@ public class MediaService : IMediaService
         IUnitOfWork unitOfWork,
         IBlobService blobService,
         IFaceRecognitionService faceRecognitionService,
+        INotificationPublisher notificationPublisher,
         ILogger<MediaService> logger,
         IVideoConverterService videoConverterService)
     {
@@ -44,6 +47,7 @@ public class MediaService : IMediaService
         _unitOfWork = unitOfWork;
         _blobService = blobService;
         _faceRecognitionService = faceRecognitionService;
+        _notificationPublisher = notificationPublisher;
         _logger = logger;
         _videoConverterService = videoConverterService;
     }
@@ -228,6 +232,8 @@ public class MediaService : IMediaService
             _logger.LogError(ex, "StartVideoTranscodeAsync failed for MediaId={MediaId}", mediaId);
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id));
             throw;
         }
     }
@@ -275,6 +281,8 @@ public class MediaService : IMediaService
                 mcJobId, mediaId);
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id));
             throw new InvalidOperationException(
                 $"MediaConvert job {mcJobId} failed for MediaId={mediaId}.");
         }
@@ -298,6 +306,8 @@ public class MediaService : IMediaService
             _logger.LogError(ex, "TryCompleteTranscodeAsync: failed to resolve output for MediaId={MediaId}", mediaId);
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id));
             throw;
         }
 
@@ -315,6 +325,8 @@ public class MediaService : IMediaService
             _logger.LogError(ex, "TryCompleteTranscodeAsync: failed to start Rekognition for MediaId={MediaId}", mediaId);
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id));
             throw;
         }
 
@@ -766,6 +778,9 @@ public class MediaService : IMediaService
         await _unitOfWork.SaveChangesAsync();
         _logger.LogInformation(
             "VideoStatus=TaggingComplete for MediaId={MediaId}.", media.Id);
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.MediaVideoReady(media.UploaderId, media.Id));
     }
 
     /// <summary>
@@ -787,6 +802,8 @@ public class MediaService : IMediaService
                 media.Id, media.FaceSearchJobId);
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.MediaAiTaggingFailed(media.UploaderId, media.Id));
             throw ErrorHelper.Internal("Video face recognition job failed.");
         }
 
@@ -866,6 +883,9 @@ public class MediaService : IMediaService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.MediaTagsProcessed(media.UploaderId, media.Id));
 
         await TryAdvanceToProcessingCompleteAsync(media);
 

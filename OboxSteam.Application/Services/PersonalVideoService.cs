@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.MediaDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -89,6 +90,7 @@ public class PersonalVideoService : IPersonalVideoService
     private readonly IBlobService _blobService;
     private readonly IPersonalVideoQueue _queue;
     private readonly IClaimsService _claimsService;
+    private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<PersonalVideoService> _logger;
 
     public PersonalVideoService(
@@ -98,6 +100,7 @@ public class PersonalVideoService : IPersonalVideoService
         IBlobService blobService,
         IPersonalVideoQueue queue,
         IClaimsService claimsService,
+        INotificationPublisher notificationPublisher,
         ILogger<PersonalVideoService> logger)
     {
         _unitOfWork = unitOfWork;
@@ -106,6 +109,7 @@ public class PersonalVideoService : IPersonalVideoService
         _blobService = blobService;
         _queue = queue;
         _claimsService = claimsService;
+        _notificationPublisher = notificationPublisher;
         _logger = logger;
         _s3Bucket = blobService.BucketName;
     }
@@ -295,6 +299,9 @@ public class PersonalVideoService : IPersonalVideoService
             stack.StudentId,
             StrengthDescription: null));
 
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.HighlightVideoGenerationQueued(stack.StudentId, trimItem.Id));
+
         return await MapItemToDtoAsync(trimItem, request.ExcludeRanges);
     }
 
@@ -397,6 +404,9 @@ public class PersonalVideoService : IPersonalVideoService
             stack.StudentId,
             StrengthDescription: null));
 
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.HighlightVideoGenerationQueued(stack.StudentId, segmentItem.Id));
+
         return await MapItemToDtoAsync(segmentItem);
     }
 
@@ -468,6 +478,8 @@ public class PersonalVideoService : IPersonalVideoService
             try
             {
                 await _unitOfWork.SaveChangesAsync();
+                await _notificationPublisher.PublishAsync(
+                    NotificationCatalog.HighlightVideoGenerationFailed(job.StudentId, item.Id));
             }
             catch (Exception saveEx)
             {
@@ -537,6 +549,21 @@ public class PersonalVideoService : IPersonalVideoService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(s => s.Id == item.StackId);
+        if (stack == null)
+            return;
+
+        if (item.Status == HighlightVideoStatus.Completed)
+        {
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.HighlightVideoReady(stack.StudentId, item.Id));
+        }
+        else if (item.Status == HighlightVideoStatus.Failed)
+        {
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.HighlightVideoGenerationFailed(stack.StudentId, item.Id));
+        }
     }
 
     private Guid ResolveStudentId(Guid? studentId)
@@ -594,6 +621,9 @@ public class PersonalVideoService : IPersonalVideoService
             stack.ProgramId,
             stack.StudentId,
             strengthForJob));
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.HighlightVideoGenerationQueued(stack.StudentId, item.Id));
 
         _logger.LogInformation(
             "[PersonalVideoService] Initial generation queued. StackId={StackId}, ItemId={ItemId}",

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassSessionDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -15,15 +16,18 @@ public sealed class ClassSessionService : IClassSessionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly ILogger<ClassSessionService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public ClassSessionService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
-        ILogger<ClassSessionService> logger)
+        ILogger<ClassSessionService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<Pagination<ClassSessionResponseDto>> GetClassSessionsByClassIdAsync(
@@ -317,6 +321,9 @@ public sealed class ClassSessionService : IClassSessionService
         await _unitOfWork.ClassSessions.AddAsync(entity);
         await _unitOfWork.SaveChangesAsync();
 
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassSessionScheduled(entity.ClassId, entity.Id, classEntity!.ProgramId));
+
         _logger.LogInformation(
             "[CreateClassSessionAsync] Class session '{Title}' created with Id {Id}.",
             entity.Title,
@@ -356,6 +363,9 @@ public sealed class ClassSessionService : IClassSessionService
 
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(session.ClassId);
         ClassValidator.ValidateClassExists(classEntity, session.ClassId);
+
+        var originalStatus = session.Status;
+        var timeChanged = request.StartTime.HasValue || request.EndTime.HasValue;
 
         var targetModuleId = session.ModuleId;
         var targetActivityId = session.ActivityId;
@@ -466,6 +476,41 @@ public sealed class ClassSessionService : IClassSessionService
         await _unitOfWork.ClassSessions.Update(session);
         await _unitOfWork.SaveChangesAsync();
 
+        var sessionNotifications = new List<NotificationCommand>();
+
+        if (request.Status.HasValue && session.Status != originalStatus)
+        {
+            switch (session.Status)
+            {
+                case ClassSessionStatus.InProgress:
+                    sessionNotifications.Add(
+                        NotificationCatalog.ClassSessionStarted(session.ClassId, session.Id, classEntity!.ProgramId));
+                    break;
+                case ClassSessionStatus.Completed:
+                    sessionNotifications.Add(
+                        NotificationCatalog.ClassSessionCompleted(session.ClassId, session.Id, classEntity!.ProgramId));
+                    break;
+                case ClassSessionStatus.Cancelled:
+                    sessionNotifications.Add(
+                        NotificationCatalog.ClassSessionCancelled(session.ClassId, session.Id, classEntity!.ProgramId));
+                    break;
+                default:
+                    sessionNotifications.Add(
+                        NotificationCatalog.ClassSessionRescheduled(session.ClassId, session.Id, classEntity!.ProgramId));
+                    break;
+            }
+        }
+        else if (timeChanged)
+        {
+            sessionNotifications.Add(
+                NotificationCatalog.ClassSessionRescheduled(session.ClassId, session.Id, classEntity!.ProgramId));
+        }
+
+        if (sessionNotifications.Count > 0)
+        {
+            await _notificationPublisher.PublishManyAsync(sessionNotifications);
+        }
+
         _logger.LogInformation("[UpdateClassSessionAsync] Class session Id {Id} updated successfully.", id);
 
         return new ClassSessionResponseDto
@@ -501,8 +546,15 @@ public sealed class ClassSessionService : IClassSessionService
             return false;
         }
 
+        var classId = entity.ClassId;
+        var sessionId = entity.Id;
+
         await _unitOfWork.ClassSessions.SoftRemove(entity);
         await _unitOfWork.SaveChangesAsync();
+
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassSessionCancelled(classId, sessionId, classEntity?.ProgramId));
 
         _logger.LogInformation("[DeleteClassSessionAsync] Class session Id {Id} soft-deleted successfully.", id);
 

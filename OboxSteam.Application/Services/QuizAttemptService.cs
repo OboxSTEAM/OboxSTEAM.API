@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.QuizDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -15,17 +16,20 @@ public sealed class QuizAttemptService : IQuizAttemptService
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICertificateService _certificateService;
+    private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<QuizAttemptService> _logger;
 
     public QuizAttemptService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
         ICertificateService certificateService,
+        INotificationPublisher notificationPublisher,
         ILogger<QuizAttemptService> logger)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _certificateService = certificateService;
+        _notificationPublisher = notificationPublisher;
         _logger = logger;
     }
 
@@ -343,6 +347,15 @@ public sealed class QuizAttemptService : IQuizAttemptService
         await _unitOfWork.SaveChangesAsync();
 
         await RecalculateEnrollmentProgressAsync(submission);
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(assignment!.ModuleId);
+        await _notificationPublisher.PublishAsync(NotificationCatalog.QuizGraded(
+            student.Id,
+            submission.Id,
+            assignment.Id,
+            grade.Passed,
+            module?.ProgramId,
+            assignment.Title));
 
         _logger.LogInformation(
             "SubmitQuiz graded submission. SubmissionId={SubmissionId}, Grade={Grade}, Passed={Passed}",

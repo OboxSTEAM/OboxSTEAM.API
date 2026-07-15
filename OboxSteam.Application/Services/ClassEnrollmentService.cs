@@ -3,6 +3,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.ClassEnrollmentDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -17,17 +18,20 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
     private readonly IClaimsService _claimsService;
     private readonly IClassService _classService;
     private readonly ILogger<ClassEnrollmentService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public ClassEnrollmentService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         IClassService classService,
-        ILogger<ClassEnrollmentService> logger)
+        ILogger<ClassEnrollmentService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _classService = classService;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<ClassEnrollmentResponseDto> EnrollClassAsync(CreateClassEnrollmentRequestDto request)
@@ -85,6 +89,14 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
 
         await _unitOfWork.ClassEnrollments.AddAsync(enrollment);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassEnrolled(
+                student.Id,
+                request.ClassId,
+                enrollment.Id,
+                programEnrollment.ProgramId,
+                classToJoin.Name));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
 
@@ -170,6 +182,14 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
 
         await _unitOfWork.ClassEnrollments.Update(enrollment);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassTransferred(
+                student.Id,
+                request.ClassId,
+                enrollment.Id,
+                programEnrollment.ProgramId,
+                targetClass.Name));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
 

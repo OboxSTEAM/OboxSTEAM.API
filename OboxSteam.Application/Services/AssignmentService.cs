@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.AssignmentDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
+using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
 
 namespace OboxSteam.Application.Services;
@@ -13,15 +15,18 @@ public sealed class AssignmentService : IAssignmentService
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<AssignmentService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public AssignmentService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
-        ILogger<AssignmentService> logger)
+        ILogger<AssignmentService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<AssignmentResponseDto> CreateAssignment(CreateAssignmentRequestDto request)
@@ -93,6 +98,8 @@ public sealed class AssignmentService : IAssignmentService
 
         await _unitOfWork.Assignments.AddAsync(assignment);
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishAssignmentPublishedAsync(assignment, module!);
 
         _logger.LogInformation(
             "CreateAssignment completed. AssignmentId={AssignmentId}",
@@ -358,5 +365,31 @@ public sealed class AssignmentService : IAssignmentService
             assignmentId);
 
         return true;
+    }
+
+    /// <summary>
+    /// Notifies rosters of Open/InProgress classes in the assignment's program.
+    /// Skips when no active cohort exists yet.
+    /// </summary>
+    private async Task PublishAssignmentPublishedAsync(Assignment assignment, Module module)
+    {
+        var activeClasses = await _unitOfWork.Classes.GetAllAsync(
+            c => c.ProgramId == module.ProgramId
+                 && (c.Status == ClassStatus.Open || c.Status == ClassStatus.InProgress));
+
+        if (activeClasses.Count == 0)
+        {
+            return;
+        }
+
+        var commands = activeClasses
+            .Select(c => NotificationCatalog.AssignmentPublished(
+                c.Id,
+                assignment.Id,
+                module.ProgramId,
+                assignment.Title))
+            .ToList();
+
+        await _notificationPublisher.PublishManyAsync(commands);
     }
 }

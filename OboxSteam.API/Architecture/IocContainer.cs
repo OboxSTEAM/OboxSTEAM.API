@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
+using OboxSteam.API.Hubs;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
@@ -204,6 +205,11 @@ public static class IocContainer
         services.AddScoped<IStripePaymentService, StripePaymentService>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IInvoiceService, InvoiceService>();
+        services.AddScoped<INotificationPublisher, NotificationPublisher>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<INotificationRecipientResolver, NotificationRecipientResolver>();
+        services.AddScoped<INotificationSmokeTestService, NotificationSmokeTestService>();
+        services.AddSingleton<INotificationDispatcher, SignalRNotificationDispatcher>();
         return services;
     }
 
@@ -399,6 +405,23 @@ public static class IocContainer
                     ValidAudience = audience,
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
                     ClockSkew = TimeSpan.Zero // Remove delay of token when expire
+                };
+
+                // SignalR JS clients pass JWT via ?access_token= on the hub negotiate/WebSocket URL.
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+                        if (!string.IsNullOrEmpty(accessToken)
+                            && path.StartsWithSegments("/hubs/notifications"))
+                        {
+                            context.Token = accessToken;
+                        }
+
+                        return Task.CompletedTask;
+                    }
                 };
             });
 

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.SessionAttendanceDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -16,17 +17,20 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
     private readonly IClaimsService _claimsService;
     private readonly ICurrentTime _currentTime;
     private readonly ILogger<SessionAttendanceService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public SessionAttendanceService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         ICurrentTime currentTime,
-        ILogger<SessionAttendanceService> logger)
+        ILogger<SessionAttendanceService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _currentTime = currentTime;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<Pagination<SessionAttendanceResponseDto>> GetSessionAttendancesByClassSessionIdAsync(
@@ -197,6 +201,14 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.AttendanceMarked(
+                attendance.Status,
+                studentId,
+                sessionId,
+                classId,
+                currentUser.Id));
 
         _logger.LogInformation(
             "[UpdateSessionAttendanceAsync] Attendance updated — sessionId: {SessionId}, studentId: {StudentId}, status: {Status}, by: {UserId}.",

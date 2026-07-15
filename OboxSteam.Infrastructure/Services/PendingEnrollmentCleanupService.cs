@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
 
@@ -81,6 +83,15 @@ public class PendingEnrollmentCleanupService : BackgroundService
         {
             int affectedRows = await unitOfWork.SaveChangesAsync();
             _logger.LogInformation("Successfully soft deleted expired enrollment records. SaveChanges affected {AffectedRows} rows.", affectedRows);
+
+            if (expiredEnrollments.Any())
+            {
+                var notificationPublisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();
+                var notifications = expiredEnrollments
+                    .Select(pe => NotificationCatalog.PendingPaymentExpired(pe.StudentId, pe.Id, pe.ProgramId))
+                    .ToList();
+                await notificationPublisher.PublishManyAsync(notifications, stoppingToken);
+            }
         }
         else
         {

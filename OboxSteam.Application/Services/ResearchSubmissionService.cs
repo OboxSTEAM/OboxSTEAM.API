@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ResearchSubmissionDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -19,6 +20,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
     private readonly ICertificateService _certificateService;
+    private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<ResearchSubmissionService> _logger;
 
     public ResearchSubmissionService(
@@ -26,12 +28,14 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         IUnitOfWork unitOfWork,
         IBlobService blobService,
         ICertificateService certificateService,
+        INotificationPublisher notificationPublisher,
         ILogger<ResearchSubmissionService> logger)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _blobService = blobService;
         _certificateService = certificateService;
+        _notificationPublisher = notificationPublisher;
         _logger = logger;
     }
 
@@ -139,6 +143,12 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
 
         await _unitOfWork.Submissions.AddAsync(submission);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(NotificationCatalog.ResearchSubmissionOpened(
+            enrollment.StudentId,
+            submission.Id,
+            assignment.Id,
+            module!.ProgramId));
 
         _logger.LogInformation(
             "StartSubmission opened research submission. SubmissionId={SubmissionId}, MilestoneId={MilestoneId}, StudentId={StudentId}, OpenedBy={OpenedBy}",
@@ -440,10 +450,11 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         var nextAttemptNumber = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
         ResearchSubmissionValidator.ValidateMaxAttemptsNotExceeded(assignment, nextAttemptNumber);
 
+        ModuleEnrollment? moduleEnrollment = null;
         if (submission.ModuleEnrollmentId.HasValue)
         {
-            var enrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(submission.ModuleEnrollmentId.Value);
-            if (enrollment == null || enrollment.IsDeleted || enrollment.Status != EnrollmentStatus.Active)
+            moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(submission.ModuleEnrollmentId.Value);
+            if (moduleEnrollment == null || moduleEnrollment.IsDeleted || moduleEnrollment.Status != EnrollmentStatus.Active)
             {
                 throw ErrorHelper.Forbidden("Module enrollment is not active.");
             }
@@ -465,6 +476,25 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             now);
         await _unitOfWork.Submissions.Update(submission);
         await _unitOfWork.SaveChangesAsync();
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+        Guid? classId = null;
+        if (moduleEnrollment?.ProgramEnrollmentId != null)
+        {
+            var classEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+                ce => ce.ProgramEnrollmentId == moduleEnrollment.ProgramEnrollmentId.Value
+                      && ce.Status == ClassEnrollmentStatus.Active
+                      && !ce.IsDeleted);
+            classId = classEnrollment?.ClassId;
+        }
+
+        await _notificationPublisher.PublishAsync(NotificationCatalog.ResearchWorkSubmitted(
+            student.Id,
+            submission.Id,
+            assignment.Id,
+            classId,
+            module?.ProgramId,
+            assignment.Title));
 
         _logger.LogInformation(
             "SubmitResearchWork completed. SubmissionId={SubmissionId}, AttemptNumber={AttemptNumber}, StudentId={StudentId}",
@@ -542,6 +572,28 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         await _unitOfWork.SaveChangesAsync();
 
         await RecalculateEnrollmentProgressAsync(submission);
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+        if (submission.Status == SubmissionStatus.ReturnedForRevision)
+        {
+            await _notificationPublisher.PublishAsync(NotificationCatalog.ResearchReturnedForRevision(
+                submission.StudentId,
+                submission.Id,
+                assignment.Id,
+                module?.ProgramId,
+                assignment.Title,
+                grader.Id));
+        }
+        else
+        {
+            await _notificationPublisher.PublishAsync(NotificationCatalog.ResearchGraded(
+                submission.StudentId,
+                submission.Id,
+                assignment.Id,
+                submission.AssignedGrade!.Value >= assignment.PassScore,
+                module?.ProgramId,
+                assignment.Title));
+        }
 
         _logger.LogInformation(
             "GradeSubmission completed. SubmissionId={SubmissionId}, Status={Status}, GradedBy={GradedBy}",

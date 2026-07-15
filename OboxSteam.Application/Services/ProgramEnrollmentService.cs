@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.EnrollmentDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -15,15 +16,18 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly ILogger<ProgramEnrollmentService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public ProgramEnrollmentService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
-        ILogger<ProgramEnrollmentService> logger)
+        ILogger<ProgramEnrollmentService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<ProgramEnrollment> GetOrCreatePendingEnrollmentAsync(Guid studentId, Guid programId)
@@ -74,6 +78,13 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
 
         await _unitOfWork.ProgramEnrollments.AddAsync(enrollment);
         await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ProgramPendingPayment(
+                studentId,
+                programId,
+                enrollment.Id,
+                programEntity.Name));
 
         _logger.LogInformation(
             "[GetOrCreatePendingEnrollmentAsync] Created new PendingPayment enrollment {EnrollmentId} for student {StudentId} on program {ProgramId}.",
