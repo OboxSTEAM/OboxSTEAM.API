@@ -15,7 +15,6 @@ namespace OboxSteam.Application.Services;
 
 public sealed class CertificateService : ICertificateService
 {
-    private const string IssuerName = "OboxSTEAM";
     private const string CertificatesRootFolder = "certificates";
     private const string ViewForbiddenMessage = "You do not have permission to view this certificate.";
 
@@ -71,11 +70,6 @@ public sealed class CertificateService : ICertificateService
                  && c.ModuleId == null
                  && !c.IsDeleted);
 
-        if (existing != null && !string.IsNullOrWhiteSpace(existing.PdfUrl))
-        {
-            return await MapDetailAsync(existing);
-        }
-
         var program = await _unitOfWork.Programs.GetByIdAsync(enrollment.ProgramId);
         if (program == null || program.IsDeleted)
         {
@@ -127,8 +121,11 @@ public sealed class CertificateService : ICertificateService
                 StudentFullName = string.IsNullOrWhiteSpace(student.FullName)
                     ? student.Email
                     : student.FullName!,
+                StudentAvatarUrl = student.AvatarUrl,
+                IssuerLogoUrl = CertificateBranding.IssuerLogoUrl,
                 ProgramName = program.Name,
                 ProgramDescription = program.Description,
+                ProgramThumbnailUrl = program.ThumbnailUrl,
                 IssueDate = certificate.IssueDate ?? DateTime.UtcNow,
                 VerificationUrl = verificationUrl,
                 ModuleNames = modules.Select(m => m.Name).ToList(),
@@ -455,7 +452,8 @@ public sealed class CertificateService : ICertificateService
             PdfUrl = certificate.PdfUrl,
             VerificationUrl = certificate.VerificationUrl,
             SkillsAcquired = certificate.SkillsAcquired,
-            IssuerName = IssuerName,
+            IssuerName = CertificateBranding.IssuerName,
+            IssuerLogoUrl = CertificateBranding.IssuerLogoUrl,
             Student = new CertificateStudentDto
             {
                 Id = student.Id,

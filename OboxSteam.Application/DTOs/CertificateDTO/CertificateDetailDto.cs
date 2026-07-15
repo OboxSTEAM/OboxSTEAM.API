@@ -17,7 +17,9 @@ public sealed class CertificateDetailDto
 
     public string? SkillsAcquired { get; set; }
 
-    public string IssuerName { get; set; } = "OboxSTEAM";
+    public string IssuerName { get; set; } = CertificateBranding.IssuerName;
+
+    public string IssuerLogoUrl { get; set; } = CertificateBranding.IssuerLogoUrl;
 
     public CertificateStudentDto Student { get; set; } = null!;
 

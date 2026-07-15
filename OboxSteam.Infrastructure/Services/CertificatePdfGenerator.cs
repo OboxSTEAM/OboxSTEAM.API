@@ -9,12 +9,9 @@ namespace OboxSteam.Infrastructure.Services;
 
 public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
 {
-    /// <summary>Hosted Obox brand mark used on certificates (same asset as MediaConvert branding).</summary>
-    private const string LogoUrl =
-        "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/logo-obox.png";
-
     private static readonly SemaphoreSlim LogoLock = new(1, 1);
     private static byte[]? _cachedLogoBytes;
+    private static string? _cachedLogoUrl;
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<CertificatePdfGenerator> _logger;
@@ -37,7 +34,12 @@ public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
         var issueDateText = model.IssueDate.ToString("MMM d, yyyy");
         var moduleCount = model.ModuleNames.Count;
         var modulesLabel = moduleCount == 1 ? "1 Module" : $"{moduleCount} Modules";
-        var logoBytes = GetLogoBytes();
+        var logoUrl = string.IsNullOrWhiteSpace(model.IssuerLogoUrl)
+            ? CertificateBranding.IssuerLogoUrl
+            : model.IssuerLogoUrl;
+        var logoBytes = GetLogoBytes(logoUrl);
+        var avatarBytes = TryDownloadImageBytes(model.StudentAvatarUrl, "student avatar");
+        var thumbnailBytes = TryDownloadImageBytes(model.ProgramThumbnailUrl, "program thumbnail");
 
         var document = Document.Create(container =>
         {
@@ -63,6 +65,13 @@ public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
 
                         sidebar.Item().PaddingTop(6).AlignCenter().Text("PROGRAM CERTIFICATE")
                             .FontSize(9).FontColor(Colors.Grey.Darken2);
+
+                        if (avatarBytes is { Length: > 0 })
+                        {
+                            sidebar.Item().PaddingTop(18).AlignCenter().Width(96).Height(96)
+                                .Image(avatarBytes)
+                                .FitArea();
+                        }
 
                         sidebar.Item().PaddingTop(20).Background(Colors.Grey.Darken3).Padding(8)
                             .AlignCenter().Text(modulesLabel)
@@ -94,6 +103,11 @@ public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
                         {
                             main.Item().PaddingTop(10).Text(model.ProgramDescription)
                                 .FontSize(10).FontColor(Colors.Grey.Darken2);
+                        }
+
+                        if (thumbnailBytes is { Length: > 0 })
+                        {
+                            main.Item().PaddingTop(14).Height(110).Image(thumbnailBytes).FitArea();
                         }
 
                         main.Item().PaddingTop(28).Row(footer =>
@@ -136,9 +150,10 @@ public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
         return document.GeneratePdf();
     }
 
-    private byte[] GetLogoBytes()
+    private byte[] GetLogoBytes(string logoUrl)
     {
-        if (_cachedLogoBytes is { Length: > 0 })
+        if (_cachedLogoBytes is { Length: > 0 }
+            && string.Equals(_cachedLogoUrl, logoUrl, StringComparison.Ordinal))
         {
             return _cachedLogoBytes;
         }
@@ -146,29 +161,81 @@ public sealed class CertificatePdfGenerator : ICertificatePdfGenerator
         LogoLock.Wait();
         try
         {
-            if (_cachedLogoBytes is { Length: > 0 })
+            if (_cachedLogoBytes is { Length: > 0 }
+                && string.Equals(_cachedLogoUrl, logoUrl, StringComparison.Ordinal))
             {
                 return _cachedLogoBytes;
             }
 
-            var client = _httpClientFactory.CreateClient();
-            using var response = client.GetAsync(LogoUrl).GetAwaiter().GetResult();
-            response.EnsureSuccessStatusCode();
-            _cachedLogoBytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
-            _logger.LogInformation(
-                "[CertificatePdfGenerator] Loaded Obox logo from {LogoUrl} ({Bytes} bytes).",
-                LogoUrl,
-                _cachedLogoBytes.Length);
-            return _cachedLogoBytes;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[CertificatePdfGenerator] Failed to load logo from {LogoUrl}.", LogoUrl);
-            return [];
+            var bytes = TryDownloadImageBytes(logoUrl, "issuer logo");
+            if (bytes is { Length: > 0 })
+            {
+                _cachedLogoBytes = bytes;
+                _cachedLogoUrl = logoUrl;
+            }
+
+            return _cachedLogoBytes ?? [];
         }
         finally
         {
             LogoLock.Release();
+        }
+    }
+
+    private byte[]? TryDownloadImageBytes(string? url, string label)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            _logger.LogWarning(
+                "[CertificatePdfGenerator] Skipping invalid {Label} URL: {Url}",
+                label,
+                url);
+            return null;
+        }
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.TryAddWithoutValidation("User-Agent", "OboxSTEAM-CertificatePdf/1.0");
+            using var response = client.Send(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "[CertificatePdfGenerator] Failed to load {Label} from {Url}. Status: {StatusCode}",
+                    label,
+                    url,
+                    (int)response.StatusCode);
+                return null;
+            }
+
+            var bytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            if (bytes.Length == 0)
+            {
+                _logger.LogWarning(
+                    "[CertificatePdfGenerator] Empty {Label} payload from {Url}.",
+                    label,
+                    url);
+                return null;
+            }
+
+            _logger.LogInformation(
+                "[CertificatePdfGenerator] Loaded {Label} from {Url} ({Bytes} bytes).",
+                label,
+                url,
+                bytes.Length);
+            return bytes;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[CertificatePdfGenerator] Failed to load {Label} from {Url}.", label, url);
+            return null;
         }
     }
 }
