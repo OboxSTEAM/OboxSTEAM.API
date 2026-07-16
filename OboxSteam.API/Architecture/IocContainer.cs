@@ -189,6 +189,7 @@ public static class IocContainer
         services.AddScoped<IActivityProgressService, ActivityProgressService>();
         services.AddScoped<ICertificateService, CertificateService>();
         services.AddScoped<ICertificatePdfGenerator, CertificatePdfGenerator>();
+        services.AddScoped<IPortfolioService, PortfolioService>();
         services.AddScoped<IClassEnrollmentService, ClassEnrollmentService>();
         services.AddScoped<IClassService, ClassService>();
         services.AddScoped<IClassSessionService, ClassSessionService>();
