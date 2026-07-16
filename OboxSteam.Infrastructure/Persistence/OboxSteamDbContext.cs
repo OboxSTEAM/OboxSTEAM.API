@@ -536,7 +536,12 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Portfolio>(entity =>
         {
             entity.HasIndex(p => p.Code).IsUnique();
-            entity.HasIndex(p => p.Subdomain).IsUnique();
+            entity.HasIndex(p => p.Subdomain)
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"Subdomain\" IS NOT NULL");
+
+            entity.Property(p => p.IsPublic)
+                .HasDefaultValue(false);
 
             entity.HasOne(p => p.ParentPortfolio)
                 .WithMany()

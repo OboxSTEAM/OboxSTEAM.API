@@ -7,5 +7,6 @@ public enum PortfolioItemType
     ExternalCert,
     Hobby,
     Extracurricular,
+    Project,
     HighlightReel
 }

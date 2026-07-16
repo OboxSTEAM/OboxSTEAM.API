@@ -33,6 +33,16 @@ public class PortfolioCustomItem : BaseEntity
     [MaxLength(255)]
     public string Title { get; set; } = null!;
 
+    [MaxLength(255)]
+    public string? Subtitle { get; set; }
+
+    [MaxLength(255)]
+    public string? Organization { get; set; }
+
+    public DateTime? StartDate { get; set; }
+
+    public DateTime? EndDate { get; set; }
+
     public string? Description { get; set; }
 
     /// <summary>Snapshot of mentor feedback at import time.</summary>
@@ -42,6 +52,8 @@ public class PortfolioCustomItem : BaseEntity
     public string? StudentEditedBody { get; set; }
 
     public string? MediaUrl { get; set; }
+
+    public string? ExternalUrl { get; set; }
 
     public int DisplayOrder { get; set; }
 
