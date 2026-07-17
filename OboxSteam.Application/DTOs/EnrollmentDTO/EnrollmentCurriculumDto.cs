@@ -80,7 +80,10 @@ public class EnrollmentCurriculumActivityDto
 
     public ActivityType ActivityType { get; set; }
 
-    /// <summary>Nav state: completed, current, available, or locked.</summary>
+    /// <summary>
+    /// Nav state: completed, current, in_progress, available, or locked.
+    /// <c>in_progress</c> is used by the curriculum mile map when learning has started but is not complete.
+    /// </summary>
     public string Status { get; set; } = null!;
 
     public ActivityResumeStateDto? ResumeState { get; set; }

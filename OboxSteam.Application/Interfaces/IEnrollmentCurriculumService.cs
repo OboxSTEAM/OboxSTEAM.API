@@ -6,6 +6,8 @@ public interface IEnrollmentCurriculumService
 {
     Task<EnrollmentCurriculumDto> GetEnrollmentCurriculumAsync(Guid programEnrollmentId);
 
+    Task<EnrollmentCurriculumMileMapDto> GetEnrollmentCurriculumMileMapAsync(Guid programEnrollmentId);
+
     Task<CompleteActivityResponseDto> CompleteActivityAsync(
         Guid programEnrollmentId,
         Guid activityId,
