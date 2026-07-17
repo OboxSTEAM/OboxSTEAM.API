@@ -176,11 +176,11 @@ public class ActivityService : IActivityService
 
         var courseActivities = await _unitOfWork.Activities.GetAllAsync(
             a => a.CourseId == request.CourseId && !a.IsDeleted);
-        var currentMaxOrder = courseActivities.Count == 0 ? 0 : courseActivities.Max(a => a.ActivityOrder);
 
-        SequentialOrderValidator.ValidateMustExceedMax(
+        SequentialOrderValidator.ValidateWithinRange(
             request.ActivityOrder,
-            currentMaxOrder,
+            minOrder: 1,
+            maxOrder: courseActivities.Count + 1,
             orderPropertyName: "ActivityOrder",
             scopeDescription: $"course '{request.CourseId}'");
 
@@ -195,6 +195,21 @@ public class ActivityService : IActivityService
             request.EndTime,
             request.Location,
             request.RequireQrCheckin);
+
+        // Insert-in-the-middle: shift existing activities at or after the requested slot.
+        var activitiesToShift = courseActivities
+            .Where(a => a.ActivityOrder >= request.ActivityOrder)
+            .ToList();
+
+        foreach (var existingActivity in activitiesToShift)
+        {
+            existingActivity.ActivityOrder += 1;
+        }
+
+        if (activitiesToShift.Count > 0)
+        {
+            await _unitOfWork.Activities.UpdateRange(activitiesToShift);
+        }
 
         var activity = new Activity
         {
@@ -271,41 +286,28 @@ public class ActivityService : IActivityService
             activity.Code = request.Code;
         }
 
-        var targetCourseId = activity.CourseId;
+        var oldCourseId = activity.CourseId;
+        var oldOrder = activity.ActivityOrder;
+        var courseChanged = request.CourseId.HasValue && request.CourseId.Value != oldCourseId;
+        var targetCourseId = courseChanged ? request.CourseId!.Value : oldCourseId;
 
-        if (request.CourseId.HasValue && activity.CourseId != request.CourseId.Value)
+        if (courseChanged)
         {
-            var targetCourse = await _unitOfWork.Courses.GetByIdAsync(request.CourseId.Value);
-            ActivityValidator.ValidateCourseExists(targetCourse, request.CourseId.Value);
-            targetCourseId = request.CourseId.Value;
-            activity.CourseId = request.CourseId.Value;
+            var targetCourse = await _unitOfWork.Courses.GetByIdAsync(targetCourseId);
+            ActivityValidator.ValidateCourseExists(targetCourse, targetCourseId);
         }
 
-        if (request.ActivityOrder.HasValue || request.CourseId.HasValue)
-        {
-            var courseActivities = await _unitOfWork.Activities.GetAllAsync(
-                a => a.CourseId == targetCourseId && !a.IsDeleted);
-            var activitiesForMax = courseActivities.Where(a => a.Id != activityId).ToList();
-            var currentMaxOrder = activitiesForMax.Count == 0 ? 0 : activitiesForMax.Max(a => a.ActivityOrder);
-            var orderToValidate = request.ActivityOrder ?? activity.ActivityOrder;
-
-            SequentialOrderValidator.ValidateMustExceedMax(
-                orderToValidate,
-                currentMaxOrder,
-                orderPropertyName: "ActivityOrder",
-                scopeDescription: $"course '{targetCourseId}'");
-
-            if (request.ActivityOrder.HasValue)
-            {
-                activity.ActivityOrder = request.ActivityOrder.Value;
-            }
-        }
-
+        // When an activity is SelfPaced it has no schedule; clear location/times/capacity
+        // (and QR check-in, which the domain only permits for Offline) so a stale schedule is
+        // never persisted or returned after the type switches.
         var resolvedActivityType = request.ActivityType ?? activity.ActivityType;
-        var resolvedStartTime = request.StartTime ?? activity.StartTime;
-        var resolvedEndTime = request.EndTime ?? activity.EndTime;
-        var resolvedLocation = request.Location ?? activity.Location;
-        var resolvedRequireQrCheckin = request.RequireQrCheckin ?? activity.RequireQrCheckin;
+        var isSelfPaced = resolvedActivityType == ActivityType.SelfPaced;
+
+        var resolvedStartTime = isSelfPaced ? null : request.StartTime ?? activity.StartTime;
+        var resolvedEndTime = isSelfPaced ? null : request.EndTime ?? activity.EndTime;
+        var resolvedLocation = isSelfPaced ? null : request.Location ?? activity.Location;
+        var resolvedMaxCapacity = isSelfPaced ? null : request.MaxCapacity ?? activity.MaxCapacity;
+        var resolvedRequireQrCheckin = !isSelfPaced && (request.RequireQrCheckin ?? activity.RequireQrCheckin);
 
         await ActivityValidator.ValidateActivityTypeForCourseAsync(
             _unitOfWork,
@@ -318,6 +320,15 @@ public class ActivityService : IActivityService
             resolvedEndTime,
             resolvedLocation,
             resolvedRequireQrCheckin);
+
+        if (courseChanged)
+        {
+            await MoveActivityToCourseAsync(activity, oldCourseId, oldOrder, targetCourseId, request.ActivityOrder);
+        }
+        else if (request.ActivityOrder.HasValue && request.ActivityOrder.Value != oldOrder)
+        {
+            await ReorderWithinCourseAsync(activity, targetCourseId, oldOrder, request.ActivityOrder.Value);
+        }
 
         if (request.ActivityType.HasValue)
         {
@@ -334,30 +345,11 @@ public class ActivityService : IActivityService
             activity.Description = request.Description;
         }
 
-        if (request.Location != null && activity.Location != request.Location)
-        {
-            activity.Location = request.Location;
-        }
-
-        if (request.StartTime.HasValue)
-        {
-            activity.StartTime = request.StartTime;
-        }
-
-        if (request.EndTime.HasValue)
-        {
-            activity.EndTime = request.EndTime;
-        }
-
-        if (request.MaxCapacity.HasValue)
-        {
-            activity.MaxCapacity = request.MaxCapacity;
-        }
-
-        if (request.RequireQrCheckin.HasValue)
-        {
-            activity.RequireQrCheckin = request.RequireQrCheckin.Value;
-        }
+        activity.Location = resolvedLocation;
+        activity.StartTime = resolvedStartTime;
+        activity.EndTime = resolvedEndTime;
+        activity.MaxCapacity = resolvedMaxCapacity;
+        activity.RequireQrCheckin = resolvedRequireQrCheckin;
 
         if (request.RequireMediaEvidence.HasValue)
         {
@@ -387,6 +379,102 @@ public class ActivityService : IActivityService
             CreatedAt = activity.CreatedAt,
             UpdatedAt = activity.UpdatedAt,
         };
+    }
+
+    // =========================================================================
+    // REORDER HELPERS
+    // =========================================================================
+
+    /// <summary>
+    /// Moves <paramref name="activity"/> to a new position within the same course, shifting the
+    /// activities in between by one slot (drag-and-drop semantics). Runs in the caller's unit of work.
+    /// </summary>
+    private async Task ReorderWithinCourseAsync(Activity activity, Guid courseId, int oldOrder, int newOrder)
+    {
+        var courseActivities = await _unitOfWork.Activities.GetAllAsync(
+            a => a.CourseId == courseId && !a.IsDeleted);
+
+        SequentialOrderValidator.ValidateWithinRange(
+            newOrder,
+            minOrder: 1,
+            maxOrder: courseActivities.Count,
+            orderPropertyName: "ActivityOrder",
+            scopeDescription: $"course '{courseId}'");
+
+        var others = courseActivities.Where(a => a.Id != activity.Id).ToList();
+
+        var shifted = newOrder < oldOrder
+            ? others.Where(a => a.ActivityOrder >= newOrder && a.ActivityOrder < oldOrder).ToList()
+            : others.Where(a => a.ActivityOrder > oldOrder && a.ActivityOrder <= newOrder).ToList();
+
+        var delta = newOrder < oldOrder ? 1 : -1;
+
+        foreach (var neighbor in shifted)
+        {
+            neighbor.ActivityOrder += delta;
+        }
+
+        if (shifted.Count > 0)
+        {
+            await _unitOfWork.Activities.UpdateRange(shifted);
+        }
+
+        activity.ActivityOrder = newOrder;
+    }
+
+    /// <summary>
+    /// Moves <paramref name="activity"/> to a different course: closes the gap it leaves in the old
+    /// course and inserts it at the requested slot (or appends) in the new course, shifting neighbors.
+    /// </summary>
+    private async Task MoveActivityToCourseAsync(
+        Activity activity,
+        Guid oldCourseId,
+        int oldOrder,
+        Guid newCourseId,
+        int? requestedOrder)
+    {
+        var oldCourseActivities = await _unitOfWork.Activities.GetAllAsync(
+            a => a.CourseId == oldCourseId && !a.IsDeleted && a.Id != activity.Id);
+
+        var newCourseActivities = await _unitOfWork.Activities.GetAllAsync(
+            a => a.CourseId == newCourseId && !a.IsDeleted);
+
+        var targetOrder = requestedOrder ?? newCourseActivities.Count + 1;
+
+        SequentialOrderValidator.ValidateWithinRange(
+            targetOrder,
+            minOrder: 1,
+            maxOrder: newCourseActivities.Count + 1,
+            orderPropertyName: "ActivityOrder",
+            scopeDescription: $"course '{newCourseId}'");
+
+        var gapShifted = oldCourseActivities
+            .Where(a => a.ActivityOrder > oldOrder)
+            .ToList();
+
+        foreach (var neighbor in gapShifted)
+        {
+            neighbor.ActivityOrder -= 1;
+        }
+
+        var insertShifted = newCourseActivities
+            .Where(a => a.ActivityOrder >= targetOrder)
+            .ToList();
+
+        foreach (var neighbor in insertShifted)
+        {
+            neighbor.ActivityOrder += 1;
+        }
+
+        var toUpdate = gapShifted.Concat(insertShifted).ToList();
+
+        if (toUpdate.Count > 0)
+        {
+            await _unitOfWork.Activities.UpdateRange(toUpdate);
+        }
+
+        activity.CourseId = newCourseId;
+        activity.ActivityOrder = targetOrder;
     }
 
     // =========================================================================

@@ -20,4 +20,22 @@ public static class SequentialOrderValidator
                 $"Use {orderPropertyName} {currentMaxOrder + 1} or higher.");
         }
     }
+
+    /// <summary>
+    /// Validates that a requested order sits within an inclusive range. Used for insert/reorder
+    /// operations where an item can be placed at any existing slot (or appended).
+    /// </summary>
+    public static void ValidateWithinRange(
+        int requestedOrder,
+        int minOrder,
+        int maxOrder,
+        string orderPropertyName = "Order",
+        string scopeDescription = "this scope")
+    {
+        if (requestedOrder < minOrder || requestedOrder > maxOrder)
+        {
+            throw ErrorHelper.BadRequest(
+                $"{orderPropertyName} must be between {minOrder} and {maxOrder} for {scopeDescription}.");
+        }
+    }
 }
