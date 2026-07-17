@@ -56,6 +56,8 @@ public partial class SeedService : ISeedService
         await SeedExtendedResearchDataAsync();
         await SeedMaterialsAsync();
         await ResetIntroductionToRoboticsFeTestProgressAsync();
+        // After robotics FE reset so STD-001 research enrollment / submissions are not wiped.
+        await SeedPortfolioDataAsync();
 
         _loggerService.LogInformation("Finished seed all data");
     }
