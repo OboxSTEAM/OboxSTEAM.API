@@ -160,6 +160,34 @@ public class ProgramEnrollmentController : ControllerBase
     }
 
     // =========================================================================
+    // GET CURRICULUM MILE MAP
+    // GET /api/program-enrollments/{enrollmentId}/curriculum-mile-map
+    // =========================================================================
+
+    [HttpGet("{enrollmentId:guid}/curriculum-mile-map")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Get the current student's curriculum mile map",
+        Description = "Returns each module with moduleInfo and learning state, its courses/milestones, "
+            + "and per-activity activityInfo and learning state. Supports parallel learning: any unlocked "
+            + "incomplete module exposes its next activity with status 'current'. "
+            + "Activity status includes completed, current, in_progress, available, and locked. "
+            + "Assignments contribute to module progress but are not included in the response.")]
+    [ProducesResponseType(typeof(ApiResult<EnrollmentCurriculumMileMapDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetEnrollmentCurriculumMileMap([FromRoute] Guid enrollmentId)
+    {
+        var result = await _enrollmentCurriculumService.GetEnrollmentCurriculumMileMapAsync(enrollmentId);
+
+        return Ok(ApiResult<EnrollmentCurriculumMileMapDto>.Success(
+            result,
+            "200",
+            "Enrollment curriculum mile map retrieved successfully."));
+    }
+
+    // =========================================================================
     // CHECKPOINT  —  PATCH /api/program-enrollments/{enrollmentId}/activities/{activityId}/checkpoint
     // =========================================================================
 

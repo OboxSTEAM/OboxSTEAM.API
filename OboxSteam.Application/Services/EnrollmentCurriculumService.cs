@@ -12,6 +12,8 @@ namespace OboxSteam.Application.Services;
 
 public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
 {
+    private const string StatusInProgress = "in_progress";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly IActivityProgressService _activityProgressService;
@@ -68,6 +70,199 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             ProgramName = snapshot.Program.Name,
             ProgressPercent = enrollment.ProgressPercent,
             CurrentActivityId = currentActivityId,
+            Modules = modules,
+        };
+    }
+
+    public async Task<EnrollmentCurriculumMileMapDto> GetEnrollmentCurriculumMileMapAsync(
+        Guid programEnrollmentId)
+    {
+        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
+            _unitOfWork,
+            _claimsService,
+            CurriculumAccessValidator.CurriculumForbiddenMessage);
+
+        var enrollment = await CurriculumAccessValidator.GetProgramEnrollmentForStudentActionAsync(
+            _unitOfWork,
+            programEnrollmentId,
+            student.Id);
+
+        var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, enrollment.ProgramId);
+        var context = await BuildCurriculumContextAsync(
+            enrollment,
+            snapshot,
+            provisionModuleEnrollments: false);
+
+        var currentActivityIdSet = new HashSet<Guid>();
+
+        foreach (var module in snapshot.Modules)
+        {
+            if (!CurriculumStatusHelper.IsModuleUnlocked(
+                    module,
+                    context.LatestEnrollmentByModuleId,
+                    context.ModulesById))
+            {
+                continue;
+            }
+
+            if (context.LatestEnrollmentByModuleId.TryGetValue(module.Id, out var latestModuleEnrollment)
+                && (latestModuleEnrollment.Status == EnrollmentStatus.Completed
+                    || latestModuleEnrollment.ProgressPercent >= 100m))
+            {
+                continue;
+            }
+
+            foreach (var activityId in snapshot.GlobalActivityOrder)
+            {
+                if (!snapshot.ActivityModuleMap.TryGetValue(activityId, out var owningModuleId)
+                    || owningModuleId != module.Id)
+                {
+                    continue;
+                }
+
+                if (!IsActivityAccessible(activityId, snapshot, context)
+                    || IsActivityCompleted(activityId, snapshot, context))
+                {
+                    continue;
+                }
+
+                currentActivityIdSet.Add(activityId);
+                break;
+            }
+        }
+
+        var modules = new List<EnrollmentCurriculumMileMapModuleDto>();
+
+        foreach (var module in snapshot.Modules)
+        {
+            var isLocked = !CurriculumStatusHelper.IsModuleUnlocked(
+                module,
+                context.LatestEnrollmentByModuleId,
+                context.ModulesById);
+
+            context.LatestEnrollmentByModuleId.TryGetValue(module.Id, out var moduleEnrollment);
+
+            string moduleStatus;
+            if (isLocked)
+            {
+                moduleStatus = CurriculumStatusHelper.StatusLocked;
+            }
+            else if (moduleEnrollment?.Status == EnrollmentStatus.Completed
+                     || moduleEnrollment?.ProgressPercent >= 100m)
+            {
+                moduleStatus = CurriculumStatusHelper.StatusCompleted;
+            }
+            else if (moduleEnrollment?.ProgressPercent > 0m)
+            {
+                moduleStatus = StatusInProgress;
+            }
+            else
+            {
+                moduleStatus = CurriculumStatusHelper.StatusAvailable;
+            }
+
+            var moduleDto = new EnrollmentCurriculumMileMapModuleDto
+            {
+                ModuleInfo = new EnrollmentCurriculumMileMapModuleInfoDto
+                {
+                    ModuleId = module.Id,
+                    ModuleName = module.Name,
+                    ModuleOrder = module.ModuleOrder,
+                    ModuleType = module.ModuleType,
+                    PrerequisiteModuleId = module.PrerequisiteModuleId,
+                    ModuleEnrollmentId = moduleEnrollment?.Id,
+                },
+                Learning = new EnrollmentCurriculumMileMapModuleLearningDto
+                {
+                    Status = moduleStatus,
+                    ProgressPercent = moduleEnrollment?.ProgressPercent ?? 0m,
+                    IsLocked = isLocked,
+                    LockReason = isLocked
+                        ? CurriculumStatusHelper.GetModuleLockReason(
+                            module,
+                            context.LatestEnrollmentByModuleId,
+                            context.ModulesById)
+                        : null,
+                },
+            };
+
+            if (module.ModuleType == ModuleType.Research)
+            {
+                if (snapshot.MilestonesByModuleId.TryGetValue(module.Id, out var moduleMilestones))
+                {
+                    foreach (var milestone in moduleMilestones)
+                    {
+                        var milestoneActivities = new List<EnrollmentCurriculumMileMapActivityDto>();
+
+                        if (snapshot.LinksByMilestoneId.TryGetValue(milestone.Id, out var links))
+                        {
+                            foreach (var link in links)
+                            {
+                                if (!snapshot.ActivitiesById.TryGetValue(link.ActivityId, out var activity))
+                                {
+                                    continue;
+                                }
+
+                                milestoneActivities.Add(BuildMileMapActivity(
+                                    activity,
+                                    snapshot,
+                                    context,
+                                    currentActivityIdSet,
+                                    isLocked));
+                            }
+                        }
+
+                        moduleDto.Milestones.Add(new EnrollmentCurriculumMileMapMilestoneDto
+                        {
+                            MilestoneId = milestone.Id,
+                            MilestoneName = milestone.Title,
+                            MilestoneOrder = milestone.MilestoneOrder,
+                            IsCapstone = milestone.IsCapstone,
+                            Activities = milestoneActivities,
+                        });
+                    }
+                }
+            }
+            else if (snapshot.CoursesByModuleId.TryGetValue(module.Id, out var moduleCourses))
+            {
+                var courseOrder = 1;
+
+                foreach (var course in moduleCourses)
+                {
+                    var courseActivities = new List<EnrollmentCurriculumMileMapActivityDto>();
+
+                    if (snapshot.ActivitiesByCourseId.TryGetValue(course.Id, out var activities))
+                    {
+                        foreach (var activity in activities)
+                        {
+                            courseActivities.Add(BuildMileMapActivity(
+                                activity,
+                                snapshot,
+                                context,
+                                currentActivityIdSet,
+                                isLocked));
+                        }
+                    }
+
+                    moduleDto.Courses.Add(new EnrollmentCurriculumMileMapCourseDto
+                    {
+                        CourseId = course.Id,
+                        CourseName = course.Name,
+                        CourseOrder = courseOrder++,
+                        Activities = courseActivities,
+                    });
+                }
+            }
+
+            modules.Add(moduleDto);
+        }
+
+        return new EnrollmentCurriculumMileMapDto
+        {
+            EnrollmentId = enrollment.Id,
+            ProgramId = enrollment.ProgramId,
+            ProgramName = snapshot.Program.Name,
+            ProgressPercent = enrollment.ProgressPercent,
             Modules = modules,
         };
     }
@@ -704,6 +899,55 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         return activityDto;
     }
 
+    private static EnrollmentCurriculumMileMapActivityDto BuildMileMapActivity(
+        Activity activity,
+        ProgramCurriculumTreeSnapshot snapshot,
+        EnrollmentCurriculumContext context,
+        IReadOnlySet<Guid> currentActivityIds,
+        bool moduleLocked)
+    {
+        snapshot.MaterialsByActivityId.TryGetValue(activity.Id, out var material);
+
+        var status = ResolveMileMapActivityStatus(
+            activity.Id,
+            snapshot,
+            context,
+            currentActivityIds,
+            moduleLocked);
+
+        var learning = new EnrollmentCurriculumMileMapActivityLearningDto
+        {
+            Status = status,
+        };
+
+        if (status is not (CurriculumStatusHelper.StatusLocked or CurriculumStatusHelper.StatusCompleted)
+            && context.ProgressByActivityId.TryGetValue(activity.Id, out var progress))
+        {
+            learning.ResumeState = ActivityResumeStateHelper.Deserialize(progress.ResumeState);
+            learning.LastAccessedAt = progress.LastAccessedAt;
+        }
+
+        return new EnrollmentCurriculumMileMapActivityDto
+        {
+            ActivityInfo = new EnrollmentCurriculumMileMapActivityInfoDto
+            {
+                ActivityId = activity.Id,
+                ActivityName = activity.Name,
+                ActivityOrder = activity.ActivityOrder,
+                ActivityType = activity.ActivityType,
+                Material = material == null
+                    ? null
+                    : new EnrollmentCurriculumMaterialDto
+                    {
+                        MaterialId = material.Id,
+                        MaterialName = material.Title,
+                        MaterialType = material.MaterialType,
+                    },
+            },
+            Learning = learning,
+        };
+    }
+
     private static void ApplyResumeFields(
         EnrollmentCurriculumActivityDto dto,
         Guid activityId,
@@ -752,6 +996,58 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         }
 
         return CurriculumStatusHelper.StatusAvailable;
+    }
+
+    private static string ResolveMileMapActivityStatus(
+        Guid activityId,
+        ProgramCurriculumTreeSnapshot snapshot,
+        EnrollmentCurriculumContext context,
+        IReadOnlySet<Guid> currentActivityIds,
+        bool moduleLocked)
+    {
+        if (moduleLocked)
+        {
+            return CurriculumStatusHelper.StatusLocked;
+        }
+
+        if (IsActivityCompleted(activityId, snapshot, context))
+        {
+            return CurriculumStatusHelper.StatusCompleted;
+        }
+
+        if (!IsActivitySequentiallyAccessible(activityId, snapshot, context))
+        {
+            return CurriculumStatusHelper.StatusLocked;
+        }
+
+        if (currentActivityIds.Contains(activityId))
+        {
+            return CurriculumStatusHelper.StatusCurrent;
+        }
+
+        if (IsActivityInProgress(activityId, context))
+        {
+            return StatusInProgress;
+        }
+
+        return CurriculumStatusHelper.StatusAvailable;
+    }
+
+    private static bool IsActivityInProgress(Guid activityId, EnrollmentCurriculumContext context)
+    {
+        if (!context.ProgressByActivityId.TryGetValue(activityId, out var progress))
+        {
+            return false;
+        }
+
+        if (progress.ActivityStatus == ActivityStatus.Done)
+        {
+            return false;
+        }
+
+        return progress.ActivityStatus == ActivityStatus.InProgress
+               || progress.LastAccessedAt.HasValue
+               || !string.IsNullOrWhiteSpace(progress.ResumeState);
     }
 
     private static bool IsActivityCompleted(
