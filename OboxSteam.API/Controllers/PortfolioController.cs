@@ -60,13 +60,12 @@ public class PortfolioController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Update my portfolio",
-        Description = "Updates profile, theme, links, subdomain, and publish state. Publishing requires a valid unique subdomain.")]
+        Description = "Updates portfolio profile, theme, and links. Subdomain and publication state use dedicated endpoints.")]
     [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> UpdateMyPortfolio(
         [FromBody, SwaggerParameter("Updated portfolio settings")] UpdatePortfolioRequestDto dto)
     {
@@ -96,6 +95,52 @@ public class PortfolioController : ControllerBase
             result.Available
                 ? "Subdomain is available."
                 : result.Reason ?? "Subdomain is not available."));
+    }
+
+    [HttpPut("me/subdomain")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Claim or change my portfolio subdomain",
+        Description = "Validates and claims a unique subdomain. Send null or blank to remove it while unpublished. Using for debounce checking on frontend")]
+    [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> UpdateMySubdomain(
+        [FromBody, SwaggerParameter("Subdomain to claim or remove")] UpdatePortfolioSubdomainRequestDto dto)
+    {
+        var result = await _portfolioService.UpdateMySubdomainAsync(dto);
+        return Ok(ApiResult<PortfolioResponseDto>.Success(
+            result,
+            "200",
+            result.Subdomain == null
+                ? "Portfolio subdomain removed successfully."
+                : "Portfolio subdomain updated successfully."));
+    }
+
+    [HttpPut("me/publication")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Publish or unpublish my portfolio",
+        Description = "Sets the desired publication state idempotently. Publishing requires a valid unique subdomain.")]
+    [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> UpdateMyPublication(
+        [FromBody, SwaggerParameter("Desired publication state")] UpdatePortfolioPublicationRequestDto dto)
+    {
+        var result = await _portfolioService.UpdateMyPublicationAsync(dto);
+        return Ok(ApiResult<PortfolioResponseDto>.Success(
+            result,
+            "200",
+            result.IsPublic
+                ? "Portfolio published successfully."
+                : "Portfolio unpublished successfully."));
     }
 
     [HttpPost("me/items")]

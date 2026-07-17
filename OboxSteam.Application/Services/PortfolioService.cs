@@ -123,11 +123,6 @@ public sealed class PortfolioService : IPortfolioService
                 : dto.Summary.Trim();
         }
 
-        if (dto.Subdomain != null)
-        {
-            await ApplySubdomainAsync(portfolio, dto.Subdomain);
-        }
-
         if (dto.Theme != null)
         {
             ApplyTheme(portfolio, dto.Theme);
@@ -138,19 +133,6 @@ public sealed class PortfolioService : IPortfolioService
             portfolio.Links = dto.Links.Count == 0
                 ? null
                 : JsonSerializer.Serialize(dto.Links, JsonOptions);
-        }
-
-        if (dto.IsPublic.HasValue)
-        {
-            if (dto.IsPublic.Value)
-            {
-                EnsureCanPublish(portfolio);
-                portfolio.IsPublic = true;
-            }
-            else
-            {
-                portfolio.IsPublic = false;
-            }
         }
 
         await _unitOfWork.Portfolios.Update(portfolio);
@@ -164,6 +146,57 @@ public sealed class PortfolioService : IPortfolioService
         var student = await GetCurrentStudentAsync();
         var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
         return await BuildSubdomainAvailabilityAsync(subdomain, portfolio.Id);
+    }
+
+    public async Task<PortfolioResponseDto> UpdateMySubdomainAsync(
+        UpdatePortfolioSubdomainRequestDto dto)
+    {
+        if (dto == null)
+        {
+            throw ErrorHelper.BadRequest("Subdomain update data is required.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+
+        await ApplySubdomainAsync(portfolio, dto.Subdomain);
+        await _unitOfWork.Portfolios.Update(portfolio);
+        await _unitOfWork.SaveChangesAsync();
+
+        return await MapPortfolioResponseAsync(portfolio);
+    }
+
+    public async Task<PortfolioResponseDto> UpdateMyPublicationAsync(
+        UpdatePortfolioPublicationRequestDto dto)
+    {
+        if (dto == null || !dto.IsPublished.HasValue)
+        {
+            throw ErrorHelper.BadRequest("Publication state is required.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+        var isPublished = dto.IsPublished.Value;
+
+        if (isPublished)
+        {
+            EnsureCanPublish(portfolio);
+
+            var availability = await BuildSubdomainAvailabilityAsync(
+                portfolio.Subdomain!,
+                portfolio.Id);
+            if (!availability.Available)
+            {
+                throw ErrorHelper.Conflict(
+                    availability.Reason ?? "Subdomain is already taken.");
+            }
+        }
+
+        portfolio.IsPublic = isPublished;
+        await _unitOfWork.Portfolios.Update(portfolio);
+        await _unitOfWork.SaveChangesAsync();
+
+        return await MapPortfolioResponseAsync(portfolio);
     }
 
     public async Task<PortfolioCustomItemResponseDto> AddItemAsync(CreatePortfolioItemRequestDto dto)
@@ -334,7 +367,7 @@ public sealed class PortfolioService : IPortfolioService
 
     public async Task<PortfolioResponseDto> ReorderItemsAsync(ReorderPortfolioItemsRequestDto dto)
     {
-        if (dto?.Items == null || dto.Items.Count == 0)
+        if (dto == null || dto.Items.Count == 0)
         {
             throw ErrorHelper.BadRequest("At least one item is required to reorder.");
         }
@@ -683,7 +716,7 @@ public sealed class PortfolioService : IPortfolioService
         }
     }
 
-    private async Task ApplySubdomainAsync(Portfolio portfolio, string subdomainInput)
+    private async Task ApplySubdomainAsync(Portfolio portfolio, string? subdomainInput)
     {
         var normalized = PortfolioSubdomainValidator.Normalize(subdomainInput);
         if (normalized == null)
@@ -882,9 +915,7 @@ public sealed class PortfolioService : IPortfolioService
 
     private async Task<PortfolioResponseDto> MapPortfolioResponseAsync(Portfolio portfolio)
     {
-        var student = portfolio.Student
-            ?? await _unitOfWork.Users.GetByIdAsync(portfolio.StudentId);
-
+        var student = await _unitOfWork.Users.GetByIdAsync(portfolio.StudentId);
         var items = await GetPortfolioItemsAsync(portfolio.Id);
         var appendixByItemId = await LoadAppendixByItemIdAsync(items.Select(i => i.Id).ToList());
 

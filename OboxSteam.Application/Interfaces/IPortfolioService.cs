@@ -12,6 +12,10 @@ public interface IPortfolioService
 
     Task<SubdomainAvailabilityResponseDto> CheckSubdomainAvailabilityAsync(string subdomain);
 
+    Task<PortfolioResponseDto> UpdateMySubdomainAsync(UpdatePortfolioSubdomainRequestDto dto);
+
+    Task<PortfolioResponseDto> UpdateMyPublicationAsync(UpdatePortfolioPublicationRequestDto dto);
+
     Task<PortfolioCustomItemResponseDto> AddItemAsync(CreatePortfolioItemRequestDto dto);
 
     Task<PortfolioCustomItemResponseDto> UpdateItemAsync(Guid itemId, UpdatePortfolioItemRequestDto dto);
