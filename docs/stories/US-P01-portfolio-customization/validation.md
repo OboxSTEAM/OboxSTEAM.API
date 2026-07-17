@@ -8,14 +8,14 @@ Behavioral verification is manual via Swagger until a test project lands.
 
 ## Test Plan
 
-| Layer | Cases |
-| --- | --- |
-| Unit | None (no test project). |
-| Integration | None (no test project). |
-| E2E | Manual Swagger: theme update, media upload/list/delete, section CRUD/reorder, item galleries/styling, publish/unpublish, by-subdomain snapshot. |
-| Platform | Startup migration + built-in section backfill on existing data. |
-| Performance | Not required. |
-| Logs/Audit | Upload/publish/unpublish information logs. |
+| Layer       | Cases                                                                                                                                           |
+| -------------| -------------------------------------------------------------------------------------------------------------------------------------------------|
+| Unit        | None (no test project).                                                                                                                         |
+| Integration | None (no test project).                                                                                                                         |
+| E2E         | Manual Swagger: theme update, media upload/list/delete, section CRUD/reorder, item galleries/styling, publish/unpublish, by-subdomain snapshot. |
+| Platform    | Startup migration + built-in section backfill on existing data.                                                                                 |
+| Performance | Not required.                                                                                                                                   |
+| Logs/Audit  | Upload/publish/unpublish information logs.                                                                                                      |
 
 ## Fixtures
 

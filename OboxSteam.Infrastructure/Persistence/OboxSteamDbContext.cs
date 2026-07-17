@@ -102,8 +102,11 @@ public class OboxSteamDbContext : DbContext
         // GLOBAL QUERY FILTERS (Soft Delete)
         // =============================================
         modelBuilder.Entity<User>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<StudentProfile>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ParentStudent>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<OtpStorage>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Expert>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramBoard>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Skill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StudentSkill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StudentSkillEvidence>().HasQueryFilter(e => !e.IsDeleted);
@@ -141,6 +144,8 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ResearchMilestoneActivity>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<FaceEmbedding>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<MediaAsset>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<MediaTag>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<SubmissionEvidence>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<HighlightVideo>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<HighlightVideoStack>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<HighlightVideoItem>().HasQueryFilter(e => !e.IsDeleted);
