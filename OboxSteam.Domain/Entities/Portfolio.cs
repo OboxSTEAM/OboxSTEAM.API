@@ -33,6 +33,13 @@ public class Portfolio : BaseEntity
 
     public string? Summary { get; set; }
 
+    /// <summary>Portfolio-specific avatar override (does not touch the account avatar).</summary>
+    [MaxLength(500)]
+    public string? AvatarUrl { get; set; }
+
+    [MaxLength(500)]
+    public string? CoverImageUrl { get; set; }
+
     /// <summary>JSON theme config (template, colors, font, layout, section order).</summary>
     public string? ThemeConfig { get; set; }
 
@@ -49,6 +56,16 @@ public class Portfolio : BaseEntity
 
     public bool IsPublic { get; set; }
 
+    /// <summary>Immutable JSON snapshot of the public portfolio, captured at publish time.</summary>
+    public string? PublishedSnapshot { get; set; }
+
+    public DateTime? LastPublishedAt { get; set; }
+
+    /// <summary>True when the draft has mutated since the last publish.</summary>
+    public bool HasUnpublishedChanges { get; set; }
+
     // Navigation
     public ICollection<PortfolioCustomItem> CustomItems { get; set; } = new List<PortfolioCustomItem>();
+    public ICollection<PortfolioSection> Sections { get; set; } = new List<PortfolioSection>();
+    public ICollection<PortfolioMediaAsset> MediaAssets { get; set; } = new List<PortfolioMediaAsset>();
 }

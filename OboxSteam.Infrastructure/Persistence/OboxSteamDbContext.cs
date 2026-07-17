@@ -63,6 +63,9 @@ public class OboxSteamDbContext : DbContext
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<PortfolioCustomItem> PortfolioCustomItems { get; set; }
     public DbSet<PortfolioItemSubmission> PortfolioItemSubmissions { get; set; }
+    public DbSet<PortfolioSection> PortfolioSections { get; set; }
+    public DbSet<PortfolioMediaAsset> PortfolioMediaAssets { get; set; }
+    public DbSet<PortfolioMediaPlacement> PortfolioMediaPlacements { get; set; }
 
     // ── 7b. Research Milestones ──
     public DbSet<ResearchMilestone> ResearchMilestones { get; set; }
@@ -131,6 +134,9 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Portfolio>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<PortfolioCustomItem>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<PortfolioItemSubmission>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<PortfolioSection>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<PortfolioMediaAsset>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<PortfolioMediaPlacement>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ResearchMilestone>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ResearchMilestoneActivity>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<FaceEmbedding>().HasQueryFilter(e => !e.IsDeleted);
@@ -551,6 +557,12 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(p => p.StudentId)
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false AND \"ParentPortfolioId\" IS NULL");
+
+            entity.Property(p => p.PublishedSnapshot)
+                .HasColumnType("jsonb");
+
+            entity.Property(p => p.HasUnpublishedChanges)
+                .HasDefaultValue(false);
         });
 
         // =============================================
@@ -586,6 +598,73 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(i => new { i.ModuleEnrollmentId, i.ItemType })
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false AND \"ModuleEnrollmentId\" IS NOT NULL AND \"ItemType\" = 'CapstoneProject'");
+        });
+
+        // =============================================
+        // PORTFOLIO SECTION (built-in groups + custom blocks)
+        // =============================================
+        modelBuilder.Entity<PortfolioSection>(entity =>
+        {
+            entity.HasOne(s => s.Portfolio)
+                .WithMany(p => p.Sections)
+                .HasForeignKey(s => s.PortfolioId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Property(s => s.SettingsJson)
+                .HasColumnType("jsonb");
+
+            entity.Property(s => s.IsVisible)
+                .HasDefaultValue(true);
+
+            entity.HasIndex(s => new { s.PortfolioId, s.DisplayOrder });
+
+            // Built-in group kinds exist at most once per portfolio.
+            entity.HasIndex(s => new { s.PortfolioId, s.Kind })
+                .IsUnique()
+                .HasFilter(
+                    "\"IsDeleted\" = false AND \"Kind\" IN ('ProjectsGroup', 'ActivitiesGroup', 'LinksGroup')");
+        });
+
+        // =============================================
+        // PORTFOLIO MEDIA ASSET (student-owned uploads)
+        // =============================================
+        modelBuilder.Entity<PortfolioMediaAsset>(entity =>
+        {
+            entity.HasOne(m => m.Portfolio)
+                .WithMany(p => p.MediaAssets)
+                .HasForeignKey(m => m.PortfolioId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(m => m.PortfolioId);
+        });
+
+        // =============================================
+        // PORTFOLIO MEDIA PLACEMENT (item/section galleries)
+        // =============================================
+        modelBuilder.Entity<PortfolioMediaPlacement>(entity =>
+        {
+            entity.HasOne(pl => pl.MediaAsset)
+                .WithMany(m => m.Placements)
+                .HasForeignKey(pl => pl.PortfolioMediaAssetId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(pl => pl.PortfolioCustomItem)
+                .WithMany(i => i.MediaPlacements)
+                .HasForeignKey(pl => pl.PortfolioCustomItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(pl => pl.PortfolioSection)
+                .WithMany(s => s.MediaPlacements)
+                .HasForeignKey(pl => pl.PortfolioSectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(pl => pl.PortfolioCustomItemId);
+            entity.HasIndex(pl => pl.PortfolioSectionId);
+
+            // A placement belongs to exactly one owner: an item or a section.
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_PortfolioMediaPlacements_SingleOwner",
+                "(\"PortfolioCustomItemId\" IS NOT NULL) <> (\"PortfolioSectionId\" IS NOT NULL)"));
         });
 
         // =============================================

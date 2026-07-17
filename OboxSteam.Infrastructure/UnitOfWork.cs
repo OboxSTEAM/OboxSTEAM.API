@@ -64,6 +64,9 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Portfolio> Portfolios => Repository<Portfolio>();
     public IGenericRepository<PortfolioCustomItem> PortfolioCustomItems => Repository<PortfolioCustomItem>();
     public IGenericRepository<PortfolioItemSubmission> PortfolioItemSubmissions => Repository<PortfolioItemSubmission>();
+    public IGenericRepository<PortfolioSection> PortfolioSections => Repository<PortfolioSection>();
+    public IGenericRepository<PortfolioMediaAsset> PortfolioMediaAssets => Repository<PortfolioMediaAsset>();
+    public IGenericRepository<PortfolioMediaPlacement> PortfolioMediaPlacements => Repository<PortfolioMediaPlacement>();
     public IGenericRepository<ResearchMilestone> ResearchMilestones => Repository<ResearchMilestone>();
     public IGenericRepository<ResearchMilestoneActivity> ResearchMilestoneActivities => Repository<ResearchMilestoneActivity>();
     public IGenericRepository<Skill> Skills => Repository<Skill>();
