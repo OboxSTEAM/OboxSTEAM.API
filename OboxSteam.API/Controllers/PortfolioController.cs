@@ -153,7 +153,7 @@ public class PortfolioController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> UploadMedia([FromForm] IFormFile file)
+    public async Task<IActionResult> UploadMedia(IFormFile file)
     {
         var result = await _portfolioService.UploadMediaAsync(file);
         return StatusCode(
