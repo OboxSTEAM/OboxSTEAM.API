@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.MaterialDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
@@ -133,6 +134,111 @@ public class MaterialService : IMaterialService
     // =========================================================================
     // Queries
     // =========================================================================
+
+    /// <inheritdoc />
+    public Task<Pagination<MaterialListItemDto>> GetAllMaterialsAsync(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        int page,
+        int pageSize,
+        MaterialType? materialType = null,
+        Guid? programId = null,
+        Guid? courseId = null,
+        Guid? activityId = null)
+    {
+        _logger.LogInformation(
+            "[GetAllMaterialsAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
+            page, pageSize, search);
+
+        var query = BuildMaterialsQuery(
+            search, sortBy, isDescending, materialType, programId, courseId, activityId);
+
+        var totalCount = query.Count();
+
+        var items = query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(m => new MaterialListItemDto
+            {
+                Id = m.Id,
+                Title = m.Title,
+                MaterialType = m.MaterialType,
+                UploadedAt = m.CreatedAt,
+                ActivityId = m.ActivityId,
+                ActivityName = m.Activity.Name,
+                CourseId = m.Activity.CourseId,
+                CourseName = m.Activity.Course.Name,
+                ProgramId = m.Activity.Course.Module.ProgramId,
+                ProgramName = m.Activity.Course.Module.Program.Name,
+            })
+            .ToList();
+
+        _logger.LogInformation("[GetAllMaterialsAsync] Retrieved {Count}/{Total} materials.", items.Count, totalCount);
+
+        return Task.FromResult(new Pagination<MaterialListItemDto>(items, totalCount, page, pageSize));
+    }
+
+    private IQueryable<Material> BuildMaterialsQuery(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        MaterialType? materialType,
+        Guid? programId,
+        Guid? courseId,
+        Guid? activityId)
+    {
+        var query = _unitOfWork.Materials
+            .GetQueryable()
+            .Where(m => !m.IsDeleted);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var lowerSearch = search.ToLower();
+            query = query.Where(m =>
+                m.Title.ToLower().Contains(lowerSearch) ||
+                m.Activity.Name.ToLower().Contains(lowerSearch) ||
+                m.Activity.Course.Name.ToLower().Contains(lowerSearch) ||
+                m.Activity.Course.Module.Program.Name.ToLower().Contains(lowerSearch));
+        }
+
+        if (materialType.HasValue)
+            query = query.Where(m => m.MaterialType == materialType.Value);
+
+        if (activityId.HasValue)
+            query = query.Where(m => m.ActivityId == activityId.Value);
+
+        if (courseId.HasValue)
+            query = query.Where(m => m.Activity.CourseId == courseId.Value);
+
+        if (programId.HasValue)
+            query = query.Where(m => m.Activity.Course.Module.ProgramId == programId.Value);
+
+        return sortBy?.ToLower() switch
+        {
+            "title" => isDescending
+                ? query.OrderByDescending(m => m.Title)
+                : query.OrderBy(m => m.Title),
+            "materialtype" => isDescending
+                ? query.OrderByDescending(m => m.MaterialType)
+                : query.OrderBy(m => m.MaterialType),
+            "activityname" => isDescending
+                ? query.OrderByDescending(m => m.Activity.Name)
+                : query.OrderBy(m => m.Activity.Name),
+            "coursename" => isDescending
+                ? query.OrderByDescending(m => m.Activity.Course.Name)
+                : query.OrderBy(m => m.Activity.Course.Name),
+            "programname" => isDescending
+                ? query.OrderByDescending(m => m.Activity.Course.Module.Program.Name)
+                : query.OrderBy(m => m.Activity.Course.Module.Program.Name),
+            "uploadedat" => isDescending
+                ? query.OrderByDescending(m => m.CreatedAt)
+                : query.OrderBy(m => m.CreatedAt),
+            _ => isDescending
+                ? query.OrderByDescending(m => m.CreatedAt)
+                : query.OrderBy(m => m.CreatedAt),
+        };
+    }
 
     /// <inheritdoc />
     public async Task<MaterialResponseDto?> GetMaterialByActivityAsync(Guid activityId)

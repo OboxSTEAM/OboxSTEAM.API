@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.MaterialDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using OboxSteam.Domain.Enums;
 using Swashbuckle.AspNetCore.Annotations;
 
 namespace OboxSteam.API.Controllers;
@@ -16,6 +18,42 @@ public class MaterialController : ControllerBase
     public MaterialController(IMaterialService materialService)
     {
         _materialService = materialService;
+    }
+
+    // =========================================================================
+    // GET ALL  —  GET /api/materials
+    // =========================================================================
+
+    /// <summary>
+    /// Get a paginated list of materials with program/course/activity context.
+    /// </summary>
+    [HttpGet]
+    [SwaggerOperation(
+        Summary = "Get all materials",
+        Description = "Retrieve a paginated list of materials, each carrying program/course/activity " +
+                      "context for the Edit deep-link. Supports search, filter, and sort options.")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<MaterialListItemDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 500)]
+    public async Task<IActionResult> GetAllMaterials(
+        [FromQuery, SwaggerParameter(Description = "Search by material title, activity, course, or program name (optional)")] string? search = null,
+        [FromQuery, SwaggerParameter(Description = "Sort by field: title, materialType, uploadedAt, activityName, courseName, programName (optional)")] string? sortBy = null,
+        [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
+        [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
+        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
+        [FromQuery, SwaggerParameter(Description = "Filter by material type (optional)")] MaterialType? materialType = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program (optional)")] Guid? programId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by course (optional)")] Guid? courseId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by activity (optional)")] Guid? activityId = null)
+    {
+        if (page < 1 || pageSize < 1)
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+
+        var result = await _materialService.GetAllMaterialsAsync(
+            search, sortBy, isDescending, page, pageSize,
+            materialType, programId, courseId, activityId);
+
+        return Ok(ApiResult<Pagination<MaterialListItemDto>>.Success(result, "200", "Materials retrieved successfully."));
     }
 
     // =========================================================================
