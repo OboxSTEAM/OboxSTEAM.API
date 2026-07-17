@@ -62,6 +62,18 @@ public class PortfolioCustomItem : BaseEntity
 
     public PortfolioItemSource Source { get; set; } = PortfolioItemSource.AutoImported;
 
+    /// <summary>Optional hex accent color for this card (e.g. #1A2B3C).</summary>
+    [MaxLength(20)]
+    public string? AccentColor { get; set; }
+
+    public bool? IsFeatured { get; set; }
+
+    /// <summary>Grid span hint for the public renderer.</summary>
+    public PortfolioItemSpan? Span { get; set; }
+
     public ICollection<PortfolioItemSubmission> AppendixSubmissions { get; set; } =
         new List<PortfolioItemSubmission>();
+
+    public ICollection<PortfolioMediaPlacement> MediaPlacements { get; set; } =
+        new List<PortfolioMediaPlacement>();
 }

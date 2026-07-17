@@ -16,9 +16,13 @@ public class PublicPortfolioResponseDto
 
     public string? AvatarUrl { get; set; }
 
+    public string? CoverImageUrl { get; set; }
+
     public ThemeConfigDto? Theme { get; set; }
 
     public List<PortfolioLinkDto> Links { get; set; } = [];
 
     public List<PortfolioCustomItemResponseDto> Items { get; set; } = [];
+
+    public List<PortfolioSectionResponseDto> Sections { get; set; } = [];
 }

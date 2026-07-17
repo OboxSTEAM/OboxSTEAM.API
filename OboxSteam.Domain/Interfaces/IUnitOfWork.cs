@@ -38,6 +38,9 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Portfolio> Portfolios { get; }
     IGenericRepository<PortfolioCustomItem> PortfolioCustomItems { get; }
     IGenericRepository<PortfolioItemSubmission> PortfolioItemSubmissions { get; }
+    IGenericRepository<PortfolioSection> PortfolioSections { get; }
+    IGenericRepository<PortfolioMediaAsset> PortfolioMediaAssets { get; }
+    IGenericRepository<PortfolioMediaPlacement> PortfolioMediaPlacements { get; }
     IGenericRepository<ResearchMilestone> ResearchMilestones { get; }
     IGenericRepository<ResearchMilestoneActivity> ResearchMilestoneActivities { get; }
     IGenericRepository<Skill> Skills { get; }

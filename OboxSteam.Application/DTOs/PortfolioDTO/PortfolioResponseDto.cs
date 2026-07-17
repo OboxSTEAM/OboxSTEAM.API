@@ -14,6 +14,8 @@ public class PortfolioResponseDto
 
     public string? AvatarUrl { get; set; }
 
+    public string? CoverImageUrl { get; set; }
+
     public string? Subdomain { get; set; }
 
     public string? DisplayName { get; set; }
@@ -28,11 +30,17 @@ public class PortfolioResponseDto
 
     public bool IsPublic { get; set; }
 
+    public DateTime? LastPublishedAt { get; set; }
+
+    public bool HasUnpublishedChanges { get; set; }
+
     public ThemeConfigDto? Theme { get; set; }
 
     public List<PortfolioLinkDto> Links { get; set; } = [];
 
     public List<PortfolioCustomItemResponseDto> Items { get; set; } = [];
+
+    public List<PortfolioSectionResponseDto> Sections { get; set; } = [];
 
     public DateTime CreatedAt { get; set; }
 

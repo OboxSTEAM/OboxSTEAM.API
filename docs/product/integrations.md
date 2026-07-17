@@ -9,7 +9,8 @@
 
 ## AWS S3
 
-- `IBlobService` / `BlobService` for object storage (avatars, media, uploads).
+- `IBlobService` / `BlobService` for object storage (avatars, media, uploads,
+  and portfolio-scoped images under `portfolio/{studentId}/{portfolioId}/`).
 - Requires `AWS_ACCESS_KEY`, `AWS_SECRET_KEY`, `AWS_REGION` (default
   `ap-southeast-1`).
 - Bucket existence checked at startup.

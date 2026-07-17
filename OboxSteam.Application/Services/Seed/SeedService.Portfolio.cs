@@ -83,6 +83,7 @@ public partial class SeedService
             wireframeSubmission,
             capstoneSubmission,
             seedTime);
+        await SeedPortfolioSectionsAsync(portfolio, seedTime);
 
         _loggerService.LogInformation(
             "Finished seed portfolio data for STD-001 — portfolio {PortfolioCode}, {CertCount} certificate(s).",
@@ -394,7 +395,14 @@ public partial class SeedService
             templateId = "cv-modern",
             primaryColor = "#0F766E",
             secondaryColor = "#134E4A",
+            accentColor = "#F59E0B",
             fontFamily = "Inter",
+            headingFontFamily = "Space Grotesk",
+            fontScale = "base",
+            lineHeight = "normal",
+            density = "cozy",
+            backgroundStyle = "plain",
+            cardStyle = "soft",
             layoutStyle = "cv",
             sectionOrder = new[]
             {
@@ -423,6 +431,7 @@ public partial class SeedService
             Summary =
                 "High-school STEAM learner exploring web development, prototyping, and visual storytelling. " +
                 "Passionate about turning classroom challenges into portfolio-ready experiments for both tech and design pathways.",
+            CoverImageUrl = null,
             ThemeConfig = JsonSerializer.Serialize(theme, PortfolioSeedJsonOptions),
             Links = JsonSerializer.Serialize(links, PortfolioSeedJsonOptions),
             TemplateId = "cv-modern",
@@ -430,6 +439,7 @@ public partial class SeedService
             PlanType = PlanType.Standard,
             IsPublic = false,
             Subdomain = null,
+            HasUnpublishedChanges = false,
             CreatedAt = seedTime,
             CreatedBy = student.Id,
             IsDeleted = false,
@@ -618,5 +628,75 @@ public partial class SeedService
             });
             await _unitOfWork.SaveChangesAsync();
         }
+    }
+
+    private async Task SeedPortfolioSectionsAsync(Portfolio portfolio, DateTime seedTime)
+    {
+        var existing = await _unitOfWork.PortfolioSections.GetAllAsync(
+            s => s.PortfolioId == portfolio.Id && !s.IsDeleted);
+        if (existing.Count > 0)
+        {
+            _loggerService.LogInformation(
+                "Portfolio sections already exist for {PortfolioCode}, skipping section seeding.",
+                portfolio.Code);
+            return;
+        }
+
+        var sections = new List<PortfolioSection>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                PortfolioId = portfolio.Id,
+                Kind = PortfolioSectionKind.ProjectsGroup,
+                Title = "Projects",
+                DisplayOrder = 0,
+                IsVisible = true,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                PortfolioId = portfolio.Id,
+                Kind = PortfolioSectionKind.ActivitiesGroup,
+                Title = "Activities",
+                DisplayOrder = 1,
+                IsVisible = true,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                PortfolioId = portfolio.Id,
+                Kind = PortfolioSectionKind.LinksGroup,
+                Title = "Links",
+                DisplayOrder = 2,
+                IsVisible = true,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                PortfolioId = portfolio.Id,
+                Kind = PortfolioSectionKind.RichText,
+                Title = "About my journey",
+                DisplayOrder = 3,
+                IsVisible = true,
+                ContentHtml =
+                    "<p>I build STEAM projects that mix <strong>code</strong> and <em>design</em>.</p>",
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            },
+        };
+
+        await _unitOfWork.PortfolioSections.AddRangeAsync(sections);
+        await _unitOfWork.SaveChangesAsync();
     }
 }
