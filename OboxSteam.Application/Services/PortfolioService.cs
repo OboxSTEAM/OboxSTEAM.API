@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.PortfolioDTO;
 using OboxSteam.Application.Interfaces;
@@ -13,6 +15,9 @@ namespace OboxSteam.Application.Services;
 
 public sealed class PortfolioService : IPortfolioService
 {
+    private const int MaxGalleryAssetsPerOwner = 20;
+    private const int MaxImageBytes = 5 * 1024 * 1024;
+
     private static readonly HashSet<PortfolioItemType> ManualCreatableTypes =
     [
         PortfolioItemType.ExternalCert,
@@ -28,23 +33,53 @@ public sealed class PortfolioService : IPortfolioService
         PortfolioItemType.HighlightReel,
     ];
 
+    private static readonly HashSet<PortfolioSectionKind> BuiltInSectionKinds =
+    [
+        PortfolioSectionKind.ProjectsGroup,
+        PortfolioSectionKind.ActivitiesGroup,
+        PortfolioSectionKind.LinksGroup,
+    ];
+
+    private static readonly HashSet<PortfolioSectionKind> CustomSectionKinds =
+    [
+        PortfolioSectionKind.RichText,
+        PortfolioSectionKind.Gallery,
+        PortfolioSectionKind.Embed,
+    ];
+
+    private static readonly Dictionary<string, string> AllowedImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+        [".png"] = "image/png",
+    };
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
+        // PascalCase enum names match the API's global JsonStringEnumConverter.
+        // Theme/span fields opt into camelCase via CamelCaseJsonStringEnumConverter attributes.
+        Converters = { new JsonStringEnumConverter() },
     };
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
+    private readonly IBlobService _blobService;
+    private readonly IPortfolioHtmlSanitizer _htmlSanitizer;
     private readonly ILogger<PortfolioService> _logger;
 
     public PortfolioService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
+        IBlobService blobService,
+        IPortfolioHtmlSanitizer htmlSanitizer,
         ILogger<PortfolioService> logger)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
+        _blobService = blobService;
+        _htmlSanitizer = htmlSanitizer;
         _logger = logger;
     }
 
@@ -52,6 +87,7 @@ public sealed class PortfolioService : IPortfolioService
     {
         var student = await GetCurrentStudentAsync();
         var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+        await EnsureBuiltInSectionsAsync(portfolio);
         return await MapPortfolioResponseAsync(portfolio);
     }
 
@@ -76,6 +112,8 @@ public sealed class PortfolioService : IPortfolioService
 
         await _unitOfWork.Portfolios.AddAsync(portfolio);
         await _unitOfWork.SaveChangesAsync();
+
+        await EnsureBuiltInSectionsAsync(portfolio);
 
         _logger.LogInformation(
             "[CreateMyPortfolioAsync] Portfolio {PortfolioId} created for student {StudentId}.",
@@ -118,13 +156,26 @@ public sealed class PortfolioService : IPortfolioService
 
         if (dto.Summary != null)
         {
-            portfolio.Summary = string.IsNullOrWhiteSpace(dto.Summary)
+            portfolio.Summary = _htmlSanitizer.Sanitize(dto.Summary);
+        }
+
+        if (dto.AvatarUrl != null)
+        {
+            portfolio.AvatarUrl = string.IsNullOrWhiteSpace(dto.AvatarUrl)
                 ? null
-                : dto.Summary.Trim();
+                : ValidateAndTrimOptionalUrl(dto.AvatarUrl, nameof(dto.AvatarUrl));
+        }
+
+        if (dto.CoverImageUrl != null)
+        {
+            portfolio.CoverImageUrl = string.IsNullOrWhiteSpace(dto.CoverImageUrl)
+                ? null
+                : ValidateAndTrimOptionalUrl(dto.CoverImageUrl, nameof(dto.CoverImageUrl));
         }
 
         if (dto.Theme != null)
         {
+            PortfolioThemeValidator.ValidateTheme(dto.Theme);
             ApplyTheme(portfolio, dto.Theme);
         }
 
@@ -135,6 +186,7 @@ public sealed class PortfolioService : IPortfolioService
                 : JsonSerializer.Serialize(dto.Links, JsonOptions);
         }
 
+        MarkDraftDirty(portfolio);
         await _unitOfWork.Portfolios.Update(portfolio);
         await _unitOfWork.SaveChangesAsync();
 
@@ -160,6 +212,7 @@ public sealed class PortfolioService : IPortfolioService
         var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
 
         await ApplySubdomainAsync(portfolio, dto.Subdomain);
+        MarkDraftDirty(portfolio);
         await _unitOfWork.Portfolios.Update(portfolio);
         await _unitOfWork.SaveChangesAsync();
 
@@ -190,9 +243,20 @@ public sealed class PortfolioService : IPortfolioService
                 throw ErrorHelper.Conflict(
                     availability.Reason ?? "Subdomain is already taken.");
             }
+
+            await EnsureBuiltInSectionsAsync(portfolio);
+
+            var snapshot = await BuildPublicSnapshotAsync(portfolio);
+            portfolio.PublishedSnapshot = JsonSerializer.Serialize(snapshot, JsonOptions);
+            portfolio.LastPublishedAt = DateTime.UtcNow;
+            portfolio.HasUnpublishedChanges = false;
+            portfolio.IsPublic = true;
+        }
+        else
+        {
+            portfolio.IsPublic = false;
         }
 
-        portfolio.IsPublic = isPublished;
         await _unitOfWork.Portfolios.Update(portfolio);
         await _unitOfWork.SaveChangesAsync();
 
@@ -233,21 +297,39 @@ public sealed class PortfolioService : IPortfolioService
             Title = dto.Title.Trim(),
             Subtitle = NormalizeOptional(dto.Subtitle),
             Organization = NormalizeOptional(dto.Organization),
-            Description = NormalizeOptional(dto.Description),
-            StudentEditedBody = NormalizeOptional(dto.StudentEditedBody),
+            Description = _htmlSanitizer.Sanitize(dto.Description),
+            StudentEditedBody = _htmlSanitizer.Sanitize(dto.StudentEditedBody),
             MediaUrl = NormalizeOptional(dto.MediaUrl),
             ExternalUrl = NormalizeOptional(dto.ExternalUrl),
             StartDate = dto.StartDate,
             EndDate = dto.EndDate,
             DisplayOrder = nextOrder,
             IsVisible = dto.IsVisible ?? true,
+            IsFeatured = dto.IsFeatured,
+            Span = dto.Span,
             Source = PortfolioItemSource.StudentEdited,
         };
+
+        ApplyAccentColor(item, dto.AccentColor);
 
         await _unitOfWork.PortfolioCustomItems.AddAsync(item);
         await _unitOfWork.SaveChangesAsync();
 
-        return MapItemResponse(item);
+        if (dto.MediaAssets != null)
+        {
+            await ReplaceMediaPlacementsAsync(portfolio.Id, item.Id, null, dto.MediaAssets);
+        }
+
+        MarkDraftDirty(portfolio);
+        await _unitOfWork.Portfolios.Update(portfolio);
+        await _unitOfWork.SaveChangesAsync();
+
+        var appendixByItemId = await LoadAppendixByItemIdAsync([item.Id]);
+        var mediaByItemId = await LoadItemMediaPlacementsAsync([item.Id]);
+        return MapItemResponse(
+            item,
+            appendixByItemId.GetValueOrDefault(item.Id),
+            mediaByItemId.GetValueOrDefault(item.Id));
     }
 
     public async Task<PortfolioCustomItemResponseDto> UpdateItemAsync(
@@ -300,12 +382,12 @@ public sealed class PortfolioService : IPortfolioService
 
         if (dto.Description != null)
         {
-            item.Description = NormalizeOptional(dto.Description);
+            item.Description = _htmlSanitizer.Sanitize(dto.Description);
         }
 
         if (dto.StudentEditedBody != null)
         {
-            item.StudentEditedBody = NormalizeOptional(dto.StudentEditedBody);
+            item.StudentEditedBody = _htmlSanitizer.Sanitize(dto.StudentEditedBody);
         }
 
         if (dto.MediaUrl != null)
@@ -333,16 +415,42 @@ public sealed class PortfolioService : IPortfolioService
             item.IsVisible = dto.IsVisible.Value;
         }
 
+        if (dto.AccentColor != null)
+        {
+            ApplyAccentColor(item, dto.AccentColor);
+        }
+
+        if (dto.IsFeatured.HasValue)
+        {
+            item.IsFeatured = dto.IsFeatured;
+        }
+
+        if (dto.Span.HasValue)
+        {
+            item.Span = dto.Span;
+        }
+
         if (AutoImportedTypes.Contains(item.ItemType))
         {
             item.Source = PortfolioItemSource.StudentEdited;
         }
 
+        if (dto.MediaAssets != null)
+        {
+            await ReplaceMediaPlacementsAsync(portfolio.Id, item.Id, null, dto.MediaAssets);
+        }
+
+        MarkDraftDirty(portfolio);
         await _unitOfWork.PortfolioCustomItems.Update(item);
+        await _unitOfWork.Portfolios.Update(portfolio);
         await _unitOfWork.SaveChangesAsync();
 
         var appendixByItemId = await LoadAppendixByItemIdAsync([item.Id]);
-        return MapItemResponse(item, appendixByItemId.GetValueOrDefault(item.Id));
+        var mediaByItemId = await LoadItemMediaPlacementsAsync([item.Id]);
+        return MapItemResponse(
+            item,
+            appendixByItemId.GetValueOrDefault(item.Id),
+            mediaByItemId.GetValueOrDefault(item.Id));
     }
 
     public async Task RemoveItemAsync(Guid itemId)
@@ -361,7 +469,16 @@ public sealed class PortfolioService : IPortfolioService
             throw ErrorHelper.BadRequest("Auto-imported items cannot be deleted. Hide them instead.");
         }
 
+        var placements = await _unitOfWork.PortfolioMediaPlacements.GetAllAsync(
+            p => p.PortfolioCustomItemId == itemId && !p.IsDeleted);
+        if (placements.Count > 0)
+        {
+            await _unitOfWork.PortfolioMediaPlacements.SoftRemoveRange(placements);
+        }
+
         await _unitOfWork.PortfolioCustomItems.SoftRemove(item);
+        MarkDraftDirty(portfolio);
+        await _unitOfWork.Portfolios.Update(portfolio);
         await _unitOfWork.SaveChangesAsync();
     }
 
@@ -395,7 +512,9 @@ public sealed class PortfolioService : IPortfolioService
             toUpdate.Add(item);
         }
 
+        MarkDraftDirty(portfolio);
         await _unitOfWork.PortfolioCustomItems.UpdateRange(toUpdate);
+        await _unitOfWork.Portfolios.Update(portfolio);
         await _unitOfWork.SaveChangesAsync();
 
         return await MapPortfolioResponseAsync(portfolio);
@@ -410,6 +529,8 @@ public sealed class PortfolioService : IPortfolioService
         await SyncCertificatesAsync(portfolio, items);
         await SyncCapstoneProjectsAsync(portfolio, items);
 
+        MarkDraftDirty(portfolio);
+        await _unitOfWork.Portfolios.Update(portfolio);
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -429,37 +550,457 @@ public sealed class PortfolioService : IPortfolioService
         }
 
         var portfolio = await _unitOfWork.Portfolios.FirstOrDefaultAsync(
-            p => p.Subdomain == normalized && p.IsPublic && !p.IsDeleted,
-            p => p.Student);
+            p => p.Subdomain == normalized && p.IsPublic && !p.IsDeleted);
 
         if (portfolio == null)
         {
             throw ErrorHelper.NotFound("Portfolio not found.");
         }
 
-        var items = (await GetPortfolioItemsAsync(portfolio.Id))
-            .Where(i => i.IsVisible)
-            .OrderBy(i => i.DisplayOrder)
-            .ThenBy(i => i.CreatedAt)
+        if (string.IsNullOrWhiteSpace(portfolio.PublishedSnapshot))
+        {
+            throw ErrorHelper.NotFound("Portfolio not found.");
+        }
+
+        var snapshot = JsonSerializer.Deserialize<PublicPortfolioResponseDto>(
+            portfolio.PublishedSnapshot,
+            JsonOptions);
+
+        if (snapshot == null)
+        {
+            throw ErrorHelper.NotFound("Portfolio not found.");
+        }
+
+        return snapshot;
+    }
+
+    public async Task<PortfolioMediaUploadResponseDto> UploadMediaAsync(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+        {
+            throw ErrorHelper.BadRequest("A file is required.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!AllowedImageExtensions.TryGetValue(extension, out var expectedContentType))
+        {
+            throw ErrorHelper.BadRequest("Only .jpg, .jpeg, and .png image files are allowed.");
+        }
+
+        if (file.Length > MaxImageBytes)
+        {
+            throw ErrorHelper.BadRequest("Image file size must not exceed 5 MB.");
+        }
+
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType)
+            ? expectedContentType
+            : file.ContentType.Trim();
+        if (!string.Equals(contentType, expectedContentType, StringComparison.OrdinalIgnoreCase))
+        {
+            throw ErrorHelper.BadRequest($"Content type must be {expectedContentType}.");
+        }
+
+        var fileName = $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
+        var folder = $"portfolio/{student.Id}/{portfolio.Id}";
+
+        await using var stream = file.OpenReadStream();
+        await _blobService.UploadFileAsync(fileName, stream, folder);
+
+        var s3Key = $"{folder}/{fileName}";
+        var url = await _blobService.GetPreviewUrlAsync(s3Key);
+
+        var asset = new PortfolioMediaAsset
+        {
+            PortfolioId = portfolio.Id,
+            Type = PortfolioMediaType.Image,
+            Url = url,
+            S3Key = s3Key,
+            FileName = Path.GetFileName(file.FileName),
+            ContentType = contentType,
+            SizeBytes = file.Length,
+        };
+
+        await _unitOfWork.PortfolioMediaAssets.AddAsync(asset);
+        await _unitOfWork.SaveChangesAsync();
+
+        return new PortfolioMediaUploadResponseDto
+        {
+            Id = asset.Id,
+            Url = asset.Url,
+            Type = asset.Type,
+            FileName = asset.FileName,
+            ContentType = asset.ContentType,
+            SizeBytes = asset.SizeBytes,
+            CreatedAt = asset.CreatedAt,
+        };
+    }
+
+    public async Task<List<PortfolioMediaUploadResponseDto>> ListMediaAsync()
+    {
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+
+        var assets = await _unitOfWork.PortfolioMediaAssets.GetAllAsync(
+            a => a.PortfolioId == portfolio.Id && !a.IsDeleted);
+
+        return assets
+            .OrderByDescending(a => a.CreatedAt)
+            .Select(a => new PortfolioMediaUploadResponseDto
+            {
+                Id = a.Id,
+                Url = a.Url,
+                Type = a.Type,
+                FileName = a.FileName,
+                ContentType = a.ContentType,
+                SizeBytes = a.SizeBytes,
+                CreatedAt = a.CreatedAt,
+            })
+            .ToList();
+    }
+
+    public async Task DeleteMediaAsync(Guid mediaId)
+    {
+        if (mediaId == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("Media id is required.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+        var asset = await GetOwnedMediaAssetOrThrowAsync(portfolio.Id, mediaId);
+
+        var activePlacements = await _unitOfWork.PortfolioMediaPlacements.GetAllAsync(
+            p => p.PortfolioMediaAssetId == asset.Id && !p.IsDeleted);
+        if (activePlacements.Count > 0)
+        {
+            throw ErrorHelper.BadRequest(
+                "Remove this media from all portfolio items and sections before deleting it.");
+        }
+
+        await _unitOfWork.PortfolioMediaAssets.SoftRemove(asset);
+        await _blobService.DeleteByKeyAsync(asset.S3Key);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    public async Task<PortfolioSectionResponseDto> CreateSectionAsync(CreatePortfolioSectionRequestDto dto)
+    {
+        if (dto == null)
+        {
+            throw ErrorHelper.BadRequest("Section data is required.");
+        }
+
+        if (!CustomSectionKinds.Contains(dto.Kind))
+        {
+            throw ErrorHelper.BadRequest("Only custom section kinds can be created manually.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+        var sections = await GetPortfolioSectionsAsync(portfolio.Id);
+
+        var nextOrder = dto.DisplayOrder ?? (sections.Count == 0 ? 0 : sections.Max(s => s.DisplayOrder) + 1);
+        if (nextOrder < 0)
+        {
+            throw ErrorHelper.BadRequest("DisplayOrder cannot be negative.");
+        }
+
+        var section = new PortfolioSection
+        {
+            PortfolioId = portfolio.Id,
+            Kind = dto.Kind,
+            Title = NormalizeOptional(dto.Title) ?? GetDefaultSectionTitle(dto.Kind),
+            DisplayOrder = nextOrder,
+            IsVisible = dto.IsVisible ?? true,
+            ContentHtml = _htmlSanitizer.Sanitize(dto.ContentHtml),
+            SettingsJson = NormalizeOptional(dto.SettingsJson),
+        };
+
+        await _unitOfWork.PortfolioSections.AddAsync(section);
+        await _unitOfWork.SaveChangesAsync();
+
+        if (dto.MediaAssets != null)
+        {
+            await ReplaceMediaPlacementsAsync(portfolio.Id, null, section.Id, dto.MediaAssets);
+        }
+
+        MarkDraftDirty(portfolio);
+        await _unitOfWork.Portfolios.Update(portfolio);
+        await _unitOfWork.SaveChangesAsync();
+
+        var mediaBySectionId = await LoadSectionMediaPlacementsAsync([section.Id]);
+        return MapSectionResponse(section, mediaBySectionId.GetValueOrDefault(section.Id));
+    }
+
+    public async Task<PortfolioSectionResponseDto> UpdateSectionAsync(
+        Guid sectionId,
+        UpdatePortfolioSectionRequestDto dto)
+    {
+        if (sectionId == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("Section id is required.");
+        }
+
+        if (dto == null)
+        {
+            throw ErrorHelper.BadRequest("Section update data is required.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+        var section = await GetOwnedSectionOrThrowAsync(portfolio.Id, sectionId);
+        var isBuiltIn = BuiltInSectionKinds.Contains(section.Kind);
+
+        if (dto.Title != null)
+        {
+            section.Title = NormalizeOptional(dto.Title);
+        }
+
+        if (dto.DisplayOrder.HasValue)
+        {
+            if (dto.DisplayOrder.Value < 0)
+            {
+                throw ErrorHelper.BadRequest("DisplayOrder cannot be negative.");
+            }
+
+            section.DisplayOrder = dto.DisplayOrder.Value;
+        }
+
+        if (dto.IsVisible.HasValue)
+        {
+            section.IsVisible = dto.IsVisible.Value;
+        }
+
+        if (dto.SettingsJson != null)
+        {
+            section.SettingsJson = NormalizeOptional(dto.SettingsJson);
+        }
+
+        if (!isBuiltIn && dto.ContentHtml != null)
+        {
+            section.ContentHtml = _htmlSanitizer.Sanitize(dto.ContentHtml);
+        }
+
+        if (dto.MediaAssets != null)
+        {
+            await ReplaceMediaPlacementsAsync(portfolio.Id, null, section.Id, dto.MediaAssets);
+        }
+
+        MarkDraftDirty(portfolio);
+        await _unitOfWork.PortfolioSections.Update(section);
+        await _unitOfWork.Portfolios.Update(portfolio);
+        await _unitOfWork.SaveChangesAsync();
+
+        var mediaBySectionId = await LoadSectionMediaPlacementsAsync([section.Id]);
+        return MapSectionResponse(section, mediaBySectionId.GetValueOrDefault(section.Id));
+    }
+
+    public async Task DeleteSectionAsync(Guid sectionId)
+    {
+        if (sectionId == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("Section id is required.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+        var section = await GetOwnedSectionOrThrowAsync(portfolio.Id, sectionId);
+
+        if (BuiltInSectionKinds.Contains(section.Kind))
+        {
+            throw ErrorHelper.BadRequest("Built-in sections cannot be deleted. Hide them instead.");
+        }
+
+        var placements = await _unitOfWork.PortfolioMediaPlacements.GetAllAsync(
+            p => p.PortfolioSectionId == section.Id && !p.IsDeleted);
+        if (placements.Count > 0)
+        {
+            await _unitOfWork.PortfolioMediaPlacements.SoftRemoveRange(placements);
+        }
+
+        await _unitOfWork.PortfolioSections.SoftRemove(section);
+        MarkDraftDirty(portfolio);
+        await _unitOfWork.Portfolios.Update(portfolio);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    public async Task<PortfolioResponseDto> ReorderSectionsAsync(ReorderPortfolioSectionsRequestDto dto)
+    {
+        if (dto == null || dto.Sections.Count == 0)
+        {
+            throw ErrorHelper.BadRequest("At least one section is required to reorder.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+        var sections = await GetPortfolioSectionsAsync(portfolio.Id);
+        var sectionsById = sections.ToDictionary(s => s.Id);
+
+        var toUpdate = new List<PortfolioSection>();
+
+        foreach (var entry in dto.Sections)
+        {
+            if (!sectionsById.TryGetValue(entry.Id, out var section))
+            {
+                throw ErrorHelper.NotFound($"Portfolio section with id '{entry.Id}' not found.");
+            }
+
+            if (entry.DisplayOrder < 0)
+            {
+                throw ErrorHelper.BadRequest("DisplayOrder cannot be negative.");
+            }
+
+            section.DisplayOrder = entry.DisplayOrder;
+            toUpdate.Add(section);
+        }
+
+        MarkDraftDirty(portfolio);
+        await _unitOfWork.PortfolioSections.UpdateRange(toUpdate);
+        await _unitOfWork.Portfolios.Update(portfolio);
+        await _unitOfWork.SaveChangesAsync();
+
+        return await MapPortfolioResponseAsync(portfolio);
+    }
+
+    public async Task<int> EnsureBuiltInSectionsForAllPortfoliosAsync()
+    {
+        var portfolios = await _unitOfWork.Portfolios.GetAllAsync(
+            p => p.ParentPortfolioId == null && !p.IsDeleted);
+
+        var totalCreated = 0;
+        foreach (var portfolio in portfolios)
+        {
+            totalCreated += await EnsureBuiltInSectionsAsync(portfolio);
+        }
+
+        return totalCreated;
+    }
+
+    private async Task<int> EnsureBuiltInSectionsAsync(Portfolio portfolio)
+    {
+        var existingSections = await GetPortfolioSectionsAsync(portfolio.Id);
+        var existingKinds = existingSections.Select(s => s.Kind).ToHashSet();
+        var theme = DeserializeTheme(portfolio.ThemeConfig);
+        var created = 0;
+
+        foreach (var kind in BuiltInSectionKinds)
+        {
+            if (existingKinds.Contains(kind))
+            {
+                continue;
+            }
+
+            var section = new PortfolioSection
+            {
+                PortfolioId = portfolio.Id,
+                Kind = kind,
+                Title = GetBuiltInSectionTitle(kind),
+                DisplayOrder = ResolveBuiltInSectionDisplayOrder(kind, theme),
+                IsVisible = true,
+                ContentHtml = null,
+            };
+
+            await _unitOfWork.PortfolioSections.AddAsync(section);
+            created++;
+        }
+
+        if (created > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        return created;
+    }
+
+    private static void MarkDraftDirty(Portfolio portfolio)
+    {
+        if (portfolio.LastPublishedAt.HasValue)
+        {
+            portfolio.HasUnpublishedChanges = true;
+        }
+    }
+
+    private async Task ReplaceMediaPlacementsAsync(
+        Guid portfolioId,
+        Guid? itemId,
+        Guid? sectionId,
+        List<PortfolioMediaAssetInputDto> inputs)
+    {
+        if (itemId.HasValue == sectionId.HasValue)
+        {
+            throw ErrorHelper.BadRequest("Exactly one media owner (item or section) is required.");
+        }
+
+        if (inputs.Count > MaxGalleryAssetsPerOwner)
+        {
+            throw ErrorHelper.BadRequest(
+                $"At most {MaxGalleryAssetsPerOwner} media assets are allowed per gallery.");
+        }
+
+        var mediaIds = new HashSet<Guid>();
+        foreach (var input in inputs)
+        {
+            if (!input.Id.HasValue || input.Id.Value == Guid.Empty)
+            {
+                throw ErrorHelper.BadRequest("Each media asset must include a non-empty id.");
+            }
+
+            if (!mediaIds.Add(input.Id.Value))
+            {
+                throw ErrorHelper.BadRequest("Duplicate media asset ids are not allowed.");
+            }
+
+            if (input.DisplayOrder < 0)
+            {
+                throw ErrorHelper.BadRequest("DisplayOrder cannot be negative.");
+            }
+        }
+
+        var ownedAssets = mediaIds.Count == 0
+            ? new Dictionary<Guid, PortfolioMediaAsset>()
+            : (await _unitOfWork.PortfolioMediaAssets.GetAllAsync(
+                    a => a.PortfolioId == portfolioId && mediaIds.Contains(a.Id) && !a.IsDeleted))
+                .ToDictionary(a => a.Id);
+
+        foreach (var mediaId in mediaIds)
+        {
+            if (!ownedAssets.ContainsKey(mediaId))
+            {
+                throw ErrorHelper.NotFound($"Portfolio media asset with id '{mediaId}' not found.");
+            }
+        }
+
+        var existingPlacements = itemId.HasValue
+            ? await _unitOfWork.PortfolioMediaPlacements.GetAllAsync(
+                p => p.PortfolioCustomItemId == itemId.Value && !p.IsDeleted)
+            : await _unitOfWork.PortfolioMediaPlacements.GetAllAsync(
+                p => p.PortfolioSectionId == sectionId!.Value && !p.IsDeleted);
+
+        if (existingPlacements.Count > 0)
+        {
+            await _unitOfWork.PortfolioMediaPlacements.SoftRemoveRange(existingPlacements);
+        }
+
+        if (inputs.Count == 0)
+        {
+            return;
+        }
+
+        var newPlacements = inputs
+            .Select(input => new PortfolioMediaPlacement
+            {
+                PortfolioMediaAssetId = input.Id!.Value,
+                PortfolioCustomItemId = itemId,
+                PortfolioSectionId = sectionId,
+                Caption = NormalizeCaption(input.Caption),
+                DisplayOrder = input.DisplayOrder,
+            })
             .ToList();
 
-        var appendixByItemId = await LoadAppendixByItemIdAsync(items.Select(i => i.Id).ToList());
-
-        return new PublicPortfolioResponseDto
-        {
-            Subdomain = portfolio.Subdomain,
-            DisplayName = portfolio.DisplayName,
-            Headline = portfolio.Headline,
-            Tagline = portfolio.Tagline,
-            Summary = portfolio.Summary,
-            StudentName = portfolio.Student.FullName,
-            AvatarUrl = portfolio.Student.AvatarUrl,
-            Theme = DeserializeTheme(portfolio.ThemeConfig),
-            Links = DeserializeLinks(portfolio.Links),
-            Items = items
-                .Select(i => MapItemResponse(i, appendixByItemId.GetValueOrDefault(i.Id)))
-                .ToList(),
-        };
+        await _unitOfWork.PortfolioMediaPlacements.AddRangeAsync(newPlacements);
+        await _unitOfWork.SaveChangesAsync();
     }
 
     private async Task SyncCertificatesAsync(Portfolio portfolio, List<PortfolioCustomItem> items)
@@ -852,6 +1393,32 @@ public sealed class PortfolioService : IPortfolioService
         return item;
     }
 
+    private async Task<PortfolioSection> GetOwnedSectionOrThrowAsync(Guid portfolioId, Guid sectionId)
+    {
+        var section = await _unitOfWork.PortfolioSections.FirstOrDefaultAsync(
+            s => s.Id == sectionId && s.PortfolioId == portfolioId && !s.IsDeleted);
+
+        if (section == null)
+        {
+            throw ErrorHelper.NotFound($"Portfolio section with id '{sectionId}' not found.");
+        }
+
+        return section;
+    }
+
+    private async Task<PortfolioMediaAsset> GetOwnedMediaAssetOrThrowAsync(Guid portfolioId, Guid mediaId)
+    {
+        var asset = await _unitOfWork.PortfolioMediaAssets.FirstOrDefaultAsync(
+            a => a.Id == mediaId && a.PortfolioId == portfolioId && !a.IsDeleted);
+
+        if (asset == null)
+        {
+            throw ErrorHelper.NotFound($"Portfolio media asset with id '{mediaId}' not found.");
+        }
+
+        return asset;
+    }
+
     private async Task<List<PortfolioCustomItem>> GetPortfolioItemsAsync(Guid portfolioId)
     {
         return (await _unitOfWork.PortfolioCustomItems.GetAllAsync(
@@ -861,6 +1428,57 @@ public sealed class PortfolioService : IPortfolioService
             .OrderBy(i => i.DisplayOrder)
             .ThenBy(i => i.CreatedAt)
             .ToList();
+    }
+
+    private async Task<List<PortfolioSection>> GetPortfolioSectionsAsync(Guid portfolioId)
+    {
+        return (await _unitOfWork.PortfolioSections.GetAllAsync(
+                s => s.PortfolioId == portfolioId && !s.IsDeleted))
+            .OrderBy(s => s.DisplayOrder)
+            .ThenBy(s => s.CreatedAt)
+            .ToList();
+    }
+
+    private async Task<Dictionary<Guid, List<PortfolioMediaPlacement>>> LoadItemMediaPlacementsAsync(
+        List<Guid> itemIds)
+    {
+        if (itemIds.Count == 0)
+        {
+            return new Dictionary<Guid, List<PortfolioMediaPlacement>>();
+        }
+
+        var placements = await _unitOfWork.PortfolioMediaPlacements.GetAllAsync(
+            p => p.PortfolioCustomItemId.HasValue
+                 && itemIds.Contains(p.PortfolioCustomItemId.Value)
+                 && !p.IsDeleted,
+            p => p.MediaAsset);
+
+        return placements
+            .GroupBy(p => p.PortfolioCustomItemId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(p => p.DisplayOrder).ThenBy(p => p.CreatedAt).ToList());
+    }
+
+    private async Task<Dictionary<Guid, List<PortfolioMediaPlacement>>> LoadSectionMediaPlacementsAsync(
+        List<Guid> sectionIds)
+    {
+        if (sectionIds.Count == 0)
+        {
+            return new Dictionary<Guid, List<PortfolioMediaPlacement>>();
+        }
+
+        var placements = await _unitOfWork.PortfolioMediaPlacements.GetAllAsync(
+            p => p.PortfolioSectionId.HasValue
+                 && sectionIds.Contains(p.PortfolioSectionId.Value)
+                 && !p.IsDeleted,
+            p => p.MediaAsset);
+
+        return placements
+            .GroupBy(p => p.PortfolioSectionId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(p => p.DisplayOrder).ThenBy(p => p.CreatedAt).ToList());
     }
 
     private async Task<Dictionary<Guid, List<PortfolioAppendixItemDto>>> LoadAppendixByItemIdAsync(
@@ -915,9 +1533,14 @@ public sealed class PortfolioService : IPortfolioService
 
     private async Task<PortfolioResponseDto> MapPortfolioResponseAsync(Portfolio portfolio)
     {
-        var student = await _unitOfWork.Users.GetByIdAsync(portfolio.StudentId);
+        var student = portfolio.Student
+            ?? await _unitOfWork.Users.GetByIdAsync(portfolio.StudentId);
+
         var items = await GetPortfolioItemsAsync(portfolio.Id);
+        var sections = await GetPortfolioSectionsAsync(portfolio.Id);
         var appendixByItemId = await LoadAppendixByItemIdAsync(items.Select(i => i.Id).ToList());
+        var itemMediaById = await LoadItemMediaPlacementsAsync(items.Select(i => i.Id).ToList());
+        var sectionMediaById = await LoadSectionMediaPlacementsAsync(sections.Select(s => s.Id).ToList());
 
         return new PortfolioResponseDto
         {
@@ -925,7 +1548,8 @@ public sealed class PortfolioService : IPortfolioService
             Code = portfolio.Code,
             StudentId = portfolio.StudentId,
             StudentName = student?.FullName,
-            AvatarUrl = student?.AvatarUrl,
+            AvatarUrl = portfolio.AvatarUrl ?? student?.AvatarUrl,
+            CoverImageUrl = portfolio.CoverImageUrl,
             Subdomain = portfolio.Subdomain,
             DisplayName = portfolio.DisplayName,
             Headline = portfolio.Headline,
@@ -933,19 +1557,68 @@ public sealed class PortfolioService : IPortfolioService
             Summary = portfolio.Summary,
             PlanType = portfolio.PlanType,
             IsPublic = portfolio.IsPublic,
+            LastPublishedAt = portfolio.LastPublishedAt,
+            HasUnpublishedChanges = portfolio.HasUnpublishedChanges,
             Theme = DeserializeTheme(portfolio.ThemeConfig),
             Links = DeserializeLinks(portfolio.Links),
             Items = items
-                .Select(i => MapItemResponse(i, appendixByItemId.GetValueOrDefault(i.Id)))
+                .Select(i => MapItemResponse(
+                    i,
+                    appendixByItemId.GetValueOrDefault(i.Id),
+                    itemMediaById.GetValueOrDefault(i.Id)))
+                .ToList(),
+            Sections = sections
+                .Select(s => MapSectionResponse(s, sectionMediaById.GetValueOrDefault(s.Id)))
                 .ToList(),
             CreatedAt = portfolio.CreatedAt,
             UpdatedAt = portfolio.UpdatedAt,
         };
     }
 
+    private async Task<PublicPortfolioResponseDto> BuildPublicSnapshotAsync(Portfolio portfolio)
+    {
+        var student = portfolio.Student
+            ?? await _unitOfWork.Users.GetByIdAsync(portfolio.StudentId);
+
+        var items = (await GetPortfolioItemsAsync(portfolio.Id))
+            .Where(i => i.IsVisible)
+            .ToList();
+        var sections = (await GetPortfolioSectionsAsync(portfolio.Id))
+            .Where(s => s.IsVisible)
+            .ToList();
+
+        var appendixByItemId = await LoadAppendixByItemIdAsync(items.Select(i => i.Id).ToList());
+        var itemMediaById = await LoadItemMediaPlacementsAsync(items.Select(i => i.Id).ToList());
+        var sectionMediaById = await LoadSectionMediaPlacementsAsync(sections.Select(s => s.Id).ToList());
+
+        return new PublicPortfolioResponseDto
+        {
+            Subdomain = portfolio.Subdomain,
+            DisplayName = portfolio.DisplayName,
+            Headline = portfolio.Headline,
+            Tagline = portfolio.Tagline,
+            Summary = portfolio.Summary,
+            StudentName = student?.FullName,
+            AvatarUrl = portfolio.AvatarUrl ?? student?.AvatarUrl,
+            CoverImageUrl = portfolio.CoverImageUrl,
+            Theme = DeserializeTheme(portfolio.ThemeConfig),
+            Links = DeserializeLinks(portfolio.Links),
+            Items = items
+                .Select(i => MapItemResponse(
+                    i,
+                    appendixByItemId.GetValueOrDefault(i.Id),
+                    itemMediaById.GetValueOrDefault(i.Id)))
+                .ToList(),
+            Sections = sections
+                .Select(s => MapSectionResponse(s, sectionMediaById.GetValueOrDefault(s.Id)))
+                .ToList(),
+        };
+    }
+
     private static PortfolioCustomItemResponseDto MapItemResponse(
         PortfolioCustomItem item,
-        List<PortfolioAppendixItemDto>? appendixSections = null)
+        List<PortfolioAppendixItemDto>? appendixSections = null,
+        List<PortfolioMediaPlacement>? mediaPlacements = null)
     {
         return new PortfolioCustomItemResponseDto
         {
@@ -964,6 +1637,14 @@ public sealed class PortfolioService : IPortfolioService
             DisplayOrder = item.DisplayOrder,
             IsVisible = item.IsVisible,
             Source = item.Source,
+            AccentColor = item.AccentColor,
+            IsFeatured = item.IsFeatured,
+            Span = item.Span,
+            MediaAssets = (mediaPlacements ?? [])
+                .OrderBy(p => p.DisplayOrder)
+                .ThenBy(p => p.CreatedAt)
+                .Select(MapMediaPlacement)
+                .ToList(),
             ProgramId = item.ProgramId,
             ProgramName = item.Program?.Name,
             ModuleId = item.ModuleId,
@@ -973,6 +1654,42 @@ public sealed class PortfolioService : IPortfolioService
             AppendixSections = appendixSections ?? [],
             CreatedAt = item.CreatedAt,
             UpdatedAt = item.UpdatedAt,
+        };
+    }
+
+    private static PortfolioSectionResponseDto MapSectionResponse(
+        PortfolioSection section,
+        List<PortfolioMediaPlacement>? mediaPlacements = null)
+    {
+        return new PortfolioSectionResponseDto
+        {
+            Id = section.Id,
+            Kind = section.Kind,
+            Title = section.Title,
+            DisplayOrder = section.DisplayOrder,
+            IsVisible = section.IsVisible,
+            ContentHtml = section.ContentHtml,
+            SettingsJson = section.SettingsJson,
+            MediaAssets = (mediaPlacements ?? [])
+                .OrderBy(p => p.DisplayOrder)
+                .ThenBy(p => p.CreatedAt)
+                .Select(MapMediaPlacement)
+                .ToList(),
+            CreatedAt = section.CreatedAt,
+            UpdatedAt = section.UpdatedAt,
+        };
+    }
+
+    private static PortfolioMediaAssetResponseDto MapMediaPlacement(PortfolioMediaPlacement placement)
+    {
+        var asset = placement.MediaAsset;
+        return new PortfolioMediaAssetResponseDto
+        {
+            Id = asset.Id,
+            Url = asset.Url,
+            Type = asset.Type,
+            Caption = placement.Caption,
+            DisplayOrder = placement.DisplayOrder,
         };
     }
 
@@ -999,6 +1716,112 @@ public sealed class PortfolioService : IPortfolioService
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string? NormalizeCaption(string? caption)
+    {
+        if (string.IsNullOrWhiteSpace(caption))
+        {
+            return null;
+        }
+
+        var trimmed = caption.Trim();
+        if (trimmed.Length > 255)
+        {
+            throw ErrorHelper.BadRequest("Caption must be at most 255 characters.");
+        }
+
+        return trimmed;
+    }
+
+    private static string ValidateAndTrimOptionalUrl(string value, string fieldName)
+    {
+        PortfolioThemeValidator.ValidateOptionalUrl(value, fieldName, 500);
+        return value.Trim();
+    }
+
+    private static void ApplyAccentColor(PortfolioCustomItem item, string? accentColor)
+    {
+        if (string.IsNullOrWhiteSpace(accentColor))
+        {
+            item.AccentColor = null;
+            return;
+        }
+
+        PortfolioThemeValidator.ValidateHexColor(accentColor, nameof(accentColor));
+        item.AccentColor = accentColor.Trim();
+    }
+
+    private static string GetBuiltInSectionTitle(PortfolioSectionKind kind)
+    {
+        return kind switch
+        {
+            PortfolioSectionKind.ProjectsGroup => "Projects",
+            PortfolioSectionKind.ActivitiesGroup => "Activities",
+            PortfolioSectionKind.LinksGroup => "Links",
+            _ => kind.ToString(),
+        };
+    }
+
+    private static string GetDefaultSectionTitle(PortfolioSectionKind kind)
+    {
+        return kind switch
+        {
+            PortfolioSectionKind.RichText => "Rich Text",
+            PortfolioSectionKind.Gallery => "Gallery",
+            PortfolioSectionKind.Embed => "Embed",
+            _ => kind.ToString(),
+        };
+    }
+
+    private static int ResolveBuiltInSectionDisplayOrder(PortfolioSectionKind kind, ThemeConfigDto? theme)
+    {
+        const int defaultProjects = 0;
+        const int defaultActivities = 1;
+        const int defaultLinks = 2;
+
+        var defaultOrder = kind switch
+        {
+            PortfolioSectionKind.ProjectsGroup => defaultProjects,
+            PortfolioSectionKind.ActivitiesGroup => defaultActivities,
+            PortfolioSectionKind.LinksGroup => defaultLinks,
+            _ => 0,
+        };
+
+        if (theme?.SectionOrder == null || theme.SectionOrder.Count == 0)
+        {
+            return defaultOrder;
+        }
+
+        for (var index = 0; index < theme.SectionOrder.Count; index++)
+        {
+            var token = theme.SectionOrder[index]?.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(token))
+            {
+                continue;
+            }
+
+            if (TokenMatchesBuiltInKind(token, kind))
+            {
+                return index;
+            }
+        }
+
+        return defaultOrder;
+    }
+
+    private static bool TokenMatchesBuiltInKind(string token, PortfolioSectionKind kind)
+    {
+        return kind switch
+        {
+            PortfolioSectionKind.ProjectsGroup => token == "projects",
+            PortfolioSectionKind.ActivitiesGroup => token is "certificates"
+                or "activities"
+                or "experience"
+                or "skills",
+            PortfolioSectionKind.LinksGroup => token == "links",
+            _ => false,
+        };
     }
 
     private async Task<string> GenerateUniquePortfolioCodeAsync()

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.PortfolioDTO;
@@ -33,6 +35,15 @@ public class PortfolioCustomItemResponseDto
     public bool IsVisible { get; set; }
 
     public PortfolioItemSource Source { get; set; }
+
+    public string? AccentColor { get; set; }
+
+    public bool? IsFeatured { get; set; }
+
+    [JsonConverter(typeof(CamelCaseJsonStringEnumConverter))]
+    public PortfolioItemSpan? Span { get; set; }
+
+    public List<PortfolioMediaAssetResponseDto> MediaAssets { get; set; } = [];
 
     public Guid? ProgramId { get; set; }
 

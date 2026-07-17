@@ -32,4 +32,8 @@ dotnet ef migrations add <Name> --project OboxSteam.Infrastructure/OboxSteam.Inf
 
 ## Acceptance Evidence
 
-- Stage 1 (entities + migration): recorded after build + migration generation.
+- Stage 1 (entities + migration): `dotnet build` succeeded; migration
+  `20260717151124_AddPortfolioSectionsMediaAndPublishing` generated via EF CLI.
+- Stage 2–5 (DTOs, sanitizer, media, sections, publication, backfill, seed):
+  `dotnet build OboxSteam.API/OboxSteam.API.csproj` succeeded (0 errors).
+  `dotnet test OboxSteam.API.slnx` completes with no test project (proof gap).

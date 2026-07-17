@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using OboxSteam.Application.DTOs.PortfolioDTO;
 
 namespace OboxSteam.Application.Interfaces;
@@ -27,4 +28,21 @@ public interface IPortfolioService
     Task<PortfolioResponseDto> SyncMyPortfolioAsync();
 
     Task<PublicPortfolioResponseDto> GetPublicPortfolioBySubdomainAsync(string subdomain);
+
+    Task<PortfolioMediaUploadResponseDto> UploadMediaAsync(IFormFile file);
+
+    Task<List<PortfolioMediaUploadResponseDto>> ListMediaAsync();
+
+    Task DeleteMediaAsync(Guid mediaId);
+
+    Task<PortfolioSectionResponseDto> CreateSectionAsync(CreatePortfolioSectionRequestDto dto);
+
+    Task<PortfolioSectionResponseDto> UpdateSectionAsync(Guid sectionId, UpdatePortfolioSectionRequestDto dto);
+
+    Task DeleteSectionAsync(Guid sectionId);
+
+    Task<PortfolioResponseDto> ReorderSectionsAsync(ReorderPortfolioSectionsRequestDto dto);
+
+    /// <summary>Idempotent backfill of built-in group sections for all root portfolios.</summary>
+    Task<int> EnsureBuiltInSectionsForAllPortfoliosAsync();
 }

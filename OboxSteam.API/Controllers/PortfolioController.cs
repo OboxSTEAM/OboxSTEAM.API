@@ -22,7 +22,7 @@ public class PortfolioController : ControllerBase
     [Authorize(Roles = "Student,SuperAdmin,Manager")]
     [SwaggerOperation(
         Summary = "Get my portfolio",
-        Description = "Returns the authenticated student's root portfolio with all items.")]
+        Description = "Returns the authenticated student's editable draft portfolio with all items and sections.")]
     [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -60,7 +60,7 @@ public class PortfolioController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Update my portfolio",
-        Description = "Updates portfolio profile, theme, and links. Subdomain and publication state use dedicated endpoints.")]
+        Description = "Updates portfolio profile, theme, avatar, cover image, and links. Subdomain and publication state use dedicated endpoints.")]
     [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -101,7 +101,7 @@ public class PortfolioController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Claim or change my portfolio subdomain",
-        Description = "Validates and claims a unique subdomain. Send null or blank to remove it while unpublished. Using for debounce checking on frontend")]
+        Description = "Validates and claims a unique subdomain. Send null or blank to remove it while unpublished.")]
     [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -124,7 +124,7 @@ public class PortfolioController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Publish or unpublish my portfolio",
-        Description = "Sets the desired publication state idempotently. Publishing requires a valid unique subdomain.")]
+        Description = "On publish, snapshots the draft for public serving. On unpublish, removes public availability while retaining the last snapshot.")]
     [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -141,6 +141,61 @@ public class PortfolioController : ControllerBase
             result.IsPublic
                 ? "Portfolio published successfully."
                 : "Portfolio unpublished successfully."));
+    }
+
+    [HttpPost("me/media")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Upload portfolio media",
+        Description = "Uploads a portfolio-scoped image (jpg/jpeg/png, max 5 MB) to blob storage.")]
+    [ProducesResponseType(typeof(ApiResult<PortfolioMediaUploadResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UploadMedia([FromForm] IFormFile file)
+    {
+        var result = await _portfolioService.UploadMediaAsync(file);
+        return StatusCode(
+            201,
+            ApiResult<PortfolioMediaUploadResponseDto>.Success(
+                result,
+                "201",
+                "Portfolio media uploaded successfully."));
+    }
+
+    [HttpGet("me/media")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "List my portfolio media",
+        Description = "Returns media assets uploaded to the caller's portfolio.")]
+    [ProducesResponseType(typeof(ApiResult<List<PortfolioMediaUploadResponseDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> ListMedia()
+    {
+        var result = await _portfolioService.ListMediaAsync();
+        return Ok(ApiResult<List<PortfolioMediaUploadResponseDto>>.Success(
+            result,
+            "200",
+            "Portfolio media listed successfully."));
+    }
+
+    [HttpDelete("me/media/{mediaId:guid}")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Delete portfolio media",
+        Description = "Soft-deletes a portfolio media asset that is not referenced by any item or section gallery.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> DeleteMedia([FromRoute] Guid mediaId)
+    {
+        await _portfolioService.DeleteMediaAsync(mediaId);
+        return Ok(ApiResult.Success("200", "Portfolio media deleted successfully."));
     }
 
     [HttpPost("me/items")]
@@ -222,6 +277,85 @@ public class PortfolioController : ControllerBase
             "Portfolio items reordered successfully."));
     }
 
+    [HttpPost("me/sections")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Create a custom portfolio section",
+        Description = "Creates RichText, Gallery, or Embed blocks. Built-in group sections are seeded automatically.")]
+    [ProducesResponseType(typeof(ApiResult<PortfolioSectionResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> CreateSection(
+        [FromBody, SwaggerParameter("New custom section")] CreatePortfolioSectionRequestDto dto)
+    {
+        var result = await _portfolioService.CreateSectionAsync(dto);
+        return StatusCode(
+            201,
+            ApiResult<PortfolioSectionResponseDto>.Success(
+                result,
+                "201",
+                "Portfolio section created successfully."));
+    }
+
+    [HttpPut("me/sections/{sectionId:guid}")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Update a portfolio section",
+        Description = "Updates custom blocks fully. Built-in group sections can be hidden, reordered, and retitled.")]
+    [ProducesResponseType(typeof(ApiResult<PortfolioSectionResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UpdateSection(
+        [FromRoute] Guid sectionId,
+        [FromBody, SwaggerParameter("Updated section")] UpdatePortfolioSectionRequestDto dto)
+    {
+        var result = await _portfolioService.UpdateSectionAsync(sectionId, dto);
+        return Ok(ApiResult<PortfolioSectionResponseDto>.Success(
+            result,
+            "200",
+            "Portfolio section updated successfully."));
+    }
+
+    [HttpDelete("me/sections/{sectionId:guid}")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Delete a custom portfolio section",
+        Description = "Soft-deletes custom blocks only. Built-in group sections must be hidden instead.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> DeleteSection([FromRoute] Guid sectionId)
+    {
+        await _portfolioService.DeleteSectionAsync(sectionId);
+        return Ok(ApiResult.Success("200", "Portfolio section deleted successfully."));
+    }
+
+    [HttpPut("me/sections/reorder")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Reorder portfolio sections",
+        Description = "Updates display order for the provided section ids.")]
+    [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> ReorderSections(
+        [FromBody, SwaggerParameter("Section display order updates")] ReorderPortfolioSectionsRequestDto dto)
+    {
+        var result = await _portfolioService.ReorderSectionsAsync(dto);
+        return Ok(ApiResult<PortfolioResponseDto>.Success(
+            result,
+            "200",
+            "Portfolio sections reordered successfully."));
+    }
+
     [HttpPost("me/sync")]
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
@@ -244,7 +378,7 @@ public class PortfolioController : ControllerBase
     [AllowAnonymous]
     [SwaggerOperation(
         Summary = "Get public portfolio by subdomain",
-        Description = "Anonymous endpoint for the public portfolio page. Returns only visible items.")]
+        Description = "Anonymous endpoint serving the published snapshot (not the live draft).")]
     [ProducesResponseType(typeof(ApiResult<PublicPortfolioResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetPublicPortfolioBySubdomain([FromRoute] string subdomain)
