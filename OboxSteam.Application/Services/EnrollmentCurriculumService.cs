@@ -14,6 +14,13 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
 {
     private const string StatusInProgress = "in_progress";
 
+    private const string NodeTypeProgram = "program";
+    private const string NodeTypeModule = "module";
+    private const string NodeTypeCourse = "course";
+    private const string NodeTypeMilestone = "milestone";
+    private const string NodeTypeActivity = "activity";
+    private const string NodeTypeAssignment = "assignment";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly IActivityProgressService _activityProgressService;
@@ -93,176 +100,29 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             snapshot,
             provisionModuleEnrollments: false);
 
-        var currentActivityIdSet = new HashSet<Guid>();
+        var currentActivityIdSet = CollectCurrentActivityIds(snapshot, context);
+        var modules = snapshot.Modules
+            .Select(module => MapMindMapModule(module, snapshot, context, currentActivityIdSet))
+            .ToList();
 
-        foreach (var module in snapshot.Modules)
-        {
-            if (!CurriculumStatusHelper.IsModuleUnlocked(
-                    module,
-                    context.LatestEnrollmentByModuleId,
-                    context.ModulesById))
-            {
-                continue;
-            }
-
-            if (context.LatestEnrollmentByModuleId.TryGetValue(module.Id, out var latestModuleEnrollment)
-                && (latestModuleEnrollment.Status == EnrollmentStatus.Completed
-                    || latestModuleEnrollment.ProgressPercent >= 100m))
-            {
-                continue;
-            }
-
-            foreach (var activityId in snapshot.GlobalActivityOrder)
-            {
-                if (!snapshot.ActivityModuleMap.TryGetValue(activityId, out var owningModuleId)
-                    || owningModuleId != module.Id)
-                {
-                    continue;
-                }
-
-                if (!IsActivityAccessible(activityId, snapshot, context)
-                    || IsActivityCompleted(activityId, snapshot, context))
-                {
-                    continue;
-                }
-
-                currentActivityIdSet.Add(activityId);
-                break;
-            }
-        }
-
-        var modules = new List<EnrollmentCurriculumMindMapModuleDto>();
-
-        foreach (var module in snapshot.Modules)
-        {
-            var isLocked = !CurriculumStatusHelper.IsModuleUnlocked(
-                module,
-                context.LatestEnrollmentByModuleId,
-                context.ModulesById);
-
-            context.LatestEnrollmentByModuleId.TryGetValue(module.Id, out var moduleEnrollment);
-
-            string moduleStatus;
-            if (isLocked)
-            {
-                moduleStatus = CurriculumStatusHelper.StatusLocked;
-            }
-            else if (moduleEnrollment?.Status == EnrollmentStatus.Completed
-                     || moduleEnrollment?.ProgressPercent >= 100m)
-            {
-                moduleStatus = CurriculumStatusHelper.StatusCompleted;
-            }
-            else if (moduleEnrollment?.ProgressPercent > 0m)
-            {
-                moduleStatus = StatusInProgress;
-            }
-            else
-            {
-                moduleStatus = CurriculumStatusHelper.StatusAvailable;
-            }
-
-            var moduleDto = new EnrollmentCurriculumMindMapModuleDto
-            {
-                ModuleInfo = new EnrollmentCurriculumMindMapModuleInfoDto
-                {
-                    ModuleId = module.Id,
-                    ModuleName = module.Name,
-                    ModuleOrder = module.ModuleOrder,
-                    ModuleType = module.ModuleType,
-                    PrerequisiteModuleId = module.PrerequisiteModuleId,
-                    ModuleEnrollmentId = moduleEnrollment?.Id,
-                },
-                Learning = new EnrollmentCurriculumMindMapModuleLearningDto
-                {
-                    Status = moduleStatus,
-                    ProgressPercent = moduleEnrollment?.ProgressPercent ?? 0m,
-                    IsLocked = isLocked,
-                    LockReason = isLocked
-                        ? CurriculumStatusHelper.GetModuleLockReason(
-                            module,
-                            context.LatestEnrollmentByModuleId,
-                            context.ModulesById)
-                        : null,
-                },
-            };
-
-            if (module.ModuleType == ModuleType.Research)
-            {
-                if (snapshot.MilestonesByModuleId.TryGetValue(module.Id, out var moduleMilestones))
-                {
-                    foreach (var milestone in moduleMilestones)
-                    {
-                        var milestoneActivities = new List<EnrollmentCurriculumMindMapActivityDto>();
-
-                        if (snapshot.LinksByMilestoneId.TryGetValue(milestone.Id, out var links))
-                        {
-                            foreach (var link in links)
-                            {
-                                if (!snapshot.ActivitiesById.TryGetValue(link.ActivityId, out var activity))
-                                {
-                                    continue;
-                                }
-
-                                milestoneActivities.Add(BuildMindMapActivity(
-                                    activity,
-                                    snapshot,
-                                    context,
-                                    currentActivityIdSet,
-                                    isLocked));
-                            }
-                        }
-
-                        moduleDto.Milestones.Add(new EnrollmentCurriculumMindMapMilestoneDto
-                        {
-                            MilestoneId = milestone.Id,
-                            MilestoneName = milestone.Title,
-                            MilestoneOrder = milestone.MilestoneOrder,
-                            IsCapstone = milestone.IsCapstone,
-                            Activities = milestoneActivities,
-                        });
-                    }
-                }
-            }
-            else if (snapshot.CoursesByModuleId.TryGetValue(module.Id, out var moduleCourses))
-            {
-                var courseOrder = 1;
-
-                foreach (var course in moduleCourses)
-                {
-                    var courseActivities = new List<EnrollmentCurriculumMindMapActivityDto>();
-
-                    if (snapshot.ActivitiesByCourseId.TryGetValue(course.Id, out var activities))
-                    {
-                        foreach (var activity in activities)
-                        {
-                            courseActivities.Add(BuildMindMapActivity(
-                                activity,
-                                snapshot,
-                                context,
-                                currentActivityIdSet,
-                                isLocked));
-                        }
-                    }
-
-                    moduleDto.Courses.Add(new EnrollmentCurriculumMindMapCourseDto
-                    {
-                        CourseId = course.Id,
-                        CourseName = course.Name,
-                        CourseOrder = courseOrder++,
-                        Activities = courseActivities,
-                    });
-                }
-            }
-
-            modules.Add(moduleDto);
-        }
+        var completedModuleCount = modules.Count(m =>
+            m.Learning.Status == CurriculumStatusHelper.StatusCompleted);
+        var hubStatus = ResolveHubStatus(enrollment.ProgressPercent, completedModuleCount, modules.Count);
 
         return new EnrollmentCurriculumMindMapDto
         {
             EnrollmentId = enrollment.Id,
-            ProgramId = enrollment.ProgramId,
-            ProgramName = snapshot.Program.Name,
-            ProgressPercent = enrollment.ProgressPercent,
+            Hub = new EnrollmentCurriculumMindMapHubDto
+            {
+                ProgramId = enrollment.ProgramId,
+                ProgramName = snapshot.Program.Name,
+                ProgressPercent = enrollment.ProgressPercent,
+                Status = hubStatus,
+                CompletedModuleCount = completedModuleCount,
+                TotalModuleCount = modules.Count,
+                Navigation = BuildMindMapNavigation(NodeTypeProgram, enrollment.ProgramId, null),
+            },
+            CurrentPaths = BuildMindMapCurrentPaths(modules, currentActivityIdSet, enrollment.ProgramId),
             Modules = modules,
         };
     }
@@ -899,12 +759,314 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         return activityDto;
     }
 
+    private static HashSet<Guid> CollectCurrentActivityIds(
+        ProgramCurriculumTreeSnapshot snapshot,
+        EnrollmentCurriculumContext context)
+    {
+        var currentActivityIdSet = new HashSet<Guid>();
+
+        foreach (var module in snapshot.Modules)
+        {
+            if (!CurriculumStatusHelper.IsModuleUnlocked(
+                    module,
+                    context.LatestEnrollmentByModuleId,
+                    context.ModulesById))
+            {
+                continue;
+            }
+
+            if (context.LatestEnrollmentByModuleId.TryGetValue(module.Id, out var latestModuleEnrollment)
+                && (latestModuleEnrollment.Status == EnrollmentStatus.Completed
+                    || latestModuleEnrollment.ProgressPercent >= 100m))
+            {
+                continue;
+            }
+
+            foreach (var activityId in snapshot.GlobalActivityOrder)
+            {
+                if (!snapshot.ActivityModuleMap.TryGetValue(activityId, out var owningModuleId)
+                    || owningModuleId != module.Id)
+                {
+                    continue;
+                }
+
+                if (!IsActivityAccessible(activityId, snapshot, context)
+                    || IsActivityCompleted(activityId, snapshot, context))
+                {
+                    continue;
+                }
+
+                currentActivityIdSet.Add(activityId);
+                break;
+            }
+        }
+
+        return currentActivityIdSet;
+    }
+
+    private static EnrollmentCurriculumMindMapModuleDto MapMindMapModule(
+        Module module,
+        ProgramCurriculumTreeSnapshot snapshot,
+        EnrollmentCurriculumContext context,
+        IReadOnlySet<Guid> currentActivityIds)
+    {
+        var isLocked = !CurriculumStatusHelper.IsModuleUnlocked(
+            module,
+            context.LatestEnrollmentByModuleId,
+            context.ModulesById);
+
+        context.LatestEnrollmentByModuleId.TryGetValue(module.Id, out var moduleEnrollment);
+        var lockReason = isLocked
+            ? CurriculumStatusHelper.GetModuleLockReason(
+                module,
+                context.LatestEnrollmentByModuleId,
+                context.ModulesById)
+            : null;
+
+        var moduleDto = new EnrollmentCurriculumMindMapModuleDto
+        {
+            ModuleInfo = new EnrollmentCurriculumMindMapModuleInfoDto
+            {
+                ModuleId = module.Id,
+                ModuleName = module.Name,
+                ModuleCode = module.Code,
+                ModuleOrder = module.ModuleOrder,
+                ModuleType = module.ModuleType,
+                PrerequisiteModuleId = module.PrerequisiteModuleId,
+                ModuleEnrollmentId = moduleEnrollment?.Id,
+                IsMandatory = module.IsMandatory,
+                LearningOutcomes = module.LearningOutcomes,
+            },
+            Navigation = BuildMindMapNavigation(NodeTypeModule, module.Id, moduleEnrollment?.Id),
+        };
+
+        moduleDto.Assignments = snapshot.ModuleScopedAssignmentsByModuleId.TryGetValue(module.Id, out var moduleAssignments)
+            ? moduleAssignments.Select(assignment => BuildMindMapAssignment(
+                assignment,
+                snapshot,
+                context,
+                module.Id,
+                isLocked,
+                lockReason,
+                moduleEnrollment?.Id)).ToList()
+            : [];
+
+        if (module.ModuleType == ModuleType.Research)
+        {
+            if (snapshot.MilestonesByModuleId.TryGetValue(module.Id, out var moduleMilestones))
+            {
+                ResearchMilestone? previousMilestone = null;
+
+                foreach (var milestone in moduleMilestones)
+                {
+                    moduleDto.Milestones.Add(MapMindMapMilestone(
+                        milestone,
+                        previousMilestone,
+                        module,
+                        snapshot,
+                        context,
+                        currentActivityIds,
+                        isLocked,
+                        lockReason,
+                        moduleEnrollment?.Id));
+                    previousMilestone = milestone;
+                }
+            }
+        }
+        else if (snapshot.CoursesByModuleId.TryGetValue(module.Id, out var moduleCourses))
+        {
+            var courseOrder = 1;
+            foreach (var course in moduleCourses)
+            {
+                moduleDto.Courses.Add(MapMindMapCourse(
+                    course,
+                    courseOrder++,
+                    module,
+                    snapshot,
+                    context,
+                    currentActivityIds,
+                    isLocked,
+                    lockReason,
+                    moduleEnrollment?.Id));
+            }
+        }
+
+        var childStatuses = moduleDto.Courses.Select(c => c.Learning.Status)
+            .Concat(moduleDto.Milestones.Select(m => m.Learning.Status))
+            .Concat(moduleDto.Assignments.Select(a => a.Learning.Status))
+            .ToList();
+
+        if (childStatuses.Count == 0)
+        {
+            childStatuses = CollectLeafStatuses(moduleDto);
+        }
+
+        var moduleStatus = ResolveMindMapModuleStatus(
+            isLocked,
+            moduleEnrollment,
+            childStatuses);
+
+        moduleDto.Learning = new EnrollmentCurriculumMindMapModuleLearningDto
+        {
+            Status = moduleStatus,
+            ProgressPercent = moduleEnrollment?.ProgressPercent ?? 0m,
+            IsLocked = isLocked,
+            LockReason = lockReason,
+        };
+
+        moduleDto.ChildProgress = BuildChildProgressFromLeaves(CollectLeafStatuses(moduleDto));
+
+        return moduleDto;
+    }
+
+    private static EnrollmentCurriculumMindMapCourseDto MapMindMapCourse(
+        Course course,
+        int courseOrder,
+        Module module,
+        ProgramCurriculumTreeSnapshot snapshot,
+        EnrollmentCurriculumContext context,
+        IReadOnlySet<Guid> currentActivityIds,
+        bool moduleLocked,
+        string? moduleLockReason,
+        Guid? moduleEnrollmentId)
+    {
+        var activities = snapshot.ActivitiesByCourseId.TryGetValue(course.Id, out var courseActivities)
+            ? courseActivities.Select(activity => BuildMindMapActivity(
+                activity,
+                snapshot,
+                context,
+                currentActivityIds,
+                moduleLocked,
+                moduleLockReason,
+                moduleEnrollmentId)).ToList()
+            : [];
+
+        var assignments = snapshot.AssignmentsByCourseId.TryGetValue(course.Id, out var courseAssignments)
+            ? courseAssignments.Select(assignment => BuildMindMapAssignment(
+                assignment,
+                snapshot,
+                context,
+                module.Id,
+                moduleLocked,
+                moduleLockReason,
+                moduleEnrollmentId)).ToList()
+            : [];
+
+        var childStatuses = activities.Select(a => a.Learning.Status)
+            .Concat(assignments.Select(a => a.Learning.Status))
+            .ToList();
+        var childProgress = BuildChildProgressFromLeaves(childStatuses);
+        var status = ResolveMindMapContainerStatus(moduleLocked, childStatuses);
+
+        return new EnrollmentCurriculumMindMapCourseDto
+        {
+            CourseInfo = new EnrollmentCurriculumMindMapCourseInfoDto
+            {
+                CourseId = course.Id,
+                CourseName = course.Name,
+                CourseOrder = courseOrder,
+            },
+            Learning = new EnrollmentCurriculumMindMapContainerLearningDto
+            {
+                Status = status,
+                ProgressPercent = childProgress.ProgressPercent,
+                IsLocked = moduleLocked || status == CurriculumStatusHelper.StatusLocked,
+                LockReason = moduleLocked ? moduleLockReason : null,
+            },
+            ChildProgress = childProgress,
+            Navigation = BuildMindMapNavigation(NodeTypeCourse, course.Id, moduleEnrollmentId),
+            Activities = activities,
+            Assignments = assignments,
+        };
+    }
+
+    private static EnrollmentCurriculumMindMapMilestoneDto MapMindMapMilestone(
+        ResearchMilestone milestone,
+        ResearchMilestone? previousMilestone,
+        Module module,
+        ProgramCurriculumTreeSnapshot snapshot,
+        EnrollmentCurriculumContext context,
+        IReadOnlySet<Guid> currentActivityIds,
+        bool moduleLocked,
+        string? moduleLockReason,
+        Guid? moduleEnrollmentId)
+    {
+        var activities = new List<EnrollmentCurriculumMindMapActivityDto>();
+        if (snapshot.LinksByMilestoneId.TryGetValue(milestone.Id, out var links))
+        {
+            foreach (var link in links)
+            {
+                if (!snapshot.ActivitiesById.TryGetValue(link.ActivityId, out var activity))
+                {
+                    continue;
+                }
+
+                activities.Add(BuildMindMapActivity(
+                    activity,
+                    snapshot,
+                    context,
+                    currentActivityIds,
+                    moduleLocked,
+                    moduleLockReason,
+                    moduleEnrollmentId));
+            }
+        }
+
+        EnrollmentCurriculumMindMapAssignmentDto? assignmentDto = null;
+        if (snapshot.AssignmentsById.TryGetValue(milestone.AssignmentId, out var milestoneAssignment))
+        {
+            assignmentDto = BuildMindMapAssignment(
+                milestoneAssignment,
+                snapshot,
+                context,
+                module.Id,
+                moduleLocked,
+                moduleLockReason,
+                moduleEnrollmentId,
+                milestone,
+                previousMilestone);
+        }
+
+        var childStatuses = activities.Select(a => a.Learning.Status).ToList();
+        if (assignmentDto != null)
+        {
+            childStatuses.Add(assignmentDto.Learning.Status);
+        }
+
+        var childProgress = BuildChildProgressFromLeaves(childStatuses);
+        var status = ResolveMindMapContainerStatus(moduleLocked, childStatuses);
+
+        return new EnrollmentCurriculumMindMapMilestoneDto
+        {
+            MilestoneInfo = new EnrollmentCurriculumMindMapMilestoneInfoDto
+            {
+                MilestoneId = milestone.Id,
+                MilestoneName = milestone.Title,
+                MilestoneOrder = milestone.MilestoneOrder,
+                IsCapstone = milestone.IsCapstone,
+            },
+            Learning = new EnrollmentCurriculumMindMapContainerLearningDto
+            {
+                Status = status,
+                ProgressPercent = childProgress.ProgressPercent,
+                IsLocked = moduleLocked || status == CurriculumStatusHelper.StatusLocked,
+                LockReason = moduleLocked ? moduleLockReason : null,
+            },
+            ChildProgress = childProgress,
+            Navigation = BuildMindMapNavigation(NodeTypeMilestone, milestone.Id, moduleEnrollmentId),
+            Activities = activities,
+            Assignment = assignmentDto,
+        };
+    }
+
     private static EnrollmentCurriculumMindMapActivityDto BuildMindMapActivity(
         Activity activity,
         ProgramCurriculumTreeSnapshot snapshot,
         EnrollmentCurriculumContext context,
         IReadOnlySet<Guid> currentActivityIds,
-        bool moduleLocked)
+        bool moduleLocked,
+        string? moduleLockReason,
+        Guid? moduleEnrollmentId)
     {
         snapshot.MaterialsByActivityId.TryGetValue(activity.Id, out var material);
 
@@ -915,9 +1077,16 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             currentActivityIds,
             moduleLocked);
 
+        var isLocked = status == CurriculumStatusHelper.StatusLocked;
         var learning = new EnrollmentCurriculumMindMapActivityLearningDto
         {
             Status = status,
+            IsLocked = isLocked,
+            LockReason = isLocked
+                ? (moduleLocked
+                    ? moduleLockReason
+                    : "Complete previous activities in this section to unlock.")
+                : null,
         };
 
         if (status is not (CurriculumStatusHelper.StatusLocked or CurriculumStatusHelper.StatusCompleted)
@@ -933,8 +1102,11 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             {
                 ActivityId = activity.Id,
                 ActivityName = activity.Name,
+                ActivityCode = activity.Code,
                 ActivityOrder = activity.ActivityOrder,
                 ActivityType = activity.ActivityType,
+                SchedulingMode = activity.SchedulingMode,
+                Description = activity.Description,
                 Material = material == null
                     ? null
                     : new EnrollmentCurriculumMaterialDto
@@ -945,57 +1117,294 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                     },
             },
             Learning = learning,
+            Navigation = BuildMindMapNavigation(NodeTypeActivity, activity.Id, moduleEnrollmentId),
         };
     }
 
-    private static void ApplyResumeFields(
-        EnrollmentCurriculumActivityDto dto,
-        Guid activityId,
-        EnrollmentCurriculumContext context,
-        string status)
-    {
-        if (status is CurriculumStatusHelper.StatusLocked or CurriculumStatusHelper.StatusCompleted)
-        {
-            return;
-        }
-
-        if (!context.ProgressByActivityId.TryGetValue(activityId, out var progress))
-        {
-            return;
-        }
-
-        dto.ResumeState = ActivityResumeStateHelper.Deserialize(progress.ResumeState);
-        dto.LastAccessedAt = progress.LastAccessedAt;
-    }
-
-    private static string ResolveActivityStatus(
-        Guid activityId,
+    private static EnrollmentCurriculumMindMapAssignmentDto BuildMindMapAssignment(
+        Assignment assignment,
         ProgramCurriculumTreeSnapshot snapshot,
         EnrollmentCurriculumContext context,
-        Guid? currentActivityId,
-        bool moduleLocked)
+        Guid moduleId,
+        bool moduleLocked,
+        string? moduleLockReason,
+        Guid? moduleEnrollmentId,
+        ResearchMilestone? researchMilestone = null,
+        ResearchMilestone? previousResearchMilestone = null)
+    {
+        var status = ResolveAssignmentStatus(
+            assignment,
+            snapshot,
+            context,
+            moduleId,
+            moduleLocked,
+            researchMilestone,
+            previousResearchMilestone);
+
+        var isLocked = status == CurriculumStatusHelper.StatusLocked;
+
+        return new EnrollmentCurriculumMindMapAssignmentDto
+        {
+            AssignmentInfo = new EnrollmentCurriculumMindMapAssignmentInfoDto
+            {
+                AssignmentId = assignment.Id,
+                AssignmentCode = assignment.Code,
+                Title = assignment.Title,
+                AssignmentType = assignment.AssignmentType,
+                MaxPoints = assignment.MaxPoints,
+                PassScore = assignment.PassScore,
+                IsRequiredForModulePass = assignment.IsRequiredForModulePass,
+                DueDate = assignment.DueDate,
+            },
+            Learning = new EnrollmentCurriculumMindMapAssignmentLearningDto
+            {
+                Status = status,
+                IsLocked = isLocked,
+                LockReason = isLocked
+                    ? (moduleLocked
+                        ? moduleLockReason
+                        : "Complete required activities before this assignment unlocks.")
+                    : null,
+            },
+            Navigation = BuildMindMapNavigation(NodeTypeAssignment, assignment.Id, moduleEnrollmentId),
+        };
+    }
+
+    private static EnrollmentCurriculumMindMapNavigationDto BuildMindMapNavigation(
+        string targetType,
+        Guid targetId,
+        Guid? moduleEnrollmentId)
+    {
+        return new EnrollmentCurriculumMindMapNavigationDto
+        {
+            TargetType = targetType,
+            TargetId = targetId,
+            ModuleEnrollmentId = moduleEnrollmentId,
+        };
+    }
+
+    private static List<EnrollmentCurriculumMindMapPathDto> BuildMindMapCurrentPaths(
+        IReadOnlyList<EnrollmentCurriculumMindMapModuleDto> modules,
+        IReadOnlySet<Guid> currentActivityIds,
+        Guid programId)
+    {
+        var paths = new List<EnrollmentCurriculumMindMapPathDto>();
+
+        foreach (var module in modules)
+        {
+            foreach (var course in module.Courses)
+            {
+                foreach (var activity in course.Activities)
+                {
+                    if (!currentActivityIds.Contains(activity.ActivityInfo.ActivityId))
+                    {
+                        continue;
+                    }
+
+                    paths.Add(new EnrollmentCurriculumMindMapPathDto
+                    {
+                        Nodes =
+                        [
+                            new EnrollmentCurriculumMindMapPathNodeDto
+                            {
+                                NodeType = NodeTypeProgram,
+                                NodeId = programId,
+                            },
+                            new EnrollmentCurriculumMindMapPathNodeDto
+                            {
+                                NodeType = NodeTypeModule,
+                                NodeId = module.ModuleInfo.ModuleId,
+                            },
+                            new EnrollmentCurriculumMindMapPathNodeDto
+                            {
+                                NodeType = NodeTypeCourse,
+                                NodeId = course.CourseInfo.CourseId,
+                            },
+                            new EnrollmentCurriculumMindMapPathNodeDto
+                            {
+                                NodeType = NodeTypeActivity,
+                                NodeId = activity.ActivityInfo.ActivityId,
+                            },
+                        ],
+                    });
+                }
+            }
+
+            foreach (var milestone in module.Milestones)
+            {
+                foreach (var activity in milestone.Activities)
+                {
+                    if (!currentActivityIds.Contains(activity.ActivityInfo.ActivityId))
+                    {
+                        continue;
+                    }
+
+                    paths.Add(new EnrollmentCurriculumMindMapPathDto
+                    {
+                        Nodes =
+                        [
+                            new EnrollmentCurriculumMindMapPathNodeDto
+                            {
+                                NodeType = NodeTypeProgram,
+                                NodeId = programId,
+                            },
+                            new EnrollmentCurriculumMindMapPathNodeDto
+                            {
+                                NodeType = NodeTypeModule,
+                                NodeId = module.ModuleInfo.ModuleId,
+                            },
+                            new EnrollmentCurriculumMindMapPathNodeDto
+                            {
+                                NodeType = NodeTypeMilestone,
+                                NodeId = milestone.MilestoneInfo.MilestoneId,
+                            },
+                            new EnrollmentCurriculumMindMapPathNodeDto
+                            {
+                                NodeType = NodeTypeActivity,
+                                NodeId = activity.ActivityInfo.ActivityId,
+                            },
+                        ],
+                    });
+                }
+            }
+        }
+
+        return paths;
+    }
+
+    private static List<string> CollectLeafStatuses(EnrollmentCurriculumMindMapModuleDto module)
+    {
+        var statuses = new List<string>();
+
+        foreach (var course in module.Courses)
+        {
+            statuses.AddRange(course.Activities.Select(a => a.Learning.Status));
+            statuses.AddRange(course.Assignments.Select(a => a.Learning.Status));
+        }
+
+        foreach (var milestone in module.Milestones)
+        {
+            statuses.AddRange(milestone.Activities.Select(a => a.Learning.Status));
+            if (milestone.Assignment != null)
+            {
+                statuses.Add(milestone.Assignment.Learning.Status);
+            }
+        }
+
+        statuses.AddRange(module.Assignments.Select(a => a.Learning.Status));
+        return statuses;
+    }
+
+    private static EnrollmentCurriculumMindMapChildProgressDto BuildChildProgressFromLeaves(
+        IReadOnlyList<string> leafStatuses)
+    {
+        var total = leafStatuses.Count;
+        var completed = leafStatuses.Count(IsMindMapLeafCompleted);
+        var progressPercent = total == 0
+            ? 0m
+            : Math.Round((decimal)completed / total * 100m, 2);
+
+        return new EnrollmentCurriculumMindMapChildProgressDto
+        {
+            TotalCount = total,
+            CompletedCount = completed,
+            ProgressPercent = progressPercent,
+        };
+    }
+
+    private static bool IsMindMapLeafCompleted(string status) =>
+        status is CurriculumStatusHelper.StatusCompleted or CurriculumStatusHelper.StatusSubmitted;
+
+    private static string ResolveHubStatus(
+        decimal progressPercent,
+        int completedModuleCount,
+        int totalModuleCount)
+    {
+        if (totalModuleCount > 0 && completedModuleCount >= totalModuleCount)
+        {
+            return CurriculumStatusHelper.StatusCompleted;
+        }
+
+        if (progressPercent > 0m || completedModuleCount > 0)
+        {
+            return StatusInProgress;
+        }
+
+        return CurriculumStatusHelper.StatusAvailable;
+    }
+
+    private static string ResolveMindMapModuleStatus(
+        bool isLocked,
+        ModuleEnrollment? moduleEnrollment,
+        IReadOnlyList<string> childStatuses)
+    {
+        if (isLocked)
+        {
+            return CurriculumStatusHelper.StatusLocked;
+        }
+
+        if (moduleEnrollment?.Status == EnrollmentStatus.Completed
+            || moduleEnrollment?.ProgressPercent >= 100m)
+        {
+            return CurriculumStatusHelper.StatusCompleted;
+        }
+
+        if (childStatuses.Any(s => s == CurriculumStatusHelper.StatusCurrent))
+        {
+            return CurriculumStatusHelper.StatusCurrent;
+        }
+
+        if (moduleEnrollment?.ProgressPercent > 0m
+            || childStatuses.Any(s => s is StatusInProgress or CurriculumStatusHelper.StatusSubmitted))
+        {
+            return StatusInProgress;
+        }
+
+        return CurriculumStatusHelper.StatusAvailable;
+    }
+
+    private static string ResolveMindMapContainerStatus(
+        bool moduleLocked,
+        IReadOnlyList<string> childStatuses)
     {
         if (moduleLocked)
         {
             return CurriculumStatusHelper.StatusLocked;
         }
 
-        if (IsActivityCompleted(activityId, snapshot, context))
+        if (childStatuses.Count == 0)
+        {
+            return CurriculumStatusHelper.StatusAvailable;
+        }
+
+        if (childStatuses.All(IsMindMapLeafCompleted))
         {
             return CurriculumStatusHelper.StatusCompleted;
         }
 
-        if (!IsActivitySequentiallyAccessible(activityId, snapshot, context))
-        {
-            return CurriculumStatusHelper.StatusLocked;
-        }
-
-        if (currentActivityId.HasValue && currentActivityId.Value == activityId)
+        if (childStatuses.Any(s => s == CurriculumStatusHelper.StatusCurrent))
         {
             return CurriculumStatusHelper.StatusCurrent;
         }
 
-        return CurriculumStatusHelper.StatusAvailable;
+        if (childStatuses.Any(s =>
+                s is StatusInProgress
+                    or CurriculumStatusHelper.StatusSubmitted
+                    or CurriculumStatusHelper.StatusCompleted
+                    or CurriculumStatusHelper.StatusAvailable))
+        {
+            if (childStatuses.Any(s =>
+                    s is StatusInProgress
+                        or CurriculumStatusHelper.StatusSubmitted
+                        or CurriculumStatusHelper.StatusCompleted))
+            {
+                return StatusInProgress;
+            }
+
+            return CurriculumStatusHelper.StatusAvailable;
+        }
+
+        return CurriculumStatusHelper.StatusLocked;
     }
 
     private static string ResolveMindMapActivityStatus(
@@ -1048,6 +1457,56 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         return progress.ActivityStatus == ActivityStatus.InProgress
                || progress.LastAccessedAt.HasValue
                || !string.IsNullOrWhiteSpace(progress.ResumeState);
+    }
+
+    private static void ApplyResumeFields(
+        EnrollmentCurriculumActivityDto dto,
+        Guid activityId,
+        EnrollmentCurriculumContext context,
+        string status)
+    {
+        if (status is CurriculumStatusHelper.StatusLocked or CurriculumStatusHelper.StatusCompleted)
+        {
+            return;
+        }
+
+        if (!context.ProgressByActivityId.TryGetValue(activityId, out var progress))
+        {
+            return;
+        }
+
+        dto.ResumeState = ActivityResumeStateHelper.Deserialize(progress.ResumeState);
+        dto.LastAccessedAt = progress.LastAccessedAt;
+    }
+
+    private static string ResolveActivityStatus(
+        Guid activityId,
+        ProgramCurriculumTreeSnapshot snapshot,
+        EnrollmentCurriculumContext context,
+        Guid? currentActivityId,
+        bool moduleLocked)
+    {
+        if (moduleLocked)
+        {
+            return CurriculumStatusHelper.StatusLocked;
+        }
+
+        if (IsActivityCompleted(activityId, snapshot, context))
+        {
+            return CurriculumStatusHelper.StatusCompleted;
+        }
+
+        if (!IsActivitySequentiallyAccessible(activityId, snapshot, context))
+        {
+            return CurriculumStatusHelper.StatusLocked;
+        }
+
+        if (currentActivityId.HasValue && currentActivityId.Value == activityId)
+        {
+            return CurriculumStatusHelper.StatusCurrent;
+        }
+
+        return CurriculumStatusHelper.StatusAvailable;
     }
 
     private static bool IsActivityCompleted(

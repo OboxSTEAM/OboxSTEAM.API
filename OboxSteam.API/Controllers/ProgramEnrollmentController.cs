@@ -168,11 +168,12 @@ public class ProgramEnrollmentController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Get the current student's curriculum mind map",
-        Description = "Returns each module with moduleInfo and learning state, its courses/milestones, "
-            + "and per-activity activityInfo and learning state. Supports parallel learning: any unlocked "
-            + "incomplete module exposes its next activity with status 'current'. "
-            + "Activity status includes completed, current, in_progress, available, and locked. "
-            + "Assignments contribute to module progress but are not included in the response.")]
+        Description = "Returns the full program learning tree for a radial mind-map UI (class data excluded). "
+            + "Hub includes program progress. Modules expand to courses/milestones, then activities and "
+            + "assignments — locked nodes are still included so the client can open them. "
+            + "Supports parallel learning via currentPaths and per-node status "
+            + "(completed, current, in_progress, available, submitted, locked). "
+            + "Each node includes navigation target ids for section deep-links.")]
     [ProducesResponseType(typeof(ApiResult<EnrollmentCurriculumMindMapDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
