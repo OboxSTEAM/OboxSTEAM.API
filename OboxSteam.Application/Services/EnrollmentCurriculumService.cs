@@ -74,7 +74,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         };
     }
 
-    public async Task<EnrollmentCurriculumMileMapDto> GetEnrollmentCurriculumMileMapAsync(
+    public async Task<EnrollmentCurriculumMindMapDto> GetEnrollmentCurriculumMindMapAsync(
         Guid programEnrollmentId)
     {
         var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
@@ -131,7 +131,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             }
         }
 
-        var modules = new List<EnrollmentCurriculumMileMapModuleDto>();
+        var modules = new List<EnrollmentCurriculumMindMapModuleDto>();
 
         foreach (var module in snapshot.Modules)
         {
@@ -161,9 +161,9 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                 moduleStatus = CurriculumStatusHelper.StatusAvailable;
             }
 
-            var moduleDto = new EnrollmentCurriculumMileMapModuleDto
+            var moduleDto = new EnrollmentCurriculumMindMapModuleDto
             {
-                ModuleInfo = new EnrollmentCurriculumMileMapModuleInfoDto
+                ModuleInfo = new EnrollmentCurriculumMindMapModuleInfoDto
                 {
                     ModuleId = module.Id,
                     ModuleName = module.Name,
@@ -172,7 +172,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                     PrerequisiteModuleId = module.PrerequisiteModuleId,
                     ModuleEnrollmentId = moduleEnrollment?.Id,
                 },
-                Learning = new EnrollmentCurriculumMileMapModuleLearningDto
+                Learning = new EnrollmentCurriculumMindMapModuleLearningDto
                 {
                     Status = moduleStatus,
                     ProgressPercent = moduleEnrollment?.ProgressPercent ?? 0m,
@@ -192,7 +192,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                 {
                     foreach (var milestone in moduleMilestones)
                     {
-                        var milestoneActivities = new List<EnrollmentCurriculumMileMapActivityDto>();
+                        var milestoneActivities = new List<EnrollmentCurriculumMindMapActivityDto>();
 
                         if (snapshot.LinksByMilestoneId.TryGetValue(milestone.Id, out var links))
                         {
@@ -203,7 +203,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                                     continue;
                                 }
 
-                                milestoneActivities.Add(BuildMileMapActivity(
+                                milestoneActivities.Add(BuildMindMapActivity(
                                     activity,
                                     snapshot,
                                     context,
@@ -212,7 +212,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                             }
                         }
 
-                        moduleDto.Milestones.Add(new EnrollmentCurriculumMileMapMilestoneDto
+                        moduleDto.Milestones.Add(new EnrollmentCurriculumMindMapMilestoneDto
                         {
                             MilestoneId = milestone.Id,
                             MilestoneName = milestone.Title,
@@ -229,13 +229,13 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
 
                 foreach (var course in moduleCourses)
                 {
-                    var courseActivities = new List<EnrollmentCurriculumMileMapActivityDto>();
+                    var courseActivities = new List<EnrollmentCurriculumMindMapActivityDto>();
 
                     if (snapshot.ActivitiesByCourseId.TryGetValue(course.Id, out var activities))
                     {
                         foreach (var activity in activities)
                         {
-                            courseActivities.Add(BuildMileMapActivity(
+                            courseActivities.Add(BuildMindMapActivity(
                                 activity,
                                 snapshot,
                                 context,
@@ -244,7 +244,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                         }
                     }
 
-                    moduleDto.Courses.Add(new EnrollmentCurriculumMileMapCourseDto
+                    moduleDto.Courses.Add(new EnrollmentCurriculumMindMapCourseDto
                     {
                         CourseId = course.Id,
                         CourseName = course.Name,
@@ -257,7 +257,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             modules.Add(moduleDto);
         }
 
-        return new EnrollmentCurriculumMileMapDto
+        return new EnrollmentCurriculumMindMapDto
         {
             EnrollmentId = enrollment.Id,
             ProgramId = enrollment.ProgramId,
@@ -899,7 +899,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         return activityDto;
     }
 
-    private static EnrollmentCurriculumMileMapActivityDto BuildMileMapActivity(
+    private static EnrollmentCurriculumMindMapActivityDto BuildMindMapActivity(
         Activity activity,
         ProgramCurriculumTreeSnapshot snapshot,
         EnrollmentCurriculumContext context,
@@ -908,14 +908,14 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
     {
         snapshot.MaterialsByActivityId.TryGetValue(activity.Id, out var material);
 
-        var status = ResolveMileMapActivityStatus(
+        var status = ResolveMindMapActivityStatus(
             activity.Id,
             snapshot,
             context,
             currentActivityIds,
             moduleLocked);
 
-        var learning = new EnrollmentCurriculumMileMapActivityLearningDto
+        var learning = new EnrollmentCurriculumMindMapActivityLearningDto
         {
             Status = status,
         };
@@ -927,9 +927,9 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             learning.LastAccessedAt = progress.LastAccessedAt;
         }
 
-        return new EnrollmentCurriculumMileMapActivityDto
+        return new EnrollmentCurriculumMindMapActivityDto
         {
-            ActivityInfo = new EnrollmentCurriculumMileMapActivityInfoDto
+            ActivityInfo = new EnrollmentCurriculumMindMapActivityInfoDto
             {
                 ActivityId = activity.Id,
                 ActivityName = activity.Name,
@@ -998,7 +998,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         return CurriculumStatusHelper.StatusAvailable;
     }
 
-    private static string ResolveMileMapActivityStatus(
+    private static string ResolveMindMapActivityStatus(
         Guid activityId,
         ProgramCurriculumTreeSnapshot snapshot,
         EnrollmentCurriculumContext context,

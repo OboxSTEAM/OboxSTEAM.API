@@ -2,7 +2,7 @@ using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.EnrollmentDTO;
 
-public class EnrollmentCurriculumMileMapDto
+public class EnrollmentCurriculumMindMapDto
 {
     public Guid EnrollmentId { get; set; }
 
@@ -12,23 +12,23 @@ public class EnrollmentCurriculumMileMapDto
 
     public decimal ProgressPercent { get; set; }
 
-    public List<EnrollmentCurriculumMileMapModuleDto> Modules { get; set; } = [];
+    public List<EnrollmentCurriculumMindMapModuleDto> Modules { get; set; } = [];
 }
 
-public class EnrollmentCurriculumMileMapModuleDto
+public class EnrollmentCurriculumMindMapModuleDto
 {
     /// <summary>Static catalog information about the module.</summary>
-    public EnrollmentCurriculumMileMapModuleInfoDto ModuleInfo { get; set; } = null!;
+    public EnrollmentCurriculumMindMapModuleInfoDto ModuleInfo { get; set; } = null!;
 
     /// <summary>The student's learning state for this module.</summary>
-    public EnrollmentCurriculumMileMapModuleLearningDto Learning { get; set; } = null!;
+    public EnrollmentCurriculumMindMapModuleLearningDto Learning { get; set; } = null!;
 
-    public List<EnrollmentCurriculumMileMapCourseDto> Courses { get; set; } = [];
+    public List<EnrollmentCurriculumMindMapCourseDto> Courses { get; set; } = [];
 
-    public List<EnrollmentCurriculumMileMapMilestoneDto> Milestones { get; set; } = [];
+    public List<EnrollmentCurriculumMindMapMilestoneDto> Milestones { get; set; } = [];
 }
 
-public class EnrollmentCurriculumMileMapModuleInfoDto
+public class EnrollmentCurriculumMindMapModuleInfoDto
 {
     public Guid ModuleId { get; set; }
 
@@ -43,7 +43,7 @@ public class EnrollmentCurriculumMileMapModuleInfoDto
     public Guid? ModuleEnrollmentId { get; set; }
 }
 
-public class EnrollmentCurriculumMileMapModuleLearningDto
+public class EnrollmentCurriculumMindMapModuleLearningDto
 {
     /// <summary>Module state: available, in_progress, completed, or locked.</summary>
     public string Status { get; set; } = null!;
@@ -55,7 +55,7 @@ public class EnrollmentCurriculumMileMapModuleLearningDto
     public string? LockReason { get; set; }
 }
 
-public class EnrollmentCurriculumMileMapCourseDto
+public class EnrollmentCurriculumMindMapCourseDto
 {
     public Guid CourseId { get; set; }
 
@@ -63,10 +63,10 @@ public class EnrollmentCurriculumMileMapCourseDto
 
     public int CourseOrder { get; set; }
 
-    public List<EnrollmentCurriculumMileMapActivityDto> Activities { get; set; } = [];
+    public List<EnrollmentCurriculumMindMapActivityDto> Activities { get; set; } = [];
 }
 
-public class EnrollmentCurriculumMileMapMilestoneDto
+public class EnrollmentCurriculumMindMapMilestoneDto
 {
     public Guid MilestoneId { get; set; }
 
@@ -76,19 +76,19 @@ public class EnrollmentCurriculumMileMapMilestoneDto
 
     public bool IsCapstone { get; set; }
 
-    public List<EnrollmentCurriculumMileMapActivityDto> Activities { get; set; } = [];
+    public List<EnrollmentCurriculumMindMapActivityDto> Activities { get; set; } = [];
 }
 
-public class EnrollmentCurriculumMileMapActivityDto
+public class EnrollmentCurriculumMindMapActivityDto
 {
     /// <summary>Static catalog information about the activity.</summary>
-    public EnrollmentCurriculumMileMapActivityInfoDto ActivityInfo { get; set; } = null!;
+    public EnrollmentCurriculumMindMapActivityInfoDto ActivityInfo { get; set; } = null!;
 
     /// <summary>The student's learning state for this activity.</summary>
-    public EnrollmentCurriculumMileMapActivityLearningDto Learning { get; set; } = null!;
+    public EnrollmentCurriculumMindMapActivityLearningDto Learning { get; set; } = null!;
 }
 
-public class EnrollmentCurriculumMileMapActivityInfoDto
+public class EnrollmentCurriculumMindMapActivityInfoDto
 {
     public Guid ActivityId { get; set; }
 
@@ -101,7 +101,7 @@ public class EnrollmentCurriculumMileMapActivityInfoDto
     public EnrollmentCurriculumMaterialDto? Material { get; set; }
 }
 
-public class EnrollmentCurriculumMileMapActivityLearningDto
+public class EnrollmentCurriculumMindMapActivityLearningDto
 {
     /// <summary>Nav state: completed, current, in_progress, available, or locked.</summary>
     public string Status { get; set; } = null!;

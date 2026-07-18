@@ -82,7 +82,7 @@ public class EnrollmentCurriculumActivityDto
 
     /// <summary>
     /// Nav state: completed, current, in_progress, available, or locked.
-    /// <c>in_progress</c> is used by the curriculum mile map when learning has started but is not complete.
+    /// <c>in_progress</c> is used by the curriculum mind map when learning has started but is not complete.
     /// </summary>
     public string Status { get; set; } = null!;
 
