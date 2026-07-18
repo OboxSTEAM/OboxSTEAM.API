@@ -6,10 +6,19 @@ namespace OboxSteam.Application.Services;
 
 /// <summary>
 /// Whitelist-based HTML sanitizer for portfolio-authored content.
-/// Allowed: p, br, strong, em, u, s, ul, ol, li, a[href], h3, span[style=color].
+/// Allowed: p, br, strong, em, u, s, ul, ol, li, a[href], h2, h3, span[style=color],
+/// and alignment classes pf-align-left|center|right|justify on block tags.
 /// </summary>
 public sealed class PortfolioHtmlSanitizer : IPortfolioHtmlSanitizer
 {
+    private static readonly HashSet<string> AllowedAlignmentClasses = new(StringComparer.Ordinal)
+    {
+        "pf-align-left",
+        "pf-align-center",
+        "pf-align-right",
+        "pf-align-justify",
+    };
+
     private readonly HtmlSanitizer _sanitizer;
 
     public PortfolioHtmlSanitizer()
@@ -18,11 +27,14 @@ public sealed class PortfolioHtmlSanitizer : IPortfolioHtmlSanitizer
         _sanitizer.AllowedTags.Clear();
         _sanitizer.AllowedTags.UnionWith(
         [
-            "p", "br", "strong", "em", "u", "s", "ul", "ol", "li", "a", "h3", "span",
+            "p", "br", "strong", "em", "u", "s", "ul", "ol", "li", "a", "h2", "h3", "span",
         ]);
 
         _sanitizer.AllowedAttributes.Clear();
-        _sanitizer.AllowedAttributes.UnionWith(["href", "style"]);
+        _sanitizer.AllowedAttributes.UnionWith(["href", "style", "class"]);
+
+        _sanitizer.AllowedClasses.Clear();
+        _sanitizer.AllowedClasses.UnionWith(AllowedAlignmentClasses);
 
         _sanitizer.AllowedCssProperties.Clear();
         _sanitizer.AllowedCssProperties.Add("color");
@@ -47,15 +59,31 @@ public sealed class PortfolioHtmlSanitizer : IPortfolioHtmlSanitizer
                 return;
             }
 
-            if (!string.Equals(element.TagName, "A", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(element.TagName, "A", StringComparison.OrdinalIgnoreCase))
             {
-                return;
+                element.SetAttribute("rel", "noopener noreferrer");
+                if (!element.HasAttribute("target"))
+                {
+                    element.SetAttribute("target", "_blank");
+                }
             }
 
-            element.SetAttribute("rel", "noopener noreferrer");
-            if (!element.HasAttribute("target"))
+            // Keep only the FE alignment tokens; drop any other class that slipped through.
+            if (element.HasAttribute("class"))
             {
-                element.SetAttribute("target", "_blank");
+                var kept = element.ClassList
+                    .Where(c => AllowedAlignmentClasses.Contains(c))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+
+                if (kept.Length == 0)
+                {
+                    element.RemoveAttribute("class");
+                }
+                else
+                {
+                    element.SetAttribute("class", string.Join(' ', kept));
+                }
             }
         };
     }
