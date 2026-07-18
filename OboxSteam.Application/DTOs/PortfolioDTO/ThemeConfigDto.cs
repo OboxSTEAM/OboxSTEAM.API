@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.PortfolioDTO;
@@ -47,6 +48,13 @@ public class ThemeConfigDto
 
     [MaxLength(100)]
     public string? LayoutStyle { get; set; }
+
+    /// <summary>
+    /// FE-owned theme-override slot map (opaque to the backend except length + JSON-object shape).
+    /// </summary>
+    [MaxLength(2000)]
+    [JsonObject]
+    public string? SettingsJson { get; set; }
 
     /// <summary>Legacy section order; superseded by <c>sections</c> but kept for migration.</summary>
     public List<string> SectionOrder { get; set; } = [];

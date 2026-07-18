@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using OboxSteam.Application.DTOs.PortfolioDTO;
 using OboxSteam.Application.Utils;
@@ -6,6 +7,8 @@ namespace OboxSteam.Application.Validation;
 
 public static partial class PortfolioThemeValidator
 {
+    public const int SettingsJsonMaxLength = 2000;
+
     public static void ValidateTheme(ThemeConfigDto theme)
     {
         ValidateHexColor(theme.PrimaryColor, nameof(theme.PrimaryColor));
@@ -22,6 +25,43 @@ public static partial class PortfolioThemeValidator
         {
             throw ErrorHelper.BadRequest("FontFamily must be at most 100 characters.");
         }
+
+        theme.SettingsJson = NormalizeOptionalJsonObject(
+            theme.SettingsJson,
+            nameof(theme.SettingsJson),
+            SettingsJsonMaxLength);
+    }
+
+    /// <summary>
+    /// Trims; empty → null. When provided, requires a well-formed JSON object (no key/value inspection).
+    /// </summary>
+    public static string? NormalizeOptionalJsonObject(string? value, string fieldName, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > maxLength)
+        {
+            throw ErrorHelper.BadRequest($"{fieldName} must be at most {maxLength} characters.");
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw ErrorHelper.BadRequest($"{fieldName} must be a JSON object.");
+            }
+        }
+        catch (JsonException)
+        {
+            throw ErrorHelper.BadRequest($"{fieldName} must be valid JSON.");
+        }
+
+        return trimmed;
     }
 
     public static void ValidateHexColor(string? value, string fieldName)

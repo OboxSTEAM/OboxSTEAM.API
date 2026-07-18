@@ -20,6 +20,7 @@ public class CreatePortfolioSectionRequestDto
 
     public string? ContentHtml { get; set; }
 
+    [MaxLength(2000)]
     public string? SettingsJson { get; set; }
 
     public List<PortfolioMediaAssetInputDto>? MediaAssets { get; set; }
@@ -38,6 +39,7 @@ public class UpdatePortfolioSectionRequestDto
 
     public string? ContentHtml { get; set; }
 
+    [MaxLength(2000)]
     public string? SettingsJson { get; set; }
 
     public List<PortfolioMediaAssetInputDto>? MediaAssets { get; set; }
@@ -72,6 +74,7 @@ public class PortfolioSectionResponseDto
 
     public string? ContentHtml { get; set; }
 
+    [MaxLength(2000)]
     public string? SettingsJson { get; set; }
 
     public List<PortfolioMediaAssetResponseDto> MediaAssets { get; set; } = [];
