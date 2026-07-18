@@ -32,6 +32,8 @@ public interface IClassService
 
     Task<ClassResponseDto> CompleteClassAsync(Guid id);
 
+    Task DeleteClassAsync(Guid id);
+
     /// <summary>
     /// Transitions a single Open class to InProgress when it is full and StartDate has passed.
     /// </summary>

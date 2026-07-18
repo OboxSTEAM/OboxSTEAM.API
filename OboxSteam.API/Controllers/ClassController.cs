@@ -229,4 +229,26 @@ public class ClassController : ControllerBase
 
         return Ok(ApiResult<ClassResponseDto>.Success(result, "200", "Class completed successfully."));
     }
+
+    // =========================================================================
+    // DELETE  —  DELETE /api/classes/{id}   [Manager only]
+    // =========================================================================
+
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "Manager")]
+    [SwaggerOperation(
+        Summary = "Delete a class",
+        Description = "Soft-deletes a Draft or Open class cohort and its sessions. Open classes may only be deleted when they have no active students. Requires Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<bool>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> DeleteClass([FromRoute] Guid id)
+    {
+        await _classService.DeleteClassAsync(id);
+
+        return Ok(ApiResult<bool>.Success(true, "200", "Class deleted successfully."));
+    }
 }

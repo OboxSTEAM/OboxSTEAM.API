@@ -230,6 +230,119 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
         };
     }
 
+    public async Task<ClassEnrollmentResponseDto> TransferClassByManagerAsync(
+        Guid id,
+        ManagerTransferClassRequestDto request)
+    {
+        ClassEnrollmentValidator.ValidateStudentIdRequired(id);
+        ClassEnrollmentValidator.ValidateClassIdRequired(request.ClassId);
+
+        await EnrollmentAccessValidator.GetCurrentManagerAsync(
+            _unitOfWork,
+            _claimsService,
+            ClassEnrollmentValidator.ManagerTransferForbiddenMessage);
+
+        var studentEntity = await _unitOfWork.Users.GetByIdAsync(id);
+        var student = ProgramEnrollmentValidator.ValidateStudentExists(studentEntity, id);
+
+        var targetClassEntity = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
+        var targetClass = ClassEnrollmentValidator.ValidateClassExists(targetClassEntity, request.ClassId);
+        ClassEnrollmentValidator.ValidateClassOpenForManagerTransfer(targetClass);
+
+        var enrollmentEntity = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.StudentId == student.Id
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted
+                  && ce.Class.ProgramId == targetClass.ProgramId,
+            ce => ce.Class);
+        var enrollment = ClassEnrollmentValidator.ValidateActiveClassEnrollmentForProgram(
+            enrollmentEntity,
+            student.Id,
+            targetClass.ProgramId);
+        ClassEnrollmentValidator.ValidateTransferTargetDifferent(enrollment.ClassId, request.ClassId);
+
+        var programEnrollmentEntity = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollment.ProgramEnrollmentId);
+        var programEnrollment = ClassEnrollmentValidator.ValidateProgramEnrollmentExists(
+            programEnrollmentEntity,
+            enrollment.ProgramEnrollmentId);
+        ClassEnrollmentValidator.ValidateProgramEnrollmentActiveForEnroll(programEnrollment);
+        ClassEnrollmentValidator.ValidateClassBelongsToProgram(targetClass, programEnrollment.ProgramId);
+
+        var existingInTargetClass = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ClassId == request.ClassId
+                  && ce.StudentId == student.Id
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+        ClassEnrollmentValidator.ValidateNotAlreadyEnrolledInClass(existingInTargetClass, enrollment.Id);
+
+        await ClassEnrollmentValidator.ValidateClassHasCapacityAsync(
+            _unitOfWork,
+            request.ClassId,
+            targetClass.MaxCapacity);
+
+        enrollment.Status = ClassEnrollmentStatus.Transferred;
+
+        var newEnrollment = new ClassEnrollment
+        {
+            ClassId = request.ClassId,
+            StudentId = student.Id,
+            ProgramEnrollmentId = enrollment.ProgramEnrollmentId,
+            Status = ClassEnrollmentStatus.Active,
+            EnrolledAt = DateTime.UtcNow,
+        };
+
+        await _unitOfWork.ClassEnrollments.Update(enrollment);
+        await _unitOfWork.ClassEnrollments.AddAsync(newEnrollment);
+        await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassTransferred(
+                student.Id,
+                request.ClassId,
+                newEnrollment.Id,
+                programEnrollment.ProgramId,
+                targetClass.Name));
+
+        await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
+
+        var targetClassAfterStart = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
+        targetClass = ClassEnrollmentValidator.ValidateClassExists(targetClassAfterStart, request.ClassId);
+
+        _logger.LogInformation(
+            "[TransferClassByManagerAsync] Manager transferred student {StudentId} from enrollment {OldEnrollmentId} to new enrollment {NewEnrollmentId} in class {ClassId}.",
+            student.Id,
+            enrollment.Id,
+            newEnrollment.Id,
+            request.ClassId);
+
+        return new ClassEnrollmentResponseDto
+        {
+            Id = newEnrollment.Id,
+            StudentId = newEnrollment.StudentId,
+            ProgramEnrollmentId = newEnrollment.ProgramEnrollmentId,
+            Status = newEnrollment.Status,
+            EnrolledAt = newEnrollment.EnrolledAt,
+            CreatedAt = newEnrollment.CreatedAt,
+            UpdatedAt = newEnrollment.UpdatedAt,
+            Class = new ClassResponseDto
+            {
+                Id = targetClass.Id,
+                Code = targetClass.Code,
+                Name = targetClass.Name,
+                ProgramId = targetClass.ProgramId,
+                MentorId = targetClass.MentorId,
+                StartDate = targetClass.StartDate,
+                EndDate = targetClass.EndDate,
+                MaxCapacity = targetClass.MaxCapacity,
+                Status = targetClass.Status,
+                MinHoursBeforeAssignmentJoin = targetClass.MinHoursBeforeAssignmentJoin,
+                ScheduleSummary = targetClass.ScheduleSummary,
+                CreatedAt = targetClass.CreatedAt,
+                UpdatedAt = targetClass.UpdatedAt,
+            },
+        };
+    }
+
     public async Task<ClassEnrollmentResponseDto> GetClassEnrollmentByIdAsync(Guid id)
     {
         await EnrollmentAccessValidator.GetCurrentUserForGetAsync(

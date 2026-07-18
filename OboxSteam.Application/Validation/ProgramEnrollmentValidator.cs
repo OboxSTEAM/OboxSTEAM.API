@@ -55,12 +55,14 @@ public static class ProgramEnrollmentValidator
         }
     }
 
-    public static void ValidateStudentExists(User? student, Guid studentId)
+    public static User ValidateStudentExists(User? student, Guid studentId)
     {
         if (student == null || student.IsDeleted || student.Role != RoleType.Student)
         {
             throw ErrorHelper.NotFound($"Student with id '{studentId}' not found.");
         }
+
+        return student;
     }
 
     public static void ValidateCanListProgramEnrollments(RoleType role)

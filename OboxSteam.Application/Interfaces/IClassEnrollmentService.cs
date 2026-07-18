@@ -9,6 +9,8 @@ public interface IClassEnrollmentService
 
     Task<ClassEnrollmentResponseDto> TransferClassAsync(Guid id, UpdateClassEnrollmentRequestDto request);
 
+    Task<ClassEnrollmentResponseDto> TransferClassByManagerAsync(Guid id, ManagerTransferClassRequestDto request);
+
     Task<ClassEnrollmentResponseDto> GetClassEnrollmentByIdAsync(Guid id);
 
     Task<Pagination<ClassEnrollmentResponseDto>> GetClassEnrollmentsByProgramEnrollmentAsync(
