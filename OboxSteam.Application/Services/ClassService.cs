@@ -807,4 +807,42 @@ public sealed class ClassService : IClassService
             UpdatedAt = classEntity.UpdatedAt,
         };
     }
+
+    public async Task DeleteClassAsync(Guid id)
+    {
+        _logger.LogInformation("[DeleteClassAsync] Attempting to soft-delete class Id: {Id}", id);
+
+        await EnrollmentAccessValidator.GetCurrentManagerAsync(
+            _unitOfWork,
+            _claimsService,
+            ClassValidator.DeleteForbiddenMessage);
+
+        var entity = await _unitOfWork.Classes.GetByIdAsync(id);
+        ClassValidator.ValidateClassExists(entity, id);
+        var classEntity = entity!;
+
+        ClassValidator.ValidateDeletableStatus(classEntity);
+
+        if (classEntity.Status == ClassStatus.Open)
+        {
+            var activeEnrollmentCount = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+            ClassValidator.ValidateOpenClassHasNoActiveStudents(classEntity, activeEnrollmentCount);
+        }
+
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == id && !cs.IsDeleted);
+
+        if (sessions.Count > 0)
+        {
+            await _unitOfWork.ClassSessions.SoftRemoveRange(sessions);
+        }
+
+        await _unitOfWork.Classes.SoftRemove(classEntity);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[DeleteClassAsync] Class Id {Id} soft-deleted successfully ({SessionCount} sessions soft-deleted).",
+            id,
+            sessions.Count);
+    }
 }

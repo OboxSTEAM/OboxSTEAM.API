@@ -75,6 +75,35 @@ public class ClassEnrollmentController : ControllerBase
     }
 
     // =========================================================================
+    // MANAGER TRANSFER  —  PUT /api/class-enrollments/manager-transfer/{id}   [Manager only]
+    // =========================================================================
+
+    [HttpPut("manager-transfer/{id:guid}")]
+    [Authorize(Roles = "Manager")]
+    [SwaggerOperation(
+        Summary = "Transfer a student to another class (Manager)",
+        Description = "Marks the student's current active class enrollment as Transferred and creates a new Active enrollment in another Open cohort within the same program. Target class must be Open (not yet started). Requires Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<ClassEnrollmentResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> TransferClassByManager(
+        [FromRoute] Guid id,
+        [FromBody, SwaggerParameter("Manager class transfer request")] ManagerTransferClassRequestDto dto)
+    {
+        if (dto == null)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Class transfer data is required."));
+        }
+
+        var result = await _classEnrollmentService.TransferClassByManagerAsync(id, dto);
+
+        return Ok(ApiResult<ClassEnrollmentResponseDto>.Success(result, "200", "Class transfer completed successfully."));
+    }
+
+    // =========================================================================
     // GET BY ID  —  GET /api/class-enrollments/{id}
     // =========================================================================
 

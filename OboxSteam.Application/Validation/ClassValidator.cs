@@ -160,4 +160,24 @@ public static class ClassValidator
                && activeEnrollmentCount >= classEntity.MaxCapacity
                && utcNow >= classEntity.StartDate;
     }
+
+    public const string DeleteForbiddenMessage = "Only managers can delete a class.";
+
+    public static void ValidateDeletableStatus(Class classEntity)
+    {
+        if (classEntity.Status is not (ClassStatus.Draft or ClassStatus.Open))
+        {
+            throw ErrorHelper.BadRequest(
+                $"Only Draft or Open classes can be deleted (status: {classEntity.Status}).");
+        }
+    }
+
+    public static void ValidateOpenClassHasNoActiveStudents(Class classEntity, int activeEnrollmentCount)
+    {
+        if (classEntity.Status == ClassStatus.Open && activeEnrollmentCount > 0)
+        {
+            throw ErrorHelper.Conflict(
+                $"Cannot delete Open class '{classEntity.Code}' while it still has active students.");
+        }
+    }
 }

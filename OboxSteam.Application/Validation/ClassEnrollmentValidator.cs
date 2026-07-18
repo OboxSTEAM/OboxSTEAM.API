@@ -11,6 +11,7 @@ namespace OboxSteam.Application.Validation;
 public static class ClassEnrollmentValidator
 {
     public const string EnrollForbiddenMessage = "Only students can enroll in a class.";
+    public const string ManagerTransferForbiddenMessage = "Only managers can transfer a student to another class.";
     public const string ViewListForbiddenMessage = "You do not have permission to view class enrollments.";
     public const string ViewEnrollmentForbiddenMessage = "You do not have permission to view this enrollment.";
 
@@ -81,6 +82,40 @@ public static class ClassEnrollmentValidator
             throw ErrorHelper.BadRequest(
                 $"Class '{classEntity.Code}' is not open for enrollment (status: {classEntity.Status}).");
         }
+    }
+
+    /// <summary>
+    /// Manager transfer target must be Open (not yet started).
+    /// </summary>
+    public static void ValidateClassOpenForManagerTransfer(Class classEntity)
+    {
+        if (classEntity.Status != ClassStatus.Open)
+        {
+            throw ErrorHelper.BadRequest(
+                $"Class '{classEntity.Code}' must be Open and not yet started (status: {classEntity.Status}).");
+        }
+    }
+
+    public static void ValidateStudentIdRequired(Guid studentId)
+    {
+        if (studentId == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("StudentId is required.");
+        }
+    }
+
+    public static ClassEnrollment ValidateActiveClassEnrollmentForProgram(
+        ClassEnrollment? enrollment,
+        Guid studentId,
+        Guid programId)
+    {
+        if (enrollment == null)
+        {
+            throw ErrorHelper.NotFound(
+                $"No active class enrollment found for student '{studentId}' in program '{programId}'.");
+        }
+
+        return enrollment;
     }
 
     public static void ValidateNoActiveClassEnrollmentForProgram(ClassEnrollment? activeEnrollment)

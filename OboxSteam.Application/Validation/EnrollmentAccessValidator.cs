@@ -36,6 +36,31 @@ public static class EnrollmentAccessValidator
         return user;
     }
 
+    public static async Task<User> GetCurrentManagerAsync(
+        IUnitOfWork unitOfWork,
+        IClaimsService claimsService,
+        string forbiddenMessage)
+    {
+        var userId = claimsService.GetCurrentUserId;
+        if (userId == Guid.Empty)
+        {
+            throw ErrorHelper.Unauthorized("Unauthorized access.");
+        }
+
+        var user = await unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null || user.IsDeleted)
+        {
+            throw ErrorHelper.NotFound("Current user not found.");
+        }
+
+        if (user.Role != RoleType.Manager)
+        {
+            throw ErrorHelper.Forbidden(forbiddenMessage);
+        }
+
+        return user;
+    }
+
     public static async Task<User> GetCurrentUserForGetAsync(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
