@@ -57,8 +57,12 @@ reset, refresh). Account management under `/api/account/*` requires auth.
 ## CORS
 
 - Development: allow any origin.
-- Production: `CORS_ALLOWED_ORIGINS` or `CORS_ALLOWED_ORIGIN` env var; default
-  includes `https://oboxsteam.website` and `http://localhost:3000`.
+- Production: exact origins from `CORS_ALLOWED_ORIGINS` /
+  `CORS_ALLOWED_ORIGIN` (default includes `https://oboxsteam.website` and
+  `http://localhost:3000`), plus the apex `https://oboxsteam.website` and
+  one-label portfolio hosts `https://<subdomain>.oboxsteam.website`
+  (e.g. `https://ch1mpleo.oboxsteam.website`). Deeper hosts like
+  `a.b.oboxsteam.website` are not allowed.
 
 ## Documentation
 
