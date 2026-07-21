@@ -198,6 +198,7 @@ public sealed class ClassService : IClassService
                 Location = cs.Location,
                 MaxCapacity = cs.MaxCapacity,
                 RequiresAttendance = cs.RequiresAttendance,
+                RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
                 Status = cs.Status,
                 CreatedAt = cs.CreatedAt,
                 UpdatedAt = cs.UpdatedAt,

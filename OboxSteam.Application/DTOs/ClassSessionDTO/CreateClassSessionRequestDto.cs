@@ -39,4 +39,6 @@ public class CreateClassSessionRequestDto
     public int? MaxCapacity { get; set; }
 
     public bool RequiresAttendance { get; set; } = true;
+
+    public bool RequiresMentorCheckIn { get; set; }
 }

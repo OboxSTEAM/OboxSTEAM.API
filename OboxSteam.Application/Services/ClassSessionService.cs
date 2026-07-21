@@ -115,6 +115,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = cs.Location,
             MaxCapacity = cs.MaxCapacity,
             RequiresAttendance = cs.RequiresAttendance,
+            RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
             Status = cs.Status,
             CreatedAt = cs.CreatedAt,
             UpdatedAt = cs.UpdatedAt,
@@ -153,6 +154,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = entity.Location,
             MaxCapacity = entity.MaxCapacity,
             RequiresAttendance = entity.RequiresAttendance,
+            RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
             Status = entity.Status,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
@@ -264,6 +266,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = session.Location,
             MaxCapacity = session.MaxCapacity,
             RequiresAttendance = session.RequiresAttendance,
+            RequiresMentorCheckIn = session.RequiresMentorCheckIn,
             Status = session.Status,
             CreatedAt = session.CreatedAt,
             UpdatedAt = session.UpdatedAt,
@@ -321,6 +324,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = request.Location?.Trim(),
             MaxCapacity = request.MaxCapacity,
             RequiresAttendance = request.RequiresAttendance,
+            RequiresMentorCheckIn = request.RequiresMentorCheckIn,
             Status = ClassSessionStatus.Scheduled,
         };
 
@@ -350,6 +354,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = entity.Location,
             MaxCapacity = entity.MaxCapacity,
             RequiresAttendance = entity.RequiresAttendance,
+            RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
             Status = entity.Status,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
@@ -479,6 +484,11 @@ public sealed class ClassSessionService : IClassSessionService
             session.RequiresAttendance = request.RequiresAttendance.Value;
         }
 
+        if (request.RequiresMentorCheckIn.HasValue)
+        {
+            session.RequiresMentorCheckIn = request.RequiresMentorCheckIn.Value;
+        }
+
         if (request.Status.HasValue)
         {
             ClassSessionValidator.ValidateStatusTransition(session.Status, request.Status.Value);
@@ -540,6 +550,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = session.Location,
             MaxCapacity = session.MaxCapacity,
             RequiresAttendance = session.RequiresAttendance,
+            RequiresMentorCheckIn = session.RequiresMentorCheckIn,
             Status = session.Status,
             CreatedAt = session.CreatedAt,
             UpdatedAt = session.UpdatedAt,
