@@ -158,20 +158,71 @@ public class MediaService : IMediaService
         var mediaList = await _unitOfWork.MediaAssets
             .GetAllAsync(m => m.ActivityId == activityId && !m.IsDeleted, m => m.MediaTags);
 
-        var allStudentIds = mediaList
-            .SelectMany(m => m.MediaTags.Where(t => !t.IsDeleted))
-            .Select(t => t.StudentId)
-            .Distinct()
-            .ToList();
+        return await MapMediaListToDtos(mediaList);
+    }
 
-        var studentMap = allStudentIds.Count > 0
-            ? (await _unitOfWork.Users.GetAllAsync(u => allStudentIds.Contains(u.Id)))
-              .ToDictionary(u => u.Id)
-            : new Dictionary<Guid, User>();
+    /// <inheritdoc />
+    public async Task<List<MediaAssetDto>> GetMediaAsync(Guid? classId, Guid? studentId)
+    {
+        if (!classId.HasValue && !studentId.HasValue)
+            throw ErrorHelper.BadRequest("At least one of classId or studentId is required.");
 
-        return mediaList
-            .Select(m => MapAssetToDto(m, m.MediaTags.Where(t => !t.IsDeleted), studentMap))
-            .ToList();
+        _logger.LogInformation(
+            "GetMediaAsync: ClassId={ClassId}, StudentId={StudentId}",
+            classId, studentId);
+
+        HashSet<Guid>? classActivityIds = null;
+        if (classId.HasValue)
+        {
+            var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId.Value);
+            if (classEntity == null || classEntity.IsDeleted)
+                throw ErrorHelper.NotFound($"Class '{classId}' not found.");
+
+            classActivityIds = await GetClassActivityIdsAsync(classId.Value);
+            if (classActivityIds.Count == 0)
+                return new List<MediaAssetDto>();
+        }
+
+        if (studentId.HasValue)
+        {
+            var student = await _unitOfWork.Users.GetByIdAsync(studentId.Value);
+            if (student == null || student.IsDeleted)
+                throw ErrorHelper.NotFound($"Student '{studentId}' not found.");
+        }
+
+        List<MediaAsset> mediaList;
+        if (classActivityIds != null)
+        {
+            mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
+                m => !m.IsDeleted
+                     && m.ActivityId != null
+                     && classActivityIds.Contains(m.ActivityId.Value)
+                     && (
+                         !string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
+                         || m.VideoStatus == VideoProcessingStatus.TaggingComplete
+                     ),
+                m => m.MediaTags);
+        }
+        else
+        {
+            mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
+                m => !m.IsDeleted
+                     && (
+                         !string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
+                         || m.VideoStatus == VideoProcessingStatus.TaggingComplete
+                     ),
+                m => m.MediaTags);
+        }
+
+        if (studentId.HasValue)
+        {
+            mediaList = mediaList
+                .Where(m => m.MediaTags.Any(t => !t.IsDeleted && t.StudentId == studentId.Value))
+                .ToList();
+        }
+
+        return await MapMediaListToDtos(
+            mediaList.OrderByDescending(m => m.UploadedAt ?? m.CreatedAt).ToList());
     }
 
     /// <inheritdoc />
@@ -618,6 +669,37 @@ public class MediaService : IMediaService
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────
+
+    private async Task<List<MediaAssetDto>> MapMediaListToDtos(IReadOnlyList<MediaAsset> mediaList)
+    {
+        var allStudentIds = mediaList
+            .SelectMany(m => m.MediaTags.Where(t => !t.IsDeleted))
+            .Select(t => t.StudentId)
+            .Distinct()
+            .ToList();
+
+        var studentMap = allStudentIds.Count > 0
+            ? (await _unitOfWork.Users.GetAllAsync(u => allStudentIds.Contains(u.Id)))
+              .ToDictionary(u => u.Id)
+            : new Dictionary<Guid, User>();
+
+        return mediaList
+            .Select(m => MapAssetToDto(m, m.MediaTags.Where(t => !t.IsDeleted), studentMap))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Activity IDs linked to the class via <see cref="ClassSession"/> rows that have an ActivityId.
+    /// </summary>
+    private async Task<HashSet<Guid>> GetClassActivityIdsAsync(Guid classId)
+    {
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            s => s.ClassId == classId && !s.IsDeleted && s.ActivityId != null);
+
+        return sessions
+            .Select(s => s.ActivityId!.Value)
+            .ToHashSet();
+    }
 
     /// <summary>
     /// True when the manual <c>process-tags</c> endpoint may submit a new Rekognition job

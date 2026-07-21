@@ -21,6 +21,15 @@ public interface IMediaService
     Task<List<MediaAssetDto>> GetMediaByActivityAsync(Guid activityId);
 
     /// <summary>
+    /// Returns ready media filtered by optional <paramref name="classId"/> and/or
+    /// <paramref name="studentId"/>. At least one filter is required.
+    /// Class scope uses activities linked via <c>ClassSession</c>.
+    /// Student scope uses face <c>MediaTag</c> matches (system-wide when class is omitted).
+    /// Ready means images, or videos with <c>VideoStatus = TaggingComplete</c>.
+    /// </summary>
+    Task<List<MediaAssetDto>> GetMediaAsync(Guid? classId, Guid? studentId);
+
+    /// <summary>
     /// Called from <see cref="UploadMediaAsync"/> after the raw file is persisted.
     /// Submits a MediaConvert job (non-blocking): reads <c>RawVideoS3Key</c>, sends the job,
     /// stores <c>MediaConvertJobId</c>, keeps <c>VideoStatus = Transcoding</c>.

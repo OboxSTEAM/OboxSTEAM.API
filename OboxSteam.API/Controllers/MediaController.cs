@@ -59,6 +59,28 @@ public class MediaController : ControllerBase
     }
 
     /// <summary>
+    /// Get ready media filtered by class and/or student.
+    /// </summary>
+    [HttpGet]
+    [SwaggerOperation(
+        Summary = "Get media by class and/or student",
+        Description = "Returns ready media (images, or videos with TaggingComplete). " +
+                      "Provide at least one of classId or studentId. " +
+                      "classId scopes to activities scheduled on that class via ClassSession; " +
+                      "studentId scopes to media face-tagged for that student (system-wide when classId is omitted)."
+    )]
+    [ProducesResponseType(typeof(ApiResult<List<MediaAssetDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetMedia(
+        [FromQuery] Guid? classId = null,
+        [FromQuery] Guid? studentId = null)
+    {
+        var result = await _mediaService.GetMediaAsync(classId, studentId);
+        return Ok(ApiResult<List<MediaAssetDto>>.Success(result, "200", "Media retrieved."));
+    }
+
+    /// <summary>
     /// Get all media for an activity (including face tags).
     /// </summary>
     [HttpGet("activity/{activityId:guid}")]
