@@ -471,12 +471,18 @@ public static class ResearchSubmissionValidator
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList() ?? [];
 
+        if (urls.Count == 0)
+            return;
+
+        var classId = await ResolveEvidenceClassIdAsync(unitOfWork, submission);
+
         foreach (var url in urls)
         {
             var media = new MediaAsset
             {
                 Id = Guid.NewGuid(),
                 UploaderId = uploaderId,
+                ClassId = classId,
                 FileUrl = url,
                 UploadedAt = now,
                 CreatedAt = now,
@@ -497,6 +503,33 @@ public static class ResearchSubmissionValidator
 
             await unitOfWork.SubmissionEvidences.AddAsync(evidence);
         }
+    }
+
+    private static async Task<Guid> ResolveEvidenceClassIdAsync(IUnitOfWork unitOfWork, Submission submission)
+    {
+        if (submission.ModuleEnrollmentId.HasValue)
+        {
+            var moduleEnrollment = await unitOfWork.ModuleEnrollments.GetByIdAsync(submission.ModuleEnrollmentId.Value);
+            if (moduleEnrollment is { IsDeleted: false, ProgramEnrollmentId: not null })
+            {
+                var classEnrollment = await unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+                    ce => ce.ProgramEnrollmentId == moduleEnrollment.ProgramEnrollmentId.Value
+                          && ce.Status == ClassEnrollmentStatus.Active
+                          && !ce.IsDeleted);
+                if (classEnrollment != null)
+                    return classEnrollment.ClassId;
+            }
+        }
+
+        var studentClass = await unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.StudentId == submission.StudentId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+        if (studentClass != null)
+            return studentClass.ClassId;
+
+        throw ErrorHelper.BadRequest(
+            "Student must be actively enrolled in a class to attach media evidence.");
     }
 
     private static async Task<User> GetCurrentUserAsync(

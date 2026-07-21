@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260721131756_AddClassIdToMediaAsset")]
+    partial class AddClassIdToMediaAsset
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1219,10 +1222,10 @@ namespace OboxSteam.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("ClassId")
+                    b.Property<Guid?>("ActivityId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("ClassSessionId")
+                    b.Property<Guid?>("ClassId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1284,9 +1287,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ClassId");
+                    b.HasIndex("ActivityId");
 
-                    b.HasIndex("ClassSessionId");
+                    b.HasIndex("ClassId");
 
                     b.HasIndex("UploaderId");
 
@@ -3783,15 +3786,13 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.MediaAsset", b =>
                 {
+                    b.HasOne("OboxSteam.Domain.Entities.Activity", "Activity")
+                        .WithMany("MediaAssets")
+                        .HasForeignKey("ActivityId");
+
                     b.HasOne("OboxSteam.Domain.Entities.Class", "Class")
                         .WithMany()
                         .HasForeignKey("ClassId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ClassSession", "ClassSession")
-                        .WithMany()
-                        .HasForeignKey("ClassSessionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Uploader")
@@ -3800,9 +3801,9 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Class");
+                    b.Navigation("Activity");
 
-                    b.Navigation("ClassSession");
+                    b.Navigation("Class");
 
                     b.Navigation("Uploader");
                 });
@@ -4466,6 +4467,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("ClassSessions");
 
                     b.Navigation("Material");
+
+                    b.Navigation("MediaAssets");
 
                     b.Navigation("ResearchMilestoneActivities");
                 });

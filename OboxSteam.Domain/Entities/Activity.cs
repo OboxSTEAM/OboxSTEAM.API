@@ -43,7 +43,6 @@ public class Activity : BaseEntity
     // Navigation
     public ICollection<ActivityBooking> ActivityBookings { get; set; } = new List<ActivityBooking>();
     public Material? Material { get; set; }
-    public ICollection<MediaAsset> MediaAssets { get; set; } = new List<MediaAsset>();
     public ICollection<ActivityProgress> ActivityProgresses { get; set; } = new List<ActivityProgress>();
     public ICollection<ClassSession> ClassSessions { get; set; } = new List<ClassSession>();
     public ICollection<ResearchMilestoneActivity> ResearchMilestoneActivities { get; set; } =

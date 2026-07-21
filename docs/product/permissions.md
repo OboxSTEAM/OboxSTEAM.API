@@ -45,7 +45,7 @@ Create, update, delete for:
 - Quiz attempts and submissions.
 - Program reviews (own reviews).
 - Parent link requests (student-initiated).
-- Media: own face-tagged ready media only (`GET /api/media`, activity media filtered).
+- Media: own face-tagged ready media only (`GET /api/media`, class-session media filtered).
 
 ### Parent
 

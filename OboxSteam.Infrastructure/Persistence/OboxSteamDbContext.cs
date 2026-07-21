@@ -748,6 +748,26 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
+        // MEDIA ASSET
+        // =============================================
+        modelBuilder.Entity<MediaAsset>(entity =>
+        {
+            entity.HasOne(m => m.Class)
+                .WithMany()
+                .HasForeignKey(m => m.ClassId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            entity.HasOne(m => m.ClassSession)
+                .WithMany()
+                .HasForeignKey(m => m.ClassSessionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(m => m.ClassId);
+            entity.HasIndex(m => m.ClassSessionId);
+        });
+
+        // =============================================
         // MEDIA TAG (Composite Key Join Table)
         // =============================================
         modelBuilder.Entity<MediaTag>(entity =>

@@ -13,18 +13,18 @@ public interface IMediaService
     /// Returns immediately with <c>VideoStatus = Transcoding</c> until AWS webhooks (or manual
     /// <c>POST /api/media/{mediaId}/process-tags</c>) advance processing.
     /// </summary>
-    Task<MediaAssetDto> UploadMediaAsync(IFormFile file, Guid activityId);
+    Task<MediaAssetDto> UploadMediaAsync(IFormFile file, Guid classId, Guid? classSessionId = null);
 
     /// <summary>
-    /// Returns media for an activity, including face tags, scoped by the caller's role.
+    /// Returns media for a class session, including face tags, scoped by the caller's role.
     /// </summary>
-    Task<List<MediaAssetDto>> GetMediaByActivityAsync(Guid activityId);
+    Task<List<MediaAssetDto>> GetMediaByClassSessionAsync(Guid classSessionId);
 
     /// <summary>
     /// Returns ready media filtered by optional <paramref name="classId"/> and/or
     /// <paramref name="studentId"/>, scoped by the caller's role.
     /// Manager/SuperAdmin may omit both filters to list all ready media.
-    /// Class scope uses activities linked via <c>ClassSession</c>.
+    /// Class scope filters on <c>MediaAsset.ClassId</c>.
     /// Student scope uses face <c>MediaTag</c> matches.
     /// Ready means images, or videos with <c>VideoStatus = TaggingComplete</c>.
     /// </summary>
@@ -96,7 +96,7 @@ public interface IMediaService
     Task<bool> IsAwaitingTaggingAsync(Guid mediaId);
 
     /// <summary>
-    /// Handles MediaConvert job completion from SNS/EventBridge (activity media uploads).
+    /// Handles MediaConvert job completion from SNS/EventBridge (media uploads).
     /// Returns <c>true</c> when a matching <c>MediaAsset</c> was found for <paramref name="jobId"/>.
     /// </summary>
     Task<bool> HandleMediaConvertWebhookAsync(string jobId, bool isSuccess);

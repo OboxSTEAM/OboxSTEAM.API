@@ -54,10 +54,12 @@ public class MediaService : IMediaService
     }
 
     /// <inheritdoc />
-    public async Task<MediaAssetDto> UploadMediaAsync(IFormFile file, Guid activityId)
+    public async Task<MediaAssetDto> UploadMediaAsync(IFormFile file, Guid classId, Guid? classSessionId = null)
     {
         var userId = _claimsService.GetCurrentUserId;
-        _logger.LogInformation("UploadMediaAsync started by UserId: {UserId} for Activity: {ActivityId}", userId, activityId);
+        _logger.LogInformation(
+            "UploadMediaAsync started by UserId: {UserId} for Class: {ClassId}, ClassSession: {ClassSessionId}",
+            userId, classId, classSessionId);
 
         // ── Validate ─────────────────────────────────────────────────────────
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
@@ -73,18 +75,15 @@ public class MediaService : IMediaService
         if (isVideo && file.Length > MaxVideoSize)
             throw ErrorHelper.BadRequest("Video file size must not exceed 3 GB.");
 
-        // Verify activity exists
-        var activity = await _unitOfWork.Activities.GetByIdAsync(activityId);
-        if (activity == null || activity.IsDeleted)
-            throw ErrorHelper.NotFound("Activity not found.");
+        var resolvedSessionId = await ValidateClassAndOptionalSessionAsync(classId, classSessionId);
 
-        var fileName = $"{activityId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
+        var fileName = $"{classId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
 
         // ── Handle upload ─────────────────────────────────────────────────────
         string? fileUrl = null;
-        string? videoLocalPath = null;          // set only for video uploads
+        string? videoLocalPath = null;
         var tags = new List<MediaTag>();
-        List<FaceMatchResult> prevalidatedMatches = new(); // image only: faces found before DB write
+        List<FaceMatchResult> prevalidatedMatches = new();
 
         if (isImage)
         {
@@ -93,9 +92,6 @@ public class MediaService : IMediaService
             await _blobService.UploadFileAsync(fileName, uploadStream, MediaFolder);
             fileUrl = await _blobService.GetPreviewUrlAsync(path);
 
-            // ── Pre-validate faces BEFORE saving to DB ──────────────────────
-            // This keeps the DB clean: if no face is found, we delete the S3 file
-            // and reject the request without leaving any orphaned MediaAsset row.
             prevalidatedMatches = await _faceRecognitionService.SearchFacesAsync(_blobService.BucketName, path);
 
             if (prevalidatedMatches.Count == 0)
@@ -107,64 +103,64 @@ public class MediaService : IMediaService
                     "Please upload a clear photo where a registered student's face is visible.");
             }
         }
-        else // isVideo — upload raw to S3; StartVideoTranscodeAsync submits MediaConvert below
+        else
         {
             var rawS3Key = $"{RawFolder}/{fileName}";
             _logger.LogInformation("Uploading raw video to S3: {RawKey}", rawS3Key);
             await using var rawStream = file.OpenReadStream();
             await _blobService.UploadFileAsync(fileName, rawStream, RawFolder);
-            videoLocalPath = rawS3Key; // holds raw S3 key (not a local path)
+            videoLocalPath = rawS3Key;
         }
 
-        // ── Save MediaAsset ───────────────────────────────────────────────────
-        // For images: only reached if face pre-validation passed above.
         var media = new MediaAsset
         {
             UploaderId = userId,
-            ActivityId = activityId,
-            FileUrl = fileUrl,   // null for video until transcoding done
+            ClassId = classId,
+            ClassSessionId = resolvedSessionId,
+            FileUrl = fileUrl,
             FileType = isImage ? "image" : "video",
             VideoStatus = isVideo ? VideoProcessingStatus.Transcoding : VideoProcessingStatus.None,
             UploadedAt = DateTime.UtcNow
         };
 
         await _unitOfWork.MediaAssets.AddAsync(media);
-        await _unitOfWork.SaveChangesAsync(); // persist MediaAsset id before submitting transcode job
+        await _unitOfWork.SaveChangesAsync();
 
-        // ── Face Tagging ──────────────────────────────────────────────────────
         if (isImage)
         {
-            // Reuse the matches already fetched during pre-validation — no second Rekognition call.
             tags = await SaveFaceTagsAsync(media.Id, prevalidatedMatches);
         }
-        else // isVideo — submit MediaConvert job directly
+        else
         {
-            // Store raw S3 key for StartVideoTranscodeAsync and webhook completion handlers.
             media.RawVideoS3Key = videoLocalPath;
             await _unitOfWork.SaveChangesAsync();
 
             await StartVideoTranscodeAsync(media.Id);
-            _logger.LogInformation("Video submitted to MediaConvert. MediaId: {MediaId}, RawKey: {Key}", media.Id, videoLocalPath);
+            _logger.LogInformation(
+                "Video submitted to MediaConvert. MediaId: {MediaId}, RawKey: {Key}",
+                media.Id, videoLocalPath);
         }
 
-        _logger.LogInformation("UploadMediaAsync completed. MediaId: {MediaId}", media.Id);
+        _logger.LogInformation(
+            "UploadMediaAsync completed. MediaId: {MediaId}, ClassId: {ClassId}, ClassSessionId: {ClassSessionId}",
+            media.Id, media.ClassId, media.ClassSessionId);
         return await MapToDto(media, tags);
     }
 
     /// <inheritdoc />
-    public async Task<List<MediaAssetDto>> GetMediaByActivityAsync(Guid activityId)
+    public async Task<List<MediaAssetDto>> GetMediaByClassSessionAsync(Guid classSessionId)
     {
-        _logger.LogInformation("GetMediaByActivityAsync: ActivityId={ActivityId}", activityId);
+        _logger.LogInformation("GetMediaByClassSessionAsync: ClassSessionId={ClassSessionId}", classSessionId);
 
-        var activity = await _unitOfWork.Activities.GetByIdAsync(activityId);
-        if (activity == null || activity.IsDeleted)
-            throw ErrorHelper.NotFound("Activity not found.");
+        var session = await _unitOfWork.ClassSessions.GetByIdAsync(classSessionId);
+        if (session == null || session.IsDeleted)
+            throw ErrorHelper.NotFound("Class session not found.");
 
         var currentUser = await GetCurrentUserOrThrowAsync();
-        await EnsureCanAccessActivityMediaAsync(currentUser, activityId);
+        await EnsureCanAccessClassMediaAsync(currentUser, session.ClassId);
 
         var mediaList = await _unitOfWork.MediaAssets
-            .GetAllAsync(m => m.ActivityId == activityId && !m.IsDeleted, m => m.MediaTags);
+            .GetAllAsync(m => m.ClassSessionId == classSessionId && !m.IsDeleted, m => m.MediaTags);
 
         if (currentUser.Role == RoleType.Student)
         {
@@ -192,19 +188,29 @@ public class MediaService : IMediaService
         var resolved = await ResolveMediaQueryScopeAsync(currentUser, classId, studentId);
 
         _logger.LogInformation(
-            "GetMediaAsync: Role={Role}, ClassId={ClassId}, StudentId={StudentId}, ActivityCount={ActivityCount}",
-            currentUser.Role, resolved.ClassId, resolved.StudentId, resolved.ActivityIds?.Count);
+            "GetMediaAsync: Role={Role}, ClassId={ClassId}, StudentId={StudentId}, ClassFilterCount={ClassCount}",
+            currentUser.Role, resolved.ClassId, resolved.StudentId, resolved.ClassIds?.Count);
 
-        if (resolved.ActivityIds is { Count: 0 })
+        if (resolved.ClassIds is { Count: 0 })
             return new List<MediaAssetDto>();
 
         List<MediaAsset> mediaList;
-        if (resolved.ActivityIds != null)
+        if (resolved.ClassIds != null)
         {
             mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
                 m => !m.IsDeleted
-                     && m.ActivityId != null
-                     && resolved.ActivityIds.Contains(m.ActivityId.Value)
+                     && resolved.ClassIds.Contains(m.ClassId)
+                     && (
+                         !string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
+                         || m.VideoStatus == VideoProcessingStatus.TaggingComplete
+                     ),
+                m => m.MediaTags);
+        }
+        else if (resolved.ClassId.HasValue)
+        {
+            mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
+                m => !m.IsDeleted
+                     && m.ClassId == resolved.ClassId.Value
                      && (
                          !string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
                          || m.VideoStatus == VideoProcessingStatus.TaggingComplete
@@ -797,7 +803,7 @@ public class MediaService : IMediaService
     private sealed record MediaQueryScope(
         Guid? ClassId,
         Guid? StudentId,
-        HashSet<Guid>? ActivityIds,
+        HashSet<Guid>? ClassIds,
         HashSet<Guid>? AllowedStudentIds);
 
     private async Task<User> GetCurrentUserOrThrowAsync()
@@ -844,7 +850,7 @@ public class MediaService : IMediaService
         return student;
     }
 
-    private async Task EnsureCanAccessActivityMediaAsync(User currentUser, Guid activityId)
+    private async Task EnsureCanAccessClassMediaAsync(User currentUser, Guid classId)
     {
         switch (currentUser.Role)
         {
@@ -852,12 +858,8 @@ public class MediaService : IMediaService
             case RoleType.Manager:
                 return;
             case RoleType.Mentor:
-            {
-                var mentorActivityIds = await GetMentorActivityIdsAsync(currentUser.Id);
-                if (!mentorActivityIds.Contains(activityId))
-                    throw ErrorHelper.Forbidden("You can only view media for activities scheduled in your classes.");
+                await MentorScopeValidator.EnsureMentorOwnsClassAsync(_unitOfWork, currentUser.Id, classId);
                 return;
-            }
             case RoleType.Student:
             case RoleType.Parent:
                 return;
@@ -874,15 +876,9 @@ public class MediaService : IMediaService
             case RoleType.Manager:
                 return;
             case RoleType.Mentor:
-            {
-                if (media.ActivityId is null)
-                    throw ErrorHelper.Forbidden("You can only view media for activities scheduled in your classes.");
-
-                var mentorActivityIds = await GetMentorActivityIdsAsync(currentUser.Id);
-                if (!mentorActivityIds.Contains(media.ActivityId.Value))
-                    throw ErrorHelper.Forbidden("You can only view media for activities scheduled in your classes.");
+                await MentorScopeValidator.EnsureMentorOwnsClassAsync(
+                    _unitOfWork, currentUser.Id, media.ClassId);
                 return;
-            }
             case RoleType.Student:
             {
                 if (!IsReadyMedia(media))
@@ -917,57 +913,45 @@ public class MediaService : IMediaService
             case RoleType.SuperAdmin:
             case RoleType.Manager:
             {
-                HashSet<Guid>? activityIds = null;
                 if (classId.HasValue)
-                {
                     await EnsureClassExistsAsync(classId.Value);
-                    activityIds = await GetClassActivityIdsAsync(classId.Value);
-                }
 
                 if (studentId.HasValue)
                     await LoadStudentOrThrowAsync(studentId.Value);
 
-                return new MediaQueryScope(classId, studentId, activityIds, null);
+                return new MediaQueryScope(classId, studentId, null, null);
             }
             case RoleType.Mentor:
             {
-                HashSet<Guid> activityIds;
+                HashSet<Guid> classIds;
                 if (classId.HasValue)
                 {
                     await MentorScopeValidator.EnsureMentorOwnsClassAsync(
                         _unitOfWork, currentUser.Id, classId.Value);
-                    activityIds = await GetClassActivityIdsAsync(classId.Value);
+                    classIds = new HashSet<Guid> { classId.Value };
                 }
                 else
                 {
-                    activityIds = await GetMentorActivityIdsAsync(currentUser.Id);
+                    classIds = await GetMentorClassIdsAsync(currentUser.Id);
                 }
 
                 if (studentId.HasValue)
                 {
                     await LoadStudentOrThrowAsync(studentId.Value);
                     if (classId.HasValue)
-                    {
                         await EnsureStudentActiveInClassAsync(studentId.Value, classId.Value);
-                    }
                     else
-                    {
                         await EnsureStudentInMentorClassesAsync(currentUser.Id, studentId.Value);
-                    }
                 }
 
-                return new MediaQueryScope(classId, studentId, activityIds, null);
+                return new MediaQueryScope(classId, studentId, classIds, null);
             }
             case RoleType.Student:
             {
-                HashSet<Guid>? activityIds = null;
                 if (classId.HasValue)
-                {
                     await EnsureClassExistsAsync(classId.Value);
-                    activityIds = await GetClassActivityIdsAsync(classId.Value);
-                }
 
-                return new MediaQueryScope(classId, currentUser.Id, activityIds, null);
+                return new MediaQueryScope(classId, currentUser.Id, null, null);
             }
             case RoleType.Parent:
             {
@@ -976,14 +960,10 @@ public class MediaService : IMediaService
 
                 await EnsureParentLinkedToStudentAsync(currentUser.Id, studentId.Value);
 
-                HashSet<Guid>? activityIds = null;
                 if (classId.HasValue)
-                {
                     await EnsureClassExistsAsync(classId.Value);
-                    activityIds = await GetClassActivityIdsAsync(classId.Value);
-                }
 
-                return new MediaQueryScope(classId, studentId, activityIds, null);
+                return new MediaQueryScope(classId, studentId, null, null);
             }
             default:
                 throw ErrorHelper.Forbidden("You are not allowed to view media.");
@@ -998,30 +978,38 @@ public class MediaService : IMediaService
         if (currentUser.Role != RoleType.Mentor)
             throw ErrorHelper.Forbidden("Only mentors and managers can manage media tags.");
 
-        if (media.ActivityId is null)
-            throw ErrorHelper.BadRequest("Media is not linked to an activity.");
+        await MentorScopeValidator.EnsureMentorOwnsClassAsync(_unitOfWork, currentUser.Id, media.ClassId);
 
-        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
-            s => s.ActivityId == media.ActivityId && !s.IsDeleted);
-        var classIds = sessions.Select(s => s.ClassId).Distinct().ToList();
-        if (classIds.Count == 0)
-            throw ErrorHelper.Forbidden("You can only manage tags on media for activities scheduled in your classes.");
-
-        var mentoredClasses = await _unitOfWork.Classes.GetAllAsync(
-            c => classIds.Contains(c.Id) && c.MentorId == currentUser.Id && !c.IsDeleted);
-        if (mentoredClasses.Count == 0)
-            throw ErrorHelper.Forbidden("You can only manage tags on media for activities scheduled in your classes.");
-
-        var mentoredClassIds = mentoredClasses.Select(c => c.Id).ToHashSet();
         var enrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
             ce => ce.StudentId == studentId
-                  && mentoredClassIds.Contains(ce.ClassId)
+                  && ce.ClassId == media.ClassId
                   && ce.Status == ClassEnrollmentStatus.Active
                   && !ce.IsDeleted);
 
         if (enrollment == null)
             throw ErrorHelper.Forbidden(
-                "Student must be actively enrolled in your class that schedules this media activity.");
+                "Student must be actively enrolled in the class this media belongs to.");
+    }
+
+    /// <summary>
+    /// Ensures the class exists and, when provided, that <paramref name="classSessionId"/>
+    /// belongs to that class. Returns the validated session id (or null).
+    /// </summary>
+    private async Task<Guid?> ValidateClassAndOptionalSessionAsync(Guid classId, Guid? classSessionId)
+    {
+        await EnsureClassExistsAsync(classId);
+
+        if (!classSessionId.HasValue)
+            return null;
+
+        var session = await _unitOfWork.ClassSessions.GetByIdAsync(classSessionId.Value);
+        if (session == null || session.IsDeleted)
+            throw ErrorHelper.NotFound($"Class session '{classSessionId}' not found.");
+
+        if (session.ClassId != classId)
+            throw ErrorHelper.BadRequest("Class session does not belong to the specified class.");
+
+        return session.Id;
     }
 
     private async Task EnsureClassExistsAsync(Guid classId)
@@ -1081,17 +1069,10 @@ public class MediaService : IMediaService
         return links.Select(l => l.StudentId).ToHashSet();
     }
 
-    private async Task<HashSet<Guid>> GetMentorActivityIdsAsync(Guid mentorId)
+    private async Task<HashSet<Guid>> GetMentorClassIdsAsync(Guid mentorId)
     {
         var classes = await _unitOfWork.Classes.GetAllAsync(c => c.MentorId == mentorId && !c.IsDeleted);
-        var classIds = classes.Select(c => c.Id).ToList();
-        if (classIds.Count == 0)
-            return new HashSet<Guid>();
-
-        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
-            s => classIds.Contains(s.ClassId) && !s.IsDeleted && s.ActivityId != null);
-
-        return sessions.Select(s => s.ActivityId!.Value).ToHashSet();
+        return classes.Select(c => c.Id).ToHashSet();
     }
 
     private async Task<List<MediaAssetDto>> MapMediaListToDtos(IReadOnlyList<MediaAsset> mediaList)
@@ -1110,19 +1091,6 @@ public class MediaService : IMediaService
         return mediaList
             .Select(m => MapAssetToDto(m, m.MediaTags.Where(t => !t.IsDeleted), studentMap))
             .ToList();
-    }
-
-    /// <summary>
-    /// Activity IDs linked to the class via <see cref="ClassSession"/> rows that have an ActivityId.
-    /// </summary>
-    private async Task<HashSet<Guid>> GetClassActivityIdsAsync(Guid classId)
-    {
-        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
-            s => s.ClassId == classId && !s.IsDeleted && s.ActivityId != null);
-
-        return sessions
-            .Select(s => s.ActivityId!.Value)
-            .ToHashSet();
     }
 
     /// <summary>
@@ -1463,7 +1431,8 @@ public class MediaService : IMediaService
         {
             Id = media.Id,
             UploaderId = media.UploaderId,
-            ActivityId = media.ActivityId,
+            ClassId = media.ClassId,
+            ClassSessionId = media.ClassSessionId,
             FileUrl = media.FileUrl,
             FileType = media.FileType,
             VideoStatus = media.VideoStatus,

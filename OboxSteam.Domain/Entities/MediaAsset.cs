@@ -8,8 +8,18 @@ public class MediaAsset : BaseEntity
     public Guid UploaderId { get; set; }
     public User Uploader { get; set; } = null!;
 
-    public Guid? ActivityId { get; set; }
-    public Activity? Activity { get; set; }
+    /// <summary>
+    /// Required class cohort this media belongs to (avoids cross-cohort leakage).
+    /// </summary>
+    public Guid ClassId { get; set; }
+    public Class Class { get; set; } = null!;
+
+    /// <summary>
+    /// Optional class session this media was captured for.
+    /// When set, must belong to <see cref="ClassId"/>.
+    /// </summary>
+    public Guid? ClassSessionId { get; set; }
+    public ClassSession? ClassSession { get; set; }
 
     public string? FileUrl { get; set; }
 

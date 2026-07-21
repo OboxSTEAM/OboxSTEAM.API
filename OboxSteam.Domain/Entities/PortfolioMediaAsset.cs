@@ -5,7 +5,7 @@ namespace OboxSteam.Domain.Entities;
 
 /// <summary>
 /// Media file owned by a portfolio (uploaded by the portfolio's student).
-/// Separate from the activity-scoped <see cref="MediaAsset"/> pipeline:
+/// Separate from the class-scoped <see cref="MediaAsset"/> pipeline:
 /// no face recognition or transcoding is involved.
 /// </summary>
 public class PortfolioMediaAsset : BaseEntity

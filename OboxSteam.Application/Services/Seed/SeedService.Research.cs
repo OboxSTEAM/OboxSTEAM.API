@@ -1192,28 +1192,39 @@ public partial class SeedService
 
             if (existingEvidence == null)
             {
-                var media = new MediaAsset
+                var roboticsClass = await _unitOfWork.Classes.FirstOrDefaultAsync(
+                    c => c.Code == "CLS-ROBOTICS-2026A" && !c.IsDeleted);
+                if (roboticsClass == null)
                 {
-                    Id = Guid.NewGuid(),
-                    UploaderId = student1.Id,
-                    FileUrl = "https://storage.oboxsteam.com/submissions/evidence/robotics-sensor-photo.jpg",
-                    FileType = "image/jpeg",
-                    UploadedAt = seedTime.AddDays(-6),
-                    CreatedAt = seedTime,
-                    CreatedBy = student1.Id,
-                    IsDeleted = false
-                };
-                await _unitOfWork.MediaAssets.AddAsync(media);
-                await _unitOfWork.SubmissionEvidences.AddAsync(new SubmissionEvidence
+                    _loggerService.LogWarning(
+                        "CLS-ROBOTICS-2026A not found; skipping seed submission evidence media.");
+                }
+                else
                 {
-                    SubmissionId = gradedSubmission.Id,
-                    MediaId = media.Id,
-                    CreatedAt = seedTime,
-                    CreatedBy = student1.Id,
-                    IsDeleted = false
-                });
-                await _unitOfWork.SaveChangesAsync();
-                createdCount++;
+                    var media = new MediaAsset
+                    {
+                        Id = Guid.NewGuid(),
+                        UploaderId = student1.Id,
+                        ClassId = roboticsClass.Id,
+                        FileUrl = "https://storage.oboxsteam.com/submissions/evidence/robotics-sensor-photo.jpg",
+                        FileType = "image/jpeg",
+                        UploadedAt = seedTime.AddDays(-6),
+                        CreatedAt = seedTime,
+                        CreatedBy = student1.Id,
+                        IsDeleted = false
+                    };
+                    await _unitOfWork.MediaAssets.AddAsync(media);
+                    await _unitOfWork.SubmissionEvidences.AddAsync(new SubmissionEvidence
+                    {
+                        SubmissionId = gradedSubmission.Id,
+                        MediaId = media.Id,
+                        CreatedAt = seedTime,
+                        CreatedBy = student1.Id,
+                        IsDeleted = false
+                    });
+                    await _unitOfWork.SaveChangesAsync();
+                    createdCount++;
+                }
             }
         }
 
