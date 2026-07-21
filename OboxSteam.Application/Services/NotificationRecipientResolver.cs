@@ -87,12 +87,12 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
         }
 
         var clazz = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Id == audience.ClassId.Value);
-        if (clazz is null || clazz.MentorId == Guid.Empty)
+        if (clazz is null || clazz.MentorId is null || clazz.MentorId == Guid.Empty)
         {
             return Array.Empty<Guid>();
         }
 
-        return new[] { clazz.MentorId };
+        return new[] { clazz.MentorId.Value };
     }
 
     private async Task<IReadOnlyList<Guid>> ResolveClassRosterAndMentorAsync(NotificationAudience audience)

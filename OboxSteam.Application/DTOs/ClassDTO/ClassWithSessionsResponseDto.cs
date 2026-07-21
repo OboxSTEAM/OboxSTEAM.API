@@ -12,7 +12,7 @@ public class ClassWithSessionsResponseDto
     public string Code { get; set; } = null!;
     public string Name { get; set; } = null!;
     public Guid ProgramId { get; set; }
-    public Guid MentorId { get; set; }
+    public Guid? MentorId { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public int MaxCapacity { get; set; }

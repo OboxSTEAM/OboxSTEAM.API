@@ -33,12 +33,19 @@ public class User : BaseEntity
 
     public bool IsEmailVerified { get; set; }
 
+    /// <summary>
+    /// Per-mentor cap on concurrent classes (Pending requests + assigned classes).
+    /// Null means use the system default.
+    /// </summary>
+    public int? MaxConcurrentClasses { get; set; }
+
     // Navigation properties
     public ICollection<ParentStudent> ParentRelations { get; set; } = new List<ParentStudent>();
     public ICollection<ParentStudent> StudentRelations { get; set; } = new List<ParentStudent>();
     public StudentProfile? StudentProfile { get; set; }
     public ICollection<StudentSkill> StudentSkills { get; set; } = new List<StudentSkill>();
     public ICollection<StudentSkill> VerifiedStudentSkills { get; set; } = new List<StudentSkill>();
+    public ICollection<MentorSkill> MentorSkills { get; set; } = new List<MentorSkill>();
     public ICollection<StandardizedTest> StandardizedTests { get; set; } = new List<StandardizedTest>();
     public Expert? Expert { get; set; }
     public FaceEmbedding? FaceEmbedding { get; set; }
@@ -59,6 +66,8 @@ public class User : BaseEntity
     public ICollection<MediaTag> MediaTags { get; set; } = new List<MediaTag>();
     public ICollection<ProgramReview> ProgramReviews { get; set; } = new List<ProgramReview>();
     public ICollection<Class> MentoredClasses { get; set; } = new List<Class>();
+    public ICollection<ClassMentorRequest> ClassMentorRequests { get; set; } = new List<ClassMentorRequest>();
+    public ICollection<ClassMentorRequest> DecidedClassMentorRequests { get; set; } = new List<ClassMentorRequest>();
     public ICollection<ClassEnrollment> ClassEnrollments { get; set; } = new List<ClassEnrollment>();
     public ICollection<SessionAttendance> SessionAttendances { get; set; } = new List<SessionAttendance>();
     public ICollection<SessionAttendance> RecordedSessionAttendances { get; set; } = new List<SessionAttendance>();

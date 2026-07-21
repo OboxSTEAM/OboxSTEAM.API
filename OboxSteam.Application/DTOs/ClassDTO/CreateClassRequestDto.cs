@@ -15,8 +15,10 @@ public class CreateClassRequestDto
     [Required(ErrorMessage = "ProgramId is required.")]
     public Guid ProgramId { get; set; }
 
-    [Required(ErrorMessage = "MentorId is required.")]
-    public Guid MentorId { get; set; }
+    /// <summary>
+    /// Optional. When omitted, the class is open for mentor assignment requests.
+    /// </summary>
+    public Guid? MentorId { get; set; }
 
     [Required(ErrorMessage = "StartDate is required.")]
     public DateTime StartDate { get; set; }

@@ -18,8 +18,12 @@ public class Class : BaseEntity
     public Guid ProgramId { get; set; }
     public Program Program { get; set; } = null!;
 
-    public Guid MentorId { get; set; }
-    public User Mentor { get; set; } = null!;
+    /// <summary>
+    /// Assigned mentor. Null while the class is open for mentor requests;
+    /// set when a request is approved or when a manager assigns directly.
+    /// </summary>
+    public Guid? MentorId { get; set; }
+    public User? Mentor { get; set; }
 
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
@@ -41,4 +45,6 @@ public class Class : BaseEntity
     // Navigation
     public ICollection<ClassEnrollment> ClassEnrollments { get; set; } = new List<ClassEnrollment>();
     public ICollection<ClassSession> ClassSessions { get; set; } = new List<ClassSession>();
+    public ICollection<ClassSkill> ClassSkills { get; set; } = new List<ClassSkill>();
+    public ICollection<ClassMentorRequest> MentorRequests { get; set; } = new List<ClassMentorRequest>();
 }

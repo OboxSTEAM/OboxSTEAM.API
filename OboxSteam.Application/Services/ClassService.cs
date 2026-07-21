@@ -282,8 +282,11 @@ public sealed class ClassService : IClassService
         var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId);
         ClassValidator.ValidateProgramExists(program, request.ProgramId);
 
-        var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId);
-        ClassValidator.ValidateMentorExists(mentor, request.MentorId);
+        if (request.MentorId.HasValue)
+        {
+            var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId.Value);
+            ClassValidator.ValidateMentorExists(mentor, request.MentorId.Value);
+        }
 
         var duplicate = await _unitOfWork.Classes.FirstOrDefaultAsync(
             c => c.Code.ToLower() == request.Code.Trim().ToLower() && !c.IsDeleted);

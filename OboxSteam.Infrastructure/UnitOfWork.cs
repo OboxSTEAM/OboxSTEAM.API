@@ -53,6 +53,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ClassEnrollment> ClassEnrollments => Repository<ClassEnrollment>();
     public IGenericRepository<ClassSession> ClassSessions => Repository<ClassSession>();
     public IGenericRepository<SessionAttendance> SessionAttendances => Repository<SessionAttendance>();
+    public IGenericRepository<ClassSkill> ClassSkills => Repository<ClassSkill>();
+    public IGenericRepository<ClassMentorRequest> ClassMentorRequests => Repository<ClassMentorRequest>();
     public IGenericRepository<Expert> Experts => Repository<Expert>();
     public IGenericRepository<Certificate> Certificates => Repository<Certificate>();
     public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();
@@ -71,6 +73,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Skill> Skills => Repository<Skill>();
     public IGenericRepository<StudentSkill> StudentSkills => Repository<StudentSkill>();
     public IGenericRepository<StudentSkillEvidence> StudentSkillEvidences => Repository<StudentSkillEvidence>();
+    public IGenericRepository<MentorSkill> MentorSkills => Repository<MentorSkill>();
     public IGenericRepository<StandardizedTest> StandardizedTests => Repository<StandardizedTest>();
     public IGenericRepository<StudentProfile> StudentProfiles => Repository<StudentProfile>();
     public IGenericRepository<SubmissionEvidence> SubmissionEvidences => Repository<SubmissionEvidence>();

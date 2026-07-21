@@ -27,6 +27,8 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<ClassEnrollment> ClassEnrollments { get; }
     IGenericRepository<ClassSession> ClassSessions { get; }
     IGenericRepository<SessionAttendance> SessionAttendances { get; }
+    IGenericRepository<ClassSkill> ClassSkills { get; }
+    IGenericRepository<ClassMentorRequest> ClassMentorRequests { get; }
     IGenericRepository<Expert> Experts { get; }
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }
@@ -45,6 +47,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Skill> Skills { get; }
     IGenericRepository<StudentSkill> StudentSkills { get; }
     IGenericRepository<StudentSkillEvidence> StudentSkillEvidences { get; }
+    IGenericRepository<MentorSkill> MentorSkills { get; }
     IGenericRepository<StandardizedTest> StandardizedTests { get; }
     IGenericRepository<StudentProfile> StudentProfiles { get; }
     IGenericRepository<SubmissionEvidence> SubmissionEvidences { get; }

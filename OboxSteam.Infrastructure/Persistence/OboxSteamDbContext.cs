@@ -24,6 +24,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<Skill> Skills { get; set; }
     public DbSet<StudentSkill> StudentSkills { get; set; }
     public DbSet<StudentSkillEvidence> StudentSkillEvidences { get; set; }
+    public DbSet<MentorSkill> MentorSkills { get; set; }
     public DbSet<StandardizedTest> StandardizedTests { get; set; }
 
     // ── 4. LMS Hierarchy ──
@@ -46,6 +47,8 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ClassEnrollment> ClassEnrollments { get; set; }
     public DbSet<ClassSession> ClassSessions { get; set; }
     public DbSet<SessionAttendance> SessionAttendances { get; set; }
+    public DbSet<ClassSkill> ClassSkills { get; set; }
+    public DbSet<ClassMentorRequest> ClassMentorRequests { get; set; }
 
     // ── 6. Assessments & Submissions ──
     public DbSet<Assignment> Assignments { get; set; }
@@ -109,6 +112,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Skill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StudentSkill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StudentSkillEvidence>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<MentorSkill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StandardizedTest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Program>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Module>().HasQueryFilter(e => !e.IsDeleted);
@@ -124,6 +128,8 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ClassEnrollment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassSession>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<SessionAttendance>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ClassSkill>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ClassMentorRequest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Assignment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuestionBank>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<BankQuestion>().HasQueryFilter(e => !e.IsDeleted);
@@ -237,6 +243,26 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(u => u.VerifiedStudentSkills)
                 .HasForeignKey(ss => ss.VerifiedBy)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // MENTOR SKILL (proficiency snapshot for mentors)
+        // =============================================
+        modelBuilder.Entity<MentorSkill>(entity =>
+        {
+            entity.HasIndex(ms => new { ms.MentorId, ms.SkillId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(ms => ms.Mentor)
+                .WithMany(u => u.MentorSkills)
+                .HasForeignKey(ms => ms.MentorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ms => ms.Skill)
+                .WithMany(s => s.MentorSkills)
+                .HasForeignKey(ms => ms.SkillId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // =============================================
@@ -887,7 +913,59 @@ public class OboxSteamDbContext : DbContext
             entity.HasOne(c => c.Mentor)
                 .WithMany(u => u.MentoredClasses)
                 .HasForeignKey(c => c.MentorId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .IsRequired(false);
+        });
+
+        // =============================================
+        // CLASS SKILL (required / desired skill tags)
+        // =============================================
+        modelBuilder.Entity<ClassSkill>(entity =>
+        {
+            entity.HasIndex(cs => new { cs.ClassId, cs.SkillId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(cs => cs.Class)
+                .WithMany(c => c.ClassSkills)
+                .HasForeignKey(cs => cs.ClassId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cs => cs.Skill)
+                .WithMany(s => s.ClassSkills)
+                .HasForeignKey(cs => cs.SkillId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // CLASS MENTOR REQUEST (mentor applies → manager decides)
+        // =============================================
+        modelBuilder.Entity<ClassMentorRequest>(entity =>
+        {
+            entity.HasIndex(r => new { r.ClassId, r.Status })
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(r => new { r.ClassId, r.MentorId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"Status\" = 'Pending'");
+
+            entity.HasIndex(r => new { r.MentorId, r.Status })
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(r => r.Class)
+                .WithMany(c => c.MentorRequests)
+                .HasForeignKey(r => r.ClassId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Mentor)
+                .WithMany(u => u.ClassMentorRequests)
+                .HasForeignKey(r => r.MentorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Decider)
+                .WithMany(u => u.DecidedClassMentorRequests)
+                .HasForeignKey(r => r.DecidedBy)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // =============================================

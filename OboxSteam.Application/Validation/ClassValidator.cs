@@ -64,9 +64,9 @@ public static class ClassValidator
             throw ErrorHelper.BadRequest("ProgramId is required.");
         }
 
-        if (request.MentorId == Guid.Empty)
+        if (request.MentorId.HasValue && request.MentorId.Value == Guid.Empty)
         {
-            throw ErrorHelper.BadRequest("MentorId is required.");
+            throw ErrorHelper.BadRequest("MentorId cannot be an empty GUID.");
         }
 
         ValidateDateRange(request.StartDate, request.EndDate);

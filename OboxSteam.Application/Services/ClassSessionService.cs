@@ -295,9 +295,15 @@ public sealed class ClassSessionService : IClassSessionService
             request.ActivityId,
             request.AssignmentId);
 
+        if (classEntity!.MentorId is null)
+        {
+            throw ErrorHelper.BadRequest(
+                "Cannot schedule a session for a class that has no assigned mentor.");
+        }
+
         await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
             _unitOfWork,
-            classEntity!.MentorId,
+            classEntity.MentorId.Value,
             request.StartTime,
             request.EndTime);
 
@@ -441,9 +447,15 @@ public sealed class ClassSessionService : IClassSessionService
                 targetStartTime,
                 targetEndTime);
 
+            if (classEntity!.MentorId is null)
+            {
+                throw ErrorHelper.BadRequest(
+                    "Cannot reschedule a session for a class that has no assigned mentor.");
+            }
+
             await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
                 _unitOfWork,
-                classEntity!.MentorId,
+                classEntity.MentorId.Value,
                 targetStartTime,
                 targetEndTime,
                 excludeSessionId: session.Id);
