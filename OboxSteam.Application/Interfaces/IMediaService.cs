@@ -16,18 +16,39 @@ public interface IMediaService
     Task<MediaAssetDto> UploadMediaAsync(IFormFile file, Guid activityId);
 
     /// <summary>
-    /// Returns all media for an activity, including face tags.
+    /// Returns media for an activity, including face tags, scoped by the caller's role.
     /// </summary>
     Task<List<MediaAssetDto>> GetMediaByActivityAsync(Guid activityId);
 
     /// <summary>
     /// Returns ready media filtered by optional <paramref name="classId"/> and/or
-    /// <paramref name="studentId"/>. At least one filter is required.
+    /// <paramref name="studentId"/>, scoped by the caller's role.
+    /// Manager/SuperAdmin may omit both filters to list all ready media.
     /// Class scope uses activities linked via <c>ClassSession</c>.
-    /// Student scope uses face <c>MediaTag</c> matches (system-wide when class is omitted).
+    /// Student scope uses face <c>MediaTag</c> matches.
     /// Ready means images, or videos with <c>VideoStatus = TaggingComplete</c>.
     /// </summary>
     Task<List<MediaAssetDto>> GetMediaAsync(Guid? classId, Guid? studentId);
+
+    /// <summary>
+    /// Returns one media asset by id, scoped by the caller's role.
+    /// </summary>
+    Task<MediaAssetDto> GetMediaByIdAsync(Guid mediaId);
+
+    /// <summary>
+    /// Manually tags a student onto ready media (mentor/manager). Creates a verified tag.
+    /// </summary>
+    Task<MediaTagDto> AddMediaTagAsync(Guid mediaId, Guid studentId);
+
+    /// <summary>
+    /// Removes a media tag (soft delete).
+    /// </summary>
+    Task RemoveMediaTagAsync(Guid mediaId, Guid studentId);
+
+    /// <summary>
+    /// Sets media-tag verification for mentor review of AI tags.
+    /// </summary>
+    Task<MediaTagDto> SetMediaTagVerificationAsync(Guid mediaId, Guid studentId, bool isVerified);
 
     /// <summary>
     /// Called from <see cref="UploadMediaAsync"/> after the raw file is persisted.

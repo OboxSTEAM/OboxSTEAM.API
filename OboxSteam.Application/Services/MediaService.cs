@@ -5,6 +5,7 @@ using OboxSteam.Application.DTOs.MediaDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
@@ -155,8 +156,31 @@ public class MediaService : IMediaService
     {
         _logger.LogInformation("GetMediaByActivityAsync: ActivityId={ActivityId}", activityId);
 
+        var activity = await _unitOfWork.Activities.GetByIdAsync(activityId);
+        if (activity == null || activity.IsDeleted)
+            throw ErrorHelper.NotFound("Activity not found.");
+
+        var currentUser = await GetCurrentUserOrThrowAsync();
+        await EnsureCanAccessActivityMediaAsync(currentUser, activityId);
+
         var mediaList = await _unitOfWork.MediaAssets
             .GetAllAsync(m => m.ActivityId == activityId && !m.IsDeleted, m => m.MediaTags);
+
+        if (currentUser.Role == RoleType.Student)
+        {
+            mediaList = mediaList
+                .Where(IsReadyMedia)
+                .Where(m => m.MediaTags.Any(t => !t.IsDeleted && t.StudentId == currentUser.Id))
+                .ToList();
+        }
+        else if (currentUser.Role == RoleType.Parent)
+        {
+            var linkedStudentIds = await GetLinkedStudentIdsAsync(currentUser.Id);
+            mediaList = mediaList
+                .Where(IsReadyMedia)
+                .Where(m => m.MediaTags.Any(t => !t.IsDeleted && linkedStudentIds.Contains(t.StudentId)))
+                .ToList();
+        }
 
         return await MapMediaListToDtos(mediaList);
     }
@@ -164,39 +188,23 @@ public class MediaService : IMediaService
     /// <inheritdoc />
     public async Task<List<MediaAssetDto>> GetMediaAsync(Guid? classId, Guid? studentId)
     {
-        if (!classId.HasValue && !studentId.HasValue)
-            throw ErrorHelper.BadRequest("At least one of classId or studentId is required.");
+        var currentUser = await GetCurrentUserOrThrowAsync();
+        var resolved = await ResolveMediaQueryScopeAsync(currentUser, classId, studentId);
 
         _logger.LogInformation(
-            "GetMediaAsync: ClassId={ClassId}, StudentId={StudentId}",
-            classId, studentId);
+            "GetMediaAsync: Role={Role}, ClassId={ClassId}, StudentId={StudentId}, ActivityCount={ActivityCount}",
+            currentUser.Role, resolved.ClassId, resolved.StudentId, resolved.ActivityIds?.Count);
 
-        HashSet<Guid>? classActivityIds = null;
-        if (classId.HasValue)
-        {
-            var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId.Value);
-            if (classEntity == null || classEntity.IsDeleted)
-                throw ErrorHelper.NotFound($"Class '{classId}' not found.");
-
-            classActivityIds = await GetClassActivityIdsAsync(classId.Value);
-            if (classActivityIds.Count == 0)
-                return new List<MediaAssetDto>();
-        }
-
-        if (studentId.HasValue)
-        {
-            var student = await _unitOfWork.Users.GetByIdAsync(studentId.Value);
-            if (student == null || student.IsDeleted)
-                throw ErrorHelper.NotFound($"Student '{studentId}' not found.");
-        }
+        if (resolved.ActivityIds is { Count: 0 })
+            return new List<MediaAssetDto>();
 
         List<MediaAsset> mediaList;
-        if (classActivityIds != null)
+        if (resolved.ActivityIds != null)
         {
             mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
                 m => !m.IsDeleted
                      && m.ActivityId != null
-                     && classActivityIds.Contains(m.ActivityId.Value)
+                     && resolved.ActivityIds.Contains(m.ActivityId.Value)
                      && (
                          !string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
                          || m.VideoStatus == VideoProcessingStatus.TaggingComplete
@@ -214,15 +222,131 @@ public class MediaService : IMediaService
                 m => m.MediaTags);
         }
 
-        if (studentId.HasValue)
+        if (resolved.StudentId.HasValue)
         {
             mediaList = mediaList
-                .Where(m => m.MediaTags.Any(t => !t.IsDeleted && t.StudentId == studentId.Value))
+                .Where(m => m.MediaTags.Any(t => !t.IsDeleted && t.StudentId == resolved.StudentId.Value))
+                .ToList();
+        }
+        else if (resolved.AllowedStudentIds != null)
+        {
+            mediaList = mediaList
+                .Where(m => m.MediaTags.Any(t => !t.IsDeleted && resolved.AllowedStudentIds.Contains(t.StudentId)))
                 .ToList();
         }
 
         return await MapMediaListToDtos(
             mediaList.OrderByDescending(m => m.UploadedAt ?? m.CreatedAt).ToList());
+    }
+
+    /// <inheritdoc />
+    public async Task<MediaAssetDto> GetMediaByIdAsync(Guid mediaId)
+    {
+        var currentUser = await GetCurrentUserOrThrowAsync();
+        _logger.LogInformation(
+            "GetMediaByIdAsync: MediaId={MediaId}, UserId={UserId}, Role={Role}",
+            mediaId, currentUser.Id, currentUser.Role);
+
+        var media = await _unitOfWork.MediaAssets.GetByIdAsync(mediaId, m => m.MediaTags);
+        if (media == null || media.IsDeleted)
+            throw ErrorHelper.NotFound("Media not found.");
+
+        await EnsureCanAccessMediaAsync(currentUser, media);
+
+        return await MapToDto(media, media.MediaTags.Where(t => !t.IsDeleted).ToList());
+    }
+
+    /// <inheritdoc />
+    public async Task<MediaTagDto> AddMediaTagAsync(Guid mediaId, Guid studentId)
+    {
+        var currentUser = await GetCurrentUserOrThrowAsync();
+        EnsureCanManageTags(currentUser);
+
+        var media = await LoadReadyMediaOrThrowAsync(mediaId);
+        var student = await LoadStudentOrThrowAsync(studentId);
+        await EnsureCanManageMediaStudentAsync(currentUser, media, studentId);
+
+        var existingList = await _unitOfWork.MediaTags.GetAllIncludingDeletedAsync(
+            t => t.MediaId == mediaId && t.StudentId == studentId);
+        var existing = existingList.FirstOrDefault();
+
+        if (existing != null && !existing.IsDeleted)
+            throw ErrorHelper.Conflict("Student is already tagged on this media.");
+
+        MediaTag tag;
+        if (existing != null)
+        {
+            existing.IsDeleted = false;
+            existing.DeletedAt = null;
+            existing.DeletedBy = null;
+            existing.IsVerified = true;
+            existing.ConfidenceScore = 100m;
+            tag = existing;
+        }
+        else
+        {
+            tag = new MediaTag
+            {
+                MediaId = mediaId,
+                StudentId = studentId,
+                ConfidenceScore = 100m,
+                IsVerified = true
+            };
+            await _unitOfWork.MediaTags.AddAsync(tag);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "AddMediaTagAsync: MediaId={MediaId}, StudentId={StudentId}, By={UserId}",
+            mediaId, studentId, currentUser.Id);
+
+        return MapTagToDto(tag, new Dictionary<Guid, User> { [student.Id] = student });
+    }
+
+    /// <inheritdoc />
+    public async Task RemoveMediaTagAsync(Guid mediaId, Guid studentId)
+    {
+        var currentUser = await GetCurrentUserOrThrowAsync();
+        EnsureCanManageTags(currentUser);
+
+        var media = await LoadReadyMediaOrThrowAsync(mediaId);
+        await EnsureCanManageMediaStudentAsync(currentUser, media, studentId);
+
+        var tag = await _unitOfWork.MediaTags.FirstOrDefaultAsync(
+            t => t.MediaId == mediaId && t.StudentId == studentId && !t.IsDeleted)
+            ?? throw ErrorHelper.NotFound("Media tag not found.");
+
+        await _unitOfWork.MediaTags.SoftRemove(tag);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "RemoveMediaTagAsync: MediaId={MediaId}, StudentId={StudentId}, By={UserId}",
+            mediaId, studentId, currentUser.Id);
+    }
+
+    /// <inheritdoc />
+    public async Task<MediaTagDto> SetMediaTagVerificationAsync(Guid mediaId, Guid studentId, bool isVerified)
+    {
+        var currentUser = await GetCurrentUserOrThrowAsync();
+        EnsureCanManageTags(currentUser);
+
+        var media = await LoadReadyMediaOrThrowAsync(mediaId);
+        var student = await LoadStudentOrThrowAsync(studentId);
+        await EnsureCanManageMediaStudentAsync(currentUser, media, studentId);
+
+        var tag = await _unitOfWork.MediaTags.FirstOrDefaultAsync(
+            t => t.MediaId == mediaId && t.StudentId == studentId && !t.IsDeleted)
+            ?? throw ErrorHelper.NotFound("Media tag not found.");
+
+        tag.IsVerified = isVerified;
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "SetMediaTagVerificationAsync: MediaId={MediaId}, StudentId={StudentId}, IsVerified={IsVerified}, By={UserId}",
+            mediaId, studentId, isVerified, currentUser.Id);
+
+        return MapTagToDto(tag, new Dictionary<Guid, User> { [student.Id] = student });
     }
 
     /// <inheritdoc />
@@ -670,6 +794,306 @@ public class MediaService : IMediaService
 
     // ── Private Helpers ───────────────────────────────────────────────────────
 
+    private sealed record MediaQueryScope(
+        Guid? ClassId,
+        Guid? StudentId,
+        HashSet<Guid>? ActivityIds,
+        HashSet<Guid>? AllowedStudentIds);
+
+    private async Task<User> GetCurrentUserOrThrowAsync()
+    {
+        var userId = _claimsService.GetCurrentUserId;
+        if (userId == Guid.Empty)
+            throw ErrorHelper.Unauthorized("Authentication required.");
+
+        var user = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null || user.IsDeleted)
+            throw ErrorHelper.Unauthorized("Authenticated user was not found.");
+
+        return user;
+    }
+
+    private static void EnsureCanManageTags(User currentUser)
+    {
+        if (currentUser.Role is not (RoleType.Mentor or RoleType.Manager or RoleType.SuperAdmin))
+            throw ErrorHelper.Forbidden("Only mentors and managers can manage media tags.");
+    }
+
+    private static bool IsReadyMedia(MediaAsset media) =>
+        !string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase)
+        || media.VideoStatus == VideoProcessingStatus.TaggingComplete;
+
+    private async Task<MediaAsset> LoadReadyMediaOrThrowAsync(Guid mediaId)
+    {
+        var media = await _unitOfWork.MediaAssets.GetByIdAsync(mediaId, m => m.MediaTags);
+        if (media == null || media.IsDeleted)
+            throw ErrorHelper.NotFound("Media not found.");
+
+        if (!IsReadyMedia(media))
+            throw ErrorHelper.BadRequest("Media must be ready before tags can be managed.");
+
+        return media;
+    }
+
+    private async Task<User> LoadStudentOrThrowAsync(Guid studentId)
+    {
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId);
+        if (student == null || student.IsDeleted || student.Role != RoleType.Student)
+            throw ErrorHelper.NotFound($"Student '{studentId}' not found.");
+
+        return student;
+    }
+
+    private async Task EnsureCanAccessActivityMediaAsync(User currentUser, Guid activityId)
+    {
+        switch (currentUser.Role)
+        {
+            case RoleType.SuperAdmin:
+            case RoleType.Manager:
+                return;
+            case RoleType.Mentor:
+            {
+                var mentorActivityIds = await GetMentorActivityIdsAsync(currentUser.Id);
+                if (!mentorActivityIds.Contains(activityId))
+                    throw ErrorHelper.Forbidden("You can only view media for activities scheduled in your classes.");
+                return;
+            }
+            case RoleType.Student:
+            case RoleType.Parent:
+                return;
+            default:
+                throw ErrorHelper.Forbidden("You are not allowed to view media.");
+        }
+    }
+
+    private async Task EnsureCanAccessMediaAsync(User currentUser, MediaAsset media)
+    {
+        switch (currentUser.Role)
+        {
+            case RoleType.SuperAdmin:
+            case RoleType.Manager:
+                return;
+            case RoleType.Mentor:
+            {
+                if (media.ActivityId is null)
+                    throw ErrorHelper.Forbidden("You can only view media for activities scheduled in your classes.");
+
+                var mentorActivityIds = await GetMentorActivityIdsAsync(currentUser.Id);
+                if (!mentorActivityIds.Contains(media.ActivityId.Value))
+                    throw ErrorHelper.Forbidden("You can only view media for activities scheduled in your classes.");
+                return;
+            }
+            case RoleType.Student:
+            {
+                if (!IsReadyMedia(media))
+                    throw ErrorHelper.NotFound("Media not found.");
+
+                if (!media.MediaTags.Any(t => !t.IsDeleted && t.StudentId == currentUser.Id))
+                    throw ErrorHelper.Forbidden("You can only view media you are tagged in.");
+                return;
+            }
+            case RoleType.Parent:
+            {
+                if (!IsReadyMedia(media))
+                    throw ErrorHelper.NotFound("Media not found.");
+
+                var linkedStudentIds = await GetLinkedStudentIdsAsync(currentUser.Id);
+                if (!media.MediaTags.Any(t => !t.IsDeleted && linkedStudentIds.Contains(t.StudentId)))
+                    throw ErrorHelper.Forbidden("You can only view media tagged for your linked students.");
+                return;
+            }
+            default:
+                throw ErrorHelper.Forbidden("You are not allowed to view media.");
+        }
+    }
+
+    private async Task<MediaQueryScope> ResolveMediaQueryScopeAsync(
+        User currentUser,
+        Guid? classId,
+        Guid? studentId)
+    {
+        switch (currentUser.Role)
+        {
+            case RoleType.SuperAdmin:
+            case RoleType.Manager:
+            {
+                HashSet<Guid>? activityIds = null;
+                if (classId.HasValue)
+                {
+                    await EnsureClassExistsAsync(classId.Value);
+                    activityIds = await GetClassActivityIdsAsync(classId.Value);
+                }
+
+                if (studentId.HasValue)
+                    await LoadStudentOrThrowAsync(studentId.Value);
+
+                return new MediaQueryScope(classId, studentId, activityIds, null);
+            }
+            case RoleType.Mentor:
+            {
+                HashSet<Guid> activityIds;
+                if (classId.HasValue)
+                {
+                    await MentorScopeValidator.EnsureMentorOwnsClassAsync(
+                        _unitOfWork, currentUser.Id, classId.Value);
+                    activityIds = await GetClassActivityIdsAsync(classId.Value);
+                }
+                else
+                {
+                    activityIds = await GetMentorActivityIdsAsync(currentUser.Id);
+                }
+
+                if (studentId.HasValue)
+                {
+                    await LoadStudentOrThrowAsync(studentId.Value);
+                    if (classId.HasValue)
+                    {
+                        await EnsureStudentActiveInClassAsync(studentId.Value, classId.Value);
+                    }
+                    else
+                    {
+                        await EnsureStudentInMentorClassesAsync(currentUser.Id, studentId.Value);
+                    }
+                }
+
+                return new MediaQueryScope(classId, studentId, activityIds, null);
+            }
+            case RoleType.Student:
+            {
+                HashSet<Guid>? activityIds = null;
+                if (classId.HasValue)
+                {
+                    await EnsureClassExistsAsync(classId.Value);
+                    activityIds = await GetClassActivityIdsAsync(classId.Value);
+                }
+
+                return new MediaQueryScope(classId, currentUser.Id, activityIds, null);
+            }
+            case RoleType.Parent:
+            {
+                if (!studentId.HasValue)
+                    throw ErrorHelper.BadRequest("studentId is required for parent media queries.");
+
+                await EnsureParentLinkedToStudentAsync(currentUser.Id, studentId.Value);
+
+                HashSet<Guid>? activityIds = null;
+                if (classId.HasValue)
+                {
+                    await EnsureClassExistsAsync(classId.Value);
+                    activityIds = await GetClassActivityIdsAsync(classId.Value);
+                }
+
+                return new MediaQueryScope(classId, studentId, activityIds, null);
+            }
+            default:
+                throw ErrorHelper.Forbidden("You are not allowed to view media.");
+        }
+    }
+
+    private async Task EnsureCanManageMediaStudentAsync(User currentUser, MediaAsset media, Guid studentId)
+    {
+        if (currentUser.Role is RoleType.Manager or RoleType.SuperAdmin)
+            return;
+
+        if (currentUser.Role != RoleType.Mentor)
+            throw ErrorHelper.Forbidden("Only mentors and managers can manage media tags.");
+
+        if (media.ActivityId is null)
+            throw ErrorHelper.BadRequest("Media is not linked to an activity.");
+
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            s => s.ActivityId == media.ActivityId && !s.IsDeleted);
+        var classIds = sessions.Select(s => s.ClassId).Distinct().ToList();
+        if (classIds.Count == 0)
+            throw ErrorHelper.Forbidden("You can only manage tags on media for activities scheduled in your classes.");
+
+        var mentoredClasses = await _unitOfWork.Classes.GetAllAsync(
+            c => classIds.Contains(c.Id) && c.MentorId == currentUser.Id && !c.IsDeleted);
+        if (mentoredClasses.Count == 0)
+            throw ErrorHelper.Forbidden("You can only manage tags on media for activities scheduled in your classes.");
+
+        var mentoredClassIds = mentoredClasses.Select(c => c.Id).ToHashSet();
+        var enrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.StudentId == studentId
+                  && mentoredClassIds.Contains(ce.ClassId)
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        if (enrollment == null)
+            throw ErrorHelper.Forbidden(
+                "Student must be actively enrolled in your class that schedules this media activity.");
+    }
+
+    private async Task EnsureClassExistsAsync(Guid classId)
+    {
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
+        if (classEntity == null || classEntity.IsDeleted)
+            throw ErrorHelper.NotFound($"Class '{classId}' not found.");
+    }
+
+    private async Task EnsureStudentActiveInClassAsync(Guid studentId, Guid classId)
+    {
+        var enrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.StudentId == studentId
+                  && ce.ClassId == classId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        if (enrollment == null)
+            throw ErrorHelper.BadRequest("Student is not actively enrolled in the specified class.");
+    }
+
+    private async Task EnsureStudentInMentorClassesAsync(Guid mentorId, Guid studentId)
+    {
+        var classes = await _unitOfWork.Classes.GetAllAsync(c => c.MentorId == mentorId && !c.IsDeleted);
+        var classIds = classes.Select(c => c.Id).ToList();
+        if (classIds.Count == 0)
+            throw ErrorHelper.Forbidden(MentorScopeValidator.StudentNotInMentorClassMessage);
+
+        var enrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.StudentId == studentId
+                  && classIds.Contains(ce.ClassId)
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        if (enrollment == null)
+            throw ErrorHelper.Forbidden(MentorScopeValidator.StudentNotInMentorClassMessage);
+    }
+
+    private async Task EnsureParentLinkedToStudentAsync(Guid parentId, Guid studentId)
+    {
+        await LoadStudentOrThrowAsync(studentId);
+
+        var link = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(
+            ps => ps.ParentId == parentId
+                  && ps.StudentId == studentId
+                  && ps.IsVerified
+                  && !ps.IsDeleted);
+
+        if (link == null)
+            throw ErrorHelper.Forbidden("You can only view media for your linked students.");
+    }
+
+    private async Task<HashSet<Guid>> GetLinkedStudentIdsAsync(Guid parentId)
+    {
+        var links = await _unitOfWork.ParentStudents.GetAllAsync(
+            ps => ps.ParentId == parentId && ps.IsVerified && !ps.IsDeleted);
+        return links.Select(l => l.StudentId).ToHashSet();
+    }
+
+    private async Task<HashSet<Guid>> GetMentorActivityIdsAsync(Guid mentorId)
+    {
+        var classes = await _unitOfWork.Classes.GetAllAsync(c => c.MentorId == mentorId && !c.IsDeleted);
+        var classIds = classes.Select(c => c.Id).ToList();
+        if (classIds.Count == 0)
+            return new HashSet<Guid>();
+
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            s => classIds.Contains(s.ClassId) && !s.IsDeleted && s.ActivityId != null);
+
+        return sessions.Select(s => s.ActivityId!.Value).ToHashSet();
+    }
+
     private async Task<List<MediaAssetDto>> MapMediaListToDtos(IReadOnlyList<MediaAsset> mediaList)
     {
         var allStudentIds = mediaList
@@ -941,7 +1365,7 @@ public class MediaService : IMediaService
                 MediaId = media.Id,
                 StudentId = match.UserId,
                 ConfidenceScore = (decimal)match.Confidence,
-                IsVerified = true
+                IsVerified = false
             };
             await _unitOfWork.MediaTags.AddAsync(tag);
             newTags.Add(tag);
@@ -1005,7 +1429,7 @@ public class MediaService : IMediaService
                 MediaId = mediaId,
                 StudentId = match.UserId,
                 ConfidenceScore = (decimal)match.Confidence,
-                IsVerified = true
+                IsVerified = false
             };
             await _unitOfWork.MediaTags.AddAsync(tag);
             tags.Add(tag);

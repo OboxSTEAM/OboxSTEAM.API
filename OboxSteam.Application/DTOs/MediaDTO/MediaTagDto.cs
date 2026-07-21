@@ -16,3 +16,13 @@ public class FaceSegmentDto
     public long StartMs { get; set; }
     public long EndMs { get; set; }
 }
+
+public class AddMediaTagRequest
+{
+    public Guid StudentId { get; init; }
+}
+
+public class UpdateMediaTagVerificationRequest
+{
+    public bool IsVerified { get; init; }
+}

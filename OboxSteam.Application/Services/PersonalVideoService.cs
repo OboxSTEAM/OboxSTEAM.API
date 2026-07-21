@@ -743,7 +743,7 @@ public class PersonalVideoService : IPersonalVideoService
             m => m.MediaTags);
 
         var taggedMedia = allMedia
-            .Where(m => m.MediaTags.Any(t => t.StudentId == studentId))
+            .Where(m => m.MediaTags.Any(t => t.StudentId == studentId && !t.IsDeleted && t.IsVerified))
             .OrderBy(m => m.CreatedAt)
             .ToList();
 
@@ -914,7 +914,7 @@ public class PersonalVideoService : IPersonalVideoService
     /// </summary>
     private VideoFaceTimelineResult? ReadPersistedTimeline(MediaAsset media, Guid studentId)
     {
-        var tag = media.MediaTags.FirstOrDefault(t => t.StudentId == studentId);
+        var tag = media.MediaTags.FirstOrDefault(t => t.StudentId == studentId && !t.IsDeleted && t.IsVerified);
         if (tag?.FaceSegmentsJson == null)
             return null;
 
@@ -1189,8 +1189,8 @@ public class PersonalVideoService : IPersonalVideoService
         if (media.VideoStatus != VideoProcessingStatus.TaggingComplete)
             throw ErrorHelper.BadRequest("Source video must finish tagging before it can be added.");
 
-        if (!media.MediaTags.Any(t => !t.IsDeleted && t.StudentId == studentId))
-            throw ErrorHelper.BadRequest("The selected source video is not tagged for this student.");
+        if (!media.MediaTags.Any(t => !t.IsDeleted && t.StudentId == studentId && t.IsVerified))
+            throw ErrorHelper.BadRequest("The selected source video is not verified-tagged for this student.");
 
         if (media.ActivityId is null)
             throw ErrorHelper.BadRequest("Source video is not linked to an activity.");
