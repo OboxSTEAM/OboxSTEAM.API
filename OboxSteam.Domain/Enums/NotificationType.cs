@@ -41,6 +41,11 @@ public enum NotificationType
     ClassAutoStarted,
     ClassCompleted,
 
+    // Class mentor assignment
+    ClassMentorRequestSubmitted,
+    ClassMentorRequestApproved,
+    ClassMentorRequestRejected,
+
     // Class enrollment
     ClassEnrolled,
     ClassTransferred,

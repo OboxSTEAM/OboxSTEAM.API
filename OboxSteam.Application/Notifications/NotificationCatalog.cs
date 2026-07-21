@@ -416,6 +416,75 @@ public static class NotificationCatalog
             entityType: "Class",
             entityId: classId);
 
+    // ── Class mentor assignment ───────────────────────────────────────────────
+
+    public static NotificationCommand ClassMentorRequestSubmitted(
+        Guid requestId,
+        Guid classId,
+        Guid programId,
+        Guid mentorId,
+        string? className = null)
+        => new(
+            NotificationType.ClassMentorRequestSubmitted,
+            NotificationAudience.ForManagers(),
+            "Mentor request submitted",
+            string.IsNullOrWhiteSpace(className)
+                ? "A mentor requested assignment to a class."
+                : $"A mentor requested assignment to class \"{className}\".",
+            payload: new NotificationPayload
+            {
+                ClassMentorRequestId = requestId,
+                ClassId = classId,
+                ProgramId = programId,
+            },
+            actorUserId: mentorId,
+            entityType: "ClassMentorRequest",
+            entityId: requestId);
+
+    public static NotificationCommand ClassMentorRequestApproved(
+        Guid requestId,
+        Guid classId,
+        Guid programId,
+        Guid mentorId,
+        string? className = null)
+        => new(
+            NotificationType.ClassMentorRequestApproved,
+            NotificationAudience.ForUser(mentorId),
+            "Mentor request approved",
+            string.IsNullOrWhiteSpace(className)
+                ? "Your class assignment request was approved."
+                : $"Your request for class \"{className}\" was approved.",
+            payload: new NotificationPayload
+            {
+                ClassMentorRequestId = requestId,
+                ClassId = classId,
+                ProgramId = programId,
+            },
+            entityType: "ClassMentorRequest",
+            entityId: requestId);
+
+    public static NotificationCommand ClassMentorRequestRejected(
+        Guid requestId,
+        Guid classId,
+        Guid programId,
+        Guid mentorId,
+        string? className = null)
+        => new(
+            NotificationType.ClassMentorRequestRejected,
+            NotificationAudience.ForUser(mentorId),
+            "Mentor request rejected",
+            string.IsNullOrWhiteSpace(className)
+                ? "Your class assignment request was rejected."
+                : $"Your request for class \"{className}\" was rejected.",
+            payload: new NotificationPayload
+            {
+                ClassMentorRequestId = requestId,
+                ClassId = classId,
+                ProgramId = programId,
+            },
+            entityType: "ClassMentorRequest",
+            entityId: requestId);
+
     // ── Class enrollment ──────────────────────────────────────────────────────
 
     public static NotificationCommand ClassEnrolled(

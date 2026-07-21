@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
+using OboxSteam.Application.DTOs.ClassMentorRequestDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Enums;
@@ -14,10 +15,47 @@ namespace OboxSteam.API.Controllers;
 public class ClassController : ControllerBase
 {
     private readonly IClassService _classService;
+    private readonly IClassMentorRequestService _classMentorRequestService;
 
-    public ClassController(IClassService classService)
+    public ClassController(
+        IClassService classService,
+        IClassMentorRequestService classMentorRequestService)
     {
         _classService = classService;
+        _classMentorRequestService = classMentorRequestService;
+    }
+
+    // =========================================================================
+    // MENTOR BOARD  —  GET /api/classes/mentor-board
+    // =========================================================================
+
+    [HttpGet("mentor-board")]
+    [Authorize(Roles = "Mentor")]
+    [SwaggerOperation(
+        Summary = "Mentor board of available classes",
+        Description = "Lists Draft/Open classes with no assigned mentor. Prefer GET /api/class-mentor-requests/board.")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<ClassMentorBoardItemDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    public async Task<IActionResult> GetMentorBoard(
+        [FromQuery, SwaggerParameter(Description = "Search by name or code (optional)")] string? search = null,
+        [FromQuery, SwaggerParameter(Description = "Sort by: name, code, startDate")] string? sortBy = null,
+        [FromQuery] bool isDescending = false,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] Guid? programId = null,
+        [FromQuery, SwaggerParameter(Description = "When true, only classes that share at least one RequiredSkill with the mentor. Default: false (show all).")] bool matchMySkills = false)
+    {
+        if (page < 1 || pageSize < 1)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+        }
+
+        var result = await _classMentorRequestService.GetMentorBoardAsync(
+            search, sortBy, isDescending, page, pageSize, programId, matchMySkills);
+
+        return Ok(ApiResult<Pagination<ClassMentorBoardItemDto>>.Success(
+            result, "200", "Mentor board retrieved successfully."));
     }
 
     // =========================================================================

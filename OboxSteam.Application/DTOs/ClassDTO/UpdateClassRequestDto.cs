@@ -14,4 +14,9 @@ public class UpdateClassRequestDto
     public ClassStatus? Status { get; set; }
     public int? MinHoursBeforeAssignmentJoin { get; set; }
     public string? ScheduleSummary { get; set; }
+
+    /// <summary>
+    /// When provided, replaces the class required-skill tags (empty list clears all).
+    /// </summary>
+    public List<Guid>? RequiredSkillIds { get; set; }
 }

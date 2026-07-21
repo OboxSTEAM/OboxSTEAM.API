@@ -33,4 +33,7 @@ public class CreateClassRequestDto
 
     [MaxLength(255)]
     public string? ScheduleSummary { get; set; }
+
+    /// <summary>Optional required/desired skill tags shown on the mentor board.</summary>
+    public List<Guid>? RequiredSkillIds { get; set; }
 }
