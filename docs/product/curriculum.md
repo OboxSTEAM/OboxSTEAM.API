@@ -95,3 +95,5 @@ label timeline.
 API: `/api/highlight-video/stacks` (`classId` query/body; optional `studentId`).
 Trim / add-segment / delete under `/api/highlight-video/stacks/{stackId}/...`.
 AWS completion: `/api/webhooks/aws`.
+Completed reels can be auto-imported into the student portfolio via
+`POST /api/portfolios/me/sync` as `HighlightReel` items (keyed by stack id).
