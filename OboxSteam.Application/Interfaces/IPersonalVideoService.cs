@@ -4,7 +4,7 @@ namespace OboxSteam.Application.Interfaces;
 
 /// <summary>
 /// Orchestrates personal highlight video generation and editing (trim / add-segment)
-/// for a student within a Program. All edits mutate a render-clip manifest and re-encode
+/// for a student within a Class. All edits mutate a render-clip manifest and re-encode
 /// via MediaConvert stitch jobs.
 /// </summary>
 public interface IPersonalVideoService
@@ -13,12 +13,12 @@ public interface IPersonalVideoService
     /// Target student. When null, uses the authenticated user from JWT claims.
     /// </param>
     Task<HighlightVideoStackDto> CreateStackAsync(
-        Guid programId, Guid? studentId = null, string? strengthDescription = null);
+        Guid classId, Guid? studentId = null, string? strengthDescription = null);
 
     /// <param name="studentId">
     /// Target student. When null, uses the authenticated user from JWT claims.
     /// </param>
-    Task<IReadOnlyList<HighlightVideoStackDto>> GetStacksAsync(Guid programId, Guid? studentId = null);
+    Task<IReadOnlyList<HighlightVideoStackDto>> GetStacksAsync(Guid classId, Guid? studentId = null);
 
     Task<HighlightVideoStackDto?> GetStackAsync(Guid stackId);
 

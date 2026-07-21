@@ -38,7 +38,7 @@ public class HighlightSourceClipDto
 public class HighlightVideoStackDto
 {
     public Guid Id { get; set; }
-    public Guid ProgramId { get; set; }
+    public Guid ClassId { get; set; }
     public Guid StudentId { get; set; }
     public string? StrengthDescription { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -57,7 +57,7 @@ public class TimeRangeDto
 
 public class CreateHighlightStackRequest
 {
-    public Guid ProgramId { get; init; }
+    public Guid ClassId { get; init; }
     public Guid? StudentId { get; init; }
     public string? StrengthDescription { get; init; }
 }

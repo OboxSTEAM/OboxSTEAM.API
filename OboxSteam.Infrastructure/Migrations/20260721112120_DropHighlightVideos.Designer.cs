@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260721112120_DropHighlightVideos")]
+    partial class DropHighlightVideos
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1038,9 +1041,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("ClassId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1055,6 +1055,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<Guid>("ProgramId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("StrengthDescription")
                         .IsRequired()
@@ -1074,7 +1077,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId");
 
-                    b.HasIndex("ClassId", "StudentId", "StrengthDescription")
+                    b.HasIndex("ProgramId", "StudentId", "StrengthDescription")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
@@ -3729,9 +3732,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.HighlightVideoStack", b =>
                 {
-                    b.HasOne("OboxSteam.Domain.Entities.Class", "Class")
+                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
                         .WithMany()
-                        .HasForeignKey("ClassId")
+                        .HasForeignKey("ProgramId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -3741,7 +3744,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Class");
+                    b.Navigation("Program");
 
                     b.Navigation("Student");
                 });

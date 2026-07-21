@@ -55,7 +55,6 @@ public class User : BaseEntity
     public ICollection<PaymentRequest> SentPaymentRequests { get; set; } = new List<PaymentRequest>();
     public ICollection<PaymentRequest> ReceivedPaymentRequests { get; set; } = new List<PaymentRequest>();
     public ICollection<Portfolio> Portfolios { get; set; } = new List<Portfolio>();
-    public ICollection<HighlightVideo> HighlightVideos { get; set; } = new List<HighlightVideo>();
     public ICollection<MediaAsset> UploadedMediaAssets { get; set; } = new List<MediaAsset>();
     public ICollection<MediaTag> MediaTags { get; set; } = new List<MediaTag>();
     public ICollection<ProgramReview> ProgramReviews { get; set; } = new List<ProgramReview>();

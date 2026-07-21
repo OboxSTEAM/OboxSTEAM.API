@@ -75,7 +75,6 @@ public class OboxSteamDbContext : DbContext
     public DbSet<FaceEmbedding> FaceEmbeddings { get; set; }
     public DbSet<MediaAsset> MediaAssets { get; set; }
     public DbSet<MediaTag> MediaTags { get; set; }
-    public DbSet<HighlightVideo> HighlightVideos { get; set; }
     public DbSet<HighlightVideoStack> HighlightVideoStacks { get; set; }
     public DbSet<HighlightVideoItem> HighlightVideoItems { get; set; }
 
@@ -146,7 +145,6 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<MediaAsset>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<MediaTag>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<SubmissionEvidence>().HasQueryFilter(e => !e.IsDeleted);
-        modelBuilder.Entity<HighlightVideo>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<HighlightVideoStack>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<HighlightVideoItem>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Payment>().HasQueryFilter(e => !e.IsDeleted);
@@ -758,24 +756,17 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
-        // HIGHLIGHT VIDEO (legacy table — migrated to stacks)
+        // HIGHLIGHT VIDEO STACKS
         // =============================================
-        modelBuilder.Entity<HighlightVideo>(entity =>
-        {
-            entity.HasIndex(hv => new { hv.ProgramId, hv.StudentId })
-                .IsUnique()
-                .HasFilter("\"IsDeleted\" = false");
-        });
-
         modelBuilder.Entity<HighlightVideoStack>(entity =>
         {
-            entity.HasIndex(s => new { s.ProgramId, s.StudentId, s.StrengthDescription })
+            entity.HasIndex(s => new { s.ClassId, s.StudentId, s.StrengthDescription })
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false");
 
-            entity.HasOne(s => s.Program)
+            entity.HasOne(s => s.Class)
                 .WithMany()
-                .HasForeignKey(s => s.ProgramId)
+                .HasForeignKey(s => s.ClassId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(s => s.Student)

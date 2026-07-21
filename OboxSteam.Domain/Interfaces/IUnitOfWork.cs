@@ -31,7 +31,6 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }
     IGenericRepository<MediaTag> MediaTags { get; }
-    IGenericRepository<HighlightVideo> HighlightVideos { get; }
     IGenericRepository<HighlightVideoStack> HighlightVideoStacks { get; }
     IGenericRepository<HighlightVideoItem> HighlightVideoItems { get; }
     IGenericRepository<FaceEmbedding> FaceEmbeddings { get; }

@@ -127,7 +127,7 @@ operations own validation and side effects; queries return DTOs.
 | ExpertController | `/api/experts` | Expert profiles |
 | ProgramReviewController | `/api/programs/{id}/reviews` | Student reviews |
 | MediaController | `/api/media` | Media assets |
-| HighlightVideoController | `/api/programs/.../highlight-video` | Highlight reels |
+| HighlightVideoController | `/api/highlight-video` | Class-scoped highlight stacks |
 | AwsWebhookController | `/api/webhooks/aws` | SNS callbacks |
 | SeedController | `/api/seed` | Dev seed data |
 

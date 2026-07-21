@@ -8,7 +8,7 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace OboxSteam.API.Controllers;
 
 /// <summary>
-/// Manages personal highlight video stacks for a student within a Program.
+/// Manages personal highlight video stacks for a student within a Class.
 /// </summary>
 [Route("api/highlight-video")]
 [ApiController]
@@ -23,12 +23,12 @@ public class HighlightVideoController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a highlight stack (max 3 per student/program) and enqueues the first video.
+    /// Creates a highlight stack (max 3 per student/class) and enqueues the first video.
     /// </summary>
     [HttpPost("stacks")]
     [SwaggerOperation(
         Summary = "Create highlight video stack",
-        Description = "Creates a highlight stack for a student in a program and starts the first video job. " +
+        Description = "Creates a highlight stack for a student in a class and starts the first video job. " +
                       "If StudentId is omitted, the authenticated user from the JWT is used."
     )]
     [ProducesResponseType(typeof(ApiResult<HighlightVideoStackDto>), 202)]
@@ -39,28 +39,28 @@ public class HighlightVideoController : ControllerBase
     public async Task<IActionResult> CreateStack([FromBody] CreateHighlightStackRequest request)
     {
         var result = await _personalVideoService.CreateStackAsync(
-            request.ProgramId, request.StudentId, request.StrengthDescription);
+            request.ClassId, request.StudentId, request.StrengthDescription);
         return Accepted(ApiResult<HighlightVideoStackDto>.Success(
             result, "202", "Highlight stack created; video generation started."));
     }
 
     /// <summary>
-    /// Lists all highlight stacks for a student in a program.
+    /// Lists all highlight stacks for a student in a class.
     /// </summary>
     [HttpGet("stacks")]
     [SwaggerOperation(
         Summary = "List highlight video stacks",
-        Description = "Lists highlight stacks for a program and student. " +
+        Description = "Lists highlight stacks for a class and student. " +
                       "If studentId is omitted, the authenticated user from the JWT is used."
     )]
     [ProducesResponseType(typeof(ApiResult<IReadOnlyList<HighlightVideoStackDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetStacks(
-        [FromQuery] Guid programId,
+        [FromQuery] Guid classId,
         [FromQuery] Guid? studentId = null)
     {
-        var result = await _personalVideoService.GetStacksAsync(programId, studentId);
+        var result = await _personalVideoService.GetStacksAsync(classId, studentId);
         return Ok(ApiResult<IReadOnlyList<HighlightVideoStackDto>>.Success(
             result, "200", "Stacks retrieved."));
     }

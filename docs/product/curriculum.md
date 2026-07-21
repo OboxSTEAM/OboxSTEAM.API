@@ -84,7 +84,12 @@ API: `/api/experts`.
 
 ## Highlight Videos
 
-Per-student highlight reels for a program, processed asynchronously via AWS
-MediaConvert. Status tracked on `HighlightVideo`.
+Per-student highlight reels for a **class**, processed asynchronously via AWS
+MediaConvert. Model: `HighlightVideoStack` (up to 3 per student/class) with
+`HighlightVideoItem` outputs (up to 4 per stack). Source clips come from
+`MediaAsset` videos on activities scheduled via that class's `ClassSession`
+rows. Optional `StrengthDescription` filters clips via Bedrock + label timeline.
 
-API: `/api/programs/{programId}/students/{studentId}/highlight-video`.
+API: `/api/highlight-video/stacks` (`classId` query/body; optional `studentId`).
+Trim / add-segment / delete under `/api/highlight-video/stacks/{stackId}/...`.
+AWS completion: `/api/webhooks/aws`.
