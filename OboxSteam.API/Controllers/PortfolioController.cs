@@ -360,7 +360,7 @@ public class PortfolioController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Sync auto-imported portfolio items",
-        Description = "Idempotently imports certificates and graded capstone projects. Highlight reels are not imported.")]
+        Description = "Idempotently imports certificates, graded capstone projects, and completed highlight reels.")]
     [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

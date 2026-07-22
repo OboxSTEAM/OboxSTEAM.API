@@ -537,7 +537,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<int>("MaxCapacity")
                         .HasColumnType("integer");
 
-                    b.Property<Guid>("MentorId")
+                    b.Property<Guid?>("MentorId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("MinHoursBeforeAssignmentJoin")
@@ -642,6 +642,223 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.ToTable("ClassEnrollments");
                 });
 
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassMentorRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DecidedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("MentorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DecidedBy");
+
+                    b.HasIndex("ClassId", "MentorId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"Status\" = 'Pending'");
+
+                    b.HasIndex("ClassId", "Status")
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.HasIndex("MentorId", "Status")
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("ClassMentorRequests");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassQuizQuestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassQuizQuestionSetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DifficultyLevel")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("OrderIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Points")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("QuestionText")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("QuestionType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<Guid?>("SourceBankQuestionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClassQuizQuestionSetId");
+
+                    b.ToTable("ClassQuizQuestions");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassQuizQuestionOption", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassQuizQuestionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsCorrect")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OptionText")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClassQuizQuestionId");
+
+                    b.ToTable("ClassQuizQuestionOptions");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassQuizQuestionSet", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("PulledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignmentId");
+
+                    b.HasIndex("ClassId", "AssignmentId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("ClassQuizQuestionSets");
+                });
+
             modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -691,6 +908,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<bool>("RequiresAttendance")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("RequiresMentorCheckIn")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("SessionKind")
                         .IsRequired()
                         .HasColumnType("text");
@@ -724,6 +944,50 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("ClassId", "StartTime");
 
                     b.ToTable("ClassSessions");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSkill", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("SkillId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SkillId");
+
+                    b.HasIndex("ClassId", "SkillId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("ClassSkills");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Course", b =>
@@ -951,72 +1215,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.ToTable("FaceEmbeddings");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.HighlightVideo", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("PersonalVideoFailureReason")
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
-
-                    b.Property<string>("PersonalVideoJobRef")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<DateTime?>("PersonalVideoRequestedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("PersonalVideoStatus")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("ProgramId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Status")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<Guid>("StudentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("VideoUrl")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StudentId");
-
-                    b.HasIndex("ProgramId", "StudentId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("HighlightVideos");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.HighlightVideoItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1104,6 +1302,9 @@ namespace OboxSteam.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("ClassId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1118,9 +1319,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
-
-                    b.Property<Guid>("ProgramId")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("StrengthDescription")
                         .IsRequired()
@@ -1140,7 +1338,7 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("StudentId");
 
-                    b.HasIndex("ProgramId", "StudentId", "StrengthDescription")
+                    b.HasIndex("ClassId", "StudentId", "StrengthDescription")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
@@ -1285,7 +1483,10 @@ namespace OboxSteam.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("ActivityId")
+                    b.Property<Guid>("ClassId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ClassSessionId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1347,7 +1548,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ActivityId");
+                    b.HasIndex("ClassId");
+
+                    b.HasIndex("ClassSessionId");
 
                     b.HasIndex("UploaderId");
 
@@ -1403,6 +1606,109 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("StudentId");
 
                     b.ToTable("MediaTags");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.MentorProfile", b =>
+                {
+                    b.Property<Guid>("MentorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Achievements")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Bio")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LinkedInUrl")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Organization")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("MentorId");
+
+                    b.ToTable("MentorProfiles");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.MentorSkill", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("MentorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ProficiencyLevel")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("SkillId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SkillId");
+
+                    b.HasIndex("MentorId", "SkillId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("MentorSkills");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Module", b =>
@@ -3480,6 +3786,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<bool>("IsEmailVerified")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("MaxConcurrentClasses")
+                        .HasColumnType("integer");
+
                     b.Property<string>("PasswordHash")
                         .HasColumnType("text");
 
@@ -3650,8 +3959,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasOne("OboxSteam.Domain.Entities.User", "Mentor")
                         .WithMany("MentoredClasses")
                         .HasForeignKey("MentorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
                         .WithMany("Classes")
@@ -3691,6 +3999,73 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Student");
                 });
 
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassMentorRequest", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.Class", "Class")
+                        .WithMany("MentorRequests")
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OboxSteam.Domain.Entities.User", "Decider")
+                        .WithMany("DecidedClassMentorRequests")
+                        .HasForeignKey("DecidedBy")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("OboxSteam.Domain.Entities.User", "Mentor")
+                        .WithMany("ClassMentorRequests")
+                        .HasForeignKey("MentorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Class");
+
+                    b.Navigation("Decider");
+
+                    b.Navigation("Mentor");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassQuizQuestion", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.ClassQuizQuestionSet", "ClassQuizQuestionSet")
+                        .WithMany("Questions")
+                        .HasForeignKey("ClassQuizQuestionSetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ClassQuizQuestionSet");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassQuizQuestionOption", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.ClassQuizQuestion", "ClassQuizQuestion")
+                        .WithMany("Options")
+                        .HasForeignKey("ClassQuizQuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ClassQuizQuestion");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassQuizQuestionSet", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.Assignment", "Assignment")
+                        .WithMany()
+                        .HasForeignKey("AssignmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OboxSteam.Domain.Entities.Class", "Class")
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Assignment");
+
+                    b.Navigation("Class");
+                });
+
             modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSession", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.Activity", "Activity")
@@ -3722,6 +4097,25 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Class");
 
                     b.Navigation("Module");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSkill", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.Class", "Class")
+                        .WithMany("ClassSkills")
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OboxSteam.Domain.Entities.Skill", "Skill")
+                        .WithMany("ClassSkills")
+                        .HasForeignKey("SkillId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Class");
+
+                    b.Navigation("Skill");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Course", b =>
@@ -3775,25 +4169,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Student");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.HighlightVideo", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
-                        .WithMany("HighlightVideos")
-                        .HasForeignKey("ProgramId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.User", "Student")
-                        .WithMany("HighlightVideos")
-                        .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Program");
-
-                    b.Navigation("Student");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.HighlightVideoItem", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.HighlightVideoItem", "ParentItem")
@@ -3814,9 +4189,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.HighlightVideoStack", b =>
                 {
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
+                    b.HasOne("OboxSteam.Domain.Entities.Class", "Class")
                         .WithMany()
-                        .HasForeignKey("ProgramId")
+                        .HasForeignKey("ClassId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -3826,7 +4201,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Program");
+                    b.Navigation("Class");
 
                     b.Navigation("Student");
                 });
@@ -3863,9 +4238,16 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.MediaAsset", b =>
                 {
-                    b.HasOne("OboxSteam.Domain.Entities.Activity", "Activity")
-                        .WithMany("MediaAssets")
-                        .HasForeignKey("ActivityId");
+                    b.HasOne("OboxSteam.Domain.Entities.Class", "Class")
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OboxSteam.Domain.Entities.ClassSession", "ClassSession")
+                        .WithMany()
+                        .HasForeignKey("ClassSessionId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("OboxSteam.Domain.Entities.User", "Uploader")
                         .WithMany("UploadedMediaAssets")
@@ -3873,7 +4255,9 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Activity");
+                    b.Navigation("Class");
+
+                    b.Navigation("ClassSession");
 
                     b.Navigation("Uploader");
                 });
@@ -3895,6 +4279,36 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Media");
 
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.MentorProfile", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.User", "Mentor")
+                        .WithOne("MentorProfile")
+                        .HasForeignKey("OboxSteam.Domain.Entities.MentorProfile", "MentorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Mentor");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.MentorSkill", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.User", "Mentor")
+                        .WithMany("MentorSkills")
+                        .HasForeignKey("MentorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OboxSteam.Domain.Entities.Skill", "Skill")
+                        .WithMany("MentorSkills")
+                        .HasForeignKey("SkillId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Mentor");
+
+                    b.Navigation("Skill");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Module", b =>
@@ -4538,8 +4952,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Navigation("Material");
 
-                    b.Navigation("MediaAssets");
-
                     b.Navigation("ResearchMilestoneActivities");
                 });
 
@@ -4564,6 +4976,20 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("ClassEnrollments");
 
                     b.Navigation("ClassSessions");
+
+                    b.Navigation("ClassSkills");
+
+                    b.Navigation("MentorRequests");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassQuizQuestion", b =>
+                {
+                    b.Navigation("Options");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassQuizQuestionSet", b =>
+                {
+                    b.Navigation("Questions");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSession", b =>
@@ -4662,8 +5088,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Navigation("Classes");
 
-                    b.Navigation("HighlightVideos");
-
                     b.Navigation("Modules");
 
                     b.Navigation("PaymentRequests");
@@ -4707,6 +5131,10 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Skill", b =>
                 {
+                    b.Navigation("ClassSkills");
+
+                    b.Navigation("MentorSkills");
+
                     b.Navigation("StudentSkills");
                 });
 
@@ -4734,17 +5162,23 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Navigation("ClassEnrollments");
 
+                    b.Navigation("ClassMentorRequests");
+
                     b.Navigation("CourseEnrollments");
+
+                    b.Navigation("DecidedClassMentorRequests");
 
                     b.Navigation("Expert");
 
                     b.Navigation("FaceEmbedding");
 
-                    b.Navigation("HighlightVideos");
-
                     b.Navigation("Invoices");
 
                     b.Navigation("MediaTags");
+
+                    b.Navigation("MentorProfile");
+
+                    b.Navigation("MentorSkills");
 
                     b.Navigation("MentoredClasses");
 

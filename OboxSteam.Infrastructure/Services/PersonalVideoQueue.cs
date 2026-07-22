@@ -9,7 +9,7 @@ namespace OboxSteam.Infrastructure.Services;
 /// background worker (singleton) share the same channel.
 ///
 /// Note: jobs live only in process memory — if the app restarts while a job is queued or
-/// mid-flight, that job is lost and the HighlightVideo stays in <c>Processing</c> until the
+/// mid-flight, that job is lost and the HighlightVideoItem stays in <c>Processing</c> until the
 /// stale-threshold guard allows a re-trigger. This is acceptable for the current scale; a
 /// durable queue (e.g. SQS) would be the next step if stronger guarantees are needed.
 /// </summary>

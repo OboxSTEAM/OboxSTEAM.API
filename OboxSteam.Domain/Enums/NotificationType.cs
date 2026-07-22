@@ -41,6 +41,11 @@ public enum NotificationType
     ClassAutoStarted,
     ClassCompleted,
 
+    // Class mentor assignment
+    ClassMentorRequestSubmitted,
+    ClassMentorRequestApproved,
+    ClassMentorRequestRejected,
+
     // Class enrollment
     ClassEnrolled,
     ClassTransferred,
@@ -82,5 +87,9 @@ public enum NotificationType
 
     // Catalog (optional admin publishes)
     AssignmentPublished,
-    MaterialUpdated
+    MaterialUpdated,
+
+    // Mentor curriculum edits
+    AssignmentEditedByMentor,
+    ClassQuizSetEditedByMentor
 }

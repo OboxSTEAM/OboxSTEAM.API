@@ -56,10 +56,17 @@ builder.Services.AddCors(options =>
                     ?? Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGIN")
                     ?? "https://oboxsteam.website,http://localhost:3000";
 
-                var allowedOrigins = originsRaw
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var allowedOrigins = new HashSet<string>(
+                    originsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                    StringComparer.OrdinalIgnoreCase)
+                {
+                    // Apex is always allowed for the main FE, even if omitted from the env list.
+                    FrontendCorsOriginValidator.ApexOrigin,
+                };
 
-                policy.WithOrigins(allowedOrigins)
+                // WithOrigins does not support wildcards; use a predicate so portfolio
+                // hosts like https://ch1mpleo.oboxsteam.website are accepted.
+                policy.SetIsOriginAllowed(origin => FrontendCorsOriginValidator.IsAllowed(origin, allowedOrigins))
                       .AllowAnyHeader()
                       .AllowAnyMethod()
                       .AllowCredentials();

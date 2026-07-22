@@ -3,13 +3,13 @@ using System.ComponentModel.DataAnnotations;
 namespace OboxSteam.Domain.Entities;
 
 /// <summary>
-/// A stack of up to four personal highlight video outputs for one student/program,
+/// A stack of up to four personal highlight video outputs for one student/class,
 /// keyed by an optional strength description (empty string = no specification).
 /// </summary>
 public class HighlightVideoStack : BaseEntity
 {
-    public Guid ProgramId { get; set; }
-    public Program Program { get; set; } = null!;
+    public Guid ClassId { get; set; }
+    public Class Class { get; set; } = null!;
 
     public Guid StudentId { get; set; }
     public User Student { get; set; } = null!;

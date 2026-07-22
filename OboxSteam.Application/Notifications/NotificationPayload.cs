@@ -11,6 +11,7 @@ public sealed class NotificationPayload
     public Guid? ClassId { get; set; }
     public Guid? ClassEnrollmentId { get; set; }
     public Guid? ClassSessionId { get; set; }
+    public Guid? ClassMentorRequestId { get; set; }
     public Guid? PaymentId { get; set; }
     public Guid? PaymentRequestId { get; set; }
     public Guid? AssignmentId { get; set; }

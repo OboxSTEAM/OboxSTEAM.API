@@ -2,6 +2,8 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.ClassSessionDTO;
+using OboxSteam.Application.DTOs.MentorDTO;
+using OboxSteam.Application.DTOs.SkillDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
@@ -93,22 +95,7 @@ public sealed class ClassService : IClassService
             .Take(pageSize)
             .ToList();
 
-        var dtos = items.Select(c => new ClassResponseDto
-        {
-            Id = c.Id,
-            Code = c.Code,
-            Name = c.Name,
-            ProgramId = c.ProgramId,
-            MentorId = c.MentorId,
-            StartDate = c.StartDate,
-            EndDate = c.EndDate,
-            MaxCapacity = c.MaxCapacity,
-            Status = c.Status,
-            MinHoursBeforeAssignmentJoin = c.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = c.ScheduleSummary,
-            CreatedAt = c.CreatedAt,
-            UpdatedAt = c.UpdatedAt,
-        }).ToList();
+        var dtos = await MapToResponseDtosAsync(items);
 
         _logger.LogInformation("[GetAllClassesAsync] Retrieved {Count}/{Total} classes.", dtos.Count, totalCount);
 
@@ -126,23 +113,7 @@ public sealed class ClassService : IClassService
 
         var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
 
-        return new ClassResponseDto
-        {
-            Id = entity!.Id,
-            Code = entity.Code,
-            Name = entity.Name,
-            ProgramId = entity.ProgramId,
-            MentorId = entity.MentorId,
-            StartDate = entity.StartDate,
-            EndDate = entity.EndDate,
-            MaxCapacity = entity.MaxCapacity,
-            SeatsTaken = seatsTaken,
-            Status = entity.Status,
-            MinHoursBeforeAssignmentJoin = entity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = entity.ScheduleSummary,
-            CreatedAt = entity.CreatedAt,
-            UpdatedAt = entity.UpdatedAt,
-        };
+        return await MapToResponseDtoAsync(entity!, seatsTaken);
     }
 
     public async Task<ClassResponseDto> GetClassWithStudentsAsync(Guid classId)
@@ -193,24 +164,9 @@ public sealed class ClassService : IClassService
             classId,
             studentDtos.Count);
 
-        return new ClassResponseDto
-        {
-            Id = entity!.Id,
-            Code = entity.Code,
-            Name = entity.Name,
-            ProgramId = entity.ProgramId,
-            MentorId = entity.MentorId,
-            StartDate = entity.StartDate,
-            EndDate = entity.EndDate,
-            MaxCapacity = entity.MaxCapacity,
-            SeatsTaken = enrollments.Count,
-            Status = entity.Status,
-            MinHoursBeforeAssignmentJoin = entity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = entity.ScheduleSummary,
-            CreatedAt = entity.CreatedAt,
-            UpdatedAt = entity.UpdatedAt,
-            Students = studentDtos,
-        };
+        var dto = await MapToResponseDtoAsync(entity!, seatsTaken: enrollments.Count);
+        dto.Students = studentDtos;
+        return dto;
     }
 
     public async Task<ClassWithSessionsResponseDto> GetClassWithSessionsAsync(Guid classId)
@@ -243,6 +199,7 @@ public sealed class ClassService : IClassService
                 Location = cs.Location,
                 MaxCapacity = cs.MaxCapacity,
                 RequiresAttendance = cs.RequiresAttendance,
+                RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
                 Status = cs.Status,
                 CreatedAt = cs.CreatedAt,
                 UpdatedAt = cs.UpdatedAt,
@@ -282,8 +239,12 @@ public sealed class ClassService : IClassService
         var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId);
         ClassValidator.ValidateProgramExists(program, request.ProgramId);
 
-        var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId);
-        ClassValidator.ValidateMentorExists(mentor, request.MentorId);
+        if (request.MentorId.HasValue)
+        {
+            var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId.Value);
+            ClassValidator.ValidateMentorExists(mentor, request.MentorId.Value);
+            await ClassMentorRequestValidator.ValidateUnderConcurrentLimitAsync(_unitOfWork, mentor!);
+        }
 
         var duplicate = await _unitOfWork.Classes.FirstOrDefaultAsync(
             c => c.Code.ToLower() == request.Code.Trim().ToLower() && !c.IsDeleted);
@@ -311,28 +272,18 @@ public sealed class ClassService : IClassService
         await _unitOfWork.Classes.AddAsync(entity);
         await _unitOfWork.SaveChangesAsync();
 
+        await SyncRequiredSkillsAsync(entity.Id, request.RequiredSkillIds);
+        if (request.RequiredSkillIds is { Count: > 0 })
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.ClassCreated(entity.Id, entity.ProgramId, entity.Name));
 
         _logger.LogInformation("[CreateClassAsync] Class '{Code}' created with Id {Id}.", entity.Code, entity.Id);
 
-        return new ClassResponseDto
-        {
-            Id = entity.Id,
-            Code = entity.Code,
-            Name = entity.Name,
-            ProgramId = entity.ProgramId,
-            MentorId = entity.MentorId,
-            StartDate = entity.StartDate,
-            EndDate = entity.EndDate,
-            MaxCapacity = entity.MaxCapacity,
-            SeatsTaken = 0,
-            Status = entity.Status,
-            MinHoursBeforeAssignmentJoin = entity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = entity.ScheduleSummary,
-            CreatedAt = entity.CreatedAt,
-            UpdatedAt = entity.UpdatedAt,
-        };
+        return await MapToResponseDtoAsync(entity, seatsTaken: 0);
     }
 
     public async Task<ClassResponseDto> UpdateClassAsync(Guid id, UpdateClassRequestDto request)
@@ -344,6 +295,8 @@ public sealed class ClassService : IClassService
         var classEntity = entity!;
 
         ClassValidator.ValidateNotUpdatingStatusViaPatch(request.Status);
+
+        List<NotificationCommand>? pendingDirectAssignReconcile = null;
 
         if (!string.IsNullOrWhiteSpace(request.Code) &&
             !classEntity.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase))
@@ -387,6 +340,11 @@ public sealed class ClassService : IClassService
             var mentor = await _unitOfWork.Users.GetByIdAsync(request.MentorId.Value);
             ClassValidator.ValidateMentorExists(mentor, request.MentorId.Value);
 
+            await ClassMentorRequestValidator.ValidateUnderConcurrentLimitAsync(
+                _unitOfWork,
+                mentor!,
+                excludeClassId: classEntity.Id);
+
             await MentorScopeValidator.ValidateMentorCanTakeClassSessionsAsync(
                 _unitOfWork,
                 request.MentorId.Value,
@@ -394,6 +352,10 @@ public sealed class ClassService : IClassService
 
             classEntity.MentorId = request.MentorId.Value;
             isUpdated = true;
+            pendingDirectAssignReconcile = await ReconcileRequestsOnDirectAssignAsync(
+                classEntity,
+                mentor!,
+                _claimsService.GetCurrentUserId);
         }
 
         var startDate = request.StartDate ?? classEntity.StartDate;
@@ -434,33 +396,27 @@ public sealed class ClassService : IClassService
             isUpdated = true;
         }
 
+        if (request.RequiredSkillIds != null)
+        {
+            await SyncRequiredSkillsAsync(classEntity.Id, request.RequiredSkillIds);
+            isUpdated = true;
+        }
+
         if (!isUpdated)
         {
             _logger.LogInformation("[UpdateClassAsync] No changes detected for class {Id}.", id);
 
             var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
-
-            return new ClassResponseDto
-            {
-                Id = classEntity.Id,
-                Code = classEntity.Code,
-                Name = classEntity.Name,
-                ProgramId = classEntity.ProgramId,
-                MentorId = classEntity.MentorId,
-                StartDate = classEntity.StartDate,
-                EndDate = classEntity.EndDate,
-                MaxCapacity = classEntity.MaxCapacity,
-                SeatsTaken = seatsTaken,
-                Status = classEntity.Status,
-                MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
-                ScheduleSummary = classEntity.ScheduleSummary,
-                CreatedAt = classEntity.CreatedAt,
-                UpdatedAt = classEntity.UpdatedAt,
-            };
+            return await MapToResponseDtoAsync(classEntity, seatsTaken);
         }
 
         await _unitOfWork.Classes.Update(classEntity);
         await _unitOfWork.SaveChangesAsync();
+
+        if (pendingDirectAssignReconcile is { Count: > 0 })
+        {
+            await _notificationPublisher.PublishManyAsync(pendingDirectAssignReconcile);
+        }
 
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.ClassUpdated(classEntity.Id, classEntity.ProgramId, classEntity.Name));
@@ -469,23 +425,7 @@ public sealed class ClassService : IClassService
 
         var updatedSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
 
-        return new ClassResponseDto
-        {
-            Id = classEntity.Id,
-            Code = classEntity.Code,
-            Name = classEntity.Name,
-            ProgramId = classEntity.ProgramId,
-            MentorId = classEntity.MentorId,
-            StartDate = classEntity.StartDate,
-            EndDate = classEntity.EndDate,
-            MaxCapacity = classEntity.MaxCapacity,
-            SeatsTaken = updatedSeatsTaken,
-            Status = classEntity.Status,
-            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = classEntity.ScheduleSummary,
-            CreatedAt = classEntity.CreatedAt,
-            UpdatedAt = classEntity.UpdatedAt,
-        };
+        return await MapToResponseDtoAsync(classEntity, updatedSeatsTaken);
     }
 
     public async Task<ClassResponseDto> OpenClassAsync(Guid id)
@@ -508,23 +448,7 @@ public sealed class ClassService : IClassService
 
         var openSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
 
-        return new ClassResponseDto
-        {
-            Id = classEntity.Id,
-            Code = classEntity.Code,
-            Name = classEntity.Name,
-            ProgramId = classEntity.ProgramId,
-            MentorId = classEntity.MentorId,
-            StartDate = classEntity.StartDate,
-            EndDate = classEntity.EndDate,
-            MaxCapacity = classEntity.MaxCapacity,
-            SeatsTaken = openSeatsTaken,
-            Status = classEntity.Status,
-            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = classEntity.ScheduleSummary,
-            CreatedAt = classEntity.CreatedAt,
-            UpdatedAt = classEntity.UpdatedAt,
-        };
+        return await MapToResponseDtoAsync(classEntity, openSeatsTaken);
     }
 
     public async Task<ClassResponseDto> StartClassAsync(Guid id)
@@ -547,23 +471,7 @@ public sealed class ClassService : IClassService
 
         var startSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
 
-        return new ClassResponseDto
-        {
-            Id = classEntity.Id,
-            Code = classEntity.Code,
-            Name = classEntity.Name,
-            ProgramId = classEntity.ProgramId,
-            MentorId = classEntity.MentorId,
-            StartDate = classEntity.StartDate,
-            EndDate = classEntity.EndDate,
-            MaxCapacity = classEntity.MaxCapacity,
-            SeatsTaken = startSeatsTaken,
-            Status = classEntity.Status,
-            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = classEntity.ScheduleSummary,
-            CreatedAt = classEntity.CreatedAt,
-            UpdatedAt = classEntity.UpdatedAt,
-        };
+        return await MapToResponseDtoAsync(classEntity, startSeatsTaken);
     }
 
     public async Task TryAutoStartClassIfReadyAsync(Guid classId)
@@ -789,23 +697,7 @@ public sealed class ClassService : IClassService
 
         var completeSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
 
-        return new ClassResponseDto
-        {
-            Id = classEntity.Id,
-            Code = classEntity.Code,
-            Name = classEntity.Name,
-            ProgramId = classEntity.ProgramId,
-            MentorId = classEntity.MentorId,
-            StartDate = classEntity.StartDate,
-            EndDate = classEntity.EndDate,
-            MaxCapacity = classEntity.MaxCapacity,
-            SeatsTaken = completeSeatsTaken,
-            Status = classEntity.Status,
-            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = classEntity.ScheduleSummary,
-            CreatedAt = classEntity.CreatedAt,
-            UpdatedAt = classEntity.UpdatedAt,
-        };
+        return await MapToResponseDtoAsync(classEntity, completeSeatsTaken);
     }
 
     public async Task DeleteClassAsync(Guid id)
@@ -844,5 +736,264 @@ public sealed class ClassService : IClassService
             "[DeleteClassAsync] Class Id {Id} soft-deleted successfully ({SessionCount} sessions soft-deleted).",
             id,
             sessions.Count);
+    }
+
+    private async Task<ClassResponseDto> MapToResponseDtoAsync(Class entity, int? seatsTaken = null)
+    {
+        var skills = await LoadRequiredSkillsAsync(entity.Id);
+        var pendingCount = await CountPendingRequestsAsync(entity.Id);
+        var mentor = await LoadMentorSummaryAsync(entity.MentorId);
+
+        return new ClassResponseDto
+        {
+            Id = entity.Id,
+            Code = entity.Code,
+            Name = entity.Name,
+            ProgramId = entity.ProgramId,
+            MentorId = entity.MentorId,
+            Mentor = mentor,
+            StartDate = entity.StartDate,
+            EndDate = entity.EndDate,
+            MaxCapacity = entity.MaxCapacity,
+            SeatsTaken = seatsTaken ?? 0,
+            Status = entity.Status,
+            MinHoursBeforeAssignmentJoin = entity.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = entity.ScheduleSummary,
+            RequiredSkills = skills,
+            PendingMentorRequestCount = pendingCount,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt,
+        };
+    }
+
+    private async Task<List<ClassResponseDto>> MapToResponseDtosAsync(List<Class> items)
+    {
+        if (items.Count == 0)
+        {
+            return new List<ClassResponseDto>();
+        }
+
+        var classIds = items.Select(c => c.Id).ToList();
+        var classSkills = await _unitOfWork.ClassSkills.GetAllAsync(
+            cs => classIds.Contains(cs.ClassId) && !cs.IsDeleted);
+        var skillIds = classSkills.Select(cs => cs.SkillId).Distinct().ToList();
+        var skills = skillIds.Count == 0
+            ? new List<Skill>()
+            : await _unitOfWork.Skills.GetAllAsync(s => skillIds.Contains(s.Id) && !s.IsDeleted);
+        var skillsById = skills.ToDictionary(s => s.Id);
+
+        var skillsByClass = classSkills
+            .GroupBy(cs => cs.ClassId)
+            .ToDictionary(
+                g => g.Key,
+                g => g
+                    .Where(cs => skillsById.ContainsKey(cs.SkillId))
+                    .Select(cs => MapSkillSummary(skillsById[cs.SkillId]))
+                    .ToList());
+
+        var pendingCounts = _unitOfWork.ClassMentorRequests
+            .GetQueryable()
+            .Where(r => classIds.Contains(r.ClassId)
+                        && r.Status == ClassMentorRequestStatus.Pending
+                        && !r.IsDeleted)
+            .GroupBy(r => r.ClassId)
+            .Select(g => new { ClassId = g.Key, Count = g.Count() })
+            .ToDictionary(x => x.ClassId, x => x.Count);
+
+        var mentorSummaries = await LoadMentorSummariesAsync(
+            items.Where(c => c.MentorId.HasValue).Select(c => c.MentorId!.Value).Distinct().ToList());
+
+        return items.Select(c => new ClassResponseDto
+        {
+            Id = c.Id,
+            Code = c.Code,
+            Name = c.Name,
+            ProgramId = c.ProgramId,
+            MentorId = c.MentorId,
+            Mentor = c.MentorId.HasValue
+                ? mentorSummaries.GetValueOrDefault(c.MentorId.Value)
+                : null,
+            StartDate = c.StartDate,
+            EndDate = c.EndDate,
+            MaxCapacity = c.MaxCapacity,
+            Status = c.Status,
+            MinHoursBeforeAssignmentJoin = c.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = c.ScheduleSummary,
+            RequiredSkills = skillsByClass.GetValueOrDefault(c.Id, new List<SkillSummaryDto>()),
+            PendingMentorRequestCount = pendingCounts.GetValueOrDefault(c.Id, 0),
+            CreatedAt = c.CreatedAt,
+            UpdatedAt = c.UpdatedAt,
+        }).ToList();
+    }
+
+    private async Task<MentorSummaryDto?> LoadMentorSummaryAsync(Guid? mentorId)
+    {
+        if (!mentorId.HasValue)
+            return null;
+
+        var mentor = await _unitOfWork.Users.GetByIdAsync(mentorId.Value);
+        if (mentor == null || mentor.IsDeleted)
+            return null;
+
+        var profile = await _unitOfWork.MentorProfiles.FirstOrDefaultAsync(
+            mp => mp.MentorId == mentor.Id && !mp.IsDeleted);
+
+        return MentorSummaryMapper.ToSummary(mentor, profile);
+    }
+
+    private async Task<Dictionary<Guid, MentorSummaryDto>> LoadMentorSummariesAsync(List<Guid> mentorIds)
+    {
+        if (mentorIds.Count == 0)
+            return new Dictionary<Guid, MentorSummaryDto>();
+
+        var mentors = await _unitOfWork.Users.GetAllAsync(u => mentorIds.Contains(u.Id) && !u.IsDeleted);
+        var profiles = await _unitOfWork.MentorProfiles.GetAllAsync(
+            mp => mentorIds.Contains(mp.MentorId) && !mp.IsDeleted);
+        var profilesByMentorId = profiles.ToDictionary(mp => mp.MentorId);
+
+        return mentors.ToDictionary(
+            m => m.Id,
+            m => MentorSummaryMapper.ToSummary(
+                m,
+                profilesByMentorId.GetValueOrDefault(m.Id)));
+    }
+
+    private async Task<List<SkillSummaryDto>> LoadRequiredSkillsAsync(Guid classId)
+    {
+        var classSkills = await _unitOfWork.ClassSkills.GetAllAsync(
+            cs => cs.ClassId == classId && !cs.IsDeleted);
+
+        if (classSkills.Count == 0)
+        {
+            return new List<SkillSummaryDto>();
+        }
+
+        var skillIds = classSkills.Select(cs => cs.SkillId).Distinct().ToList();
+        var skills = await _unitOfWork.Skills.GetAllAsync(s => skillIds.Contains(s.Id) && !s.IsDeleted);
+        var skillsById = skills.ToDictionary(s => s.Id);
+
+        return classSkills
+            .Where(cs => skillsById.ContainsKey(cs.SkillId))
+            .Select(cs => MapSkillSummary(skillsById[cs.SkillId]))
+            .ToList();
+    }
+
+    private Task<int> CountPendingRequestsAsync(Guid classId)
+    {
+        var count = _unitOfWork.ClassMentorRequests
+            .GetQueryable()
+            .Count(r => r.ClassId == classId
+                        && r.Status == ClassMentorRequestStatus.Pending
+                        && !r.IsDeleted);
+        return Task.FromResult(count);
+    }
+
+    private static SkillSummaryDto MapSkillSummary(Skill skill)
+        => new()
+        {
+            Id = skill.Id,
+            Code = skill.Code,
+            Name = skill.Name,
+            Category = skill.Category,
+            Subcategory = skill.Subcategory,
+        };
+
+    private async Task SyncRequiredSkillsAsync(Guid classId, List<Guid>? skillIds)
+    {
+        if (skillIds == null)
+        {
+            return;
+        }
+
+        var desired = skillIds.Where(id => id != Guid.Empty).Distinct().ToList();
+
+        if (desired.Count > 0)
+        {
+            var existingSkills = await _unitOfWork.Skills.GetAllAsync(
+                s => desired.Contains(s.Id) && !s.IsDeleted);
+            if (existingSkills.Count != desired.Count)
+            {
+                var found = existingSkills.Select(s => s.Id).ToHashSet();
+                var missing = desired.First(id => !found.Contains(id));
+                throw ErrorHelper.NotFound($"Skill with id '{missing}' not found.");
+            }
+        }
+
+        var current = await _unitOfWork.ClassSkills.GetAllAsync(
+            cs => cs.ClassId == classId && !cs.IsDeleted);
+
+        var toRemove = current.Where(cs => !desired.Contains(cs.SkillId)).ToList();
+        if (toRemove.Count > 0)
+        {
+            await _unitOfWork.ClassSkills.SoftRemoveRange(toRemove);
+        }
+
+        var currentSkillIds = current.Select(cs => cs.SkillId).ToHashSet();
+        var toAdd = desired
+            .Where(id => !currentSkillIds.Contains(id))
+            .Select(id => new ClassSkill
+            {
+                ClassId = classId,
+                SkillId = id,
+            })
+            .ToList();
+
+        if (toAdd.Count > 0)
+        {
+            await _unitOfWork.ClassSkills.AddRangeAsync(toAdd);
+        }
+    }
+
+    private async Task<List<NotificationCommand>> ReconcileRequestsOnDirectAssignAsync(
+        Class classEntity,
+        User mentor,
+        Guid deciderId)
+    {
+        var pending = await _unitOfWork.ClassMentorRequests.GetAllAsync(
+            r => r.ClassId == classEntity.Id
+                 && r.Status == ClassMentorRequestStatus.Pending
+                 && !r.IsDeleted);
+
+        if (pending.Count == 0)
+        {
+            return new List<NotificationCommand>();
+        }
+
+        var now = DateTime.UtcNow;
+        var notifications = new List<NotificationCommand>();
+
+        foreach (var request in pending)
+        {
+            if (request.MentorId == mentor.Id)
+            {
+                request.Status = ClassMentorRequestStatus.Approved;
+                request.DecidedAt = now;
+                request.DecidedBy = deciderId == Guid.Empty ? null : deciderId;
+                request.DecisionNote = "Assigned directly by manager.";
+                notifications.Add(NotificationCatalog.ClassMentorRequestApproved(
+                    request.Id,
+                    classEntity.Id,
+                    classEntity.ProgramId,
+                    request.MentorId,
+                    classEntity.Name));
+            }
+            else
+            {
+                request.Status = ClassMentorRequestStatus.Rejected;
+                request.DecidedAt = now;
+                request.DecidedBy = deciderId == Guid.Empty ? null : deciderId;
+                request.DecisionNote = "Assigned directly by manager.";
+                notifications.Add(NotificationCatalog.ClassMentorRequestRejected(
+                    request.Id,
+                    classEntity.Id,
+                    classEntity.ProgramId,
+                    request.MentorId,
+                    classEntity.Name));
+            }
+
+            await _unitOfWork.ClassMentorRequests.Update(request);
+        }
+
+        return notifications;
     }
 }

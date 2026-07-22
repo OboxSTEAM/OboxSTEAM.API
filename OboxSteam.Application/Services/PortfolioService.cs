@@ -528,6 +528,7 @@ public sealed class PortfolioService : IPortfolioService
 
         await SyncCertificatesAsync(portfolio, items);
         await SyncCapstoneProjectsAsync(portfolio, items);
+        await SyncHighlightReelsAsync(portfolio, items);
 
         MarkDraftDirty(portfolio);
         await _unitOfWork.Portfolios.Update(portfolio);
@@ -1191,6 +1192,93 @@ public sealed class PortfolioService : IPortfolioService
             }
 
             await SyncCapstoneAppendixAsync(existing, submission, portfolio.StudentId);
+        }
+    }
+
+    /// <summary>
+    /// Imports completed class-scoped highlight videos as <see cref="PortfolioItemType.HighlightReel"/>
+    /// items. Keyed by stack id so regenerations/trims refresh the same portfolio row.
+    /// </summary>
+    private async Task SyncHighlightReelsAsync(Portfolio portfolio, List<PortfolioCustomItem> items)
+    {
+        var stacks = await _unitOfWork.HighlightVideoStacks.GetAllAsync(
+            s => s.StudentId == portfolio.StudentId && !s.IsDeleted);
+
+        if (stacks.Count == 0)
+            return;
+
+        var stackIds = stacks.Select(s => s.Id).ToList();
+        var stackItems = await _unitOfWork.HighlightVideoItems.GetAllAsync(
+            i => stackIds.Contains(i.StackId) && !i.IsDeleted);
+
+        var latestCompletedByStack = stackItems
+            .Where(i => i.Status == HighlightVideoStatus.Completed
+                        && !string.IsNullOrWhiteSpace(i.VideoUrl))
+            .GroupBy(i => i.StackId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(i => i.CreatedAt).First());
+
+        if (latestCompletedByStack.Count == 0)
+            return;
+
+        var classIds = stacks.Select(s => s.ClassId).Distinct().ToList();
+        var classes = (await _unitOfWork.Classes.GetAllAsync(
+                c => classIds.Contains(c.Id) && !c.IsDeleted))
+            .ToDictionary(c => c.Id);
+
+        var programIds = classes.Values.Select(c => c.ProgramId).Distinct().ToList();
+        var programs = programIds.Count == 0
+            ? new Dictionary<Guid, Program>()
+            : (await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id) && !p.IsDeleted))
+                .ToDictionary(p => p.Id);
+
+        var nextOrder = items.Count == 0 ? 0 : items.Max(i => i.DisplayOrder) + 1;
+
+        foreach (var stack in stacks)
+        {
+            if (!latestCompletedByStack.TryGetValue(stack.Id, out var video))
+                continue;
+
+            classes.TryGetValue(stack.ClassId, out var classEntity);
+            programs.TryGetValue(classEntity?.ProgramId ?? Guid.Empty, out var program);
+
+            var title = string.IsNullOrWhiteSpace(stack.StrengthDescription)
+                ? $"{program?.Name ?? classEntity?.Name ?? "Class"} Highlights"
+                : stack.StrengthDescription.Trim();
+
+            var existing = items.FirstOrDefault(
+                i => i.ItemType == PortfolioItemType.HighlightReel
+                     && i.ReferenceId == stack.Id
+                     && !i.IsDeleted);
+
+            if (existing == null)
+            {
+                var item = new PortfolioCustomItem
+                {
+                    PortfolioId = portfolio.Id,
+                    ItemType = PortfolioItemType.HighlightReel,
+                    ReferenceId = stack.Id,
+                    ProgramId = classEntity?.ProgramId,
+                    Title = title,
+                    MediaUrl = video.VideoUrl,
+                    DisplayOrder = nextOrder++,
+                    IsVisible = true,
+                    Source = PortfolioItemSource.AutoImported,
+                };
+
+                await _unitOfWork.PortfolioCustomItems.AddAsync(item);
+                items.Add(item);
+                continue;
+            }
+
+            if (existing.Source == PortfolioItemSource.StudentEdited)
+                continue;
+
+            existing.ProgramId = classEntity?.ProgramId;
+            existing.Title = title;
+            existing.MediaUrl = video.VideoUrl;
+            await _unitOfWork.PortfolioCustomItems.Update(existing);
         }
     }
 

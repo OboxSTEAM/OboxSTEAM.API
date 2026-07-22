@@ -14,7 +14,11 @@ public class MediaTag : BaseEntity
 
     public decimal ConfidenceScore { get; set; }
 
-    public bool IsVerified { get; set; } = true;
+    /// <summary>
+    /// AI-detected tags start as <c>false</c> until a mentor verifies them.
+    /// Manual mentor tags are created as <c>true</c>.
+    /// </summary>
+    public bool IsVerified { get; set; } = false;
 
     /// <summary>
     /// JSON-serialized list of this student's face appearance segments in the video,

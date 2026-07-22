@@ -51,7 +51,7 @@ ProgramEnrollment → ModuleEnrollment → ActivityProgress / Submission
                  └→ ClassEnrollment
 ```
 
-Supporting entities: **StudentProfile**, **Portfolio**, **Certificate**, **Payment**, **MediaAsset**, **HighlightVideo**, **FaceEmbedding**.
+Supporting entities: **StudentProfile**, **Portfolio**, **Certificate**, **Payment**, **MediaAsset**, **HighlightVideoStack** / **HighlightVideoItem**, **FaceEmbedding**.
 
 For the full domain reference (roles, UI mapping, AI pipeline, entity index), see [`.cursor/rules/context.mdc`](.cursor/rules/context.mdc).
 
@@ -155,7 +155,7 @@ dotnet test
 | `/api/program-enrollments` | Program enrollment |
 | `/api/module-enrollments` | Module enrollment and progress |
 | `/api/media` | Media upload and tagging |
-| `/api/highlight-videos` | Personal highlight video pipeline |
+| `/api/highlight-video` | Personal highlight video stacks (class-scoped) |
 | `/api/experts` | Expert / program board |
 | `/api/program-reviews` | Student program reviews |
 | `/api/webhooks/aws` | AWS SNS / processing callbacks |

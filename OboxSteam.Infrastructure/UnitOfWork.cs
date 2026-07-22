@@ -53,11 +53,15 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ClassEnrollment> ClassEnrollments => Repository<ClassEnrollment>();
     public IGenericRepository<ClassSession> ClassSessions => Repository<ClassSession>();
     public IGenericRepository<SessionAttendance> SessionAttendances => Repository<SessionAttendance>();
+    public IGenericRepository<ClassSkill> ClassSkills => Repository<ClassSkill>();
+    public IGenericRepository<ClassMentorRequest> ClassMentorRequests => Repository<ClassMentorRequest>();
+    public IGenericRepository<ClassQuizQuestionSet> ClassQuizQuestionSets => Repository<ClassQuizQuestionSet>();
+    public IGenericRepository<ClassQuizQuestion> ClassQuizQuestions => Repository<ClassQuizQuestion>();
+    public IGenericRepository<ClassQuizQuestionOption> ClassQuizQuestionOptions => Repository<ClassQuizQuestionOption>();
     public IGenericRepository<Expert> Experts => Repository<Expert>();
     public IGenericRepository<Certificate> Certificates => Repository<Certificate>();
     public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();
     public IGenericRepository<MediaTag> MediaTags => Repository<MediaTag>();
-    public IGenericRepository<HighlightVideo> HighlightVideos => Repository<HighlightVideo>();
     public IGenericRepository<HighlightVideoStack> HighlightVideoStacks => Repository<HighlightVideoStack>();
     public IGenericRepository<HighlightVideoItem> HighlightVideoItems => Repository<HighlightVideoItem>();
     public IGenericRepository<FaceEmbedding> FaceEmbeddings => Repository<FaceEmbedding>();
@@ -72,8 +76,10 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Skill> Skills => Repository<Skill>();
     public IGenericRepository<StudentSkill> StudentSkills => Repository<StudentSkill>();
     public IGenericRepository<StudentSkillEvidence> StudentSkillEvidences => Repository<StudentSkillEvidence>();
+    public IGenericRepository<MentorSkill> MentorSkills => Repository<MentorSkill>();
     public IGenericRepository<StandardizedTest> StandardizedTests => Repository<StandardizedTest>();
     public IGenericRepository<StudentProfile> StudentProfiles => Repository<StudentProfile>();
+    public IGenericRepository<MentorProfile> MentorProfiles => Repository<MentorProfile>();
     public IGenericRepository<SubmissionEvidence> SubmissionEvidences => Repository<SubmissionEvidence>();
     public IGenericRepository<Payment> Payments => Repository<Payment>();
     public IGenericRepository<ProgramBoard> ProgramBoards => Repository<ProgramBoard>();

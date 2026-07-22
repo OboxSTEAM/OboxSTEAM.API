@@ -11,7 +11,7 @@ using System.Text.Json;
 namespace OboxSteam.Application.Services;
 
 /// <summary>
-/// Orchestrates personal highlight video generation for a student within a Program.
+/// Orchestrates personal highlight video generation for a student within a Class.
 ///
 /// Data source: face and label timelines are captured at tagging time and persisted
 /// (<see cref="MediaTag.FaceSegmentsJson"/> / <see cref="MediaTag.HasOtherFaces"/> and
@@ -19,8 +19,8 @@ namespace OboxSteam.Application.Services;
 /// does NOT re-query Rekognition (whose video job results expire after 7 days).
 ///
 /// Logic Core (clipping rules per source video):
-///   Case 1 — Video has ZERO recorded face segments for the student (scene-only / activity
-///             footage) but was tagged for the student → include the ENTIRE video without
+///   Case 1 — Video has ZERO recorded face segments for the student (scene-only /
+///             class footage) but was tagged for the student → include the ENTIRE video without
 ///             strength filtering; with strength filtering use label-only Bedrock sub-clips
 ///             when strength filtering is enabled.
 ///   Case 2 — Video has no other faces besides the target student → include ENTIRE video.
@@ -73,11 +73,11 @@ public class PersonalVideoService : IPersonalVideoService
     /// </summary>
     private const long LabelContextWindowMs = 5_000;
 
-    private const int MaxStacksPerStudentProgram = 3;
+    private const int MaxStacksPerStudentClass = 3;
     private const int MaxItemsPerStack = 4;
 
     /// <summary>
-    /// A HighlightVideo stuck in <see cref="HighlightVideoStatus.Processing"/> longer than this
+    /// A HighlightVideoItem stuck in <see cref="HighlightVideoStatus.Processing"/> longer than this
     /// is treated as stale (e.g. the MediaConvert completion webhook never arrived) and may be
     /// re-triggered. Without this guard a lost webhook would lock the record forever.
     /// </summary>
@@ -120,15 +120,15 @@ public class PersonalVideoService : IPersonalVideoService
 
     /// <inheritdoc />
     public async Task<HighlightVideoStackDto> CreateStackAsync(
-        Guid programId, Guid? studentId = null, string? strengthDescription = null)
+        Guid classId, Guid? studentId = null, string? strengthDescription = null)
     {
         var resolvedStudentId = ResolveStudentId(studentId);
-        await ValidateProgramAndStudentAsync(programId, resolvedStudentId);
+        await ValidateClassAndStudentAsync(classId, resolvedStudentId);
 
         var normalizedStrength = NormalizeStrengthDescription(strengthDescription);
 
         var existingStack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
-            s => s.ProgramId == programId
+            s => s.ClassId == classId
                  && s.StudentId == resolvedStudentId
                  && s.StrengthDescription == normalizedStrength);
 
@@ -155,15 +155,15 @@ public class PersonalVideoService : IPersonalVideoService
         }
 
         var stacks = await _unitOfWork.HighlightVideoStacks.GetAllAsync(
-            s => s.ProgramId == programId && s.StudentId == resolvedStudentId);
+            s => s.ClassId == classId && s.StudentId == resolvedStudentId);
 
-        if (stacks.Count >= MaxStacksPerStudentProgram)
+        if (stacks.Count >= MaxStacksPerStudentClass)
             throw ErrorHelper.Conflict(
-                $"Maximum of {MaxStacksPerStudentProgram} highlight stacks allowed per student and program. Delete an existing stack first.");
+                $"Maximum of {MaxStacksPerStudentClass} highlight stacks allowed per student and class. Delete an existing stack first.");
 
         var stack = new HighlightVideoStack
         {
-            ProgramId = programId,
+            ClassId = classId,
             StudentId = resolvedStudentId,
             StrengthDescription = normalizedStrength,
         };
@@ -177,13 +177,13 @@ public class PersonalVideoService : IPersonalVideoService
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<HighlightVideoStackDto>> GetStacksAsync(
-        Guid programId, Guid? studentId = null)
+        Guid classId, Guid? studentId = null)
     {
         var resolvedStudentId = ResolveStudentId(studentId);
-        await ValidateProgramAndStudentAsync(programId, resolvedStudentId);
+        await ValidateClassAndStudentAsync(classId, resolvedStudentId);
 
         var stacks = await _unitOfWork.HighlightVideoStacks.GetAllAsync(
-            s => s.ProgramId == programId && s.StudentId == resolvedStudentId);
+            s => s.ClassId == classId && s.StudentId == resolvedStudentId);
 
         var result = new List<HighlightVideoStackDto>();
         foreach (var stack in stacks.OrderBy(s => s.CreatedAt))
@@ -295,7 +295,7 @@ public class PersonalVideoService : IPersonalVideoService
         _queue.Enqueue(new PersonalVideoJob(
             trimItem.Id,
             PersonalVideoJobKind.ManifestEncode,
-            stack.ProgramId,
+            stack.ClassId,
             stack.StudentId,
             StrengthDescription: null));
 
@@ -337,7 +337,7 @@ public class PersonalVideoService : IPersonalVideoService
         if (startMs < 0 || endMs <= startMs)
             throw ErrorHelper.BadRequest("Segment start must be before end and non-negative.");
 
-        var media = await ValidateSegmentMediaAsync(stack.ProgramId, stack.StudentId, request.MediaId);
+        var media = await ValidateSegmentMediaAsync(stack.ClassId, stack.StudentId, request.MediaId);
         var s3Key = ExtractS3KeyFromUrl(media.FileUrl);
         if (string.IsNullOrEmpty(s3Key))
             throw ErrorHelper.BadRequest("Cannot resolve source video key for the selected media.");
@@ -400,7 +400,7 @@ public class PersonalVideoService : IPersonalVideoService
         _queue.Enqueue(new PersonalVideoJob(
             segmentItem.Id,
             PersonalVideoJobKind.ManifestEncode,
-            stack.ProgramId,
+            stack.ClassId,
             stack.StudentId,
             StrengthDescription: null));
 
@@ -578,15 +578,23 @@ public class PersonalVideoService : IPersonalVideoService
         return currentUserId;
     }
 
-    private async Task ValidateProgramAndStudentAsync(Guid programId, Guid studentId)
+    private async Task ValidateClassAndStudentAsync(Guid classId, Guid studentId)
     {
-        var program = await _unitOfWork.Programs.GetByIdAsync(programId);
-        if (program == null || program.IsDeleted)
-            throw ErrorHelper.NotFound($"Program '{programId}' not found.");
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
+        if (classEntity == null || classEntity.IsDeleted)
+            throw ErrorHelper.NotFound($"Class '{classId}' not found.");
 
         var student = await _unitOfWork.Users.GetByIdAsync(studentId);
-        if (student == null || student.IsDeleted)
+        if (student == null || student.IsDeleted || student.Role != RoleType.Student)
             throw ErrorHelper.NotFound($"Student '{studentId}' not found.");
+
+        var enrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ClassId == classId
+                  && ce.StudentId == studentId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+        if (enrollment == null)
+            throw ErrorHelper.BadRequest("Student is not actively enrolled in the specified class.");
     }
 
     private static string NormalizeStrengthDescription(string? strengthDescription) =>
@@ -618,7 +626,7 @@ public class PersonalVideoService : IPersonalVideoService
         _queue.Enqueue(new PersonalVideoJob(
             item.Id,
             PersonalVideoJobKind.InitialGeneration,
-            stack.ProgramId,
+            stack.ClassId,
             stack.StudentId,
             strengthForJob));
 
@@ -634,7 +642,7 @@ public class PersonalVideoService : IPersonalVideoService
 
     private async Task ProcessInitialGenerationAsync(HighlightVideoItem item, PersonalVideoJob job)
     {
-        var buildResult = await BuildClipInputsAsync(job.ProgramId, job.StudentId, job.StrengthDescription);
+        var buildResult = await BuildClipInputsAsync(job.ClassId, job.StudentId, job.StrengthDescription);
 
         var clipInputs = buildResult.Clips;
         if (clipInputs.Count == 0)
@@ -642,7 +650,7 @@ public class PersonalVideoService : IPersonalVideoService
             var reason = !string.IsNullOrWhiteSpace(job.StrengthDescription)
                 ? $"No video segments matched the specified strengths: '{job.StrengthDescription}'. " +
                   "Ensure the student's strengths are visible in the tagged videos."
-                : "No processed video assets tagged for this student were found in the program.";
+                : "No processed video assets tagged for this student were found for this class.";
 
             item.Status = HighlightVideoStatus.Failed;
             item.FailureReason = reason;
@@ -716,49 +724,55 @@ public class PersonalVideoService : IPersonalVideoService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Traverses Program → Module → Course → Activity → MediaAsset to collect all
-    /// <c>TaggingComplete</c> video assets that have a <see cref="MediaTag"/> for
-    /// <paramref name="studentId"/>, then applies the Logic Core rules to build the
-    /// ordered list of <see cref="ClipInput"/> objects for the MediaConvert job.
-    /// When <paramref name="strengthDescription"/> is provided, each video's face segments are
-    /// filtered via Bedrock against the label detection timeline. Missing label data
-    /// filtered via Bedrock against the label detection timeline. Missing label data for a video
-    /// causes that video to be skipped while the build continues with available clips.
+    /// Collects <c>TaggingComplete</c> class-scoped video assets that have a verified
+    /// <see cref="MediaTag"/> for <paramref name="studentId"/>, then applies the Logic Core
+    /// rules to build the ordered list of <see cref="ClipInput"/> objects for MediaConvert.
+    /// Source scope is <see cref="MediaAsset.ClassId"/> (optional <see cref="MediaAsset.ClassSessionId"/>
+    /// is used only for ordering and DTO enrichment). When <paramref name="strengthDescription"/>
+    /// is provided, each video's face segments are filtered via Bedrock against the label
+    /// detection timeline. Missing label data for a video causes that video to be skipped
+    /// while the build continues with available clips.
     /// </summary>
     private async Task<ClipBuildResult> BuildClipInputsAsync(
-        Guid programId, Guid studentId, string? strengthDescription = null)
+        Guid classId, Guid studentId, string? strengthDescription = null)
     {
         _logger.LogInformation(
-            "[PersonalVideoService] BuildClipInputsAsync: ProgramId={ProgramId}, StudentId={StudentId}",
-            programId, studentId);
+            "[PersonalVideoService] BuildClipInputsAsync: ClassId={ClassId}, StudentId={StudentId}",
+            classId, studentId);
 
-        // Traverse: Program → Modules → Courses → Activities
-        var modules = await _unitOfWork.Modules.GetAllAsync(
-            m => m.ProgramId == programId && !m.IsDeleted);
-
-        var moduleIds = modules.Select(m => m.Id).ToList();
-
-        var courses = await _unitOfWork.Courses.GetAllAsync(
-            c => moduleIds.Contains(c.ModuleId) && !c.IsDeleted);
-
-        var courseIds = courses.Select(c => c.Id).ToList();
-
-        var activities = await _unitOfWork.Activities.GetAllAsync(
-            a => courseIds.Contains(a.CourseId) && !a.IsDeleted);
-
-        var activityIds = activities.Select(a => a.Id).ToList();
-
-        // All tagged-complete videos for this student in the program
+        // All tagged-complete videos for this student in the class (ClassId required on media)
         var allMedia = await _unitOfWork.MediaAssets.GetAllAsync(
-            m => activityIds.Contains(m.ActivityId!.Value)
+            m => m.ClassId == classId
                  && !m.IsDeleted
-                 && m.FileType == "video"
+                 && string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
                  && m.VideoStatus == VideoProcessingStatus.TaggingComplete,
             m => m.MediaTags);
 
         var taggedMedia = allMedia
-            .Where(m => m.MediaTags.Any(t => t.StudentId == studentId))
-            .OrderBy(m => m.CreatedAt)
+            .Where(m => m.MediaTags.Any(t => t.StudentId == studentId && !t.IsDeleted && t.IsVerified))
+            .ToList();
+
+        // Prefer chronological class-session order; media without a session sorts last by upload time.
+        var sessionIds = taggedMedia
+            .Where(m => m.ClassSessionId.HasValue)
+            .Select(m => m.ClassSessionId!.Value)
+            .Distinct()
+            .ToList();
+        var sessionStartById = sessionIds.Count == 0
+            ? new Dictionary<Guid, DateTime>()
+            : (await _unitOfWork.ClassSessions.GetAllAsync(s => sessionIds.Contains(s.Id) && !s.IsDeleted))
+                .ToDictionary(s => s.Id, s => s.StartTime);
+
+        taggedMedia = taggedMedia
+            .OrderBy(m => m.ClassSessionId.HasValue
+                && sessionStartById.TryGetValue(m.ClassSessionId.Value, out _)
+                    ? 0
+                    : 1)
+            .ThenBy(m => m.ClassSessionId.HasValue
+                && sessionStartById.TryGetValue(m.ClassSessionId.Value, out var start)
+                    ? start
+                    : DateTime.MaxValue)
+            .ThenBy(m => m.UploadedAt ?? m.CreatedAt)
             .ToList();
 
         _logger.LogInformation(
@@ -928,7 +942,7 @@ public class PersonalVideoService : IPersonalVideoService
     /// </summary>
     private VideoFaceTimelineResult? ReadPersistedTimeline(MediaAsset media, Guid studentId)
     {
-        var tag = media.MediaTags.FirstOrDefault(t => t.StudentId == studentId);
+        var tag = media.MediaTags.FirstOrDefault(t => t.StudentId == studentId && !t.IsDeleted && t.IsVerified);
         if (tag?.FaceSegmentsJson == null)
             return null;
 
@@ -1194,31 +1208,21 @@ public class PersonalVideoService : IPersonalVideoService
     // DTO mapping
     // ─────────────────────────────────────────────────────────────────────────
 
-    private async Task<MediaAsset> ValidateSegmentMediaAsync(Guid programId, Guid studentId, Guid mediaId)
+    private async Task<MediaAsset> ValidateSegmentMediaAsync(Guid classId, Guid studentId, Guid mediaId)
     {
         var media = await _unitOfWork.MediaAssets.GetByIdAsync(mediaId, m => m.MediaTags);
-        if (media == null || media.IsDeleted || media.FileType != "video")
+        if (media == null || media.IsDeleted
+            || !string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase))
             throw ErrorHelper.NotFound($"Media '{mediaId}' not found.");
 
         if (media.VideoStatus != VideoProcessingStatus.TaggingComplete)
             throw ErrorHelper.BadRequest("Source video must finish tagging before it can be added.");
 
-        if (!media.MediaTags.Any(t => !t.IsDeleted && t.StudentId == studentId))
-            throw ErrorHelper.BadRequest("The selected source video is not tagged for this student.");
+        if (!media.MediaTags.Any(t => !t.IsDeleted && t.StudentId == studentId && t.IsVerified))
+            throw ErrorHelper.BadRequest("The selected source video is not verified-tagged for this student.");
 
-        if (media.ActivityId is null)
-            throw ErrorHelper.BadRequest("Source video is not linked to an activity.");
-
-        var modules = await _unitOfWork.Modules.GetAllAsync(m => m.ProgramId == programId && !m.IsDeleted);
-        var moduleIds = modules.Select(m => m.Id).ToList();
-        var courses = await _unitOfWork.Courses.GetAllAsync(c => moduleIds.Contains(c.ModuleId) && !c.IsDeleted);
-        var courseIds = courses.Select(c => c.Id).ToList();
-        var activities = await _unitOfWork.Activities.GetAllAsync(
-            a => courseIds.Contains(a.CourseId) && !a.IsDeleted);
-        var activityIds = activities.Select(a => a.Id).ToHashSet();
-
-        if (!activityIds.Contains(media.ActivityId.Value))
-            throw ErrorHelper.BadRequest("Source video does not belong to this program.");
+        if (media.ClassId != classId)
+            throw ErrorHelper.BadRequest("Source video does not belong to this class.");
 
         return media;
     }
@@ -1258,7 +1262,7 @@ public class PersonalVideoService : IPersonalVideoService
         return new HighlightVideoStackDto
         {
             Id = stack.Id,
-            ProgramId = stack.ProgramId,
+            ClassId = stack.ClassId,
             StudentId = stack.StudentId,
             StrengthDescription = string.IsNullOrEmpty(stack.StrengthDescription)
                 ? null
@@ -1333,9 +1337,19 @@ public class PersonalVideoService : IPersonalVideoService
             : new List<MediaAsset>();
         var mediaMap = mediaAssets.ToDictionary(m => m.Id);
 
-        var activityIds = mediaAssets
-            .Where(m => m.ActivityId.HasValue)
-            .Select(m => m.ActivityId!.Value)
+        var sessionIds = mediaAssets
+            .Where(m => m.ClassSessionId.HasValue)
+            .Select(m => m.ClassSessionId!.Value)
+            .Distinct()
+            .ToList();
+        var sessions = sessionIds.Count > 0
+            ? await _unitOfWork.ClassSessions.GetAllAsync(s => sessionIds.Contains(s.Id))
+            : new List<ClassSession>();
+        var sessionMap = sessions.ToDictionary(s => s.Id);
+
+        var activityIds = sessions
+            .Where(s => s.ActivityId.HasValue)
+            .Select(s => s.ActivityId!.Value)
             .Distinct()
             .ToList();
         var activities = activityIds.Count > 0
@@ -1346,14 +1360,20 @@ public class PersonalVideoService : IPersonalVideoService
         return groups.Select(g =>
         {
             mediaMap.TryGetValue(g.MediaId, out var media);
+            ClassSession? session = null;
+            if (media?.ClassSessionId is Guid sessionId)
+                sessionMap.TryGetValue(sessionId, out session);
+
             Activity? activity = null;
-            if (media?.ActivityId is Guid activityId)
+            if (session?.ActivityId is Guid activityId)
                 activityMap.TryGetValue(activityId, out activity);
 
             return new HighlightSourceClipDto
             {
                 MediaId = g.MediaId,
-                ActivityId = media?.ActivityId,
+                ClassId = media?.ClassId,
+                ClassSessionId = media?.ClassSessionId,
+                ActivityId = session?.ActivityId,
                 ActivityName = activity?.Name,
                 Segments = g.Segments
                     .Select(s => new HighlightSourceSegmentDto

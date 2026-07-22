@@ -30,6 +30,11 @@ public class HighlightSourceSegmentDto
 public class HighlightSourceClipDto
 {
     public Guid MediaId { get; set; }
+    /// <summary>Class the source media belongs to (always set when media still exists).</summary>
+    public Guid? ClassId { get; set; }
+    /// <summary>Optional session the media was captured for.</summary>
+    public Guid? ClassSessionId { get; set; }
+    /// <summary>Activity linked via the class session, when present.</summary>
     public Guid? ActivityId { get; set; }
     public string? ActivityName { get; set; }
     public IReadOnlyList<HighlightSourceSegmentDto> Segments { get; set; } = Array.Empty<HighlightSourceSegmentDto>();
@@ -38,7 +43,7 @@ public class HighlightSourceClipDto
 public class HighlightVideoStackDto
 {
     public Guid Id { get; set; }
-    public Guid ProgramId { get; set; }
+    public Guid ClassId { get; set; }
     public Guid StudentId { get; set; }
     public string? StrengthDescription { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -57,7 +62,7 @@ public class TimeRangeDto
 
 public class CreateHighlightStackRequest
 {
-    public Guid ProgramId { get; init; }
+    public Guid ClassId { get; init; }
     public Guid? StudentId { get; init; }
     public string? StrengthDescription { get; init; }
 }

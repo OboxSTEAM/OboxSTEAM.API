@@ -26,7 +26,8 @@ JWT role claims must match enum names exactly (e.g. `"Student"`, `"SuperAdmin"`)
 
 - `POST /api/auth/logout`
 - `/api/account/*`
-- `/api/media/*` (base controller requires auth)
+- `/api/media/*` (base controller requires auth; list endpoints are role-scoped in
+  `MediaService`)
 
 ### Manager / SuperAdmin
 
@@ -35,6 +36,8 @@ Create, update, delete for:
 - Programs, modules, courses, activities (mutations).
 - Assignments and question banks.
 - Curriculum structure and admin seed data.
+- Media tag management (`POST/PATCH/DELETE /api/media/{id}/tags...`).
+- `GET /api/media` without filters returns all ready media.
 
 ### Student
 
@@ -42,17 +45,23 @@ Create, update, delete for:
 - Quiz attempts and submissions.
 - Program reviews (own reviews).
 - Parent link requests (student-initiated).
+- Media: own face-tagged ready media only (`GET /api/media`, class-session media filtered).
 
 ### Parent
 
 - View linked student enrollments and progress (shared endpoints with Student,
   SuperAdmin, Manager).
 - Parent-specific endpoints under `/api/parent/*`.
+- Media: ready media tagged for verified linked students (`studentId` required on
+  `GET /api/media`).
 
 ### Mentor
 
 - Assigned via `Course.MentorId` and `Class.MentorId`; mentor-scoped behavior
   is enforced in services, not only at controller level.
+- Media review: list media for mentored class activities; add/remove/verify
+  student tags on that media (`Mentor,Manager,SuperAdmin` on tag mutation routes).
+  AI tags start with `IsVerified = false` until mentor approval.
 
 ## Parent–Student Linking
 

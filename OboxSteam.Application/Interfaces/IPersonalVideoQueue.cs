@@ -16,7 +16,7 @@ public enum PersonalVideoJobKind
 public record PersonalVideoJob(
     Guid ItemId,
     PersonalVideoJobKind Kind,
-    Guid ProgramId,
+    Guid ClassId,
     Guid StudentId,
     string? StrengthDescription);
 

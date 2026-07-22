@@ -13,12 +13,42 @@ public interface IMediaService
     /// Returns immediately with <c>VideoStatus = Transcoding</c> until AWS webhooks (or manual
     /// <c>POST /api/media/{mediaId}/process-tags</c>) advance processing.
     /// </summary>
-    Task<MediaAssetDto> UploadMediaAsync(IFormFile file, Guid activityId);
+    Task<MediaAssetDto> UploadMediaAsync(IFormFile file, Guid classId, Guid? classSessionId = null);
 
     /// <summary>
-    /// Returns all media for an activity, including face tags.
+    /// Returns media for a class session, including face tags, scoped by the caller's role.
     /// </summary>
-    Task<List<MediaAssetDto>> GetMediaByActivityAsync(Guid activityId);
+    Task<List<MediaAssetDto>> GetMediaByClassSessionAsync(Guid classSessionId);
+
+    /// <summary>
+    /// Returns ready media filtered by optional <paramref name="classId"/> and/or
+    /// <paramref name="studentId"/>, scoped by the caller's role.
+    /// Manager/SuperAdmin may omit both filters to list all ready media.
+    /// Class scope filters on <c>MediaAsset.ClassId</c>.
+    /// Student scope uses face <c>MediaTag</c> matches.
+    /// Ready means images, or videos with <c>VideoStatus = TaggingComplete</c>.
+    /// </summary>
+    Task<List<MediaAssetDto>> GetMediaAsync(Guid? classId, Guid? studentId);
+
+    /// <summary>
+    /// Returns one media asset by id, scoped by the caller's role.
+    /// </summary>
+    Task<MediaAssetDto> GetMediaByIdAsync(Guid mediaId);
+
+    /// <summary>
+    /// Manually tags a student onto ready media (mentor/manager). Creates a verified tag.
+    /// </summary>
+    Task<MediaTagDto> AddMediaTagAsync(Guid mediaId, Guid studentId);
+
+    /// <summary>
+    /// Removes a media tag (soft delete).
+    /// </summary>
+    Task RemoveMediaTagAsync(Guid mediaId, Guid studentId);
+
+    /// <summary>
+    /// Sets media-tag verification for mentor review of AI tags.
+    /// </summary>
+    Task<MediaTagDto> SetMediaTagVerificationAsync(Guid mediaId, Guid studentId, bool isVerified);
 
     /// <summary>
     /// Called from <see cref="UploadMediaAsync"/> after the raw file is persisted.
@@ -66,7 +96,7 @@ public interface IMediaService
     Task<bool> IsAwaitingTaggingAsync(Guid mediaId);
 
     /// <summary>
-    /// Handles MediaConvert job completion from SNS/EventBridge (activity media uploads).
+    /// Handles MediaConvert job completion from SNS/EventBridge (media uploads).
     /// Returns <c>true</c> when a matching <c>MediaAsset</c> was found for <paramref name="jobId"/>.
     /// </summary>
     Task<bool> HandleMediaConvertWebhookAsync(string jobId, bool isSuccess);

@@ -39,6 +39,9 @@ public class ClassSession : BaseEntity
 
     public bool RequiresAttendance { get; set; } = true;
 
+    /// <summary>Whether the assigned mentor must check in for this specific session instance.</summary>
+    public bool RequiresMentorCheckIn { get; set; }
+
     public ClassSessionStatus Status { get; set; } = ClassSessionStatus.Scheduled;
 
     // Navigation

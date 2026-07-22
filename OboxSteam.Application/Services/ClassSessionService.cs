@@ -115,6 +115,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = cs.Location,
             MaxCapacity = cs.MaxCapacity,
             RequiresAttendance = cs.RequiresAttendance,
+            RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
             Status = cs.Status,
             CreatedAt = cs.CreatedAt,
             UpdatedAt = cs.UpdatedAt,
@@ -153,6 +154,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = entity.Location,
             MaxCapacity = entity.MaxCapacity,
             RequiresAttendance = entity.RequiresAttendance,
+            RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
             Status = entity.Status,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
@@ -264,6 +266,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = session.Location,
             MaxCapacity = session.MaxCapacity,
             RequiresAttendance = session.RequiresAttendance,
+            RequiresMentorCheckIn = session.RequiresMentorCheckIn,
             Status = session.Status,
             CreatedAt = session.CreatedAt,
             UpdatedAt = session.UpdatedAt,
@@ -295,9 +298,15 @@ public sealed class ClassSessionService : IClassSessionService
             request.ActivityId,
             request.AssignmentId);
 
+        if (classEntity!.MentorId is null)
+        {
+            throw ErrorHelper.BadRequest(
+                "Cannot schedule a session for a class that has no assigned mentor.");
+        }
+
         await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
             _unitOfWork,
-            classEntity!.MentorId,
+            classEntity.MentorId.Value,
             request.StartTime,
             request.EndTime);
 
@@ -315,6 +324,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = request.Location?.Trim(),
             MaxCapacity = request.MaxCapacity,
             RequiresAttendance = request.RequiresAttendance,
+            RequiresMentorCheckIn = request.RequiresMentorCheckIn,
             Status = ClassSessionStatus.Scheduled,
         };
 
@@ -344,6 +354,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = entity.Location,
             MaxCapacity = entity.MaxCapacity,
             RequiresAttendance = entity.RequiresAttendance,
+            RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
             Status = entity.Status,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
@@ -441,9 +452,15 @@ public sealed class ClassSessionService : IClassSessionService
                 targetStartTime,
                 targetEndTime);
 
+            if (classEntity!.MentorId is null)
+            {
+                throw ErrorHelper.BadRequest(
+                    "Cannot reschedule a session for a class that has no assigned mentor.");
+            }
+
             await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
                 _unitOfWork,
-                classEntity!.MentorId,
+                classEntity.MentorId.Value,
                 targetStartTime,
                 targetEndTime,
                 excludeSessionId: session.Id);
@@ -465,6 +482,11 @@ public sealed class ClassSessionService : IClassSessionService
         if (request.RequiresAttendance.HasValue)
         {
             session.RequiresAttendance = request.RequiresAttendance.Value;
+        }
+
+        if (request.RequiresMentorCheckIn.HasValue)
+        {
+            session.RequiresMentorCheckIn = request.RequiresMentorCheckIn.Value;
         }
 
         if (request.Status.HasValue)
@@ -528,6 +550,7 @@ public sealed class ClassSessionService : IClassSessionService
             Location = session.Location,
             MaxCapacity = session.MaxCapacity,
             RequiresAttendance = session.RequiresAttendance,
+            RequiresMentorCheckIn = session.RequiresMentorCheckIn,
             Status = session.Status,
             CreatedAt = session.CreatedAt,
             UpdatedAt = session.UpdatedAt,

@@ -6,7 +6,8 @@ public class MediaAssetDto
 {
     public Guid Id { get; set; }
     public Guid UploaderId { get; set; }
-    public Guid? ActivityId { get; set; }
+    public Guid ClassId { get; set; }
+    public Guid? ClassSessionId { get; set; }
     public string? FileUrl { get; set; }
     public string? FileType { get; set; }
     public VideoProcessingStatus VideoStatus { get; set; }

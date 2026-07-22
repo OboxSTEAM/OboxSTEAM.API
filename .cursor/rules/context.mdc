@@ -192,7 +192,7 @@ Auto-generated PDF on program or module completion. Linked to `ProgramBoard` exp
 | `FaceEmbedding` | Student face vector (AWS Rekognition) for auto-tagging session media |
 | `MediaAsset` | Uploaded photos/videos; S3 + MediaConvert + Rekognition job tracking |
 | `MediaTag` | Links tagged students to media assets |
-| `HighlightVideo` | AI-generated 9:16 personal highlight reel per student per program |
+| `HighlightVideoStack` / `HighlightVideoItem` | AI-generated personal highlight reels per student per class (stacks of outputs; MediaConvert stitch) |
 | Bedrock / Rekognition services | Reflection summarisation, skills analysis, face search, label detection |
 
 > AI logic lives in the **backend**. Frontend consumes results via API only.
@@ -229,7 +229,7 @@ Grouped as registered in `OboxSteamDbContext`:
 6. **Class delivery** — `Class`, `ClassEnrollment`, `ClassSession`, `SessionAttendance`
 7. **Assessments** — `Assignment`, `QuestionBank`, `BankQuestion`, `BankQuestionOption`, `QuizQuestion`, `QuizOption`, `QuizAnswer`, `Submission`, `SubmissionEvidence`
 8. **Portfolio & certs** — `Certificate`, `Portfolio`, `PortfolioCustomItem`
-9. **AI & media** — `FaceEmbedding`, `MediaAsset`, `MediaTag`, `HighlightVideo`
+9. **AI & media** — `FaceEmbedding`, `MediaAsset`, `MediaTag`, `HighlightVideoStack`, `HighlightVideoItem`
 10. **Commerce & reviews** — `Payment`, `ProgramReview`
 
 All entities inherit `BaseEntity` (Id, audit fields, soft delete via `IsDeleted` global query filters).

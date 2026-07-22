@@ -21,7 +21,7 @@ public class MediaController : ControllerBase
     }
 
     /// <summary>
-    /// Upload an image or video to an activity. Auto face-tagging is applied.
+    /// Upload an image or video to a class. Auto face-tagging is applied.
     /// Images are tagged synchronously. Videos upload raw to S3, submit MediaConvert in this
     /// request, then AWS webhooks drive transcode and face search. Poll
     /// POST /api/media/{mediaId}/process-tags if tags are not ready yet.
@@ -30,8 +30,9 @@ public class MediaController : ControllerBase
     [RequestSizeLimit(3L * 1024 * 1024 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = 3L * 1024 * 1024 * 1024)]
     [SwaggerOperation(
-        Summary = "Upload media to activity",
-        Description = "Uploads an image (.jpg, .jpeg, .png) or video (.mp4, .mov) to an activity. " +
+        Summary = "Upload media to class",
+        Description = "Uploads an image (.jpg, .jpeg, .png) or video (.mp4, .mov) for a class. " +
+                      "classId is required; classSessionId is optional and must belong to that class. " +
                       "Images are auto face-tagged immediately. Videos: raw upload + MediaConvert submit " +
                       "in one request; AWS SNS webhooks complete transcode and start Rekognition. " +
                       "Call POST /api/media/{mediaId}/process-tags to poll face tags if webhooks are delayed."
@@ -40,9 +41,12 @@ public class MediaController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<MediaAssetDto>), 202)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> UploadMedia(IFormFile file, [FromQuery] Guid activityId)
+    public async Task<IActionResult> UploadMedia(
+        IFormFile file,
+        [FromQuery] Guid classId,
+        [FromQuery] Guid? classSessionId = null)
     {
-        var result = await _mediaService.UploadMediaAsync(file, activityId);
+        var result = await _mediaService.UploadMediaAsync(file, classId, classSessionId);
 
         if (string.Equals(result.FileType, "video", StringComparison.OrdinalIgnoreCase))
         {
@@ -59,18 +63,128 @@ public class MediaController : ControllerBase
     }
 
     /// <summary>
-    /// Get all media for an activity (including face tags).
+    /// Get ready media filtered by class and/or student (role-scoped).
     /// </summary>
-    [HttpGet("activity/{activityId:guid}")]
+    [HttpGet]
     [SwaggerOperation(
-        Summary = "Get media by activity",
-        Description = "Retrieves all media assets for a specific activity, including face recognition tags."
+        Summary = "Get media by class and/or student",
+        Description = "Returns ready media (images, or videos with TaggingComplete), scoped by role. " +
+                      "Manager/SuperAdmin may omit filters to list all ready media. " +
+                      "Mentor is limited to mentored classes. " +
+                      "Student always sees own tags; Parent requires linked studentId."
     )]
     [ProducesResponseType(typeof(ApiResult<List<MediaAssetDto>>), 200)]
-    public async Task<IActionResult> GetMediaByActivity([FromRoute] Guid activityId)
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetMedia(
+        [FromQuery] Guid? classId = null,
+        [FromQuery] Guid? studentId = null)
     {
-        var result = await _mediaService.GetMediaByActivityAsync(activityId);
+        var result = await _mediaService.GetMediaAsync(classId, studentId);
         return Ok(ApiResult<List<MediaAssetDto>>.Success(result, "200", "Media retrieved."));
+    }
+
+    /// <summary>
+    /// Get one media asset by id (role-scoped).
+    /// </summary>
+    [HttpGet("{mediaId:guid}")]
+    [SwaggerOperation(
+        Summary = "Get media by id",
+        Description = "Returns one media asset including face tags. Access is role-scoped: " +
+                      "Manager/SuperAdmin any media; Mentor only mentored classes; " +
+                      "Student only ready media they are tagged in; Parent only ready media tagged for linked students."
+    )]
+    [ProducesResponseType(typeof(ApiResult<MediaAssetDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetMediaById([FromRoute] Guid mediaId)
+    {
+        var result = await _mediaService.GetMediaByIdAsync(mediaId);
+        return Ok(ApiResult<MediaAssetDto>.Success(result, "200", "Media retrieved."));
+    }
+
+    /// <summary>
+    /// Get all media for a class session (including face tags), scoped by role.
+    /// </summary>
+    [HttpGet("class-session/{classSessionId:guid}")]
+    [SwaggerOperation(
+        Summary = "Get media by class session",
+        Description = "Retrieves media assets for a specific class session, including face recognition tags. " +
+                      "Students and parents only receive ready media they (or linked students) are tagged in."
+    )]
+    [ProducesResponseType(typeof(ApiResult<List<MediaAssetDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetMediaByClassSession([FromRoute] Guid classSessionId)
+    {
+        var result = await _mediaService.GetMediaByClassSessionAsync(classSessionId);
+        return Ok(ApiResult<List<MediaAssetDto>>.Success(result, "200", "Media retrieved."));
+    }
+
+    /// <summary>
+    /// Manually add a verified student tag (mentor/manager).
+    /// </summary>
+    [HttpPost("{mediaId:guid}/tags")]
+    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [SwaggerOperation(
+        Summary = "Add media tag",
+        Description = "Manually tags a student onto ready media. Creates a verified tag. " +
+                      "Mentors may only tag students enrolled in the media's class."
+    )]
+    [ProducesResponseType(typeof(ApiResult<MediaTagDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> AddMediaTag(
+        [FromRoute] Guid mediaId,
+        [FromBody] AddMediaTagRequest request)
+    {
+        var result = await _mediaService.AddMediaTagAsync(mediaId, request.StudentId);
+        return StatusCode(StatusCodes.Status201Created, ApiResult<MediaTagDto>.Success(
+            result, "201", "Media tag added."));
+    }
+
+    /// <summary>
+    /// Verify or reject an AI/manual media tag.
+    /// </summary>
+    [HttpPatch("{mediaId:guid}/tags/{studentId:guid}")]
+    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [SwaggerOperation(
+        Summary = "Set media tag verification",
+        Description = "Sets IsVerified for mentor review of face tags."
+    )]
+    [ProducesResponseType(typeof(ApiResult<MediaTagDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> SetMediaTagVerification(
+        [FromRoute] Guid mediaId,
+        [FromRoute] Guid studentId,
+        [FromBody] UpdateMediaTagVerificationRequest request)
+    {
+        var result = await _mediaService.SetMediaTagVerificationAsync(mediaId, studentId, request.IsVerified);
+        return Ok(ApiResult<MediaTagDto>.Success(result, "200", "Media tag verification updated."));
+    }
+
+    /// <summary>
+    /// Remove a student tag from media.
+    /// </summary>
+    [HttpDelete("{mediaId:guid}/tags/{studentId:guid}")]
+    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [SwaggerOperation(
+        Summary = "Remove media tag",
+        Description = "Soft-deletes a media tag for the given student."
+    )]
+    [ProducesResponseType(typeof(ApiResult), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> RemoveMediaTag(
+        [FromRoute] Guid mediaId,
+        [FromRoute] Guid studentId)
+    {
+        await _mediaService.RemoveMediaTagAsync(mediaId, studentId);
+        return Ok(ApiResult.Success("200", "Media tag removed."));
     }
 
     /// <summary>

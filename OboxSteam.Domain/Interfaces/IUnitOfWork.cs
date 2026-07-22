@@ -27,11 +27,15 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<ClassEnrollment> ClassEnrollments { get; }
     IGenericRepository<ClassSession> ClassSessions { get; }
     IGenericRepository<SessionAttendance> SessionAttendances { get; }
+    IGenericRepository<ClassSkill> ClassSkills { get; }
+    IGenericRepository<ClassMentorRequest> ClassMentorRequests { get; }
+    IGenericRepository<ClassQuizQuestionSet> ClassQuizQuestionSets { get; }
+    IGenericRepository<ClassQuizQuestion> ClassQuizQuestions { get; }
+    IGenericRepository<ClassQuizQuestionOption> ClassQuizQuestionOptions { get; }
     IGenericRepository<Expert> Experts { get; }
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }
     IGenericRepository<MediaTag> MediaTags { get; }
-    IGenericRepository<HighlightVideo> HighlightVideos { get; }
     IGenericRepository<HighlightVideoStack> HighlightVideoStacks { get; }
     IGenericRepository<HighlightVideoItem> HighlightVideoItems { get; }
     IGenericRepository<FaceEmbedding> FaceEmbeddings { get; }
@@ -46,8 +50,10 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Skill> Skills { get; }
     IGenericRepository<StudentSkill> StudentSkills { get; }
     IGenericRepository<StudentSkillEvidence> StudentSkillEvidences { get; }
+    IGenericRepository<MentorSkill> MentorSkills { get; }
     IGenericRepository<StandardizedTest> StandardizedTests { get; }
     IGenericRepository<StudentProfile> StudentProfiles { get; }
+    IGenericRepository<MentorProfile> MentorProfiles { get; }
     IGenericRepository<SubmissionEvidence> SubmissionEvidences { get; }
     IGenericRepository<Payment> Payments { get; }
     IGenericRepository<ProgramBoard> ProgramBoards { get; }

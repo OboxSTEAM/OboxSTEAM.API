@@ -57,10 +57,10 @@ public class AssignmentController : ControllerBase
     }
 
     [HttpPut("{assignmentId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "SuperAdmin,Manager,Mentor")]
     [SwaggerOperation(
         Summary = "Update an assignment",
-        Description = "Updates an assignment by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Updates an assignment by its ID. Managers/SuperAdmins may update all fields. Mentors may update Title, Description, DueDate, AvailableFrom, and AvailableUntil for assignments in programs they teach.")]
     [ProducesResponseType(typeof(ApiResult<AssignmentResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

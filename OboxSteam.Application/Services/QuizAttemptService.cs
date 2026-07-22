@@ -110,17 +110,41 @@ public sealed class QuizAttemptService : IQuizAttemptService
 
         await QuizAttemptValidator.ValidateMaxAttemptsForNewStartAsync(_unitOfWork, assignment!, student.Id);
 
-        var bankQuestions = await LoadBankQuestionsAsync(assignment!.QuestionBankId!.Value);
-        QuizAttemptValidator.ValidateBankQuestionsForDraw(assignment, bankQuestions);
+        var classId = await ResolveStudentClassIdForAssignmentAsync(student.Id, assignment!);
+        ClassQuizQuestionSet? classSet = null;
+        if (classId.HasValue)
+        {
+            classSet = await _unitOfWork.ClassQuizQuestionSets.FirstOrDefaultAsync(
+                s => s.ClassId == classId.Value
+                     && s.AssignmentId == assignmentId
+                     && !s.IsDeleted);
+        }
 
-        var drawCount = assignment.QuestionCount ?? bankQuestions.Count;
-        var drawnQuestions = QuizQuestionDrawHelper.Draw(
-            bankQuestions,
-            drawCount,
-            assignment.EasyPercent,
-            assignment.MediumPercent,
-            assignment.HardPercent,
-            assignment.AllowShuffle);
+        List<BankQuestion>? drawnQuestions = null;
+        List<ClassQuizQuestion>? classQuestions = null;
+
+        if (classSet != null)
+        {
+            classQuestions = await LoadClassSetQuestionsAsync(classSet.Id);
+            if (assignment!.AllowShuffle)
+                classQuestions = classQuestions.OrderBy(_ => Random.Shared.Next()).ToList();
+            else
+                classQuestions = classQuestions.OrderBy(q => q.OrderIndex).ToList();
+        }
+        else
+        {
+            var bankQuestions = await LoadBankQuestionsAsync(assignment!.QuestionBankId!.Value);
+            QuizAttemptValidator.ValidateBankQuestionsForDraw(assignment, bankQuestions);
+
+            var drawCount = assignment.QuestionCount ?? bankQuestions.Count;
+            drawnQuestions = QuizQuestionDrawHelper.Draw(
+                bankQuestions,
+                drawCount,
+                assignment.EasyPercent,
+                assignment.MediumPercent,
+                assignment.HardPercent,
+                assignment.AllowShuffle);
+        }
 
         var completedAttempts = await _unitOfWork.Submissions.GetAllAsync(
             s => s.AssignmentId == assignmentId
@@ -133,7 +157,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
         {
             Id = Guid.NewGuid(),
             Code = GenerateSubmissionCode(),
-            AssignmentId = assignment.Id,
+            AssignmentId = assignment!.Id,
             StudentId = student.Id,
             ModuleEnrollmentId = enrollment.Id,
             AttemptNumber = completedAttempts.Count + 1,
@@ -148,12 +172,17 @@ public sealed class QuizAttemptService : IQuizAttemptService
         };
 
         await _unitOfWork.Submissions.AddAsync(submission);
-        await CreateSnapshotsAsync(assignment, submission, drawnQuestions, student.Id, now);
+
+        if (classQuestions != null)
+            await CreateSnapshotsFromClassSetAsync(assignment, submission, classQuestions, student.Id, now);
+        else
+            await CreateSnapshotsAsync(assignment, submission, drawnQuestions!, student.Id, now);
+
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
-            "StartQuiz created new attempt. SubmissionId={SubmissionId}, AssignmentId={AssignmentId}, StudentId={StudentId}",
-            submission.Id, assignmentId, student.Id);
+            "StartQuiz created new attempt. SubmissionId={SubmissionId}, AssignmentId={AssignmentId}, StudentId={StudentId}, UsedClassSet={UsedClassSet}",
+            submission.Id, assignmentId, student.Id, classSet != null);
 
         var snapshotQuestions = await LoadSnapshotQuestionsAsync(submission.Id);
 
@@ -445,6 +474,104 @@ public sealed class QuizAttemptService : IQuizAttemptService
         }
 
         return questions;
+    }
+
+    private async Task<Guid?> ResolveStudentClassIdForAssignmentAsync(Guid studentId, Assignment assignment)
+    {
+        var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+        if (module == null || module.IsDeleted)
+            return null;
+
+        var classEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.StudentId == studentId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted
+                  && ce.Class.ProgramId == module.ProgramId,
+            ce => ce.Class);
+
+        return classEnrollment?.ClassId;
+    }
+
+    private async Task<List<ClassQuizQuestion>> LoadClassSetQuestionsAsync(Guid setId)
+    {
+        var questions = await _unitOfWork.ClassQuizQuestions.GetAllAsync(
+            q => q.ClassQuizQuestionSetId == setId && !q.IsDeleted);
+
+        if (questions.Count == 0)
+            return questions;
+
+        var questionIds = questions.Select(q => q.Id).ToList();
+        var allOptions = await _unitOfWork.ClassQuizQuestionOptions.GetAllAsync(
+            o => questionIds.Contains(o.ClassQuizQuestionId) && !o.IsDeleted);
+
+        var optionsByQuestion = allOptions
+            .GroupBy(o => o.ClassQuizQuestionId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var question in questions)
+        {
+            question.Options = optionsByQuestion.TryGetValue(question.Id, out var options)
+                ? options
+                : [];
+        }
+
+        return questions;
+    }
+
+    private async Task CreateSnapshotsFromClassSetAsync(
+        Assignment assignment,
+        Submission submission,
+        IReadOnlyList<ClassQuizQuestion> classQuestions,
+        Guid userId,
+        DateTime now)
+    {
+        var quizQuestions = new List<QuizQuestion>();
+        var quizOptions = new List<QuizOption>();
+
+        for (var index = 0; index < classQuestions.Count; index++)
+        {
+            var classQuestion = classQuestions[index];
+            var activeOptions = classQuestion.Options.Where(o => !o.IsDeleted).ToList();
+
+            var quizQuestion = new QuizQuestion
+            {
+                Id = Guid.NewGuid(),
+                AssignmentId = assignment.Id,
+                SubmissionId = submission.Id,
+                BankQuestionId = classQuestion.SourceBankQuestionId,
+                QuestionText = classQuestion.QuestionText,
+                QuestionType = classQuestion.QuestionType,
+                Points = classQuestion.Points,
+                OrderIndex = index + 1,
+                AttemptNumber = submission.AttemptNumber,
+                CreatedAt = now,
+                CreatedBy = userId,
+                IsDeleted = false
+            };
+
+            quizQuestions.Add(quizQuestion);
+
+            var optionEntities = activeOptions
+                .Select(option => new QuizOption
+                {
+                    Id = Guid.NewGuid(),
+                    QuestionId = quizQuestion.Id,
+                    OptionText = option.OptionText,
+                    IsCorrect = option.IsCorrect,
+                    CreatedAt = now,
+                    CreatedBy = userId,
+                    IsDeleted = false
+                })
+                .ToList();
+
+            if (assignment.ShuffleOptions)
+                optionEntities = optionEntities.OrderBy(_ => Random.Shared.Next()).ToList();
+
+            quizOptions.AddRange(optionEntities);
+        }
+
+        await _unitOfWork.QuizQuestions.AddRangeAsync(quizQuestions);
+        await _unitOfWork.QuizOptions.AddRangeAsync(quizOptions);
     }
 
     private async Task<List<QuizQuestion>> LoadSnapshotQuestionsAsync(Guid submissionId)
