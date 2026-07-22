@@ -1,3 +1,4 @@
+using OboxSteam.Application.DTOs.MentorDTO;
 using OboxSteam.Application.DTOs.SkillDTO;
 using OboxSteam.Domain.Enums;
 
@@ -10,6 +11,7 @@ public class ClassResponseDto
     public string Name { get; set; } = null!;
     public Guid ProgramId { get; set; }
     public Guid? MentorId { get; set; }
+    public MentorSummaryDto? Mentor { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public int MaxCapacity { get; set; }

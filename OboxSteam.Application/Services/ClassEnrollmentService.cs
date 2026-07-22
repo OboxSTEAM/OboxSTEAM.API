@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.ClassEnrollmentDTO;
+using OboxSteam.Application.DTOs.MentorDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
@@ -118,22 +119,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             EnrolledAt = enrollment.EnrolledAt,
             CreatedAt = enrollment.CreatedAt,
             UpdatedAt = enrollment.UpdatedAt,
-            Class = new ClassResponseDto
-            {
-                Id = classToJoin.Id,
-                Code = classToJoin.Code,
-                Name = classToJoin.Name,
-                ProgramId = classToJoin.ProgramId,
-                MentorId = classToJoin.MentorId,
-                StartDate = classToJoin.StartDate,
-                EndDate = classToJoin.EndDate,
-                MaxCapacity = classToJoin.MaxCapacity,
-                Status = classToJoin.Status,
-                MinHoursBeforeAssignmentJoin = classToJoin.MinHoursBeforeAssignmentJoin,
-                ScheduleSummary = classToJoin.ScheduleSummary,
-                CreatedAt = classToJoin.CreatedAt,
-                UpdatedAt = classToJoin.UpdatedAt,
-            },
+            Class = await MapClassResponseAsync(classToJoin),
         };
     }
 
@@ -211,22 +197,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             EnrolledAt = enrollment.EnrolledAt,
             CreatedAt = enrollment.CreatedAt,
             UpdatedAt = enrollment.UpdatedAt,
-            Class = new ClassResponseDto
-            {
-                Id = targetClass.Id,
-                Code = targetClass.Code,
-                Name = targetClass.Name,
-                ProgramId = targetClass.ProgramId,
-                MentorId = targetClass.MentorId,
-                StartDate = targetClass.StartDate,
-                EndDate = targetClass.EndDate,
-                MaxCapacity = targetClass.MaxCapacity,
-                Status = targetClass.Status,
-                MinHoursBeforeAssignmentJoin = targetClass.MinHoursBeforeAssignmentJoin,
-                ScheduleSummary = targetClass.ScheduleSummary,
-                CreatedAt = targetClass.CreatedAt,
-                UpdatedAt = targetClass.UpdatedAt,
-            },
+            Class = await MapClassResponseAsync(targetClass),
         };
     }
 
@@ -324,22 +295,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             EnrolledAt = newEnrollment.EnrolledAt,
             CreatedAt = newEnrollment.CreatedAt,
             UpdatedAt = newEnrollment.UpdatedAt,
-            Class = new ClassResponseDto
-            {
-                Id = targetClass.Id,
-                Code = targetClass.Code,
-                Name = targetClass.Name,
-                ProgramId = targetClass.ProgramId,
-                MentorId = targetClass.MentorId,
-                StartDate = targetClass.StartDate,
-                EndDate = targetClass.EndDate,
-                MaxCapacity = targetClass.MaxCapacity,
-                Status = targetClass.Status,
-                MinHoursBeforeAssignmentJoin = targetClass.MinHoursBeforeAssignmentJoin,
-                ScheduleSummary = targetClass.ScheduleSummary,
-                CreatedAt = targetClass.CreatedAt,
-                UpdatedAt = targetClass.UpdatedAt,
-            },
+            Class = await MapClassResponseAsync(targetClass),
         };
     }
 
@@ -370,22 +326,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             EnrolledAt = enrollment.EnrolledAt,
             CreatedAt = enrollment.CreatedAt,
             UpdatedAt = enrollment.UpdatedAt,
-            Class = new ClassResponseDto
-            {
-                Id = classEntity.Id,
-                Code = classEntity.Code,
-                Name = classEntity.Name,
-                ProgramId = classEntity.ProgramId,
-                MentorId = classEntity.MentorId,
-                StartDate = classEntity.StartDate,
-                EndDate = classEntity.EndDate,
-                MaxCapacity = classEntity.MaxCapacity,
-                Status = classEntity.Status,
-                MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
-                ScheduleSummary = classEntity.ScheduleSummary,
-                CreatedAt = classEntity.CreatedAt,
-                UpdatedAt = classEntity.UpdatedAt,
-            },
+            Class = await MapClassResponseAsync(classEntity),
         };
     }
 
@@ -467,22 +408,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                 EnrolledAt = enrollment.EnrolledAt,
                 CreatedAt = enrollment.CreatedAt,
                 UpdatedAt = enrollment.UpdatedAt,
-                Class = new ClassResponseDto
-                {
-                    Id = classInfo.Id,
-                    Code = classInfo.Code,
-                    Name = classInfo.Name,
-                    ProgramId = classInfo.ProgramId,
-                    MentorId = classInfo.MentorId,
-                    StartDate = classInfo.StartDate,
-                    EndDate = classInfo.EndDate,
-                    MaxCapacity = classInfo.MaxCapacity,
-                    Status = classInfo.Status,
-                    MinHoursBeforeAssignmentJoin = classInfo.MinHoursBeforeAssignmentJoin,
-                    ScheduleSummary = classInfo.ScheduleSummary,
-                    CreatedAt = classInfo.CreatedAt,
-                    UpdatedAt = classInfo.UpdatedAt,
-                },
+                Class = await MapClassResponseAsync(classInfo),
             });
         }
 
@@ -492,5 +418,38 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             totalCount);
 
         return new Pagination<ClassEnrollmentResponseDto>(dtos, totalCount, page, pageSize);
+    }
+
+    private async Task<ClassResponseDto> MapClassResponseAsync(Class classEntity)
+    {
+        MentorSummaryDto? mentor = null;
+        if (classEntity.MentorId.HasValue)
+        {
+            var mentorUser = await _unitOfWork.Users.GetByIdAsync(classEntity.MentorId.Value);
+            if (mentorUser != null && !mentorUser.IsDeleted)
+            {
+                var profile = await _unitOfWork.MentorProfiles.FirstOrDefaultAsync(
+                    mp => mp.MentorId == mentorUser.Id && !mp.IsDeleted);
+                mentor = MentorSummaryMapper.ToSummary(mentorUser, profile);
+            }
+        }
+
+        return new ClassResponseDto
+        {
+            Id = classEntity.Id,
+            Code = classEntity.Code,
+            Name = classEntity.Name,
+            ProgramId = classEntity.ProgramId,
+            MentorId = classEntity.MentorId,
+            Mentor = mentor,
+            StartDate = classEntity.StartDate,
+            EndDate = classEntity.EndDate,
+            MaxCapacity = classEntity.MaxCapacity,
+            Status = classEntity.Status,
+            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
+            ScheduleSummary = classEntity.ScheduleSummary,
+            CreatedAt = classEntity.CreatedAt,
+            UpdatedAt = classEntity.UpdatedAt,
+        };
     }
 }

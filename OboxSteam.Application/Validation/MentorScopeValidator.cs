@@ -22,6 +22,39 @@ public static class MentorScopeValidator
     public const string ClassProgramMismatchMessage =
         "The class does not belong to the same program as this module.";
 
+    public const string OwnsProgramForbiddenMessage =
+        "You can only manage curriculum for programs where you currently teach an assigned class.";
+
+    public static async Task EnsureMentorOwnsProgramAsync(
+        IUnitOfWork unitOfWork,
+        Guid mentorId,
+        Guid programId)
+    {
+        var ownsClass = await unitOfWork.Classes.FirstOrDefaultAsync(
+            c => c.MentorId == mentorId
+                 && c.ProgramId == programId
+                 && !c.IsDeleted);
+
+        if (ownsClass == null)
+        {
+            throw ErrorHelper.Forbidden(OwnsProgramForbiddenMessage);
+        }
+    }
+
+    public static async Task EnsureMentorOwnsAssignmentAsync(
+        IUnitOfWork unitOfWork,
+        Guid mentorId,
+        Assignment assignment)
+    {
+        var module = await unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+        if (module == null || module.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Module with id '{assignment.ModuleId}' not found.");
+        }
+
+        await EnsureMentorOwnsProgramAsync(unitOfWork, mentorId, module.ProgramId);
+    }
+
     public static async Task<Class> EnsureMentorOwnsClassAsync(
         IUnitOfWork unitOfWork,
         Guid mentorId,

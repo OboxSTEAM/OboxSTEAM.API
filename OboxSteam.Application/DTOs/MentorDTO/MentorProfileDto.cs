@@ -17,5 +17,10 @@ public class MentorProfileDto
     public int AssignedClassCount { get; set; }
     public int PendingRequestCount { get; set; }
     public int ConcurrentUsage { get; set; }
+    public string? Title { get; set; }
+    public string? Organization { get; set; }
+    public string? Bio { get; set; }
+    public string? Achievements { get; set; }
+    public string? LinkedInUrl { get; set; }
     public List<MentorSkillDto> Skills { get; set; } = new();
 }

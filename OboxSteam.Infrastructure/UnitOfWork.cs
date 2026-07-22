@@ -55,6 +55,9 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<SessionAttendance> SessionAttendances => Repository<SessionAttendance>();
     public IGenericRepository<ClassSkill> ClassSkills => Repository<ClassSkill>();
     public IGenericRepository<ClassMentorRequest> ClassMentorRequests => Repository<ClassMentorRequest>();
+    public IGenericRepository<ClassQuizQuestionSet> ClassQuizQuestionSets => Repository<ClassQuizQuestionSet>();
+    public IGenericRepository<ClassQuizQuestion> ClassQuizQuestions => Repository<ClassQuizQuestion>();
+    public IGenericRepository<ClassQuizQuestionOption> ClassQuizQuestionOptions => Repository<ClassQuizQuestionOption>();
     public IGenericRepository<Expert> Experts => Repository<Expert>();
     public IGenericRepository<Certificate> Certificates => Repository<Certificate>();
     public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();

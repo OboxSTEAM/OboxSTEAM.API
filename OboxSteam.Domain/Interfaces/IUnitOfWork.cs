@@ -29,6 +29,9 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<SessionAttendance> SessionAttendances { get; }
     IGenericRepository<ClassSkill> ClassSkills { get; }
     IGenericRepository<ClassMentorRequest> ClassMentorRequests { get; }
+    IGenericRepository<ClassQuizQuestionSet> ClassQuizQuestionSets { get; }
+    IGenericRepository<ClassQuizQuestion> ClassQuizQuestions { get; }
+    IGenericRepository<ClassQuizQuestionOption> ClassQuizQuestionOptions { get; }
     IGenericRepository<Expert> Experts { get; }
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }

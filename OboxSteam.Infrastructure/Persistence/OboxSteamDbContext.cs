@@ -50,6 +50,9 @@ public class OboxSteamDbContext : DbContext
     public DbSet<SessionAttendance> SessionAttendances { get; set; }
     public DbSet<ClassSkill> ClassSkills { get; set; }
     public DbSet<ClassMentorRequest> ClassMentorRequests { get; set; }
+    public DbSet<ClassQuizQuestionSet> ClassQuizQuestionSets { get; set; }
+    public DbSet<ClassQuizQuestion> ClassQuizQuestions { get; set; }
+    public DbSet<ClassQuizQuestionOption> ClassQuizQuestionOptions { get; set; }
 
     // ── 6. Assessments & Submissions ──
     public DbSet<Assignment> Assignments { get; set; }
@@ -132,6 +135,9 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<SessionAttendance>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassSkill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassMentorRequest>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ClassQuizQuestionSet>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ClassQuizQuestion>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ClassQuizQuestionOption>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Assignment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuestionBank>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<BankQuestion>().HasQueryFilter(e => !e.IsDeleted);
@@ -981,6 +987,42 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(u => u.DecidedClassMentorRequests)
                 .HasForeignKey(r => r.DecidedBy)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // CLASS QUIZ QUESTION SET (mentor-pulled copy)
+        // =============================================
+        modelBuilder.Entity<ClassQuizQuestionSet>(entity =>
+        {
+            entity.HasIndex(s => new { s.ClassId, s.AssignmentId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(s => s.Class)
+                .WithMany()
+                .HasForeignKey(s => s.ClassId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(s => s.Assignment)
+                .WithMany()
+                .HasForeignKey(s => s.AssignmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ClassQuizQuestion>(entity =>
+        {
+            entity.HasOne(q => q.ClassQuizQuestionSet)
+                .WithMany(s => s.Questions)
+                .HasForeignKey(q => q.ClassQuizQuestionSetId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ClassQuizQuestionOption>(entity =>
+        {
+            entity.HasOne(o => o.ClassQuizQuestion)
+                .WithMany(q => q.Options)
+                .HasForeignKey(o => o.ClassQuizQuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // =============================================

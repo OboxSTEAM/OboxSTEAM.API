@@ -18,5 +18,9 @@ public interface IMentorService
 
     Task<MentorProfileDto> GetMentorProfileAsync(Guid mentorId);
 
+    Task<MentorProfileDto> GetMyProfileAsync();
+
+    Task<MentorProfileDto> UpdateMyProfileAsync(UpdateMentorProfileRequestDto request);
+
     Task<MentorProfileDto> SetClassLimitAsync(Guid mentorId, UpdateMentorClassLimitRequestDto request);
 }

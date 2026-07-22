@@ -201,6 +201,7 @@ public static class IocContainer
         services.AddScoped<IBankQuestionService, BankQuestionService>();
         services.AddScoped<IProgramReviewService, ProgramReviewService>();
         services.AddScoped<IAssignmentService, AssignmentService>();
+        services.AddScoped<IClassQuizQuestionSetService, ClassQuizQuestionSetService>();
         services.AddScoped<IResearchMilestoneService, ResearchMilestoneService>();
         services.AddScoped<IResearchSubmissionService, ResearchSubmissionService>();
         services.AddScoped<IAssignmentSubmissionService, AssignmentSubmissionService>();

@@ -131,6 +131,68 @@ public sealed class MentorService : IMentorService
         return await BuildProfileAsync(mentor);
     }
 
+    public async Task<MentorProfileDto> GetMyProfileAsync()
+    {
+        var mentorId = await GetCurrentMentorIdAsync();
+        var mentor = await _unitOfWork.Users.GetByIdAsync(mentorId);
+        MentorSkillValidator.ValidateMentorUser(mentor, mentorId);
+        return await BuildProfileAsync(mentor!);
+    }
+
+    public async Task<MentorProfileDto> UpdateMyProfileAsync(UpdateMentorProfileRequestDto request)
+    {
+        var mentorId = await GetCurrentMentorIdAsync();
+        var mentor = await _unitOfWork.Users.GetByIdAsync(mentorId);
+        MentorSkillValidator.ValidateMentorUser(mentor, mentorId);
+
+        var profile = await _unitOfWork.MentorProfiles.FirstOrDefaultAsync(
+            mp => mp.MentorId == mentorId && !mp.IsDeleted);
+
+        var isNew = profile == null;
+        if (isNew)
+        {
+            profile = new MentorProfile
+            {
+                Id = Guid.NewGuid(),
+                MentorId = mentorId,
+            };
+        }
+
+        if (request.Title != null)
+            profile!.Title = string.IsNullOrWhiteSpace(request.Title) ? null : request.Title.Trim();
+
+        if (request.Organization != null)
+            profile!.Organization = string.IsNullOrWhiteSpace(request.Organization)
+                ? null
+                : request.Organization.Trim();
+
+        if (request.Bio != null)
+            profile!.Bio = string.IsNullOrWhiteSpace(request.Bio) ? null : request.Bio.Trim();
+
+        if (request.Achievements != null)
+            profile!.Achievements = string.IsNullOrWhiteSpace(request.Achievements)
+                ? null
+                : request.Achievements.Trim();
+
+        if (request.LinkedInUrl != null)
+            profile!.LinkedInUrl = string.IsNullOrWhiteSpace(request.LinkedInUrl)
+                ? null
+                : request.LinkedInUrl.Trim();
+
+        if (isNew)
+            await _unitOfWork.MentorProfiles.AddAsync(profile!);
+        else
+            await _unitOfWork.MentorProfiles.Update(profile!);
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[UpdateMyProfileAsync] Mentor {MentorId} updated mentor profile.",
+            mentorId);
+
+        return await BuildProfileAsync(mentor!);
+    }
+
     public async Task<MentorProfileDto> SetClassLimitAsync(
         Guid mentorId,
         UpdateMentorClassLimitRequestDto request)
@@ -165,6 +227,8 @@ public sealed class MentorService : IMentorService
             mentor.Id);
         var skills = await LoadSkillDtosAsync(mentor.Id);
         var effective = ClassMentorRequestValidator.ResolveMaxConcurrentClasses(mentor);
+        var profile = await _unitOfWork.MentorProfiles.FirstOrDefaultAsync(
+            mp => mp.MentorId == mentor.Id && !mp.IsDeleted);
 
         return new MentorProfileDto
         {
@@ -181,6 +245,11 @@ public sealed class MentorService : IMentorService
             AssignedClassCount = assigned,
             PendingRequestCount = pending,
             ConcurrentUsage = assigned + pending,
+            Title = profile?.Title,
+            Organization = profile?.Organization,
+            Bio = profile?.Bio,
+            Achievements = profile?.Achievements,
+            LinkedInUrl = profile?.LinkedInUrl,
             Skills = skills,
         };
     }

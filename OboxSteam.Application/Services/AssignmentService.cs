@@ -187,6 +187,21 @@ public sealed class AssignmentService : IAssignmentService
         if (assignment == null || assignment.IsDeleted)
             return null;
 
+        var caller = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (caller == null || caller.IsDeleted)
+            throw ErrorHelper.Unauthorized("Unauthorized access.");
+
+        var isMentor = caller.Role == RoleType.Mentor;
+        if (isMentor)
+        {
+            await MentorScopeValidator.EnsureMentorOwnsAssignmentAsync(_unitOfWork, userId, assignment);
+            if (HasMentorRestrictedFields(request))
+            {
+                throw ErrorHelper.Forbidden(
+                    "Mentors may only update Title, Description, DueDate, AvailableFrom, and AvailableUntil.");
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Code)
             && !string.Equals(request.Code.Trim(), assignment.Code, StringComparison.OrdinalIgnoreCase))
         {
@@ -308,6 +323,17 @@ public sealed class AssignmentService : IAssignmentService
         await _unitOfWork.Assignments.Update(assignment);
         await _unitOfWork.SaveChangesAsync();
 
+        if (isMentor)
+        {
+            var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.AssignmentEditedByMentor(
+                    assignment.Id,
+                    userId,
+                    module?.ProgramId ?? Guid.Empty,
+                    assignment.Title));
+        }
+
         _logger.LogInformation(
             "UpdateAssignment completed. AssignmentId={AssignmentId}",
             assignmentId);
@@ -340,6 +366,24 @@ public sealed class AssignmentService : IAssignmentService
             UpdatedAt = assignment.UpdatedAt
         };
     }
+
+    private static bool HasMentorRestrictedFields(UpdateAssignmentRequestDto request)
+        => request.Code != null
+           || request.ModuleId.HasValue
+           || request.CourseId.HasValue
+           || request.AssignmentType.HasValue
+           || request.MaxPoints.HasValue
+           || request.PassScore.HasValue
+           || request.IsRequiredForModulePass.HasValue
+           || request.AllowShuffle.HasValue
+           || request.QuestionBankId.HasValue
+           || request.QuestionCount.HasValue
+           || request.ShuffleOptions.HasValue
+           || request.EasyPercent.HasValue
+           || request.MediumPercent.HasValue
+           || request.HardPercent.HasValue
+           || request.TimeLimitMinutes.HasValue
+           || request.MaxAttempts.HasValue;
 
     public async Task<bool> DeleteAssignment(Guid assignmentId)
     {

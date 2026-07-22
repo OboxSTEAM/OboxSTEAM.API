@@ -19,6 +19,28 @@ public class MentorController : ControllerBase
         _mentorService = mentorService;
     }
 
+    [HttpGet("me/profile")]
+    [Authorize(Roles = "Mentor")]
+    [SwaggerOperation(Summary = "Get my mentor public profile")]
+    [ProducesResponseType(typeof(ApiResult<MentorProfileDto>), 200)]
+    public async Task<IActionResult> GetMyProfile()
+    {
+        var result = await _mentorService.GetMyProfileAsync();
+        return Ok(ApiResult<MentorProfileDto>.Success(result, "200", "Mentor profile retrieved successfully."));
+    }
+
+    [HttpPut("me/profile")]
+    [Authorize(Roles = "Mentor")]
+    [SwaggerOperation(
+        Summary = "Update my mentor public profile",
+        Description = "Partial update of Title, Organization, Bio, Achievements, and LinkedInUrl. FullName/Phone/Avatar stay on account endpoints.")]
+    [ProducesResponseType(typeof(ApiResult<MentorProfileDto>), 200)]
+    public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateMentorProfileRequestDto dto)
+    {
+        var result = await _mentorService.UpdateMyProfileAsync(dto);
+        return Ok(ApiResult<MentorProfileDto>.Success(result, "200", "Mentor profile updated successfully."));
+    }
+
     [HttpGet("me/skills")]
     [Authorize(Roles = "Mentor")]
     [SwaggerOperation(Summary = "List my mentor skills")]

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.ClassSessionDTO;
+using OboxSteam.Application.DTOs.MentorDTO;
 using OboxSteam.Application.DTOs.SkillDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
@@ -447,23 +448,7 @@ public sealed class ClassService : IClassService
 
         var openSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
 
-        return new ClassResponseDto
-        {
-            Id = classEntity.Id,
-            Code = classEntity.Code,
-            Name = classEntity.Name,
-            ProgramId = classEntity.ProgramId,
-            MentorId = classEntity.MentorId,
-            StartDate = classEntity.StartDate,
-            EndDate = classEntity.EndDate,
-            MaxCapacity = classEntity.MaxCapacity,
-            SeatsTaken = openSeatsTaken,
-            Status = classEntity.Status,
-            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = classEntity.ScheduleSummary,
-            CreatedAt = classEntity.CreatedAt,
-            UpdatedAt = classEntity.UpdatedAt,
-        };
+        return await MapToResponseDtoAsync(classEntity, openSeatsTaken);
     }
 
     public async Task<ClassResponseDto> StartClassAsync(Guid id)
@@ -486,23 +471,7 @@ public sealed class ClassService : IClassService
 
         var startSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
 
-        return new ClassResponseDto
-        {
-            Id = classEntity.Id,
-            Code = classEntity.Code,
-            Name = classEntity.Name,
-            ProgramId = classEntity.ProgramId,
-            MentorId = classEntity.MentorId,
-            StartDate = classEntity.StartDate,
-            EndDate = classEntity.EndDate,
-            MaxCapacity = classEntity.MaxCapacity,
-            SeatsTaken = startSeatsTaken,
-            Status = classEntity.Status,
-            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = classEntity.ScheduleSummary,
-            CreatedAt = classEntity.CreatedAt,
-            UpdatedAt = classEntity.UpdatedAt,
-        };
+        return await MapToResponseDtoAsync(classEntity, startSeatsTaken);
     }
 
     public async Task TryAutoStartClassIfReadyAsync(Guid classId)
@@ -728,23 +697,7 @@ public sealed class ClassService : IClassService
 
         var completeSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
 
-        return new ClassResponseDto
-        {
-            Id = classEntity.Id,
-            Code = classEntity.Code,
-            Name = classEntity.Name,
-            ProgramId = classEntity.ProgramId,
-            MentorId = classEntity.MentorId,
-            StartDate = classEntity.StartDate,
-            EndDate = classEntity.EndDate,
-            MaxCapacity = classEntity.MaxCapacity,
-            SeatsTaken = completeSeatsTaken,
-            Status = classEntity.Status,
-            MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
-            ScheduleSummary = classEntity.ScheduleSummary,
-            CreatedAt = classEntity.CreatedAt,
-            UpdatedAt = classEntity.UpdatedAt,
-        };
+        return await MapToResponseDtoAsync(classEntity, completeSeatsTaken);
     }
 
     public async Task DeleteClassAsync(Guid id)
@@ -789,6 +742,7 @@ public sealed class ClassService : IClassService
     {
         var skills = await LoadRequiredSkillsAsync(entity.Id);
         var pendingCount = await CountPendingRequestsAsync(entity.Id);
+        var mentor = await LoadMentorSummaryAsync(entity.MentorId);
 
         return new ClassResponseDto
         {
@@ -797,6 +751,7 @@ public sealed class ClassService : IClassService
             Name = entity.Name,
             ProgramId = entity.ProgramId,
             MentorId = entity.MentorId,
+            Mentor = mentor,
             StartDate = entity.StartDate,
             EndDate = entity.EndDate,
             MaxCapacity = entity.MaxCapacity,
@@ -845,6 +800,9 @@ public sealed class ClassService : IClassService
             .Select(g => new { ClassId = g.Key, Count = g.Count() })
             .ToDictionary(x => x.ClassId, x => x.Count);
 
+        var mentorSummaries = await LoadMentorSummariesAsync(
+            items.Where(c => c.MentorId.HasValue).Select(c => c.MentorId!.Value).Distinct().ToList());
+
         return items.Select(c => new ClassResponseDto
         {
             Id = c.Id,
@@ -852,6 +810,9 @@ public sealed class ClassService : IClassService
             Name = c.Name,
             ProgramId = c.ProgramId,
             MentorId = c.MentorId,
+            Mentor = c.MentorId.HasValue
+                ? mentorSummaries.GetValueOrDefault(c.MentorId.Value)
+                : null,
             StartDate = c.StartDate,
             EndDate = c.EndDate,
             MaxCapacity = c.MaxCapacity,
@@ -863,6 +824,38 @@ public sealed class ClassService : IClassService
             CreatedAt = c.CreatedAt,
             UpdatedAt = c.UpdatedAt,
         }).ToList();
+    }
+
+    private async Task<MentorSummaryDto?> LoadMentorSummaryAsync(Guid? mentorId)
+    {
+        if (!mentorId.HasValue)
+            return null;
+
+        var mentor = await _unitOfWork.Users.GetByIdAsync(mentorId.Value);
+        if (mentor == null || mentor.IsDeleted)
+            return null;
+
+        var profile = await _unitOfWork.MentorProfiles.FirstOrDefaultAsync(
+            mp => mp.MentorId == mentor.Id && !mp.IsDeleted);
+
+        return MentorSummaryMapper.ToSummary(mentor, profile);
+    }
+
+    private async Task<Dictionary<Guid, MentorSummaryDto>> LoadMentorSummariesAsync(List<Guid> mentorIds)
+    {
+        if (mentorIds.Count == 0)
+            return new Dictionary<Guid, MentorSummaryDto>();
+
+        var mentors = await _unitOfWork.Users.GetAllAsync(u => mentorIds.Contains(u.Id) && !u.IsDeleted);
+        var profiles = await _unitOfWork.MentorProfiles.GetAllAsync(
+            mp => mentorIds.Contains(mp.MentorId) && !mp.IsDeleted);
+        var profilesByMentorId = profiles.ToDictionary(mp => mp.MentorId);
+
+        return mentors.ToDictionary(
+            m => m.Id,
+            m => MentorSummaryMapper.ToSummary(
+                m,
+                profilesByMentorId.GetValueOrDefault(m.Id)));
     }
 
     private async Task<List<SkillSummaryDto>> LoadRequiredSkillsAsync(Guid classId)

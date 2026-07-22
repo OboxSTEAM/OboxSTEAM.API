@@ -930,4 +930,52 @@ public static class NotificationCatalog
             },
             entityType: "Material",
             entityId: materialId);
+
+    // ── Mentor curriculum edits ───────────────────────────────────────────────
+
+    public static NotificationCommand AssignmentEditedByMentor(
+        Guid assignmentId,
+        Guid mentorId,
+        Guid programId,
+        string assignmentTitle)
+        => new(
+            NotificationType.AssignmentEditedByMentor,
+            NotificationAudience.ForManagers(),
+            "Assignment edited by mentor",
+            string.IsNullOrWhiteSpace(assignmentTitle)
+                ? "A mentor updated assignment details."
+                : $"Mentor updated assignment \"{assignmentTitle}\".",
+            payload: new NotificationPayload
+            {
+                AssignmentId = assignmentId,
+                ProgramId = programId
+            },
+            actorUserId: mentorId,
+            entityType: "Assignment",
+            entityId: assignmentId);
+
+    public static NotificationCommand ClassQuizSetEditedByMentor(
+        Guid assignmentId,
+        Guid classId,
+        Guid mentorId,
+        Guid programId,
+        string action,
+        string? detail = null)
+        => new(
+            NotificationType.ClassQuizSetEditedByMentor,
+            NotificationAudience.ForManagers(),
+            "Class quiz set edited by mentor",
+            string.IsNullOrWhiteSpace(detail)
+                ? $"A mentor {action} for a class quiz."
+                : $"A mentor {action}: {detail}",
+            payload: new NotificationPayload
+            {
+                AssignmentId = assignmentId,
+                ClassId = classId,
+                ProgramId = programId,
+                Extra = action
+            },
+            actorUserId: mentorId,
+            entityType: "ClassQuizQuestionSet",
+            entityId: assignmentId);
 }

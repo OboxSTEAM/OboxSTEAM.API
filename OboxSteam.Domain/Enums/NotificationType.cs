@@ -87,5 +87,9 @@ public enum NotificationType
 
     // Catalog (optional admin publishes)
     AssignmentPublished,
-    MaterialUpdated
+    MaterialUpdated,
+
+    // Mentor curriculum edits
+    AssignmentEditedByMentor,
+    ClassQuizSetEditedByMentor
 }
