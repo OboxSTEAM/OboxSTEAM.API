@@ -1,5 +1,5 @@
 <Solution>
-  <Project Path="../OboxSteam.Test/OboxSteam.Test.csproj" Id="bb16c270-b341-4389-8206-a3880dd70272" />
+  <Project Path="OboxSteam.Test/OboxSteam.Test.csproj" Id="bb16c270-b341-4389-8206-a3880dd70272" />
   <Project Path="docker-compose.dcproj">
     <Build />
   </Project>
