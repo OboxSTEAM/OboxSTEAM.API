@@ -2,7 +2,7 @@
   "mcpServers": {
     "codegraph": {
       "command": "codegraph",
-      "args": ["serve", "--mcp"]
+      "args": ["serve", "--mcp", "--path", "E:\\Semester 9\\OboxSTEAM.API"]
     }
   }
 }
