@@ -370,6 +370,9 @@ FodyWeavers.xsd
 # CodeGraph local index
 .codegraph/
 
+# Local Cursor MCP config (machine-specific paths); see .cursor/mcp.json.example
+.cursor/mcp.json
+
 # Harness durable layer
 harness.db
 harness.db-wal
