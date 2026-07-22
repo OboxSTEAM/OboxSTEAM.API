@@ -43,6 +43,7 @@ public class User : BaseEntity
     public ICollection<ParentStudent> ParentRelations { get; set; } = new List<ParentStudent>();
     public ICollection<ParentStudent> StudentRelations { get; set; } = new List<ParentStudent>();
     public StudentProfile? StudentProfile { get; set; }
+    public MentorProfile? MentorProfile { get; set; }
     public ICollection<StudentSkill> StudentSkills { get; set; } = new List<StudentSkill>();
     public ICollection<StudentSkill> VerifiedStudentSkills { get; set; } = new List<StudentSkill>();
     public ICollection<MentorSkill> MentorSkills { get; set; } = new List<MentorSkill>();

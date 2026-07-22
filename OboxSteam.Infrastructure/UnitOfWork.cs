@@ -76,6 +76,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<MentorSkill> MentorSkills => Repository<MentorSkill>();
     public IGenericRepository<StandardizedTest> StandardizedTests => Repository<StandardizedTest>();
     public IGenericRepository<StudentProfile> StudentProfiles => Repository<StudentProfile>();
+    public IGenericRepository<MentorProfile> MentorProfiles => Repository<MentorProfile>();
     public IGenericRepository<SubmissionEvidence> SubmissionEvidences => Repository<SubmissionEvidence>();
     public IGenericRepository<Payment> Payments => Repository<Payment>();
     public IGenericRepository<ProgramBoard> ProgramBoards => Repository<ProgramBoard>();

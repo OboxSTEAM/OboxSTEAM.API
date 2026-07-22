@@ -21,6 +21,7 @@ public class OboxSteamDbContext : DbContext
 
     // ── 3. Student Academic Profile ──
     public DbSet<StudentProfile> StudentProfiles { get; set; }
+    public DbSet<MentorProfile> MentorProfiles { get; set; }
     public DbSet<Skill> Skills { get; set; }
     public DbSet<StudentSkill> StudentSkills { get; set; }
     public DbSet<StudentSkillEvidence> StudentSkillEvidences { get; set; }
@@ -105,6 +106,7 @@ public class OboxSteamDbContext : DbContext
         // =============================================
         modelBuilder.Entity<User>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StudentProfile>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<MentorProfile>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ParentStudent>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<OtpStorage>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Expert>().HasQueryFilter(e => !e.IsDeleted);
@@ -209,6 +211,19 @@ public class OboxSteamDbContext : DbContext
             entity.HasOne(sp => sp.Student)
                 .WithOne(u => u.StudentProfile)
                 .HasForeignKey<StudentProfile>(sp => sp.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =============================================
+        // 3b. MENTOR PROFILE (1:1 with User, shared PK)
+        // =============================================
+        modelBuilder.Entity<MentorProfile>(entity =>
+        {
+            entity.HasKey(mp => mp.MentorId);
+
+            entity.HasOne(mp => mp.Mentor)
+                .WithOne(u => u.MentorProfile)
+                .HasForeignKey<MentorProfile>(mp => mp.MentorId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
