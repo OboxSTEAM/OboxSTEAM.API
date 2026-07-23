@@ -133,6 +133,99 @@ public partial class SeedService
                 });
             }
 
+            // Extra status / date diversity for Manager dashboard enrollment charts.
+            var student5 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-005");
+            var student6 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-006");
+            var student7 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-007");
+            var programGameDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV");
+            var programAi = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-AIBASIC");
+
+            if (student5 != null && programRobotics != null)
+            {
+                programEnrollments.Add(new ProgramEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student5.Id,
+                    ProgramId = programRobotics.Id,
+                    Status = EnrollmentStatus.Completed,
+                    ProgressPercent = 100m,
+                    EnrolledAt = enrollTime.AddMonths(-8),
+                    StartedAt = enrollTime.AddMonths(-8).AddDays(3),
+                    CompletedAt = enrollTime.AddMonths(-2),
+                    CreatedAt = enrollTime.AddMonths(-8),
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+
+            if (student6 != null && programGameDev != null)
+            {
+                programEnrollments.Add(new ProgramEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student6.Id,
+                    ProgramId = programGameDev.Id,
+                    Status = EnrollmentStatus.PendingPayment,
+                    ProgressPercent = 0m,
+                    EnrolledAt = enrollTime.AddMonths(-1),
+                    CreatedAt = enrollTime.AddMonths(-1),
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+
+            if (student7 != null && programAi != null)
+            {
+                programEnrollments.Add(new ProgramEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student7.Id,
+                    ProgramId = programAi.Id,
+                    Status = EnrollmentStatus.Dropped,
+                    ProgressPercent = 15m,
+                    EnrolledAt = enrollTime.AddMonths(-5),
+                    StartedAt = enrollTime.AddMonths(-5).AddDays(2),
+                    CreatedAt = enrollTime.AddMonths(-5),
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+
+            if (student3 != null && programWebDev != null)
+            {
+                programEnrollments.Add(new ProgramEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student3.Id,
+                    ProgramId = programWebDev.Id,
+                    Status = EnrollmentStatus.Completed,
+                    ProgressPercent = 100m,
+                    EnrolledAt = enrollTime.AddMonths(-10),
+                    StartedAt = enrollTime.AddMonths(-10).AddDays(5),
+                    CompletedAt = enrollTime.AddMonths(-3),
+                    CreatedAt = enrollTime.AddMonths(-10),
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+
+            if (student4 != null && programSteam != null)
+            {
+                programEnrollments.Add(new ProgramEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = student4.Id,
+                    ProgramId = programSteam.Id,
+                    Status = EnrollmentStatus.Deferred,
+                    ProgressPercent = 20m,
+                    EnrolledAt = enrollTime.AddMonths(-3),
+                    StartedAt = enrollTime.AddMonths(-3).AddDays(1),
+                    CreatedAt = enrollTime.AddMonths(-3),
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false
+                });
+            }
+
             if (programEnrollments.Count > 0)
             {
                 await _unitOfWork.ProgramEnrollments.AddRangeAsync(programEnrollments);
