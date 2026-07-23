@@ -209,6 +209,172 @@ public partial class SeedService
             profilesToAdd.Count);
     }
 
+    /// <summary>
+    /// Seeds mentor skill tags aligned with the programs/classes each mentor teaches.
+    /// Runs after <see cref="SeedSkillsAsync"/> and <see cref="SeedMentorClassesAsync"/>.
+    /// </summary>
+    private async Task SeedMentorSkillsAsync()
+    {
+        _loggerService.LogInformation("Starting seed mentor skills");
+
+        // Mentor → skills tied to the programs they teach in SeedMentorClassesAsync.
+        var skillDefinitions = new List<(
+            string MentorCode,
+            string SkillCode,
+            SkillProficiencyLevel Level,
+            string Notes)>
+        {
+            // MNT-001 — Robotics (CLS-ROBOTICS-2026A/B)
+            ("MNT-001", "SKL-TECH-ROBOTICS-IOT", SkillProficiencyLevel.Expert,
+                "Primary skill for Robotics Spring/Summer cohorts (CLS-ROBOTICS-2026A/B)."),
+            ("MNT-001", "SKL-TECH-PROG-PYTHON", SkillProficiencyLevel.Advanced,
+                "Robot control scripts and autonomous challenge logic."),
+            ("MNT-001", "SKL-ENG-PROTOTYPE", SkillProficiencyLevel.Expert,
+                "Physical robot builds and chassis prototyping in Robotics Lab."),
+            ("MNT-001", "SKL-ENG-DESIGN", SkillProficiencyLevel.Advanced,
+                "Engineering design cycles for competition robots."),
+            ("MNT-001", "SKL-ENG-TEST-ITERATE", SkillProficiencyLevel.Advanced,
+                "Competition prep: test, tune, and iterate robot behavior."),
+            ("MNT-001", "SKL-SOFT-COLLAB", SkillProficiencyLevel.Advanced,
+                "Team roles and pit-crew collaboration during robotics cohorts."),
+
+            // MNT-002 — Robotics + IoT (CLS-ROBOTICS-2026C, CLS-IOT-2026A/B)
+            ("MNT-002", "SKL-TECH-ROBOTICS-IOT", SkillProficiencyLevel.Expert,
+                "Core for Robotics Fall and IoT Sensors/Cloud cohorts."),
+            ("MNT-002", "SKL-TECH-PROG-PYTHON", SkillProficiencyLevel.Advanced,
+                "Sensor pipelines and embedded Python for IoT projects."),
+            ("MNT-002", "SKL-TECH-DATA-DB", SkillProficiencyLevel.Advanced,
+                "Cloud IoT data handling in CLS-IOT-2026B."),
+            ("MNT-002", "SKL-ENG-SYSTEMS", SkillProficiencyLevel.Expert,
+                "Sensor–microcontroller–cloud system architecture."),
+            ("MNT-002", "SKL-SCI-DATA", SkillProficiencyLevel.Advanced,
+                "Collecting and analyzing IoT sensor telemetry."),
+            ("MNT-002", "SKL-SOFT-CRITICAL", SkillProficiencyLevel.Advanced,
+                "Debugging connected-device failures with students."),
+
+            // MNT-003 — Robotics + WebDev (CLS-ROBOTICS-2026D, CLS-WEBDEV-2026A/B)
+            ("MNT-003", "SKL-TECH-PROG-JS", SkillProficiencyLevel.Expert,
+                "JavaScript Bootcamp (CLS-WEBDEV-2026B) and interactive web labs."),
+            ("MNT-003", "SKL-ART-UXUI", SkillProficiencyLevel.Advanced,
+                "UI/UX basics in Web Foundations (CLS-WEBDEV-2026A)."),
+            ("MNT-003", "SKL-TECH-COMP-THINK", SkillProficiencyLevel.Expert,
+                "Computational thinking across web and robotics draft cohorts."),
+            ("MNT-003", "SKL-TECH-DIGITAL-LIT", SkillProficiencyLevel.Advanced,
+                "Safe, effective use of web tooling in student projects."),
+            ("MNT-003", "SKL-SOFT-COMM", SkillProficiencyLevel.Advanced,
+                "Demo days and portfolio walkthroughs for web cohorts."),
+            ("MNT-003", "SKL-TECH-ROBOTICS-IOT", SkillProficiencyLevel.Intermediate,
+                "Supporting mentor for Robotics Winter draft cohort (CLS-ROBOTICS-2026D)."),
+
+            // MNT-004 — GameDev (CLS-GAMEDEV-2026A/B)
+            ("MNT-004", "SKL-TECH-SOFTWARE", SkillProficiencyLevel.Expert,
+                "Unity and game-tooling proficiency for Game Lab cohorts."),
+            ("MNT-004", "SKL-ART-VISUAL", SkillProficiencyLevel.Advanced,
+                "Visual design for Game Design Spring (CLS-GAMEDEV-2026A)."),
+            ("MNT-004", "SKL-ART-STORY", SkillProficiencyLevel.Advanced,
+                "Narrative and level storytelling in game projects."),
+            ("MNT-004", "SKL-ENG-PROTOTYPE", SkillProficiencyLevel.Expert,
+                "Unity Prototype Summer (CLS-GAMEDEV-2026B) rapid iteration."),
+            ("MNT-004", "SKL-SOFT-CREATIVE", SkillProficiencyLevel.Expert,
+                "Creative direction and playtest feedback loops."),
+            ("MNT-004", "SKL-MATH-LOGIC", SkillProficiencyLevel.Advanced,
+                "Game mechanics, state machines, and scoring logic."),
+
+            // MNT-005 — AI Basics (CLS-AIBASIC-2026A/B)
+            ("MNT-005", "SKL-TECH-PROG-PYTHON", SkillProficiencyLevel.Expert,
+                "Python notebooks for AI Basics and ML Intro cohorts."),
+            ("MNT-005", "SKL-TECH-DATA-DB", SkillProficiencyLevel.Advanced,
+                "Dataset prep and feature handling in ML Intro (CLS-AIBASIC-2026B)."),
+            ("MNT-005", "SKL-MATH-STATS", SkillProficiencyLevel.Expert,
+                "Probability and evaluation metrics for beginner ML."),
+            ("MNT-005", "SKL-MATH-MODEL", SkillProficiencyLevel.Advanced,
+                "Simple predictive models mapped to real student problems."),
+            ("MNT-005", "SKL-SCI-REASONING", SkillProficiencyLevel.Advanced,
+                "Interpreting model results with scientific reasoning."),
+            ("MNT-005", "SKL-SOFT-CRITICAL", SkillProficiencyLevel.Expert,
+                "Ethics and critical evaluation of AI outputs with teens."),
+
+            // MNT-006 — 3D Design (CLS-3DDESIGN-2026A/B)
+            ("MNT-006", "SKL-TECH-SOFTWARE", SkillProficiencyLevel.Expert,
+                "3D tooling for Modeling and Animation cohorts."),
+            ("MNT-006", "SKL-ART-VISUAL", SkillProficiencyLevel.Expert,
+                "Composition, lighting, and visual polish in 3D Studio."),
+            ("MNT-006", "SKL-ART-AESTHETIC", SkillProficiencyLevel.Advanced,
+                "Aesthetic critique for student animation showcases."),
+            ("MNT-006", "SKL-ENG-DRAWING", SkillProficiencyLevel.Advanced,
+                "Technical drawing literacy before modeling (CLS-3DDESIGN-2026A)."),
+            ("MNT-006", "SKL-MATH-MEASURE", SkillProficiencyLevel.Advanced,
+                "Scale, proportion, and spatial geometry in 3D scenes."),
+            ("MNT-006", "SKL-SOFT-CREATIVE", SkillProficiencyLevel.Expert,
+                "Creative storytelling through 3D animation (CLS-3DDESIGN-2026B)."),
+        };
+
+        var skills = await _unitOfWork.Skills.GetAllAsync(s => !s.IsDeleted);
+        var skillsByCode = skills.ToDictionary(s => s.Code, StringComparer.OrdinalIgnoreCase);
+
+        var mentors = await _unitOfWork.Users.GetAllAsync(
+            u => u.Role == RoleType.Mentor && !u.IsDeleted);
+        var mentorsByCode = mentors.ToDictionary(m => m.Code, StringComparer.OrdinalIgnoreCase);
+
+        var existingMentorSkills = await _unitOfWork.MentorSkills.GetAllAsync(ms => !ms.IsDeleted);
+        var existingPairs = existingMentorSkills
+            .Select(ms => (ms.MentorId, ms.SkillId))
+            .ToHashSet();
+
+        var toAdd = new List<MentorSkill>();
+        var seedTime = DateTime.UtcNow;
+
+        foreach (var definition in skillDefinitions)
+        {
+            if (!mentorsByCode.TryGetValue(definition.MentorCode, out var mentor))
+            {
+                _loggerService.LogWarning(
+                    "Skipping mentor skill: mentor {MentorCode} not found.",
+                    definition.MentorCode);
+                continue;
+            }
+
+            if (!skillsByCode.TryGetValue(definition.SkillCode, out var skill))
+            {
+                _loggerService.LogWarning(
+                    "Skipping mentor skill: skill {SkillCode} not found for {MentorCode}.",
+                    definition.SkillCode,
+                    definition.MentorCode);
+                continue;
+            }
+
+            if (existingPairs.Contains((mentor.Id, skill.Id)))
+            {
+                continue;
+            }
+
+            toAdd.Add(new MentorSkill
+            {
+                Id = Guid.NewGuid(),
+                MentorId = mentor.Id,
+                SkillId = skill.Id,
+                ProficiencyLevel = definition.Level,
+                Notes = definition.Notes,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+            existingPairs.Add((mentor.Id, skill.Id));
+        }
+
+        if (toAdd.Count == 0)
+        {
+            _loggerService.LogInformation("Mentor skills already seeded, skipping");
+            return;
+        }
+
+        await _unitOfWork.MentorSkills.AddRangeAsync(toAdd);
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Finished seed mentor skills — {Count} skill link(s) created.",
+            toAdd.Count);
+    }
+
     private async Task SeedMentorClassesAsync()
     {
         _loggerService.LogInformation("Starting seed mentor classes");
