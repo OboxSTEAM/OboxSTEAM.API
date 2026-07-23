@@ -87,7 +87,7 @@ public sealed class MentorService : IMentorService
         int pageSize)
     {
         ClassMentorRequestValidator.ValidatePagination(page, pageSize);
-        await EnsureCanListMentorsAsync();
+        await EnsureManagerOrSuperAdminAsync();
 
         var query = _unitOfWork.Users
             .GetQueryable()
@@ -118,7 +118,7 @@ public sealed class MentorService : IMentorService
 
     public async Task<MentorProfileDto> GetMentorProfileAsync(Guid mentorId)
     {
-        await EnsureManagerOrSuperAdminAsync();
+        await EnsureCanViewMentorProfileAsync();
 
         var mentor = await _unitOfWork.Users.GetByIdAsync(mentorId);
         MentorSkillValidator.ValidateMentorUser(mentor, mentorId);
@@ -316,7 +316,7 @@ public sealed class MentorService : IMentorService
         return userId;
     }
 
-    private async Task EnsureCanListMentorsAsync()
+    private async Task EnsureCanViewMentorProfileAsync()
     {
         var userId = _claimsService.GetCurrentUserId;
         if (userId == Guid.Empty)
@@ -332,7 +332,7 @@ public sealed class MentorService : IMentorService
 
         if (user.Role is not (RoleType.Manager or RoleType.SuperAdmin or RoleType.Student))
         {
-            throw ErrorHelper.Forbidden("Only Student, Manager, or SuperAdmin can list mentors.");
+            throw ErrorHelper.Forbidden("Only Student, Manager, or SuperAdmin can view mentor profiles.");
         }
     }
 
