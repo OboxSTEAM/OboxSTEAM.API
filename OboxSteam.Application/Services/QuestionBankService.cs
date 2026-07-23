@@ -31,6 +31,109 @@ public sealed class QuestionBankService : IQuestionBankService
         _logger = logger;
     }
 
+    public Task<Pagination<QuestionBankListItemDto>> GetAllQuestionBanks(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        int page,
+        int pageSize,
+        Guid? courseId = null,
+        Guid? programId = null,
+        Guid? moduleId = null)
+    {
+        _logger.LogInformation(
+            "[GetAllQuestionBanks] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
+            page, pageSize, search);
+
+        var query = BuildQuestionBanksQuery(
+            search, sortBy, isDescending, courseId, programId, moduleId);
+
+        var totalCount = query.Count();
+
+        var items = query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(qb => new QuestionBankListItemDto
+            {
+                Id = qb.Id,
+                CourseId = qb.CourseId,
+                Name = qb.Name,
+                Description = qb.Description,
+                QuestionCount = qb.Questions.Count(q => !q.IsDeleted),
+                CourseName = qb.Course.Name,
+                ModuleId = qb.Course.ModuleId,
+                ModuleName = qb.Course.Module.Name,
+                ProgramId = qb.Course.Module.ProgramId,
+                ProgramName = qb.Course.Module.Program.Name,
+                CreatedAt = qb.CreatedAt,
+                UpdatedAt = qb.UpdatedAt,
+            })
+            .ToList();
+
+        _logger.LogInformation(
+            "[GetAllQuestionBanks] Retrieved {Count}/{Total} question banks.",
+            items.Count, totalCount);
+
+        return Task.FromResult(new Pagination<QuestionBankListItemDto>(items, totalCount, page, pageSize));
+    }
+
+    private IQueryable<QuestionBank> BuildQuestionBanksQuery(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        Guid? courseId,
+        Guid? programId,
+        Guid? moduleId)
+    {
+        var query = _unitOfWork.QuestionBanks
+            .GetQueryable()
+            .Where(qb => !qb.IsDeleted);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var lowerSearch = search.ToLower();
+            query = query.Where(qb =>
+                qb.Name.ToLower().Contains(lowerSearch) ||
+                qb.Course.Name.ToLower().Contains(lowerSearch) ||
+                qb.Course.Module.Name.ToLower().Contains(lowerSearch) ||
+                qb.Course.Module.Program.Name.ToLower().Contains(lowerSearch));
+        }
+
+        if (courseId.HasValue)
+            query = query.Where(qb => qb.CourseId == courseId.Value);
+
+        if (moduleId.HasValue)
+            query = query.Where(qb => qb.Course.ModuleId == moduleId.Value);
+
+        if (programId.HasValue)
+            query = query.Where(qb => qb.Course.Module.ProgramId == programId.Value);
+
+        return sortBy?.ToLower() switch
+        {
+            "name" => isDescending
+                ? query.OrderByDescending(qb => qb.Name)
+                : query.OrderBy(qb => qb.Name),
+            "questioncount" => isDescending
+                ? query.OrderByDescending(qb => qb.Questions.Count(q => !q.IsDeleted))
+                : query.OrderBy(qb => qb.Questions.Count(q => !q.IsDeleted)),
+            "coursename" => isDescending
+                ? query.OrderByDescending(qb => qb.Course.Name)
+                : query.OrderBy(qb => qb.Course.Name),
+            "programname" => isDescending
+                ? query.OrderByDescending(qb => qb.Course.Module.Program.Name)
+                : query.OrderBy(qb => qb.Course.Module.Program.Name),
+            "updatedat" => isDescending
+                ? query.OrderByDescending(qb => qb.UpdatedAt)
+                : query.OrderBy(qb => qb.UpdatedAt),
+            "createdat" => isDescending
+                ? query.OrderByDescending(qb => qb.CreatedAt)
+                : query.OrderBy(qb => qb.CreatedAt),
+            _ => isDescending
+                ? query.OrderByDescending(qb => qb.CreatedAt)
+                : query.OrderBy(qb => qb.CreatedAt),
+        };
+    }
+
     public async Task<QuestionBankResponseDto> CreateQuestionBank(CreateQuestionBankRequestDto request)
     {
         var userId = _claimsService.GetCurrentUserId;

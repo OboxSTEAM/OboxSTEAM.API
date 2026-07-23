@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.AssignmentDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
@@ -27,6 +28,121 @@ public sealed class AssignmentService : IAssignmentService
         _unitOfWork = unitOfWork;
         _logger = logger;
         _notificationPublisher = notificationPublisher;
+    }
+
+    public Task<Pagination<AssignmentListItemDto>> GetAllAssignments(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        int page,
+        int pageSize,
+        Guid? moduleId = null,
+        Guid? programId = null,
+        Guid? courseId = null,
+        AssignmentType? assignmentType = null)
+    {
+        _logger.LogInformation(
+            "[GetAllAssignments] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
+            page, pageSize, search);
+
+        var query = BuildAssignmentsQuery(
+            search, sortBy, isDescending, moduleId, programId, courseId, assignmentType);
+
+        var totalCount = query.Count();
+
+        var items = query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(a => new AssignmentListItemDto
+            {
+                Id = a.Id,
+                Code = a.Code,
+                Title = a.Title,
+                AssignmentType = a.AssignmentType,
+                ModuleId = a.ModuleId,
+                CourseId = a.CourseId,
+                MaxPoints = a.MaxPoints,
+                PassScore = a.PassScore,
+                DueDate = a.DueDate,
+                QuestionBankId = a.QuestionBankId,
+                QuestionCount = a.QuestionCount,
+                ModuleName = a.Module.Name,
+                ProgramId = a.Module.ProgramId,
+                ProgramName = a.Module.Program.Name,
+                CreatedAt = a.CreatedAt,
+                UpdatedAt = a.UpdatedAt,
+            })
+            .ToList();
+
+        _logger.LogInformation(
+            "[GetAllAssignments] Retrieved {Count}/{Total} assignments.",
+            items.Count, totalCount);
+
+        return Task.FromResult(new Pagination<AssignmentListItemDto>(items, totalCount, page, pageSize));
+    }
+
+    private IQueryable<Assignment> BuildAssignmentsQuery(
+        string? search,
+        string? sortBy,
+        bool isDescending,
+        Guid? moduleId,
+        Guid? programId,
+        Guid? courseId,
+        AssignmentType? assignmentType)
+    {
+        var query = _unitOfWork.Assignments
+            .GetQueryable()
+            .Where(a => !a.IsDeleted);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var lowerSearch = search.ToLower();
+            query = query.Where(a =>
+                a.Title.ToLower().Contains(lowerSearch) ||
+                a.Code.ToLower().Contains(lowerSearch) ||
+                a.Module.Name.ToLower().Contains(lowerSearch) ||
+                a.Module.Program.Name.ToLower().Contains(lowerSearch));
+        }
+
+        if (moduleId.HasValue)
+            query = query.Where(a => a.ModuleId == moduleId.Value);
+
+        if (programId.HasValue)
+            query = query.Where(a => a.Module.ProgramId == programId.Value);
+
+        if (courseId.HasValue)
+            query = query.Where(a => a.CourseId == courseId.Value);
+
+        if (assignmentType.HasValue)
+            query = query.Where(a => a.AssignmentType == assignmentType.Value);
+
+        return sortBy?.ToLower() switch
+        {
+            "title" => isDescending
+                ? query.OrderByDescending(a => a.Title)
+                : query.OrderBy(a => a.Title),
+            "code" => isDescending
+                ? query.OrderByDescending(a => a.Code)
+                : query.OrderBy(a => a.Code),
+            "duedate" => isDescending
+                ? query.OrderByDescending(a => a.DueDate)
+                : query.OrderBy(a => a.DueDate),
+            "assignmenttype" => isDescending
+                ? query.OrderByDescending(a => a.AssignmentType)
+                : query.OrderBy(a => a.AssignmentType),
+            "modulename" => isDescending
+                ? query.OrderByDescending(a => a.Module.Name)
+                : query.OrderBy(a => a.Module.Name),
+            "programname" => isDescending
+                ? query.OrderByDescending(a => a.Module.Program.Name)
+                : query.OrderBy(a => a.Module.Program.Name),
+            "createdat" => isDescending
+                ? query.OrderByDescending(a => a.CreatedAt)
+                : query.OrderBy(a => a.CreatedAt),
+            _ => isDescending
+                ? query.OrderByDescending(a => a.CreatedAt)
+                : query.OrderBy(a => a.CreatedAt),
+        };
     }
 
     public async Task<AssignmentResponseDto> CreateAssignment(CreateAssignmentRequestDto request)
