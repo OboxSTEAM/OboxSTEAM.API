@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.AssignmentDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using OboxSteam.Domain.Enums;
 using Swashbuckle.AspNetCore.Annotations;
 
 namespace OboxSteam.API.Controllers;
@@ -16,6 +18,43 @@ public class AssignmentController : ControllerBase
     public AssignmentController(IAssignmentService assignmentService)
     {
         _assignmentService = assignmentService;
+    }
+
+    // =========================================================================
+    // GET ALL  —  GET /api/assignments
+    // =========================================================================
+
+    /// <summary>
+    /// Get a paginated list of assignments with module/program context.
+    /// </summary>
+    [HttpGet]
+    [SwaggerOperation(
+        Summary = "Get all assignments",
+        Description = "Retrieve a paginated list of assignments, each carrying module/program " +
+                      "context for the Edit deep-link. Supports search, filter, and sort options.")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<AssignmentListItemDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 500)]
+    public async Task<IActionResult> GetAllAssignments(
+        [FromQuery, SwaggerParameter(Description = "Search by title, code, module, or program name (optional)")] string? search = null,
+        [FromQuery, SwaggerParameter(Description = "Sort by field: title, code, createdAt, dueDate, assignmentType, moduleName, programName (optional)")] string? sortBy = null,
+        [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: true")] bool isDescending = true,
+        [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
+        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
+        [FromQuery, SwaggerParameter(Description = "Filter by module (optional)")] Guid? moduleId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program (optional)")] Guid? programId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by course (optional)")] Guid? courseId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by assignment type: Quiz, Retrospective, FileUpload (optional)")] AssignmentType? assignmentType = null)
+    {
+        if (page < 1 || pageSize < 1)
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+
+        var result = await _assignmentService.GetAllAssignments(
+            search, sortBy, isDescending, page, pageSize,
+            moduleId, programId, courseId, assignmentType);
+
+        return Ok(ApiResult<Pagination<AssignmentListItemDto>>.Success(
+            result, "200", "Assignments retrieved successfully."));
     }
 
     [HttpGet("{assignmentId:guid}")]

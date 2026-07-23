@@ -87,7 +87,7 @@ public sealed class MentorService : IMentorService
         int pageSize)
     {
         ClassMentorRequestValidator.ValidatePagination(page, pageSize);
-        await EnsureManagerOrSuperAdminAsync();
+        await EnsureCanListMentorsAsync();
 
         var query = _unitOfWork.Users
             .GetQueryable()
@@ -314,6 +314,26 @@ public sealed class MentorService : IMentorService
         }
 
         return userId;
+    }
+
+    private async Task EnsureCanListMentorsAsync()
+    {
+        var userId = _claimsService.GetCurrentUserId;
+        if (userId == Guid.Empty)
+        {
+            throw ErrorHelper.Unauthorized("Unauthorized access.");
+        }
+
+        var user = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null || user.IsDeleted)
+        {
+            throw ErrorHelper.NotFound("Current user not found.");
+        }
+
+        if (user.Role is not (RoleType.Manager or RoleType.SuperAdmin or RoleType.Student))
+        {
+            throw ErrorHelper.Forbidden("Only Student, Manager, or SuperAdmin can list mentors.");
+        }
     }
 
     private async Task EnsureManagerOrSuperAdminAsync()

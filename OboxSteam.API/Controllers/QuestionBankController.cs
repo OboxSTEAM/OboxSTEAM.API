@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.BankQuestionDTO;
 using OboxSteam.Application.DTOs.QuestionBankDTO;
 using OboxSteam.Application.Interfaces;
@@ -21,6 +22,42 @@ public class QuestionBankController : ControllerBase
     {
         _questionBankService = questionBankService;
         _bankQuestionService = bankQuestionService;
+    }
+
+    // =========================================================================
+    // GET ALL  —  GET /api/question-banks
+    // =========================================================================
+
+    /// <summary>
+    /// Get a paginated list of question banks with program/module/course context.
+    /// </summary>
+    [HttpGet]
+    [SwaggerOperation(
+        Summary = "Get all question banks",
+        Description = "Retrieve a paginated list of question banks, each carrying program/module/course " +
+                      "context for the Edit deep-link. Supports search, filter, and sort options.")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<QuestionBankListItemDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 500)]
+    public async Task<IActionResult> GetAllQuestionBanks(
+        [FromQuery, SwaggerParameter(Description = "Search by bank, course, program, or module name (optional)")] string? search = null,
+        [FromQuery, SwaggerParameter(Description = "Sort by field: name, createdAt, updatedAt, questionCount, courseName, programName (optional)")] string? sortBy = null,
+        [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: true")] bool isDescending = true,
+        [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
+        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
+        [FromQuery, SwaggerParameter(Description = "Filter by course (optional)")] Guid? courseId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program (optional)")] Guid? programId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by module (optional)")] Guid? moduleId = null)
+    {
+        if (page < 1 || pageSize < 1)
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+
+        var result = await _questionBankService.GetAllQuestionBanks(
+            search, sortBy, isDescending, page, pageSize,
+            courseId, programId, moduleId);
+
+        return Ok(ApiResult<Pagination<QuestionBankListItemDto>>.Success(
+            result, "200", "Question banks retrieved successfully."));
     }
 
     [HttpGet("{questionBankId:guid}")]

@@ -98,6 +98,117 @@ public partial class SeedService
             mentorsToAdd.Count);
     }
 
+    private async Task SeedMentorProfilesAsync()
+    {
+        _loggerService.LogInformation("Starting seed mentor profiles");
+
+        var profileDefinitions = new List<(
+            string MentorCode,
+            string Title,
+            string Organization,
+            string Bio,
+            string Achievements,
+            string LinkedInUrl)>
+        {
+            (
+                "MNT-001",
+                "Senior Robotics Coach",
+                "OboxSTEAM Robotics Lab",
+                "Hands-on robotics mentor helping students build, code, and compete with autonomous robots.",
+                "Led multiple regional robotics competition teams; National STEM Educator Award nominee.",
+                "https://www.linkedin.com/in/john-mentor-oboxsteam"
+            ),
+            (
+                "MNT-002",
+                "IoT & Embedded Systems Mentor",
+                "OboxSTEAM Connected Devices Studio",
+                "Guides students through sensor networks, microcontrollers, and cloud-connected IoT projects.",
+                "Built production IoT curricula used across OboxSTEAM cohorts; 8+ years industry experience.",
+                "https://www.linkedin.com/in/sarah-mentor-oboxsteam"
+            ),
+            (
+                "MNT-003",
+                "Full-Stack Web Development Mentor",
+                "OboxSTEAM Web Academy",
+                "Teaches modern web foundations and JavaScript bootcamps with project-based learning.",
+                "Shipped 30+ student portfolio sites; former frontend engineer turned STEAM educator.",
+                "https://www.linkedin.com/in/michael-mentor-oboxsteam"
+            ),
+            (
+                "MNT-004",
+                "Game Design & Unity Mentor",
+                "OboxSTEAM Game Lab",
+                "Mentors students from game design principles through Unity prototyping and playtesting.",
+                "Published indie prototypes with student teams; Unity Certified Instructor.",
+                "https://www.linkedin.com/in/emily-mentor-oboxsteam"
+            ),
+            (
+                "MNT-005",
+                "AI & Machine Learning Mentor",
+                "OboxSTEAM AI Studio",
+                "Introduces students to AI basics and practical machine learning with accessible tools.",
+                "Designed introductory ML pathways for teens; research collaborator on education AI.",
+                "https://www.linkedin.com/in/chris-mentor-oboxsteam"
+            ),
+            (
+                "MNT-006",
+                "3D Modeling & Animation Mentor",
+                "OboxSTEAM Creative Studio",
+                "Helps students master 3D modeling, texturing, and animation for STEAM storytelling projects.",
+                "Portfolio of student animation showcases; industry experience in digital content creation.",
+                "https://www.linkedin.com/in/lisa-mentor-oboxsteam"
+            ),
+        };
+
+        var profilesToAdd = new List<MentorProfile>();
+        var seedTime = DateTime.UtcNow;
+
+        foreach (var definition in profileDefinitions)
+        {
+            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == definition.MentorCode);
+            if (mentor == null || mentor.Role != RoleType.Mentor)
+            {
+                _loggerService.LogWarning(
+                    "Skipping mentor profile for {MentorCode}: mentor user not found.",
+                    definition.MentorCode);
+                continue;
+            }
+
+            var existing = await _unitOfWork.MentorProfiles.FirstOrDefaultAsync(
+                mp => mp.MentorId == mentor.Id && !mp.IsDeleted);
+            if (existing != null)
+            {
+                continue;
+            }
+
+            profilesToAdd.Add(new MentorProfile
+            {
+                Id = Guid.NewGuid(),
+                MentorId = mentor.Id,
+                Title = definition.Title,
+                Organization = definition.Organization,
+                Bio = definition.Bio,
+                Achievements = definition.Achievements,
+                LinkedInUrl = definition.LinkedInUrl,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+        }
+
+        if (profilesToAdd.Count == 0)
+        {
+            _loggerService.LogInformation("Mentor profiles already seeded, skipping");
+            return;
+        }
+
+        await _unitOfWork.MentorProfiles.AddRangeAsync(profilesToAdd);
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Finished seed mentor profiles — {Count} profile(s) created.",
+            profilesToAdd.Count);
+    }
+
     private async Task SeedMentorClassesAsync()
     {
         _loggerService.LogInformation("Starting seed mentor classes");

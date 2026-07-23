@@ -74,8 +74,10 @@ public class MentorController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Manager")]
-    [SwaggerOperation(Summary = "List mentors with skills and concurrent usage")]
+    [Authorize(Roles = "SuperAdmin,Manager,Student")]
+    [SwaggerOperation(
+        Summary = "List mentors for curriculum navigation and assignment decisions",
+        Description = "Returns a paginated mentor directory with public profile fields (Title, Organization, Bio, Achievements, LinkedInUrl), skills, and concurrent class usage. Students use this for curriculum navigation; Managers/SuperAdmins use it when deciding class assignments.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<MentorProfileDto>>), 200)]
     public async Task<IActionResult> GetMentors(
         [FromQuery] string? search = null,
