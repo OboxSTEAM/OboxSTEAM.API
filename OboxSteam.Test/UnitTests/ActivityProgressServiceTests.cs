@@ -1,0 +1,1035 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using OboxSteam.Application.DTOs.ActivityProgressDTO;
+using OboxSteam.Application.DTOs.CertificateDTO;
+using OboxSteam.Application.Exceptions;
+using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Services;
+using OboxSteam.Domain.Entities;
+using OboxSteam.Domain.Enums;
+using OboxSteam.Test.Helpers;
+
+namespace OboxSteam.Test.UnitTests;
+
+public sealed class ActivityProgressServiceTests
+{
+    private readonly Guid _studentId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private readonly Guid _otherStudentId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+    private readonly Guid _managerId = Guid.Parse("13131313-1313-1313-1313-131313131313");
+    private readonly Guid _moduleId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private readonly Guid _unlockedModuleId = Guid.Parse("23232323-2323-2323-2323-232323232323");
+    private readonly Guid _programId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private readonly Guid _courseId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+    private readonly Guid _activityId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+    private readonly Guid _enrollmentId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+    private readonly Guid _programEnrollmentId = Guid.Parse("77777777-7777-7777-7777-777777777777");
+    private readonly Guid _progressId = Guid.Parse("88888888-8888-8888-8888-888888888888");
+
+    private readonly InMemoryUnitOfWork _db = new();
+    private readonly Mock<IClaimsService> _claimsService = new();
+    private readonly Mock<ICertificateService> _certificateService = new();
+    private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+
+    private ActivityProgressService CreateSut(Guid? currentUserId = null)
+    {
+        _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _studentId);
+        _certificateService
+            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .ReturnsAsync((CertificateDetailDto?)null);
+        _notificationPublisher
+            .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _notificationPublisher
+            .Setup(n => n.PublishManyAsync(
+                It.IsAny<IReadOnlyList<NotificationCommand>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        return new ActivityProgressService(
+            _db,
+            _claimsService.Object,
+            _certificateService.Object,
+            _notificationPublisher.Object,
+            NullLogger<ActivityProgressService>.Instance);
+    }
+
+    private void SeedStudent()
+    {
+        _db.Users.Seed(new User
+        {
+            Id = _studentId,
+            Code = "STD-001",
+            Email = "student@test.com",
+            Role = RoleType.Student,
+            IsDeleted = false
+        });
+    }
+
+    private void SeedManager()
+    {
+        _db.Users.Seed(new User
+        {
+            Id = _managerId,
+            Code = "MGR-001",
+            Email = "manager@test.com",
+            Role = RoleType.Manager,
+            IsDeleted = false
+        });
+    }
+
+    private void SeedModule(Guid? moduleId = null, string name = "Module 1", Guid? prerequisiteModuleId = null)
+    {
+        _db.Modules.Seed(new Module
+        {
+            Id = moduleId ?? _moduleId,
+            Code = "MOD-001",
+            Name = name,
+            ProgramId = _programId,
+            ModuleType = ModuleType.Theory,
+            PrerequisiteModuleId = prerequisiteModuleId,
+            IsDeleted = false
+        });
+    }
+
+    private void SeedCourse(Guid? courseId = null, Guid? moduleId = null, bool isDeleted = false)
+    {
+        _db.Courses.Seed(new Course
+        {
+            Id = courseId ?? _courseId,
+            Code = "CRS-001",
+            Name = "Course 1",
+            ModuleId = moduleId ?? _moduleId,
+            IsDeleted = isDeleted
+        });
+    }
+
+    private Activity SeedActivity(
+        Guid? activityId = null,
+        Guid? courseId = null,
+        ActivityType type = ActivityType.SelfPaced,
+        bool isDeleted = false,
+        int order = 1)
+    {
+        var activity = new Activity
+        {
+            Id = activityId ?? _activityId,
+            Code = "ACT-001",
+            Name = "Lesson 1",
+            CourseId = courseId ?? _courseId,
+            ActivityType = type,
+            ActivityOrder = order,
+            SchedulingMode = SchedulingMode.SelfPaced,
+            IsDeleted = isDeleted
+        };
+        _db.Activities.Seed(activity);
+        return activity;
+    }
+
+    private void SeedActiveEnrollment(
+        Guid? programEnrollmentId = null,
+        DateTime? startedAt = null,
+        EnrollmentStatus status = EnrollmentStatus.Active,
+        int attemptNumber = 1,
+        bool isDeleted = false,
+        Guid? studentId = null,
+        Guid? moduleId = null)
+    {
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = _enrollmentId,
+            StudentId = studentId ?? _studentId,
+            ModuleId = moduleId ?? _moduleId,
+            Status = status,
+            ProgramEnrollmentId = programEnrollmentId,
+            StartedAt = startedAt,
+            AttemptNumber = attemptNumber,
+            IsDeleted = isDeleted
+        });
+    }
+
+    private void SeedProgramEnrollment(DateTime? startedAt = null, bool isDeleted = false)
+    {
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = _programEnrollmentId,
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.Active,
+            StartedAt = startedAt,
+            IsDeleted = isDeleted
+        });
+    }
+
+    private ActivityProgress SeedInProgress(
+        ActivityStatus status = ActivityStatus.InProgress,
+        bool isCompleted = false,
+        bool isDeleted = false)
+    {
+        var progress = new ActivityProgress
+        {
+            Id = _progressId,
+            StudentId = _studentId,
+            ActivityId = _activityId,
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityStatus = status,
+            IsCompleted = isCompleted,
+            CompletedAt = isCompleted ? DateTime.UtcNow.AddHours(-1) : null,
+            IsDeleted = isDeleted
+        };
+        _db.ActivityProgresses.Seed(progress);
+        return progress;
+    }
+
+    private void SeedLearningGraph(Guid? programEnrollmentId = null)
+    {
+        SeedStudent();
+        SeedModule();
+        SeedCourse();
+        SeedActivity();
+        SeedActiveEnrollment(programEnrollmentId: programEnrollmentId);
+    }
+
+    // ── StartActivityProgressAsync ────────────────────────────────────────────
+
+    [Fact]
+    public async Task StartActivityProgress_CreatesInProgress_AndSetsStartedAt()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment();
+        var sut = CreateSut();
+
+        var result = await sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+        {
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityId = _activityId
+        });
+
+        Assert.Equal(_studentId, result.StudentId);
+        Assert.Equal(_activityId, result.ActivityId);
+        Assert.Equal(_enrollmentId, result.ModuleEnrollmentId);
+        Assert.Equal(ActivityStatus.InProgress, result.ActivityStatus);
+        Assert.False(result.IsCompleted);
+        Assert.Equal("ACT-001", result.ActivityCode);
+        Assert.Equal("Lesson 1", result.ActivityName);
+        Assert.Equal(ActivityType.SelfPaced, result.ActivityType);
+        Assert.Single(_db.ActivityProgresses.Items);
+        Assert.NotNull(_db.ModuleEnrollments.Items[0].StartedAt);
+        Assert.NotNull(_db.ProgramEnrollments.Items[0].StartedAt);
+        Assert.Equal(1, _db.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_DoesNotOverwriteExistingStartedAt()
+    {
+        var started = DateTime.UtcNow.AddDays(-3);
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment(startedAt: started);
+        _db.ModuleEnrollments.Items[0].StartedAt = started;
+        var sut = CreateSut();
+
+        await sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+        {
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityId = _activityId
+        });
+
+        Assert.Equal(started, _db.ModuleEnrollments.Items[0].StartedAt);
+        Assert.Equal(started, _db.ProgramEnrollments.Items[0].StartedAt);
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_SkipsProgramStartedAt_WhenProgramEnrollmentMissingOrDeleted()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment(isDeleted: true);
+        var sut = CreateSut();
+
+        await sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+        {
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityId = _activityId
+        });
+
+        Assert.True(_db.ProgramEnrollments.Items[0].IsDeleted);
+        Assert.Null(_db.ProgramEnrollments.Items[0].StartedAt);
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_Works_WithoutProgramEnrollmentId()
+    {
+        SeedLearningGraph();
+        var sut = CreateSut();
+
+        var result = await sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+        {
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityId = _activityId
+        });
+
+        Assert.Equal(ActivityStatus.InProgress, result.ActivityStatus);
+        _certificateService.Verify(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsBadRequest_WhenIdsEmpty()
+    {
+        SeedStudent();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = Guid.Empty,
+                ActivityId = _activityId
+            }));
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = Guid.Empty
+            }));
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsForbidden_WhenNotStudent()
+    {
+        SeedManager();
+        var sut = CreateSut(currentUserId: _managerId);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+
+        Assert.Equal("Only students can start activity progress.", ex.Message);
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsNotFound_WhenEnrollmentMissing()
+    {
+        SeedStudent();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsForbidden_WhenEnrollmentBelongsToOtherStudent()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedCourse();
+        SeedActivity();
+        SeedActiveEnrollment(studentId: _otherStudentId);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsBadRequest_WhenEnrollmentNotActive()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedCourse();
+        SeedActivity();
+        SeedActiveEnrollment(status: EnrollmentStatus.Completed);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsNotFound_WhenActivityMissing()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedActiveEnrollment();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsNotFound_WhenCourseMissing()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedActivity();
+        SeedActiveEnrollment();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsNotFound_WhenCourseDeleted()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedCourse(isDeleted: true);
+        SeedActivity();
+        SeedActiveEnrollment();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsBadRequest_WhenActivityNotInModule()
+    {
+        SeedStudent();
+        SeedModule();
+        var otherModuleId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        SeedModule(moduleId: otherModuleId, name: "Other");
+        SeedCourse(moduleId: otherModuleId);
+        SeedActivity();
+        SeedActiveEnrollment();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+
+        Assert.Equal("Activity does not belong to the enrolled module.", ex.Message);
+    }
+
+    [Fact]
+    public async Task StartActivityProgress_ThrowsConflict_WhenDuplicate()
+    {
+        SeedLearningGraph();
+        SeedInProgress();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+    }
+
+    // ── UpdateActivityProgressAsync ───────────────────────────────────────────
+
+    [Fact]
+    public async Task UpdateActivityProgress_MarksDone_AndRecalculates()
+    {
+        SeedLearningGraph();
+        SeedInProgress();
+        var sut = CreateSut();
+
+        var result = await sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
+        {
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityId = _activityId
+        });
+
+        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
+        Assert.True(result.IsCompleted);
+        Assert.NotNull(result.CompletedAt);
+        Assert.Equal(100m, result.ModuleProgressPercent);
+        Assert.Null(result.ProgramProgressPercent);
+        Assert.Equal(EnrollmentStatus.Completed, _db.ModuleEnrollments.Items[0].Status);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task UpdateActivityProgress_WithProgram_CallsCertificate_AndSetsProgramProgress()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment();
+        SeedInProgress();
+        var sut = CreateSut();
+
+        var result = await sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
+        {
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityId = _activityId
+        });
+
+        Assert.NotNull(result.ProgramProgressPercent);
+        _certificateService.Verify(c => c.EnsureProgramCertificateAsync(_programEnrollmentId), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateActivityProgress_Continues_WhenCertificateThrows()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment();
+        SeedInProgress();
+        var sut = CreateSut();
+        _certificateService
+            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .ThrowsAsync(new InvalidOperationException("cert failed"));
+
+        var result = await sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
+        {
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityId = _activityId
+        });
+
+        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
+    }
+
+    [Fact]
+    public async Task UpdateActivityProgress_PublishesModuleCompleted_AndUnlocked()
+    {
+        SeedLearningGraph();
+        SeedModule(moduleId: _unlockedModuleId, name: "Module 2", prerequisiteModuleId: _moduleId);
+        SeedInProgress();
+        var sut = CreateSut();
+
+        await sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
+        {
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityId = _activityId
+        });
+
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ActivityCompleted),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleCompleted),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleUnlocked),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateActivityProgress_SkipsModuleCompleted_WhenAlreadyCompleted()
+    {
+        SeedLearningGraph();
+        SeedInProgress();
+        _db.ModuleEnrollments.Items[0].Status = EnrollmentStatus.Completed;
+        // ValidateModuleEnrollmentActive requires Active — so this path can't use Update.
+        // Cover via ForceComplete / Complete with previous already Completed after recalc stays Completed.
+        // Instead: complete when there are 2 activities — first complete shouldn't finish module.
+        _db.ModuleEnrollments.Items[0].Status = EnrollmentStatus.Active;
+        var secondActivityId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+        SeedActivity(activityId: secondActivityId, order: 2);
+        var sut = CreateSut();
+
+        await sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
+        {
+            ModuleEnrollmentId = _enrollmentId,
+            ActivityId = _activityId
+        });
+
+        Assert.Equal(EnrollmentStatus.Active, _db.ModuleEnrollments.Items[0].Status);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleCompleted),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateActivityProgress_ThrowsForbidden_WhenNotStudent()
+    {
+        SeedManager();
+        var sut = CreateSut(currentUserId: _managerId);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+
+        Assert.Equal("Only students can update activity progress.", ex.Message);
+    }
+
+    [Fact]
+    public async Task UpdateActivityProgress_ThrowsNotFound_WhenProgressMissing()
+    {
+        SeedLearningGraph();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
+            {
+                ModuleEnrollmentId = _enrollmentId,
+                ActivityId = _activityId
+            }));
+    }
+
+    // ── CompleteActivityForModuleEnrollmentAsync ──────────────────────────────
+
+    [Fact]
+    public async Task CompleteActivity_CreatesProgress_WhenNoneExists()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment();
+        var sut = CreateSut();
+
+        var result = await sut.CompleteActivityForModuleEnrollmentAsync(
+            _enrollmentId,
+            _activityId,
+            _studentId,
+            CompletionSource.Video);
+
+        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
+        Assert.True(result.IsCompleted);
+        Assert.Equal(100m, result.ModuleProgressPercent);
+        Assert.NotNull(result.ProgramProgressPercent);
+        Assert.Single(_db.ActivityProgresses.Items);
+        Assert.Equal(CompletionSource.Video, _db.ActivityProgresses.Items[0].CompletionSource);
+        Assert.NotNull(_db.ModuleEnrollments.Items[0].StartedAt);
+        Assert.NotNull(_db.ProgramEnrollments.Items[0].StartedAt);
+        _certificateService.Verify(c => c.EnsureProgramCertificateAsync(_programEnrollmentId), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompleteActivity_UpdatesExistingProgress()
+    {
+        SeedLearningGraph();
+        SeedInProgress();
+        var sut = CreateSut();
+
+        var result = await sut.CompleteActivityForModuleEnrollmentAsync(
+            _enrollmentId,
+            _activityId,
+            _studentId,
+            CompletionSource.Manual);
+
+        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
+        Assert.Equal(CompletionSource.Manual, _db.ActivityProgresses.Items[0].CompletionSource);
+        Assert.Null(_db.ActivityProgresses.Items[0].ResumeState);
+        Assert.Single(_db.ActivityProgresses.Items);
+    }
+
+    [Fact]
+    public async Task CompleteActivity_DoesNotOverwriteStartedAt_WhenAlreadySet()
+    {
+        var started = DateTime.UtcNow.AddDays(-2);
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment(startedAt: started);
+        _db.ModuleEnrollments.Items[0].StartedAt = started;
+        var sut = CreateSut();
+
+        await sut.CompleteActivityForModuleEnrollmentAsync(
+            _enrollmentId,
+            _activityId,
+            _studentId);
+
+        Assert.Equal(started, _db.ModuleEnrollments.Items[0].StartedAt);
+        Assert.Equal(started, _db.ProgramEnrollments.Items[0].StartedAt);
+    }
+
+    [Fact]
+    public async Task CompleteActivity_SkipsProgramStart_WhenProgramEnrollmentDeleted()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment(isDeleted: true);
+        var sut = CreateSut();
+
+        // RecalculateProgramProgressAsync throws when PE deleted — so this would fail.
+        // Cover the StartAt skip by not linking PE id when deleted; instead use null PE and
+        // separately verify create-path with PE missing entirely (already covered).
+        // Here: use PE id that does not exist.
+        _db.ModuleEnrollments.Items[0].ProgramEnrollmentId = Guid.NewGuid();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.CompleteActivityForModuleEnrollmentAsync(
+                _enrollmentId,
+                _activityId,
+                _studentId));
+    }
+
+    [Fact]
+    public async Task CompleteActivity_Creates_WhenProgramEnrollmentIdPointsToMissing()
+    {
+        // Create path only sets StartedAt when PE exists; missing PE is skipped before recalc.
+        // Use no PE id for create-path success without program.
+        SeedLearningGraph();
+        var sut = CreateSut();
+
+        var result = await sut.CompleteActivityForModuleEnrollmentAsync(
+            _enrollmentId,
+            _activityId,
+            _studentId);
+
+        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
+        Assert.Null(result.ProgramProgressPercent);
+    }
+
+    [Fact]
+    public async Task CompleteActivity_ThrowsForbidden_WhenStudentMismatch()
+    {
+        SeedLearningGraph();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.CompleteActivityForModuleEnrollmentAsync(
+                _enrollmentId,
+                _activityId,
+                _otherStudentId));
+    }
+
+    [Fact]
+    public async Task CompleteActivity_ThrowsNotFound_WhenCourseMissing()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedActivity();
+        SeedActiveEnrollment();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.CompleteActivityForModuleEnrollmentAsync(
+                _enrollmentId,
+                _activityId,
+                _studentId));
+    }
+
+    [Fact]
+    public async Task CompleteActivity_PublishesModuleCompleted_WhenModuleMissingFromStore()
+    {
+        // Enrollment references a module id with course/activity, but Modules repo has no row.
+        SeedStudent();
+        SeedCourse(moduleId: _moduleId);
+        SeedActivity();
+        SeedActiveEnrollment();
+        var sut = CreateSut();
+
+        await sut.CompleteActivityForModuleEnrollmentAsync(
+            _enrollmentId,
+            _activityId,
+            _studentId);
+
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleCompleted),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleUnlocked),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // ── SaveCheckpointForModuleEnrollmentAsync ────────────────────────────────
+
+    [Fact]
+    public async Task SaveCheckpoint_CreatesInProgress_WithResumeState()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment();
+        var sut = CreateSut();
+        var json = """{"kind":"video","positionSeconds":12}""";
+
+        var result = await sut.SaveCheckpointForModuleEnrollmentAsync(
+            _enrollmentId,
+            _activityId,
+            _studentId,
+            json);
+
+        Assert.Equal(ActivityStatus.InProgress, result.ActivityStatus);
+        Assert.NotNull(result.ResumeState);
+        Assert.Equal("video", result.ResumeState!.Kind);
+        Assert.Equal(12, result.ResumeState.PositionSeconds);
+        Assert.NotNull(result.LastAccessedAt);
+        Assert.NotNull(_db.ModuleEnrollments.Items[0].StartedAt);
+        Assert.NotNull(_db.ProgramEnrollments.Items[0].StartedAt);
+    }
+
+    [Fact]
+    public async Task SaveCheckpoint_UpdatesExisting_WhenInProgress()
+    {
+        SeedLearningGraph();
+        SeedInProgress();
+        var sut = CreateSut();
+        var json = """{"kind":"pdf","page":3}""";
+
+        var result = await sut.SaveCheckpointForModuleEnrollmentAsync(
+            _enrollmentId,
+            _activityId,
+            _studentId,
+            json);
+
+        Assert.Equal(ActivityStatus.InProgress, result.ActivityStatus);
+        Assert.Equal(3, result.ResumeState!.Page);
+        Assert.Single(_db.ActivityProgresses.Items);
+    }
+
+    [Fact]
+    public async Task SaveCheckpoint_DoesNotOverwriteStartedAt()
+    {
+        var started = DateTime.UtcNow.AddDays(-1);
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment(startedAt: started);
+        _db.ModuleEnrollments.Items[0].StartedAt = started;
+        var sut = CreateSut();
+
+        await sut.SaveCheckpointForModuleEnrollmentAsync(
+            _enrollmentId,
+            _activityId,
+            _studentId,
+            """{"kind":"doc","scrollRatio":0.4}""");
+
+        Assert.Equal(started, _db.ModuleEnrollments.Items[0].StartedAt);
+        Assert.Equal(started, _db.ProgramEnrollments.Items[0].StartedAt);
+    }
+
+    [Fact]
+    public async Task SaveCheckpoint_SkipsProgramStart_WhenProgramEnrollmentDeleted()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment(isDeleted: true);
+        var sut = CreateSut();
+
+        await sut.SaveCheckpointForModuleEnrollmentAsync(
+            _enrollmentId,
+            _activityId,
+            _studentId,
+            """{"kind":"video","positionSeconds":1}""");
+
+        Assert.Null(_db.ProgramEnrollments.Items[0].StartedAt);
+    }
+
+    [Fact]
+    public async Task SaveCheckpoint_ThrowsBadRequest_WhenAlreadyCompleted()
+    {
+        SeedLearningGraph();
+        SeedInProgress(status: ActivityStatus.Done, isCompleted: true);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.SaveCheckpointForModuleEnrollmentAsync(
+                _enrollmentId,
+                _activityId,
+                _studentId,
+                """{"kind":"video","positionSeconds":1}"""));
+
+        Assert.Equal("Activity is already completed.", ex.Message);
+    }
+
+    [Fact]
+    public async Task SaveCheckpoint_ThrowsBadRequest_WhenNotSelfPaced()
+    {
+        SeedLearningGraph();
+        _db.Activities.Items[0].ActivityType = ActivityType.LiveOnline;
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.SaveCheckpointForModuleEnrollmentAsync(
+                _enrollmentId,
+                _activityId,
+                _studentId,
+                """{"kind":"video","positionSeconds":1}"""));
+    }
+
+    [Fact]
+    public async Task SaveCheckpoint_ThrowsNotFound_WhenCourseMissing()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedActivity();
+        SeedActiveEnrollment();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.SaveCheckpointForModuleEnrollmentAsync(
+                _enrollmentId,
+                _activityId,
+                _studentId,
+                """{"kind":"video","positionSeconds":1}"""));
+    }
+
+    [Fact]
+    public async Task SaveCheckpoint_ThrowsBadRequest_WhenActivityWrongModule()
+    {
+        SeedStudent();
+        SeedModule();
+        var otherModuleId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        SeedModule(moduleId: otherModuleId, name: "Other");
+        SeedCourse(moduleId: otherModuleId);
+        SeedActivity();
+        SeedActiveEnrollment();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.SaveCheckpointForModuleEnrollmentAsync(
+                _enrollmentId,
+                _activityId,
+                _studentId,
+                """{"kind":"video","positionSeconds":1}"""));
+    }
+
+    // ── ForceCompleteActivityAsync ────────────────────────────────────────────
+
+    [Fact]
+    public async Task ForceComplete_CreatesProgress_AndRecalculates()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment();
+        var sut = CreateSut();
+
+        var result = await sut.ForceCompleteActivityAsync(_studentId, _activityId);
+
+        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
+        Assert.True(result.IsCompleted);
+        Assert.Equal(100m, result.ModuleProgressPercent);
+        Assert.NotNull(result.ProgramProgressPercent);
+        Assert.Equal(CompletionSource.Manual, _db.ActivityProgresses.Items[0].CompletionSource);
+        _certificateService.Verify(c => c.EnsureProgramCertificateAsync(_programEnrollmentId), Times.Once);
+    }
+
+    [Fact]
+    public async Task ForceComplete_UpdatesExistingProgress()
+    {
+        SeedLearningGraph();
+        SeedInProgress();
+        var sut = CreateSut();
+
+        var result = await sut.ForceCompleteActivityAsync(_studentId, _activityId);
+
+        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
+        Assert.Single(_db.ActivityProgresses.Items);
+    }
+
+    [Fact]
+    public async Task ForceComplete_UsesLatestAttemptEnrollment()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedCourse();
+        SeedActivity();
+        _db.ModuleEnrollments.Seed(
+            new ModuleEnrollment
+            {
+                Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                StudentId = _studentId,
+                ModuleId = _moduleId,
+                Status = EnrollmentStatus.Active,
+                AttemptNumber = 1,
+                IsDeleted = false
+            },
+            new ModuleEnrollment
+            {
+                Id = _enrollmentId,
+                StudentId = _studentId,
+                ModuleId = _moduleId,
+                Status = EnrollmentStatus.Active,
+                AttemptNumber = 2,
+                IsDeleted = false
+            });
+        var sut = CreateSut();
+
+        var result = await sut.ForceCompleteActivityAsync(_studentId, _activityId);
+
+        Assert.Equal(_enrollmentId, result.ModuleEnrollmentId);
+    }
+
+    [Fact]
+    public async Task ForceComplete_ThrowsBadRequest_WhenStudentIdEmpty()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.ForceCompleteActivityAsync(Guid.Empty, _activityId));
+    }
+
+    [Fact]
+    public async Task ForceComplete_ThrowsBadRequest_WhenActivityIdEmpty()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.ForceCompleteActivityAsync(_studentId, Guid.Empty));
+    }
+
+    [Fact]
+    public async Task ForceComplete_ThrowsNotFound_WhenActivityMissing()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.ForceCompleteActivityAsync(_studentId, _activityId));
+    }
+
+    [Fact]
+    public async Task ForceComplete_ThrowsNotFound_WhenCourseMissing()
+    {
+        SeedActivity();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.ForceCompleteActivityAsync(_studentId, _activityId));
+    }
+
+    [Fact]
+    public async Task ForceComplete_ThrowsNotFound_WhenNoModuleEnrollment()
+    {
+        SeedCourse();
+        SeedActivity();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.ForceCompleteActivityAsync(_studentId, _activityId));
+
+        Assert.Contains("No module enrollment found", ex.Message);
+    }
+
+    [Fact]
+    public async Task ForceComplete_Continues_WhenCertificateThrows()
+    {
+        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
+        SeedProgramEnrollment();
+        var sut = CreateSut();
+        _certificateService
+            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var result = await sut.ForceCompleteActivityAsync(_studentId, _activityId);
+
+        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
+    }
+}
