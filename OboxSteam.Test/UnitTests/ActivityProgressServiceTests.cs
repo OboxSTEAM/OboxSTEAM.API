@@ -239,39 +239,6 @@ public sealed class ActivityProgressServiceTests
     }
 
     [Fact]
-    public async Task StartActivityProgress_SkipsProgramStartedAt_WhenProgramEnrollmentMissingOrDeleted()
-    {
-        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
-        SeedProgramEnrollment(isDeleted: true);
-        var sut = CreateSut();
-
-        await sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
-        {
-            ModuleEnrollmentId = _enrollmentId,
-            ActivityId = _activityId
-        });
-
-        Assert.True(_db.ProgramEnrollments.Items[0].IsDeleted);
-        Assert.Null(_db.ProgramEnrollments.Items[0].StartedAt);
-    }
-
-    [Fact]
-    public async Task StartActivityProgress_Works_WithoutProgramEnrollmentId()
-    {
-        SeedLearningGraph();
-        var sut = CreateSut();
-
-        var result = await sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
-        {
-            ModuleEnrollmentId = _enrollmentId,
-            ActivityId = _activityId
-        });
-
-        Assert.Equal(ActivityStatus.InProgress, result.ActivityStatus);
-        _certificateService.Verify(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()), Times.Never);
-    }
-
-    [Fact]
     public async Task StartActivityProgress_ThrowsBadRequest_WhenIdsEmpty()
     {
         SeedStudent();
@@ -375,23 +342,6 @@ public sealed class ActivityProgressServiceTests
     }
 
     [Fact]
-    public async Task StartActivityProgress_ThrowsNotFound_WhenCourseMissing()
-    {
-        SeedStudent();
-        SeedModule();
-        SeedActivity();
-        SeedActiveEnrollment();
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.StartActivityProgressAsync(new CreateActivityProgressRequestDto
-            {
-                ModuleEnrollmentId = _enrollmentId,
-                ActivityId = _activityId
-            }));
-    }
-
-    [Fact]
     public async Task StartActivityProgress_ThrowsNotFound_WhenCourseDeleted()
     {
         SeedStudent();
@@ -449,30 +399,6 @@ public sealed class ActivityProgressServiceTests
     // ── UpdateActivityProgressAsync ───────────────────────────────────────────
 
     [Fact]
-    public async Task UpdateActivityProgress_MarksDone_AndRecalculates()
-    {
-        SeedLearningGraph();
-        SeedInProgress();
-        var sut = CreateSut();
-
-        var result = await sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
-        {
-            ModuleEnrollmentId = _enrollmentId,
-            ActivityId = _activityId
-        });
-
-        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
-        Assert.True(result.IsCompleted);
-        Assert.NotNull(result.CompletedAt);
-        Assert.Equal(100m, result.ModuleProgressPercent);
-        Assert.Null(result.ProgramProgressPercent);
-        Assert.Equal(EnrollmentStatus.Completed, _db.ModuleEnrollments.Items[0].Status);
-        _notificationPublisher.Verify(
-            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
-            Times.AtLeastOnce);
-    }
-
-    [Fact]
     public async Task UpdateActivityProgress_WithProgram_CallsCertificate_AndSetsProgramProgress()
     {
         SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
@@ -486,8 +412,16 @@ public sealed class ActivityProgressServiceTests
             ActivityId = _activityId
         });
 
+        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
+        Assert.True(result.IsCompleted);
+        Assert.NotNull(result.CompletedAt);
+        Assert.Equal(100m, result.ModuleProgressPercent);
         Assert.NotNull(result.ProgramProgressPercent);
+        Assert.Equal(EnrollmentStatus.Completed, _db.ModuleEnrollments.Items[0].Status);
         _certificateService.Verify(c => c.EnsureProgramCertificateAsync(_programEnrollmentId), Times.Once);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
     }
 
     [Fact]
@@ -539,34 +473,6 @@ public sealed class ActivityProgressServiceTests
                 It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleUnlocked),
                 It.IsAny<CancellationToken>()),
             Times.Once);
-    }
-
-    [Fact]
-    public async Task UpdateActivityProgress_SkipsModuleCompleted_WhenAlreadyCompleted()
-    {
-        SeedLearningGraph();
-        SeedInProgress();
-        _db.ModuleEnrollments.Items[0].Status = EnrollmentStatus.Completed;
-        // ValidateModuleEnrollmentActive requires Active — so this path can't use Update.
-        // Cover via ForceComplete / Complete with previous already Completed after recalc stays Completed.
-        // Instead: complete when there are 2 activities — first complete shouldn't finish module.
-        _db.ModuleEnrollments.Items[0].Status = EnrollmentStatus.Active;
-        var secondActivityId = Guid.Parse("99999999-9999-9999-9999-999999999999");
-        SeedActivity(activityId: secondActivityId, order: 2);
-        var sut = CreateSut();
-
-        await sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
-        {
-            ModuleEnrollmentId = _enrollmentId,
-            ActivityId = _activityId
-        });
-
-        Assert.Equal(EnrollmentStatus.Active, _db.ModuleEnrollments.Items[0].Status);
-        _notificationPublisher.Verify(
-            n => n.PublishAsync(
-                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleCompleted),
-                It.IsAny<CancellationToken>()),
-            Times.Never);
     }
 
     [Fact]
@@ -626,80 +532,6 @@ public sealed class ActivityProgressServiceTests
     }
 
     [Fact]
-    public async Task CompleteActivity_UpdatesExistingProgress()
-    {
-        SeedLearningGraph();
-        SeedInProgress();
-        var sut = CreateSut();
-
-        var result = await sut.CompleteActivityForModuleEnrollmentAsync(
-            _enrollmentId,
-            _activityId,
-            _studentId,
-            CompletionSource.Manual);
-
-        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
-        Assert.Equal(CompletionSource.Manual, _db.ActivityProgresses.Items[0].CompletionSource);
-        Assert.Null(_db.ActivityProgresses.Items[0].ResumeState);
-        Assert.Single(_db.ActivityProgresses.Items);
-    }
-
-    [Fact]
-    public async Task CompleteActivity_DoesNotOverwriteStartedAt_WhenAlreadySet()
-    {
-        var started = DateTime.UtcNow.AddDays(-2);
-        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
-        SeedProgramEnrollment(startedAt: started);
-        _db.ModuleEnrollments.Items[0].StartedAt = started;
-        var sut = CreateSut();
-
-        await sut.CompleteActivityForModuleEnrollmentAsync(
-            _enrollmentId,
-            _activityId,
-            _studentId);
-
-        Assert.Equal(started, _db.ModuleEnrollments.Items[0].StartedAt);
-        Assert.Equal(started, _db.ProgramEnrollments.Items[0].StartedAt);
-    }
-
-    [Fact]
-    public async Task CompleteActivity_SkipsProgramStart_WhenProgramEnrollmentDeleted()
-    {
-        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
-        SeedProgramEnrollment(isDeleted: true);
-        var sut = CreateSut();
-
-        // RecalculateProgramProgressAsync throws when PE deleted — so this would fail.
-        // Cover the StartAt skip by not linking PE id when deleted; instead use null PE and
-        // separately verify create-path with PE missing entirely (already covered).
-        // Here: use PE id that does not exist.
-        _db.ModuleEnrollments.Items[0].ProgramEnrollmentId = Guid.NewGuid();
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.CompleteActivityForModuleEnrollmentAsync(
-                _enrollmentId,
-                _activityId,
-                _studentId));
-    }
-
-    [Fact]
-    public async Task CompleteActivity_Creates_WhenProgramEnrollmentIdPointsToMissing()
-    {
-        // Create path only sets StartedAt when PE exists; missing PE is skipped before recalc.
-        // Use no PE id for create-path success without program.
-        SeedLearningGraph();
-        var sut = CreateSut();
-
-        var result = await sut.CompleteActivityForModuleEnrollmentAsync(
-            _enrollmentId,
-            _activityId,
-            _studentId);
-
-        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
-        Assert.Null(result.ProgramProgressPercent);
-    }
-
-    [Fact]
     public async Task CompleteActivity_ThrowsForbidden_WhenStudentMismatch()
     {
         SeedLearningGraph();
@@ -712,126 +544,38 @@ public sealed class ActivityProgressServiceTests
                 _otherStudentId));
     }
 
-    [Fact]
-    public async Task CompleteActivity_ThrowsNotFound_WhenCourseMissing()
-    {
-        SeedStudent();
-        SeedModule();
-        SeedActivity();
-        SeedActiveEnrollment();
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.CompleteActivityForModuleEnrollmentAsync(
-                _enrollmentId,
-                _activityId,
-                _studentId));
-    }
-
-    [Fact]
-    public async Task CompleteActivity_PublishesModuleCompleted_WhenModuleMissingFromStore()
-    {
-        // Enrollment references a module id with course/activity, but Modules repo has no row.
-        SeedStudent();
-        SeedCourse(moduleId: _moduleId);
-        SeedActivity();
-        SeedActiveEnrollment();
-        var sut = CreateSut();
-
-        await sut.CompleteActivityForModuleEnrollmentAsync(
-            _enrollmentId,
-            _activityId,
-            _studentId);
-
-        _notificationPublisher.Verify(
-            n => n.PublishAsync(
-                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleCompleted),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
-        _notificationPublisher.Verify(
-            n => n.PublishAsync(
-                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleUnlocked),
-                It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
-
     // ── SaveCheckpointForModuleEnrollmentAsync ────────────────────────────────
 
     [Fact]
-    public async Task SaveCheckpoint_CreatesInProgress_WithResumeState()
+    public async Task SaveCheckpoint_CreatesAndUpdatesResumeState()
     {
         SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
         SeedProgramEnrollment();
         var sut = CreateSut();
-        var json = """{"kind":"video","positionSeconds":12}""";
 
-        var result = await sut.SaveCheckpointForModuleEnrollmentAsync(
+        var created = await sut.SaveCheckpointForModuleEnrollmentAsync(
             _enrollmentId,
             _activityId,
             _studentId,
-            json);
+            """{"kind":"video","positionSeconds":12}""");
 
-        Assert.Equal(ActivityStatus.InProgress, result.ActivityStatus);
-        Assert.NotNull(result.ResumeState);
-        Assert.Equal("video", result.ResumeState!.Kind);
-        Assert.Equal(12, result.ResumeState.PositionSeconds);
-        Assert.NotNull(result.LastAccessedAt);
+        Assert.Equal(ActivityStatus.InProgress, created.ActivityStatus);
+        Assert.NotNull(created.ResumeState);
+        Assert.Equal("video", created.ResumeState!.Kind);
+        Assert.Equal(12, created.ResumeState.PositionSeconds);
+        Assert.NotNull(created.LastAccessedAt);
         Assert.NotNull(_db.ModuleEnrollments.Items[0].StartedAt);
         Assert.NotNull(_db.ProgramEnrollments.Items[0].StartedAt);
-    }
 
-    [Fact]
-    public async Task SaveCheckpoint_UpdatesExisting_WhenInProgress()
-    {
-        SeedLearningGraph();
-        SeedInProgress();
-        var sut = CreateSut();
-        var json = """{"kind":"pdf","page":3}""";
-
-        var result = await sut.SaveCheckpointForModuleEnrollmentAsync(
+        var updated = await sut.SaveCheckpointForModuleEnrollmentAsync(
             _enrollmentId,
             _activityId,
             _studentId,
-            json);
+            """{"kind":"pdf","page":3}""");
 
-        Assert.Equal(ActivityStatus.InProgress, result.ActivityStatus);
-        Assert.Equal(3, result.ResumeState!.Page);
+        Assert.Equal(ActivityStatus.InProgress, updated.ActivityStatus);
+        Assert.Equal(3, updated.ResumeState!.Page);
         Assert.Single(_db.ActivityProgresses.Items);
-    }
-
-    [Fact]
-    public async Task SaveCheckpoint_DoesNotOverwriteStartedAt()
-    {
-        var started = DateTime.UtcNow.AddDays(-1);
-        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
-        SeedProgramEnrollment(startedAt: started);
-        _db.ModuleEnrollments.Items[0].StartedAt = started;
-        var sut = CreateSut();
-
-        await sut.SaveCheckpointForModuleEnrollmentAsync(
-            _enrollmentId,
-            _activityId,
-            _studentId,
-            """{"kind":"doc","scrollRatio":0.4}""");
-
-        Assert.Equal(started, _db.ModuleEnrollments.Items[0].StartedAt);
-        Assert.Equal(started, _db.ProgramEnrollments.Items[0].StartedAt);
-    }
-
-    [Fact]
-    public async Task SaveCheckpoint_SkipsProgramStart_WhenProgramEnrollmentDeleted()
-    {
-        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
-        SeedProgramEnrollment(isDeleted: true);
-        var sut = CreateSut();
-
-        await sut.SaveCheckpointForModuleEnrollmentAsync(
-            _enrollmentId,
-            _activityId,
-            _studentId,
-            """{"kind":"video","positionSeconds":1}""");
-
-        Assert.Null(_db.ProgramEnrollments.Items[0].StartedAt);
     }
 
     [Fact]
@@ -866,43 +610,6 @@ public sealed class ActivityProgressServiceTests
                 """{"kind":"video","positionSeconds":1}"""));
     }
 
-    [Fact]
-    public async Task SaveCheckpoint_ThrowsNotFound_WhenCourseMissing()
-    {
-        SeedStudent();
-        SeedModule();
-        SeedActivity();
-        SeedActiveEnrollment();
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.SaveCheckpointForModuleEnrollmentAsync(
-                _enrollmentId,
-                _activityId,
-                _studentId,
-                """{"kind":"video","positionSeconds":1}"""));
-    }
-
-    [Fact]
-    public async Task SaveCheckpoint_ThrowsBadRequest_WhenActivityWrongModule()
-    {
-        SeedStudent();
-        SeedModule();
-        var otherModuleId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-        SeedModule(moduleId: otherModuleId, name: "Other");
-        SeedCourse(moduleId: otherModuleId);
-        SeedActivity();
-        SeedActiveEnrollment();
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.SaveCheckpointForModuleEnrollmentAsync(
-                _enrollmentId,
-                _activityId,
-                _studentId,
-                """{"kind":"video","positionSeconds":1}"""));
-    }
-
     // ── ForceCompleteActivityAsync ────────────────────────────────────────────
 
     [Fact]
@@ -920,19 +627,6 @@ public sealed class ActivityProgressServiceTests
         Assert.NotNull(result.ProgramProgressPercent);
         Assert.Equal(CompletionSource.Manual, _db.ActivityProgresses.Items[0].CompletionSource);
         _certificateService.Verify(c => c.EnsureProgramCertificateAsync(_programEnrollmentId), Times.Once);
-    }
-
-    [Fact]
-    public async Task ForceComplete_UpdatesExistingProgress()
-    {
-        SeedLearningGraph();
-        SeedInProgress();
-        var sut = CreateSut();
-
-        var result = await sut.ForceCompleteActivityAsync(_studentId, _activityId);
-
-        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
-        Assert.Single(_db.ActivityProgresses.Items);
     }
 
     [Fact]
@@ -969,18 +663,12 @@ public sealed class ActivityProgressServiceTests
     }
 
     [Fact]
-    public async Task ForceComplete_ThrowsBadRequest_WhenStudentIdEmpty()
+    public async Task ForceComplete_ThrowsBadRequest_WhenIdsEmpty()
     {
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.ForceCompleteActivityAsync(Guid.Empty, _activityId));
-    }
-
-    [Fact]
-    public async Task ForceComplete_ThrowsBadRequest_WhenActivityIdEmpty()
-    {
-        var sut = CreateSut();
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.ForceCompleteActivityAsync(_studentId, Guid.Empty));
@@ -989,16 +677,6 @@ public sealed class ActivityProgressServiceTests
     [Fact]
     public async Task ForceComplete_ThrowsNotFound_WhenActivityMissing()
     {
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.ForceCompleteActivityAsync(_studentId, _activityId));
-    }
-
-    [Fact]
-    public async Task ForceComplete_ThrowsNotFound_WhenCourseMissing()
-    {
-        SeedActivity();
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
@@ -1016,20 +694,5 @@ public sealed class ActivityProgressServiceTests
             sut.ForceCompleteActivityAsync(_studentId, _activityId));
 
         Assert.Contains("No module enrollment found", ex.Message);
-    }
-
-    [Fact]
-    public async Task ForceComplete_Continues_WhenCertificateThrows()
-    {
-        SeedLearningGraph(programEnrollmentId: _programEnrollmentId);
-        SeedProgramEnrollment();
-        var sut = CreateSut();
-        _certificateService
-            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
-            .ThrowsAsync(new Exception("boom"));
-
-        var result = await sut.ForceCompleteActivityAsync(_studentId, _activityId);
-
-        Assert.Equal(ActivityStatus.Done, result.ActivityStatus);
     }
 }

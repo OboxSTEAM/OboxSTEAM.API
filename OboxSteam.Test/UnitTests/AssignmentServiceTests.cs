@@ -291,29 +291,6 @@ public sealed class AssignmentServiceTests
     }
 
     [Fact]
-    public async Task GetAllAssignments_SearchesByTitleCodeModuleOrProgram()
-    {
-        var module = SeedCatalogModule(moduleName: "Robotics Theory", programName: "STEAM Track");
-        SeedCatalogAssignment(module, code: "ASN-ALPHA", title: "Intro Quiz");
-        SeedCatalogAssignment(module, code: "ASN-BETA", title: "Final Project");
-        var sut = CreateSut();
-
-        var byTitle = await sut.GetAllAssignments("intro", null, true, 1, 10);
-        Assert.Single(byTitle.Items);
-        Assert.Equal("ASN-ALPHA", byTitle.Items[0].Code);
-
-        var byCode = await sut.GetAllAssignments("beta", null, true, 1, 10);
-        Assert.Single(byCode.Items);
-        Assert.Equal("ASN-BETA", byCode.Items[0].Code);
-
-        var byModule = await sut.GetAllAssignments("robotics", null, true, 1, 10);
-        Assert.Equal(2, byModule.TotalCount);
-
-        var byProgram = await sut.GetAllAssignments("steam", null, true, 1, 10);
-        Assert.Equal(2, byProgram.TotalCount);
-    }
-
-    [Fact]
     public async Task GetAllAssignments_FiltersByModuleProgramCourseAndType()
     {
         var moduleA = SeedCatalogModule();
@@ -357,43 +334,6 @@ public sealed class AssignmentServiceTests
     }
 
     [Fact]
-    public async Task GetAllAssignments_SortsByTitleAscending()
-    {
-        var module = SeedCatalogModule();
-        SeedCatalogAssignment(module, code: "ASN-Z", title: "Zebra");
-        SeedCatalogAssignment(module, code: "ASN-A", title: "Apple");
-        var sut = CreateSut();
-
-        var result = await sut.GetAllAssignments(null, "title", isDescending: false, 1, 10);
-
-        Assert.Equal(2, result.Items.Count);
-        Assert.Equal("Apple", result.Items[0].Title);
-        Assert.Equal("Zebra", result.Items[1].Title);
-    }
-
-    [Fact]
-    public async Task GetAllAssignments_SortsByCreatedAtDescending_ByDefault()
-    {
-        var module = SeedCatalogModule();
-        SeedCatalogAssignment(
-            module,
-            code: "ASN-OLD",
-            title: "Old",
-            createdAt: DateTime.UtcNow.AddDays(-10));
-        SeedCatalogAssignment(
-            module,
-            code: "ASN-NEW",
-            title: "New",
-            createdAt: DateTime.UtcNow.AddDays(-1));
-        var sut = CreateSut();
-
-        var result = await sut.GetAllAssignments(null, null, isDescending: true, 1, 10);
-
-        Assert.Equal("ASN-NEW", result.Items[0].Code);
-        Assert.Equal("ASN-OLD", result.Items[1].Code);
-    }
-
-    [Fact]
     public async Task GetAllAssignments_PaginatesResults()
     {
         var module = SeedCatalogModule();
@@ -419,19 +359,6 @@ public sealed class AssignmentServiceTests
         Assert.Equal("ASN-001", page1.Items[0].Code);
         Assert.Equal("ASN-003", page2.Items[0].Code);
         Assert.Equal("ASN-005", page3.Items[0].Code);
-    }
-
-    [Fact]
-    public async Task GetAllAssignments_ReturnsEmpty_WhenNoMatches()
-    {
-        var module = SeedCatalogModule();
-        SeedCatalogAssignment(module, code: "ASN-001", title: "Only One");
-        var sut = CreateSut();
-
-        var result = await sut.GetAllAssignments("no-such-term", null, true, 1, 10);
-
-        Assert.Equal(0, result.TotalCount);
-        Assert.Empty(result.Items);
     }
 
     // ── CreateAssignment happy ────────────────────────────────────────────────

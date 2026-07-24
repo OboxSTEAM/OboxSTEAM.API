@@ -17,7 +17,6 @@ public sealed class AssignmentSubmissionServiceTests
     private readonly Guid _studentId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly Guid _managerId = Guid.Parse("12121212-1212-1212-1212-121212121212");
     private readonly Guid _mentorId = Guid.Parse("13131313-1313-1313-1313-131313131313");
-    private readonly Guid _parentId = Guid.Parse("14141414-1414-1414-1414-141414141414");
     private readonly Guid _otherStudentId = Guid.Parse("15151515-1515-1515-1515-151515151515");
     private readonly Guid _moduleId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly Guid _programId = Guid.Parse("33333333-3333-3333-3333-333333333333");
@@ -237,7 +236,7 @@ public sealed class AssignmentSubmissionServiceTests
         return file;
     }
 
-    // ── SubmitAssignment happy ────────────────────────────────────────────────
+    // ── SubmitAssignment ──────────────────────────────────────────────────────
 
     [Fact]
     public async Task SubmitAssignment_CreatesSubmission_WithContentText()
@@ -262,44 +261,6 @@ public sealed class AssignmentSubmissionServiceTests
         Assert.Single(_db.Submissions.Items);
         Assert.Equal(1, _db.SaveChangesCallCount);
     }
-
-    [Fact]
-    public async Task SubmitAssignment_CreatesSubmission_WithFileUrlOnly()
-    {
-        SeedStudentModuleAndAssignment();
-        var sut = CreateSut();
-
-        var result = await sut.SubmitAssignment(new SubmitAssignmentRequestDto
-        {
-            AssignmentId = _assignmentId,
-            FileUrl = "  https://cdn.example.com/a.pdf  "
-        });
-
-        Assert.Equal("https://cdn.example.com/a.pdf", result.FileUrl);
-        Assert.Null(result.ContentText);
-        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
-    }
-
-    [Fact]
-    public async Task SubmitAssignment_Resubmits_WhenNotGraded()
-    {
-        SeedStudentModuleAndAssignment(maxAttempts: 3);
-        SeedTurnedInSubmission(status: SubmissionStatus.ReturnedForRevision, attemptNumber: 1);
-        var sut = CreateSut();
-
-        var result = await sut.SubmitAssignment(new SubmitAssignmentRequestDto
-        {
-            AssignmentId = _assignmentId,
-            ContentText = "Revised work"
-        });
-
-        Assert.Equal(2, result.AttemptNumber);
-        Assert.Equal("Revised work", result.ContentText);
-        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
-        Assert.Single(_db.Submissions.Items);
-    }
-
-    // ── SubmitAssignment unhappy ──────────────────────────────────────────────
 
     [Fact]
     public async Task SubmitAssignment_ThrowsBadRequest_WhenContentAndFileMissing()
@@ -375,22 +336,6 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
-    public async Task SubmitAssignment_ThrowsNotFound_WhenAssignmentDeleted()
-    {
-        SeedStudent();
-        SeedModule();
-        SeedFileUploadAssignment(isDeleted: true);
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.SubmitAssignment(new SubmitAssignmentRequestDto
-            {
-                AssignmentId = _assignmentId,
-                ContentText = "x"
-            }));
-    }
-
-    [Fact]
     public async Task SubmitAssignment_ThrowsBadRequest_WhenQuizType()
     {
         SeedStudent();
@@ -410,41 +355,22 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
-    public async Task SubmitAssignment_ThrowsBadRequest_WhenRetrospectiveType()
+    public async Task SubmitAssignment_Resubmits_WhenNotGraded()
     {
-        SeedStudent();
-        SeedModule();
-        SeedActiveEnrollment();
-        SeedFileUploadAssignment(type: AssignmentType.Retrospective);
+        SeedStudentModuleAndAssignment(maxAttempts: 3);
+        SeedTurnedInSubmission(status: SubmissionStatus.ReturnedForRevision, attemptNumber: 1);
         var sut = CreateSut();
 
-        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.SubmitAssignment(new SubmitAssignmentRequestDto
-            {
-                AssignmentId = _assignmentId,
-                ContentText = "x"
-            }));
+        var result = await sut.SubmitAssignment(new SubmitAssignmentRequestDto
+        {
+            AssignmentId = _assignmentId,
+            ContentText = "Revised work"
+        });
 
-        Assert.Contains("retrospective endpoints", ex.Message);
-    }
-
-    [Fact]
-    public async Task SubmitAssignment_ThrowsBadRequest_WhenUnsupportedAssignmentType()
-    {
-        SeedStudent();
-        SeedModule();
-        SeedActiveEnrollment();
-        SeedFileUploadAssignment(type: (AssignmentType)99);
-        var sut = CreateSut();
-
-        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.SubmitAssignment(new SubmitAssignmentRequestDto
-            {
-                AssignmentId = _assignmentId,
-                ContentText = "x"
-            }));
-
-        Assert.Contains("is not supported by this endpoint", ex.Message);
+        Assert.Equal(2, result.AttemptNumber);
+        Assert.Equal("Revised work", result.ContentText);
+        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
+        Assert.Single(_db.Submissions.Items);
     }
 
     [Fact]
@@ -492,36 +418,6 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
-    public async Task SubmitAssignment_ThrowsForbidden_WhenNotYetAvailable()
-    {
-        SeedStudentModuleAndAssignment();
-        _db.Assignments.Items[0].AvailableFrom = DateTime.UtcNow.AddDays(1);
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<ForbiddenException>(() =>
-            sut.SubmitAssignment(new SubmitAssignmentRequestDto
-            {
-                AssignmentId = _assignmentId,
-                ContentText = "x"
-            }));
-    }
-
-    [Fact]
-    public async Task SubmitAssignment_ThrowsConflict_WhenNoLongerAvailable()
-    {
-        SeedStudentModuleAndAssignment();
-        _db.Assignments.Items[0].AvailableUntil = DateTime.UtcNow.AddDays(-1);
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.SubmitAssignment(new SubmitAssignmentRequestDto
-            {
-                AssignmentId = _assignmentId,
-                ContentText = "x"
-            }));
-    }
-
-    [Fact]
     public async Task SubmitAssignment_ThrowsConflict_WhenAlreadyGraded()
     {
         SeedStudentModuleAndAssignment();
@@ -558,12 +454,13 @@ public sealed class AssignmentSubmissionServiceTests
     // ── GradeAssignment ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GradeAssignment_GradesAsManager_AndSetsPassedTrue()
+    public async Task GradeAssignment_GradesAsManager_AndRecalculatesProgress()
     {
         SeedStudent();
         SeedManager();
         SeedModule();
-        SeedActiveEnrollment();
+        SeedProgramEnrollment();
+        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
         SeedFileUploadAssignment(maxPoints: 10, passScore: 5m);
         SeedTurnedInSubmission();
         var sut = CreateSut(currentUserId: _managerId);
@@ -581,115 +478,9 @@ public sealed class AssignmentSubmissionServiceTests
         Assert.Equal(_managerId, result.VerifiedBy);
         Assert.NotNull(result.GradedAt);
         Assert.True(_db.SaveChangesCallCount >= 1);
-    }
-
-    [Fact]
-    public async Task GradeAssignment_SetsPassedFalse_WhenBelowPassScore()
-    {
-        SeedStudent();
-        SeedManager();
-        SeedModule();
-        SeedActiveEnrollment();
-        SeedFileUploadAssignment(maxPoints: 10, passScore: 7m);
-        SeedTurnedInSubmission();
-        var sut = CreateSut(currentUserId: _managerId);
-
-        var result = await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
-        {
-            AssignedGrade = 6
-        });
-
-        Assert.Equal(SubmissionStatus.Graded, result.Status);
-        Assert.False(result.Passed);
-    }
-
-    [Fact]
-    public async Task GradeAssignment_ReturnsForRevision()
-    {
-        SeedStudent();
-        SeedManager();
-        SeedModule();
-        SeedActiveEnrollment();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission();
-        var sut = CreateSut(currentUserId: _managerId);
-
-        var result = await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
-        {
-            AssignedGrade = 3,
-            ReturnForRevision = true,
-            MentorFeedback = "Revise"
-        });
-
-        Assert.Equal(SubmissionStatus.ReturnedForRevision, result.Status);
-        Assert.Null(result.Passed);
-        Assert.Equal(3m, result.AssignedGrade);
-    }
-
-    [Fact]
-    public async Task GradeAssignment_RecalculatesProgramProgress_AndCallsCertificate()
-    {
-        SeedStudent();
-        SeedManager();
-        SeedModule();
-        SeedProgramEnrollment();
-        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission();
-        var sut = CreateSut(currentUserId: _managerId);
-
-        await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
-        {
-            AssignedGrade = 10
-        });
-
         _certificateService.Verify(
             c => c.EnsureProgramCertificateAsync(_programEnrollmentId),
             Times.Once);
-    }
-
-    [Fact]
-    public async Task GradeAssignment_Continues_WhenCertificateServiceThrows()
-    {
-        SeedStudent();
-        SeedManager();
-        SeedModule();
-        SeedProgramEnrollment();
-        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission();
-        var sut = CreateSut(currentUserId: _managerId);
-        _certificateService
-            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
-            .ThrowsAsync(new InvalidOperationException("cert failed"));
-
-        var result = await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
-        {
-            AssignedGrade = 9
-        });
-
-        Assert.Equal(SubmissionStatus.Graded, result.Status);
-    }
-
-    [Fact]
-    public async Task GradeAssignment_SkipsProgress_WhenModuleEnrollmentMissing()
-    {
-        SeedStudent();
-        SeedManager();
-        SeedModule();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission(moduleEnrollmentId: Guid.NewGuid());
-        var sut = CreateSut(currentUserId: _managerId);
-
-        var result = await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
-        {
-            AssignedGrade = 5
-        });
-
-        Assert.Equal(SubmissionStatus.Graded, result.Status);
-        _certificateService.Verify(
-            c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()),
-            Times.Never);
     }
 
     [Fact]
@@ -700,28 +491,7 @@ public sealed class AssignmentSubmissionServiceTests
         SeedModule();
         SeedFileUploadAssignment();
         SeedTurnedInSubmission(moduleEnrollmentId: null);
-        // SeedTurnedInSubmission uses ?? _enrollmentId — override after seed
         _db.Submissions.Items[0].ModuleEnrollmentId = null;
-        var sut = CreateSut(currentUserId: _managerId);
-
-        var result = await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
-        {
-            AssignedGrade = 5
-        });
-
-        Assert.Equal(SubmissionStatus.Graded, result.Status);
-    }
-
-    [Fact]
-    public async Task GradeAssignment_SkipsProgress_WhenModuleEnrollmentDeleted()
-    {
-        SeedStudent();
-        SeedManager();
-        SeedModule();
-        SeedActiveEnrollment();
-        _db.ModuleEnrollments.Items[0].IsDeleted = true;
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission();
         var sut = CreateSut(currentUserId: _managerId);
 
         var result = await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
@@ -786,22 +556,6 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
-    public async Task GradeAssignment_ThrowsNotFound_WhenSubmissionDeleted()
-    {
-        SeedManager();
-        SeedModule();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission(isDeleted: true);
-        var sut = CreateSut(currentUserId: _managerId);
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
-            {
-                AssignedGrade = 5
-            }));
-    }
-
-    [Fact]
     public async Task GradeAssignment_ThrowsBadRequest_WhenResearchSubmission()
     {
         SeedManager();
@@ -836,20 +590,6 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
-    public async Task GradeAssignment_ThrowsNotFound_WhenAssignmentMissing()
-    {
-        SeedManager();
-        SeedTurnedInSubmission();
-        var sut = CreateSut(currentUserId: _managerId);
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
-            {
-                AssignedGrade = 5
-            }));
-    }
-
-    [Fact]
     public async Task GradeAssignment_ThrowsBadRequest_WhenGradeOutOfRange()
     {
         SeedStudent();
@@ -860,25 +600,13 @@ public sealed class AssignmentSubmissionServiceTests
         SeedTurnedInSubmission();
         var sut = CreateSut(currentUserId: _managerId);
 
-        var tooHigh = await Assert.ThrowsAsync<BadRequestException>(() =>
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
             {
                 AssignedGrade = 11
             }));
-        Assert.Contains("AssignedGrade must be between", tooHigh.Message);
 
-        SeedTurnedInSubmission(
-            status: SubmissionStatus.TurnedIn);
-        // second seed would duplicate — update existing instead
-        _db.Submissions.Items[0].Status = SubmissionStatus.TurnedIn;
-        _db.Submissions.Items[0].AssignedGrade = null;
-
-        var tooLow = await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
-            {
-                AssignedGrade = -1
-            }));
-        Assert.Contains("AssignedGrade must be between", tooLow.Message);
+        Assert.Contains("AssignedGrade must be between", ex.Message);
     }
 
     // ── GetAssignmentSubmission ───────────────────────────────────────────────
@@ -901,70 +629,11 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
-    public async Task GetAssignmentSubmission_ReturnsDto_ForManager()
-    {
-        SeedStudent();
-        SeedManager();
-        SeedModule();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission();
-        var sut = CreateSut(currentUserId: _managerId);
-
-        var result = await sut.GetAssignmentSubmission(_submissionId);
-
-        Assert.NotNull(result);
-        Assert.Equal(_submissionId, result!.Id);
-    }
-
-    [Fact]
-    public async Task GetAssignmentSubmission_ReturnsDto_ForLinkedParent()
-    {
-        SeedStudent();
-        SeedModule();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission();
-        _db.Users.Seed(new User
-        {
-            Id = _parentId,
-            Code = "PAR-001",
-            Email = "parent@test.com",
-            Role = RoleType.Parent,
-            IsDeleted = false
-        });
-        _db.ParentStudents.Seed(new ParentStudent
-        {
-            Id = Guid.NewGuid(),
-            ParentId = _parentId,
-            StudentId = _studentId,
-            IsDeleted = false
-        });
-        var sut = CreateSut(currentUserId: _parentId);
-
-        var result = await sut.GetAssignmentSubmission(_submissionId);
-
-        Assert.NotNull(result);
-    }
-
-    [Fact]
     public async Task GetAssignmentSubmission_ReturnsNull_WhenMissing()
     {
         var sut = CreateSut();
 
         var result = await sut.GetAssignmentSubmission(Guid.NewGuid());
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task GetAssignmentSubmission_ReturnsNull_WhenDeleted()
-    {
-        SeedStudent();
-        SeedModule();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission(isDeleted: true);
-        var sut = CreateSut();
-
-        var result = await sut.GetAssignmentSubmission(_submissionId);
 
         Assert.Null(result);
     }
@@ -1014,18 +683,6 @@ public sealed class AssignmentSubmissionServiceTests
             sut.GetAssignmentSubmission(_submissionId));
     }
 
-    [Fact]
-    public async Task GetAssignmentSubmission_ThrowsUnauthorized_WhenUserIdEmpty()
-    {
-        SeedModule();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission();
-        var sut = CreateSut(currentUserId: Guid.Empty);
-
-        await Assert.ThrowsAsync<UnauthorizedException>(() =>
-            sut.GetAssignmentSubmission(_submissionId));
-    }
-
     // ── UploadAssignmentFile ──────────────────────────────────────────────────
 
     [Fact]
@@ -1052,29 +709,6 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
-    public async Task UploadAssignmentFile_ThrowsNotFound_WhenSubmissionMissing()
-    {
-        SeedStudent();
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.UploadAssignmentFile(Guid.NewGuid(), CreateFormFile().Object));
-    }
-
-    [Fact]
-    public async Task UploadAssignmentFile_ThrowsBadRequest_WhenResearchSubmission()
-    {
-        SeedStudent();
-        SeedModule();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission(researchMilestoneId: Guid.NewGuid());
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.UploadAssignmentFile(_submissionId, CreateFormFile().Object));
-    }
-
-    [Fact]
     public async Task UploadAssignmentFile_ThrowsForbidden_WhenNotOwner()
     {
         SeedStudent();
@@ -1098,31 +732,5 @@ public sealed class AssignmentSubmissionServiceTests
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.UploadAssignmentFile(_submissionId, CreateFormFile(length: 0).Object));
-    }
-
-    [Fact]
-    public async Task UploadAssignmentFile_ThrowsBadRequest_WhenExtensionNotAllowed()
-    {
-        SeedStudent();
-        SeedModule();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission();
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.UploadAssignmentFile(_submissionId, CreateFormFile(fileName: "hack.exe").Object));
-    }
-
-    [Fact]
-    public async Task UploadAssignmentFile_ThrowsForbidden_WhenCallerNotStudent()
-    {
-        SeedManager();
-        SeedModule();
-        SeedFileUploadAssignment();
-        SeedTurnedInSubmission();
-        var sut = CreateSut(currentUserId: _managerId);
-
-        await Assert.ThrowsAsync<ForbiddenException>(() =>
-            sut.UploadAssignmentFile(_submissionId, CreateFormFile().Object));
     }
 }

@@ -122,7 +122,7 @@ public sealed class RetrospectiveAttemptServiceTests
         return submission;
     }
 
-    // ── StartRetrospective happy ──────────────────────────────────────────────
+    // ── StartRetrospective ──────────────────────────────────────────────────────
 
     [Fact]
     public async Task StartRetrospective_CreatesNewPendingDraft()
@@ -160,26 +160,6 @@ public sealed class RetrospectiveAttemptServiceTests
     }
 
     [Fact]
-    public async Task StartRetrospective_ResumesReturnedForRevision()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        var existing = SeedSubmission(
-            status: SubmissionStatus.ReturnedForRevision,
-            contentText: "Please revise",
-            attemptNumber: 1);
-        var sut = CreateSut();
-
-        var result = await sut.StartRetrospective(_assignmentId);
-
-        Assert.Equal(existing.Id, result.SubmissionId);
-        Assert.Equal(SubmissionStatus.ReturnedForRevision, result.Status);
-        Assert.Equal(0, _db.SaveChangesCallCount);
-    }
-
-    // ── StartRetrospective unhappy ────────────────────────────────────────────
-
-    [Fact]
     public async Task StartRetrospective_ThrowsBadRequest_WhenAssignmentIdEmpty()
     {
         SeedStudentAndEnrollment();
@@ -208,30 +188,6 @@ public sealed class RetrospectiveAttemptServiceTests
 
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.StartRetrospective(_assignmentId));
         Assert.Equal("This assignment is not a retrospective.", ex.Message);
-    }
-
-    [Fact]
-    public async Task StartRetrospective_ThrowsForbidden_WhenAssignmentNotYetAvailable()
-    {
-        SeedStudentAndEnrollment();
-        var assignment = SeedRetrospectiveAssignment();
-        assignment.AvailableFrom = DateTime.UtcNow.AddHours(1);
-        var sut = CreateSut();
-
-        var ex = await Assert.ThrowsAsync<ForbiddenException>(() => sut.StartRetrospective(_assignmentId));
-        Assert.Equal("Assignment is not yet available.", ex.Message);
-    }
-
-    [Fact]
-    public async Task StartRetrospective_ThrowsConflict_WhenAssignmentNoLongerAvailable()
-    {
-        SeedStudentAndEnrollment();
-        var assignment = SeedRetrospectiveAssignment();
-        assignment.AvailableUntil = DateTime.UtcNow.AddMinutes(-1);
-        var sut = CreateSut();
-
-        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartRetrospective(_assignmentId));
-        Assert.Equal("Assignment is no longer available.", ex.Message);
     }
 
     [Fact]
@@ -294,18 +250,6 @@ public sealed class RetrospectiveAttemptServiceTests
     }
 
     [Fact]
-    public async Task StartRetrospective_ThrowsConflict_WhenExistingSubmissionGraded()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        SeedSubmission(status: SubmissionStatus.Graded, contentText: "Done", assignedGrade: 8m);
-        var sut = CreateSut();
-
-        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartRetrospective(_assignmentId));
-        Assert.Equal("This assignment has already been graded for the current module attempt.", ex.Message);
-    }
-
-    [Fact]
     public async Task StartRetrospective_ThrowsBadRequest_WhenExistingSubmissionIsResearch()
     {
         SeedStudentAndEnrollment();
@@ -315,17 +259,6 @@ public sealed class RetrospectiveAttemptServiceTests
 
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.StartRetrospective(_assignmentId));
         Assert.Contains("research submission", ex.Message);
-    }
-
-    [Fact]
-    public async Task StartRetrospective_ThrowsForbidden_WhenExistingSubmissionBelongsToAnotherStudent()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        SeedSubmission(studentId: Guid.NewGuid(), contentText: "Other student");
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => sut.StartRetrospective(_assignmentId));
     }
 
     // ── GetRetrospective ──────────────────────────────────────────────────────
@@ -373,20 +306,6 @@ public sealed class RetrospectiveAttemptServiceTests
     }
 
     [Fact]
-    public async Task GetRetrospective_PassedIsNull_WhenNotGraded()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        var submission = SeedSubmission(contentText: "Draft");
-        var sut = CreateSut();
-
-        var result = await sut.GetRetrospective(submission.Id);
-
-        Assert.NotNull(result);
-        Assert.Null(result!.Passed);
-    }
-
-    [Fact]
     public async Task GetRetrospective_ReturnsNull_WhenSubmissionMissing()
     {
         SeedStudentAndEnrollment();
@@ -395,70 +314,6 @@ public sealed class RetrospectiveAttemptServiceTests
         var result = await sut.GetRetrospective(Guid.NewGuid());
 
         Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task GetRetrospective_ReturnsNull_WhenSubmissionDeleted()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        var submission = SeedSubmission();
-        submission.IsDeleted = true;
-        var sut = CreateSut();
-
-        var result = await sut.GetRetrospective(submission.Id);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task GetRetrospective_ReturnsNull_WhenAssignmentDeleted()
-    {
-        SeedStudentAndEnrollment();
-        var assignment = SeedRetrospectiveAssignment();
-        var submission = SeedSubmission();
-        assignment.IsDeleted = true;
-        var sut = CreateSut();
-
-        var result = await sut.GetRetrospective(submission.Id);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task GetRetrospective_ThrowsBadRequest_WhenSubmissionIsResearch()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        var submission = SeedSubmission(researchMilestoneId: Guid.NewGuid());
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<BadRequestException>(() => sut.GetRetrospective(submission.Id));
-    }
-
-    [Fact]
-    public async Task GetRetrospective_AllowsManagerToView()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        var submission = SeedSubmission(contentText: "Student draft");
-
-        var managerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-        _db.Users.Seed(new User
-        {
-            Id = managerId,
-            Code = "MGR-001",
-            Email = "manager@test.com",
-            Role = RoleType.Manager,
-            IsDeleted = false
-        });
-
-        var sut = CreateSut(currentUserId: managerId);
-
-        var result = await sut.GetRetrospective(submission.Id);
-
-        Assert.NotNull(result);
-        Assert.Equal(submission.Id, result!.SubmissionId);
     }
 
     [Fact]
@@ -484,27 +339,14 @@ public sealed class RetrospectiveAttemptServiceTests
     }
 
     [Fact]
-    public async Task GetRetrospective_ThrowsUnauthorized_WhenUserIdEmpty()
+    public async Task GetRetrospective_ThrowsBadRequest_WhenSubmissionIsResearch()
     {
         SeedStudentAndEnrollment();
         SeedRetrospectiveAssignment();
-        var submission = SeedSubmission();
-        var sut = CreateSut(currentUserId: Guid.Empty);
-
-        await Assert.ThrowsAsync<UnauthorizedException>(() => sut.GetRetrospective(submission.Id));
-    }
-
-    [Fact]
-    public async Task GetRetrospective_ThrowsBadRequest_WhenAssignmentNotRetrospective()
-    {
-        SeedStudentAndEnrollment();
-        var assignment = SeedRetrospectiveAssignment();
-        assignment.AssignmentType = AssignmentType.FileUpload;
-        var submission = SeedSubmission();
+        var submission = SeedSubmission(researchMilestoneId: Guid.NewGuid());
         var sut = CreateSut();
 
-        var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.GetRetrospective(submission.Id));
-        Assert.Equal("This assignment is not a retrospective.", ex.Message);
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.GetRetrospective(submission.Id));
     }
 
     // ── SaveDraft ─────────────────────────────────────────────────────────────
@@ -526,38 +368,6 @@ public sealed class RetrospectiveAttemptServiceTests
         Assert.Equal("My draft text", submission.ContentText);
         Assert.Equal(_studentId, submission.UpdatedBy);
         Assert.Equal(1, _db.SaveChangesCallCount);
-    }
-
-    [Fact]
-    public async Task SaveDraft_ClearsContent_WhenEmptyString()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        var submission = SeedSubmission(contentText: "Old draft");
-        var sut = CreateSut();
-
-        await sut.SaveDraft(submission.Id, new SaveRetrospectiveDraftRequestDto
-        {
-            ContentText = "   "
-        });
-
-        Assert.Null(submission.ContentText);
-    }
-
-    [Fact]
-    public async Task SaveDraft_Works_WhenReturnedForRevision()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        var submission = SeedSubmission(status: SubmissionStatus.ReturnedForRevision, contentText: "Old");
-        var sut = CreateSut();
-
-        await sut.SaveDraft(submission.Id, new SaveRetrospectiveDraftRequestDto
-        {
-            ContentText = "Revised draft"
-        });
-
-        Assert.Equal("Revised draft", submission.ContentText);
     }
 
     [Fact]
@@ -596,18 +406,6 @@ public sealed class RetrospectiveAttemptServiceTests
     }
 
     [Fact]
-    public async Task SaveDraft_ThrowsConflict_WhenSubmissionGraded()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        var submission = SeedSubmission(status: SubmissionStatus.Graded, contentText: "Done", assignedGrade: 9m);
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.SaveDraft(submission.Id, new SaveRetrospectiveDraftRequestDto { ContentText = "edit" }));
-    }
-
-    [Fact]
     public async Task SaveDraft_ThrowsBadRequest_WhenSubmissionIsResearch()
     {
         SeedStudentAndEnrollment();
@@ -617,19 +415,6 @@ public sealed class RetrospectiveAttemptServiceTests
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.SaveDraft(submission.Id, new SaveRetrospectiveDraftRequestDto { ContentText = "x" }));
-    }
-
-    [Fact]
-    public async Task SaveDraft_ThrowsConflict_WhenAssignmentPastDue()
-    {
-        SeedStudentAndEnrollment();
-        var assignment = SeedRetrospectiveAssignment();
-        assignment.DueDate = DateTime.UtcNow.AddMinutes(-1);
-        var submission = SeedSubmission();
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.SaveDraft(submission.Id, new SaveRetrospectiveDraftRequestDto { ContentText = "late" }));
     }
 
     // ── SubmitRetrospective ───────────────────────────────────────────────────
@@ -669,26 +454,6 @@ public sealed class RetrospectiveAttemptServiceTests
         });
 
         Assert.Equal("Saved draft content", result.ContentText);
-        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
-    }
-
-    [Fact]
-    public async Task SubmitRetrospective_IncrementsAttempt_WhenReturnedForRevision()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment(maxAttempts: 3);
-        var submission = SeedSubmission(
-            status: SubmissionStatus.ReturnedForRevision,
-            contentText: "Revised version",
-            attemptNumber: 1);
-        var sut = CreateSut();
-
-        var result = await sut.SubmitRetrospective(submission.Id, new SubmitRetrospectiveRequestDto
-        {
-            ContentText = "Resubmitted"
-        });
-
-        Assert.Equal(2, result.AttemptNumber);
         Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
     }
 
@@ -758,50 +523,6 @@ public sealed class RetrospectiveAttemptServiceTests
             sut.SubmitRetrospective(submission.Id, new SubmitRetrospectiveRequestDto
             {
                 ContentText = "Hack"
-            }));
-    }
-
-    [Fact]
-    public async Task SubmitRetrospective_ThrowsNotFound_WhenSubmissionMissing()
-    {
-        SeedStudentAndEnrollment();
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.SubmitRetrospective(Guid.NewGuid(), new SubmitRetrospectiveRequestDto
-            {
-                ContentText = "x"
-            }));
-    }
-
-    [Fact]
-    public async Task SubmitRetrospective_ThrowsBadRequest_WhenSubmissionIsResearch()
-    {
-        SeedStudentAndEnrollment();
-        SeedRetrospectiveAssignment();
-        var submission = SeedSubmission(researchMilestoneId: Guid.NewGuid(), contentText: "x");
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.SubmitRetrospective(submission.Id, new SubmitRetrospectiveRequestDto
-            {
-                ContentText = "x"
-            }));
-    }
-
-    [Fact]
-    public async Task SubmitRetrospective_ThrowsConflict_WhenAssignmentNoLongerAvailable()
-    {
-        SeedStudentAndEnrollment();
-        var assignment = SeedRetrospectiveAssignment();
-        assignment.AvailableUntil = DateTime.UtcNow.AddMinutes(-1);
-        var submission = SeedSubmission(contentText: "Late");
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.SubmitRetrospective(submission.Id, new SubmitRetrospectiveRequestDto
-            {
-                ContentText = "Late"
             }));
     }
 

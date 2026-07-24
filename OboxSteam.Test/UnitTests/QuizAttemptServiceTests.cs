@@ -33,6 +33,9 @@ public sealed class QuizAttemptServiceTests
         _notificationPublisher
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+        _certificateService
+            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .ReturnsAsync((OboxSteam.Application.DTOs.CertificateDTO.CertificateDetailDto?)null);
 
         return new QuizAttemptService(
             _claimsService.Object,
@@ -999,5 +1002,175 @@ public sealed class QuizAttemptServiceTests
         var result = await sut.GetQuizResult(submissionId);
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task StartQuiz_CreatesAttempt_FromClassQuestionSet()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment();
+
+        var classId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var setId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var classQuestionId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var classOptionCorrectId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        var classOptionWrongId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var programEnrollmentId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+
+        var classEntity = new Class
+        {
+            Id = classId,
+            Code = "CLS-Q",
+            Name = "Quiz Cohort",
+            ProgramId = _programId,
+            Status = ClassStatus.Open,
+            MaxCapacity = 30,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(30),
+            IsDeleted = false
+        };
+        _db.Classes.Seed(classEntity);
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = programEnrollmentId,
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.Active,
+            IsDeleted = false
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            Class = classEntity,
+            StudentId = _studentId,
+            ProgramEnrollmentId = programEnrollmentId,
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false
+        });
+        _db.ClassQuizQuestionSets.Seed(new ClassQuizQuestionSet
+        {
+            Id = setId,
+            ClassId = classId,
+            AssignmentId = _assignmentId,
+            PulledAt = DateTime.UtcNow,
+            IsDeleted = false
+        });
+
+        var classQuestion = new ClassQuizQuestion
+        {
+            Id = classQuestionId,
+            ClassQuizQuestionSetId = setId,
+            QuestionText = "Class-set Q",
+            QuestionType = QuestionTypeConstants.SingleChoice,
+            Points = 1,
+            OrderIndex = 1,
+            DifficultyLevel = 1,
+            IsDeleted = false,
+            Options =
+            [
+                new ClassQuizQuestionOption
+                {
+                    Id = classOptionCorrectId,
+                    ClassQuizQuestionId = classQuestionId,
+                    OptionText = "A",
+                    IsCorrect = true,
+                    IsDeleted = false
+                },
+                new ClassQuizQuestionOption
+                {
+                    Id = classOptionWrongId,
+                    ClassQuizQuestionId = classQuestionId,
+                    OptionText = "B",
+                    IsCorrect = false,
+                    IsDeleted = false
+                }
+            ]
+        };
+        _db.ClassQuizQuestions.Seed(classQuestion);
+        _db.ClassQuizQuestionOptions.Seed(classQuestion.Options.ToArray());
+
+        var sut = CreateSut();
+        var result = await sut.StartQuiz(_assignmentId);
+
+        Assert.Equal(_assignmentId, result.AssignmentId);
+        Assert.Single(result.Questions);
+        Assert.Equal("Class-set Q", result.Questions[0].QuestionText);
+        Assert.Equal(2, result.Questions[0].Options.Count);
+        Assert.Single(_db.Submissions.Items);
+        Assert.Single(_db.QuizQuestions.Items);
+        Assert.Equal(2, _db.QuizOptions.Items.Count);
+    }
+
+    [Fact]
+    public async Task SubmitQuiz_RecalculatesProgramProgress_AndCallsCertificate()
+    {
+        var programEnrollmentId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        SeedStudentAndEnrollment();
+        _db.ModuleEnrollments.Items[0].ProgramEnrollmentId = programEnrollmentId;
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = programEnrollmentId,
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.Active,
+            IsDeleted = false
+        });
+        SeedQuizAssignment(maxPoints: 10m, passScore: 5m);
+        var (submissionId, questionId, correctOptionId, _) = SeedAttemptSnapshot();
+        var sut = CreateSut();
+
+        var result = await sut.SubmitQuiz(submissionId, new SubmitQuizAnswersRequestDto
+        {
+            Answers =
+            [
+                new QuizAnswerItemDto
+                {
+                    QuestionId = questionId,
+                    SelectedOptionIds = [correctOptionId]
+                }
+            ]
+        });
+
+        Assert.Equal(SubmissionStatus.Graded, result.Status);
+        _certificateService.Verify(
+            c => c.EnsureProgramCertificateAsync(programEnrollmentId),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SubmitQuiz_Continues_WhenCertificateThrows()
+    {
+        var programEnrollmentId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        SeedStudentAndEnrollment();
+        _db.ModuleEnrollments.Items[0].ProgramEnrollmentId = programEnrollmentId;
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = programEnrollmentId,
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.Active,
+            IsDeleted = false
+        });
+        SeedQuizAssignment(maxPoints: 10m, passScore: 5m);
+        var (submissionId, questionId, correctOptionId, _) = SeedAttemptSnapshot();
+        var sut = CreateSut();
+        _certificateService
+            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .ThrowsAsync(new InvalidOperationException("cert failed"));
+
+        var result = await sut.SubmitQuiz(submissionId, new SubmitQuizAnswersRequestDto
+        {
+            Answers =
+            [
+                new QuizAnswerItemDto
+                {
+                    QuestionId = questionId,
+                    SelectedOptionIds = [correctOptionId]
+                }
+            ]
+        });
+
+        Assert.Equal(SubmissionStatus.Graded, result.Status);
     }
 }
