@@ -210,6 +210,7 @@ public static class IocContainer
         services.AddScoped<IStripePaymentService, StripePaymentService>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IInvoiceService, InvoiceService>();
+        services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<INotificationPublisher, NotificationPublisher>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<INotificationRecipientResolver, NotificationRecipientResolver>();
