@@ -5,20 +5,22 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Application.Services;
 
 /// <summary>
-/// Dense, idempotent seed data for Manager dashboard endpoints:
-/// trends (daily/weekly/monthly), previous-period windows, all status buckets,
-/// and entity-scoped filters (programId / moduleId / classId).
+/// Rich, range-aware dashboard seed so every preset feels like a live platform:
+/// Last7Days / Last30Days (daily), Last90Days (near-daily), Last12Months (weekly),
+/// plus matching previous-period windows (7/30/90/365 days before the current window).
 /// </summary>
 public partial class SeedService
 {
-    private const string DashboardSessionTitlePrefix = "[DASH] Cohort session";
+    private const string DashboardSessionTitlePrefix = "[DASHR] Cohort session";
     private const string DashboardCompletedClassCode = "CLS-DASH-COMPLETED";
     private const string DashboardCancelledClassCode = "CLS-DASH-CANCELLED";
-    private const string DashboardPaymentCodePrefix = "INV-DASH-";
+    private const string DashboardPaymentCodePrefix = "INV-DASHR-";
+    private const string DashboardSubmissionCodePrefix = "SUB-DASHR-";
+    private const string DashboardRichMarkerCode = "INV-DASHR-0001";
 
     private async Task SeedDashboardSupportDataAsync()
     {
-        _loggerService.LogInformation("Starting dense dashboard support seed");
+        _loggerService.LogInformation("Starting rich range-aware dashboard support seed");
 
         await SeedDashboardEnrollmentDiversityAsync();
         await SeedDashboardModuleEnrollmentStatusesAsync();
@@ -29,16 +31,85 @@ public partial class SeedService
         await SeedDashboardSessionsAndAttendanceAsync();
         await SeedDashboardClassEnrollmentStatusesAsync();
 
-        _loggerService.LogInformation("Finished dense dashboard support seed");
+        _loggerService.LogInformation("Finished rich range-aware dashboard support seed");
     }
 
     /// <summary>
-    /// Extra program enrollments across statuses and a 12-month EnrolledAt timeline
-    /// so enrollment trends / previous-period / status zero-fill charts are meaningful.
+    /// Day plan covering every dashboard preset + its previous adjacent window.
+    /// Value = suggested event count that day (higher on weekdays / recent days).
+    /// </summary>
+    private static List<(int DaysAgo, int Events)> BuildRichDashboardDayPlan(DateTime utcNow)
+    {
+        var plan = new Dictionary<int, int>();
+
+        void Upsert(int daysAgo, int events)
+        {
+            if (daysAgo < 0)
+            {
+                return;
+            }
+
+            plan[daysAgo] = plan.TryGetValue(daysAgo, out var existing)
+                ? Math.Max(existing, events)
+                : events;
+        }
+
+        // Last7Days current (0–6) + previous (7–13): every day, several events.
+        for (var d = 0; d <= 13; d++)
+        {
+            Upsert(d, IsWeekend(utcNow, d) ? 2 : 4);
+        }
+
+        // Last30Days current (0–29) + previous (30–59): every day.
+        for (var d = 14; d <= 59; d++)
+        {
+            Upsert(d, IsWeekend(utcNow, d) ? 1 : 3);
+        }
+
+        // Last90Days current (0–89) + previous (90–179): every other day.
+        for (var d = 60; d <= 179; d += 2)
+        {
+            Upsert(d, IsWeekend(utcNow, d) ? 1 : 2);
+        }
+
+        // Last12Months current (0–364): weekly anchors with a few events.
+        for (var d = 180; d <= 364; d += 7)
+        {
+            Upsert(d, 2);
+        }
+
+        // Previous 12 months for Last12Months comparison (365–729): biweekly.
+        for (var d = 365; d <= 729; d += 14)
+        {
+            Upsert(d, 1);
+        }
+
+        // Extra mid-month spikes so monthly charts are not flat.
+        for (var month = 0; month < 24; month++)
+        {
+            Upsert(month * 30 + 5, 3);
+            Upsert(month * 30 + 18, 2);
+        }
+
+        return plan
+            .OrderBy(kv => kv.Key)
+            .Select(kv => (kv.Key, kv.Value))
+            .ToList();
+    }
+
+    private static bool IsWeekend(DateTime utcNow, int daysAgo)
+    {
+        var day = utcNow.AddDays(-daysAgo).DayOfWeek;
+        return day is DayOfWeek.Saturday or DayOfWeek.Sunday;
+    }
+
+    /// <summary>
+    /// Fill student×program matrix + redistribute EnrolledAt across every preset window
+    /// so enrollment trends / previous-period KPIs are non-flat for 7d/30d/90d/12mo.
     /// </summary>
     private async Task SeedDashboardEnrollmentDiversityAsync()
     {
-        _loggerService.LogInformation("Starting seed dashboard enrollment diversity");
+        _loggerService.LogInformation("Starting seed dashboard enrollment diversity (rich)");
 
         var programs = (await _unitOfWork.Programs.GetAllAsync(p => !p.IsDeleted))
             .OrderBy(p => p.Code)
@@ -54,14 +125,11 @@ public partial class SeedService
             return;
         }
 
-        var existingKeys = (await _unitOfWork.ProgramEnrollments.GetAllAsync(pe => !pe.IsDeleted))
-            .Select(pe => (pe.StudentId, pe.ProgramId, pe.Status))
-            .ToHashSet();
-
         var now = DateTime.UtcNow;
+        var dayPlan = BuildRichDashboardDayPlan(now);
         var toAdd = new List<ProgramEnrollment>();
 
-        // Ensure every EnrollmentStatus appears at least once.
+        // Ensure every EnrollmentStatus appears at least once on distinct pairs.
         var statusTargets = new (EnrollmentStatus Status, int StudentIndex, int ProgramIndex, int DaysAgo)[]
         {
             (EnrollmentStatus.Failed, 7, 0, 40),
@@ -74,126 +142,8 @@ public partial class SeedService
 
         foreach (var target in statusTargets)
         {
-            if (target.StudentIndex >= students.Count)
-            {
-                continue;
-            }
-
             var student = students[target.StudentIndex % students.Count];
             var program = programs[target.ProgramIndex % programs.Count];
-            var key = (student.Id, program.Id, target.Status);
-            if (existingKeys.Contains(key))
-            {
-                continue;
-            }
-
-            // Avoid unique conflicts when an Active enrollment already exists for the same pair.
-            if (await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                    pe => pe.StudentId == student.Id
-                          && pe.ProgramId == program.Id
-                          && !pe.IsDeleted) != null
-                && target.Status == EnrollmentStatus.Active)
-            {
-                continue;
-            }
-
-            if (await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                    pe => pe.StudentId == student.Id
-                          && pe.ProgramId == program.Id
-                          && pe.Status == target.Status
-                          && !pe.IsDeleted) != null)
-            {
-                continue;
-            }
-
-            // For non-active statuses, still only one PE per student+program typically —
-            // skip if any PE already exists for the pair.
-            if (await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                    pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted) != null)
-            {
-                continue;
-            }
-
-            var enrolledAt = now.AddDays(-target.DaysAgo);
-            toAdd.Add(new ProgramEnrollment
-            {
-                Id = Guid.NewGuid(),
-                StudentId = student.Id,
-                ProgramId = program.Id,
-                Status = target.Status,
-                ProgressPercent = target.Status == EnrollmentStatus.Completed ? 100m : 25m,
-                EnrolledAt = enrolledAt,
-                StartedAt = target.Status is EnrollmentStatus.PendingPayment
-                    ? null
-                    : enrolledAt.AddDays(2),
-                CompletedAt = target.Status == EnrollmentStatus.Completed
-                    ? enrolledAt.AddDays(90)
-                    : null,
-                CreatedAt = enrolledAt,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false
-            });
-            existingKeys.Add(key);
-        }
-
-        // Spread Active enrollments across ~360 days (monthly + weekly density for trends).
-        var robotics = programs.FirstOrDefault(p => p.Code == "PRG-ROBOTICS") ?? programs[0];
-        var webdev = programs.FirstOrDefault(p => p.Code == "PRG-WEBDEV") ?? programs[Math.Min(1, programs.Count - 1)];
-        var dayOffsets = new[]
-        {
-            1, 3, 5, 8, 12, 16, 20, 25, 28,
-            35, 42, 49, 56, 63, 70, 77, 85,
-            100, 120, 140, 160, 180, 200, 230, 260, 290, 320, 350
-        };
-
-        var studentCursor = 0;
-        foreach (var daysAgo in dayOffsets)
-        {
-            // Pick students that do not already have a robotics PE when possible.
-            User? student = null;
-            for (var attempt = 0; attempt < students.Count; attempt++)
-            {
-                var candidate = students[(studentCursor + attempt) % students.Count];
-                studentCursor++;
-                var program = daysAgo % 2 == 0 ? robotics : webdev;
-                if (await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                        pe => pe.StudentId == candidate.Id
-                              && pe.ProgramId == program.Id
-                              && !pe.IsDeleted) != null)
-                {
-                    continue;
-                }
-
-                if (toAdd.Any(pe => pe.StudentId == candidate.Id && pe.ProgramId == program.Id))
-                {
-                    continue;
-                }
-
-                student = candidate;
-                var enrolledAt = now.AddDays(-daysAgo);
-                toAdd.Add(new ProgramEnrollment
-                {
-                    Id = Guid.NewGuid(),
-                    StudentId = student.Id,
-                    ProgramId = program.Id,
-                    Status = EnrollmentStatus.Active,
-                    ProgressPercent = daysAgo > 200 ? 80m : 30m,
-                    EnrolledAt = enrolledAt,
-                    StartedAt = enrolledAt.AddDays(1),
-                    CreatedAt = enrolledAt,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false
-                });
-                break;
-            }
-        }
-
-        // Previous-period window density: cluster enrollments in [now-60d, now-30d)
-        // so Last30Days previous-period KPIs are non-zero.
-        for (var i = 31; i <= 58; i += 3)
-        {
-            var student = students[i % students.Count];
-            var program = programs[i % programs.Count];
             if (await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
                     pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted) != null)
             {
@@ -205,35 +155,128 @@ public partial class SeedService
                 continue;
             }
 
-            var enrolledAt = now.AddDays(-i);
-            toAdd.Add(new ProgramEnrollment
-            {
-                Id = Guid.NewGuid(),
-                StudentId = student.Id,
-                ProgramId = program.Id,
-                Status = i % 5 == 0 ? EnrollmentStatus.Completed : EnrollmentStatus.Active,
-                ProgressPercent = i % 5 == 0 ? 100m : 40m,
-                EnrolledAt = enrolledAt,
-                StartedAt = enrolledAt.AddDays(1),
-                CompletedAt = i % 5 == 0 ? enrolledAt.AddDays(20) : null,
-                CreatedAt = enrolledAt,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false
-            });
+            var enrolledAt = now.AddDays(-target.DaysAgo);
+            toAdd.Add(CreateProgramEnrollment(
+                student.Id,
+                program.Id,
+                target.Status,
+                enrolledAt,
+                target.Status == EnrollmentStatus.Completed ? 100m : 25m));
         }
 
-        if (toAdd.Count == 0)
+        // Fill as many unique student×program pairs as possible, dated from the rich day plan.
+        var dayCursor = 0;
+        foreach (var student in students)
         {
-            _loggerService.LogInformation("Dashboard enrollment diversity already present, skipping");
-            return;
+            foreach (var program in programs)
+            {
+                if (await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                        pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted) != null)
+                {
+                    continue;
+                }
+
+                if (toAdd.Any(pe => pe.StudentId == student.Id && pe.ProgramId == program.Id))
+                {
+                    continue;
+                }
+
+                var (daysAgo, _) = dayPlan[dayCursor % dayPlan.Count];
+                dayCursor++;
+                var enrolledAt = now.AddDays(-daysAgo).AddHours(9 + (dayCursor % 8));
+                var status = (dayCursor % 17) switch
+                {
+                    0 => EnrollmentStatus.Completed,
+                    1 => EnrollmentStatus.PendingPayment,
+                    2 => EnrollmentStatus.Deferred,
+                    3 => EnrollmentStatus.Failed,
+                    4 => EnrollmentStatus.Dropped,
+                    _ => EnrollmentStatus.Active
+                };
+
+                toAdd.Add(CreateProgramEnrollment(
+                    student.Id,
+                    program.Id,
+                    status,
+                    enrolledAt,
+                    status == EnrollmentStatus.Completed ? 100m : 15m + (dayCursor % 70)));
+            }
         }
 
-        await _unitOfWork.ProgramEnrollments.AddRangeAsync(toAdd);
-        await _unitOfWork.SaveChangesAsync();
+        if (toAdd.Count > 0)
+        {
+            await _unitOfWork.ProgramEnrollments.AddRangeAsync(toAdd);
+            await _unitOfWork.SaveChangesAsync();
+            _loggerService.LogInformation(
+                "Added {Count} dashboard program enrollment(s).",
+                toAdd.Count);
+        }
+
+        // Redistribute EnrolledAt on ALL existing PEs so charts are dense even when matrix was already full.
+        var allEnrollments = (await _unitOfWork.ProgramEnrollments.GetAllAsync(pe => !pe.IsDeleted))
+            .OrderBy(pe => pe.CreatedAt)
+            .ThenBy(pe => pe.Id)
+            .ToList();
+
+        var updated = 0;
+        for (var i = 0; i < allEnrollments.Count; i++)
+        {
+            var pe = allEnrollments[i];
+            var (daysAgo, _) = dayPlan[i % dayPlan.Count];
+            // Spread multiple enrollments that land on the same plan day across hours.
+            var enrolledAt = now.AddDays(-daysAgo).AddHours(8 + (i % 10)).AddMinutes((i * 7) % 60);
+
+            if (pe.EnrolledAt.HasValue
+                && Math.Abs((pe.EnrolledAt.Value - enrolledAt).TotalHours) < 12)
+            {
+                continue;
+            }
+
+            pe.EnrolledAt = enrolledAt;
+            pe.StartedAt = pe.Status is EnrollmentStatus.PendingPayment
+                ? null
+                : enrolledAt.AddDays(1);
+            if (pe.Status == EnrollmentStatus.Completed)
+            {
+                pe.CompletedAt = enrolledAt.AddDays(60 + (i % 40));
+                pe.ProgressPercent = 100m;
+            }
+
+            await _unitOfWork.ProgramEnrollments.Update(pe);
+            updated++;
+        }
+
+        if (updated > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
         _loggerService.LogInformation(
-            "Finished seed dashboard enrollment diversity — {Count} program enrollment(s).",
-            toAdd.Count);
+            "Finished seed dashboard enrollment diversity — added {Added}, redistributed {Updated}.",
+            toAdd.Count,
+            updated);
     }
+
+    private static ProgramEnrollment CreateProgramEnrollment(
+        Guid studentId,
+        Guid programId,
+        EnrollmentStatus status,
+        DateTime enrolledAt,
+        decimal progressPercent)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            StudentId = studentId,
+            ProgramId = programId,
+            Status = status,
+            ProgressPercent = progressPercent,
+            EnrolledAt = enrolledAt,
+            StartedAt = status is EnrollmentStatus.PendingPayment ? null : enrolledAt.AddDays(1),
+            CompletedAt = status == EnrollmentStatus.Completed ? enrolledAt.AddDays(75) : null,
+            CreatedAt = enrolledAt,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false
+        };
 
     /// <summary>Ensure ModuleEnrollment status breakdown covers every EnrollmentStatus.</summary>
     private async Task SeedDashboardModuleEnrollmentStatusesAsync()
@@ -242,7 +285,7 @@ public partial class SeedService
 
         var modules = (await _unitOfWork.Modules.GetAllAsync(m => !m.IsDeleted))
             .OrderBy(m => m.Code)
-            .Take(6)
+            .Take(8)
             .ToList();
         var students = (await _unitOfWork.Users.GetAllAsync(
                 u => !u.IsDeleted && u.Role == RoleType.Student))
@@ -255,89 +298,112 @@ public partial class SeedService
         }
 
         var now = DateTime.UtcNow;
+        var dayPlan = BuildRichDashboardDayPlan(now);
         var statuses = Enum.GetValues<EnrollmentStatus>();
         var toAdd = new List<ModuleEnrollment>();
+        var cursor = 0;
 
+        // One of each status, then fill more dated module enrollments for trends.
         for (var i = 0; i < statuses.Length; i++)
         {
-            var status = statuses[i];
-            var student = students[i % students.Count];
-            var module = modules[i % modules.Count];
+            TryQueueModuleEnrollment(
+                toAdd,
+                students[i % students.Count],
+                modules[i % modules.Count],
+                statuses[i],
+                now.AddDays(-(10 + i * 7)));
+        }
 
-            var exists = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                me => me.StudentId == student.Id
-                      && me.ModuleId == module.Id
-                      && me.Status == status
-                      && !me.IsDeleted);
-            if (exists != null)
+        foreach (var (daysAgo, events) in dayPlan.Where(p => p.DaysAgo <= 365).Take(80))
+        {
+            for (var e = 0; e < Math.Min(events, 2); e++)
             {
-                continue;
+                var student = students[cursor % students.Count];
+                var module = modules[cursor % modules.Count];
+                cursor++;
+                TryQueueModuleEnrollment(
+                    toAdd,
+                    student,
+                    module,
+                    EnrollmentStatus.Active,
+                    now.AddDays(-daysAgo).AddHours(10 + e));
             }
+        }
 
-            // Skip if any active attempt already occupies the pair for Active.
-            if (status == EnrollmentStatus.Active
-                && await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                    me => me.StudentId == student.Id
-                          && me.ModuleId == module.Id
-                          && !me.IsDeleted) != null)
-            {
-                continue;
-            }
-
+        // Persist only rows that do not collide with DB.
+        var persisted = new List<ModuleEnrollment>();
+        foreach (var me in toAdd)
+        {
             if (await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                    me => me.StudentId == student.Id && me.ModuleId == module.Id && !me.IsDeleted) != null)
+                    x => x.StudentId == me.StudentId
+                         && x.ModuleId == me.ModuleId
+                         && !x.IsDeleted) != null)
             {
                 continue;
             }
 
             var pe = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                e => e.StudentId == student.Id
-                     && e.ProgramId == module.ProgramId
+                e => e.StudentId == me.StudentId
+                     && e.ProgramId == modules.First(m => m.Id == me.ModuleId).ProgramId
                      && !e.IsDeleted);
-
-            toAdd.Add(new ModuleEnrollment
-            {
-                Id = Guid.NewGuid(),
-                StudentId = student.Id,
-                ModuleId = module.Id,
-                ProgramEnrollmentId = pe?.Id,
-                Status = status,
-                ProgressPercent = status == EnrollmentStatus.Completed ? 100m : 20m,
-                AttemptNumber = 1,
-                EnrolledAt = now.AddDays(-(10 + i * 7)),
-                StartedAt = now.AddDays(-(8 + i * 7)),
-                CompletedAt = status == EnrollmentStatus.Completed ? now.AddDays(-3) : null,
-                CreatedAt = now.AddDays(-(10 + i * 7)),
-                CreatedBy = Guid.Empty,
-                IsDeleted = false
-            });
+            me.ProgramEnrollmentId = pe?.Id;
+            persisted.Add(me);
         }
 
-        if (toAdd.Count == 0)
+        if (persisted.Count == 0)
         {
-            _loggerService.LogInformation("Module enrollment status diversity already present, skipping");
+            _loggerService.LogInformation("Module enrollment status diversity already present, skipping inserts");
             return;
         }
 
-        await _unitOfWork.ModuleEnrollments.AddRangeAsync(toAdd);
+        await _unitOfWork.ModuleEnrollments.AddRangeAsync(persisted);
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
             "Finished seed dashboard module enrollment statuses — {Count} row(s).",
-            toAdd.Count);
+            persisted.Count);
+    }
+
+    private static void TryQueueModuleEnrollment(
+        List<ModuleEnrollment> toAdd,
+        User student,
+        Module module,
+        EnrollmentStatus status,
+        DateTime enrolledAt)
+    {
+        if (toAdd.Any(me => me.StudentId == student.Id && me.ModuleId == module.Id))
+        {
+            return;
+        }
+
+        toAdd.Add(new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = student.Id,
+            ModuleId = module.Id,
+            Status = status,
+            ProgressPercent = status == EnrollmentStatus.Completed ? 100m : 20m,
+            AttemptNumber = 1,
+            EnrolledAt = enrolledAt,
+            StartedAt = enrolledAt.AddDays(1),
+            CompletedAt = status == EnrollmentStatus.Completed ? enrolledAt.AddDays(20) : null,
+            CreatedAt = enrolledAt,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false
+        });
     }
 
     /// <summary>
-    /// Dense payment timeline (~1 year) across gateways and statuses for revenue trends,
-    /// previous-period comparison, and program/module/class filters.
+    /// Multi-event/day payment timeline covering every preset + previous window,
+    /// all gateways/statuses, plus module-retake rows for moduleId filters.
     /// </summary>
     private async Task SeedDashboardRevenueTimelineAsync()
     {
-        _loggerService.LogInformation("Starting seed dashboard revenue timeline");
+        _loggerService.LogInformation("Starting seed dashboard revenue timeline (rich)");
 
         if (await _unitOfWork.Payments.FirstOrDefaultAsync(
-                p => p.Code == $"{DashboardPaymentCodePrefix}001" && !p.IsDeleted) != null)
+                p => p.Code == DashboardRichMarkerCode && !p.IsDeleted) != null)
         {
-            _loggerService.LogInformation("Dashboard revenue timeline already seeded, skipping");
+            _loggerService.LogInformation("Rich dashboard revenue timeline already seeded, skipping");
             return;
         }
 
@@ -355,118 +421,96 @@ public partial class SeedService
         }
 
         var now = DateTime.UtcNow;
+        var dayPlan = BuildRichDashboardDayPlan(now);
         var gateways = new[] { PaymentGateway.Stripe, PaymentGateway.VnPay, PaymentGateway.BankTransfer };
         var payments = new List<Payment>();
         var invoices = new List<Invoice>();
-
-        // Daily density for last 45 days + weekly for 90d + monthly for 12mo.
-        var dayOffsets = new List<int>();
-        for (var d = 0; d <= 44; d += 2)
-        {
-            dayOffsets.Add(d);
-        }
-
-        for (var d = 50; d <= 90; d += 7)
-        {
-            dayOffsets.Add(d);
-        }
-
-        for (var d = 100; d <= 360; d += 20)
-        {
-            dayOffsets.Add(d);
-        }
-
-        // Extra cluster in previous 30d window relative to Last30Days (days 31–59).
-        for (var d = 31; d <= 59; d += 2)
-        {
-            if (!dayOffsets.Contains(d))
-            {
-                dayOffsets.Add(d);
-            }
-        }
-
-        dayOffsets = dayOffsets.Distinct().OrderBy(x => x).ToList();
         var index = 1;
 
-        foreach (var daysAgo in dayOffsets)
+        foreach (var (daysAgo, events) in dayPlan)
         {
-            var enrollment = enrollments[index % enrollments.Count];
-            var gateway = gateways[index % gateways.Length];
-            var status = (index % 11) switch
+            for (var e = 0; e < events; e++)
             {
-                0 => PaymentStatus.Failed,
-                1 => PaymentStatus.Refunded,
-                2 => PaymentStatus.Pending,
-                3 => PaymentStatus.Cancelled,
-                _ => PaymentStatus.Success
-            };
+                var enrollment = enrollments[(index + e) % enrollments.Count];
+                var gateway = gateways[index % gateways.Length];
+                // ~70% success so revenue trends look healthy but not fake-perfect.
+                var status = (index % 10) switch
+                {
+                    0 => PaymentStatus.Failed,
+                    1 => PaymentStatus.Refunded,
+                    2 => PaymentStatus.Pending,
+                    3 => PaymentStatus.Cancelled,
+                    _ => PaymentStatus.Success
+                };
 
-            var amount = 400_000m + (index % 9) * 75_000m;
-            var paidAt = status is PaymentStatus.Success or PaymentStatus.Refunded
-                ? now.AddDays(-daysAgo).AddHours(10)
-                : (DateTime?)null;
+                var amount = 350_000m + (index % 12) * 85_000m + (e * 15_000m);
+                var paidAt = status is PaymentStatus.Success or PaymentStatus.Refunded
+                    ? now.AddDays(-daysAgo).AddHours(9 + e).AddMinutes((index * 3) % 50)
+                    : (DateTime?)null;
 
-            var payment = new Payment
-            {
-                Id = Guid.NewGuid(),
-                Code = $"{DashboardPaymentCodePrefix}{index:D3}",
-                StudentId = enrollment.StudentId,
-                PaidById = enrollment.StudentId,
-                ProgramEnrollmentId = enrollment.Id,
-                ModuleEnrollmentId = null,
-                Amount = amount,
-                Currency = "VND",
-                Gateway = gateway,
-                TransactionId = status == PaymentStatus.Success
-                    ? $"DASH-TXN-{index:D3}"
-                    : null,
-                Status = status,
-                PaidAt = paidAt,
-                CheckoutSessionId = status == PaymentStatus.Pending ? $"dash_sess_{index}" : null,
-                CreatedAt = now.AddDays(-daysAgo),
-                CreatedBy = Guid.Empty,
-                IsDeleted = false
-            };
-            payments.Add(payment);
-
-            if (status == PaymentStatus.Success)
-            {
-                invoices.Add(new Invoice
+                var payment = new Payment
                 {
                     Id = Guid.NewGuid(),
-                    InvoiceNumber = $"INV-DASH-DOC-{index:D3}",
-                    PaymentId = payment.Id,
-                    IssuedToId = enrollment.StudentId,
-                    BillingName = enrollment.Student?.FullName ?? "Dashboard Seed Student",
-                    BillingEmail = enrollment.Student?.Email ?? "dash-seed@oboxsteam.com",
-                    ItemDescription = $"Dashboard seed — {enrollment.Program?.Name ?? "Program"}",
-                    SubTotal = amount,
-                    TotalAmount = amount,
+                    Code = $"{DashboardPaymentCodePrefix}{index:D4}",
+                    StudentId = enrollment.StudentId,
+                    PaidById = enrollment.StudentId,
+                    ProgramEnrollmentId = enrollment.Id,
+                    ModuleEnrollmentId = null,
+                    Amount = amount,
                     Currency = "VND",
-                    CreatedAt = paidAt ?? now,
+                    Gateway = gateway,
+                    TransactionId = status == PaymentStatus.Success
+                        ? $"DASHR-TXN-{index:D4}"
+                        : null,
+                    Status = status,
+                    PaidAt = paidAt,
+                    CheckoutSessionId = status == PaymentStatus.Pending ? $"dashr_sess_{index}" : null,
+                    CreatedAt = now.AddDays(-daysAgo).AddHours(8 + e),
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
-                });
-            }
+                };
+                payments.Add(payment);
 
-            index++;
+                if (status == PaymentStatus.Success)
+                {
+                    invoices.Add(new Invoice
+                    {
+                        Id = Guid.NewGuid(),
+                        InvoiceNumber = $"INV-DASHR-DOC-{index:D4}",
+                        PaymentId = payment.Id,
+                        IssuedToId = enrollment.StudentId,
+                        BillingName = enrollment.Student?.FullName ?? "Dashboard Seed Student",
+                        BillingEmail = enrollment.Student?.Email ?? "dash-seed@oboxsteam.com",
+                        ItemDescription = $"Dashboard rich seed — {enrollment.Program?.Name ?? "Program"}",
+                        SubTotal = amount,
+                        TotalAmount = amount,
+                        Currency = "VND",
+                        CreatedAt = paidAt ?? now,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
+                }
+
+                index++;
+            }
         }
 
-        // Module retake fee payments for moduleId filter coverage.
+        // Module retake fees spread across last 90 days for moduleId filter demos.
         var moduleEnrollments = (await _unitOfWork.ModuleEnrollments.GetAllAsync(
                 me => !me.IsDeleted,
                 me => me.Student,
                 me => me.Module))
-            .Take(6)
+            .Take(20)
             .ToList();
 
-        foreach (var me in moduleEnrollments)
+        for (var i = 0; i < moduleEnrollments.Count; i++)
         {
-            var code = $"{DashboardPaymentCodePrefix}M{index:D3}";
+            var me = moduleEnrollments[i];
+            var daysAgo = 3 + i * 4;
             payments.Add(new Payment
             {
                 Id = Guid.NewGuid(),
-                Code = code,
+                Code = $"{DashboardPaymentCodePrefix}M{index:D4}",
                 StudentId = me.StudentId,
                 PaidById = me.StudentId,
                 ProgramEnrollmentId = me.ProgramEnrollmentId,
@@ -474,10 +518,10 @@ public partial class SeedService
                 Amount = me.Module?.RetakeFee > 0 ? me.Module.RetakeFee : 250_000m,
                 Currency = "VND",
                 Gateway = PaymentGateway.VnPay,
-                TransactionId = $"DASH-RETAKE-{index:D3}",
+                TransactionId = $"DASHR-RETAKE-{index:D4}",
                 Status = PaymentStatus.Success,
-                PaidAt = now.AddDays(-(index % 40)),
-                CreatedAt = now.AddDays(-(index % 40)),
+                PaidAt = now.AddDays(-daysAgo).AddHours(11),
+                CreatedAt = now.AddDays(-daysAgo),
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             });
@@ -493,14 +537,45 @@ public partial class SeedService
             await _unitOfWork.SaveChangesAsync();
         }
 
-        // Extra pending payment requests for PendingPaymentRequestsAmount.
-        var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
-        var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Role == RoleType.Parent && !u.IsDeleted);
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
-        if (student != null && parent != null && program != null
-            && await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
-                pr => pr.Token == "SEED-DASH-PAYREQ-001" && !pr.IsDeleted) == null)
+        await SeedDashboardPendingPaymentRequestsAsync(now);
+
+        _loggerService.LogInformation(
+            "Finished rich dashboard revenue timeline — {PaymentCount} payment(s), {InvoiceCount} invoice(s).",
+            payments.Count,
+            invoices.Count);
+    }
+
+    private async Task SeedDashboardPendingPaymentRequestsAsync(DateTime now)
+    {
+        var specs = new (string Token, string StudentCode, string ProgramCode, decimal Amount, int ExpireDays)[]
         {
+            ("SEED-DASHR-PAYREQ-001", "STD-002", "PRG-WEBDEV", 980_000m, 5),
+            ("SEED-DASHR-PAYREQ-002", "STD-003", "PRG-ROBOTICS", 1_150_000m, 3),
+            ("SEED-DASHR-PAYREQ-003", "STD-004", "PRG-STEAM-01", 750_000m, 7),
+        };
+
+        var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Role == RoleType.Parent && !u.IsDeleted);
+        if (parent == null)
+        {
+            return;
+        }
+
+        var added = 0;
+        foreach (var spec in specs)
+        {
+            if (await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                    pr => pr.Token == spec.Token && !pr.IsDeleted) != null)
+            {
+                continue;
+            }
+
+            var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == spec.StudentCode);
+            var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == spec.ProgramCode);
+            if (student == null || program == null)
+            {
+                continue;
+            }
+
             var pe = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
                 e => e.StudentId == student.Id && e.ProgramId == program.Id && !e.IsDeleted);
 
@@ -511,40 +586,45 @@ public partial class SeedService
                 ParentId = parent.Id,
                 ProgramId = program.Id,
                 ProgramEnrollmentId = pe?.Id,
-                Amount = 980_000m,
+                Amount = spec.Amount,
                 Currency = "VND",
-                Token = "SEED-DASH-PAYREQ-001",
-                ExpiresAt = now.AddDays(5),
+                Token = spec.Token,
+                ExpiresAt = now.AddDays(spec.ExpireDays),
                 Status = PaymentRequestStatus.Pending,
-                CreatedAt = now,
+                CreatedAt = now.AddDays(-1),
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             });
-            await _unitOfWork.SaveChangesAsync();
+            added++;
         }
 
-        _loggerService.LogInformation(
-            "Finished seed dashboard revenue timeline — {PaymentCount} payment(s), {InvoiceCount} invoice(s).",
-            payments.Count,
-            invoices.Count);
+        if (added > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
     }
 
     /// <summary>
-    /// Submission timeline across statuses with backlog (&gt;48h), pass/fail grades,
-    /// and GradedAt in both current and previous windows.
+    /// Dense submissions across every preset window (backlog, pass/fail, revision, trends).
     /// </summary>
     private async Task SeedDashboardAssessmentTimelineAsync()
     {
-        _loggerService.LogInformation("Starting seed dashboard assessment timeline");
+        _loggerService.LogInformation("Starting seed dashboard assessment timeline (rich)");
+
+        if (await _unitOfWork.Submissions.FirstOrDefaultAsync(
+                s => s.Code == $"{DashboardSubmissionCodePrefix}0001" && !s.IsDeleted) != null)
+        {
+            _loggerService.LogInformation("Rich dashboard assessment timeline already seeded, skipping");
+            return;
+        }
 
         var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
         var students = (await _unitOfWork.Users.GetAllAsync(
                 u => !u.IsDeleted && u.Role == RoleType.Student))
             .OrderBy(u => u.Code)
-            .Take(12)
             .ToList();
         var assignments = (await _unitOfWork.Assignments.GetAllAsync(a => !a.IsDeleted))
-            .Take(4)
+            .Take(8)
             .ToList();
 
         if (mentor == null || students.Count == 0 || assignments.Count == 0)
@@ -556,187 +636,118 @@ public partial class SeedService
         var moduleEnrollments = (await _unitOfWork.ModuleEnrollments.GetAllAsync(me => !me.IsDeleted))
             .ToList();
         var now = DateTime.UtcNow;
+        var dayPlan = BuildRichDashboardDayPlan(now);
         var created = 0;
+        var index = 1;
 
-        async Task<bool> TryAddAsync(string code, Submission submission)
+        async Task AddIfMissingAsync(Submission submission)
         {
-            if (await SubmissionCodeExistsAsync(code))
+            if (await SubmissionCodeExistsAsync(submission.Code))
             {
-                return false;
+                return;
             }
 
-            submission.Code = code;
             await _unitOfWork.Submissions.AddAsync(submission);
             created++;
-            return true;
         }
 
-        // Backlog + pass/fail anchors (kept from earlier seed).
-        var assignment0 = assignments[0];
+        // Anchor cases for backlog / pass / fail / revision (always present).
+        var a0 = assignments[0];
         var s1 = students[0];
         var s2 = students.Count > 1 ? students[1] : students[0];
         var me1 = moduleEnrollments.FirstOrDefault(me => me.StudentId == s1.Id)
                   ?? moduleEnrollments.FirstOrDefault();
 
-        await TryAddAsync("SUB-DASH-BACKLOG-01", new Submission
+        await AddIfMissingAsync(new Submission
         {
             Id = Guid.NewGuid(),
-            AssignmentId = assignment0.Id,
+            Code = $"{DashboardSubmissionCodePrefix}BACKLOG-01",
+            AssignmentId = a0.Id,
             StudentId = s1.Id,
             ModuleEnrollmentId = me1?.Id,
             AttemptNumber = 1,
             Status = SubmissionStatus.TurnedIn,
-            ContentText = "Dashboard seed — backlog TurnedIn > 48h.",
+            ContentText = "Rich dashboard seed — backlog TurnedIn > 48h.",
             SubmittedAt = now.AddDays(-5),
             CreatedAt = now.AddDays(-6),
             CreatedBy = s1.Id,
             IsDeleted = false
         });
 
-        await TryAddAsync("SUB-DASH-BACKLOG-02", new Submission
+        await AddIfMissingAsync(new Submission
         {
             Id = Guid.NewGuid(),
-            AssignmentId = assignment0.Id,
+            Code = $"{DashboardSubmissionCodePrefix}BACKLOG-02",
+            AssignmentId = a0.Id,
             StudentId = s2.Id,
             ModuleEnrollmentId = moduleEnrollments.FirstOrDefault(me => me.StudentId == s2.Id)?.Id ?? me1?.Id,
             AttemptNumber = 1,
             Status = SubmissionStatus.Pending,
-            ContentText = "Dashboard seed — backlog Pending > 48h.",
+            ContentText = "Rich dashboard seed — backlog Pending > 48h.",
             SubmittedAt = now.AddDays(-4),
             CreatedAt = now.AddDays(-4),
             CreatedBy = s2.Id,
             IsDeleted = false
         });
 
-        await TryAddAsync("SUB-DASH-FAIL-01", new Submission
+        foreach (var (daysAgo, events) in dayPlan)
         {
-            Id = Guid.NewGuid(),
-            AssignmentId = assignment0.Id,
-            StudentId = s2.Id,
-            ModuleEnrollmentId = moduleEnrollments.FirstOrDefault(me => me.StudentId == s2.Id)?.Id ?? me1?.Id,
-            AttemptNumber = 1,
-            Status = SubmissionStatus.Graded,
-            ContentText = "Dashboard seed — graded below PassScore.",
-            AssignedGrade = Math.Max(0, assignment0.PassScore - 15),
-            MentorFeedback = "Needs revision.",
-            VerifiedBy = mentor.Id,
-            SubmittedAt = now.AddDays(-10),
-            GradedAt = now.AddDays(-8),
-            CreatedAt = now.AddDays(-11),
-            CreatedBy = s2.Id,
-            IsDeleted = false
-        });
-
-        await TryAddAsync("SUB-DASH-PASS-01", new Submission
-        {
-            Id = Guid.NewGuid(),
-            AssignmentId = assignment0.Id,
-            StudentId = s1.Id,
-            ModuleEnrollmentId = me1?.Id,
-            AttemptNumber = 1,
-            Status = SubmissionStatus.Graded,
-            ContentText = "Dashboard seed — graded above PassScore.",
-            AssignedGrade = assignment0.PassScore + 20,
-            MentorFeedback = "Solid work.",
-            VerifiedBy = mentor.Id,
-            SubmittedAt = now.AddDays(-12),
-            GradedAt = now.AddDays(-11),
-            CreatedAt = now.AddDays(-13),
-            CreatedBy = s1.Id,
-            IsDeleted = false
-        });
-
-        await TryAddAsync("SUB-DASH-REVISION-01", new Submission
-        {
-            Id = Guid.NewGuid(),
-            AssignmentId = assignment0.Id,
-            StudentId = s1.Id,
-            ModuleEnrollmentId = me1?.Id,
-            AttemptNumber = 2,
-            Status = SubmissionStatus.ReturnedForRevision,
-            ContentText = "Dashboard seed — returned for revision.",
-            AssignedGrade = assignment0.PassScore - 5,
-            MentorFeedback = "Please revise section 2.",
-            VerifiedBy = mentor.Id,
-            SubmittedAt = now.AddDays(-6),
-            GradedAt = now.AddDays(-5),
-            CreatedAt = now.AddDays(-7),
-            CreatedBy = s1.Id,
-            IsDeleted = false
-        });
-
-        // Timeline for trends + previous-period PassRate / SubmissionsInPreviousRange.
-        var dayOffsets = new List<int>();
-        for (var d = 0; d <= 44; d += 3)
-        {
-            dayOffsets.Add(d);
-        }
-
-        for (var d = 48; d <= 90; d += 7)
-        {
-            dayOffsets.Add(d);
-        }
-
-        for (var d = 100; d <= 340; d += 25)
-        {
-            dayOffsets.Add(d);
-        }
-
-        for (var d = 32; d <= 58; d += 3)
-        {
-            if (!dayOffsets.Contains(d))
+            for (var e = 0; e < events; e++)
             {
-                dayOffsets.Add(d);
+                var student = students[(index + e) % students.Count];
+                var assignment = assignments[index % assignments.Count];
+                var me = moduleEnrollments.FirstOrDefault(m => m.StudentId == student.Id)
+                         ?? moduleEnrollments.FirstOrDefault();
+                var code = $"{DashboardSubmissionCodePrefix}{index:D4}";
+
+                var status = (index % 8) switch
+                {
+                    0 => SubmissionStatus.Pending,
+                    1 => SubmissionStatus.TurnedIn,
+                    2 => SubmissionStatus.ReturnedForRevision,
+                    _ => SubmissionStatus.Graded
+                };
+
+                // Keep some recent TurnedIn/Pending older than 48h for backlog KPI.
+                if (daysAgo is >= 3 and <= 10 && index % 5 == 0)
+                {
+                    status = index % 2 == 0 ? SubmissionStatus.TurnedIn : SubmissionStatus.Pending;
+                }
+
+                var submittedAt = now.AddDays(-daysAgo).AddHours(10 + e).AddMinutes((index * 5) % 55);
+                decimal? grade = null;
+                DateTime? gradedAt = null;
+                if (status is SubmissionStatus.Graded or SubmissionStatus.ReturnedForRevision)
+                {
+                    var pass = index % 4 != 0;
+                    grade = pass
+                        ? assignment.PassScore + 8 + (index % 12)
+                        : Math.Max(0, assignment.PassScore - 8 - (index % 6));
+                    gradedAt = submittedAt.AddHours(6 + (index % 18));
+                }
+
+                await AddIfMissingAsync(new Submission
+                {
+                    Id = Guid.NewGuid(),
+                    Code = code,
+                    AssignmentId = assignment.Id,
+                    StudentId = student.Id,
+                    ModuleEnrollmentId = me?.Id,
+                    AttemptNumber = 1 + (index % 2),
+                    Status = status,
+                    ContentText = $"Rich dashboard timeline seed day-{daysAgo} event-{e}.",
+                    AssignedGrade = grade,
+                    MentorFeedback = status == SubmissionStatus.Graded ? "Auto rich-seed grade." : null,
+                    VerifiedBy = gradedAt.HasValue ? mentor.Id : null,
+                    SubmittedAt = submittedAt,
+                    GradedAt = gradedAt,
+                    CreatedAt = submittedAt.AddHours(-1),
+                    CreatedBy = student.Id,
+                    IsDeleted = false
+                });
+
+                index++;
             }
-        }
-
-        var seq = 1;
-        foreach (var daysAgo in dayOffsets.Distinct().OrderBy(x => x))
-        {
-            var student = students[seq % students.Count];
-            var assignment = assignments[seq % assignments.Count];
-            var me = moduleEnrollments.FirstOrDefault(m => m.StudentId == student.Id)
-                     ?? moduleEnrollments.FirstOrDefault();
-            var code = $"SUB-DASH-TL-{seq:D3}";
-
-            var status = (seq % 7) switch
-            {
-                0 => SubmissionStatus.Pending,
-                1 => SubmissionStatus.TurnedIn,
-                2 => SubmissionStatus.ReturnedForRevision,
-                _ => SubmissionStatus.Graded
-            };
-
-            var submittedAt = now.AddDays(-daysAgo).AddHours(14);
-            decimal? grade = null;
-            DateTime? gradedAt = null;
-            if (status is SubmissionStatus.Graded or SubmissionStatus.ReturnedForRevision)
-            {
-                var pass = seq % 3 != 0;
-                grade = pass ? assignment.PassScore + 10 + (seq % 5) : Math.Max(0, assignment.PassScore - 10);
-                gradedAt = submittedAt.AddHours(20 + (seq % 10));
-            }
-
-            await TryAddAsync(code, new Submission
-            {
-                Id = Guid.NewGuid(),
-                AssignmentId = assignment.Id,
-                StudentId = student.Id,
-                ModuleEnrollmentId = me?.Id,
-                AttemptNumber = 1,
-                Status = status,
-                ContentText = $"Dashboard timeline seed day-{daysAgo}.",
-                AssignedGrade = grade,
-                MentorFeedback = status == SubmissionStatus.Graded ? "Auto seed grade." : null,
-                VerifiedBy = gradedAt.HasValue ? mentor.Id : null,
-                SubmittedAt = submittedAt,
-                GradedAt = gradedAt,
-                CreatedAt = submittedAt.AddHours(-1),
-                CreatedBy = student.Id,
-                IsDeleted = false
-            });
-
-            seq++;
         }
 
         if (created > 0)
@@ -745,11 +756,11 @@ public partial class SeedService
         }
 
         _loggerService.LogInformation(
-            "Finished seed dashboard assessment timeline — {Count} submission(s).",
+            "Finished rich dashboard assessment timeline — {Count} submission(s).",
             created);
     }
 
-    /// <summary>Completed / Cancelled classes with varied capacity for operations filters.</summary>
+    /// <summary>Completed / Cancelled / sparse Open classes for operations filters.</summary>
     private async Task SeedDashboardOperationsClassesAsync()
     {
         _loggerService.LogInformation("Starting seed dashboard operations classes");
@@ -885,16 +896,17 @@ public partial class SeedService
     }
 
     /// <summary>
-    /// Dedicated class sessions spanning 12 months with mixed AttendanceStatus for trends.
+    /// One attendance session per planned day (plus multi-student roster) so
+    /// 7d/30d daily charts and 90d/12mo weekly-monthly charts stay populated.
     /// </summary>
     private async Task SeedDashboardSessionsAndAttendanceAsync()
     {
-        _loggerService.LogInformation("Starting seed dashboard sessions and attendance");
+        _loggerService.LogInformation("Starting seed dashboard sessions and attendance (rich)");
 
         if (await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
                 cs => cs.Title.StartsWith(DashboardSessionTitlePrefix) && !cs.IsDeleted) != null)
         {
-            _loggerService.LogInformation("Dashboard sessions already seeded, skipping");
+            _loggerService.LogInformation("Rich dashboard sessions already seeded, skipping");
             return;
         }
 
@@ -915,7 +927,7 @@ public partial class SeedService
         var students = (await _unitOfWork.Users.GetAllAsync(
                 u => !u.IsDeleted && u.Role == RoleType.Student))
             .OrderBy(u => u.Code)
-            .Take(8)
+            .Take(10)
             .ToList();
         var moduleEnrollments = (await _unitOfWork.ModuleEnrollments.GetAllAsync(me => !me.IsDeleted))
             .ToList();
@@ -926,37 +938,13 @@ public partial class SeedService
         }
 
         var now = DateTime.UtcNow;
-        var dayOffsets = new List<int>();
-        for (var d = 1; d <= 40; d += 2)
-        {
-            dayOffsets.Add(d);
-        }
-
-        for (var d = 45; d <= 90; d += 7)
-        {
-            dayOffsets.Add(d);
-        }
-
-        for (var d = 100; d <= 340; d += 30)
-        {
-            dayOffsets.Add(d);
-        }
-
-        // Previous-period attendance cluster.
-        for (var d = 32; d <= 58; d += 4)
-        {
-            if (!dayOffsets.Contains(d))
-            {
-                dayOffsets.Add(d);
-            }
-        }
-
+        var dayPlan = BuildRichDashboardDayPlan(now);
         var attendanceStatuses = Enum.GetValues<AttendanceStatus>();
         var sessions = new List<ClassSession>();
         var attendances = new List<SessionAttendance>();
         var seq = 0;
 
-        foreach (var daysAgo in dayOffsets.Distinct().OrderBy(x => x))
+        foreach (var (daysAgo, _) in dayPlan)
         {
             var start = now.AddDays(-daysAgo).Date.AddHours(9);
             var session = new ClassSession
@@ -966,8 +954,8 @@ public partial class SeedService
                 ModuleId = module.Id,
                 ActivityId = activity?.Id,
                 SessionKind = SessionKind.Lesson,
-                Title = $"{DashboardSessionTitlePrefix} #{seq + 1:D2}",
-                Description = "Dense dashboard attendance seed session.",
+                Title = $"{DashboardSessionTitlePrefix} #{seq + 1:D3}",
+                Description = "Rich dashboard attendance seed session.",
                 StartTime = start,
                 EndTime = start.AddHours(2),
                 Location = "Lab A",
@@ -981,7 +969,9 @@ public partial class SeedService
             sessions.Add(session);
 
             var statusIndex = seq;
-            foreach (var student in students)
+            // Fewer students on older/monthly sessions to vary attendance rate.
+            var rosterSize = daysAgo <= 60 ? students.Count : Math.Max(4, students.Count - 3);
+            foreach (var student in students.Take(rosterSize))
             {
                 var me = moduleEnrollments.FirstOrDefault(m => m.StudentId == student.Id)
                          ?? moduleEnrollments.FirstOrDefault();
@@ -991,6 +981,12 @@ public partial class SeedService
                 }
 
                 var status = attendanceStatuses[statusIndex % attendanceStatuses.Length];
+                // Bias recent sessions toward Present so current-window rate > previous-window.
+                if (daysAgo <= 30 && statusIndex % 5 != 0)
+                {
+                    status = AttendanceStatus.Present;
+                }
+
                 statusIndex++;
 
                 attendances.Add(new SessionAttendance
@@ -1018,7 +1014,7 @@ public partial class SeedService
         await _unitOfWork.SaveChangesAsync();
 
         _loggerService.LogInformation(
-            "Finished seed dashboard sessions/attendance — {SessionCount} session(s), {AttendanceCount} attendance row(s).",
+            "Finished rich dashboard sessions/attendance — {SessionCount} session(s), {AttendanceCount} attendance row(s).",
             sessions.Count,
             attendances.Count);
     }
@@ -1075,23 +1071,16 @@ public partial class SeedService
                 e => e.StudentId == student.Id && e.ProgramId == program.Id && !e.IsDeleted);
             if (pe == null)
             {
-                pe = new ProgramEnrollment
-                {
-                    Id = Guid.NewGuid(),
-                    StudentId = student.Id,
-                    ProgramId = program.Id,
-                    Status = EnrollmentStatus.Active,
-                    ProgressPercent = 10m,
-                    EnrolledAt = now.AddDays(-40),
-                    CreatedAt = now.AddDays(-40),
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false
-                };
+                pe = CreateProgramEnrollment(
+                    student.Id,
+                    program.Id,
+                    EnrollmentStatus.Active,
+                    now.AddDays(-40),
+                    10m);
                 await _unitOfWork.ProgramEnrollments.AddAsync(pe);
                 await _unitOfWork.SaveChangesAsync();
             }
 
-            // If student already has Active enrollment on this class, update status instead of duplicating.
             var activeOnClass = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
                 ce => ce.StudentId == student.Id && ce.ClassId == plan.ClassId && !ce.IsDeleted);
             if (activeOnClass != null)
