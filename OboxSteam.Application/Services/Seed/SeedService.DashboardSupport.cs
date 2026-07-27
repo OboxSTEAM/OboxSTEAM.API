@@ -331,20 +331,29 @@ public partial class SeedService
         }
 
         // Persist only rows that do not collide with DB.
+        var moduleProgramById = modules.ToDictionary(m => m.Id, m => m.ProgramId);
         var persisted = new List<ModuleEnrollment>();
         foreach (var me in toAdd)
         {
+            var studentId = me.StudentId;
+            var moduleId = me.ModuleId;
+
             if (await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                    x => x.StudentId == me.StudentId
-                         && x.ModuleId == me.ModuleId
+                    x => x.StudentId == studentId
+                         && x.ModuleId == moduleId
                          && !x.IsDeleted) != null)
             {
                 continue;
             }
 
+            if (!moduleProgramById.TryGetValue(moduleId, out var programId))
+            {
+                continue;
+            }
+
             var pe = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                e => e.StudentId == me.StudentId
-                     && e.ProgramId == modules.First(m => m.Id == me.ModuleId).ProgramId
+                e => e.StudentId == studentId
+                     && e.ProgramId == programId
                      && !e.IsDeleted);
             me.ProgramEnrollmentId = pe?.Id;
             persisted.Add(me);
