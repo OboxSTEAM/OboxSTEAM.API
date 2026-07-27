@@ -6,6 +6,8 @@ public class RevenueKpiSummaryDto
 
     public decimal RevenueInRange { get; set; }
 
+    public decimal RevenueInPreviousRange { get; set; }
+
     public int PendingPaymentRequestsCount { get; set; }
 
     public decimal PendingPaymentRequestsAmount { get; set; }
