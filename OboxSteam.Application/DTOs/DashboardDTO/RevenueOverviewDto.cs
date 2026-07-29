@@ -8,6 +8,9 @@ public class RevenueOverviewDto
 
     public decimal RevenueInRange { get; set; }
 
+    /// <summary>Sum of successful payments in the previous adjacent window of equal length.</summary>
+    public decimal RevenueInPreviousRange { get; set; }
+
     public decimal AverageOrderValue { get; set; }
 
     public int PendingPaymentRequestsCount { get; set; }
@@ -18,7 +21,7 @@ public class RevenueOverviewDto
 
     public int InvoiceCount { get; set; }
 
-    public List<TrendPointDto> RevenueTrend { get; set; } = new();
+    public TrendSeriesDto RevenueTrend { get; set; } = null!;
 
     public List<RevenueByGatewayDto> RevenueByGateway { get; set; } = new();
 
