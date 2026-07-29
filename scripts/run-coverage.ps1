@@ -119,12 +119,14 @@ if (Test-Path $reportDir) {
     Remove-Item -Recurse -Force $reportDir
 }
 
+# NOTE: Do NOT use -**/OboxSteam.API/** in filefilters — it matches OboxSteam.Application
+# (prefix collision) and excludes the entire Application assembly from the HTML report.
 & reportgenerator `
     "-reports:$($cobertura.FullName)" `
     "-targetdir:$reportDir" `
     "-reporttypes:Html;TextSummary" `
-    "-classfilters:-OboxSteam.Application.Services.SeedService;-OboxSteam.Application.Services.MediaService;-OboxSteam.Application.Services.PersonalVideoService;-OboxSteam.Infrastructure.*;-OboxSteam.API.*" `
-    "-filefilters:-**/SeedService.cs;-**/MediaService.cs;-**/PersonalVideoService.cs;-**/OboxSteam.Infrastructure/**;-**/OboxSteam.API/**;-**/Migrations/**"
+    "-classfilters:-OboxSteam.Application.Services.SeedService;-OboxSteam.Application.Services.MediaService;-OboxSteam.Application.Services.PersonalVideoService" `
+    "-filefilters:+**/OboxSteam.Application/**;+**/OboxSteam.Domain/**;-**/obj/**;-**/Migrations/**;-**/Services/SeedService.cs;-**/Services/MediaService.cs;-**/Services/PersonalVideoService.cs"
 
 Write-Host ""
 Write-Host "HTML report: $reportDir\index.html" -ForegroundColor Green

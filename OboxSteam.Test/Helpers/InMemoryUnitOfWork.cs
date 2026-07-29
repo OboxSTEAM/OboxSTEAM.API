@@ -204,7 +204,56 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public Task<int> SaveChangesAsync()
     {
         SaveChangesCallCount++;
+        SyncExpertProgramBoards();
+        SyncPortfolioMediaPlacements();
+        SyncPortfolioItemSubmissions();
         return Task.FromResult(1);
+    }
+
+    /// <summary>
+    /// Keeps <see cref="Expert.ProgramBoards"/> aligned with the ProgramBoards store after mutations,
+    /// matching EF include/reload behavior used by ExpertService.
+    /// </summary>
+    private void SyncExpertProgramBoards()
+    {
+        foreach (var expert in Experts.Items)
+        {
+            expert.ProgramBoards = ProgramBoards.Items
+                .Where(pb => pb.ExpertId == expert.Id && !pb.IsDeleted)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Keeps placement <see cref="PortfolioMediaPlacement.MediaAsset"/> aligned with the media store,
+    /// matching EF include behavior used by PortfolioService mapping.
+    /// </summary>
+    private void SyncPortfolioMediaPlacements()
+    {
+        var assetsById = PortfolioMediaAssets.Items.ToDictionary(a => a.Id);
+        foreach (var placement in PortfolioMediaPlacements.Items)
+        {
+            if (assetsById.TryGetValue(placement.PortfolioMediaAssetId, out var asset))
+            {
+                placement.MediaAsset = asset;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Keeps appendix <see cref="PortfolioItemSubmission.Submission"/> aligned with the submissions store,
+    /// matching EF include behavior used by PortfolioService.
+    /// </summary>
+    private void SyncPortfolioItemSubmissions()
+    {
+        var submissionsById = Submissions.Items.ToDictionary(s => s.Id);
+        foreach (var appendix in PortfolioItemSubmissions.Items)
+        {
+            if (submissionsById.TryGetValue(appendix.SubmissionId, out var submission))
+            {
+                appendix.Submission = submission;
+            }
+        }
     }
 
     public Task TruncateAllApplicationTablesAsync() => Task.CompletedTask;
