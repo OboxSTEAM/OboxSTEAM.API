@@ -25,11 +25,17 @@ public sealed class NotificationAudience
     public static NotificationAudience ForClassRoster(Guid classId)
         => new(NotificationAudienceKind.ClassRoster, classId: classId);
 
+    public static NotificationAudience ForClassRosterAndParents(Guid classId)
+        => new(NotificationAudienceKind.ClassRosterAndParents, classId: classId);
+
     public static NotificationAudience ForClassMentor(Guid classId)
         => new(NotificationAudienceKind.ClassMentor, classId: classId);
 
     public static NotificationAudience ForClassRosterAndMentor(Guid classId)
         => new(NotificationAudienceKind.ClassRosterAndMentor, classId: classId);
+
+    public static NotificationAudience ForClassRosterAndParentsAndMentor(Guid classId)
+        => new(NotificationAudienceKind.ClassRosterAndParentsAndMentor, classId: classId);
 
     public static NotificationAudience ForManagers()
         => new(NotificationAudienceKind.Managers);

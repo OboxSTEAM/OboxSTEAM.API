@@ -5,7 +5,9 @@ public enum NotificationAudienceKind
     User,
     StudentAndParents,
     ClassRoster,
+    ClassRosterAndParents,
     ClassMentor,
     ClassRosterAndMentor,
+    ClassRosterAndParentsAndMentor,
     Managers
 }
