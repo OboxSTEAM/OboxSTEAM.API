@@ -205,6 +205,26 @@ public sealed class ClassServiceTests
         Assert.Empty(result.Items);
     }
 
+    [Theory]
+    [InlineData("name", false)]
+    [InlineData("code", true)]
+    [InlineData("startdate", false)]
+    [InlineData("enddate", true)]
+    [InlineData("status", false)]
+    [InlineData("maxcapacity", true)]
+    [InlineData("createdat", false)]
+    [InlineData("unknown", false)]
+    public async Task GetAll_SortByColumns_ReturnsResults(string sortBy, bool desc)
+    {
+        SeedProgram();
+        SeedClass();
+        var sut = CreateSut();
+
+        var result = await sut.GetAllClassesAsync(null, sortBy, desc, 1, 10);
+
+        Assert.True(result.TotalCount >= 1);
+    }
+
     // ── GetClassByIdAsync ─────────────────────────────────────────────────────
 
     [Fact]

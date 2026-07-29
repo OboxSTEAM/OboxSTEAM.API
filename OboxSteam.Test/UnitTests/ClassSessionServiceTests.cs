@@ -719,6 +719,13 @@ public sealed class ClassSessionServiceTests
 
         var byCreated = await sut.GetClassSessionsByClassIdAsync(_classId, "createdat", true, 1, 10);
         Assert.Equal(2, byCreated.Items.Count);
+
+        var byStart = await sut.GetClassSessionsByClassIdAsync(_classId, "starttime", false, 1, 10);
+        Assert.True(byStart.TotalCount >= 1);
+        var byEnd = await sut.GetClassSessionsByClassIdAsync(_classId, "endtime", true, 1, 10);
+        Assert.True(byEnd.TotalCount >= 1);
+        var byKind = await sut.GetClassSessionsByClassIdAsync(_classId, "sessionkind", false, 1, 10);
+        Assert.True(byKind.TotalCount >= 1);
     }
 
     [Fact]

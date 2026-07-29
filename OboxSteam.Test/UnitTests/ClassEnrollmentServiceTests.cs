@@ -604,6 +604,19 @@ public sealed class ClassEnrollmentServiceTests
 
         Assert.Equal("Apple", result.Items[0].Class.Name);
         Assert.Equal("Zebra", result.Items[1].Class.Name);
+
+        var byStatus = await sut.GetClassEnrollmentsByProgramEnrollmentAsync(
+            _programEnrollmentId, "status", false, 1, 10);
+        Assert.True(byStatus.TotalCount >= 1);
+        var byCreated = await sut.GetClassEnrollmentsByProgramEnrollmentAsync(
+            _programEnrollmentId, "createdat", true, 1, 10);
+        Assert.True(byCreated.TotalCount >= 1);
+        var byClassCode = await sut.GetClassEnrollmentsByProgramEnrollmentAsync(
+            _programEnrollmentId, "classcode", false, 1, 10);
+        Assert.True(byClassCode.TotalCount >= 1);
+        var byDefault = await sut.GetClassEnrollmentsByProgramEnrollmentAsync(
+            _programEnrollmentId, "xxx", false, 1, 10);
+        Assert.True(byDefault.TotalCount >= 1);
     }
 
     [Fact]

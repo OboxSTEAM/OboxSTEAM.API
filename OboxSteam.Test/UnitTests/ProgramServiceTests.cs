@@ -227,10 +227,16 @@ public sealed class ProgramServiceTests
         var byRating = await sut.GetAllProgramsAsync(null, "rating", true, 1, 10, rating: 4m);
         var byPrice = await sut.GetAllProgramsAsync(null, "price", false, 1, 10, code: "prg");
         var byCreatedAt = await sut.GetAllProgramsAsync(null, "createdat", true, 1, 10);
+        var byName = await sut.GetAllProgramsAsync(null, "name", false, 1, 10);
+        var byCode = await sut.GetAllProgramsAsync(null, "code", false, 1, 10);
+        var byLevel = await sut.GetAllProgramsAsync(null, "level", true, 1, 10);
 
         Assert.Equal("Beta", byRating.Items[0].Name);
         Assert.Equal("Alpha", byPrice.Items[0].Name);
         Assert.Equal("Beta", byCreatedAt.Items[0].Name);
+        Assert.True(byName.TotalCount >= 1);
+        Assert.True(byCode.TotalCount >= 1);
+        Assert.True(byLevel.TotalCount >= 1);
     }
 
     // ── GetAllProgramsWithModulesAsync ────────────────────────────────────────

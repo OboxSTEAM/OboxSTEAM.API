@@ -162,6 +162,22 @@ public sealed class ActivityServiceTests
         Assert.Equal("ACT-B", byStart.Items[0].Code);
     }
 
+    [Theory]
+    [InlineData("name", false)]
+    [InlineData("code", true)]
+    [InlineData("endtime", false)]
+    [InlineData("createdat", true)]
+    [InlineData("xxx", false)]
+    public async Task GetAll_SortByExtraColumns_ReturnsResults(string sortBy, bool desc)
+    {
+        SeedActivity();
+        var sut = CreateSut();
+
+        var result = await sut.GetAllActivitiesAsync(null, sortBy, desc, 1, 10, null, null);
+
+        Assert.True(result.TotalCount >= 1);
+    }
+
     // ── GetActivityByIdAsync ──────────────────────────────────────────────────
 
     [Fact]
@@ -388,6 +404,30 @@ public sealed class ActivityServiceTests
         Assert.Null(result.EndTime);
         Assert.Null(result.MaxCapacity);
         Assert.False(result.RequireQrCheckin);
+    }
+
+    [Fact]
+    public async Task Update_SetsAllOptionalFields_ForLiveOnline()
+    {
+        var (start, end) = FutureSchedule();
+        SeedActivity(activityType: ActivityType.LiveOnline);
+        var sut = CreateSut();
+
+        var result = await sut.UpdateActivityAsync(_activityId, new UpdateActivitiesRequestDto
+        {
+            ActivityType = ActivityType.LiveOnline,
+            RequireMediaEvidence = true,
+            StartTime = start,
+            EndTime = end,
+            Location = "Room B",
+            MaxCapacity = 50,
+            RequireQrCheckin = false,
+        });
+
+        Assert.NotNull(result);
+        Assert.True(result!.RequireMediaEvidence);
+        Assert.Equal("Room B", result.Location);
+        Assert.Equal(50, result.MaxCapacity);
     }
 
     [Fact]

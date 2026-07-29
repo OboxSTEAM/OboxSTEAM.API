@@ -782,6 +782,42 @@ public sealed class AssignmentServiceTests
     }
 
     [Fact]
+    public async Task UpdateAssignment_UpdatesAllNullableFields()
+    {
+        SeedManager();
+        SeedModule();
+        SeedAssignment();
+        var sut = CreateSut();
+
+        var result = await sut.UpdateAssignment(_assignmentId, new UpdateAssignmentRequestDto
+        {
+            Code = "ASN-UPDATED",
+            Title = "Full Update",
+            Description = "Updated desc",
+            AssignmentType = AssignmentType.FileUpload,
+            MaxPoints = 50,
+            PassScore = 25,
+            MaxAttempts = 5,
+            IsRequiredForModulePass = true,
+            DueDate = DateTime.UtcNow.AddDays(30),
+            AvailableFrom = DateTime.UtcNow,
+            AvailableUntil = DateTime.UtcNow.AddDays(60),
+            AllowShuffle = true,
+            ShuffleOptions = true,
+            TimeLimitMinutes = 90,
+            EasyPercent = 30,
+            MediumPercent = 40,
+            HardPercent = 30,
+        });
+
+        Assert.NotNull(result);
+        Assert.Equal("ASN-UPDATED", result!.Code);
+        Assert.Equal("Full Update", result.Title);
+        Assert.Equal(50, result.MaxPoints);
+        Assert.True(result.IsRequiredForModulePass);
+    }
+
+    [Fact]
     public async Task UpdateAssignment_ReturnsNull_WhenMissing()
     {
         SeedManager();
@@ -995,5 +1031,38 @@ public sealed class AssignmentServiceTests
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.DeleteAssignment(_assignmentId));
         Assert.Equal("Cannot delete an assignment that has existing submissions.", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetAllAssignments_SortsAndSearchesByConfiguredColumns()
+    {
+        var module = SeedCatalogModule();
+        SeedCatalogAssignment(module, code: "ZZZ-999", title: "Zulu Task", dueDate: DateTime.UtcNow.AddDays(10));
+        SeedCatalogAssignment(module, code: "AAA-001", title: "Alpha Task", dueDate: DateTime.UtcNow.AddDays(1));
+        var sut = CreateSut();
+
+        var bySearch = await sut.GetAllAssignments("Zulu", null, false, 1, 10);
+        Assert.Single(bySearch.Items);
+
+        var byTitleAsc = await sut.GetAllAssignments(null, "title", false, 1, 10);
+        Assert.Equal("Alpha Task", byTitleAsc.Items[0].Title);
+
+        var byCodeDesc = await sut.GetAllAssignments(null, "code", true, 1, 10);
+        Assert.Equal("ZZZ-999", byCodeDesc.Items[0].Code);
+
+        var byDueDate = await sut.GetAllAssignments(null, "duedate", false, 1, 10);
+        Assert.Equal("Alpha Task", byDueDate.Items[0].Title);
+
+        var byModuleName = await sut.GetAllAssignments(null, "modulename", false, 1, 10);
+        Assert.NotEmpty(byModuleName.Items);
+
+        var byProgramName = await sut.GetAllAssignments(null, "programname", true, 1, 10);
+        Assert.NotEmpty(byProgramName.Items);
+
+        var byType = await sut.GetAllAssignments(null, "assignmenttype", false, 1, 10);
+        Assert.NotEmpty(byType.Items);
+
+        var defaultSort = await sut.GetAllAssignments(null, "unknown", false, 1, 10);
+        Assert.Equal(2, defaultSort.Items.Count);
     }
 }

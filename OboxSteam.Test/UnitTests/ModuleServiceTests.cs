@@ -187,6 +187,21 @@ public sealed class ModuleServiceTests
         Assert.Equal("Beta", byPrice.Items[0].Name);
     }
 
+    [Theory]
+    [InlineData("name", false)]
+    [InlineData("code", true)]
+    [InlineData("createdat", false)]
+    [InlineData("xxx", true)]
+    public async Task GetAll_SortByExtraColumns_ReturnsResults(string sortBy, bool desc)
+    {
+        SeedModule();
+        var sut = CreateSut();
+
+        var result = await sut.GetAllModulesAsync(null, sortBy, desc, 1, 10, null, null);
+
+        Assert.True(result.TotalCount >= 1);
+    }
+
     // ── CreateModuleAsync ─────────────────────────────────────────────────────
 
     [Fact]

@@ -358,6 +358,9 @@ public sealed class MaterialServiceTests
         var byProgram = await sut.GetAllMaterialsAsync(null, "programname", true, 1, 10);
         Assert.Equal("Intro Course", byCourse.Items[0].CourseName);
         Assert.Equal("STEAM Program", byProgram.Items[0].ProgramName);
+
+        var byDefault = await sut.GetAllMaterialsAsync(null, "xxx", false, 1, 10);
+        Assert.True(byDefault.TotalCount >= 1);
     }
 
     // ── GetMaterialByActivityAsync ────────────────────────────────────────────

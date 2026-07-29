@@ -243,6 +243,9 @@ public sealed class ClassMentorRequestServiceTests
         var sorted = await sut.GetMentorBoardAsync(null, "code", false, 1, 10);
         Assert.Equal("CLS-ALPHA", sorted.Items[0].Code);
         Assert.Equal("CLS-ZEBRA", sorted.Items[1].Code);
+
+        var byStart = await sut.GetMentorBoardAsync(null, "startdate", true, 1, 10);
+        Assert.True(byStart.TotalCount >= 1);
     }
 
     [Fact]

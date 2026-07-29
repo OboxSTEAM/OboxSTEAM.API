@@ -168,6 +168,7 @@ public sealed class ExpertServiceTests
         var sut = CreateSut();
 
         var byCode = await sut.GetAllExpertsAsync(null, "code", true, 1, 10);
+        var byFullName = await sut.GetAllExpertsAsync(null, "fullname", false, 1, 10);
         var byCreatedAt = await sut.GetAllExpertsAsync(null, "createdat", true, 1, 10);
         var byDefault = await sut.GetAllExpertsAsync(null, null, false, 1, 10);
 

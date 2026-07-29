@@ -111,9 +111,11 @@ public sealed class CourseServiceTests
         newer.CreatedAt = DateTime.UtcNow.AddDays(-1);
         var sut = CreateSut();
 
+        var byName = await sut.GetAllCoursesAsync(null, "name", false, 1, 10, null, null);
         var byCode = await sut.GetAllCoursesAsync(null, "code", true, 1, 10, null, null);
         var byModuleId = await sut.GetAllCoursesAsync(null, "moduleid", false, 1, 10, null, null);
         var byCreatedAt = await sut.GetAllCoursesAsync(null, "createdat", true, 1, 10, null, null);
+        var byDefault = await sut.GetAllCoursesAsync(null, "xxx", false, 1, 10, null, null);
 
         Assert.Equal("CRS-B", byCode.Items[0].Code);
         Assert.Equal(_moduleId, byModuleId.Items[0].ModuleId);

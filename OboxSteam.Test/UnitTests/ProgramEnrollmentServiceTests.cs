@@ -407,6 +407,13 @@ public sealed class ProgramEnrollmentServiceTests
 
         Assert.Equal(20m, result.Items[0].ProgressPercent);
         Assert.Equal(80m, result.Items[1].ProgressPercent);
+
+        var byStatus = await sut.GetMyProgramEnrollmentsAsync(null, "status", false, 1, 10);
+        Assert.True(byStatus.TotalCount >= 1);
+        var byCreated = await sut.GetMyProgramEnrollmentsAsync(null, "createdat", true, 1, 10);
+        Assert.True(byCreated.TotalCount >= 1);
+        var byEnrolled = await sut.GetMyProgramEnrollmentsAsync(null, "enrolledat", false, 1, 10);
+        Assert.True(byEnrolled.TotalCount >= 1);
     }
 
     [Fact]
@@ -481,6 +488,16 @@ public sealed class ProgramEnrollmentServiceTests
 
         Assert.Equal(EnrollmentStatus.Active, result.Items[0].Status);
         Assert.Equal(EnrollmentStatus.Completed, result.Items[1].Status);
+
+        var byProgress = await sut.GetProgramEnrollmentsByStudentIdAsync(
+            _studentId, "progresspercent", true, 1, 10);
+        Assert.True(byProgress.TotalCount >= 1);
+        var byCreated = await sut.GetProgramEnrollmentsByStudentIdAsync(
+            _studentId, "createdat", false, 1, 10);
+        Assert.True(byCreated.TotalCount >= 1);
+        var byEnrolled = await sut.GetProgramEnrollmentsByStudentIdAsync(
+            _studentId, "enrolledat", true, 1, 10);
+        Assert.True(byEnrolled.TotalCount >= 1);
     }
 
     // ── GetProgramEnrollmentClassAsync ────────────────────────────────────────

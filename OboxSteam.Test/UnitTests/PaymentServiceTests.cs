@@ -474,6 +474,338 @@ public sealed class PaymentServiceTests
         await Assert.ThrowsAsync<ForbiddenException>(() => sut.GetPaymentById(_paymentId));
     }
 
+    [Fact]
+    public async Task GetPaymentById_AllowsPayerAndSuperAdmin()
+    {
+        SeedStudent();
+        SeedParent();
+        SeedPendingPayment(paidById: _parentId);
+        var payerView = await CreateSut(_parentId).GetPaymentById(_paymentId);
+
+        _db.Users.Seed(new User
+        {
+            Id = Guid.Parse("16161616-1616-1616-1616-161616161616"),
+            Code = "ADM-001",
+            Email = "admin@test.com",
+            Role = RoleType.SuperAdmin,
+            IsDeleted = false,
+        });
+        var adminView = await CreateSut(Guid.Parse("16161616-1616-1616-1616-161616161616")).GetPaymentById(_paymentId);
+
+        Assert.Equal(_paymentId, payerView.Id);
+        Assert.Equal(_paymentId, adminView.Id);
+    }
+
+    // ── RequestParentModulePayment ────────────────────────────────────────────
+
+    [Fact]
+    public async Task RequestParentModulePayment_CreatesRequestAndEmailsParent()
+    {
+        SeedStudent();
+        SeedParent();
+        SeedProgram();
+        var module = SeedModule();
+        SeedModuleEnrollment(module);
+        _db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _parentId,
+            StudentId = _studentId,
+            IsVerified = true,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.RequestParentModulePayment(_moduleEnrollmentId, _parentId);
+
+        Assert.Single(_db.PaymentRequests.Items);
+        Assert.Equal(_moduleEnrollmentId, _db.PaymentRequests.Items[0].ModuleEnrollmentId);
+        _emailService.Verify(e => e.SendPaymentRequestToParentEmailAsync(It.IsAny<PaymentRequestEmailDto>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RequestParentModulePayment_Throws_WhenNotEligible()
+    {
+        SeedStudent();
+        SeedParent();
+        SeedProgram();
+        var module = SeedModule();
+        SeedModuleEnrollment(module);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.RequestParentModulePayment(_moduleEnrollmentId, _parentId));
+
+        _db.ModuleEnrollments.Items[0].Status = EnrollmentStatus.Active;
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.RequestParentModulePayment(_moduleEnrollmentId, _parentId));
+
+        SeedParent();
+        _db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _parentId,
+            StudentId = _studentId,
+            IsVerified = true,
+            IsDeleted = false,
+        });
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            CreateSut(_parentId).RequestParentModulePayment(_moduleEnrollmentId, _parentId));
+    }
+
+    // ── CreateParentCheckout (module path) ────────────────────────────────────
+
+    [Fact]
+    public async Task CreateParentCheckout_ModuleRetake_CreatesPayment()
+    {
+        SeedStudent();
+        SeedParent();
+        SeedProgram();
+        var module = SeedModule();
+        SeedModuleEnrollment(module);
+        _db.PaymentRequests.Seed(new PaymentRequest
+        {
+            Id = _paymentRequestId,
+            StudentId = _studentId,
+            ParentId = _parentId,
+            ModuleId = _moduleId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            Amount = module.RetakeFee,
+            Currency = "VND",
+            Token = RequestToken,
+            ExpiresAt = DateTime.UtcNow.AddHours(1),
+            Status = PaymentRequestStatus.Pending,
+            IsDeleted = false,
+        });
+        var sut = CreateSut(_parentId);
+
+        var result = await sut.CreateParentCheckout(RequestToken, PaymentGateway.Stripe);
+
+        Assert.Single(_db.Payments.Items);
+        Assert.Equal(_moduleEnrollmentId, result.EnrollmentId);
+    }
+
+    [Fact]
+    public async Task CreateParentCheckout_Throws_WhenTokenExpiredOrInvalidType()
+    {
+        SeedStudent();
+        SeedParent();
+        _db.PaymentRequests.Seed(new PaymentRequest
+        {
+            Id = _paymentRequestId,
+            StudentId = _studentId,
+            ParentId = _parentId,
+            Amount = 100_000m,
+            Currency = "VND",
+            Token = RequestToken,
+            ExpiresAt = DateTime.UtcNow.AddHours(-1),
+            Status = PaymentRequestStatus.Pending,
+            IsDeleted = false,
+        });
+        var sut = CreateSut(_parentId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateParentCheckout(RequestToken, PaymentGateway.Stripe));
+
+        _db.PaymentRequests.Items[0].ExpiresAt = DateTime.UtcNow.AddHours(1);
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateParentCheckout(RequestToken, PaymentGateway.Stripe));
+    }
+
+    // ── Webhook / failure / cancel (module paths) ─────────────────────────────
+
+    [Fact]
+    public async Task HandleStripeWebhook_Completed_ActivatesModuleEnrollmentAndSendsParentConfirmation()
+    {
+        SeedStudent();
+        SeedParent();
+        SeedProgram();
+        var module = SeedModule();
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = _moduleEnrollmentId,
+            StudentId = _studentId,
+            ModuleId = module.Id,
+            Status = EnrollmentStatus.PendingPayment,
+            IsDeleted = false,
+        });
+        SeedPendingPayment(moduleEnrollmentId: _moduleEnrollmentId, paidById: _parentId);
+        _db.PaymentRequests.Seed(new PaymentRequest
+        {
+            Id = _paymentRequestId,
+            StudentId = _studentId,
+            ParentId = _parentId,
+            ModuleId = _moduleId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            Amount = module.RetakeFee,
+            Token = RequestToken,
+            Status = PaymentRequestStatus.Accepted,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Equal(EnrollmentStatus.Active, _db.ModuleEnrollments.Items.Single().Status);
+        Assert.Equal(PaymentRequestStatus.Paid, _db.PaymentRequests.Items.Single().Status);
+        _emailService.Verify(e => e.SendEnrollmentConfirmationEmailAsync(It.IsAny<EnrollmentConfirmationEmailDto>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_Completed_IsIdempotent_WhenAlreadySuccess()
+    {
+        SeedStudent();
+        var payment = SeedPendingPayment();
+        payment.Status = PaymentStatus.Success;
+        var sut = CreateSut();
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Equal(PaymentStatus.Success, _db.Payments.Items.Single().Status);
+        Assert.Empty(_db.Invoices.Items);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_Expired_NoPayment_DoesNotThrow()
+    {
+        var sut = CreateSut();
+        _stripe
+            .Setup(s => s.ParseWebhookEvent(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(("checkout.session.expired", "missing-session", null));
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Empty(_db.Payments.Items);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_IgnoresUnknownEvent()
+    {
+        SeedStudent();
+        SeedPendingPayment();
+        var sut = CreateSut();
+        _stripe
+            .Setup(s => s.ParseWebhookEvent(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(("payment_intent.succeeded", CheckoutSessionId, null));
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Equal(PaymentStatus.Pending, _db.Payments.Items.Single().Status);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_Expired_RollsBackAcceptedModulePaymentRequest()
+    {
+        SeedStudent();
+        SeedParent();
+        SeedProgram();
+        var module = SeedModule();
+        SeedPendingPayment(moduleEnrollmentId: _moduleEnrollmentId);
+        _db.PaymentRequests.Seed(new PaymentRequest
+        {
+            Id = _paymentRequestId,
+            StudentId = _studentId,
+            ParentId = _parentId,
+            ModuleId = _moduleId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            Amount = module.RetakeFee,
+            Token = RequestToken,
+            Status = PaymentRequestStatus.Accepted,
+            ExpiresAt = DateTime.UtcNow.AddHours(1),
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+        _stripe
+            .Setup(s => s.ParseWebhookEvent(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(("checkout.session.expired", CheckoutSessionId, null));
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Equal(PaymentStatus.Failed, _db.Payments.Items.Single().Status);
+        Assert.Equal(PaymentRequestStatus.Pending, _db.PaymentRequests.Items.Single().Status);
+    }
+
+    [Fact]
+    public async Task CancelPayment_ModuleEnrollment_RollsBackAcceptedRequest()
+    {
+        SeedStudent();
+        SeedParent();
+        SeedProgram();
+        var module = SeedModule();
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = _moduleEnrollmentId,
+            StudentId = _studentId,
+            ModuleId = module.Id,
+            Status = EnrollmentStatus.PendingPayment,
+            IsDeleted = false,
+        });
+        SeedPendingPayment(moduleEnrollmentId: _moduleEnrollmentId);
+        _db.PaymentRequests.Seed(new PaymentRequest
+        {
+            Id = _paymentRequestId,
+            StudentId = _studentId,
+            ParentId = _parentId,
+            ModuleId = _moduleId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            Amount = module.RetakeFee,
+            Token = RequestToken,
+            Status = PaymentRequestStatus.Accepted,
+            ExpiresAt = DateTime.UtcNow.AddHours(1),
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.CancelPayment(_paymentId);
+
+        Assert.Equal(PaymentStatus.Cancelled, _db.Payments.Items.Single().Status);
+        Assert.Equal(PaymentRequestStatus.Pending, _db.PaymentRequests.Items.Single().Status);
+    }
+
+    [Fact]
+    public async Task CreateDirectCheckout_UsesRichDescription_WhenProgramHasHtml()
+    {
+        SeedStudent();
+        var program = SeedProgram();
+        program.Description = "<p>Robotics <b>101</b></p>";
+        var sut = CreateSut();
+
+        await sut.CreateDirectCheckout(_programId, PaymentGateway.Stripe);
+
+        _stripe.Verify(s => s.CreateCheckoutSession(
+            It.IsAny<Payment>(),
+            It.IsAny<string>(),
+            It.Is<string?>(d => d != null && d.Contains("Robotics")),
+            It.IsAny<string?>(),
+            It.IsAny<string>(),
+            It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateModuleRetakeCheckout_Throws_WhenEnrollmentNotOwnedOrModuleMissing()
+    {
+        SeedStudent();
+        SeedProgram();
+        var module = SeedModule();
+        SeedModuleEnrollment(module);
+        var otherStudent = Guid.Parse("17171717-1717-1717-1717-171717171717");
+        _db.Users.Seed(new User
+        {
+            Id = otherStudent,
+            Code = "STD-003",
+            Email = "other2@test.com",
+            Role = RoleType.Student,
+            IsDeleted = false,
+        });
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            CreateSut(otherStudent).CreateModuleRetakeCheckout(_moduleEnrollmentId, PaymentGateway.Stripe));
+
+        module.IsDeleted = true;
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            CreateSut().CreateModuleRetakeCheckout(_moduleEnrollmentId, PaymentGateway.Stripe));
+    }
+
     private void SeedUserManager()
     {
         _db.Users.Seed(new User

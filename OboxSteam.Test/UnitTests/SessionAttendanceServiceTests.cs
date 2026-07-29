@@ -192,6 +192,35 @@ public sealed class SessionAttendanceServiceTests
         Assert.Equal(2, result.Items.Count);
     }
 
+    [Theory]
+    [InlineData("status", false)]
+    [InlineData("checkedinat", true)]
+    [InlineData("studentid", false)]
+    [InlineData("createdat", true)]
+    [InlineData("xxx", false)]
+    public async Task GetBySession_SortByColumns_ReturnsResults(string sortBy, bool desc)
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedClass();
+        SeedSession();
+        _db.SessionAttendances.Seed(new SessionAttendance
+        {
+            Id = _attendanceId,
+            ClassSessionId = _sessionId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            Status = AttendanceStatus.Present,
+            CreatedAt = _now,
+            IsDeleted = false,
+        });
+        var sut = CreateSut(_managerId);
+
+        var r = await sut.GetSessionAttendancesByClassSessionIdAsync(
+            _sessionId, sortBy, desc, 1, 10);
+
+        Assert.True(r.TotalCount >= 1);
+    }
+
     [Fact]
     public async Task GetBySession_StudentSeesOnlyOwnRecord()
     {
