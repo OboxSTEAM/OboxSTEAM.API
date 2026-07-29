@@ -13,6 +13,7 @@ implemented codebase and domain model.
 | `curriculum.md` | Program → module → course → activity model |
 | `enrollment.md` | Enrollments, progress, gating |
 | `assessment.md` | Assignments, quizzes, question banks |
+| `notifications.md` | Notification audiences, publishers, parent coverage |
 | `integrations.md` | PostgreSQL, AWS, email, webhooks |
 
 ## Update Rule

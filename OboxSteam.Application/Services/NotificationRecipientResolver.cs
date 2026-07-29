@@ -25,8 +25,11 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
             NotificationAudienceKind.User => ResolveUser(audience),
             NotificationAudienceKind.StudentAndParents => await ResolveStudentAndParentsAsync(audience),
             NotificationAudienceKind.ClassRoster => await ResolveClassRosterAsync(audience),
+            NotificationAudienceKind.ClassRosterAndParents => await ResolveClassRosterAndParentsAsync(audience),
             NotificationAudienceKind.ClassMentor => await ResolveClassMentorAsync(audience),
             NotificationAudienceKind.ClassRosterAndMentor => await ResolveClassRosterAndMentorAsync(audience),
+            NotificationAudienceKind.ClassRosterAndParentsAndMentor =>
+                await ResolveClassRosterAndParentsAndMentorAsync(audience),
             NotificationAudienceKind.Managers => await ResolveManagersAsync(),
             _ => Array.Empty<Guid>()
         };
@@ -79,6 +82,24 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
             .ToList();
     }
 
+    private async Task<IReadOnlyList<Guid>> ResolveClassRosterAndParentsAsync(NotificationAudience audience)
+    {
+        var roster = await ResolveClassRosterAsync(audience);
+        if (roster.Count == 0)
+        {
+            return roster;
+        }
+
+        var studentIds = roster.Distinct().ToList();
+        var parentLinks = await _unitOfWork.ParentStudents.GetAllAsync(
+            ps => studentIds.Contains(ps.StudentId) && ps.IsVerified);
+
+        return studentIds
+            .Concat(parentLinks.Select(link => link.ParentId))
+            .Distinct()
+            .ToList();
+    }
+
     private async Task<IReadOnlyList<Guid>> ResolveClassMentorAsync(NotificationAudience audience)
     {
         if (audience.ClassId is null || audience.ClassId == Guid.Empty)
@@ -100,6 +121,14 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
         var roster = await ResolveClassRosterAsync(audience);
         var mentor = await ResolveClassMentorAsync(audience);
         return roster.Concat(mentor).Distinct().ToList();
+    }
+
+    private async Task<IReadOnlyList<Guid>> ResolveClassRosterAndParentsAndMentorAsync(
+        NotificationAudience audience)
+    {
+        var rosterAndParents = await ResolveClassRosterAndParentsAsync(audience);
+        var mentor = await ResolveClassMentorAsync(audience);
+        return rosterAndParents.Concat(mentor).Distinct().ToList();
     }
 
     private async Task<IReadOnlyList<Guid>> ResolveManagersAsync()

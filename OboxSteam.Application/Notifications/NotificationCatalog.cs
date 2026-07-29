@@ -359,7 +359,7 @@ public static class NotificationCatalog
     public static NotificationCommand ClassUpdated(Guid classId, Guid programId, string? className = null)
         => new(
             NotificationType.ClassUpdated,
-            NotificationAudience.ForClassRosterAndMentor(classId),
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Class updated",
             string.IsNullOrWhiteSpace(className)
                 ? "Class details were updated."
@@ -383,7 +383,7 @@ public static class NotificationCatalog
     public static NotificationCommand ClassStarted(Guid classId, Guid programId, string? className = null)
         => new(
             NotificationType.ClassStarted,
-            NotificationAudience.ForClassRosterAndMentor(classId),
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Class started",
             string.IsNullOrWhiteSpace(className)
                 ? "Your class has started."
@@ -395,7 +395,7 @@ public static class NotificationCatalog
     public static NotificationCommand ClassAutoStarted(Guid classId, Guid programId, string? className = null)
         => new(
             NotificationType.ClassAutoStarted,
-            NotificationAudience.ForClassRosterAndMentor(classId),
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Class auto-started",
             string.IsNullOrWhiteSpace(className)
                 ? "Your class was automatically started."
@@ -407,7 +407,7 @@ public static class NotificationCatalog
     public static NotificationCommand ClassCompleted(Guid classId, Guid programId, string? className = null)
         => new(
             NotificationType.ClassCompleted,
-            NotificationAudience.ForClassRosterAndMentor(classId),
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Class completed",
             string.IsNullOrWhiteSpace(className)
                 ? "Your class has been completed."
@@ -541,7 +541,7 @@ public static class NotificationCatalog
         Guid? programId = null)
         => new(
             NotificationType.ClassSessionScheduled,
-            NotificationAudience.ForClassRosterAndMentor(classId),
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Session scheduled",
             "A new class session has been scheduled.",
             payload: new NotificationPayload
@@ -559,7 +559,7 @@ public static class NotificationCatalog
         Guid? programId = null)
         => new(
             NotificationType.ClassSessionRescheduled,
-            NotificationAudience.ForClassRosterAndMentor(classId),
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Session rescheduled",
             "A class session has been rescheduled.",
             payload: new NotificationPayload
@@ -613,7 +613,7 @@ public static class NotificationCatalog
         Guid? programId = null)
         => new(
             NotificationType.ClassSessionCancelled,
-            NotificationAudience.ForClassRosterAndMentor(classId),
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Session cancelled",
             "A class session has been cancelled.",
             payload: new NotificationPayload
@@ -894,7 +894,7 @@ public static class NotificationCatalog
         string? assignmentTitle = null)
         => new(
             NotificationType.AssignmentPublished,
-            NotificationAudience.ForClassRoster(classId),
+            NotificationAudience.ForClassRosterAndParents(classId),
             "New assignment published",
             string.IsNullOrWhiteSpace(assignmentTitle)
                 ? "A new assignment is available."
