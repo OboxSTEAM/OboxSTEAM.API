@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Coverlet settings for Application-layer unit-test coverage.
+  Exclude SeedService, MediaService, PersonalVideoService (not unit-tested).
+  Infrastructure / API / AWS adapters are not in the test project graph.
+  Run via: scripts/run-coverage.ps1
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+
+          <Exclude>
+            [*]OboxSteam.Application.Services.SeedService,
+            [*]OboxSteam.Application.Services.MediaService,
+            [*]OboxSteam.Application.Services.PersonalVideoService,
+            [*]OboxSteam.Application.Services.SeedService.*,
+            [*]OboxSteam.Application.Services.MediaService.*,
+            [*]OboxSteam.Application.Services.PersonalVideoService.*
+          </Exclude>
+
+          <ExcludeByFile>
+            **/Services/SeedService.cs,
+            **/Services/MediaService.cs,
+            **/Services/PersonalVideoService.cs
+          </ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

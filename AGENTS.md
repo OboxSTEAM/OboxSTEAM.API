@@ -16,12 +16,18 @@
 dotnet build OboxSteam.API/OboxSteam.API.csproj
 ```
 
+**Unit tests + coverage** (Application only; excludes Seed / Media / PersonalVideo
+and all Infrastructure / Background / AWS adapters via `coverage.runsettings`):
+
+```powershell
+.\scripts\run-coverage.ps1
+# optional filter:
+.\scripts\run-coverage.ps1 -Filter "FullyQualifiedName~ClassServiceTests"
+```
+
 **Conventions:** follow `.cursor/rules/coding-style-csharp.mdc` — manual DTO
 mapping, `GenericRepository`, no `Async` suffix on controller actions,
 `ErrorHelper` for business errors.
-
-**Proof gap:** no test project exists; do not claim unit/integration/E2E proof
-until `US-E07` or story-specific tests are added.
 
 <!-- HARNESS:BEGIN -->
 ## Harness
