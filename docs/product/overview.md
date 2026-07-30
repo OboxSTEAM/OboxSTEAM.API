@@ -53,6 +53,7 @@ shared schedule.
 | Program/module/class enrollment | `enrollment.md` |
 | Assignments, quizzes, question banks | `assessment.md` |
 | Student skills and evidence | `student-skills.md` |
+| Mentor skills and evidence | `mentor-skills.md` |
 | AWS, email, face recognition, media | `integrations.md` |
 
 ## Out of Scope (This Repo)

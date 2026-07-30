@@ -26,6 +26,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<StudentSkill> StudentSkills { get; set; }
     public DbSet<StudentSkillEvidence> StudentSkillEvidences { get; set; }
     public DbSet<MentorSkill> MentorSkills { get; set; }
+    public DbSet<MentorSkillEvidence> MentorSkillEvidences { get; set; }
     public DbSet<StandardizedTest> StandardizedTests { get; set; }
 
     // ── 4. LMS Hierarchy ──
@@ -118,6 +119,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<StudentSkill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StudentSkillEvidence>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<MentorSkill>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<MentorSkillEvidence>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StandardizedTest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Program>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Module>().HasQueryFilter(e => !e.IsDeleted);
@@ -275,6 +277,8 @@ public class OboxSteamDbContext : DbContext
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false");
 
+            entity.Property(ms => ms.IsPublic).HasDefaultValue(true);
+
             entity.HasOne(ms => ms.Mentor)
                 .WithMany(u => u.MentorSkills)
                 .HasForeignKey(ms => ms.MentorId)
@@ -284,6 +288,20 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(s => s.MentorSkills)
                 .HasForeignKey(ms => ms.SkillId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // =============================================
+        // MENTOR SKILL EVIDENCE
+        // =============================================
+        modelBuilder.Entity<MentorSkillEvidence>(entity =>
+        {
+            entity.HasOne(e => e.MentorSkill)
+                .WithMany(ms => ms.Evidences)
+                .HasForeignKey(e => e.MentorSkillId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.MentorSkillId)
+                .HasFilter("\"IsDeleted\" = false");
         });
 
         // =============================================

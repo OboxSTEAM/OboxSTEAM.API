@@ -51,6 +51,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<StudentSkill> StudentSkills { get; }
     IGenericRepository<StudentSkillEvidence> StudentSkillEvidences { get; }
     IGenericRepository<MentorSkill> MentorSkills { get; }
+    IGenericRepository<MentorSkillEvidence> MentorSkillEvidences { get; }
     IGenericRepository<StandardizedTest> StandardizedTests { get; }
     IGenericRepository<StudentProfile> StudentProfiles { get; }
     IGenericRepository<MentorProfile> MentorProfiles { get; }

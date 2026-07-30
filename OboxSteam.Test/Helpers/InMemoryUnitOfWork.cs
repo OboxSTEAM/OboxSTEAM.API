@@ -56,6 +56,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<StudentSkill> StudentSkills { get; } = new();
     public InMemoryRepository<StudentSkillEvidence> StudentSkillEvidences { get; } = new();
     public InMemoryRepository<MentorSkill> MentorSkills { get; } = new();
+    public InMemoryRepository<MentorSkillEvidence> MentorSkillEvidences { get; } = new();
     public InMemoryRepository<StandardizedTest> StandardizedTests { get; } = new();
     public InMemoryRepository<StudentProfile> StudentProfiles { get; } = new();
     public InMemoryRepository<MentorProfile> MentorProfiles { get; } = new();
@@ -116,6 +117,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<StudentSkill> IUnitOfWork.StudentSkills => StudentSkills;
     IGenericRepository<StudentSkillEvidence> IUnitOfWork.StudentSkillEvidences => StudentSkillEvidences;
     IGenericRepository<MentorSkill> IUnitOfWork.MentorSkills => MentorSkills;
+    IGenericRepository<MentorSkillEvidence> IUnitOfWork.MentorSkillEvidences => MentorSkillEvidences;
     IGenericRepository<StandardizedTest> IUnitOfWork.StandardizedTests => StandardizedTests;
     IGenericRepository<StudentProfile> IUnitOfWork.StudentProfiles => StudentProfiles;
     IGenericRepository<MentorProfile> IUnitOfWork.MentorProfiles => MentorProfiles;
@@ -180,6 +182,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(StudentSkill) => StudentSkills,
             nameof(StudentSkillEvidence) => StudentSkillEvidences,
             nameof(MentorSkill) => MentorSkills,
+            nameof(MentorSkillEvidence) => MentorSkillEvidences,
             nameof(StandardizedTest) => StandardizedTests,
             nameof(StudentProfile) => StudentProfiles,
             nameof(MentorProfile) => MentorProfiles,

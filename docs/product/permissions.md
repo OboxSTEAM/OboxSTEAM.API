@@ -62,6 +62,15 @@ Create, update, delete for:
 - Media review: list media for mentored class activities; add/remove/verify
   student tags on that media (`Mentor,Manager,SuperAdmin` on tag mutation routes).
   AI tags start with `IsVerified = false` until mentor approval.
+- Mentor skill profile: freely create, update, delete, and set `IsPublic` on
+  own `MentorSkill` rows and evidence (no manager verification). See
+  `docs/product/mentor-skills.md`.
+
+### Mentor skill visibility
+
+- Mentor (own): all skills.
+- Manager / SuperAdmin: all skills on a mentor (staffing).
+- Student (mentor profile by id): only `IsPublic` skills.
 
 ## Parent–Student Linking
 

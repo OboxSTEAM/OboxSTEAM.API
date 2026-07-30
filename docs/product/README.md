@@ -14,6 +14,8 @@ implemented codebase and domain model.
 | `enrollment.md` | Enrollments, progress, gating |
 | `assessment.md` | Assignments, quizzes, question banks |
 | `notifications.md` | Notification audiences, publishers, parent coverage |
+| `student-skills.md` | Student skill catalog snapshots and evidence |
+| `mentor-skills.md` | Mentor self-managed skill profiles and evidence |
 | `integrations.md` | PostgreSQL, AWS, email, webhooks |
 
 ## Update Rule
