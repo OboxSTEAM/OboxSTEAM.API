@@ -43,7 +43,7 @@ public class MentorController : ControllerBase
 
     [HttpGet("me/skills")]
     [Authorize(Roles = "Mentor")]
-    [SwaggerOperation(Summary = "List my mentor skills")]
+    [SwaggerOperation(Summary = "List my mentor skills (including private)")]
     [ProducesResponseType(typeof(ApiResult<List<MentorSkillDto>>), 200)]
     public async Task<IActionResult> GetMySkills()
     {
@@ -53,7 +53,9 @@ public class MentorController : ControllerBase
 
     [HttpPost("me/skills")]
     [Authorize(Roles = "Mentor")]
-    [SwaggerOperation(Summary = "Add a skill to my mentor profile")]
+    [SwaggerOperation(
+        Summary = "Add a skill to my mentor profile",
+        Description = "Mentors manage skills freely (no manager verification). Optional evidence list and IsPublic flag (default true).")]
     [ProducesResponseType(typeof(ApiResult<MentorSkillDto>), 201)]
     public async Task<IActionResult> AddMySkill([FromBody] CreateMentorSkillRequestDto dto)
     {
@@ -61,6 +63,32 @@ public class MentorController : ControllerBase
         return StatusCode(
             StatusCodes.Status201Created,
             ApiResult<MentorSkillDto>.Success(result, "201", "Skill added successfully."));
+    }
+
+    [HttpPut("me/skills/{id:guid}")]
+    [Authorize(Roles = "Mentor")]
+    [SwaggerOperation(
+        Summary = "Update one of my mentor skills",
+        Description = "Updates proficiency, years, description, notes, and visibility. When Evidences is provided, it replaces all evidence rows.")]
+    [ProducesResponseType(typeof(ApiResult<MentorSkillDto>), 200)]
+    public async Task<IActionResult> UpdateMySkill(
+        [FromRoute] Guid id,
+        [FromBody] UpdateMentorSkillRequestDto dto)
+    {
+        var result = await _mentorService.UpdateMySkillAsync(id, dto);
+        return Ok(ApiResult<MentorSkillDto>.Success(result, "200", "Skill updated successfully."));
+    }
+
+    [HttpPut("me/skills/{id:guid}/visibility")]
+    [Authorize(Roles = "Mentor")]
+    [SwaggerOperation(Summary = "Toggle whether a skill is visible to students")]
+    [ProducesResponseType(typeof(ApiResult<MentorSkillDto>), 200)]
+    public async Task<IActionResult> SetMySkillVisibility(
+        [FromRoute] Guid id,
+        [FromBody] UpdateMentorSkillVisibilityRequestDto dto)
+    {
+        var result = await _mentorService.SetMySkillVisibilityAsync(id, dto);
+        return Ok(ApiResult<MentorSkillDto>.Success(result, "200", "Skill visibility updated successfully."));
     }
 
     [HttpDelete("me/skills/{id:guid}")]
@@ -75,7 +103,7 @@ public class MentorController : ControllerBase
 
     [HttpGet]
     [Authorize(Roles = "SuperAdmin,Manager")]
-    [SwaggerOperation(Summary = "List mentors with skills and concurrent usage")]
+    [SwaggerOperation(Summary = "List mentors with all skills (including private) and concurrent usage")]
     [ProducesResponseType(typeof(ApiResult<Pagination<MentorProfileDto>>), 200)]
     public async Task<IActionResult> GetMentors(
         [FromQuery] string? search = null,
@@ -96,7 +124,7 @@ public class MentorController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Manager,Student")]
     [SwaggerOperation(
         Summary = "Get mentor profile by ID",
-        Description = "Returns a mentor's public profile (Title, Organization, Bio, Achievements, LinkedInUrl), skills, and concurrent usage. Students use this for curriculum navigation; Managers/SuperAdmins use it when deciding class assignments.")]
+        Description = "Students see only public skills. Managers/SuperAdmins see all skills for staffing.")]
     [ProducesResponseType(typeof(ApiResult<MentorProfileDto>), 200)]
     public async Task<IActionResult> GetMentorProfile([FromRoute] Guid id)
     {

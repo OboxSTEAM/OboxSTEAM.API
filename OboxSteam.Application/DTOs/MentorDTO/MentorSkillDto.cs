@@ -10,6 +10,10 @@ public class MentorSkillDto
     public Guid SkillId { get; set; }
     public SkillSummaryDto Skill { get; set; } = null!;
     public SkillProficiencyLevel ProficiencyLevel { get; set; }
+    public int YearsOfExperience { get; set; }
+    public string? Description { get; set; }
     public string? Notes { get; set; }
+    public bool IsPublic { get; set; }
+    public List<MentorSkillEvidenceDto> Evidences { get; set; } = new();
     public DateTime CreatedAt { get; set; }
 }

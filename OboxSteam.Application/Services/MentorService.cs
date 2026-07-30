@@ -30,7 +30,7 @@ public sealed class MentorService : IMentorService
     public async Task<List<MentorSkillDto>> GetMySkillsAsync()
     {
         var mentorId = await GetCurrentMentorIdAsync();
-        return await LoadSkillDtosAsync(mentorId);
+        return await LoadSkillDtosAsync(mentorId, publicOnly: false);
     }
 
     public async Task<MentorSkillDto> AddMySkillAsync(CreateMentorSkillRequestDto request)
@@ -46,15 +46,30 @@ public sealed class MentorService : IMentorService
             ms => ms.MentorId == mentorId && ms.SkillId == request.SkillId && !ms.IsDeleted);
         MentorSkillValidator.ValidateNoDuplicate(existing);
 
+        var utcNow = DateTime.UtcNow;
+        MentorSkillValidator.ValidateYearsOfExperience(request.YearsOfExperience);
+        MentorSkillValidator.ValidateDescription(request.Description);
+        MentorSkillValidator.ValidateEvidenceList(request.Evidences, utcNow);
+
         var entity = new MentorSkill
         {
+            Id = Guid.NewGuid(),
             MentorId = mentorId,
             SkillId = request.SkillId,
             ProficiencyLevel = request.ProficiencyLevel,
-            Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
+            YearsOfExperience = request.YearsOfExperience,
+            Description = NormalizeOptionalText(request.Description),
+            Notes = NormalizeOptionalText(request.Notes),
+            IsPublic = request.IsPublic,
         };
 
         await _unitOfWork.MentorSkills.AddAsync(entity);
+
+        if (request.Evidences is { Count: > 0 })
+        {
+            await AddEvidenceRowsAsync(entity.Id, request.Evidences);
+        }
+
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -62,7 +77,73 @@ public sealed class MentorService : IMentorService
             mentorId,
             request.SkillId);
 
-        return MapMentorSkill(entity, skill!);
+        var evidences = await LoadEvidencesByMentorSkillIdsAsync(new[] { entity.Id });
+        return MapMentorSkill(entity, skill!, evidences.GetValueOrDefault(entity.Id));
+    }
+
+    public async Task<MentorSkillDto> UpdateMySkillAsync(
+        Guid mentorSkillId,
+        UpdateMentorSkillRequestDto request)
+    {
+        var mentorId = await GetCurrentMentorIdAsync();
+        var entity = await _unitOfWork.MentorSkills.GetByIdAsync(mentorSkillId);
+        MentorSkillValidator.ValidateMentorSkillExists(entity, mentorSkillId);
+        MentorSkillValidator.ValidateOwnership(entity!, mentorId);
+
+        var utcNow = DateTime.UtcNow;
+        MentorSkillValidator.ValidateYearsOfExperience(request.YearsOfExperience);
+        MentorSkillValidator.ValidateDescription(request.Description);
+        MentorSkillValidator.ValidateEvidenceList(request.Evidences, utcNow);
+
+        entity!.ProficiencyLevel = request.ProficiencyLevel;
+        entity.YearsOfExperience = request.YearsOfExperience;
+        entity.Description = NormalizeOptionalText(request.Description);
+        entity.Notes = NormalizeOptionalText(request.Notes);
+        entity.IsPublic = request.IsPublic;
+
+        await _unitOfWork.MentorSkills.Update(entity);
+
+        if (request.Evidences != null)
+        {
+            await ReplaceEvidenceAsync(entity.Id, request.Evidences);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[UpdateMySkillAsync] Mentor {MentorId} updated mentor skill {MentorSkillId}.",
+            mentorId,
+            mentorSkillId);
+
+        var skill = await _unitOfWork.Skills.GetByIdAsync(entity.SkillId);
+        MentorSkillValidator.ValidateSkillExists(skill, entity.SkillId);
+        var evidences = await LoadEvidencesByMentorSkillIdsAsync(new[] { entity.Id });
+        return MapMentorSkill(entity, skill!, evidences.GetValueOrDefault(entity.Id));
+    }
+
+    public async Task<MentorSkillDto> SetMySkillVisibilityAsync(
+        Guid mentorSkillId,
+        UpdateMentorSkillVisibilityRequestDto request)
+    {
+        var mentorId = await GetCurrentMentorIdAsync();
+        var entity = await _unitOfWork.MentorSkills.GetByIdAsync(mentorSkillId);
+        MentorSkillValidator.ValidateMentorSkillExists(entity, mentorSkillId);
+        MentorSkillValidator.ValidateOwnership(entity!, mentorId);
+
+        entity!.IsPublic = request.IsPublic;
+        await _unitOfWork.MentorSkills.Update(entity);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[SetMySkillVisibilityAsync] Mentor {MentorId} set mentor skill {MentorSkillId} IsPublic={IsPublic}.",
+            mentorId,
+            mentorSkillId,
+            request.IsPublic);
+
+        var skill = await _unitOfWork.Skills.GetByIdAsync(entity.SkillId);
+        MentorSkillValidator.ValidateSkillExists(skill, entity.SkillId);
+        var evidences = await LoadEvidencesByMentorSkillIdsAsync(new[] { entity.Id });
+        return MapMentorSkill(entity, skill!, evidences.GetValueOrDefault(entity.Id));
     }
 
     public async Task RemoveMySkillAsync(Guid mentorSkillId)
@@ -71,6 +152,13 @@ public sealed class MentorService : IMentorService
         var entity = await _unitOfWork.MentorSkills.GetByIdAsync(mentorSkillId);
         MentorSkillValidator.ValidateMentorSkillExists(entity, mentorSkillId);
         MentorSkillValidator.ValidateOwnership(entity!, mentorId);
+
+        var evidences = await _unitOfWork.MentorSkillEvidences.GetAllAsync(
+            e => e.MentorSkillId == mentorSkillId && !e.IsDeleted);
+        if (evidences.Count > 0)
+        {
+            await _unitOfWork.MentorSkillEvidences.SoftRemoveRange(evidences);
+        }
 
         await _unitOfWork.MentorSkills.SoftRemove(entity!);
         await _unitOfWork.SaveChangesAsync();
@@ -110,7 +198,7 @@ public sealed class MentorService : IMentorService
 
         foreach (var mentor in mentors)
         {
-            dtos.Add(await BuildProfileAsync(mentor));
+            dtos.Add(await BuildProfileAsync(mentor, publicSkillsOnly: false));
         }
 
         return new Pagination<MentorProfileDto>(dtos, totalCount, page, pageSize);
@@ -118,7 +206,7 @@ public sealed class MentorService : IMentorService
 
     public async Task<MentorProfileDto> GetMentorProfileAsync(Guid mentorId)
     {
-        await EnsureCanViewMentorProfileAsync();
+        var viewer = await EnsureCanViewMentorProfileAsync();
 
         var mentor = await _unitOfWork.Users.GetByIdAsync(mentorId);
         MentorSkillValidator.ValidateMentorUser(mentor, mentorId);
@@ -128,7 +216,8 @@ public sealed class MentorService : IMentorService
             throw ErrorHelper.BadRequest($"User '{mentorId}' is not a Mentor.");
         }
 
-        return await BuildProfileAsync(mentor);
+        var publicSkillsOnly = viewer.Role == RoleType.Student;
+        return await BuildProfileAsync(mentor, publicSkillsOnly);
     }
 
     public async Task<MentorProfileDto> GetMyProfileAsync()
@@ -136,7 +225,7 @@ public sealed class MentorService : IMentorService
         var mentorId = await GetCurrentMentorIdAsync();
         var mentor = await _unitOfWork.Users.GetByIdAsync(mentorId);
         MentorSkillValidator.ValidateMentorUser(mentor, mentorId);
-        return await BuildProfileAsync(mentor!);
+        return await BuildProfileAsync(mentor!, publicSkillsOnly: false);
     }
 
     public async Task<MentorProfileDto> UpdateMyProfileAsync(UpdateMentorProfileRequestDto request)
@@ -190,7 +279,7 @@ public sealed class MentorService : IMentorService
             "[UpdateMyProfileAsync] Mentor {MentorId} updated mentor profile.",
             mentorId);
 
-        return await BuildProfileAsync(mentor!);
+        return await BuildProfileAsync(mentor!, publicSkillsOnly: false);
     }
 
     public async Task<MentorProfileDto> SetClassLimitAsync(
@@ -217,15 +306,15 @@ public sealed class MentorService : IMentorService
             mentorId,
             request.MaxConcurrentClasses);
 
-        return await BuildProfileAsync(mentor);
+        return await BuildProfileAsync(mentor, publicSkillsOnly: false);
     }
 
-    private async Task<MentorProfileDto> BuildProfileAsync(User mentor)
+    private async Task<MentorProfileDto> BuildProfileAsync(User mentor, bool publicSkillsOnly)
     {
         var (assigned, pending) = await ClassMentorRequestValidator.GetUsageBreakdownAsync(
             _unitOfWork,
             mentor.Id);
-        var skills = await LoadSkillDtosAsync(mentor.Id);
+        var skills = await LoadSkillDtosAsync(mentor.Id, publicSkillsOnly);
         var effective = ClassMentorRequestValidator.ResolveMaxConcurrentClasses(mentor);
         var profile = await _unitOfWork.MentorProfiles.FirstOrDefaultAsync(
             mp => mp.MentorId == mentor.Id && !mp.IsDeleted);
@@ -254,10 +343,10 @@ public sealed class MentorService : IMentorService
         };
     }
 
-    private async Task<List<MentorSkillDto>> LoadSkillDtosAsync(Guid mentorId)
+    private async Task<List<MentorSkillDto>> LoadSkillDtosAsync(Guid mentorId, bool publicOnly)
     {
         var mentorSkills = await _unitOfWork.MentorSkills.GetAllAsync(
-            ms => ms.MentorId == mentorId && !ms.IsDeleted);
+            ms => ms.MentorId == mentorId && !ms.IsDeleted && (!publicOnly || ms.IsPublic));
 
         if (mentorSkills.Count == 0)
         {
@@ -268,14 +357,80 @@ public sealed class MentorService : IMentorService
         var skills = await _unitOfWork.Skills.GetAllAsync(s => skillIds.Contains(s.Id) && !s.IsDeleted);
         var skillsById = skills.ToDictionary(s => s.Id);
 
+        var mentorSkillIds = mentorSkills.Select(ms => ms.Id).ToList();
+        var evidencesByMentorSkillId = await LoadEvidencesByMentorSkillIdsAsync(mentorSkillIds);
+
         return mentorSkills
             .Where(ms => skillsById.ContainsKey(ms.SkillId))
             .OrderBy(ms => skillsById[ms.SkillId].Name)
-            .Select(ms => MapMentorSkill(ms, skillsById[ms.SkillId]))
+            .Select(ms => MapMentorSkill(
+                ms,
+                skillsById[ms.SkillId],
+                evidencesByMentorSkillId.GetValueOrDefault(ms.Id)))
             .ToList();
     }
 
-    private static MentorSkillDto MapMentorSkill(MentorSkill entity, Skill skill)
+    private async Task<Dictionary<Guid, List<MentorSkillEvidence>>> LoadEvidencesByMentorSkillIdsAsync(
+        IReadOnlyCollection<Guid> mentorSkillIds)
+    {
+        if (mentorSkillIds.Count == 0)
+        {
+            return new Dictionary<Guid, List<MentorSkillEvidence>>();
+        }
+
+        var evidences = await _unitOfWork.MentorSkillEvidences.GetAllAsync(
+            e => mentorSkillIds.Contains(e.MentorSkillId) && !e.IsDeleted);
+
+        return evidences
+            .GroupBy(e => e.MentorSkillId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(e => e.Title).ToList());
+    }
+
+    private async Task AddEvidenceRowsAsync(
+        Guid mentorSkillId,
+        IReadOnlyList<MentorSkillEvidenceRequestDto> evidences)
+    {
+        var entities = evidences.Select(e => MapEvidenceEntity(mentorSkillId, e)).ToList();
+        await _unitOfWork.MentorSkillEvidences.AddRangeAsync(entities);
+    }
+
+    private async Task ReplaceEvidenceAsync(
+        Guid mentorSkillId,
+        IReadOnlyList<MentorSkillEvidenceRequestDto> evidences)
+    {
+        var existing = await _unitOfWork.MentorSkillEvidences.GetAllAsync(
+            e => e.MentorSkillId == mentorSkillId && !e.IsDeleted);
+        if (existing.Count > 0)
+        {
+            await _unitOfWork.MentorSkillEvidences.SoftRemoveRange(existing);
+        }
+
+        if (evidences.Count > 0)
+        {
+            await AddEvidenceRowsAsync(mentorSkillId, evidences);
+        }
+    }
+
+    private static MentorSkillEvidence MapEvidenceEntity(
+        Guid mentorSkillId,
+        MentorSkillEvidenceRequestDto request)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            MentorSkillId = mentorSkillId,
+            Title = request.Title.Trim(),
+            Issuer = NormalizeOptionalText(request.Issuer),
+            Url = request.Url.Trim(),
+            IssuedAt = request.IssuedAt?.ToUniversalTime(),
+            CredentialId = NormalizeOptionalText(request.CredentialId),
+        };
+
+    private static MentorSkillDto MapMentorSkill(
+        MentorSkill entity,
+        Skill skill,
+        List<MentorSkillEvidence>? evidences)
         => new()
         {
             Id = entity.Id,
@@ -290,53 +445,62 @@ public sealed class MentorService : IMentorService
                 Subcategory = skill.Subcategory,
             },
             ProficiencyLevel = entity.ProficiencyLevel,
+            YearsOfExperience = entity.YearsOfExperience,
+            Description = entity.Description,
             Notes = entity.Notes,
+            IsPublic = entity.IsPublic,
+            Evidences = (evidences ?? new List<MentorSkillEvidence>())
+                .Select(MapEvidenceDto)
+                .ToList(),
             CreatedAt = entity.CreatedAt,
         };
 
+    private static MentorSkillEvidenceDto MapEvidenceDto(MentorSkillEvidence entity)
+        => new()
+        {
+            Id = entity.Id,
+            Title = entity.Title,
+            Issuer = entity.Issuer,
+            Url = entity.Url,
+            IssuedAt = entity.IssuedAt,
+            CredentialId = entity.CredentialId,
+        };
+
+    private static string? NormalizeOptionalText(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private async Task<Guid> GetCurrentMentorIdAsync()
     {
-        var userId = _claimsService.GetCurrentUserId;
-        if (userId == Guid.Empty)
-        {
-            throw ErrorHelper.Unauthorized("Unauthorized access.");
-        }
-
-        var user = await _unitOfWork.Users.GetByIdAsync(userId);
-        if (user == null || user.IsDeleted)
-        {
-            throw ErrorHelper.NotFound("Current user not found.");
-        }
-
+        var user = await GetCurrentUserAsync();
         if (user.Role != RoleType.Mentor)
         {
             throw ErrorHelper.Forbidden("Only mentors can perform this action.");
         }
 
-        return userId;
+        return user.Id;
     }
 
-    private async Task EnsureCanViewMentorProfileAsync()
+    private async Task<User> EnsureCanViewMentorProfileAsync()
     {
-        var userId = _claimsService.GetCurrentUserId;
-        if (userId == Guid.Empty)
-        {
-            throw ErrorHelper.Unauthorized("Unauthorized access.");
-        }
-
-        var user = await _unitOfWork.Users.GetByIdAsync(userId);
-        if (user == null || user.IsDeleted)
-        {
-            throw ErrorHelper.NotFound("Current user not found.");
-        }
-
+        var user = await GetCurrentUserAsync();
         if (user.Role is not (RoleType.Manager or RoleType.SuperAdmin or RoleType.Student))
         {
             throw ErrorHelper.Forbidden("Only Student, Manager, or SuperAdmin can view mentor profiles.");
         }
+
+        return user;
     }
 
     private async Task EnsureManagerOrSuperAdminAsync()
+    {
+        var user = await GetCurrentUserAsync();
+        if (user.Role is not (RoleType.Manager or RoleType.SuperAdmin))
+        {
+            throw ErrorHelper.Forbidden("Only Manager or SuperAdmin can manage mentor profiles.");
+        }
+    }
+
+    private async Task<User> GetCurrentUserAsync()
     {
         var userId = _claimsService.GetCurrentUserId;
         if (userId == Guid.Empty)
@@ -350,9 +514,6 @@ public sealed class MentorService : IMentorService
             throw ErrorHelper.NotFound("Current user not found.");
         }
 
-        if (user.Role is not (RoleType.Manager or RoleType.SuperAdmin))
-        {
-            throw ErrorHelper.Forbidden("Only Manager or SuperAdmin can manage mentor profiles.");
-        }
+        return user;
     }
 }

@@ -3,11 +3,8 @@ using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.MentorDTO;
 
-public class CreateMentorSkillRequestDto
+public class UpdateMentorSkillRequestDto
 {
-    [Required]
-    public Guid SkillId { get; set; }
-
     public SkillProficiencyLevel ProficiencyLevel { get; set; } = SkillProficiencyLevel.Beginner;
 
     public int YearsOfExperience { get; set; }
@@ -18,8 +15,11 @@ public class CreateMentorSkillRequestDto
     [MaxLength(500)]
     public string? Notes { get; set; }
 
-    /// <summary>Defaults to true when omitted by clients that send the property as true by default.</summary>
     public bool IsPublic { get; set; } = true;
 
+    /// <summary>
+    /// When non-null, replaces all evidence rows for this skill (empty list clears evidence).
+    /// When null, existing evidence is left unchanged.
+    /// </summary>
     public List<MentorSkillEvidenceRequestDto>? Evidences { get; set; }
 }

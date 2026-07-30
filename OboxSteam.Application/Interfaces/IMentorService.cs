@@ -9,6 +9,12 @@ public interface IMentorService
 
     Task<MentorSkillDto> AddMySkillAsync(CreateMentorSkillRequestDto request);
 
+    Task<MentorSkillDto> UpdateMySkillAsync(Guid mentorSkillId, UpdateMentorSkillRequestDto request);
+
+    Task<MentorSkillDto> SetMySkillVisibilityAsync(
+        Guid mentorSkillId,
+        UpdateMentorSkillVisibilityRequestDto request);
+
     Task RemoveMySkillAsync(Guid mentorSkillId);
 
     Task<Pagination<MentorProfileDto>> GetMentorsAsync(

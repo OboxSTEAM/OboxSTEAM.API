@@ -17,14 +17,14 @@ Durable status: `scripts/bin/harness-cli query matrix`.
 | E06-parent-experts | Parent linking, experts, reviews, highlight video | implemented | build only |
 | E07-test-harness | Test project, CI, proof ladder | unsliced | none |
 | E08-student-skills | Skill catalog + student skill snapshots | schema done | build |
-| E09-mentor-skills | Transparent mentor skill profiles | in progress | schema slice |
+| E09-mentor-skills | Transparent mentor skill profiles | implemented | unit + build |
 
 ## Suggested Next Stories
 
 | ID | Title | Lane | Notes |
 | --- | --- | --- | --- |
-| US-E09-001 | Expand mentor skill schema | high-risk | Schema + docs (this slice) |
-| US-E09-002 | Mentor skill CRUD and visibility APIs | high-risk | Follow-on after schema |
+| US-E09-001 | Expand mentor skill schema | high-risk | Done (schema + docs) |
+| US-E09-002 | Mentor skill CRUD and visibility APIs | high-risk | Done (APIs + tests) |
 | US-001 | Add integration test project | normal | Foundation for all proof columns |
 | US-002 | Quiz grading integration tests | normal | Covers US-E04 contract |
 | US-003 | Auth and role enforcement tests | high-risk | Touches auth hard gate |

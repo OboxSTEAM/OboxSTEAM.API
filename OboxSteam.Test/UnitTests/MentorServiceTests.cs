@@ -78,7 +78,10 @@ public sealed class MentorServiceTests
         Guid? id = null,
         Guid? mentorId = null,
         Guid? skillId = null,
-        bool isDeleted = false)
+        bool isDeleted = false,
+        bool isPublic = true,
+        int years = 3,
+        string? description = "Builds robots with teens")
     {
         var entity = new MentorSkill
         {
@@ -86,7 +89,10 @@ public sealed class MentorServiceTests
             MentorId = mentorId ?? _mentorId,
             SkillId = skillId ?? _skillId,
             ProficiencyLevel = SkillProficiencyLevel.Intermediate,
+            YearsOfExperience = years,
+            Description = description,
             Notes = "Hands-on",
+            IsPublic = isPublic,
             IsDeleted = isDeleted,
         };
         _db.MentorSkills.Seed(entity);
@@ -187,14 +193,37 @@ public sealed class MentorServiceTests
         {
             SkillId = _skillId,
             ProficiencyLevel = SkillProficiencyLevel.Advanced,
+            YearsOfExperience = 5,
+            Description = "  Leads robotics labs  ",
             Notes = "  Solid  ",
+            IsPublic = true,
+            Evidences =
+            [
+                new MentorSkillEvidenceRequestDto
+                {
+                    Title = " Robotics Cert ",
+                    Issuer = " IEEE ",
+                    Url = "https://example.com/cert/1",
+                    IssuedAt = DateTime.UtcNow.AddYears(-1),
+                    CredentialId = " CERT-1 ",
+                },
+            ],
         });
 
         Assert.Equal(_skillId, result.SkillId);
         Assert.Equal("Robotics", result.Skill.Name);
         Assert.Equal(SkillProficiencyLevel.Advanced, result.ProficiencyLevel);
+        Assert.Equal(5, result.YearsOfExperience);
+        Assert.Equal("Leads robotics labs", result.Description);
         Assert.Equal("Solid", result.Notes);
+        Assert.True(result.IsPublic);
+        Assert.Single(result.Evidences);
+        Assert.Equal("Robotics Cert", result.Evidences[0].Title);
+        Assert.Equal("IEEE", result.Evidences[0].Issuer);
+        Assert.Equal("https://example.com/cert/1", result.Evidences[0].Url);
+        Assert.Equal("CERT-1", result.Evidences[0].CredentialId);
         Assert.Single(_db.MentorSkills.Items);
+        Assert.Single(_db.MentorSkillEvidences.Items);
         Assert.Equal(1, _db.SaveChangesCallCount);
     }
 
@@ -229,16 +258,127 @@ public sealed class MentorServiceTests
     }
 
     [Fact]
+    public async Task AddMySkill_Throws_WhenYearsOrEvidenceInvalid()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
+        SeedSkill();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.AddMySkillAsync(new CreateMentorSkillRequestDto
+            {
+                SkillId = _skillId,
+                YearsOfExperience = 61,
+            }));
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.AddMySkillAsync(new CreateMentorSkillRequestDto
+            {
+                SkillId = _skillId,
+                Evidences =
+                [
+                    new MentorSkillEvidenceRequestDto
+                    {
+                        Title = "Cert",
+                        Url = "http://insecure.example.com/cert",
+                    },
+                ],
+            }));
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.AddMySkillAsync(new CreateMentorSkillRequestDto
+            {
+                SkillId = _skillId,
+                Evidences =
+                [
+                    new MentorSkillEvidenceRequestDto
+                    {
+                        Title = "Cert",
+                        Url = "https://example.com/cert",
+                        IssuedAt = DateTime.UtcNow.AddDays(2),
+                    },
+                ],
+            }));
+    }
+
+    [Fact]
+    public async Task UpdateMySkill_UpdatesFieldsAndReplacesEvidence()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
+        SeedSkill();
+        SeedMentorSkill();
+        _db.MentorSkillEvidences.Seed(new MentorSkillEvidence
+        {
+            Id = Guid.Parse("71717171-7171-7171-7171-717171717171"),
+            MentorSkillId = _mentorSkillId,
+            Title = "Old",
+            Url = "https://example.com/old",
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.UpdateMySkillAsync(_mentorSkillId, new UpdateMentorSkillRequestDto
+        {
+            ProficiencyLevel = SkillProficiencyLevel.Expert,
+            YearsOfExperience = 12,
+            Description = "Updated description",
+            Notes = "  ",
+            IsPublic = false,
+            Evidences =
+            [
+                new MentorSkillEvidenceRequestDto
+                {
+                    Title = "New Cert",
+                    Url = "https://example.com/new",
+                },
+            ],
+        });
+
+        Assert.Equal(SkillProficiencyLevel.Expert, result.ProficiencyLevel);
+        Assert.Equal(12, result.YearsOfExperience);
+        Assert.Equal("Updated description", result.Description);
+        Assert.Null(result.Notes);
+        Assert.False(result.IsPublic);
+        Assert.Single(result.Evidences);
+        Assert.Equal("New Cert", result.Evidences[0].Title);
+        Assert.True(_db.MentorSkillEvidences.Items.Single(e => e.Title == "Old").IsDeleted);
+        Assert.False(_db.MentorSkillEvidences.Items.Single(e => e.Title == "New Cert").IsDeleted);
+    }
+
+    [Fact]
+    public async Task SetMySkillVisibility_TogglesPublicFlag()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
+        SeedSkill();
+        SeedMentorSkill(isPublic: true);
+        var sut = CreateSut();
+
+        var result = await sut.SetMySkillVisibilityAsync(
+            _mentorSkillId,
+            new UpdateMentorSkillVisibilityRequestDto { IsPublic = false });
+
+        Assert.False(result.IsPublic);
+        Assert.False(_db.MentorSkills.Items[0].IsPublic);
+    }
+
+    [Fact]
     public async Task RemoveMySkill_SoftDeletesOwnedSkill()
     {
         SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
         SeedSkill();
         SeedMentorSkill();
+        _db.MentorSkillEvidences.Seed(new MentorSkillEvidence
+        {
+            Id = Guid.Parse("72727272-7272-7272-7272-727272727272"),
+            MentorSkillId = _mentorSkillId,
+            Title = "Cert",
+            Url = "https://example.com/cert",
+            IsDeleted = false,
+        });
         var sut = CreateSut();
 
         await sut.RemoveMySkillAsync(_mentorSkillId);
 
         Assert.True(_db.MentorSkills.Items[0].IsDeleted);
+        Assert.True(_db.MentorSkillEvidences.Items[0].IsDeleted);
     }
 
     [Fact]
@@ -316,7 +456,12 @@ public sealed class MentorServiceTests
         SeedUser(_studentId, RoleType.Student, "STD-001");
         SeedUser(_mentorId, RoleType.Mentor, "MNT-001", "Mentor One", maxConcurrent: 5);
         SeedSkill();
-        SeedMentorSkill();
+        SeedSkill(_otherSkillId, "SKL-002", "Private Soft Skill");
+        SeedMentorSkill(isPublic: true);
+        SeedMentorSkill(
+            id: Guid.Parse("67676767-6767-6767-6767-676767676767"),
+            skillId: _otherSkillId,
+            isPublic: false);
         _db.MentorProfiles.Seed(new MentorProfile
         {
             Id = Guid.Parse("88888888-8888-8888-8888-888888888888"),
@@ -334,6 +479,26 @@ public sealed class MentorServiceTests
         Assert.Equal(5, result.EffectiveMaxConcurrentClasses);
         Assert.Equal("Senior Mentor", result.Title);
         Assert.Single(result.Skills);
+        Assert.True(result.Skills[0].IsPublic);
+    }
+
+    [Fact]
+    public async Task GetMentorProfile_ReturnsPrivateSkills_ForManager()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001", "Mentor One");
+        SeedSkill();
+        SeedSkill(_otherSkillId, "SKL-002", "Private Soft Skill");
+        SeedMentorSkill(isPublic: true);
+        SeedMentorSkill(
+            id: Guid.Parse("67676767-6767-6767-6767-676767676767"),
+            skillId: _otherSkillId,
+            isPublic: false);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.GetMentorProfileAsync(_mentorId);
+
+        Assert.Equal(2, result.Skills.Count);
     }
 
     [Fact]
