@@ -41,7 +41,7 @@ public class QuizController : ControllerBase
     }
 
     [HttpGet("submissions/{submissionId:guid}/quiz")]
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = "Student, Mentor")]
     [SwaggerOperation(
         Summary = "Get in-progress quiz",
         Description = "Returns quiz questions and saved answers for a Pending submission. Requires Student role.")]

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.AssignmentDTO;
+using OboxSteam.Application.DTOs.AssignmentSubmissionDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Enums;
@@ -71,6 +72,26 @@ public class AssignmentController : ControllerBase
             return NotFound(ApiResult<object>.Failure("404", "Assignment not found."));
 
         return Ok(ApiResult<AssignmentResponseDto>.Success(result, "200", "Assignment retrieved successfully."));
+    }
+
+    [HttpGet("{assignmentId:guid}/submissions")]
+    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [SwaggerOperation(
+        Summary = "List assignment submissions for a class",
+        Description = "Returns submissions of the assignment made by students actively enrolled in the given class. Mentors may only view classes they are assigned to.")]
+    [ProducesResponseType(typeof(ApiResult<List<AssignmentSubmissionListItemDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetAssignmentSubmissions(
+        Guid assignmentId,
+        [FromQuery, SwaggerParameter(Description = "Class (cohort) whose students' submissions are listed")] Guid classId)
+    {
+        var result = await _assignmentService.GetAssignmentSubmissions(assignmentId, classId);
+
+        return Ok(ApiResult<List<AssignmentSubmissionListItemDto>>.Success(
+            result, "200", "Assignment submissions retrieved successfully."));
     }
 
     [HttpPost]

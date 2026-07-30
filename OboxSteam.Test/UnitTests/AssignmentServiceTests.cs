@@ -1065,4 +1065,207 @@ public sealed class AssignmentServiceTests
         var defaultSort = await sut.GetAllAssignments(null, "unknown", false, 1, 10);
         Assert.Equal(2, defaultSort.Items.Count);
     }
+
+    // ── GetAssignmentSubmissions ─────────────────────────────────────────────
+
+    private void SeedClassEnrollment(Guid studentId, ClassEnrollmentStatus status = ClassEnrollmentStatus.Active)
+    {
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _classId,
+            StudentId = studentId,
+            ProgramEnrollmentId = Guid.NewGuid(),
+            Status = status,
+            EnrolledAt = DateTime.UtcNow.AddDays(-7),
+            IsDeleted = false
+        });
+    }
+
+    private Submission SeedSubmission(
+        Guid studentId,
+        SubmissionStatus status = SubmissionStatus.TurnedIn,
+        decimal? assignedGrade = null,
+        int attemptNumber = 1,
+        bool isDeleted = false)
+    {
+        var submission = new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = $"SUB-{Guid.NewGuid():N}",
+            AssignmentId = _assignmentId,
+            StudentId = studentId,
+            Status = status,
+            AssignedGrade = assignedGrade,
+            AttemptNumber = attemptNumber,
+            SubmittedAt = DateTime.UtcNow.AddHours(-2),
+            GradedAt = status == SubmissionStatus.Graded ? DateTime.UtcNow.AddHours(-1) : null,
+            IsDeleted = isDeleted
+        };
+
+        _db.Submissions.Seed(submission);
+        return submission;
+    }
+
+    private void SeedStudent(Guid studentId, string fullName)
+    {
+        _db.Users.Seed(new User
+        {
+            Id = studentId,
+            Code = $"STD-{studentId:N}",
+            Email = $"{studentId:N}@test.com",
+            FullName = fullName,
+            Role = RoleType.Student,
+            IsDeleted = false
+        });
+    }
+
+    [Fact]
+    public async Task GetAssignmentSubmissions_ReturnsSubmissions_ForActiveClassStudentsOnly()
+    {
+        SeedModule();
+        SeedAssignment();
+        SeedManager();
+        SeedMentorWithClass();
+
+        var otherStudentId = Guid.NewGuid();
+        var withdrawnStudentId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+
+        SeedClassEnrollment(_studentId);
+        SeedClassEnrollment(otherStudentId);
+        SeedClassEnrollment(withdrawnStudentId, ClassEnrollmentStatus.Withdrawn);
+
+        SeedStudent(_studentId, "Bob Student");
+        SeedStudent(otherStudentId, "Alice Student");
+
+        var expected1 = SeedSubmission(_studentId);
+        var expected2 = SeedSubmission(otherStudentId);
+        SeedSubmission(withdrawnStudentId);
+        SeedSubmission(outsiderId);
+        SeedSubmission(_studentId, isDeleted: true);
+
+        var sut = CreateSut();
+
+        var result = await sut.GetAssignmentSubmissions(_assignmentId, _classId);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Alice Student", result[0].StudentName);
+        Assert.Equal("Bob Student", result[1].StudentName);
+        Assert.Equal(expected2.Id, result[0].SubmissionId);
+        Assert.Equal(expected1.Id, result[1].SubmissionId);
+    }
+
+    [Fact]
+    public async Task GetAssignmentSubmissions_ComputesPassed_FromPassScore()
+    {
+        SeedModule();
+        SeedAssignment(); // PassScore = 5
+        SeedManager();
+        SeedMentorWithClass();
+
+        var passedStudentId = Guid.NewGuid();
+        var failedStudentId = Guid.NewGuid();
+        var pendingStudentId = Guid.NewGuid();
+
+        SeedClassEnrollment(_studentId);
+        SeedClassEnrollment(passedStudentId);
+        SeedClassEnrollment(failedStudentId);
+        SeedClassEnrollment(pendingStudentId);
+
+        SeedSubmission(_studentId, SubmissionStatus.Graded, assignedGrade: 7);
+        SeedSubmission(passedStudentId, SubmissionStatus.Graded, assignedGrade: 5);
+        SeedSubmission(failedStudentId, SubmissionStatus.Graded, assignedGrade: 3);
+        SeedSubmission(pendingStudentId, SubmissionStatus.TurnedIn);
+
+        var sut = CreateSut();
+
+        var result = await sut.GetAssignmentSubmissions(_assignmentId, _classId);
+
+        Assert.Equal(4, result.Count);
+        Assert.True(result.Single(r => r.StudentId == _studentId).Passed);
+        Assert.True(result.Single(r => r.StudentId == passedStudentId).Passed);
+        Assert.False(result.Single(r => r.StudentId == failedStudentId).Passed);
+        Assert.Null(result.Single(r => r.StudentId == pendingStudentId).Passed);
+    }
+
+    [Fact]
+    public async Task GetAssignmentSubmissions_ReturnsEmpty_WhenNoActiveEnrollments()
+    {
+        SeedModule();
+        SeedAssignment();
+        SeedManager();
+        SeedMentorWithClass();
+        SeedSubmission(_studentId);
+        var sut = CreateSut();
+
+        var result = await sut.GetAssignmentSubmissions(_assignmentId, _classId);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task GetAssignmentSubmissions_Succeeds_ForOwningMentor()
+    {
+        SeedModule();
+        SeedAssignment();
+        SeedMentorWithClass();
+        SeedClassEnrollment(_studentId);
+        SeedSubmission(_studentId);
+        var sut = CreateSut(_mentorId);
+
+        var result = await sut.GetAssignmentSubmissions(_assignmentId, _classId);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task GetAssignmentSubmissions_ThrowsForbidden_WhenMentorDoesNotOwnClass()
+    {
+        SeedModule();
+        SeedAssignment();
+        SeedMentorWithClass();
+        _db.Classes.Items.First(c => c.Id == _classId).MentorId = Guid.NewGuid();
+        var sut = CreateSut(_mentorId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => sut.GetAssignmentSubmissions(_assignmentId, _classId));
+    }
+
+    [Fact]
+    public async Task GetAssignmentSubmissions_ThrowsNotFound_WhenAssignmentMissing()
+    {
+        SeedManager();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => sut.GetAssignmentSubmissions(Guid.NewGuid(), _classId));
+    }
+
+    [Fact]
+    public async Task GetAssignmentSubmissions_ThrowsNotFound_WhenClassMissing()
+    {
+        SeedModule();
+        SeedAssignment();
+        SeedManager();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => sut.GetAssignmentSubmissions(_assignmentId, Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task GetAssignmentSubmissions_ThrowsBadRequest_WhenClassProgramMismatch()
+    {
+        SeedModule();
+        SeedAssignment();
+        SeedManager();
+        SeedMentorWithClass();
+        _db.Classes.Items.First(c => c.Id == _classId).ProgramId = Guid.NewGuid();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(
+            () => sut.GetAssignmentSubmissions(_assignmentId, _classId));
+        Assert.Equal("The class does not belong to the same program as this module.", ex.Message);
+    }
 }

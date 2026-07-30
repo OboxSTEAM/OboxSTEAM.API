@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.AssignmentDTO;
+using OboxSteam.Application.DTOs.AssignmentSubmissionDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
@@ -143,6 +144,84 @@ public sealed class AssignmentService : IAssignmentService
                 ? query.OrderByDescending(a => a.CreatedAt)
                 : query.OrderBy(a => a.CreatedAt),
         };
+    }
+
+    public async Task<List<AssignmentSubmissionListItemDto>> GetAssignmentSubmissions(
+        Guid assignmentId,
+        Guid classId)
+    {
+        var userId = _claimsService.GetCurrentUserId;
+        _logger.LogInformation(
+            "GetAssignmentSubmissions started by UserId={UserId} for AssignmentId={AssignmentId}, ClassId={ClassId}",
+            userId, assignmentId, classId);
+
+        var assignment = await _unitOfWork.Assignments.GetByIdAsync(assignmentId);
+        if (assignment == null || assignment.IsDeleted)
+            throw ErrorHelper.NotFound($"Assignment with id '{assignmentId}' not found.");
+
+        var caller = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (caller == null || caller.IsDeleted)
+            throw ErrorHelper.Unauthorized("Unauthorized access.");
+
+        if (caller.Role == RoleType.Mentor)
+        {
+            await MentorScopeValidator.EnsureMentorOwnsClassForModuleAsync(
+                _unitOfWork, userId, classId, assignment.ModuleId);
+        }
+        else
+        {
+            var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
+            ClassValidator.ValidateClassExists(classEntity, classId);
+
+            var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+            if (module == null || module.IsDeleted)
+                throw ErrorHelper.NotFound($"Module with id '{assignment.ModuleId}' not found.");
+
+            if (module.ProgramId != classEntity!.ProgramId)
+                throw ErrorHelper.BadRequest(MentorScopeValidator.ClassProgramMismatchMessage);
+        }
+
+        var enrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ClassId == classId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        var studentIds = enrollments.Select(ce => ce.StudentId).Distinct().ToList();
+        if (studentIds.Count == 0)
+            return [];
+
+        var submissions = await _unitOfWork.Submissions.GetAllAsync(
+            s => s.AssignmentId == assignmentId
+                 && !s.IsDeleted
+                 && studentIds.Contains(s.StudentId));
+
+        var students = await _unitOfWork.Users.GetAllAsync(u => studentIds.Contains(u.Id));
+        var studentNames = students.ToDictionary(u => u.Id, u => u.FullName);
+
+        var items = submissions
+            .Select(s => new AssignmentSubmissionListItemDto
+            {
+                SubmissionId = s.Id,
+                StudentId = s.StudentId,
+                StudentName = studentNames.TryGetValue(s.StudentId, out var name) ? name : null,
+                AttemptNumber = s.AttemptNumber,
+                Status = s.Status,
+                AssignedGrade = s.AssignedGrade,
+                Passed = s.Status == SubmissionStatus.Graded && s.AssignedGrade.HasValue
+                    ? s.AssignedGrade.Value >= assignment.PassScore
+                    : null,
+                SubmittedAt = s.SubmittedAt,
+                GradedAt = s.GradedAt
+            })
+            .OrderBy(i => i.StudentName)
+            .ThenByDescending(i => i.AttemptNumber)
+            .ToList();
+
+        _logger.LogInformation(
+            "GetAssignmentSubmissions retrieved {Count} submission(s). AssignmentId={AssignmentId}, ClassId={ClassId}",
+            items.Count, assignmentId, classId);
+
+        return items;
     }
 
     public async Task<AssignmentResponseDto> CreateAssignment(CreateAssignmentRequestDto request)
