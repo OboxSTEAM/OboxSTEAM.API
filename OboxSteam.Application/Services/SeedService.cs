@@ -61,6 +61,7 @@ public partial class SeedService : ISeedService
         // After robotics FE reset so STD-001 research enrollment / submissions are not wiped.
         await SeedPortfolioDataAsync();
         await SeedDashboardSupportDataAsync();
+        await SeedNotificationsAsync();
 
         _loggerService.LogInformation("Finished seed all data");
     }
