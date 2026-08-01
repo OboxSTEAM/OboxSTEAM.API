@@ -122,18 +122,22 @@ public sealed class DashboardService : IDashboardService
             ? payments.Where(p => p.Status == filter.PaymentStatus.Value)
             : successPayments;
 
+        // Soft-deleted enrollments/programs are query-filtered out, so require live navigations
+        // (FK alone leaves null joins that throw on non-nullable ProgramId materialization).
         var programRevenue = topSource
-            .Where(p => p.ProgramEnrollmentId != null)
-            .GroupBy(p => new
+            .Where(p => p.ProgramEnrollment != null && p.ProgramEnrollment.Program != null)
+            .Select(p => new
             {
-                ProgramId = p.ProgramEnrollment!.ProgramId,
-                ProgramName = p.ProgramEnrollment.Program.Name
+                p.ProgramEnrollment!.ProgramId,
+                ProgramName = p.ProgramEnrollment.Program!.Name,
+                p.Amount
             })
+            .GroupBy(x => new { x.ProgramId, x.ProgramName })
             .Select(g => new TopProgramRevenueDto
             {
                 ProgramId = g.Key.ProgramId,
                 ProgramName = g.Key.ProgramName,
-                Amount = g.Sum(p => p.Amount)
+                Amount = g.Sum(x => x.Amount)
             })
             .ToList();
 
@@ -236,7 +240,7 @@ public sealed class DashboardService : IDashboardService
                 .Where(ce => !ce.IsDeleted && ce.ClassId == classId)
                 .Select(ce => ce.ProgramEnrollmentId);
             moduleEnrollments = moduleEnrollments.Where(me =>
-                me.ProgramEnrollmentId != null && peIds.Contains(me.ProgramEnrollmentId.Value));
+                peIds.Any(id => (Guid?)id == me.ProgramEnrollmentId));
         }
 
         if (filter.EnrollmentStatus.HasValue)
@@ -319,8 +323,9 @@ public sealed class DashboardService : IDashboardService
 
         var enrollmentDates = programEnrollments
             .Where(pe => pe.EnrolledAt != null && pe.EnrolledAt >= from && pe.EnrolledAt <= to)
-            .Select(pe => pe.EnrolledAt!.Value)
-            .ToList();
+            .Select(pe => pe.EnrolledAt)
+            .ToList()
+            .ConvertAll(d => d!.Value);
 
         var enrollmentTrend = BuildTrend(
             enrollmentDates.Select(d => (d, 1m)),
@@ -330,11 +335,13 @@ public sealed class DashboardService : IDashboardService
             DashboardTrendValueKind.Count);
 
         var topProgramRows = programEnrollments
-            .GroupBy(pe => new { pe.ProgramId, pe.Program.Name })
+            .Where(pe => pe.Program != null)
+            .Select(pe => new { pe.ProgramId, ProgramName = pe.Program!.Name })
+            .GroupBy(x => new { x.ProgramId, x.ProgramName })
             .Select(g => new TopProgramEnrollmentDto
             {
                 ProgramId = g.Key.ProgramId,
-                ProgramName = g.Key.Name,
+                ProgramName = g.Key.ProgramName,
                 Count = g.Count()
             })
             .ToList();
@@ -422,11 +429,17 @@ public sealed class DashboardService : IDashboardService
             .Where(s => s.Status == SubmissionStatus.Graded && s.AssignedGrade != null)
             .Select(s => new
             {
-                Grade = s.AssignedGrade!.Value,
+                Grade = s.AssignedGrade,
                 PassScore = s.Assignment.PassScore,
                 GradedAt = s.GradedAt
             })
-            .ToList();
+            .ToList()
+            .ConvertAll(x => new
+            {
+                Grade = x.Grade!.Value,
+                x.PassScore,
+                x.GradedAt
+            });
 
         var averageScore = gradedWithScore.Count == 0
             ? 0m
@@ -449,8 +462,9 @@ public sealed class DashboardService : IDashboardService
 
         var trendDates = submissions
             .Where(s => s.SubmittedAt != null && s.SubmittedAt >= from && s.SubmittedAt <= to)
-            .Select(s => s.SubmittedAt!.Value)
-            .ToList();
+            .Select(s => s.SubmittedAt)
+            .ToList()
+            .ConvertAll(d => d!.Value);
 
         var submissionsTrend = BuildTrend(
             trendDates.Select(d => (d, 1m)),
@@ -732,7 +746,7 @@ public sealed class DashboardService : IDashboardService
                 .Select(ce => ce.ProgramEnrollmentId);
 
             payments = payments.Where(p =>
-                p.ProgramEnrollmentId != null && peIds.Contains(p.ProgramEnrollmentId.Value));
+                peIds.Any(id => (Guid?)id == p.ProgramEnrollmentId));
         }
 
         return payments;
@@ -761,7 +775,7 @@ public sealed class DashboardService : IDashboardService
                 .Select(ce => ce.ProgramEnrollmentId);
 
             requests = requests.Where(pr =>
-                pr.ProgramEnrollmentId != null && peIds.Contains(pr.ProgramEnrollmentId.Value));
+                peIds.Any(id => (Guid?)id == pr.ProgramEnrollmentId));
         }
 
         return requests;
@@ -791,9 +805,8 @@ public sealed class DashboardService : IDashboardService
                 .Select(ce => ce.ProgramEnrollmentId);
 
             submissions = submissions.Where(s =>
-                s.ModuleEnrollmentId != null
-                && s.ModuleEnrollment!.ProgramEnrollmentId != null
-                && peIds.Contains(s.ModuleEnrollment.ProgramEnrollmentId.Value));
+                s.ModuleEnrollment != null
+                && peIds.Any(id => (Guid?)id == s.ModuleEnrollment.ProgramEnrollmentId));
         }
 
         return submissions;

@@ -834,6 +834,34 @@ public sealed class DashboardServiceTests
     }
 
     [Fact]
+    public async Task GetRevenueOverviewAsync_OrphanProgramEnrollmentFk_DoesNotThrow()
+    {
+        SeedFullDashboardData();
+        // Simulates EF query-filter behavior: FK set, soft-deleted enrollment navigation null.
+        _db.Payments.Seed(new Payment
+        {
+            Id = Guid.Parse("aeaeaeae-aeae-aeae-aeae-aeaeaeaeaeae"),
+            Code = "PAY-ORPHAN-PE",
+            StudentId = _studentId,
+            PaidById = _studentId,
+            ProgramEnrollmentId = Guid.Parse("bfbfbfbf-bfbf-bfbf-bfbf-bfbfbfbfbfbf"),
+            ProgramEnrollment = null,
+            Amount = 777m,
+            Gateway = PaymentGateway.Stripe,
+            Status = PaymentStatus.Success,
+            PaidAt = _now,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetRevenueOverviewAsync(Last30DaysFilter());
+
+        Assert.Equal(2277m, result.TotalRevenue);
+        Assert.Single(result.TopProgramsByRevenue.Items);
+        Assert.Equal(1500m, result.TopProgramsByRevenue.Items[0].Amount);
+    }
+
+    [Fact]
     public async Task GetRevenueOverviewAsync_RefundedAmount_AndGatewayBreakdown()
     {
         SeedFullDashboardData();

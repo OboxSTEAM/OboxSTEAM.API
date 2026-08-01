@@ -31,65 +31,65 @@ enrollments do not qualify.
 The matrix is the product contract for who receives each notification and which
 service emits it.
 
-| Notification type | Audience | Publisher |
-| --- | --- | --- |
-| `AccountRegistered` | `ForUser` | `AuthService` |
-| `EmailVerified` | `ForUser` | `AuthService` |
-| `PasswordChanged` | `ForUser` | `AuthService` |
-| `ParentLinkRequested` | Parent via `ForUser` | `ParentService` |
-| `ParentLinkVerified` | Parent via `ForUser` | `ParentService` |
-| `ParentLinkApproved` | Student via `ForUser` | `ParentService` |
-| `ProgramPendingPayment` | `ForStudentAndParents` | `ProgramEnrollmentService` |
-| `ProgramActivated` | `ForStudentAndParents` | `PaymentService` |
-| `ModuleCompleted` | `ForStudentAndParents` | `ActivityProgressService` |
-| `ModuleUnlocked` | `ForStudentAndParents` | `ActivityProgressService` |
-| `ModuleRetakePendingPayment` | `ForStudentAndParents` | `ModuleEnrollmentService` |
-| `ModuleRetakeInitiated` | `ForStudentAndParents` | `ModuleEnrollmentService` |
-| `PendingPaymentExpired` | `ForStudentAndParents` | `PendingEnrollmentCleanupService` |
-| `ActivityCompleted` | `ForStudentAndParents` | `ActivityProgressService` |
-| `PaymentSucceeded` | `ForStudentAndParents` | `PaymentService` |
-| `PaymentFailed` | `ForStudentAndParents` | `PaymentService` |
-| `PaymentCancelled` | `ForStudentAndParents` | `PaymentService` |
-| `ParentPaymentRequested` | Parent via `ForUser` | `PaymentService` |
-| `ParentModuleRetakeRequested` | Parent via `ForUser` | `PaymentService` |
-| `ClassCreated` | `ForManagers` | `ClassService` |
-| `ClassUpdated` | `ForClassRosterAndParentsAndMentor` | `ClassService` |
-| `ClassOpenForEnrollment` | `ForManagers` | `ClassService` |
-| `ClassStarted` | `ForClassRosterAndParentsAndMentor` | `ClassService` |
-| `ClassAutoStarted` | `ForClassRosterAndParentsAndMentor` | `ClassService` |
-| `ClassCompleted` | `ForClassRosterAndParentsAndMentor` | `ClassService` |
-| `ClassMentorRequestSubmitted` | `ForManagers` | `ClassMentorRequestService` |
-| `ClassMentorRequestApproved` | Mentor via `ForUser` | `ClassMentorRequestService`, `ClassService` |
-| `ClassMentorRequestRejected` | Mentor via `ForUser` | `ClassMentorRequestService`, `ClassService` |
-| `ClassEnrolled` | `ForStudentAndParents` | `ClassEnrollmentService` |
-| `ClassTransferred` | `ForStudentAndParents` | `ClassEnrollmentService` |
-| `ClassSessionScheduled` | `ForClassRosterAndParentsAndMentor` | `ClassSessionService` |
-| `ClassSessionRescheduled` | `ForClassRosterAndParentsAndMentor` | `ClassSessionService` |
-| `ClassSessionStarted` | `ForClassRosterAndMentor` | `ClassSessionService` |
-| `ClassSessionCompleted` | `ForClassRosterAndMentor` | `ClassSessionService` |
-| `ClassSessionCancelled` | `ForClassRosterAndParentsAndMentor` | `ClassSessionService` |
-| `AttendanceMarkedPresent` | `ForStudentAndParents` | `SessionAttendanceService` |
-| `AttendanceMarkedLate` | `ForStudentAndParents` | `SessionAttendanceService` |
-| `AttendanceMarkedAbsent` | `ForStudentAndParents` | `SessionAttendanceService` |
-| `AttendanceMarkedExcused` | `ForStudentAndParents` | `SessionAttendanceService` |
-| `QuizPassed` | `ForStudentAndParents` | `QuizAttemptService` |
-| `QuizFailed` | `ForStudentAndParents` | `QuizAttemptService` |
-| `ResearchGradedPassed` | `ForStudentAndParents` | `ResearchSubmissionService` |
-| `ResearchGradedFailed` | `ForStudentAndParents` | `ResearchSubmissionService` |
-| `ResearchReturnedForRevision` | `ForStudentAndParents` | `ResearchSubmissionService` |
-| `ResearchSubmissionOpened` | Student via `ForUser` | `ResearchSubmissionService` |
-| `ResearchWorkSubmitted` | `ForClassMentor`; student fallback when no class is resolved | `ResearchSubmissionService` |
-| `MediaVideoReady` | Uploader via `ForUser` | `MediaService` |
-| `MediaProcessingFailed` | Uploader via `ForUser` | `MediaService` |
-| `MediaAiTaggingFailed` | Uploader via `ForUser` | `MediaService` |
-| `MediaTagsProcessed` | Uploader via `ForUser` | `MediaService` |
-| `HighlightVideoGenerationQueued` | Student via `ForUser` | `PersonalVideoService` |
-| `HighlightVideoReady` | `ForStudentAndParents` | `PersonalVideoService` |
-| `HighlightVideoGenerationFailed` | Student via `ForUser` | `PersonalVideoService` |
-| `AssignmentPublished` | `ForClassRosterAndParents` | `AssignmentService` |
-| `MaterialUpdated` | `ForClassRoster` | `MaterialService` |
-| `AssignmentEditedByMentor` | `ForManagers` | `AssignmentService` |
-| `ClassQuizSetEditedByMentor` | `ForManagers` | `ClassQuizQuestionSetService` |
+| Notification type                | Audience                                                     | Publisher                                   |
+| ----------------------------------| --------------------------------------------------------------| ---------------------------------------------|
+| `AccountRegistered`              | `ForUser`                                                    | `AuthService`                               |
+| `EmailVerified`                  | `ForUser`                                                    | `AuthService`                               |
+| `PasswordChanged`                | `ForUser`                                                    | `AuthService`                               |
+| `ParentLinkRequested`            | Parent via `ForUser`                                         | `ParentService`                             |
+| `ParentLinkVerified`             | Parent via `ForUser`                                         | `ParentService`                             |
+| `ParentLinkApproved`             | Student via `ForUser`                                        | `ParentService`                             |
+| `ProgramPendingPayment`          | `ForStudentAndParents`                                       | `ProgramEnrollmentService`                  |
+| `ProgramActivated`               | `ForStudentAndParents`                                       | `PaymentService`                            |
+| `ModuleCompleted`                | `ForStudentAndParents`                                       | `ActivityProgressService`                   |
+| `ModuleUnlocked`                 | `ForStudentAndParents`                                       | `ActivityProgressService`                   |
+| `ModuleRetakePendingPayment`     | `ForStudentAndParents`                                       | `ModuleEnrollmentService`                   |
+| `ModuleRetakeInitiated`          | `ForStudentAndParents`                                       | `ModuleEnrollmentService`                   |
+| `PendingPaymentExpired`          | `ForStudentAndParents`                                       | `PendingEnrollmentCleanupService`           |
+| `ActivityCompleted`              | `ForStudentAndParents`                                       | `ActivityProgressService`                   |
+| `PaymentSucceeded`               | `ForStudentAndParents`                                       | `PaymentService`                            |
+| `PaymentFailed`                  | `ForStudentAndParents`                                       | `PaymentService`                            |
+| `PaymentCancelled`               | `ForStudentAndParents`                                       | `PaymentService`                            |
+| `ParentPaymentRequested`         | Parent via `ForUser`                                         | `PaymentService`                            |
+| `ParentModuleRetakeRequested`    | Parent via `ForUser`                                         | `PaymentService`                            |
+| `ClassCreated`                   | `ForManagers`                                                | `ClassService`                              |
+| `ClassUpdated`                   | `ForClassRosterAndParentsAndMentor`                          | `ClassService`                              |
+| `ClassOpenForEnrollment`         | `ForManagers`                                                | `ClassService`                              |
+| `ClassStarted`                   | `ForClassRosterAndParentsAndMentor`                          | `ClassService`                              |
+| `ClassAutoStarted`               | `ForClassRosterAndParentsAndMentor`                          | `ClassService`                              |
+| `ClassCompleted`                 | `ForClassRosterAndParentsAndMentor`                          | `ClassService`                              |
+| `ClassMentorRequestSubmitted`    | `ForManagers`                                                | `ClassMentorRequestService`                 |
+| `ClassMentorRequestApproved`     | Mentor via `ForUser`                                         | `ClassMentorRequestService`, `ClassService` |
+| `ClassMentorRequestRejected`     | Mentor via `ForUser`                                         | `ClassMentorRequestService`, `ClassService` |
+| `ClassEnrolled`                  | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
+| `ClassTransferred`               | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
+| `ClassSessionScheduled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `ClassSessionStarted`            | `ForClassRosterAndMentor`                                    | `ClassSessionService`                       |
+| `ClassSessionCompleted`          | `ForClassRosterAndMentor`                                    | `ClassSessionService`                       |
+| `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `AttendanceMarkedPresent`        | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
+| `AttendanceMarkedLate`           | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
+| `AttendanceMarkedAbsent`         | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
+| `AttendanceMarkedExcused`        | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
+| `QuizPassed`                     | `ForStudentAndParents`                                       | `QuizAttemptService`                        |
+| `QuizFailed`                     | `ForStudentAndParents`                                       | `QuizAttemptService`                        |
+| `ResearchGradedPassed`           | `ForStudentAndParents`                                       | `ResearchSubmissionService`                 |
+| `ResearchGradedFailed`           | `ForStudentAndParents`                                       | `ResearchSubmissionService`                 |
+| `ResearchReturnedForRevision`    | `ForStudentAndParents`                                       | `ResearchSubmissionService`                 |
+| `ResearchSubmissionOpened`       | Student via `ForUser`                                        | `ResearchSubmissionService`                 |
+| `ResearchWorkSubmitted`          | `ForClassMentor`; student fallback when no class is resolved | `ResearchSubmissionService`                 |
+| `MediaVideoReady`                | Uploader via `ForUser`                                       | `MediaService`                              |
+| `MediaProcessingFailed`          | Uploader via `ForUser`                                       | `MediaService`                              |
+| `MediaAiTaggingFailed`           | Uploader via `ForUser`                                       | `MediaService`                              |
+| `MediaTagsProcessed`             | Uploader via `ForUser`                                       | `MediaService`                              |
+| `HighlightVideoGenerationQueued` | Student via `ForUser`                                        | `PersonalVideoService`                      |
+| `HighlightVideoReady`            | `ForStudentAndParents`                                       | `PersonalVideoService`                      |
+| `HighlightVideoGenerationFailed` | Student via `ForUser`                                        | `PersonalVideoService`                      |
+| `AssignmentPublished`            | `ForClassRosterAndParents`                                   | `AssignmentService`                         |
+| `MaterialUpdated`                | `ForClassRoster`                                             | `MaterialService`                           |
+| `AssignmentEditedByMentor`       | `ForManagers`                                                | `AssignmentService`                         |
+| `ClassQuizSetEditedByMentor`     | `ForManagers`                                                | `ClassQuizQuestionSetService`               |
 
 ## Parent Time-Support Policy
 
