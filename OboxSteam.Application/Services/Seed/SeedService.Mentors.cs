@@ -73,6 +73,22 @@ public partial class SeedService
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
+            },
+            // Available mentor with profile/skills but no assigned class yet.
+            new()
+            {
+                Id = Guid.NewGuid(),
+                Code = "MNT-007",
+                Email = "mentor7@oboxsteam.com",
+                PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                FullName = "Alex Mentor",
+                Phone = "0123456775",
+                Role = RoleType.Mentor,
+                Status = AccountStatus.Active,
+                IsEmailVerified = true,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
             }
         };
 
@@ -157,6 +173,14 @@ public partial class SeedService
                 "Helps students master 3D modeling, texturing, and animation for STEAM storytelling projects.",
                 "Portfolio of student animation showcases; industry experience in digital content creation.",
                 "https://www.linkedin.com/in/lisa-mentor-oboxsteam"
+            ),
+            (
+                "MNT-007",
+                "STEAM Generalist Mentor",
+                "OboxSTEAM Talent Pool",
+                "Cross-disciplinary mentor ready for upcoming cohorts across coding, prototyping, and soft skills.",
+                "Former industry engineer transitioning to full-time STEAM mentoring; awaiting first class assignment.",
+                "https://www.linkedin.com/in/alex-mentor-oboxsteam"
             ),
         };
 
@@ -346,6 +370,20 @@ public partial class SeedService
             ("MNT-006", "SKL-SOFT-CREATIVE", SkillProficiencyLevel.Expert, 10,
                 "Creative storytelling through 3D animation.",
                 "Creative storytelling through 3D animation (CLS-3DDESIGN-2026B).", true),
+
+            // MNT-007 — available mentor, no class assignment yet
+            ("MNT-007", "SKL-TECH-PROG-PYTHON", SkillProficiencyLevel.Advanced, 6,
+                "Python fundamentals and project scaffolding for beginner cohorts.",
+                "Available capacity — not yet assigned to a class.", true),
+            ("MNT-007", "SKL-ENG-PROTOTYPE", SkillProficiencyLevel.Advanced, 5,
+                "Hands-on prototyping and maker-space facilitation.",
+                "Available capacity — not yet assigned to a class.", true),
+            ("MNT-007", "SKL-SOFT-COLLAB", SkillProficiencyLevel.Expert, 8,
+                "Team facilitation and peer collaboration coaching.",
+                "Available capacity — not yet assigned to a class.", true),
+            ("MNT-007", "SKL-TECH-COMP-THINK", SkillProficiencyLevel.Advanced, 7,
+                "Computational thinking workshops for mixed-age groups.",
+                "Available capacity — not yet assigned to a class.", true),
         };
 
         var skills = await _unitOfWork.Skills.GetAllAsync(s => !s.IsDeleted);
