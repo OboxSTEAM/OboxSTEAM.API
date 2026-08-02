@@ -632,7 +632,14 @@ public partial class SeedService
                 u => !u.IsDeleted && u.Role == RoleType.Student))
             .OrderBy(u => u.Code)
             .ToList();
-        var assignments = (await _unitOfWork.Assignments.GetAllAsync(a => !a.IsDeleted))
+
+        // Keep dashboard volume off research milestone deliverables so SUB-RML* UI seeds
+        // are not blocked / mixed with SUB-DASHR* rows that have no FileUrl / milestone.
+        var researchAssignmentIds = (await _unitOfWork.ResearchMilestones.GetAllAsync(rm => !rm.IsDeleted))
+            .Select(rm => rm.AssignmentId)
+            .ToHashSet();
+        var assignments = (await _unitOfWork.Assignments.GetAllAsync(
+                a => !a.IsDeleted && !researchAssignmentIds.Contains(a.Id)))
             .Take(8)
             .ToList();
 

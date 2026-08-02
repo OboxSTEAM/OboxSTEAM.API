@@ -14,22 +14,33 @@ public partial class SeedService
     private const string GradedCapstoneTargetClassCode = "CLS-ROBOTICS-2026A";
     private const string GradedCapstoneSeedFileName = "ASG-ROBOTICS-03-03-std002-capstone.pdf";
 
+    private const string DesignBriefSubmissionCode = "SUB-RML0301B";
+    private const string DesignBriefSeedFileName = "ASG-ROBOTICS-03-01-std002-design-brief.pdf";
+
     /// <summary>
-    /// Moves STD-002 onto CLS-ROBOTICS-2026A and seeds a Graded Capstone research
-    /// submission with a real PDF under <c>Seed/Submission/</c> so mentor UI can list
-    /// and open the file after a full reseed.
+    /// Ensures research UI seeds have real S3 files under <c>Seed/Submission/</c>:
+    /// Capstone Graded (<c>SUB-RML0303B</c>) and Design Brief with openable PDF (<c>SUB-RML0301B</c>).
+    /// Soft-removes conflicting dashboard rows that blocked Capstone seeding.
     /// </summary>
     private async Task SeedGradedCapstoneSubmissionForUiAsync()
     {
-        _loggerService.LogInformation("Starting seed graded Capstone submission for UI testing");
+        _loggerService.LogInformation("Starting seed research FileUpload submissions with S3 files for UI testing");
 
         await EnsureStudentOnRoboticsClassAsync(GradedCapstoneStudentCode, GradedCapstoneTargetClassCode);
+        await SeedGradedCapstoneWithFileAsync();
+        await EnsureDesignBriefHasOpenableFileAsync();
 
+        _loggerService.LogInformation("Finished seed research FileUpload submissions with S3 files");
+    }
+
+    private async Task SeedGradedCapstoneWithFileAsync()
+    {
         if (await SubmissionCodeExistsAsync(GradedCapstoneSubmissionCode))
         {
-            _loggerService.LogInformation(
-                "Graded Capstone submission {Code} already exists; skipping.",
-                GradedCapstoneSubmissionCode);
+            await EnsureSubmissionHasSeedFileAsync(
+                GradedCapstoneSubmissionCode,
+                GradedCapstoneSeedFileName,
+                "OboxSTEAM Seed Capstone Deliverable");
             return;
         }
 
@@ -48,11 +59,8 @@ public partial class SeedService
         }
 
         var assignment = await _unitOfWork.Assignments.FirstOrDefaultAsync(
-            a => a.Code == GradedCapstoneAssignmentCode && !a.IsDeleted);
-        if (assignment == null)
-        {
-            assignment = await _unitOfWork.Assignments.GetByIdAsync(milestone.AssignmentId);
-        }
+            a => a.Code == GradedCapstoneAssignmentCode && !a.IsDeleted)
+            ?? await _unitOfWork.Assignments.GetByIdAsync(milestone.AssignmentId);
 
         if (assignment == null || assignment.IsDeleted)
         {
@@ -73,26 +81,13 @@ public partial class SeedService
             return;
         }
 
-        var existingForStudent = await _unitOfWork.Submissions.FirstOrDefaultAsync(
-            s => s.AssignmentId == assignment.Id
-                 && s.StudentId == student.Id
-                 && !s.IsDeleted);
-        if (existingForStudent != null)
-        {
-            _loggerService.LogInformation(
-                "STD-002 already has a Capstone submission ({Code}); skipping graded Capstone seed.",
-                existingForStudent.Code);
-            return;
-        }
+        // Dashboard rich seed previously attached SUB-DASHR* to Capstone without milestone/file
+        // and blocked this seed via the unique student+assignment row check.
+        await SoftRemoveOrphanDashboardSubmissionsOnAssignmentAsync(assignment.Id);
 
-        var folder = $"{SeedS3Folder}/Submission";
-        var s3Key = $"{folder}/{GradedCapstoneSeedFileName}";
-        await using (var pdfStream = new MemoryStream(BuildSeedCapstonePdfBytes()))
-        {
-            await _blobService.UploadFileAsync(GradedCapstoneSeedFileName, pdfStream, folder);
-        }
-
-        var fileUrl = await _blobService.GetPreviewUrlAsync(s3Key);
+        var fileUrl = await UploadSeedSubmissionPdfAsync(
+            GradedCapstoneSeedFileName,
+            "OboxSTEAM Seed Capstone Deliverable");
         var seedTime = DateTime.UtcNow;
 
         await _unitOfWork.Submissions.AddAsync(new Submission
@@ -121,9 +116,100 @@ public partial class SeedService
         await _unitOfWork.SaveChangesAsync();
 
         _loggerService.LogInformation(
-            "Finished seed graded Capstone submission {Code} with S3 key {S3Key}.",
-            GradedCapstoneSubmissionCode,
-            s3Key);
+            "Finished seed graded Capstone submission {Code} with FileUrl.",
+            GradedCapstoneSubmissionCode);
+    }
+
+    private async Task SoftRemoveOrphanDashboardSubmissionsOnAssignmentAsync(Guid assignmentId)
+    {
+        var orphans = await _unitOfWork.Submissions.GetAllAsync(
+            s => s.AssignmentId == assignmentId
+                 && !s.IsDeleted
+                 && s.ResearchMilestoneId == null);
+
+        foreach (var orphan in orphans)
+        {
+            _loggerService.LogInformation(
+                "Soft-removing orphan dashboard submission {Code} on research assignment {AssignmentId}.",
+                orphan.Code,
+                assignmentId);
+            await _unitOfWork.Submissions.SoftRemove(orphan);
+        }
+
+        if (orphans.Count > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>
+    /// Upgrades existing Design Brief <c>SUB-RML0301B</c> fake URL to a real Seed/Submission PDF.
+    /// </summary>
+    private async Task EnsureDesignBriefHasOpenableFileAsync()
+    {
+        var milestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
+            rm => rm.Code == "RML-ROBOTICS-03-01" && !rm.IsDeleted);
+        if (milestone != null)
+        {
+            await SoftRemoveOrphanDashboardSubmissionsOnAssignmentAsync(milestone.AssignmentId);
+        }
+
+        var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+            s => s.Code == DesignBriefSubmissionCode && !s.IsDeleted);
+        if (submission == null)
+        {
+            _loggerService.LogWarning(
+                "Design Brief submission {Code} not found; skipping file backfill.",
+                DesignBriefSubmissionCode);
+            return;
+        }
+
+        await EnsureSubmissionHasSeedFileAsync(
+            DesignBriefSubmissionCode,
+            DesignBriefSeedFileName,
+            "OboxSTEAM Seed Design Brief");
+    }
+
+    private async Task EnsureSubmissionHasSeedFileAsync(
+        string submissionCode,
+        string fileName,
+        string pdfTitle)
+    {
+        var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+            s => s.Code == submissionCode && !s.IsDeleted);
+        if (submission == null)
+        {
+            return;
+        }
+
+        var expectedKeyFragment = $"{SeedS3Folder}/Submission/{fileName}";
+        if (!string.IsNullOrWhiteSpace(submission.FileUrl)
+            && submission.FileUrl.Contains(expectedKeyFragment, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        submission.FileUrl = await UploadSeedSubmissionPdfAsync(fileName, pdfTitle);
+        submission.UpdatedAt = DateTime.UtcNow;
+        submission.UpdatedBy = Guid.Empty;
+        await _unitOfWork.Submissions.Update(submission);
+        await _unitOfWork.SaveChangesAsync();
+
+        _loggerService.LogInformation(
+            "Backfilled openable Seed/Submission file on {Code}.",
+            submissionCode);
+    }
+
+    private async Task<string> UploadSeedSubmissionPdfAsync(string fileName, string pdfTitle)
+    {
+        var folder = $"{SeedS3Folder}/Submission";
+        var s3Key = $"{folder}/{fileName}";
+        await using (var pdfStream = new MemoryStream(BuildSeedSubmissionPdfBytes(pdfTitle)))
+        {
+            await _blobService.UploadFileAsync(fileName, pdfStream, folder);
+        }
+
+        return await _blobService.GetPreviewUrlAsync(s3Key);
     }
 
     private async Task EnsureStudentOnRoboticsClassAsync(string studentCode, string targetClassCode)
@@ -202,22 +288,24 @@ public partial class SeedService
     }
 
     /// <summary>Minimal one-page PDF so seed does not depend on QuestPDF in Application.</summary>
-    private static byte[] BuildSeedCapstonePdfBytes()
+    private static byte[] BuildSeedSubmissionPdfBytes(string title)
     {
-        const string contentStream = "BT /F1 18 Tf 72 720 Td (OboxSTEAM Seed Capstone Deliverable) Tj ET";
+        var safeTitle = string.IsNullOrWhiteSpace(title) ? "OboxSTEAM Seed Submission" : title.Trim();
+        // PDF string literals cannot contain unbalanced parentheses without escaping.
+        safeTitle = safeTitle.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
+        var contentStream = $"BT /F1 18 Tf 72 720 Td ({safeTitle}) Tj ET";
         var objects = new[]
         {
             "1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n",
             "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n",
             "3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
             + "/Resources<< /Font<< /F1 5 0 R >> >> /Contents 4 0 R >>endobj\n",
-            $"4 0 obj<< /Length {contentStream.Length} >>stream\n{contentStream}\nendstream\nendobj\n",
+            $"4 0 obj<< /Length {Encoding.ASCII.GetByteCount(contentStream)} >>stream\n{contentStream}\nendstream\nendobj\n",
             "5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n",
         };
 
-        var header = "%PDF-1.4\n";
         var builder = new StringBuilder();
-        builder.Append(header);
+        builder.Append("%PDF-1.4\n");
         var offsets = new int[objects.Length + 1];
         offsets[0] = 0;
 
