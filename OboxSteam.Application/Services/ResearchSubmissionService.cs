@@ -388,37 +388,13 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             throw ErrorHelper.NotFound($"Assignment with id '{submission.AssignmentId}' not found.");
         }
 
-        var evidenceUrls = await ResearchSubmissionValidator.LoadEvidenceUrlsAsync(_unitOfWork, submission.Id);
         bool? passed = null;
         if (submission.Status == SubmissionStatus.Graded && submission.AssignedGrade.HasValue)
         {
             passed = submission.AssignedGrade.Value >= assignment.PassScore;
         }
 
-        return new ResearchSubmissionResponseDto
-        {
-            Id = submission.Id,
-            Code = submission.Code,
-            AssignmentId = submission.AssignmentId,
-            ResearchMilestoneId = submission.ResearchMilestoneId!.Value,
-            ModuleEnrollmentId = submission.ModuleEnrollmentId,
-            StudentId = submission.StudentId,
-            AttemptNumber = submission.AttemptNumber,
-            Status = submission.Status,
-            ContentText = submission.ContentText,
-            FileUrl = submission.FileUrl,
-            EvidenceUrls = evidenceUrls,
-            AssignedGrade = submission.AssignedGrade,
-            PassScore = assignment.PassScore,
-            MaxPoints = assignment.MaxPoints,
-            Passed = passed,
-            MentorFeedback = submission.MentorFeedback,
-            VerifiedBy = submission.VerifiedBy,
-            SubmittedAt = submission.SubmittedAt,
-            GradedAt = submission.GradedAt,
-            CreatedAt = submission.CreatedAt,
-            UpdatedAt = submission.UpdatedAt
-        };
+        return await MapSubmissionToResponseDtoAsync(submission, assignment, passed);
     }
 
     public async Task<ResearchSubmissionResponseDto> SubmitResearchWork(
@@ -502,32 +478,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             submission.AttemptNumber,
             student.Id);
 
-        var evidenceUrls = await ResearchSubmissionValidator.LoadEvidenceUrlsAsync(_unitOfWork, submission.Id);
-
-        return new ResearchSubmissionResponseDto
-        {
-            Id = submission.Id,
-            Code = submission.Code,
-            AssignmentId = submission.AssignmentId,
-            ResearchMilestoneId = submission.ResearchMilestoneId!.Value,
-            ModuleEnrollmentId = submission.ModuleEnrollmentId,
-            StudentId = submission.StudentId,
-            AttemptNumber = submission.AttemptNumber,
-            Status = submission.Status,
-            ContentText = submission.ContentText,
-            FileUrl = submission.FileUrl,
-            EvidenceUrls = evidenceUrls,
-            AssignedGrade = submission.AssignedGrade,
-            PassScore = assignment.PassScore,
-            MaxPoints = assignment.MaxPoints,
-            Passed = null,
-            MentorFeedback = submission.MentorFeedback,
-            VerifiedBy = submission.VerifiedBy,
-            SubmittedAt = submission.SubmittedAt,
-            GradedAt = submission.GradedAt,
-            CreatedAt = submission.CreatedAt,
-            UpdatedAt = submission.UpdatedAt
-        };
+        return await MapSubmissionToResponseDtoAsync(submission, assignment);
     }
 
     public async Task<ResearchSubmissionResponseDto> GradeSubmission(
@@ -601,35 +552,11 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             submission.Status,
             grader.Id);
 
-        var evidenceUrls = await ResearchSubmissionValidator.LoadEvidenceUrlsAsync(_unitOfWork, submission.Id);
         bool? passed = submission.Status == SubmissionStatus.Graded && submission.AssignedGrade.HasValue
             ? submission.AssignedGrade.Value >= assignment.PassScore
             : null;
 
-        return new ResearchSubmissionResponseDto
-        {
-            Id = submission.Id,
-            Code = submission.Code,
-            AssignmentId = submission.AssignmentId,
-            ResearchMilestoneId = submission.ResearchMilestoneId!.Value,
-            ModuleEnrollmentId = submission.ModuleEnrollmentId,
-            StudentId = submission.StudentId,
-            AttemptNumber = submission.AttemptNumber,
-            Status = submission.Status,
-            ContentText = submission.ContentText,
-            FileUrl = submission.FileUrl,
-            EvidenceUrls = evidenceUrls,
-            AssignedGrade = submission.AssignedGrade,
-            PassScore = assignment.PassScore,
-            MaxPoints = assignment.MaxPoints,
-            Passed = passed,
-            MentorFeedback = submission.MentorFeedback,
-            VerifiedBy = submission.VerifiedBy,
-            SubmittedAt = submission.SubmittedAt,
-            GradedAt = submission.GradedAt,
-            CreatedAt = submission.CreatedAt,
-            UpdatedAt = submission.UpdatedAt
-        };
+        return await MapSubmissionToResponseDtoAsync(submission, assignment, passed);
     }
 
     /// <summary>
@@ -684,6 +611,15 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         bool? passed = null)
     {
         var evidenceUrls = await ResearchSubmissionValidator.LoadEvidenceUrlsAsync(_unitOfWork, submission.Id);
+        var resolvedEvidenceUrls = new List<string>(evidenceUrls.Count);
+        foreach (var evidenceUrl in evidenceUrls)
+        {
+            var resolved = await ResolvePresignedFileUrlAsync(evidenceUrl);
+            if (!string.IsNullOrWhiteSpace(resolved))
+            {
+                resolvedEvidenceUrls.Add(resolved);
+            }
+        }
 
         return new ResearchSubmissionResponseDto
         {
@@ -696,8 +632,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             AttemptNumber = submission.AttemptNumber,
             Status = submission.Status,
             ContentText = submission.ContentText,
-            FileUrl = submission.FileUrl,
-            EvidenceUrls = evidenceUrls,
+            FileUrl = await ResolvePresignedFileUrlAsync(submission.FileUrl),
+            EvidenceUrls = resolvedEvidenceUrls,
             AssignedGrade = submission.AssignedGrade,
             PassScore = assignment.PassScore,
             MaxPoints = assignment.MaxPoints,
@@ -709,5 +645,57 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             CreatedAt = submission.CreatedAt,
             UpdatedAt = submission.UpdatedAt
         };
+    }
+
+    /// <summary>
+    /// Resolves a stored S3 public URL or raw key into a time-limited presigned URL
+    /// so FE can open private-bucket seed/submission files (same pattern as materials).
+    /// </summary>
+    private async Task<string?> ResolvePresignedFileUrlAsync(string? fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+        {
+            return fileUrl;
+        }
+
+        var s3Key = ExtractS3Key(fileUrl, _blobService.BucketName);
+        if (string.IsNullOrWhiteSpace(s3Key))
+        {
+            return fileUrl;
+        }
+
+        var presigned = await _blobService.GetFileUrlAsync(s3Key);
+        return string.IsNullOrWhiteSpace(presigned) ? fileUrl : presigned;
+    }
+
+    private static string? ExtractS3Key(string fileUrl, string? bucketName = null)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+        {
+            return fileUrl;
+        }
+
+        if (!fileUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            return fileUrl;
+        }
+
+        if (!Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri))
+        {
+            return fileUrl;
+        }
+
+        var path = uri.AbsolutePath.TrimStart('/');
+
+        if (!string.IsNullOrEmpty(bucketName))
+        {
+            var bucketPrefix = $"{bucketName}/";
+            if (path.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                path = path[bucketPrefix.Length..];
+            }
+        }
+
+        return Uri.UnescapeDataString(path.Replace('+', ' '));
     }
 }

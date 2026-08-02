@@ -52,6 +52,12 @@ public sealed class ResearchSubmissionServiceTests
         _blobService
             .Setup(b => b.GetPreviewUrlAsync(It.IsAny<string>()))
             .ReturnsAsync("https://cdn.example.com/submissions/file.pdf");
+        _blobService
+            .Setup(b => b.BucketName)
+            .Returns("oboxsteam-bucket-main");
+        _blobService
+            .Setup(b => b.GetFileUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string key, CancellationToken _) => $"https://presigned.example.com/{key}");
         _certificateService
             .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
             .ReturnsAsync((CertificateDetailDto?)null);
@@ -619,7 +625,7 @@ public sealed class ResearchSubmissionServiceTests
         });
 
         Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
-        Assert.Equal("https://cdn.example.com/submissions/file.pdf", result.FileUrl);
+        Assert.Equal("https://presigned.example.com/submissions/file.pdf", result.FileUrl);
         Assert.Single(_db.MediaAssets.Items);
         Assert.Equal("https://cdn.example.com/submissions/evidence.jpg", _db.MediaAssets.Items[0].FileUrl);
         Assert.Single(_db.SubmissionEvidences.Items);
