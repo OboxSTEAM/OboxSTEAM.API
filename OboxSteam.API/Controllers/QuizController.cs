@@ -105,7 +105,7 @@ public class QuizController : ControllerBase
     }
 
     [HttpGet("submissions/{submissionId:guid}/quiz/result")]
-    [Authorize(Roles = "Student")]
+    [Authorize(Roles = "Student, Mentor")]
     [SwaggerOperation(
         Summary = "Get quiz result",
         Description = "Returns the graded result for a submission. Requires Student role.")]
