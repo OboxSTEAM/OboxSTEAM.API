@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.MediaDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -63,26 +64,37 @@ public class MediaController : ControllerBase
     }
 
     /// <summary>
-    /// Get ready media filtered by class and/or student (role-scoped).
+    /// Get media filtered by class and/or student (role-scoped), with pagination and status filters.
     /// </summary>
     [HttpGet]
     [SwaggerOperation(
         Summary = "Get media by class and/or student",
-        Description = "Returns ready media (images, or videos with TaggingComplete), scoped by role. " +
-                      "Manager/SuperAdmin may omit filters to list all ready media. " +
-                      "Mentor is limited to mentored classes. " +
-                      "Student always sees own tags; Parent requires linked studentId."
+        Description = "Returns paginated media scoped by role. " +
+                      "Manager/SuperAdmin/Mentor see all video statuses by default (including Transcoding / PendingTagging). " +
+                      "Filter with videoStatus=TaggingComplete for ready-only. " +
+                      "Student always sees own tagged ready media; Parent requires linked studentId."
     )]
-    [ProducesResponseType(typeof(ApiResult<List<MediaAssetDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<Pagination<MediaAssetDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetMedia(
         [FromQuery] Guid? classId = null,
-        [FromQuery] Guid? studentId = null)
+        [FromQuery] Guid? studentId = null,
+        [FromQuery] Guid? classSessionId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by file type: image or video")] string? fileType = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by video status (e.g. TaggingComplete)")] VideoProcessingStatus? videoStatus = null,
+        [FromQuery, SwaggerParameter(Description = "Sort by: uploadedAt, createdAt, fileType, videoStatus")] string? sortBy = null,
+        [FromQuery] bool isDescending = true,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
     {
-        var result = await _mediaService.GetMediaAsync(classId, studentId);
-        return Ok(ApiResult<List<MediaAssetDto>>.Success(result, "200", "Media retrieved."));
+        if (page < 1 || pageSize < 1)
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+
+        var result = await _mediaService.GetMediaAsync(
+            classId, studentId, classSessionId, fileType, videoStatus, sortBy, isDescending, page, pageSize);
+        return Ok(ApiResult<Pagination<MediaAssetDto>>.Success(result, "200", "Media retrieved."));
     }
 
     /// <summary>
@@ -102,6 +114,25 @@ public class MediaController : ControllerBase
     {
         var result = await _mediaService.GetMediaByIdAsync(mediaId);
         return Ok(ApiResult<MediaAssetDto>.Success(result, "200", "Media retrieved."));
+    }
+
+    /// <summary>
+    /// Poll video processing progress (MediaConvert percent while transcoding).
+    /// </summary>
+    [HttpGet("{mediaId:guid}/progress")]
+    [SwaggerOperation(
+        Summary = "Get media processing progress",
+        Description = "While VideoStatus is Transcoding, percentComplete is MediaConvert JobPercentComplete (0–100). " +
+                      "While PendingTagging, percentComplete is null — poll until TaggingComplete or Failed. " +
+                      "Also usable via GET /api/media/{mediaId} for status-only checks."
+    )]
+    [ProducesResponseType(typeof(ApiResult<MediaProcessingProgressDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetProcessingProgress([FromRoute] Guid mediaId)
+    {
+        var result = await _mediaService.GetProcessingProgressAsync(mediaId);
+        return Ok(ApiResult<MediaProcessingProgressDto>.Success(result, "200", "Processing progress retrieved."));
     }
 
     /// <summary>

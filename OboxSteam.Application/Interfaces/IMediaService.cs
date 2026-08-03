@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Http;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.MediaDTO;
+using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.Interfaces;
 
@@ -21,19 +23,34 @@ public interface IMediaService
     Task<List<MediaAssetDto>> GetMediaByClassSessionAsync(Guid classSessionId);
 
     /// <summary>
-    /// Returns ready media filtered by optional <paramref name="classId"/> and/or
-    /// <paramref name="studentId"/>, scoped by the caller's role.
-    /// Manager/SuperAdmin may omit both filters to list all ready media.
-    /// Class scope filters on <c>MediaAsset.ClassId</c>.
-    /// Student scope uses face <c>MediaTag</c> matches.
-    /// Ready means images, or videos with <c>VideoStatus = TaggingComplete</c>.
+    /// Returns paginated media filtered by class / session / student / type / status,
+    /// scoped by the caller's role.
+    /// Manager/SuperAdmin/Mentor see all <see cref="VideoProcessingStatus"/> values by default.
+    /// Student/Parent only see ready media they (or linked students) are tagged in.
+    /// Pass <paramref name="videoStatus"/> (e.g. TaggingComplete) to narrow results.
     /// </summary>
-    Task<List<MediaAssetDto>> GetMediaAsync(Guid? classId, Guid? studentId);
+    Task<Pagination<MediaAssetDto>> GetMediaAsync(
+        Guid? classId,
+        Guid? studentId,
+        Guid? classSessionId = null,
+        string? fileType = null,
+        VideoProcessingStatus? videoStatus = null,
+        string? sortBy = null,
+        bool isDescending = true,
+        int page = 1,
+        int pageSize = 10);
 
     /// <summary>
     /// Returns one media asset by id, scoped by the caller's role.
     /// </summary>
     Task<MediaAssetDto> GetMediaByIdAsync(Guid mediaId);
+
+    /// <summary>
+    /// Returns processing progress for a media asset (role-scoped).
+    /// While <c>Transcoding</c>, <c>PercentComplete</c> comes from MediaConvert.
+    /// While <c>PendingTagging</c>, percent is null — poll until ready or failed.
+    /// </summary>
+    Task<MediaProcessingProgressDto> GetProcessingProgressAsync(Guid mediaId);
 
     /// <summary>
     /// Manually tags a student onto ready media (mentor/manager). Creates a verified tag.

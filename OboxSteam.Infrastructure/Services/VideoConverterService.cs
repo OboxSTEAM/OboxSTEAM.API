@@ -154,18 +154,40 @@ public class VideoConverterService : IVideoConverterService
     /// <inheritdoc />
     public async Task<MediaConvertJobStatus> GetJobStatusAsync(string jobId)
     {
-        var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });
-
-        var status = response.Job.Status;
-        _logger.LogDebug("MediaConvert job {JobId} status: {Status}", jobId, status);
-
-        if (status == JobStatus.COMPLETE)
-            return MediaConvertJobStatus.Complete;
-        if (status == JobStatus.ERROR || status == JobStatus.CANCELED)
-            return MediaConvertJobStatus.Error;
-        // SUBMITTED, PROGRESSING, etc.
-        return MediaConvertJobStatus.InProgress;
+        var progress = await GetJobProgressAsync(jobId);
+        return progress.Status;
     }
+
+    /// <inheritdoc />
+    public async Task<MediaConvertJobProgress> GetJobProgressAsync(string jobId)
+    {
+        var response = await _mediaConvert.GetJobAsync(new GetJobRequest { Id = jobId });
+        var job = response.Job;
+        var status = job.Status;
+
+        _logger.LogDebug(
+            "MediaConvert job {JobId} status: {Status}, percent: {Percent}",
+            jobId, status, job.JobPercentComplete);
+
+        MediaConvertJobStatus mapped;
+        if (status == JobStatus.COMPLETE)
+            mapped = MediaConvertJobStatus.Complete;
+        else if (status == JobStatus.ERROR || status == JobStatus.CANCELED)
+            mapped = MediaConvertJobStatus.Error;
+        else
+            mapped = MediaConvertJobStatus.InProgress;
+
+        var percent = mapped switch
+        {
+            MediaConvertJobStatus.Complete => 100,
+            MediaConvertJobStatus.Error => ClampPercent(job.JobPercentComplete),
+            _ => ClampPercent(job.JobPercentComplete)
+        };
+
+        return new MediaConvertJobProgress(mapped, percent);
+    }
+
+    private static int ClampPercent(int value) => Math.Clamp(value, 0, 100);
 
     /// <inheritdoc />
     public async Task<string> GetOutputS3KeyAsync(string jobId)

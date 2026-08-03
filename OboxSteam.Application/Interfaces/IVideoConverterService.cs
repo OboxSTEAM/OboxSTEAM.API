@@ -46,6 +46,12 @@ public interface IVideoConverterService
     Task<MediaConvertJobStatus> GetJobStatusAsync(string jobId);
 
     /// <summary>
+    /// Polls MediaConvert job status together with AWS <c>JobPercentComplete</c> (0–100).
+    /// Use while the job is in progress to drive a progress UI; percent is 100 when complete.
+    /// </summary>
+    Task<MediaConvertJobProgress> GetJobProgressAsync(string jobId);
+
+    /// <summary>
     /// Retrieves the S3 key of the transcoded output file for a completed MediaConvert job.
     /// The key is relative to the bucket root (e.g. "media/activityId_123.mp4").
     /// </summary>
@@ -70,6 +76,11 @@ public enum MediaConvertJobStatus
     Complete,
     Error
 }
+
+/// <summary>
+/// MediaConvert job status plus AWS-reported percent complete (0–100).
+/// </summary>
+public sealed record MediaConvertJobProgress(MediaConvertJobStatus Status, int PercentComplete);
 
 // ── Personal Video DTOs ───────────────────────────────────────────────────────
 

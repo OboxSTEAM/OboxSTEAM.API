@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.MediaDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
@@ -182,51 +183,71 @@ public class MediaService : IMediaService
     }
 
     /// <inheritdoc />
-    public async Task<List<MediaAssetDto>> GetMediaAsync(Guid? classId, Guid? studentId)
+    public async Task<Pagination<MediaAssetDto>> GetMediaAsync(
+        Guid? classId,
+        Guid? studentId,
+        Guid? classSessionId = null,
+        string? fileType = null,
+        VideoProcessingStatus? videoStatus = null,
+        string? sortBy = null,
+        bool isDescending = true,
+        int page = 1,
+        int pageSize = 10)
     {
+        if (page < 1 || pageSize < 1)
+            throw ErrorHelper.BadRequest("Invalid pagination parameters.");
+
+        if (pageSize > 100)
+            throw ErrorHelper.BadRequest("pageSize must not exceed 100.");
+
         var currentUser = await GetCurrentUserOrThrowAsync();
         var resolved = await ResolveMediaQueryScopeAsync(currentUser, classId, studentId);
+        var restrictToReady = currentUser.Role is RoleType.Student or RoleType.Parent;
 
         _logger.LogInformation(
-            "GetMediaAsync: Role={Role}, ClassId={ClassId}, StudentId={StudentId}, ClassFilterCount={ClassCount}",
-            currentUser.Role, resolved.ClassId, resolved.StudentId, resolved.ClassIds?.Count);
+            "GetMediaAsync: Role={Role}, ClassId={ClassId}, StudentId={StudentId}, ClassSessionId={ClassSessionId}, " +
+            "FileType={FileType}, VideoStatus={VideoStatus}, ClassFilterCount={ClassCount}",
+            currentUser.Role, resolved.ClassId, resolved.StudentId, classSessionId,
+            fileType, videoStatus, resolved.ClassIds?.Count);
 
         if (resolved.ClassIds is { Count: 0 })
-            return new List<MediaAssetDto>();
+            return new Pagination<MediaAssetDto>([], 0, page, pageSize);
 
         List<MediaAsset> mediaList;
         if (resolved.ClassIds != null)
         {
             mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
-                m => !m.IsDeleted
-                     && resolved.ClassIds.Contains(m.ClassId)
-                     && (
-                         !string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
-                         || m.VideoStatus == VideoProcessingStatus.TaggingComplete
-                     ),
+                m => !m.IsDeleted && resolved.ClassIds.Contains(m.ClassId),
                 m => m.MediaTags);
         }
         else if (resolved.ClassId.HasValue)
         {
             mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
-                m => !m.IsDeleted
-                     && m.ClassId == resolved.ClassId.Value
-                     && (
-                         !string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
-                         || m.VideoStatus == VideoProcessingStatus.TaggingComplete
-                     ),
+                m => !m.IsDeleted && m.ClassId == resolved.ClassId.Value,
                 m => m.MediaTags);
         }
         else
         {
             mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
-                m => !m.IsDeleted
-                     && (
-                         !string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
-                         || m.VideoStatus == VideoProcessingStatus.TaggingComplete
-                     ),
+                m => !m.IsDeleted,
                 m => m.MediaTags);
         }
+
+        if (restrictToReady)
+            mediaList = mediaList.Where(IsReadyMedia).ToList();
+
+        if (classSessionId.HasValue)
+            mediaList = mediaList.Where(m => m.ClassSessionId == classSessionId.Value).ToList();
+
+        if (!string.IsNullOrWhiteSpace(fileType))
+        {
+            mediaList = mediaList
+                .Where(m => string.Equals(m.FileType, fileType.Trim(), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        if (videoStatus.HasValue)
+            mediaList = mediaList.Where(m => m.VideoStatus == videoStatus.Value).ToList();
 
         if (resolved.StudentId.HasValue)
         {
@@ -241,8 +262,16 @@ public class MediaService : IMediaService
                 .ToList();
         }
 
-        return await MapMediaListToDtos(
-            mediaList.OrderByDescending(m => m.UploadedAt ?? m.CreatedAt).ToList());
+        mediaList = SortMediaList(mediaList, sortBy, isDescending);
+
+        var totalCount = mediaList.Count;
+        var pageItems = mediaList
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var dtos = await MapMediaListToDtos(pageItems);
+        return new Pagination<MediaAssetDto>(dtos, totalCount, page, pageSize);
     }
 
     /// <inheritdoc />
@@ -260,6 +289,54 @@ public class MediaService : IMediaService
         await EnsureCanAccessMediaAsync(currentUser, media);
 
         return await MapToDto(media, media.MediaTags.Where(t => !t.IsDeleted).ToList());
+    }
+
+    /// <inheritdoc />
+    public async Task<MediaProcessingProgressDto> GetProcessingProgressAsync(Guid mediaId)
+    {
+        var currentUser = await GetCurrentUserOrThrowAsync();
+        _logger.LogInformation(
+            "GetProcessingProgressAsync: MediaId={MediaId}, UserId={UserId}",
+            mediaId, currentUser.Id);
+
+        var media = await _unitOfWork.MediaAssets.GetByIdAsync(mediaId, m => m.MediaTags);
+        if (media == null || media.IsDeleted)
+            throw ErrorHelper.NotFound("Media not found.");
+
+        await EnsureCanAccessMediaAsync(currentUser, media);
+
+        var isVideo = string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase);
+        var isReady = !isVideo || media.VideoStatus == VideoProcessingStatus.TaggingComplete;
+        var isFailed = media.VideoStatus == VideoProcessingStatus.Failed;
+
+        int? percentComplete = null;
+        if (isVideo && media.VideoStatus == VideoProcessingStatus.Transcoding)
+        {
+            if (!string.IsNullOrEmpty(media.MediaConvertJobId))
+            {
+                var progress = await _videoConverterService.GetJobProgressAsync(media.MediaConvertJobId);
+                percentComplete = progress.PercentComplete;
+            }
+            else
+            {
+                percentComplete = 0;
+            }
+        }
+        else if (isVideo && media.VideoStatus == VideoProcessingStatus.TaggingComplete)
+        {
+            percentComplete = 100;
+        }
+
+        return new MediaProcessingProgressDto
+        {
+            MediaId = media.Id,
+            VideoStatus = media.VideoStatus,
+            StatusLabel = GetVideoStatusLabel(media.FileType, media.VideoStatus),
+            PercentComplete = percentComplete,
+            IsReady = isReady,
+            IsFailed = isFailed,
+            FileUrl = media.FileUrl
+        };
     }
 
     /// <inheritdoc />
@@ -1091,6 +1168,28 @@ public class MediaService : IMediaService
         return mediaList
             .Select(m => MapAssetToDto(m, m.MediaTags.Where(t => !t.IsDeleted), studentMap))
             .ToList();
+    }
+
+    private static List<MediaAsset> SortMediaList(
+        List<MediaAsset> mediaList,
+        string? sortBy,
+        bool isDescending)
+    {
+        return (sortBy?.Trim().ToLowerInvariant()) switch
+        {
+            "createdat" => isDescending
+                ? mediaList.OrderByDescending(m => m.CreatedAt).ToList()
+                : mediaList.OrderBy(m => m.CreatedAt).ToList(),
+            "filetype" => isDescending
+                ? mediaList.OrderByDescending(m => m.FileType).ToList()
+                : mediaList.OrderBy(m => m.FileType).ToList(),
+            "videostatus" => isDescending
+                ? mediaList.OrderByDescending(m => m.VideoStatus).ToList()
+                : mediaList.OrderBy(m => m.VideoStatus).ToList(),
+            "uploadedat" or _ => isDescending
+                ? mediaList.OrderByDescending(m => m.UploadedAt ?? m.CreatedAt).ToList()
+                : mediaList.OrderBy(m => m.UploadedAt ?? m.CreatedAt).ToList(),
+        };
     }
 
     /// <summary>
