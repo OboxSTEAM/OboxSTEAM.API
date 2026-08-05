@@ -275,6 +275,79 @@ public class MediaService : IMediaService
     }
 
     /// <inheritdoc />
+    public async Task<Pagination<ClassGalleryMediaDto>> GetClassGalleryAsync(
+        Guid classId,
+        Guid? classSessionId = null,
+        string? fileType = null,
+        VideoProcessingStatus? videoStatus = null,
+        string? sortBy = null,
+        bool isDescending = true,
+        int page = 1,
+        int pageSize = 10)
+    {
+        if (page < 1 || pageSize < 1)
+            throw ErrorHelper.BadRequest("Invalid pagination parameters.");
+
+        if (pageSize > 100)
+            throw ErrorHelper.BadRequest("pageSize must not exceed 100.");
+
+        var currentUser = await GetCurrentUserOrThrowAsync();
+        if (currentUser.Role != RoleType.Student)
+            throw ErrorHelper.Forbidden("Only students can view the class gallery.");
+
+        await EnsureClassExistsAsync(classId);
+
+        var enrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.StudentId == currentUser.Id
+                  && ce.ClassId == classId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+        if (enrollment == null)
+            throw ErrorHelper.Forbidden("You must be actively enrolled in this class to view its gallery.");
+
+        if (classSessionId.HasValue)
+        {
+            var session = await _unitOfWork.ClassSessions.GetByIdAsync(classSessionId.Value);
+            if (session == null || session.IsDeleted)
+                throw ErrorHelper.NotFound($"Class session '{classSessionId}' not found.");
+            if (session.ClassId != classId)
+                throw ErrorHelper.BadRequest("Class session does not belong to the specified class.");
+        }
+
+        _logger.LogInformation(
+            "GetClassGalleryAsync: StudentId={StudentId}, ClassId={ClassId}, ClassSessionId={ClassSessionId}, " +
+            "FileType={FileType}, VideoStatus={VideoStatus}",
+            currentUser.Id, classId, classSessionId, fileType, videoStatus);
+
+        var mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
+            m => !m.IsDeleted && m.ClassId == classId);
+
+        if (classSessionId.HasValue)
+            mediaList = mediaList.Where(m => m.ClassSessionId == classSessionId.Value).ToList();
+
+        if (!string.IsNullOrWhiteSpace(fileType))
+        {
+            mediaList = mediaList
+                .Where(m => string.Equals(m.FileType, fileType.Trim(), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        if (videoStatus.HasValue)
+            mediaList = mediaList.Where(m => m.VideoStatus == videoStatus.Value).ToList();
+
+        mediaList = SortMediaList(mediaList, sortBy, isDescending);
+
+        var totalCount = mediaList.Count;
+        var pageItems = mediaList
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var dtos = pageItems.Select(MapToGalleryDto).ToList();
+        return new Pagination<ClassGalleryMediaDto>(dtos, totalCount, page, pageSize);
+    }
+
+    /// <inheritdoc />
     public async Task<MediaAssetDto> GetMediaByIdAsync(Guid mediaId)
     {
         var currentUser = await GetCurrentUserOrThrowAsync();
@@ -1587,6 +1660,26 @@ public class MediaService : IMediaService
             UploadedAt = media.UploadedAt,
             LabelTimeline = ParseLabelTimeline(media.LabelTimelineJson),
             Tags = tags.Select(t => MapTagToDto(t, studentMap)).ToList()
+        };
+    }
+
+    private static ClassGalleryMediaDto MapToGalleryDto(MediaAsset media)
+    {
+        var isVideo = string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase);
+        var isReady = !isVideo || media.VideoStatus == VideoProcessingStatus.TaggingComplete;
+
+        return new ClassGalleryMediaDto
+        {
+            Id = media.Id,
+            UploaderId = media.UploaderId,
+            ClassId = media.ClassId,
+            ClassSessionId = media.ClassSessionId,
+            FileUrl = media.FileUrl,
+            FileType = media.FileType,
+            VideoStatus = media.VideoStatus,
+            StatusLabel = GetVideoStatusLabel(media.FileType, media.VideoStatus),
+            IsReady = isReady,
+            UploadedAt = media.UploadedAt,
         };
     }
 

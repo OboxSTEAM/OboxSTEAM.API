@@ -41,6 +41,21 @@ public interface IMediaService
         int pageSize = 10);
 
     /// <summary>
+    /// Student class gallery: all media for a class (any <see cref="VideoProcessingStatus"/>),
+    /// without face tags. Caller must be a Student with Active enrollment in <paramref name="classId"/>.
+    /// Supports the same pagination / filter / sort options as <see cref="GetMediaAsync"/>.
+    /// </summary>
+    Task<Pagination<ClassGalleryMediaDto>> GetClassGalleryAsync(
+        Guid classId,
+        Guid? classSessionId = null,
+        string? fileType = null,
+        VideoProcessingStatus? videoStatus = null,
+        string? sortBy = null,
+        bool isDescending = true,
+        int page = 1,
+        int pageSize = 10);
+
+    /// <summary>
     /// Returns one media asset by id, scoped by the caller's role.
     /// </summary>
     Task<MediaAssetDto> GetMediaByIdAsync(Guid mediaId);

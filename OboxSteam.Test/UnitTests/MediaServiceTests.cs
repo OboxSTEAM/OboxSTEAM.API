@@ -456,4 +456,64 @@ public sealed class MediaServiceTests
         var pending = _db.MediaAssets.Items.Single(m => m.Id == _pendingId);
         Assert.Equal(VideoProcessingStatus.TaggingComplete, pending.VideoStatus);
     }
+
+    [Fact]
+    public async Task GetClassGalleryAsync_Student_ReturnsAllStatusesWithoutTags()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        SeedMediaAssets();
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.GetClassGalleryAsync(_classId);
+
+        Assert.Equal(4, result.TotalCount);
+        Assert.Contains(result.Items, m => m.Id == _transcodingId);
+        Assert.Contains(result.Items, m => m.Id == _pendingId);
+        Assert.Contains(result.Items, m => m.Id == _readyId);
+        Assert.Contains(result.Items, m => m.Id == _imageId);
+        Assert.All(result.Items, m => Assert.Equal(_classId, m.ClassId));
+    }
+
+    [Fact]
+    public async Task GetClassGalleryAsync_Student_FilterFileTypeAndPagination()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        SeedMediaAssets();
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.GetClassGalleryAsync(_classId, fileType: "video", page: 1, pageSize: 2);
+
+        Assert.Equal(3, result.TotalCount);
+        Assert.Equal(2, result.Items.Count);
+        Assert.All(result.Items, m => Assert.Equal("video", m.FileType));
+    }
+
+    [Fact]
+    public async Task GetClassGalleryAsync_Mentor_ThrowsForbidden()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        SeedMediaAssets();
+        var sut = CreateSut(_mentorId);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(
+            () => sut.GetClassGalleryAsync(_classId));
+
+        Assert.Equal(403, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetClassGalleryAsync_StudentNotEnrolled_ThrowsForbidden()
+    {
+        SeedBase();
+        SeedMediaAssets();
+        var sut = CreateSut(_studentId);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(
+            () => sut.GetClassGalleryAsync(_classId));
+
+        Assert.Equal(403, ex.StatusCode);
+    }
 }
