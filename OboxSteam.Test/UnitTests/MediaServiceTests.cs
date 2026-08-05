@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OboxSteam.Application.Exceptions;
@@ -15,6 +16,7 @@ public sealed class MediaServiceTests
     private readonly Guid _managerId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly Guid _mentorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly Guid _studentId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private readonly Guid _outsideStudentId = Guid.Parse("33333333-3333-3333-3333-333333333334");
     private readonly Guid _programId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private readonly Guid _classId = Guid.Parse("55555555-5555-5555-5555-555555555555");
     private readonly Guid _sessionId = Guid.Parse("66666666-6666-6666-6666-666666666666");
@@ -75,6 +77,15 @@ public sealed class MediaServiceTests
                 Code = "STU-001",
                 Email = "student@test.com",
                 FullName = "Student",
+                Role = RoleType.Student,
+                IsDeleted = false,
+            },
+            new User
+            {
+                Id = _outsideStudentId,
+                Code = "STU-002",
+                Email = "outside@test.com",
+                FullName = "Outside Student",
                 Role = RoleType.Student,
                 IsDeleted = false,
             });
@@ -170,6 +181,29 @@ public sealed class MediaServiceTests
             });
 
         _db.MediaTags.Seed(readyTag);
+    }
+
+    private void SeedActiveEnrollment(Guid studentId, Guid? classId = null)
+    {
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId ?? _classId,
+            StudentId = studentId,
+            ProgramEnrollmentId = Guid.NewGuid(),
+            Status = ClassEnrollmentStatus.Active,
+            EnrolledAt = DateTime.UtcNow.AddDays(-1),
+            IsDeleted = false,
+        });
+    }
+
+    private static Mock<IFormFile> CreateImageFile(string fileName = "photo.jpg", long length = 1024)
+    {
+        var file = new Mock<IFormFile>();
+        file.Setup(f => f.FileName).Returns(fileName);
+        file.Setup(f => f.Length).Returns(length);
+        file.Setup(f => f.OpenReadStream()).Returns(new MemoryStream([0xFF, 0xD8, 0xFF]));
+        return file;
     }
 
     [Fact]
@@ -330,5 +364,96 @@ public sealed class MediaServiceTests
             () => sut.GetMediaAsync(_classId, null, page: 0, pageSize: 10));
 
         Assert.Equal(400, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task UploadMediaAsync_Image_TagsOnlyActiveEnrolledStudents()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        _blobService
+            .Setup(b => b.UploadFileAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _blobService
+            .Setup(b => b.GetPreviewUrlAsync(It.IsAny<string>()))
+            .ReturnsAsync("https://cdn.example.com/photo.jpg");
+        _faceRecognition
+            .Setup(f => f.SearchFacesAsync("obox-bucket", It.IsAny<string>(), It.IsAny<float>()))
+            .ReturnsAsync(
+            [
+                new FaceMatchResult(_studentId, "face-in", 98f),
+                new FaceMatchResult(_outsideStudentId, "face-out", 97f),
+            ]);
+
+        var sut = CreateSut(_mentorId);
+        var result = await sut.UploadMediaAsync(CreateImageFile().Object, _classId);
+
+        Assert.Single(result.Tags);
+        Assert.Equal(_studentId, result.Tags[0].StudentId);
+        Assert.DoesNotContain(result.Tags, t => t.StudentId == _outsideStudentId);
+        Assert.Single(_db.MediaTags.Items, t => !t.IsDeleted);
+    }
+
+    [Fact]
+    public async Task UploadMediaAsync_Image_OutOfClassOnly_AcceptsWithZeroTags()
+    {
+        SeedBase();
+        _blobService
+            .Setup(b => b.UploadFileAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _blobService
+            .Setup(b => b.GetPreviewUrlAsync(It.IsAny<string>()))
+            .ReturnsAsync("https://cdn.example.com/photo.jpg");
+        _faceRecognition
+            .Setup(f => f.SearchFacesAsync("obox-bucket", It.IsAny<string>(), It.IsAny<float>()))
+            .ReturnsAsync([new FaceMatchResult(_outsideStudentId, "face-out", 97f)]);
+
+        var sut = CreateSut(_mentorId);
+        var result = await sut.UploadMediaAsync(CreateImageFile().Object, _classId);
+
+        Assert.Equal("image", result.FileType);
+        Assert.Empty(result.Tags);
+        Assert.DoesNotContain(_db.MediaTags.Items, t => !t.IsDeleted);
+    }
+
+    [Fact]
+    public async Task TryProcessVideoTagsAsync_SkipsStudentsNotActiveInClass()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        SeedMediaAssets();
+        _faceRecognition
+            .Setup(f => f.GetVideoFaceSearchResultsAsync("rek-job-1"))
+            .ReturnsAsync(new VideoFaceSearchResult(
+                "SUCCEEDED",
+                [
+                    new FaceMatchResult(_studentId, "face-in", 96f),
+                    new FaceMatchResult(_outsideStudentId, "face-out", 95f),
+                ]));
+        _faceRecognition
+            .Setup(f => f.GetAllFaceTimelinesAsync("rek-job-1"))
+            .ReturnsAsync(new Dictionary<Guid, VideoFaceTimelineResult>
+            {
+                [_studentId] = new VideoFaceTimelineResult(true, [new FaceTimestampSegment(0, 1000)]),
+                [_outsideStudentId] = new VideoFaceTimelineResult(true, [new FaceTimestampSegment(0, 1000)]),
+            });
+
+        var sut = CreateSut(_managerId);
+        var done = await sut.TryProcessVideoTagsAsync(_pendingId);
+
+        Assert.True(done);
+        var tags = _db.MediaTags.Items.Where(t => t.MediaId == _pendingId && !t.IsDeleted).ToList();
+        Assert.Single(tags);
+        Assert.Equal(_studentId, tags[0].StudentId);
+        var pending = _db.MediaAssets.Items.Single(m => m.Id == _pendingId);
+        Assert.Equal(VideoProcessingStatus.TaggingComplete, pending.VideoStatus);
     }
 }

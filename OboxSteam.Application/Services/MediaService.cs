@@ -129,7 +129,7 @@ public class MediaService : IMediaService
 
         if (isImage)
         {
-            tags = await SaveFaceTagsAsync(media.Id, prevalidatedMatches);
+            tags = await SaveFaceTagsAsync(media.Id, classId, prevalidatedMatches);
         }
         else
         {
@@ -1399,8 +1399,11 @@ public class MediaService : IMediaService
                 "Personal video generation will fall back to the safe legacy policy.", media.Id);
         }
 
+        // Only tag students Active-enrolled in this media's class (same rule as manual tags).
+        var inClassMatches = await FilterMatchesToActiveClassStudentsAsync(media.ClassId, result.Matches);
+
         // Batch-load all matched students in one query to avoid N+1 DB round-trips.
-        var matchedUserIds = result.Matches
+        var matchedUserIds = inClassMatches
             .Select(m => m.UserId)
             .Distinct()
             .ToList();
@@ -1409,7 +1412,7 @@ public class MediaService : IMediaService
               .ToDictionary(u => u.Id)
             : new Dictionary<Guid, User>();
 
-        foreach (var match in result.Matches)
+        foreach (var match in inClassMatches)
         {
             // Skip duplicates already in DB
             if (media.MediaTags.Any(t => t.StudentId == match.UserId))
@@ -1468,21 +1471,65 @@ public class MediaService : IMediaService
     }
 
     /// <summary>
-    /// Persists <see cref="MediaTag"/> rows from already-fetched Rekognition matches.
-    /// Called for images after face pre-validation in <see cref="UploadMediaAsync"/>.
+    /// Keeps only face matches for students with <see cref="ClassEnrollmentStatus.Active"/>
+    /// enrollment in <paramref name="classId"/>. Out-of-class matches are skipped so AI tags
+    /// never attach students outside the media's class.
     /// </summary>
-    private async Task<List<MediaTag>> SaveFaceTagsAsync(Guid mediaId, List<FaceMatchResult> matches)
+    private async Task<List<FaceMatchResult>> FilterMatchesToActiveClassStudentsAsync(
+        Guid classId,
+        IReadOnlyList<FaceMatchResult> matches)
+    {
+        if (matches.Count == 0)
+            return [];
+
+        var matchedUserIds = matches.Select(m => m.UserId).Distinct().ToList();
+        var enrolledIds = (await _unitOfWork.ClassEnrollments.GetAllAsync(
+                ce => ce.ClassId == classId
+                      && matchedUserIds.Contains(ce.StudentId)
+                      && ce.Status == ClassEnrollmentStatus.Active
+                      && !ce.IsDeleted))
+            .Select(ce => ce.StudentId)
+            .ToHashSet();
+
+        var filtered = new List<FaceMatchResult>(matches.Count);
+        foreach (var match in matches)
+        {
+            if (enrolledIds.Contains(match.UserId))
+            {
+                filtered.Add(match);
+                continue;
+            }
+
+            _logger.LogInformation(
+                "Skipping face match for StudentId={StudentId}: not Active-enrolled in ClassId={ClassId} (FaceId={FaceId})",
+                match.UserId, classId, match.FaceId);
+        }
+
+        return filtered;
+    }
+
+    /// <summary>
+    /// Persists <see cref="MediaTag"/> rows from already-fetched Rekognition matches,
+    /// limited to students Active-enrolled in <paramref name="classId"/>.
+    /// Called for images after face pre-validation in <see cref="UploadMediaAsync"/>.
+    /// May return an empty list when no in-class students matched (upload still succeeds).
+    /// </summary>
+    private async Task<List<MediaTag>> SaveFaceTagsAsync(
+        Guid mediaId,
+        Guid classId,
+        List<FaceMatchResult> matches)
     {
         var tags = new List<MediaTag>();
+        var inClassMatches = await FilterMatchesToActiveClassStudentsAsync(classId, matches);
 
         // Batch-load all matched students in one query to avoid N+1 DB round-trips.
-        var matchedUserIds = matches.Select(m => m.UserId).Distinct().ToList();
+        var matchedUserIds = inClassMatches.Select(m => m.UserId).Distinct().ToList();
         var studentMap = matchedUserIds.Count > 0
             ? (await _unitOfWork.Users.GetAllAsync(u => matchedUserIds.Contains(u.Id)))
               .ToDictionary(u => u.Id)
             : new Dictionary<Guid, User>();
 
-        foreach (var match in matches)
+        foreach (var match in inClassMatches)
         {
             if (!studentMap.TryGetValue(match.UserId, out var student))
             {
