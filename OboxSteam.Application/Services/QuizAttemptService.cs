@@ -71,6 +71,8 @@ public sealed class QuizAttemptService : IQuizAttemptService
             {
                 SubmissionId = pendingSubmission.Id,
                 AssignmentId = assignment!.Id,
+                StudentId = student.Id,
+                StudentName = student.FullName,
                 AttemptNumber = pendingSubmission.AttemptNumber,
                 TimeLimitMinutes = assignment.TimeLimitMinutes,
                 StartedAt = pendingSubmission.StartedAt,
@@ -190,6 +192,8 @@ public sealed class QuizAttemptService : IQuizAttemptService
         {
             SubmissionId = submission.Id,
             AssignmentId = assignment.Id,
+            StudentId = student.Id,
+            StudentName = student.FullName,
             AttemptNumber = submission.AttemptNumber,
             TimeLimitMinutes = assignment.TimeLimitMinutes,
             StartedAt = submission.StartedAt,
@@ -219,25 +223,21 @@ public sealed class QuizAttemptService : IQuizAttemptService
 
     public async Task<QuizAttemptResponseDto?> GetQuiz(Guid submissionId)
     {
-        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
-            _unitOfWork,
-            _claimsService,
-            QuizAttemptValidator.QuizForbiddenMessage);
-
         var submission = await _unitOfWork.Submissions.GetByIdAsync(submissionId);
         QuizAttemptValidator.ValidateSubmissionExists(submission, submissionId);
-        QuizAttemptValidator.ValidateSubmissionOwnership(submission!, student.Id);
         QuizAttemptValidator.ValidateSubmissionPending(submission!);
 
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission!.AssignmentId);
         if (assignment == null || assignment.IsDeleted)
             return null;
 
-        await QuizAttemptValidator.ValidateActiveModuleEnrollmentAsync(
+        await QuizAttemptValidator.EnsureCanViewQuizSubmissionAsync(
             _unitOfWork,
-            student.Id,
+            _claimsService,
+            submission,
             assignment);
 
+        var subjectStudent = await _unitOfWork.Users.GetByIdAsync(submission.StudentId);
         var snapshotQuestions = await LoadSnapshotQuestionsAsync(submission.Id);
         var savedAnswers = await _unitOfWork.QuizAnswers.GetAllAsync(
             a => a.SubmissionId == submission.Id && !a.IsDeleted);
@@ -246,6 +246,8 @@ public sealed class QuizAttemptService : IQuizAttemptService
         {
             SubmissionId = submission.Id,
             AssignmentId = assignment.Id,
+            StudentId = submission.StudentId,
+            StudentName = subjectStudent?.FullName,
             AttemptNumber = submission.AttemptNumber,
             TimeLimitMinutes = assignment.TimeLimitMinutes,
             StartedAt = submission.StartedAt,
@@ -394,6 +396,8 @@ public sealed class QuizAttemptService : IQuizAttemptService
         {
             SubmissionId = submission.Id,
             AssignmentId = assignment!.Id,
+            StudentId = student.Id,
+            StudentName = student.FullName,
             AttemptNumber = submission.AttemptNumber,
             StartedAt = submission.StartedAt,
             AssignedGrade = grade.AssignedGrade,
@@ -409,25 +413,21 @@ public sealed class QuizAttemptService : IQuizAttemptService
 
     public async Task<QuizResultResponseDto?> GetQuizResult(Guid submissionId)
     {
-        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
-            _unitOfWork,
-            _claimsService,
-            QuizAttemptValidator.QuizForbiddenMessage);
-
         var submission = await _unitOfWork.Submissions.GetByIdAsync(submissionId);
         QuizAttemptValidator.ValidateSubmissionExists(submission, submissionId);
-        QuizAttemptValidator.ValidateSubmissionOwnership(submission!, student.Id);
         QuizAttemptValidator.ValidateSubmissionGraded(submission!);
 
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission!.AssignmentId);
         if (assignment == null || assignment.IsDeleted)
             return null;
 
-        await QuizAttemptValidator.ValidateActiveModuleEnrollmentAsync(
+        await QuizAttemptValidator.EnsureCanViewQuizSubmissionAsync(
             _unitOfWork,
-            student.Id,
+            _claimsService,
+            submission,
             assignment);
 
+        var subjectStudent = await _unitOfWork.Users.GetByIdAsync(submission.StudentId);
         var snapshotQuestions = await LoadSnapshotQuestionsAsync(submissionId);
         var answers = await _unitOfWork.QuizAnswers.GetAllAsync(
             a => a.SubmissionId == submissionId && !a.IsDeleted);
@@ -438,6 +438,8 @@ public sealed class QuizAttemptService : IQuizAttemptService
         {
             SubmissionId = submission.Id,
             AssignmentId = assignment.Id,
+            StudentId = submission.StudentId,
+            StudentName = subjectStudent?.FullName,
             AttemptNumber = submission.AttemptNumber,
             StartedAt = submission.StartedAt,
             AssignedGrade = grade.AssignedGrade,

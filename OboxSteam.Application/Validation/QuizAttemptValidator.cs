@@ -15,6 +15,9 @@ public static class QuizAttemptValidator
 {
     public const string QuizForbiddenMessage = "Only students can take quizzes.";
 
+    public const string ViewQuizForbiddenMessage =
+        "You do not have access to this quiz submission.";
+
     public static void ValidateAssignmentIdRequired(Guid assignmentId)
     {
         if (assignmentId == Guid.Empty)
@@ -116,6 +119,52 @@ public static class QuizAttemptValidator
             return;
 
         await ValidateActiveModuleEnrollmentAsync(unitOfWork, userId, assignment);
+    }
+
+    /// <summary>
+    /// Authorizes viewing an in-progress or graded quiz submission.
+    /// Students: own submission only. Mentors: students in their class for the module's program.
+    /// Manager / SuperAdmin: unrestricted.
+    /// </summary>
+    public static async Task EnsureCanViewQuizSubmissionAsync(
+        IUnitOfWork unitOfWork,
+        IClaimsService claimsService,
+        Submission submission,
+        Assignment assignment)
+    {
+        var userId = claimsService.GetCurrentUserId;
+        if (userId == Guid.Empty)
+            throw ErrorHelper.Unauthorized("Unauthorized access.");
+
+        var user = await unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null || user.IsDeleted)
+            throw ErrorHelper.NotFound("Current user not found.");
+
+        if (user.Role == RoleType.Student)
+        {
+            ValidateSubmissionOwnership(submission, user.Id);
+            await ValidateActiveModuleEnrollmentAsync(unitOfWork, user.Id, assignment);
+            return;
+        }
+
+        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+            return;
+
+        if (user.Role == RoleType.Mentor)
+        {
+            var module = await unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+            if (module == null || module.IsDeleted)
+                throw ErrorHelper.NotFound($"Module with id '{assignment.ModuleId}' not found.");
+
+            await MentorScopeValidator.EnsureMentorOwnsStudentInProgramAsync(
+                unitOfWork,
+                user.Id,
+                submission.StudentId,
+                module.ProgramId);
+            return;
+        }
+
+        throw ErrorHelper.Forbidden(ViewQuizForbiddenMessage);
     }
 
     public static async Task ValidateMaxAttemptsForNewStartAsync(

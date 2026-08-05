@@ -1173,4 +1173,137 @@ public sealed class QuizAttemptServiceTests
 
         Assert.Equal(SubmissionStatus.Graded, result.Status);
     }
+
+    // ── Mentor / staff view access ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetQuizResult_AsMentor_ReturnsStudentResult()
+    {
+        var mentorId = Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111");
+        var classId = Guid.Parse("bbbbbbbb-1111-1111-1111-111111111111");
+        SeedStudentAndEnrollment();
+        SeedClassRosterForMentor(mentorId, classId);
+        SeedQuizAssignment(maxPoints: 10m, passScore: 5m);
+        var (submissionId, questionId, correctOptionId, _) =
+            SeedAttemptSnapshot(
+                status: SubmissionStatus.Graded,
+                assignedGrade: 10m,
+                submittedAt: DateTime.UtcNow);
+
+        _db.QuizAnswers.Seed(new QuizAnswer
+        {
+            Id = Guid.NewGuid(),
+            SubmissionId = submissionId,
+            QuizQuestionId = questionId,
+            QuizOptionId = correctOptionId,
+            IsDeleted = false
+        });
+
+        var sut = CreateSut();
+        _claimsService.Setup(c => c.GetCurrentUserId).Returns(mentorId);
+
+        var result = await sut.GetQuizResult(submissionId);
+
+        Assert.NotNull(result);
+        Assert.Equal(_studentId, result!.StudentId);
+        Assert.Equal(10m, result.AssignedGrade);
+        Assert.True(result.Passed);
+    }
+
+    [Fact]
+    public async Task GetQuiz_AsMentor_ReturnsPendingAttempt()
+    {
+        var mentorId = Guid.Parse("aaaaaaaa-2222-2222-2222-222222222222");
+        var classId = Guid.Parse("bbbbbbbb-2222-2222-2222-222222222222");
+        SeedStudentAndEnrollment();
+        SeedClassRosterForMentor(mentorId, classId);
+        SeedQuizAssignment();
+        var (submissionId, _, _, _) = SeedAttemptSnapshot(status: SubmissionStatus.Pending);
+
+        var sut = CreateSut();
+        _claimsService.Setup(c => c.GetCurrentUserId).Returns(mentorId);
+
+        var result = await sut.GetQuiz(submissionId);
+
+        Assert.NotNull(result);
+        Assert.Equal(_studentId, result!.StudentId);
+        Assert.Equal(submissionId, result.SubmissionId);
+    }
+
+    [Fact]
+    public async Task GetQuizResult_AsOtherMentor_ThrowsForbidden()
+    {
+        var mentorId = Guid.Parse("aaaaaaaa-3333-3333-3333-333333333333");
+        var otherMentorId = Guid.Parse("cccccccc-3333-3333-3333-333333333333");
+        var classId = Guid.Parse("bbbbbbbb-3333-3333-3333-333333333333");
+        SeedStudentAndEnrollment();
+        SeedClassRosterForMentor(mentorId, classId);
+        SeedQuizAssignment(maxPoints: 10m, passScore: 5m);
+        var (submissionId, _, _, _) =
+            SeedAttemptSnapshot(
+                status: SubmissionStatus.Graded,
+                assignedGrade: 10m,
+                submittedAt: DateTime.UtcNow);
+
+        _db.Users.Seed(new User
+        {
+            Id = otherMentorId,
+            Code = "MNT-OTHER",
+            Role = RoleType.Mentor,
+            IsDeleted = false
+        });
+
+        var sut = CreateSut();
+        _claimsService.Setup(c => c.GetCurrentUserId).Returns(otherMentorId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => sut.GetQuizResult(submissionId));
+    }
+
+    private void SeedClassRosterForMentor(Guid mentorId, Guid classId)
+    {
+        _db.Users.Seed(new User
+        {
+            Id = mentorId,
+            Code = $"MNT-{mentorId:N}"[..12],
+            Role = RoleType.Mentor,
+            FullName = "Class Mentor",
+            IsDeleted = false
+        });
+
+        var classEntity = new Class
+        {
+            Id = classId,
+            Code = "CLS-001",
+            Name = "Cohort 1",
+            ProgramId = _programId,
+            MentorId = mentorId,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(60),
+            MaxCapacity = 30,
+            Status = ClassStatus.InProgress,
+            IsDeleted = false
+        };
+        _db.Classes.Seed(classEntity);
+
+        var programEnrollmentId = Guid.NewGuid();
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = programEnrollmentId,
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.Active,
+            IsDeleted = false
+        });
+
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = programEnrollmentId,
+            Status = ClassEnrollmentStatus.Active,
+            Class = classEntity,
+            IsDeleted = false
+        });
+    }
 }

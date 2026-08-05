@@ -41,10 +41,12 @@ public class QuizController : ControllerBase
     }
 
     [HttpGet("submissions/{submissionId:guid}/quiz")]
-    [Authorize(Roles = "Student, Mentor")]
+    [Authorize(Roles = "Student, Mentor, Manager, SuperAdmin")]
     [SwaggerOperation(
         Summary = "Get in-progress quiz",
-        Description = "Returns quiz questions and saved answers for a Pending submission. Requires Student role.")]
+        Description = "Returns quiz questions and saved answers for a Pending submission. "
+            + "Students may only access their own attempt. Mentors may access students in their class. "
+            + "Manager and SuperAdmin may access any submission.")]
     [ProducesResponseType(typeof(ApiResult<QuizAttemptResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -105,10 +107,12 @@ public class QuizController : ControllerBase
     }
 
     [HttpGet("submissions/{submissionId:guid}/quiz/result")]
-    [Authorize(Roles = "Student, Mentor")]
+    [Authorize(Roles = "Student, Mentor, Manager, SuperAdmin")]
     [SwaggerOperation(
         Summary = "Get quiz result",
-        Description = "Returns the graded result for a submission. Requires Student role.")]
+        Description = "Returns the graded result for a submission. "
+            + "Students may only access their own result. Mentors may access students in their class. "
+            + "Manager and SuperAdmin may access any submission.")]
     [ProducesResponseType(typeof(ApiResult<QuizResultResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

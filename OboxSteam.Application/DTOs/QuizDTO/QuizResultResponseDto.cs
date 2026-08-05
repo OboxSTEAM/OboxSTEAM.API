@@ -6,6 +6,8 @@ public class QuizResultResponseDto
 {
     public Guid SubmissionId { get; set; }
     public Guid AssignmentId { get; set; }
+    public Guid StudentId { get; set; }
+    public string? StudentName { get; set; }
     public int AttemptNumber { get; set; }
     public DateTime? StartedAt { get; set; }
     public decimal AssignedGrade { get; set; }

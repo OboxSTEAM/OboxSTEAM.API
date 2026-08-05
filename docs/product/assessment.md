@@ -63,6 +63,16 @@ Flow:
 3. Submit merges drafts, validates completeness, auto-grades, sets Graded status.
 4. Result returns score against `PassScore` and `MaxPoints`.
 
+### Mentor / staff access
+
+`GET .../quiz` and `GET .../quiz/result` also allow **Mentor**, **Manager**, and
+**SuperAdmin**:
+
+- Mentor may only view submissions of students enrolled in a class they mentor
+  (same program as the assignment module).
+- Manager / SuperAdmin may view any submission.
+- Responses include `StudentId` and `StudentName`.
+
 ## Retrospective Lifecycle (Student)
 
 Endpoints on `RetrospectiveController` (`/api`):
