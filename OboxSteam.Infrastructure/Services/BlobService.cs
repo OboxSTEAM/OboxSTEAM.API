@@ -474,6 +474,7 @@ public class BlobService : IBlobService
             ".gif" => "image/gif",
             ".pdf" => "application/pdf",
             ".mp4" => "video/mp4",
+            ".mov" => "video/quicktime",
             _ => "application/octet-stream"
         };
     }

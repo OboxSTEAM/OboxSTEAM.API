@@ -145,9 +145,12 @@ public class PortfolioController : ControllerBase
 
     [HttpPost("me/media")]
     [Authorize(Roles = "Student")]
+    [RequestSizeLimit(2L * 1024 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 2L * 1024 * 1024 * 1024)]
     [SwaggerOperation(
         Summary = "Upload portfolio media",
-        Description = "Uploads a portfolio-scoped image (jpg/jpeg/png, max 5 MB) to blob storage.")]
+        Description = "Uploads a portfolio-scoped image (jpg/jpeg/png, max 5 MB) or video " +
+                      "(mp4/mov, max 2 GB) to blob storage. Videos are stored as-is (no transcoding).")]
     [ProducesResponseType(typeof(ApiResult<PortfolioMediaUploadResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

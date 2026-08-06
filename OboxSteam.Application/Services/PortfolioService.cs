@@ -16,7 +16,8 @@ namespace OboxSteam.Application.Services;
 public sealed class PortfolioService : IPortfolioService
 {
     private const int MaxGalleryAssetsPerOwner = 20;
-    private const int MaxImageBytes = 5 * 1024 * 1024;
+    private const long MaxImageBytes = 5L * 1024 * 1024;
+    private const long MaxVideoBytes = 2L * 1024 * 1024 * 1024;
 
     private static readonly HashSet<PortfolioItemType> ManualCreatableTypes =
     [
@@ -52,6 +53,12 @@ public sealed class PortfolioService : IPortfolioService
         [".jpg"] = "image/jpeg",
         [".jpeg"] = "image/jpeg",
         [".png"] = "image/png",
+    };
+
+    private static readonly Dictionary<string, string> AllowedVideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".mp4"] = "video/mp4",
+        [".mov"] = "video/quicktime",
     };
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -586,14 +593,34 @@ public sealed class PortfolioService : IPortfolioService
         var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
 
         var extension = Path.GetExtension(file.FileName);
-        if (!AllowedImageExtensions.TryGetValue(extension, out var expectedContentType))
+        PortfolioMediaType mediaType;
+        string expectedContentType;
+        long maxBytes;
+
+        if (AllowedImageExtensions.TryGetValue(extension, out var imageContentType))
         {
-            throw ErrorHelper.BadRequest("Only .jpg, .jpeg, and .png image files are allowed.");
+            mediaType = PortfolioMediaType.Image;
+            expectedContentType = imageContentType;
+            maxBytes = MaxImageBytes;
+        }
+        else if (AllowedVideoExtensions.TryGetValue(extension, out var videoContentType))
+        {
+            mediaType = PortfolioMediaType.Video;
+            expectedContentType = videoContentType;
+            maxBytes = MaxVideoBytes;
+        }
+        else
+        {
+            throw ErrorHelper.BadRequest(
+                "Only .jpg, .jpeg, .png image files or .mp4, .mov video files are allowed.");
         }
 
-        if (file.Length > MaxImageBytes)
+        if (file.Length > maxBytes)
         {
-            throw ErrorHelper.BadRequest("Image file size must not exceed 5 MB.");
+            throw ErrorHelper.BadRequest(
+                mediaType == PortfolioMediaType.Image
+                    ? "Image file size must not exceed 5 MB."
+                    : "Video file size must not exceed 2 GB.");
         }
 
         var contentType = string.IsNullOrWhiteSpace(file.ContentType)
@@ -615,8 +642,9 @@ public sealed class PortfolioService : IPortfolioService
 
         var asset = new PortfolioMediaAsset
         {
+            Id = Guid.NewGuid(),
             PortfolioId = portfolio.Id,
-            Type = PortfolioMediaType.Image,
+            Type = mediaType,
             Url = url,
             S3Key = s3Key,
             FileName = Path.GetFileName(file.FileName),

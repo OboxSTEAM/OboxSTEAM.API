@@ -147,12 +147,18 @@ public sealed class PortfolioServiceTests
         string fileName = "photo.jpg",
         long length = 1024,
         string contentType = "image/jpeg")
+        => CreateMediaFile(fileName, length, contentType);
+
+    private static Mock<IFormFile> CreateMediaFile(
+        string fileName,
+        long length,
+        string contentType)
     {
         var file = new Mock<IFormFile>();
         file.Setup(f => f.FileName).Returns(fileName);
         file.Setup(f => f.Length).Returns(length);
         file.Setup(f => f.ContentType).Returns(contentType);
-        file.Setup(f => f.OpenReadStream()).Returns(new MemoryStream([0xFF, 0xD8, 0xFF]));
+        file.Setup(f => f.OpenReadStream()).Returns(new MemoryStream([0x00, 0x00, 0x00, 0x18]));
         return file;
     }
 
@@ -555,7 +561,31 @@ public sealed class PortfolioServiceTests
 
         Assert.Equal("photo.jpg", result.FileName);
         Assert.Equal("image/jpeg", result.ContentType);
+        Assert.Equal(PortfolioMediaType.Image, result.Type);
         Assert.StartsWith("https://cdn.example.com/portfolio/", result.Url);
+        _blobService.Verify(
+            b => b.UploadFileAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                $"portfolio/{_studentId}/{_portfolioId}",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UploadMediaAsync_UploadsValidMp4()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+        var sut = CreateSut();
+        var file = CreateMediaFile("clip.mp4", 10 * 1024 * 1024, "video/mp4");
+
+        var result = await sut.UploadMediaAsync(file.Object);
+
+        Assert.Equal("clip.mp4", result.FileName);
+        Assert.Equal("video/mp4", result.ContentType);
+        Assert.Equal(PortfolioMediaType.Video, result.Type);
+        Assert.Equal(10 * 1024 * 1024, result.SizeBytes);
         _blobService.Verify(
             b => b.UploadFileAsync(
                 It.IsAny<string>(),
@@ -577,12 +607,26 @@ public sealed class PortfolioServiceTests
     }
 
     [Fact]
-    public async Task UploadMediaAsync_ThrowsBadRequest_WhenFileTooLarge()
+    public async Task UploadMediaAsync_ThrowsBadRequest_WhenImageTooLarge()
     {
         var student = SeedStudent();
         SeedPortfolio(student: student);
         var sut = CreateSut();
         var file = CreateImageFile(length: 6 * 1024 * 1024);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.UploadMediaAsync(file.Object));
+    }
+
+    [Fact]
+    public async Task UploadMediaAsync_ThrowsBadRequest_WhenVideoTooLarge()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+        var sut = CreateSut();
+        var file = CreateMediaFile(
+            "huge.mp4",
+            (2L * 1024 * 1024 * 1024) + 1,
+            "video/mp4");
 
         await Assert.ThrowsAsync<BadRequestException>(() => sut.UploadMediaAsync(file.Object));
     }
