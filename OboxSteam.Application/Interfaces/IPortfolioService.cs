@@ -35,6 +35,13 @@ public interface IPortfolioService
 
     Task DeleteMediaAsync(Guid mediaId);
 
+    /// <summary>
+    /// Copies ready class-gallery media into portfolio-owned assets (independent S3 objects).
+    /// Optionally appends placements to an item or section gallery.
+    /// </summary>
+    Task<ImportClassGalleryMediaResponseDto> ImportClassGalleryMediaAsync(
+        ImportClassGalleryMediaRequestDto dto);
+
     Task<PortfolioSectionResponseDto> CreateSectionAsync(CreatePortfolioSectionRequestDto dto);
 
     Task<PortfolioSectionResponseDto> UpdateSectionAsync(Guid sectionId, UpdatePortfolioSectionRequestDto dto);

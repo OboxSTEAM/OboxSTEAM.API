@@ -29,6 +29,13 @@ public class PortfolioMediaAsset : BaseEntity
 
     public long SizeBytes { get; set; }
 
+    /// <summary>
+    /// When this asset was copied from a class gallery <see cref="MediaAsset"/>,
+    /// stores the source id for provenance and idempotent re-import.
+    /// </summary>
+    public Guid? SourceMediaAssetId { get; set; }
+    public MediaAsset? SourceMediaAsset { get; set; }
+
     // Navigation
     public ICollection<PortfolioMediaPlacement> Placements { get; set; } =
         new List<PortfolioMediaPlacement>();

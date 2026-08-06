@@ -266,6 +266,35 @@ public class BlobService : IBlobService
     }
 
     /// <inheritdoc />
+    public async Task CopyObjectAsync(
+        string sourceKey,
+        string destinationKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceKey))
+            throw new ArgumentException("Source key is required.", nameof(sourceKey));
+        if (string.IsNullOrWhiteSpace(destinationKey))
+            throw new ArgumentException("Destination key is required.", nameof(destinationKey));
+
+        await EnsureBucketExistsAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Copying S3 object from {Source} to {Destination}",
+            sourceKey,
+            destinationKey);
+
+        await _s3Client.CopyObjectAsync(new CopyObjectRequest
+        {
+            SourceBucket = _bucketName,
+            SourceKey = sourceKey,
+            DestinationBucket = _bucketName,
+            DestinationKey = destinationKey,
+        }, cancellationToken);
+
+        _logger.LogInformation("S3 copy completed: {Destination}", destinationKey);
+    }
+
+    /// <inheritdoc />
     public Task<(int Deleted, int Failed)> ClearAllObjectsAsync(CancellationToken cancellationToken = default) =>
         ClearObjectsByPrefixAsync(string.Empty, cancellationToken);
 

@@ -33,6 +33,14 @@ public interface IBlobService
     Task DeleteByKeyAsync(string s3Key, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Server-side copy of an object within the same bucket (source and destination keys).
+    /// </summary>
+    Task CopyObjectAsync(
+        string sourceKey,
+        string destinationKey,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Xóa toàn bộ objects trong bucket hiện tại.
     /// Trả về số object đã xóa và số object xóa thất bại.
     /// </summary>

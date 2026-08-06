@@ -132,6 +132,40 @@ public class MediaController : ControllerBase
     }
 
     /// <summary>
+    /// Student gallery across all Active-enrolled classes (portfolio media picker).
+    /// </summary>
+    [HttpGet("my-gallery")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Get my enrollment gallery (student)",
+        Description = "Returns paginated class media from every class the student is Active-enrolled in. " +
+                      "Filter with programId and/or classId. Same filters/sort/pagination as class gallery. " +
+                      "Use POST /api/portfolios/me/media/from-class-gallery to copy selected items into the portfolio."
+    )]
+    [ProducesResponseType(typeof(ApiResult<Pagination<ClassGalleryMediaDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetMyGallery(
+        [FromQuery, SwaggerParameter(Description = "Filter by program")] Guid? programId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by enrolled class")] Guid? classId = null,
+        [FromQuery] Guid? classSessionId = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by file type: image or video")] string? fileType = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by video status (e.g. TaggingComplete)")] VideoProcessingStatus? videoStatus = null,
+        [FromQuery, SwaggerParameter(Description = "Sort by: uploadedAt, createdAt, fileType, videoStatus")] string? sortBy = null,
+        [FromQuery] bool isDescending = true,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        if (page < 1 || pageSize < 1)
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+
+        var result = await _mediaService.GetMyGalleryAsync(
+            programId, classId, classSessionId, fileType, videoStatus, sortBy, isDescending, page, pageSize);
+        return Ok(ApiResult<Pagination<ClassGalleryMediaDto>>.Success(result, "200", "Enrollment gallery retrieved."));
+    }
+
+    /// <summary>
     /// Get one media asset by id (role-scoped).
     /// </summary>
     [HttpGet("{mediaId:guid}")]

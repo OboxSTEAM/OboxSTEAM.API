@@ -686,6 +686,155 @@ public sealed class PortfolioService : IPortfolioService
         await _unitOfWork.SaveChangesAsync();
     }
 
+    public async Task<ImportClassGalleryMediaResponseDto> ImportClassGalleryMediaAsync(
+        ImportClassGalleryMediaRequestDto dto)
+    {
+        if (dto == null || dto.MediaAssetIds == null || dto.MediaAssetIds.Count == 0)
+            throw ErrorHelper.BadRequest("At least one media asset id is required.");
+
+        if (dto.PortfolioCustomItemId.HasValue && dto.PortfolioSectionId.HasValue)
+            throw ErrorHelper.BadRequest("Provide either PortfolioCustomItemId or PortfolioSectionId, not both.");
+
+        var uniqueIds = new HashSet<Guid>();
+        foreach (var id in dto.MediaAssetIds)
+        {
+            if (id == Guid.Empty)
+                throw ErrorHelper.BadRequest("Each media asset id must be non-empty.");
+            if (!uniqueIds.Add(id))
+                throw ErrorHelper.BadRequest("Duplicate media asset ids are not allowed.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+
+        var enrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.StudentId == student.Id
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+        var enrolledClassIds = enrollments.Select(ce => ce.ClassId).ToHashSet();
+
+        var sourceMedia = await _unitOfWork.MediaAssets.GetAllAsync(
+            m => uniqueIds.Contains(m.Id) && !m.IsDeleted);
+        var sourceById = sourceMedia.ToDictionary(m => m.Id);
+
+        var existingCopies = await _unitOfWork.PortfolioMediaAssets.GetAllAsync(
+            a => a.PortfolioId == portfolio.Id
+                 && a.SourceMediaAssetId.HasValue
+                 && uniqueIds.Contains(a.SourceMediaAssetId.Value)
+                 && !a.IsDeleted);
+        var existingBySourceId = existingCopies
+            .GroupBy(a => a.SourceMediaAssetId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.CreatedAt).First());
+
+        var imported = new List<PortfolioMediaAsset>();
+        var newAssets = new List<PortfolioMediaAsset>();
+
+        foreach (var mediaId in dto.MediaAssetIds)
+        {
+            if (!sourceById.TryGetValue(mediaId, out var source))
+                throw ErrorHelper.NotFound($"Class media asset with id '{mediaId}' not found.");
+
+            if (string.IsNullOrWhiteSpace(source.FileUrl))
+                throw ErrorHelper.BadRequest($"Media '{mediaId}' has no file URL and cannot be imported.");
+
+            if (!IsReadyClassMedia(source))
+                throw ErrorHelper.BadRequest($"Media '{mediaId}' must be ready before it can be imported.");
+
+            if (!enrolledClassIds.Contains(source.ClassId))
+                throw ErrorHelper.Forbidden(
+                    $"You must be actively enrolled in the class that owns media '{mediaId}'.");
+
+            if (existingBySourceId.TryGetValue(mediaId, out var existing))
+            {
+                imported.Add(existing);
+                continue;
+            }
+
+            var sourceKey = ExtractS3KeyFromFileUrl(source.FileUrl);
+            if (string.IsNullOrWhiteSpace(sourceKey))
+                throw ErrorHelper.BadRequest($"Could not resolve S3 key for media '{mediaId}'.");
+
+            var extension = Path.GetExtension(sourceKey);
+            if (string.IsNullOrWhiteSpace(extension))
+                extension = string.Equals(source.FileType, "video", StringComparison.OrdinalIgnoreCase)
+                    ? ".mp4"
+                    : ".jpg";
+
+            var isVideo = string.Equals(source.FileType, "video", StringComparison.OrdinalIgnoreCase);
+            var fileName = $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
+            var folder = $"portfolio/{student.Id}/{portfolio.Id}";
+            var destKey = $"{folder}/{fileName}";
+
+            await _blobService.CopyObjectAsync(sourceKey, destKey);
+            var url = await _blobService.GetPreviewUrlAsync(destKey);
+
+            var asset = new PortfolioMediaAsset
+            {
+                Id = Guid.NewGuid(),
+                PortfolioId = portfolio.Id,
+                Type = isVideo ? PortfolioMediaType.Video : PortfolioMediaType.Image,
+                Url = url,
+                S3Key = destKey,
+                FileName = Path.GetFileName(sourceKey),
+                ContentType = InferContentType(extension, isVideo),
+                SizeBytes = 0,
+                SourceMediaAssetId = source.Id,
+            };
+
+            newAssets.Add(asset);
+            imported.Add(asset);
+            existingBySourceId[mediaId] = asset;
+        }
+
+        if (newAssets.Count > 0)
+        {
+            await _unitOfWork.PortfolioMediaAssets.AddRangeAsync(newAssets);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        PortfolioCustomItemResponseDto? itemResponse = null;
+        PortfolioSectionResponseDto? sectionResponse = null;
+
+        if (dto.PortfolioCustomItemId.HasValue || dto.PortfolioSectionId.HasValue)
+        {
+            await AppendPlacementsAsync(
+                portfolio.Id,
+                dto.PortfolioCustomItemId,
+                dto.PortfolioSectionId,
+                imported);
+
+            MarkDraftDirty(portfolio);
+            await _unitOfWork.Portfolios.Update(portfolio);
+            await _unitOfWork.SaveChangesAsync();
+
+            if (dto.PortfolioCustomItemId.HasValue)
+            {
+                var item = await GetOwnedItemOrThrowAsync(portfolio.Id, dto.PortfolioCustomItemId.Value);
+                var appendixByItemId = await LoadAppendixByItemIdAsync([item.Id]);
+                var mediaByItemId = await LoadItemMediaPlacementsAsync([item.Id]);
+                itemResponse = MapItemResponse(
+                    item,
+                    appendixByItemId.GetValueOrDefault(item.Id),
+                    mediaByItemId.GetValueOrDefault(item.Id));
+            }
+            else
+            {
+                var section = await GetOwnedSectionOrThrowAsync(portfolio.Id, dto.PortfolioSectionId!.Value);
+                var mediaBySectionId = await LoadSectionMediaPlacementsAsync([section.Id]);
+                sectionResponse = MapSectionResponse(
+                    section,
+                    mediaBySectionId.GetValueOrDefault(section.Id));
+            }
+        }
+
+        return new ImportClassGalleryMediaResponseDto
+        {
+            Assets = imported.Select(MapUploadResponse).ToList(),
+            Item = itemResponse,
+            Section = sectionResponse,
+        };
+    }
+
     public async Task<PortfolioSectionResponseDto> CreateSectionAsync(CreatePortfolioSectionRequestDto dto)
     {
         if (dto == null)
@@ -1821,6 +1970,104 @@ public sealed class PortfolioService : IPortfolioService
 
         return trimmed;
     }
+
+    private async Task AppendPlacementsAsync(
+        Guid portfolioId,
+        Guid? itemId,
+        Guid? sectionId,
+        List<PortfolioMediaAsset> assets)
+    {
+        if (itemId.HasValue == sectionId.HasValue)
+            throw ErrorHelper.BadRequest("Exactly one media owner (item or section) is required.");
+
+        if (itemId.HasValue)
+            await GetOwnedItemOrThrowAsync(portfolioId, itemId.Value);
+        else
+            await GetOwnedSectionOrThrowAsync(portfolioId, sectionId!.Value);
+
+        var existingPlacements = itemId.HasValue
+            ? await _unitOfWork.PortfolioMediaPlacements.GetAllAsync(
+                p => p.PortfolioCustomItemId == itemId.Value && !p.IsDeleted)
+            : await _unitOfWork.PortfolioMediaPlacements.GetAllAsync(
+                p => p.PortfolioSectionId == sectionId!.Value && !p.IsDeleted);
+
+        var alreadyPlaced = existingPlacements.Select(p => p.PortfolioMediaAssetId).ToHashSet();
+        var toAdd = assets.Where(a => !alreadyPlaced.Contains(a.Id)).ToList();
+
+        if (existingPlacements.Count + toAdd.Count > MaxGalleryAssetsPerOwner)
+        {
+            throw ErrorHelper.BadRequest(
+                $"At most {MaxGalleryAssetsPerOwner} media assets are allowed per gallery.");
+        }
+
+        if (toAdd.Count == 0)
+            return;
+
+        var nextOrder = existingPlacements.Count == 0
+            ? 0
+            : existingPlacements.Max(p => p.DisplayOrder) + 1;
+
+        var newPlacements = toAdd
+            .Select((asset, index) => new PortfolioMediaPlacement
+            {
+                PortfolioMediaAssetId = asset.Id,
+                PortfolioCustomItemId = itemId,
+                PortfolioSectionId = sectionId,
+                DisplayOrder = nextOrder + index,
+            })
+            .ToList();
+
+        await _unitOfWork.PortfolioMediaPlacements.AddRangeAsync(newPlacements);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private static bool IsReadyClassMedia(MediaAsset media) =>
+        !string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase)
+        || media.VideoStatus == VideoProcessingStatus.TaggingComplete;
+
+    private string? ExtractS3KeyFromFileUrl(string? fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+            return null;
+
+        try
+        {
+            var uri = new Uri(fileUrl);
+            var s3Key = uri.AbsolutePath.TrimStart('/');
+            var bucketPrefix = $"{_blobService.BucketName}/";
+            if (s3Key.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
+                s3Key = s3Key[bucketPrefix.Length..];
+            return s3Key;
+        }
+        catch (UriFormatException)
+        {
+            return fileUrl.Trim();
+        }
+    }
+
+    private static string InferContentType(string extension, bool isVideo)
+    {
+        return extension.ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".mp4" => "video/mp4",
+            ".mov" => "video/quicktime",
+            _ => isVideo ? "video/mp4" : "image/jpeg",
+        };
+    }
+
+    private static PortfolioMediaUploadResponseDto MapUploadResponse(PortfolioMediaAsset asset) =>
+        new()
+        {
+            Id = asset.Id,
+            Url = asset.Url,
+            Type = asset.Type,
+            FileName = asset.FileName,
+            ContentType = asset.ContentType,
+            SizeBytes = asset.SizeBytes,
+            CreatedAt = asset.CreatedAt,
+        };
 
     private static string ValidateAndTrimOptionalUrl(string value, string fieldName)
     {

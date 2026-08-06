@@ -52,6 +52,12 @@ public sealed class PortfolioServiceTests
         _blobService
             .Setup(b => b.DeleteByKeyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+        _blobService
+            .Setup(b => b.CopyObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         return new PortfolioService(
             _db,
@@ -1749,5 +1755,312 @@ public sealed class PortfolioServiceTests
         Assert.Equal("https://cdn.example.com/updated.pdf", capstone.MediaUrl);
         Assert.Equal("Updated highlight title", reel.Title);
         Assert.Equal("https://cdn.example.com/new-highlight.mp4", reel.MediaUrl);
+    }
+
+    [Fact]
+    public async Task ImportClassGalleryMediaAsync_CopiesReadyImageAndVideo()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+
+        var programId = Guid.Parse("61616161-6161-6161-6161-616161616161");
+        var classId = Guid.Parse("62626262-6262-6262-6262-626262626262");
+        var imageMediaId = Guid.Parse("63636363-6363-6363-6363-636363636363");
+        var videoMediaId = Guid.Parse("64646464-6464-6464-6464-646464646464");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-IMP",
+            Name = "Import Program",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+        });
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-IMP",
+            Name = "Import Class",
+            ProgramId = programId,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(30),
+            MaxCapacity = 20,
+            Status = ClassStatus.InProgress,
+            IsDeleted = false,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = Guid.NewGuid(),
+            Status = ClassEnrollmentStatus.Active,
+            EnrolledAt = DateTime.UtcNow.AddDays(-1),
+            IsDeleted = false,
+        });
+        _db.MediaAssets.Seed(
+            new MediaAsset
+            {
+                Id = imageMediaId,
+                UploaderId = _studentId,
+                ClassId = classId,
+                FileType = "image",
+                FileUrl = "https://obox-bucket.s3.ap-southeast-1.amazonaws.com/media/photo.jpg",
+                VideoStatus = VideoProcessingStatus.None,
+                UploadedAt = DateTime.UtcNow,
+                IsDeleted = false,
+            },
+            new MediaAsset
+            {
+                Id = videoMediaId,
+                UploaderId = _studentId,
+                ClassId = classId,
+                FileType = "video",
+                FileUrl = "https://obox-bucket.s3.ap-southeast-1.amazonaws.com/media/clip.mp4",
+                VideoStatus = VideoProcessingStatus.TaggingComplete,
+                UploadedAt = DateTime.UtcNow,
+                IsDeleted = false,
+            });
+
+        var sut = CreateSut();
+        var result = await sut.ImportClassGalleryMediaAsync(new ImportClassGalleryMediaRequestDto
+        {
+            MediaAssetIds = [imageMediaId, videoMediaId],
+        });
+
+        Assert.Equal(2, result.Assets.Count);
+        Assert.Contains(result.Assets, a => a.Type == PortfolioMediaType.Image);
+        Assert.Contains(result.Assets, a => a.Type == PortfolioMediaType.Video);
+        Assert.Equal(2, _db.PortfolioMediaAssets.Items.Count(a => !a.IsDeleted));
+        Assert.All(
+            _db.MediaAssets.Items.Where(m => m.Id == imageMediaId || m.Id == videoMediaId),
+            m => Assert.False(m.IsDeleted));
+        _blobService.Verify(
+            b => b.CopyObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ImportClassGalleryMediaAsync_IsIdempotent_BySourceMediaAssetId()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+
+        var programId = Guid.Parse("65656565-6565-6565-6565-656565656565");
+        var classId = Guid.Parse("66666666-6666-6666-6666-666666666661");
+        var imageMediaId = Guid.Parse("67676767-6767-6767-6767-676767676767");
+        var existingAssetId = Guid.Parse("68686868-6868-6868-6868-686868686868");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-IDEM",
+            Name = "Idem Program",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+        });
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-IDEM",
+            Name = "Idem Class",
+            ProgramId = programId,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(30),
+            MaxCapacity = 20,
+            Status = ClassStatus.InProgress,
+            IsDeleted = false,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = Guid.NewGuid(),
+            Status = ClassEnrollmentStatus.Active,
+            EnrolledAt = DateTime.UtcNow.AddDays(-1),
+            IsDeleted = false,
+        });
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = imageMediaId,
+            UploaderId = _studentId,
+            ClassId = classId,
+            FileType = "image",
+            FileUrl = "https://obox-bucket.s3.ap-southeast-1.amazonaws.com/media/photo.jpg",
+            VideoStatus = VideoProcessingStatus.None,
+            UploadedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+        _db.PortfolioMediaAssets.Seed(new PortfolioMediaAsset
+        {
+            Id = existingAssetId,
+            PortfolioId = _portfolioId,
+            Type = PortfolioMediaType.Image,
+            Url = "https://cdn.example.com/already.jpg",
+            S3Key = "portfolio/already.jpg",
+            FileName = "already.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = 100,
+            SourceMediaAssetId = imageMediaId,
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        var result = await sut.ImportClassGalleryMediaAsync(new ImportClassGalleryMediaRequestDto
+        {
+            MediaAssetIds = [imageMediaId],
+        });
+
+        Assert.Single(result.Assets);
+        Assert.Equal(existingAssetId, result.Assets[0].Id);
+        _blobService.Verify(
+            b => b.CopyObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ImportClassGalleryMediaAsync_AppendsToItem()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+
+        var programId = Guid.Parse("69696969-6969-6969-6969-696969696969");
+        var classId = Guid.Parse("6a6a6a6a-6a6a-6a6a-6a6a-6a6a6a6a6a6a");
+        var imageMediaId = Guid.Parse("6b6b6b6b-6b6b-6b6b-6b6b-6b6b6b6b6b6b");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-ATT",
+            Name = "Attach Program",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+        });
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-ATT",
+            Name = "Attach Class",
+            ProgramId = programId,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(30),
+            MaxCapacity = 20,
+            Status = ClassStatus.InProgress,
+            IsDeleted = false,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = Guid.NewGuid(),
+            Status = ClassEnrollmentStatus.Active,
+            EnrolledAt = DateTime.UtcNow.AddDays(-1),
+            IsDeleted = false,
+        });
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = imageMediaId,
+            UploaderId = _studentId,
+            ClassId = classId,
+            FileType = "image",
+            FileUrl = "https://obox-bucket.s3.ap-southeast-1.amazonaws.com/media/photo.jpg",
+            VideoStatus = VideoProcessingStatus.None,
+            UploadedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+        _db.PortfolioCustomItems.Seed(new PortfolioCustomItem
+        {
+            Id = _itemId,
+            PortfolioId = _portfolioId,
+            ItemType = PortfolioItemType.Project,
+            Title = "My Project",
+            DisplayOrder = 0,
+            IsVisible = true,
+            Source = PortfolioItemSource.StudentEdited,
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        var result = await sut.ImportClassGalleryMediaAsync(new ImportClassGalleryMediaRequestDto
+        {
+            MediaAssetIds = [imageMediaId],
+            PortfolioCustomItemId = _itemId,
+        });
+
+        Assert.NotNull(result.Item);
+        Assert.Single(result.Item!.MediaAssets);
+        Assert.Single(_db.PortfolioMediaPlacements.Items, p => !p.IsDeleted);
+    }
+
+    [Fact]
+    public async Task ImportClassGalleryMediaAsync_Throws_WhenNotReadyVideo()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+
+        var programId = Guid.Parse("6c6c6c6c-6c6c-6c6c-6c6c-6c6c6c6c6c6c");
+        var classId = Guid.Parse("6d6d6d6d-6d6d-6d6d-6d6d-6d6d6d6d6d6d");
+        var videoMediaId = Guid.Parse("6e6e6e6e-6e6e-6e6e-6e6e-6e6e6e6e6e6e");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-NR",
+            Name = "NotReady Program",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+        });
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-NR",
+            Name = "NotReady Class",
+            ProgramId = programId,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(30),
+            MaxCapacity = 20,
+            Status = ClassStatus.InProgress,
+            IsDeleted = false,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = Guid.NewGuid(),
+            Status = ClassEnrollmentStatus.Active,
+            EnrolledAt = DateTime.UtcNow.AddDays(-1),
+            IsDeleted = false,
+        });
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = videoMediaId,
+            UploaderId = _studentId,
+            ClassId = classId,
+            FileType = "video",
+            FileUrl = "https://obox-bucket.s3.ap-southeast-1.amazonaws.com/media/clip.mp4",
+            VideoStatus = VideoProcessingStatus.Transcoding,
+            UploadedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.ImportClassGalleryMediaAsync(new ImportClassGalleryMediaRequestDto
+            {
+                MediaAssetIds = [videoMediaId],
+            }));
     }
 }

@@ -198,6 +198,30 @@ public class PortfolioController : ControllerBase
         return Ok(ApiResult.Success("200", "Portfolio media deleted successfully."));
     }
 
+    [HttpPost("me/media/from-class-gallery")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Import class gallery media into portfolio",
+        Description = "Copies ready class-gallery images/videos into independent portfolio media assets. " +
+                      "Optionally appends them to an item or section gallery. " +
+                      "Does not modify the original class gallery MediaAsset.")]
+    [ProducesResponseType(typeof(ApiResult<ImportClassGalleryMediaResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> ImportClassGalleryMedia(
+        [FromBody, SwaggerParameter("Class media ids to import")] ImportClassGalleryMediaRequestDto dto)
+    {
+        var result = await _portfolioService.ImportClassGalleryMediaAsync(dto);
+        return StatusCode(
+            201,
+            ApiResult<ImportClassGalleryMediaResponseDto>.Success(
+                result,
+                "201",
+                "Class gallery media imported successfully."));
+    }
+
     [HttpPost("me/items")]
     [Authorize(Roles = "Student")]
     [SwaggerOperation(

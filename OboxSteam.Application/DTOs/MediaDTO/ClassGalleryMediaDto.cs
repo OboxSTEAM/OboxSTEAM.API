@@ -10,6 +10,9 @@ public class ClassGalleryMediaDto
     public Guid Id { get; set; }
     public Guid UploaderId { get; set; }
     public Guid ClassId { get; set; }
+    public string? ClassName { get; set; }
+    public Guid? ProgramId { get; set; }
+    public string? ProgramName { get; set; }
     public Guid? ClassSessionId { get; set; }
     public string? FileUrl { get; set; }
     public string? FileType { get; set; }

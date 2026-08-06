@@ -322,20 +322,7 @@ public class MediaService : IMediaService
         var mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
             m => !m.IsDeleted && m.ClassId == classId);
 
-        if (classSessionId.HasValue)
-            mediaList = mediaList.Where(m => m.ClassSessionId == classSessionId.Value).ToList();
-
-        if (!string.IsNullOrWhiteSpace(fileType))
-        {
-            mediaList = mediaList
-                .Where(m => string.Equals(m.FileType, fileType.Trim(), StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
-
-        if (videoStatus.HasValue)
-            mediaList = mediaList.Where(m => m.VideoStatus == videoStatus.Value).ToList();
-
-        mediaList = SortMediaList(mediaList, sortBy, isDescending);
+        mediaList = ApplyGalleryFilters(mediaList, classSessionId, fileType, videoStatus, sortBy, isDescending);
 
         var totalCount = mediaList.Count;
         var pageItems = mediaList
@@ -343,7 +330,87 @@ public class MediaService : IMediaService
             .Take(pageSize)
             .ToList();
 
-        var dtos = pageItems.Select(MapToGalleryDto).ToList();
+        var dtos = await MapGalleryDtosAsync(pageItems);
+        return new Pagination<ClassGalleryMediaDto>(dtos, totalCount, page, pageSize);
+    }
+
+    /// <inheritdoc />
+    public async Task<Pagination<ClassGalleryMediaDto>> GetMyGalleryAsync(
+        Guid? programId = null,
+        Guid? classId = null,
+        Guid? classSessionId = null,
+        string? fileType = null,
+        VideoProcessingStatus? videoStatus = null,
+        string? sortBy = null,
+        bool isDescending = true,
+        int page = 1,
+        int pageSize = 10)
+    {
+        if (page < 1 || pageSize < 1)
+            throw ErrorHelper.BadRequest("Invalid pagination parameters.");
+
+        if (pageSize > 100)
+            throw ErrorHelper.BadRequest("pageSize must not exceed 100.");
+
+        var currentUser = await GetCurrentUserOrThrowAsync();
+        if (currentUser.Role != RoleType.Student)
+            throw ErrorHelper.Forbidden("Only students can view the enrollment gallery.");
+
+        var enrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.StudentId == currentUser.Id
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        var enrolledClassIds = enrollments.Select(ce => ce.ClassId).Distinct().ToHashSet();
+
+        if (classId.HasValue && !enrolledClassIds.Contains(classId.Value))
+            throw ErrorHelper.Forbidden("You must be actively enrolled in this class to view its gallery.");
+
+        if (enrolledClassIds.Count == 0)
+            return new Pagination<ClassGalleryMediaDto>([], 0, page, pageSize);
+
+        var enrolledClasses = await _unitOfWork.Classes.GetAllAsync(
+            c => enrolledClassIds.Contains(c.Id) && !c.IsDeleted);
+
+        if (programId.HasValue)
+        {
+            enrolledClasses = enrolledClasses
+                .Where(c => c.ProgramId == programId.Value)
+                .ToList();
+            enrolledClassIds = enrolledClasses.Select(c => c.Id).ToHashSet();
+            if (enrolledClassIds.Count == 0)
+                return new Pagination<ClassGalleryMediaDto>([], 0, page, pageSize);
+        }
+
+        if (classId.HasValue)
+            enrolledClassIds = [classId.Value];
+
+        if (classSessionId.HasValue)
+        {
+            var session = await _unitOfWork.ClassSessions.GetByIdAsync(classSessionId.Value);
+            if (session == null || session.IsDeleted)
+                throw ErrorHelper.NotFound($"Class session '{classSessionId}' not found.");
+            if (!enrolledClassIds.Contains(session.ClassId))
+                throw ErrorHelper.Forbidden("You must be actively enrolled in the session's class.");
+        }
+
+        _logger.LogInformation(
+            "GetMyGalleryAsync: StudentId={StudentId}, ProgramId={ProgramId}, ClassId={ClassId}, " +
+            "ClassSessionId={ClassSessionId}, FileType={FileType}, VideoStatus={VideoStatus}, ClassCount={ClassCount}",
+            currentUser.Id, programId, classId, classSessionId, fileType, videoStatus, enrolledClassIds.Count);
+
+        var mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
+            m => !m.IsDeleted && enrolledClassIds.Contains(m.ClassId));
+
+        mediaList = ApplyGalleryFilters(mediaList, classSessionId, fileType, videoStatus, sortBy, isDescending);
+
+        var totalCount = mediaList.Count;
+        var pageItems = mediaList
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var dtos = await MapGalleryDtosAsync(pageItems);
         return new Pagination<ClassGalleryMediaDto>(dtos, totalCount, page, pageSize);
     }
 
@@ -1663,7 +1730,60 @@ public class MediaService : IMediaService
         };
     }
 
-    private static ClassGalleryMediaDto MapToGalleryDto(MediaAsset media)
+    private static List<MediaAsset> ApplyGalleryFilters(
+        List<MediaAsset> mediaList,
+        Guid? classSessionId,
+        string? fileType,
+        VideoProcessingStatus? videoStatus,
+        string? sortBy,
+        bool isDescending)
+    {
+        if (classSessionId.HasValue)
+            mediaList = mediaList.Where(m => m.ClassSessionId == classSessionId.Value).ToList();
+
+        if (!string.IsNullOrWhiteSpace(fileType))
+        {
+            mediaList = mediaList
+                .Where(m => string.Equals(m.FileType, fileType.Trim(), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        if (videoStatus.HasValue)
+            mediaList = mediaList.Where(m => m.VideoStatus == videoStatus.Value).ToList();
+
+        return SortMediaList(mediaList, sortBy, isDescending);
+    }
+
+    private async Task<List<ClassGalleryMediaDto>> MapGalleryDtosAsync(List<MediaAsset> pageItems)
+    {
+        if (pageItems.Count == 0)
+            return [];
+
+        var classIds = pageItems.Select(m => m.ClassId).Distinct().ToList();
+        var classes = (await _unitOfWork.Classes.GetAllAsync(
+                c => classIds.Contains(c.Id) && !c.IsDeleted))
+            .ToDictionary(c => c.Id);
+
+        var programIds = classes.Values.Select(c => c.ProgramId).Distinct().ToList();
+        var programs = programIds.Count == 0
+            ? new Dictionary<Guid, Program>()
+            : (await _unitOfWork.Programs.GetAllAsync(
+                    p => programIds.Contains(p.Id) && !p.IsDeleted))
+                .ToDictionary(p => p.Id);
+
+        return pageItems.Select(media =>
+        {
+            classes.TryGetValue(media.ClassId, out var classEntity);
+            programs.TryGetValue(classEntity?.ProgramId ?? Guid.Empty, out var program);
+            return MapToGalleryDto(media, classEntity?.Name, classEntity?.ProgramId, program?.Name);
+        }).ToList();
+    }
+
+    private static ClassGalleryMediaDto MapToGalleryDto(
+        MediaAsset media,
+        string? className = null,
+        Guid? programId = null,
+        string? programName = null)
     {
         var isVideo = string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase);
         var isReady = !isVideo || media.VideoStatus == VideoProcessingStatus.TaggingComplete;
@@ -1673,6 +1793,9 @@ public class MediaService : IMediaService
             Id = media.Id,
             UploaderId = media.UploaderId,
             ClassId = media.ClassId,
+            ClassName = className,
+            ProgramId = programId,
+            ProgramName = programName,
             ClassSessionId = media.ClassSessionId,
             FileUrl = media.FileUrl,
             FileType = media.FileType,

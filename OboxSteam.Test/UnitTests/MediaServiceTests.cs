@@ -516,4 +516,121 @@ public sealed class MediaServiceTests
 
         Assert.Equal(403, ex.StatusCode);
     }
+
+    [Fact]
+    public async Task GetMyGalleryAsync_ReturnsMediaFromAllEnrolledClasses()
+    {
+        SeedBase();
+        var class2Id = Guid.Parse("55555555-5555-5555-5555-555555555556");
+        var image2Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab");
+        _db.Classes.Seed(new Class
+        {
+            Id = class2Id,
+            Code = "CLS-002",
+            Name = "Cohort B",
+            ProgramId = _programId,
+            MentorId = _mentorId,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(60),
+            MaxCapacity = 30,
+            Status = ClassStatus.InProgress,
+            IsDeleted = false,
+        });
+        SeedActiveEnrollment(_studentId, _classId);
+        SeedActiveEnrollment(_studentId, class2Id);
+        SeedMediaAssets();
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = image2Id,
+            UploaderId = _mentorId,
+            ClassId = class2Id,
+            FileType = "image",
+            FileUrl = "https://cdn.example.com/class2.jpg",
+            VideoStatus = VideoProcessingStatus.None,
+            UploadedAt = DateTime.UtcNow,
+            IsDeleted = false,
+            MediaTags = [],
+        });
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.GetMyGalleryAsync();
+
+        Assert.Equal(5, result.TotalCount);
+        Assert.Contains(result.Items, m => m.Id == _imageId && m.ClassName == "Cohort A");
+        Assert.Contains(result.Items, m => m.Id == image2Id && m.ClassName == "Cohort B");
+        Assert.All(result.Items, m =>
+        {
+            Assert.Equal(_programId, m.ProgramId);
+            Assert.Equal("STEAM Program", m.ProgramName);
+        });
+    }
+
+    [Fact]
+    public async Task GetMyGalleryAsync_FilterByProgramAndClass()
+    {
+        SeedBase();
+        var otherProgramId = Guid.Parse("44444444-4444-4444-4444-444444444445");
+        var otherClassId = Guid.Parse("55555555-5555-5555-5555-555555555557");
+        var otherImageId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaac");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = otherProgramId,
+            Code = "PRG-002",
+            Name = "Art Program",
+            Category = ProgramCategory.Art,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+        });
+        _db.Classes.Seed(new Class
+        {
+            Id = otherClassId,
+            Code = "CLS-003",
+            Name = "Art Cohort",
+            ProgramId = otherProgramId,
+            MentorId = _mentorId,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(60),
+            MaxCapacity = 30,
+            Status = ClassStatus.InProgress,
+            IsDeleted = false,
+        });
+        SeedActiveEnrollment(_studentId, _classId);
+        SeedActiveEnrollment(_studentId, otherClassId);
+        SeedMediaAssets();
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = otherImageId,
+            UploaderId = _mentorId,
+            ClassId = otherClassId,
+            FileType = "image",
+            FileUrl = "https://cdn.example.com/art.jpg",
+            VideoStatus = VideoProcessingStatus.None,
+            UploadedAt = DateTime.UtcNow,
+            IsDeleted = false,
+            MediaTags = [],
+        });
+        var sut = CreateSut(_studentId);
+
+        var byProgram = await sut.GetMyGalleryAsync(programId: _programId);
+        Assert.Equal(4, byProgram.TotalCount);
+        Assert.DoesNotContain(byProgram.Items, m => m.Id == otherImageId);
+
+        var byClass = await sut.GetMyGalleryAsync(classId: otherClassId);
+        Assert.Equal(1, byClass.TotalCount);
+        Assert.Equal(otherImageId, byClass.Items[0].Id);
+    }
+
+    [Fact]
+    public async Task GetMyGalleryAsync_ClassNotEnrolled_ThrowsForbidden()
+    {
+        SeedBase();
+        SeedMediaAssets();
+        var sut = CreateSut(_studentId);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(
+            () => sut.GetMyGalleryAsync(classId: _classId));
+
+        Assert.Equal(403, ex.StatusCode);
+    }
 }

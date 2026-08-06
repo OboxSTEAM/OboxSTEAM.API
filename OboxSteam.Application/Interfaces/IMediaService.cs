@@ -56,6 +56,22 @@ public interface IMediaService
         int pageSize = 10);
 
     /// <summary>
+    /// Student portfolio picker gallery: media from all Active-enrolled classes,
+    /// optionally filtered by <paramref name="programId"/> / <paramref name="classId"/>.
+    /// Same filters/sort/pagination as <see cref="GetClassGalleryAsync"/>.
+    /// </summary>
+    Task<Pagination<ClassGalleryMediaDto>> GetMyGalleryAsync(
+        Guid? programId = null,
+        Guid? classId = null,
+        Guid? classSessionId = null,
+        string? fileType = null,
+        VideoProcessingStatus? videoStatus = null,
+        string? sortBy = null,
+        bool isDescending = true,
+        int page = 1,
+        int pageSize = 10);
+
+    /// <summary>
     /// Returns one media asset by id, scoped by the caller's role.
     /// </summary>
     Task<MediaAssetDto> GetMediaByIdAsync(Guid mediaId);

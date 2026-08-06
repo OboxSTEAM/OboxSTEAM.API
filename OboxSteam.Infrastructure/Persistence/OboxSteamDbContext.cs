@@ -703,7 +703,13 @@ public class OboxSteamDbContext : DbContext
                 .HasForeignKey(m => m.PortfolioId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.HasOne(m => m.SourceMediaAsset)
+                .WithMany()
+                .HasForeignKey(m => m.SourceMediaAssetId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasIndex(m => m.PortfolioId);
+            entity.HasIndex(m => new { m.PortfolioId, m.SourceMediaAssetId });
         });
 
         // =============================================
