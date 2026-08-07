@@ -36,6 +36,16 @@ public interface IPersonalVideoService
 
     Task DeleteStackAsync(Guid stackId);
 
+    Task<HighlightVideoProgressDto> GetItemProgressAsync(Guid stackId, Guid itemId);
+
+    Task<HighlightVideoItemDto> CancelItemAsync(Guid stackId, Guid itemId);
+
+    Task<HighlightVideoStackDto> RegenerateStackAsync(Guid stackId);
+
+    Task<HighlightVideoItemDto> RetryItemAsync(Guid stackId, Guid itemId);
+
+    Task<IReadOnlyList<HighlightSourceMediaDto>> GetSourceMediaAsync(Guid stackId);
+
     Task HandlePersonalVideoJobCompletionAsync(string jobId, bool isSuccess);
 
     Task ProcessGenerationAsync(PersonalVideoJob job);

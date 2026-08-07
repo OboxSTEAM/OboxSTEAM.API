@@ -15,5 +15,8 @@ public enum HighlightVideoStatus
     Completed,
 
     /// <summary>Job failed at some stage.</summary>
-    Failed
+    Failed,
+
+    /// <summary>Job was cancelled by the user before completion.</summary>
+    Cancelled
 }

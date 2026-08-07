@@ -187,6 +187,21 @@ public class VideoConverterService : IVideoConverterService
         return new MediaConvertJobProgress(mapped, percent);
     }
 
+    /// <inheritdoc />
+    public async Task CancelJobAsync(string jobId)
+    {
+        try
+        {
+            await _mediaConvert.CancelJobAsync(new CancelJobRequest { Id = jobId });
+            _logger.LogInformation("MediaConvert job {JobId} cancel requested.", jobId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "MediaConvert CancelJob for {JobId} failed (job may already be finished).", jobId);
+        }
+    }
+
     private static int ClampPercent(int value) => Math.Clamp(value, 0, 100);
 
     /// <inheritdoc />

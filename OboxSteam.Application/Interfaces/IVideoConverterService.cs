@@ -52,6 +52,12 @@ public interface IVideoConverterService
     Task<MediaConvertJobProgress> GetJobProgressAsync(string jobId);
 
     /// <summary>
+    /// Best-effort cancel of an in-flight MediaConvert job. Swallows errors when the job
+    /// has already finished or cannot be cancelled.
+    /// </summary>
+    Task CancelJobAsync(string jobId);
+
+    /// <summary>
     /// Retrieves the S3 key of the transcoded output file for a completed MediaConvert job.
     /// The key is relative to the bucket root (e.g. "media/activityId_123.mp4").
     /// </summary>
