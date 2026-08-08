@@ -584,7 +584,7 @@ public class PersonalVideoService : IPersonalVideoService
         var allMedia = await _unitOfWork.MediaAssets.GetAllAsync(
             m => m.ClassId == stack.ClassId
                  && !m.IsDeleted
-                 && string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
+                 && m.FileType == "video"
                  && m.VideoStatus == VideoProcessingStatus.TaggingComplete,
             m => m.MediaTags);
 
@@ -1037,7 +1037,7 @@ public class PersonalVideoService : IPersonalVideoService
         var allMedia = await _unitOfWork.MediaAssets.GetAllAsync(
             m => m.ClassId == classId
                  && !m.IsDeleted
-                 && string.Equals(m.FileType, "video", StringComparison.OrdinalIgnoreCase)
+                 && m.FileType == "video"
                  && m.VideoStatus == VideoProcessingStatus.TaggingComplete,
             m => m.MediaTags);
 
