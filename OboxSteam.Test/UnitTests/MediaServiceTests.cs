@@ -633,4 +633,44 @@ public sealed class MediaServiceTests
 
         Assert.Equal(403, ex.StatusCode);
     }
+
+    [Fact]
+    public async Task AddMediaTagAsync_VideoWithExistingTag_PersistsEmptyFaceTimeline()
+    {
+        SeedBase();
+        SeedMediaAssets();
+        SeedActiveEnrollment(_outsideStudentId);
+        var existingTag = _db.MediaTags.Items.Single(t => t.MediaId == _readyId && t.StudentId == _studentId);
+        existingTag.FaceSegmentsJson = "[{\"StartMs\":1000,\"EndMs\":4000}]";
+        existingTag.HasOtherFaces = false;
+        var sut = CreateSut(_managerId);
+
+        var dto = await sut.AddMediaTagAsync(_readyId, _outsideStudentId);
+
+        Assert.Equal(_outsideStudentId, dto.StudentId);
+        Assert.True(dto.IsVerified);
+
+        var newTag = _db.MediaTags.Items.Single(t => t.MediaId == _readyId && t.StudentId == _outsideStudentId);
+        Assert.Equal("[]", newTag.FaceSegmentsJson);
+        Assert.True(newTag.HasOtherFaces);
+
+        // Other student's timeline must remain unchanged.
+        Assert.Equal("[{\"StartMs\":1000,\"EndMs\":4000}]", existingTag.FaceSegmentsJson);
+        Assert.False(existingTag.HasOtherFaces);
+    }
+
+    [Fact]
+    public async Task AddMediaTagAsync_Image_DoesNotSetFaceTimeline()
+    {
+        SeedBase();
+        SeedMediaAssets();
+        SeedActiveEnrollment(_studentId);
+        var sut = CreateSut(_managerId);
+
+        await sut.AddMediaTagAsync(_imageId, _studentId);
+
+        var tag = _db.MediaTags.Items.Single(t => t.MediaId == _imageId && t.StudentId == _studentId);
+        Assert.Null(tag.FaceSegmentsJson);
+        Assert.False(tag.HasOtherFaces);
+    }
 }

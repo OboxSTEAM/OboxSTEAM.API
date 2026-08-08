@@ -89,8 +89,11 @@ MediaConvert. Model: `HighlightVideoStack` (up to 3 per student/class) with
 `HighlightVideoItem` outputs (up to 4 per stack). Source clips come from
 `MediaAsset` videos for that class (`ClassId` required; optional
 `ClassSessionId`). Only videos with a **verified** face `MediaTag` for the
-student are used. Optional `StrengthDescription` filters clips via Bedrock +
-label timeline.
+student are used. Mentor late tags (no face timeline) are treated as scene-only
+participation / project credit: full video when no strength is set, or
+activity clips from the media label timeline when `StrengthDescription` is
+set. Optional `StrengthDescription` otherwise filters via Bedrock + label
+timeline (face windows when a face timeline exists).
 
 API: `/api/highlight-video/stacks` (`classId` query/body; optional `studentId`).
 Trim / add-segment / delete under `/api/highlight-video/stacks/{stackId}/...`.

@@ -461,4 +461,150 @@ public sealed class PersonalVideoServiceTests
         Assert.Equal(HighlightVideoStatus.Cancelled, item.Status);
         Assert.DoesNotContain(_published, n => n.Type == NotificationType.HighlightVideoGenerationFailed);
     }
+
+    [Fact]
+    public async Task ProcessInitialGeneration_LateTagNullTimeline_IncludesFullVideo()
+    {
+        SeedStudentAndClass(_mentorId);
+        SeedStack();
+        var item = SeedItem();
+
+        var otherTimelineJson = JsonSerializer.Serialize(new[]
+        {
+            new FaceTimestampSegment(500, 2500),
+        });
+        var otherTag = new MediaTag
+        {
+            Id = Guid.NewGuid(),
+            MediaId = _mediaId,
+            StudentId = _otherStudentId,
+            IsVerified = true,
+            FaceSegmentsJson = otherTimelineJson,
+            HasOtherFaces = true,
+        };
+        var lateTag = new MediaTag
+        {
+            Id = Guid.NewGuid(),
+            MediaId = _mediaId,
+            StudentId = _studentId,
+            IsVerified = true,
+            FaceSegmentsJson = null,
+            HasOtherFaces = true,
+        };
+        var media = new MediaAsset
+        {
+            Id = _mediaId,
+            UploaderId = _mentorId,
+            ClassId = _classId,
+            FileUrl = $"https://obox-bucket.s3.amazonaws.com/media/{_mediaId}.mp4",
+            FileType = "video",
+            VideoStatus = VideoProcessingStatus.TaggingComplete,
+            UploadedAt = DateTime.UtcNow,
+            MediaConvertJobId = "mc-media-1",
+            MediaTags = [otherTag, lateTag],
+        };
+        _db.MediaAssets.Seed(media);
+        _db.MediaTags.Seed(otherTag, lateTag);
+
+        _videoConverter
+            .Setup(v => v.SubmitPersonalVideoJobAsync(
+                It.IsAny<List<ClipInput>>(),
+                It.IsAny<string>()))
+            .ReturnsAsync("mc-personal-1");
+
+        var sut = CreateSut();
+        await sut.ProcessGenerationAsync(new PersonalVideoJob(
+            item.Id,
+            PersonalVideoJobKind.InitialGeneration,
+            _classId,
+            _studentId,
+            StrengthDescription: null));
+
+        Assert.Equal(HighlightVideoStatus.Processing, item.Status);
+        Assert.Equal("mc-personal-1", item.PersonalVideoJobRef);
+        Assert.Null(item.FailureReason);
+        Assert.Equal(otherTimelineJson, otherTag.FaceSegmentsJson);
+
+        _videoConverter.Verify(
+            v => v.SubmitPersonalVideoJobAsync(
+                It.Is<List<ClipInput>>(clips =>
+                    clips.Count == 1 && clips[0].Clips.Count == 0),
+                It.IsAny<string>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessInitialGeneration_LateTagWithStrength_UsesLabelOnlyMatch()
+    {
+        SeedStudentAndClass(_mentorId);
+        SeedStack("building IoT");
+        var item = SeedItem();
+
+        var lateTag = new MediaTag
+        {
+            Id = Guid.NewGuid(),
+            MediaId = _mediaId,
+            StudentId = _studentId,
+            IsVerified = true,
+            FaceSegmentsJson = "[]",
+            HasOtherFaces = false,
+        };
+        var media = new MediaAsset
+        {
+            Id = _mediaId,
+            UploaderId = _mentorId,
+            ClassId = _classId,
+            FileUrl = $"https://obox-bucket.s3.amazonaws.com/media/{_mediaId}.mp4",
+            FileType = "video",
+            VideoStatus = VideoProcessingStatus.TaggingComplete,
+            UploadedAt = DateTime.UtcNow,
+            MediaConvertJobId = "mc-media-1",
+            LabelTimelineJson = JsonSerializer.Serialize(new[]
+            {
+                new LabelDetectionEntry(1000, "Electronics", 90f),
+            }),
+            MediaTags = [lateTag],
+        };
+        _db.MediaAssets.Seed(media);
+        _db.MediaTags.Seed(lateTag);
+
+        _strengthMatch
+            .Setup(s => s.MatchStrengthsFromLabelsOnlyAsync(
+                It.IsAny<IList<LabelDetectionEntry>>(),
+                "building IoT",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StrengthMatchResult(
+                [new MatchedSegment(1000, 5000, "building IoT", 0.9, ["Electronics"])],
+                "project evidence"));
+
+        _videoConverter
+            .Setup(v => v.SubmitPersonalVideoJobAsync(
+                It.IsAny<List<ClipInput>>(),
+                It.IsAny<string>()))
+            .ReturnsAsync("mc-personal-strength");
+
+        var sut = CreateSut();
+        await sut.ProcessGenerationAsync(new PersonalVideoJob(
+            item.Id,
+            PersonalVideoJobKind.InitialGeneration,
+            _classId,
+            _studentId,
+            "building IoT"));
+
+        Assert.Equal(HighlightVideoStatus.Processing, item.Status);
+        Assert.Equal("mc-personal-strength", item.PersonalVideoJobRef);
+        _strengthMatch.Verify(
+            s => s.MatchStrengthsFromLabelsOnlyAsync(
+                It.IsAny<IList<LabelDetectionEntry>>(),
+                "building IoT",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _strengthMatch.Verify(
+            s => s.MatchStrengthsAsync(
+                It.IsAny<IList<FaceTimestampSegment>>(),
+                It.IsAny<IList<LabelDetectionEntry>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }

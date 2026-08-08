@@ -496,6 +496,14 @@ public class MediaService : IMediaService
         if (existing != null && !existing.IsDeleted)
             throw ErrorHelper.Conflict("Student is already tagged on this media.");
 
+        // Mentor late tags are participation / project credit: empty face timeline (Case 1 /
+        // scene-only) so highlight generation can use full video or label-only strength
+        // filtering without inventing face windows or rewriting other students' timelines.
+        var isVideo = string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase);
+        var hasOtherActiveTags = media.MediaTags.Any(t =>
+            !t.IsDeleted && t.StudentId != studentId);
+        var emptyFaceTimelineJson = isVideo ? "[]" : null;
+
         MediaTag tag;
         if (existing != null)
         {
@@ -504,6 +512,12 @@ public class MediaService : IMediaService
             existing.DeletedBy = null;
             existing.IsVerified = true;
             existing.ConfidenceScore = 100m;
+            if (isVideo)
+            {
+                existing.FaceSegmentsJson = emptyFaceTimelineJson;
+                existing.HasOtherFaces = hasOtherActiveTags;
+            }
+
             tag = existing;
         }
         else
@@ -513,7 +527,9 @@ public class MediaService : IMediaService
                 MediaId = mediaId,
                 StudentId = studentId,
                 ConfidenceScore = 100m,
-                IsVerified = true
+                IsVerified = true,
+                FaceSegmentsJson = emptyFaceTimelineJson,
+                HasOtherFaces = isVideo && hasOtherActiveTags,
             };
             await _unitOfWork.MediaTags.AddAsync(tag);
         }

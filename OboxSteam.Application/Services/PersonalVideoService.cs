@@ -21,15 +21,17 @@ namespace OboxSteam.Application.Services;
 ///
 /// Logic Core (clipping rules per source video):
 ///   Case 1 — Video has ZERO recorded face segments for the student (scene-only /
-///             class footage) but was tagged for the student → include the ENTIRE video without
-///             strength filtering; with strength filtering use label-only Bedrock sub-clips
-///             when strength filtering is enabled.
+///             class footage, or mentor late tag as participation / project credit) but was
+///             tagged for the student → include the ENTIRE video without strength filtering;
+///             with strength filtering use label-only Bedrock sub-clips when strength filtering
+///             is enabled. Verified tags with null <see cref="MediaTag.FaceSegmentsJson"/> are
+///             treated as empty scene-only timelines (same Case 1 path).
 ///   Case 2 — Video has no other faces besides the target student → include ENTIRE video.
 ///   Case 3 — Video has multiple people → extract only the student's segments from the timeline
 ///             using 2-second buffers; segments that overlap after buffering are merged.
-///   Fallback — No persisted timeline (legacy data / capture failure): include the ENTIRE video
-///              only when the student is the sole tagged person; otherwise skip the video to
-///              avoid leaking other people's faces.
+///   Fallback — No verified tag, or corrupt FaceSegmentsJson that cannot be deserialized:
+///              include the ENTIRE video only when the student is the sole tagged person;
+///              otherwise skip the video to avoid leaking other people's faces.
 ///
 /// Strengths Filtering (optional — triggered when caller supplies a strength description):
 ///   Cross-references on-camera face segments with the persisted Label Detection timeline via
@@ -1149,10 +1151,9 @@ public class PersonalVideoService : IPersonalVideoService
 
         if (timelineResult == null)
         {
-            // No persisted timeline: legacy media tagged before timelines were captured,
-            // or capture failed. Apply a privacy-safe fallback — only include the whole
-            // video when the student is the ONLY tagged person; otherwise skip the video
-            // to avoid leaking other people's faces into a personal highlight.
+            // No verified tag, or corrupt FaceSegmentsJson. Privacy-safe fallback — only
+            // include the whole video when the student is the ONLY tagged person; otherwise
+            // skip the video to avoid leaking other people's faces into a personal highlight.
             var taggedStudentCount = media.MediaTags
                 .Select(t => t.StudentId)
                 .Distinct()
@@ -1230,14 +1231,20 @@ public class PersonalVideoService : IPersonalVideoService
     /// <summary>
     /// Reconstructs the student's face timeline from the <see cref="MediaTag"/> captured at
     /// tagging time (<see cref="MediaTag.FaceSegmentsJson"/> + <see cref="MediaTag.HasOtherFaces"/>).
-    /// Returns <c>null</c> when no timeline was persisted for this student (legacy data created
-    /// before this field existed, or a capture failure) so the caller can apply a fallback policy.
+    /// A verified tag with null <see cref="MediaTag.FaceSegmentsJson"/> is treated as an empty
+    /// scene-only timeline (mentor late tag / participation credit → Case 1).
+    /// Returns <c>null</c> when there is no verified tag, or when FaceSegmentsJson cannot be
+    /// deserialized, so the caller can apply the privacy fallback policy.
     /// </summary>
     private VideoFaceTimelineResult? ReadPersistedTimeline(MediaAsset media, Guid studentId)
     {
         var tag = media.MediaTags.FirstOrDefault(t => t.StudentId == studentId && !t.IsDeleted && t.IsVerified);
-        if (tag?.FaceSegmentsJson == null)
+        if (tag == null)
             return null;
+
+        // Mentor late tags and legacy verified tags without a captured timeline → Case 1.
+        if (tag.FaceSegmentsJson == null)
+            return new VideoFaceTimelineResult(tag.HasOtherFaces, new List<FaceTimestampSegment>());
 
         try
         {
