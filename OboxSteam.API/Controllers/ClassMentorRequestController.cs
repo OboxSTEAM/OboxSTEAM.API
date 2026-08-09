@@ -89,7 +89,7 @@ public class ClassMentorRequestController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(Summary = "List class mentor requests (manager)")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ClassMentorRequestResponseDto>>), 200)]
     public async Task<IActionResult> GetRequests(
@@ -110,7 +110,7 @@ public class ClassMentorRequestController : ControllerBase
     }
 
     [HttpPost("{id:guid}/approve")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(Summary = "Approve a pending mentor request")]
     [ProducesResponseType(typeof(ApiResult<ClassMentorRequestResponseDto>), 200)]
     public async Task<IActionResult> ApproveRequest(
@@ -123,7 +123,7 @@ public class ClassMentorRequestController : ControllerBase
     }
 
     [HttpPost("{id:guid}/reject")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(Summary = "Reject a pending mentor request")]
     [ProducesResponseType(typeof(ApiResult<ClassMentorRequestResponseDto>), 200)]
     public async Task<IActionResult> RejectRequest(

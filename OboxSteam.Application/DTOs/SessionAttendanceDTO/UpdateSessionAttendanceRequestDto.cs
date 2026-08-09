@@ -5,7 +5,7 @@ namespace OboxSteam.Application.DTOs.SessionAttendanceDTO;
 
 /// <summary>
 /// Request to record or update attendance for a roster entry.
-/// Only Mentor, Manager, and SuperAdmin may submit this request.
+/// Only Mentor, Manager, and Admin may submit this request.
 /// <c>RecordedBy</c> is set from the authenticated user in the service layer.
 /// </summary>
 public class UpdateSessionAttendanceRequestDto

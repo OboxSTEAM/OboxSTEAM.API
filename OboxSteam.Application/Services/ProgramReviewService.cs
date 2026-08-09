@@ -186,7 +186,7 @@ public class ProgramReviewService : IProgramReviewService
 
         var currentUser = await _unitOfWork.Users.GetByIdAsync(currentUserId);
         bool isPrivileged = currentUser != null &&
-            (currentUser.Role == RoleType.SuperAdmin || currentUser.Role == RoleType.Manager);
+            (currentUser.Role == RoleType.Admin || currentUser.Role == RoleType.Manager);
 
         if (review.StudentId != currentUserId && !isPrivileged)
             throw ErrorHelper.Forbidden("You are not authorised to delete this review.");

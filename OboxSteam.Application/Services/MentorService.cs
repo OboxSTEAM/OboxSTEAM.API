@@ -175,7 +175,7 @@ public sealed class MentorService : IMentorService
         int pageSize)
     {
         ClassMentorRequestValidator.ValidatePagination(page, pageSize);
-        await EnsureManagerOrSuperAdminAsync();
+        await EnsureManagerOrAdminAsync();
 
         var query = _unitOfWork.Users
             .GetQueryable()
@@ -286,7 +286,7 @@ public sealed class MentorService : IMentorService
         Guid mentorId,
         UpdateMentorClassLimitRequestDto request)
     {
-        await EnsureManagerOrSuperAdminAsync();
+        await EnsureManagerOrAdminAsync();
         MentorSkillValidator.ValidateClassLimitValue(request.MaxConcurrentClasses);
 
         var mentor = await _unitOfWork.Users.GetByIdAsync(mentorId);
@@ -483,20 +483,20 @@ public sealed class MentorService : IMentorService
     private async Task<User> EnsureCanViewMentorProfileAsync()
     {
         var user = await GetCurrentUserAsync();
-        if (user.Role is not (RoleType.Manager or RoleType.SuperAdmin or RoleType.Student))
+        if (user.Role is not (RoleType.Manager or RoleType.Admin or RoleType.Student))
         {
-            throw ErrorHelper.Forbidden("Only Student, Manager, or SuperAdmin can view mentor profiles.");
+            throw ErrorHelper.Forbidden("Only Student, Manager, or Admin can view mentor profiles.");
         }
 
         return user;
     }
 
-    private async Task EnsureManagerOrSuperAdminAsync()
+    private async Task EnsureManagerOrAdminAsync()
     {
         var user = await GetCurrentUserAsync();
-        if (user.Role is not (RoleType.Manager or RoleType.SuperAdmin))
+        if (user.Role is not (RoleType.Manager or RoleType.Admin))
         {
-            throw ErrorHelper.Forbidden("Only Manager or SuperAdmin can manage mentor profiles.");
+            throw ErrorHelper.Forbidden("Only Manager or Admin can manage mentor profiles.");
         }
     }
 

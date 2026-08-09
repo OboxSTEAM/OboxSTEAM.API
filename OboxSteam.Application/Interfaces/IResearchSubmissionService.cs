@@ -9,7 +9,7 @@ namespace OboxSteam.Application.Interfaces;
 public interface IResearchSubmissionService
 {
     /// <summary>
-    /// Mentor, Manager, or SuperAdmin opens a <c>Pending</c> submission for a student on a milestone.
+    /// Mentor, Manager, or Admin opens a <c>Pending</c> submission for a student on a milestone.
     /// </summary>
     Task<ResearchSubmissionResponseDto> StartSubmission(StartResearchSubmissionRequestDto request);
 
@@ -41,7 +41,7 @@ public interface IResearchSubmissionService
         CreateResearchSubmissionRequestDto request);
 
     /// <summary>
-    /// Mentor, Manager, or SuperAdmin grades a submission or returns it for revision.
+    /// Mentor, Manager, or Admin grades a submission or returns it for revision.
     /// </summary>
     Task<ResearchSubmissionResponseDto> GradeSubmission(
         Guid submissionId,

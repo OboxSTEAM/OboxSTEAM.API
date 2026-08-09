@@ -76,10 +76,10 @@ public class QuestionBankController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a question bank",
-        Description = "Creates a new question bank for a course. Requires SuperAdmin or Manager role.")]
+        Description = "Creates a new question bank for a course. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<QuestionBankResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -98,10 +98,10 @@ public class QuestionBankController : ControllerBase
     }
 
     [HttpDelete("{questionBankId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete a question bank",
-        Description = "Soft-deletes a question bank and its questions. Requires SuperAdmin or Manager role.")]
+        Description = "Soft-deletes a question bank and its questions. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -117,10 +117,10 @@ public class QuestionBankController : ControllerBase
     }
 
     [HttpDelete("{questionBankId:guid}/questions/{questionId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete a bank question",
-        Description = "Soft-deletes a question and its options from a question bank. Requires SuperAdmin or Manager role.")]
+        Description = "Soft-deletes a question and its options from a question bank. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -135,13 +135,13 @@ public class QuestionBankController : ControllerBase
     }
 
     [HttpPost("{questionBankId:guid}/import")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [RequestSizeLimit(5 * 1024 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = 5 * 1024 * 1024)]
     [SwaggerOperation(
         Summary = "Import questions from CSV",
         Description = "Parses a CSV file and imports valid question rows into the specified question bank. " +
-                      "Invalid rows are skipped and returned in the error list. Requires SuperAdmin or Manager role.")]
+                      "Invalid rows are skipped and returned in the error list. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ImportBankQuestionsResultDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

@@ -115,10 +115,10 @@ public class ActivityController : ControllerBase
     // =========================================================================
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a new activity",
-        Description = "Creates a new activity with the provided information. Requires SuperAdmin or Manager role.")]
+        Description = "Creates a new activity with the provided information. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ActivitiesResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -140,10 +140,10 @@ public class ActivityController : ControllerBase
     // =========================================================================
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update activity information",
-        Description = "Updates the details of a specific activity by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Updates the details of a specific activity by its ID. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ActivitiesResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -174,10 +174,10 @@ public class ActivityController : ControllerBase
     // =========================================================================
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete an activity",
-        Description = "Soft-deletes an activity by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Soft-deletes an activity by its ID. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

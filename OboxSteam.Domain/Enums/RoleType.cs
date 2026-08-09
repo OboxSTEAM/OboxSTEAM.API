@@ -2,7 +2,7 @@ namespace OboxSteam.Domain.Enums;
 
 public enum RoleType
 {
-    SuperAdmin,
+    Admin,
     Manager,
     Mentor,
     Parent,

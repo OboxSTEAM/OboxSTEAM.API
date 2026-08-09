@@ -27,7 +27,7 @@ public class InvoiceService : IInvoiceService
             ?? throw ErrorHelper.NotFound($"Invoice '{invoiceId}' not found.");
 
         // Check ownership: Admin/Manager can view all, otherwise must be IssuedTo
-        if (currentUser.Role != RoleType.SuperAdmin && currentUser.Role != RoleType.Manager)
+        if (currentUser.Role != RoleType.Admin && currentUser.Role != RoleType.Manager)
         {
             if (invoice.IssuedToId != currentUserId)
             {
@@ -50,7 +50,7 @@ public class InvoiceService : IInvoiceService
             ?? throw ErrorHelper.NotFound($"Invoice for payment '{paymentId}' not found.");
 
         // Check ownership: Admin/Manager can view all, otherwise must be IssuedTo
-        if (currentUser.Role != RoleType.SuperAdmin && currentUser.Role != RoleType.Manager)
+        if (currentUser.Role != RoleType.Admin && currentUser.Role != RoleType.Manager)
         {
             if (invoice.IssuedToId != currentUserId)
             {

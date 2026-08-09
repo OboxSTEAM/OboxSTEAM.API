@@ -104,7 +104,7 @@ public class MaterialController : ControllerBase
     /// Get the material for a SelfPaced activity.
     /// </summary>
     [HttpGet("activity/{activityId:guid}")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get material by activity",
         Description = "Returns the learning material for a SelfPaced activity. Students must pass programEnrollmentId for enrollment-scoped access.")]

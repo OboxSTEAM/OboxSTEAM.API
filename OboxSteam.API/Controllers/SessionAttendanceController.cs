@@ -29,7 +29,7 @@ public sealed class SessionAttendanceController : ControllerBase
     // =========================================================================
 
     [HttpGet]
-    [Authorize(Roles = "Student,Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Student,Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Get session attendance roster",
         Description = "Returns attendance records for a class session. Students receive only their own record; "
@@ -81,10 +81,10 @@ public sealed class SessionAttendanceController : ControllerBase
     // =========================================================================
 
     [HttpPut("students/{studentId:guid}")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Update session attendance (by student)",
-        Description = "Upserts one student's attendance for a class session. Requires Mentor, Manager, or SuperAdmin role.")]
+        Description = "Upserts one student's attendance for a class session. Requires Mentor, Manager, or Admin role.")]
     [ProducesResponseType(typeof(ApiResult<SessionAttendanceResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

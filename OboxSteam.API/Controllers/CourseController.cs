@@ -99,10 +99,10 @@ public class CourseController : ControllerBase
     // =========================================================================
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a new course",
-        Description = "Creates a new course with the provided information. Requires SuperAdmin or Manager role.")]
+        Description = "Creates a new course with the provided information. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<CourseResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -124,10 +124,10 @@ public class CourseController : ControllerBase
     // =========================================================================
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update course information",
-        Description = "Updates the details of a specific course by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Updates the details of a specific course by its ID. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<CourseResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -158,10 +158,10 @@ public class CourseController : ControllerBase
     // =========================================================================
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete a course",
-        Description = "Soft-deletes a course by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Soft-deletes a course by its ID. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

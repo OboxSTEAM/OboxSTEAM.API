@@ -71,7 +71,7 @@ public class ClassSessionController : ControllerBase
     // =========================================================================
 
     [HttpGet("with-students/{sessionId:guid}")]
-    [Authorize(Roles = "Student,Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Student,Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Get class session with student roster",
         Description = "Retrieve class session details including attendance roster. Students receive only their own row; "
@@ -126,10 +126,10 @@ public class ClassSessionController : ControllerBase
     // =========================================================================
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a class session",
-        Description = "Schedules a new session for a class cohort. Requires SuperAdmin or Manager role.")]
+        Description = "Schedules a new session for a class cohort. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassSessionResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -159,10 +159,10 @@ public class ClassSessionController : ControllerBase
     // =========================================================================
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update a class session",
-        Description = "Updates a scheduled class session. Requires SuperAdmin or Manager role.")]
+        Description = "Updates a scheduled class session. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassSessionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -195,10 +195,10 @@ public class ClassSessionController : ControllerBase
     // =========================================================================
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete a class session",
-        Description = "Soft-deletes a class session. Requires SuperAdmin or Manager role.")]
+        Description = "Soft-deletes a class session. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

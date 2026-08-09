@@ -101,10 +101,10 @@ public class ClassController : ControllerBase
     // =========================================================================
 
     [HttpGet("with-students/{classId:guid}")]
-    [Authorize(Roles = "Student,Mentor,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Mentor,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get class with active student roster",
-        Description = "Retrieve class details including active enrolled students. Students may view the roster only for a class they are actively enrolled in. SuperAdmin and Manager may view any class roster. Mentors may only view classes they own.")]
+        Description = "Retrieve class details including active enrolled students. Students may view the roster only for a class they are actively enrolled in. Admin and Manager may view any class roster. Mentors may only view classes they own.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -155,10 +155,10 @@ public class ClassController : ControllerBase
     // =========================================================================
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a new class",
-        Description = "Creates a new class cohort in Draft status. Requires SuperAdmin or Manager role.")]
+        Description = "Creates a new class cohort in Draft status. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -181,10 +181,10 @@ public class ClassController : ControllerBase
     // =========================================================================
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update class information",
-        Description = "Updates class cohort details. Status changes must use Open, Start, or Complete endpoints. Requires SuperAdmin or Manager role.")]
+        Description = "Updates class cohort details. Status changes must use Open, Start, or Complete endpoints. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -210,10 +210,10 @@ public class ClassController : ControllerBase
     // =========================================================================
 
     [HttpPost("{id:guid}/open")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Open a class for enrollment",
-        Description = "Transitions a class from Draft to Open. Requires SuperAdmin or Manager role.")]
+        Description = "Transitions a class from Draft to Open. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -231,10 +231,10 @@ public class ClassController : ControllerBase
     // =========================================================================
 
     [HttpPost("{id:guid}/start")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Start a class",
-        Description = "Transitions a class from Open to InProgress. Requires SuperAdmin or Manager role.")]
+        Description = "Transitions a class from Open to InProgress. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -252,10 +252,10 @@ public class ClassController : ControllerBase
     // =========================================================================
 
     [HttpPost("{id:guid}/complete")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Complete a class",
-        Description = "Transitions a class from InProgress to Completed. Requires SuperAdmin or Manager role.")]
+        Description = "Transitions a class from InProgress to Completed. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

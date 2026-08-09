@@ -18,7 +18,7 @@ API, seed enrichment, and unit-test expansion follow in a later story slice.
 ## Affected Users
 
 - Mentor (future self-service profile)
-- Manager / SuperAdmin (future staffing views)
+- Manager / Admin (future staffing views)
 - Student (future public skill visibility)
 
 ## Affected Product Docs

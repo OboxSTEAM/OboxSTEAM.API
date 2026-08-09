@@ -263,7 +263,7 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
         int pageSize)
     {
         ClassMentorRequestValidator.ValidatePagination(page, pageSize);
-        await EnsureManagerOrSuperAdminAsync();
+        await EnsureManagerOrAdminAsync();
 
         var query = _unitOfWork.ClassMentorRequests
             .GetQueryable()
@@ -297,7 +297,7 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
         Guid requestId,
         DecideClassMentorRequestDto? request)
     {
-        var decider = await EnsureManagerOrSuperAdminAsync();
+        var decider = await EnsureManagerOrAdminAsync();
         var entity = await _unitOfWork.ClassMentorRequests.GetByIdAsync(requestId);
         ClassMentorRequestValidator.ValidateRequestExists(entity, requestId);
         ClassMentorRequestValidator.ValidatePendingForDecision(entity!);
@@ -382,7 +382,7 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
         Guid requestId,
         DecideClassMentorRequestDto? request)
     {
-        var decider = await EnsureManagerOrSuperAdminAsync();
+        var decider = await EnsureManagerOrAdminAsync();
         var entity = await _unitOfWork.ClassMentorRequests.GetByIdAsync(requestId);
         ClassMentorRequestValidator.ValidateRequestExists(entity, requestId);
         ClassMentorRequestValidator.ValidatePendingForDecision(entity!);
@@ -437,7 +437,7 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
         return userId;
     }
 
-    private async Task<User> EnsureManagerOrSuperAdminAsync()
+    private async Task<User> EnsureManagerOrAdminAsync()
     {
         var userId = _claimsService.GetCurrentUserId;
         if (userId == Guid.Empty)
@@ -451,9 +451,9 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
             throw ErrorHelper.NotFound("Current user not found.");
         }
 
-        if (user.Role is not (RoleType.Manager or RoleType.SuperAdmin))
+        if (user.Role is not (RoleType.Manager or RoleType.Admin))
         {
-            throw ErrorHelper.Forbidden("Only Manager or SuperAdmin can manage mentor requests.");
+            throw ErrorHelper.Forbidden("Only Manager or Admin can manage mentor requests.");
         }
 
         return user;

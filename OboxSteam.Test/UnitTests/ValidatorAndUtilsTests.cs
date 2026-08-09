@@ -948,7 +948,7 @@ public sealed class ValidatorAndUtilsTests
         ClassValidator.ValidateMentorExists(
             new User { Role = RoleType.Manager }, Guid.NewGuid());
         ClassValidator.ValidateMentorExists(
-            new User { Role = RoleType.SuperAdmin }, Guid.NewGuid());
+            new User { Role = RoleType.Admin }, Guid.NewGuid());
         Assert.Throws<BadRequestException>(() =>
             ClassValidator.ValidateMentorExists(
                 new User { Role = RoleType.Student }, Guid.NewGuid()));

@@ -108,7 +108,7 @@ public class ClassEnrollmentController : ControllerBase
     // =========================================================================
 
     [HttpGet("{id:guid}")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get class enrollment by ID",
         Description = "Retrieve a class enrollment. Students see their own; parents see linked students; admins see all.")]
@@ -131,7 +131,7 @@ public class ClassEnrollmentController : ControllerBase
     // =========================================================================
 
     [HttpGet("program-enrollment/{programEnrollmentId:guid}")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get class enrollments by program enrollment",
         Description = "Lists class enrollments for a program enrollment. Access is enforced per role.")]

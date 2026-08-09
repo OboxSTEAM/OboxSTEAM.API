@@ -19,7 +19,7 @@ public class PortfolioController : ControllerBase
     }
 
     [HttpGet("me")]
-    [Authorize(Roles = "Student,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get my portfolio",
         Description = "Returns the authenticated student's editable draft portfolio with all items and sections.")]

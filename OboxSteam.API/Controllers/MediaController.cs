@@ -70,7 +70,7 @@ public class MediaController : ControllerBase
     [SwaggerOperation(
         Summary = "Get media by class and/or student",
         Description = "Returns paginated media scoped by role. " +
-                      "Manager/SuperAdmin/Mentor see all video statuses by default (including Transcoding / PendingTagging). " +
+                      "Manager/Admin/Mentor see all video statuses by default (including Transcoding / PendingTagging). " +
                       "Filter with videoStatus=TaggingComplete for ready-only. " +
                       "Student always sees own tagged ready media; Parent requires linked studentId."
     )]
@@ -172,7 +172,7 @@ public class MediaController : ControllerBase
     [SwaggerOperation(
         Summary = "Get media by id",
         Description = "Returns one media asset including face tags. Access is role-scoped: " +
-                      "Manager/SuperAdmin any media; Mentor only mentored classes; " +
+                      "Manager/Admin any media; Mentor only mentored classes; " +
                       "Student only ready media they are tagged in; Parent only ready media tagged for linked students."
     )]
     [ProducesResponseType(typeof(ApiResult<MediaAssetDto>), 200)]
@@ -225,7 +225,7 @@ public class MediaController : ControllerBase
     /// Manually add a verified student tag (mentor/manager).
     /// </summary>
     [HttpPost("{mediaId:guid}/tags")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Add media tag",
         Description = "Manually tags a student onto ready media. Creates a verified tag. " +
@@ -249,7 +249,7 @@ public class MediaController : ControllerBase
     /// Verify or reject an AI/manual media tag.
     /// </summary>
     [HttpPatch("{mediaId:guid}/tags/{studentId:guid}")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Set media tag verification",
         Description = "Sets IsVerified for mentor review of face tags."
@@ -270,7 +270,7 @@ public class MediaController : ControllerBase
     /// Remove a student tag from media.
     /// </summary>
     [HttpDelete("{mediaId:guid}/tags/{studentId:guid}")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Remove media tag",
         Description = "Soft-deletes a media tag for the given student."

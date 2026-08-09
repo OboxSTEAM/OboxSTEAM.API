@@ -9,10 +9,10 @@ namespace OboxSteam.Application.Validation;
 public static class ResearchMilestoneValidator
 {
     public const string MutateMilestoneForbiddenMessage =
-        "Only SuperAdmin and Manager can create, update, or delete research milestones.";
+        "Only Admin and Manager can create, update, or delete research milestones.";
 
     public const string MutateActivityLinkForbiddenMessage =
-        "Only SuperAdmin, Manager, and assigned Mentors can manage milestone activity links.";
+        "Only Admin, Manager, and assigned Mentors can manage milestone activity links.";
 
     public const string ViewProgressForbiddenMessage =
         "You do not have permission to view milestone progress.";
@@ -89,7 +89,7 @@ public static class ResearchMilestoneValidator
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
-        if (user.Role is not (RoleType.SuperAdmin or RoleType.Manager))
+        if (user.Role is not (RoleType.Admin or RoleType.Manager))
         {
             throw ErrorHelper.Forbidden(MutateMilestoneForbiddenMessage);
         }
@@ -105,7 +105,7 @@ public static class ResearchMilestoneValidator
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
         {
             return user;
         }

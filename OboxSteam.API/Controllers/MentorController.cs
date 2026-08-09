@@ -102,7 +102,7 @@ public class MentorController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(Summary = "List mentors with all skills (including private) and concurrent usage")]
     [ProducesResponseType(typeof(ApiResult<Pagination<MentorProfileDto>>), 200)]
     public async Task<IActionResult> GetMentors(
@@ -121,10 +121,10 @@ public class MentorController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager,Student")]
+    [Authorize(Roles = "Admin,Manager,Student")]
     [SwaggerOperation(
         Summary = "Get mentor profile by ID",
-        Description = "Students see only public skills. Managers/SuperAdmins see all skills for staffing.")]
+        Description = "Students see only public skills. Managers/Admins see all skills for staffing.")]
     [ProducesResponseType(typeof(ApiResult<MentorProfileDto>), 200)]
     public async Task<IActionResult> GetMentorProfile([FromRoute] Guid id)
     {
@@ -133,7 +133,7 @@ public class MentorController : ControllerBase
     }
 
     [HttpPut("{id:guid}/class-limit")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(Summary = "Set per-mentor concurrent class limit")]
     [ProducesResponseType(typeof(ApiResult<MentorProfileDto>), 200)]
     public async Task<IActionResult> SetClassLimit(

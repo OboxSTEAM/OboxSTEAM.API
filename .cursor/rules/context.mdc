@@ -30,11 +30,11 @@ Student enrolls in program → joins a class cohort → learns through online/of
 | **Parent** | `Parent` | Register on behalf of child, pay, monitor child's progress (linked sub-profile) |
 | **Mentor / Instructor** | `Mentor` | Teach cohort sessions, grade submissions, upload evidence media |
 | **Manager** | `Manager` | OboxSTEAM platform representative; oversees program quality and Mentor accounts |
-| **Admin** | `SuperAdmin` | System-level observer; manages users, content, AI pipelines |
+| **Admin** | `Admin` | System-level observer; manages users, content, AI pipelines |
 
 **Parent–Child linking:** `ParentStudent` join table links parent and student accounts. A parent can manage multiple child sub-profiles. Activity notifications flow to the parent.
 
-**Mentor approval flow:** Mentor registers → uploads CCCD, degree, CV, language cert → Manager reviews → SuperAdmin approves.
+**Mentor approval flow:** Mentor registers → uploads CCCD, degree, CV, language cert → Manager reviews → Admin approves.
 
 ---
 

@@ -15,7 +15,7 @@ Assignments belong to a `Module` and optionally a `Course`. Fields include
 `MaxPoints`, `PassScore`, `IsRequiredForModulePass`, availability window, and
 `DueDate`.
 
-API: `/api/assignments` — CRUD for Manager/SuperAdmin; student submission
+API: `/api/assignments` — CRUD for Manager/Admin; student submission
 flows via assignment, quiz, and retrospective services.
 
 ## Question Banks
@@ -66,11 +66,11 @@ Flow:
 ### Mentor / staff access
 
 `GET .../quiz` and `GET .../quiz/result` also allow **Mentor**, **Manager**, and
-**SuperAdmin**:
+**Admin**:
 
 - Mentor may only view submissions of students enrolled in a class they mentor
   (same program as the assignment module).
-- Manager / SuperAdmin may view any submission.
+- Manager / Admin may view any submission.
 - Responses include `StudentId` and `StudentName`.
 
 ## Retrospective Lifecycle (Student)

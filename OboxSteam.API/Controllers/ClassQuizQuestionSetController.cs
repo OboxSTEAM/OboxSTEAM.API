@@ -36,7 +36,7 @@ public class ClassQuizQuestionSetController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(Summary = "Get the pulled quiz question set for a class")]
     [ProducesResponseType(typeof(ApiResult<ClassQuizQuestionSetResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

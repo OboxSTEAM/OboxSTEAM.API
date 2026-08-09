@@ -19,14 +19,14 @@ public sealed class ResearchMilestoneController : ControllerBase
     }
 
     // =========================================================================
-    // CREATE  —  POST /api/modules/{moduleId}/research-milestones   [SuperAdmin,Manager]
+    // CREATE  —  POST /api/modules/{moduleId}/research-milestones   [Admin,Manager]
     // =========================================================================
 
     [HttpPost("modules/{moduleId:guid}/research-milestones")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a research milestone",
-        Description = "Creates a research milestone and its linked deliverable assignment. Requires SuperAdmin or Manager.")]
+        Description = "Creates a research milestone and its linked deliverable assignment. Requires Admin or Manager.")]
     [ProducesResponseType(typeof(ApiResult<ResearchMilestoneResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -90,14 +90,14 @@ public sealed class ResearchMilestoneController : ControllerBase
     }
 
     // =========================================================================
-    // UPDATE  —  PUT /api/research-milestones/{milestoneId}   [SuperAdmin,Manager]
+    // UPDATE  —  PUT /api/research-milestones/{milestoneId}   [Admin,Manager]
     // =========================================================================
 
     [HttpPut("research-milestones/{milestoneId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update a research milestone",
-        Description = "Updates milestone fields and the linked deliverable assignment. Requires SuperAdmin or Manager.")]
+        Description = "Updates milestone fields and the linked deliverable assignment. Requires Admin or Manager.")]
     [ProducesResponseType(typeof(ApiResult<ResearchMilestoneResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -118,14 +118,14 @@ public sealed class ResearchMilestoneController : ControllerBase
     }
 
     // =========================================================================
-    // DELETE  —  DELETE /api/research-milestones/{milestoneId}   [SuperAdmin,Manager]
+    // DELETE  —  DELETE /api/research-milestones/{milestoneId}   [Admin,Manager]
     // =========================================================================
 
     [HttpDelete("research-milestones/{milestoneId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete a research milestone",
-        Description = "Soft-deletes a milestone (and its linked assignment) when no submissions exist. Requires SuperAdmin or Manager.")]
+        Description = "Soft-deletes a milestone (and its linked assignment) when no submissions exist. Requires Admin or Manager.")]
     [ProducesResponseType(typeof(ApiResult<object>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -143,14 +143,14 @@ public sealed class ResearchMilestoneController : ControllerBase
     }
 
     // =========================================================================
-    // LINK ACTIVITY  —  POST /api/research-milestones/{milestoneId}/activities   [SuperAdmin,Manager,Mentor]
+    // LINK ACTIVITY  —  POST /api/research-milestones/{milestoneId}/activities   [Admin,Manager,Mentor]
     // =========================================================================
 
     [HttpPost("research-milestones/{milestoneId:guid}/activities")]
-    [Authorize(Roles = "SuperAdmin,Manager,Mentor")]
+    [Authorize(Roles = "Admin,Manager,Mentor")]
     [SwaggerOperation(
         Summary = "Link an activity to a research milestone",
-        Description = "Links an existing activity to a milestone with required flag and display order. Requires SuperAdmin, Manager, or Mentor.")]
+        Description = "Links an existing activity to a milestone with required flag and display order. Requires Admin, Manager, or Mentor.")]
     [ProducesResponseType(typeof(ApiResult<ResearchMilestoneActivityResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -170,14 +170,14 @@ public sealed class ResearchMilestoneController : ControllerBase
     }
 
     // =========================================================================
-    // UPDATE LINK  —  PUT /api/research-milestones/{milestoneId}/activities/{activityId}   [SuperAdmin,Manager,Mentor]
+    // UPDATE LINK  —  PUT /api/research-milestones/{milestoneId}/activities/{activityId}   [Admin,Manager,Mentor]
     // =========================================================================
 
     [HttpPut("research-milestones/{milestoneId:guid}/activities/{activityId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager,Mentor")]
+    [Authorize(Roles = "Admin,Manager,Mentor")]
     [SwaggerOperation(
         Summary = "Update milestone activity link",
-        Description = "Updates required flag and/or display order for the activity link. Requires SuperAdmin, Manager, or Mentor.")]
+        Description = "Updates required flag and/or display order for the activity link. Requires Admin, Manager, or Mentor.")]
     [ProducesResponseType(typeof(ApiResult<ResearchMilestoneActivityResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -201,14 +201,14 @@ public sealed class ResearchMilestoneController : ControllerBase
     }
 
     // =========================================================================
-    // UNLINK ACTIVITY  —  DELETE /api/research-milestones/{milestoneId}/activities/{activityId}   [SuperAdmin,Manager,Mentor]
+    // UNLINK ACTIVITY  —  DELETE /api/research-milestones/{milestoneId}/activities/{activityId}   [Admin,Manager,Mentor]
     // =========================================================================
 
     [HttpDelete("research-milestones/{milestoneId:guid}/activities/{activityId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager,Mentor")]
+    [Authorize(Roles = "Admin,Manager,Mentor")]
     [SwaggerOperation(
         Summary = "Unlink activity from a research milestone",
-        Description = "Removes (soft-deletes) the activity link from the milestone. Requires SuperAdmin, Manager, or Mentor.")]
+        Description = "Removes (soft-deletes) the activity link from the milestone. Requires Admin, Manager, or Mentor.")]
     [ProducesResponseType(typeof(ApiResult<object>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -232,7 +232,7 @@ public sealed class ResearchMilestoneController : ControllerBase
     // =========================================================================
 
     [HttpGet("module-enrollments/{moduleEnrollmentId:guid}/research-milestones/progress")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get student research milestone progress",
         Description = "Returns per-milestone unlock and submission readiness for a module enrollment. Access is enforced per role.")]

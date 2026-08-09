@@ -11,7 +11,7 @@ mobile clients; this repository is the .NET backend only.
 
 | Role | Primary responsibility |
 | --- | --- |
-| SuperAdmin | Full platform administration |
+| Admin | Full platform administration |
 | Manager | Curriculum, classes, question banks, assignments |
 | Mentor | Course delivery, class mentoring, student guidance |
 | Student | Enrollment, activities, assignments, quizzes, submissions |

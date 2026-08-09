@@ -25,7 +25,7 @@ public interface IMediaService
     /// <summary>
     /// Returns paginated media filtered by class / session / student / type / status,
     /// scoped by the caller's role.
-    /// Manager/SuperAdmin/Mentor see all <see cref="VideoProcessingStatus"/> values by default.
+    /// Manager/Admin/Mentor see all <see cref="VideoProcessingStatus"/> values by default.
     /// Student/Parent only see ready media they (or linked students) are tagged in.
     /// Pass <paramref name="videoStatus"/> (e.g. TaggingComplete) to narrow results.
     /// </summary>

@@ -19,7 +19,7 @@ public class CertificateController : ControllerBase
     }
 
     [HttpGet("me")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "List my program certificates",
         Description = "Students see their own certificates. Parents see linked students. Admins see all program certificates.")]
@@ -36,7 +36,7 @@ public class CertificateController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get certificate by ID",
         Description = "Full show-page payload for an issued program certificate.")]
@@ -54,7 +54,7 @@ public class CertificateController : ControllerBase
     }
 
     [HttpGet("by-enrollment/{programEnrollmentId:guid}")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get certificate by program enrollment",
         Description = "Returns the program certificate for an enrollment when issued; otherwise null data.")]
@@ -91,7 +91,7 @@ public class CertificateController : ControllerBase
     }
 
     [HttpPost("program-enrollments/{programEnrollmentId:guid}/ensure")]
-    [Authorize(Roles = "Student,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Ensure / retry program certificate issuance",
         Description = "Issues a program certificate when all activities are Done. Regenerates and re-uploads the PDF (including avatar/thumbnail images). Reuses the same certificate code when already issued.")]

@@ -86,10 +86,10 @@ public class ProgramReviewController : ControllerBase
     }
 
     [HttpDelete("{reviewId:guid}")]
-    [Authorize(Roles = "Student,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete a program review",
-        Description = "Soft-deletes a review. The review owner, SuperAdmin, or Manager may call this endpoint.")]
+        Description = "Soft-deletes a review. The review owner, Admin, or Manager may call this endpoint.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

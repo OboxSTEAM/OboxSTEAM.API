@@ -27,13 +27,13 @@ public static class ResearchSubmissionValidator
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".mp4", ".mov", ".avi", ".mkv" };
     public const string StartSubmissionForbiddenMessage =
-        "Only Mentor, Manager, and SuperAdmin can open a research submission for a student.";
+        "Only Mentor, Manager, and Admin can open a research submission for a student.";
 
     public const string SubmitResearchForbiddenMessage =
         "Only students can submit research work.";
 
     public const string GradeSubmissionForbiddenMessage =
-        "Only Mentor, Manager, and SuperAdmin can grade research submissions.";
+        "Only Mentor, Manager, and Admin can grade research submissions.";
 
     public const string ViewSubmissionForbiddenMessage =
         "You do not have permission to view this research submission.";
@@ -225,7 +225,7 @@ public static class ResearchSubmissionValidator
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
         {
             return user;
         }
@@ -257,7 +257,7 @@ public static class ResearchSubmissionValidator
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
         {
             return user;
         }
@@ -283,7 +283,7 @@ public static class ResearchSubmissionValidator
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
         {
             return user;
         }
@@ -329,7 +329,7 @@ public static class ResearchSubmissionValidator
             throw ErrorHelper.NotFound("Current user not found.");
         }
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
         {
             return;
         }
