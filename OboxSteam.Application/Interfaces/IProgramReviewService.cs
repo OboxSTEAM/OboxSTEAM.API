@@ -29,7 +29,7 @@ public interface IProgramReviewService
     Task<ProgramReviewResponseDto> UpdateReviewAsync(Guid programId, Guid reviewId, UpdateProgramReviewDto dto);
 
     /// <summary>
-    /// Soft-deletes a review. The owner, SuperAdmin, or Manager may call this.
+    /// Soft-deletes a review. The owner, Admin, or Manager may call this.
     /// </summary>
     Task<bool> DeleteReviewAsync(Guid programId, Guid reviewId);
 }

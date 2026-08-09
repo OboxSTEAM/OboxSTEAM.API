@@ -18,7 +18,7 @@ Program
 Represents a sellable STEAM track (e.g. robotics, coding). Key fields: `Code`,
 `Name`, `Category`, `Level`, `Price`, `SkillsGained`, `Rating`, `Status`.
 
-API: `/api/programs` — list/detail public; mutations require SuperAdmin or
+API: `/api/programs` — list/detail public; mutations require Admin or
 Manager.
 
 ## Module

@@ -67,7 +67,7 @@ public static class ProgramEnrollmentValidator
 
     public static void ValidateCanListProgramEnrollments(RoleType role)
     {
-        if (role is not (RoleType.Student or RoleType.Parent or RoleType.SuperAdmin or RoleType.Manager))
+        if (role is not (RoleType.Student or RoleType.Parent or RoleType.Admin or RoleType.Manager))
         {
             throw ErrorHelper.Forbidden(ViewListForbiddenMessage);
         }

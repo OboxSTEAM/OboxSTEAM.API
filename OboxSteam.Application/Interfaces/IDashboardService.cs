@@ -3,7 +3,7 @@ using OboxSteam.Application.DTOs.DashboardDTO;
 namespace OboxSteam.Application.Interfaces;
 
 /// <summary>
-/// Manager/SuperAdmin statistics dashboard. All methods accept the same
+/// Manager/Admin statistics dashboard. All methods accept the same
 /// <see cref="DashboardFilterDto"/>; status/entity filters that do not apply to a
 /// section are silently ignored so the frontend can send one shared query string.
 /// </summary>

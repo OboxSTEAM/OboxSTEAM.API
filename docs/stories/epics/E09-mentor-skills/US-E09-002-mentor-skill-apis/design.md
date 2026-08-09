@@ -9,8 +9,8 @@
 | PUT | `/api/mentors/me/skills/{id}` | Mentor |
 | PUT | `/api/mentors/me/skills/{id}/visibility` | Mentor |
 | DELETE | `/api/mentors/me/skills/{id}` | Mentor |
-| GET | `/api/mentors` | Manager, SuperAdmin (all skills) |
-| GET | `/api/mentors/{id}` | Student (public only); Manager/SuperAdmin (all) |
+| GET | `/api/mentors` | Manager, Admin (all skills) |
+| GET | `/api/mentors/{id}` | Student (public only); Manager/Admin (all) |
 
 Evidence HTTPS URL, years 0–60, and non-future `IssuedAt` validated in
 `MentorSkillValidator`. Update with `Evidences != null` replaces all evidence.

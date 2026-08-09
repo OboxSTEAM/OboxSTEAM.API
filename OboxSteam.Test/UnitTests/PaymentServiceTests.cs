@@ -475,7 +475,7 @@ public sealed class PaymentServiceTests
     }
 
     [Fact]
-    public async Task GetPaymentById_AllowsPayerAndSuperAdmin()
+    public async Task GetPaymentById_AllowsPayerAndAdmin()
     {
         SeedStudent();
         SeedParent();
@@ -487,7 +487,7 @@ public sealed class PaymentServiceTests
             Id = Guid.Parse("16161616-1616-1616-1616-161616161616"),
             Code = "ADM-001",
             Email = "admin@test.com",
-            Role = RoleType.SuperAdmin,
+            Role = RoleType.Admin,
             IsDeleted = false,
         });
         var adminView = await CreateSut(Guid.Parse("16161616-1616-1616-1616-161616161616")).GetPaymentById(_paymentId);

@@ -20,7 +20,7 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 4. Join a class cohort when class-based delivery applies.
 
 Parents and managers can view enrollment state on shared read endpoints
-(Student, Parent, SuperAdmin, Manager).
+(Student, Parent, Admin, Manager).
 
 `GET /api/program-enrollments/{programEnrollmentId}/module-enrollments` returns
 the latest module enrollment per module (ordered by `ModuleOrder`). Use the

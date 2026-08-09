@@ -179,7 +179,7 @@ public sealed class CertificateService : ICertificateService
             var linkedIds = await GetLinkedStudentIdsAsync(currentUser.Id);
             query = query.Where(c => linkedIds.Contains(c.StudentId));
         }
-        else if (currentUser.Role is not (RoleType.SuperAdmin or RoleType.Manager))
+        else if (currentUser.Role is not (RoleType.Admin or RoleType.Manager))
         {
             throw ErrorHelper.Forbidden(ViewForbiddenMessage);
         }
@@ -307,7 +307,7 @@ public sealed class CertificateService : ICertificateService
             throw ErrorHelper.NotFound("Current user not found.");
         }
 
-        if (currentUser.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (currentUser.Role is RoleType.Admin or RoleType.Manager)
         {
             return;
         }

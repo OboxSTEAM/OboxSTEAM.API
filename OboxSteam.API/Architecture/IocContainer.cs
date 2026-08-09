@@ -433,8 +433,8 @@ public static class IocContainer
 
         services.AddAuthorization(options =>
         {
-            options.AddPolicy("SuperAdminPolicy", policy =>
-                policy.RequireRole("SuperAdmin"));
+            options.AddPolicy("AdminPolicy", policy =>
+                policy.RequireRole("Admin"));
 
             options.AddPolicy("ManagerPolicy", policy =>
                 policy.RequireRole("Manager"));

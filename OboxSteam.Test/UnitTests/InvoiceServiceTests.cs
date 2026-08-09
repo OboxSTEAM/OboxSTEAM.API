@@ -13,7 +13,7 @@ public sealed class InvoiceServiceTests
     private readonly Guid _studentId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly Guid _otherStudentId = Guid.Parse("12121212-1212-1212-1212-121212121212");
     private readonly Guid _managerId = Guid.Parse("13131313-1313-1313-1313-131313131313");
-    private readonly Guid _superAdminId = Guid.Parse("14141414-1414-1414-1414-141414141414");
+    private readonly Guid _adminId = Guid.Parse("14141414-1414-1414-1414-141414141414");
     private readonly Guid _paymentId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly Guid _otherPaymentId = Guid.Parse("23232323-2323-2323-2323-232323232323");
     private readonly Guid _invoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
@@ -100,15 +100,15 @@ public sealed class InvoiceServiceTests
     }
 
     [Fact]
-    public async Task GetById_AllowsManagerAndSuperAdmin()
+    public async Task GetById_AllowsManagerAndAdmin()
     {
         SeedUser(_managerId, RoleType.Manager, "MGR-001");
-        SeedUser(_superAdminId, RoleType.SuperAdmin, "SA-001");
+        SeedUser(_adminId, RoleType.Admin, "ADM-001");
         SeedUser(_studentId, RoleType.Student, "STD-001");
         SeedInvoice(issuedToId: _studentId);
 
         var managerResult = await CreateSut(_managerId).GetById(_invoiceId);
-        var adminResult = await CreateSut(_superAdminId).GetById(_invoiceId);
+        var adminResult = await CreateSut(_adminId).GetById(_invoiceId);
 
         Assert.Equal(_invoiceId, managerResult.Id);
         Assert.Equal(_invoiceId, adminResult.Id);

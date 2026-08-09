@@ -6,13 +6,13 @@
 
 | Role | Description |
 | --- | --- |
-| SuperAdmin | Platform-wide administration |
+| Admin | Platform-wide administration |
 | Manager | Curriculum and operational management |
 | Mentor | Delivers courses and mentors class cohorts |
 | Parent | Views and acts on behalf of linked students |
 | Student | Learns, enrolls, submits work |
 
-JWT role claims must match enum names exactly (e.g. `"Student"`, `"SuperAdmin"`).
+JWT role claims must match enum names exactly (e.g. `"Student"`, `"Admin"`).
 
 ## Authorization Patterns
 
@@ -29,7 +29,7 @@ JWT role claims must match enum names exactly (e.g. `"Student"`, `"SuperAdmin"`)
 - `/api/media/*` (base controller requires auth; list endpoints are role-scoped in
   `MediaService`)
 
-### Manager / SuperAdmin
+### Manager / Admin
 
 Create, update, delete for:
 
@@ -50,7 +50,7 @@ Create, update, delete for:
 ### Parent
 
 - View linked student enrollments and progress (shared endpoints with Student,
-  SuperAdmin, Manager).
+  Admin, Manager).
 - Parent-specific endpoints under `/api/parent/*`.
 - Media: ready media tagged for verified linked students (`studentId` required on
   `GET /api/media`).
@@ -60,7 +60,7 @@ Create, update, delete for:
 - Assigned via `Course.MentorId` and `Class.MentorId`; mentor-scoped behavior
   is enforced in services, not only at controller level.
 - Media review: list media for mentored class activities; add/remove/verify
-  student tags on that media (`Mentor,Manager,SuperAdmin` on tag mutation routes).
+  student tags on that media (`Mentor,Manager,Admin` on tag mutation routes).
   AI tags start with `IsVerified = false` until mentor approval.
 - Mentor skill profile: freely create, update, delete, and set `IsPublic` on
   own `MentorSkill` rows and evidence (no manager verification). See
@@ -69,7 +69,7 @@ Create, update, delete for:
 ### Mentor skill visibility
 
 - Mentor (own): all skills.
-- Manager / SuperAdmin: all skills on a mentor (staffing).
+- Manager / Admin: all skills on a mentor (staffing).
 - Student (mentor profile by id): only `IsPublic` skills.
 
 ## Parent–Student Linking

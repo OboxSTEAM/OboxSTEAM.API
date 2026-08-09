@@ -31,7 +31,7 @@ public class ProgramEnrollmentController : ControllerBase
     // =========================================================================
 
     [HttpGet("{id:guid}")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get program enrollment by ID",
         Description = "Retrieve a program enrollment. Students see their own; parents see linked students; admins see all.")]
@@ -54,7 +54,7 @@ public class ProgramEnrollmentController : ControllerBase
     // =========================================================================
 
     [HttpGet("me")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get program enrollments for current user",
         Description = "Students: own enrollments. Parents: linked students. Admins: all enrollments.")]
@@ -92,7 +92,7 @@ public class ProgramEnrollmentController : ControllerBase
     // =========================================================================
 
     [HttpGet("{enrollmentId:guid}/class")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get class for a program enrollment",
         Description = "Returns the active class cohort linked to this program enrollment. "
@@ -117,7 +117,7 @@ public class ProgramEnrollmentController : ControllerBase
     // =========================================================================
 
     [HttpGet("{enrollmentId:guid}/module-enrollments")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "List module enrollments for a program enrollment",
         Description = "Returns the latest module enrollment per module for the program enrollment. "
@@ -141,7 +141,7 @@ public class ProgramEnrollmentController : ControllerBase
     // =========================================================================
 
     [HttpGet("{enrollmentId:guid}/curriculum")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get enrollment-scoped program curriculum",
         Description = "Returns the curriculum tree with per-student activity and assignment status, module locks, and current activity.")]
@@ -253,7 +253,7 @@ public class ProgramEnrollmentController : ControllerBase
     // =========================================================================
 
     [HttpGet("student/{studentId:guid}")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get program enrollments by student ID",
         Description = "List program enrollments for a student. Access rules apply per role (self, linked parent, or admin).")]

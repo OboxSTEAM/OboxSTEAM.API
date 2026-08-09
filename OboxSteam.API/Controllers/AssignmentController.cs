@@ -75,7 +75,7 @@ public class AssignmentController : ControllerBase
     }
 
     [HttpGet("{assignmentId:guid}/submissions")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "List assignment submissions for a class",
         Description = "Returns submissions of the assignment made by students actively enrolled in the given class. Mentors may only view classes they are assigned to.")]
@@ -95,10 +95,10 @@ public class AssignmentController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create an assignment",
-        Description = "Creates a new assignment for a module. Requires SuperAdmin or Manager role.")]
+        Description = "Creates a new assignment for a module. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<AssignmentResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -117,10 +117,10 @@ public class AssignmentController : ControllerBase
     }
 
     [HttpPut("{assignmentId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager,Mentor")]
+    [Authorize(Roles = "Admin,Manager,Mentor")]
     [SwaggerOperation(
         Summary = "Update an assignment",
-        Description = "Updates an assignment by its ID. Managers/SuperAdmins may update all fields. Mentors may update Title, Description, DueDate, AvailableFrom, and AvailableUntil for assignments in programs they teach.")]
+        Description = "Updates an assignment by its ID. Managers/Admins may update all fields. Mentors may update Title, Description, DueDate, AvailableFrom, and AvailableUntil for assignments in programs they teach.")]
     [ProducesResponseType(typeof(ApiResult<AssignmentResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -142,10 +142,10 @@ public class AssignmentController : ControllerBase
     }
 
     [HttpDelete("{assignmentId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete an assignment",
-        Description = "Soft-deletes an assignment by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Soft-deletes an assignment by its ID. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

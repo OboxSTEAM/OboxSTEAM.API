@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ModuleDTO;
@@ -88,10 +88,10 @@ public class ModuleController : ControllerBase
     // =========================================================================
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a new module",
-        Description = "Creates a new module with the provided information. Requires SuperAdmin or Manager role.")]
+        Description = "Creates a new module with the provided information. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ModulesResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -113,10 +113,10 @@ public class ModuleController : ControllerBase
     // =========================================================================
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update module information",
-        Description = "Updates the details of a specific module by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Updates the details of a specific module by its ID. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ModulesResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -141,10 +141,10 @@ public class ModuleController : ControllerBase
     // =========================================================================
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete a module",
-        Description = "Soft-deletes a module by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Soft-deletes a module by its ID. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

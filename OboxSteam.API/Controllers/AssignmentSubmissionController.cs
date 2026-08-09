@@ -43,7 +43,7 @@ public sealed class AssignmentSubmissionController : ControllerBase
     }
 
     [HttpGet("assignment-submissions/{submissionId:guid}")]
-    [Authorize(Roles = "Student,Parent,Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Student,Parent,Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Get a non-research assignment submission by ID",
         Description = "Returns a FileUpload submission. Access is enforced per role.")]
@@ -91,10 +91,10 @@ public sealed class AssignmentSubmissionController : ControllerBase
     }
 
     [HttpPost("assignment-submissions/{submissionId:guid}/grade")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Grade a non-research assignment submission",
-        Description = "Mentor, Manager, or SuperAdmin grades a turned-in submission against the assignment's pass score, "
+        Description = "Mentor, Manager, or Admin grades a turned-in submission against the assignment's pass score, "
             + "or returns it for revision. Grading recalculates module and program progress.")]
     [ProducesResponseType(typeof(ApiResult<AssignmentSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]

@@ -9,12 +9,12 @@ entities. Application APIs still only expose thin proficiency + notes.
 
 - Mentors freely create, update, delete skills and evidence; toggle `IsPublic`.
 - Students see only public skills on `GET /api/mentors/{id}`.
-- Managers/SuperAdmins see all skills on list and detail.
+- Managers/Admins see all skills on list and detail.
 - Seed data includes structured expertise and sample evidence.
 
 ## Affected Users
 
-- Mentor, Manager, SuperAdmin, Student
+- Mentor, Manager, Admin, Student
 
 ## Affected Product Docs
 

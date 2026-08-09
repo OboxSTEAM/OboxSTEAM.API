@@ -513,7 +513,7 @@ public class PaymentService : IPaymentService
             ?? throw ErrorHelper.NotFound($"Payment '{id}' not found.");
 
         // Check ownership: Admin or Manager can view all, otherwise user must be Student or Payer
-        if (currentUser.Role != RoleType.SuperAdmin && currentUser.Role != RoleType.Manager)
+        if (currentUser.Role != RoleType.Admin && currentUser.Role != RoleType.Manager)
         {
             if (payment.StudentId != currentUserId && payment.PaidById != currentUserId)
             {

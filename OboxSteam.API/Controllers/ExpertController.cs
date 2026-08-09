@@ -68,10 +68,10 @@ public class ExpertController : ControllerBase
     // =========================================================================
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a new expert",
-        Description = "Creates a new expert with the provided information. Requires SuperAdmin or Manager role.")]
+        Description = "Creates a new expert with the provided information. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -93,10 +93,10 @@ public class ExpertController : ControllerBase
     // =========================================================================
 
     [HttpPost("{expertId:guid}/programs/{programId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Add program to expert",
-        Description = "Assigns a program to an expert. Optional request body may include RoleInBoard. Requires SuperAdmin or Manager role.")]
+        Description = "Assigns a program to an expert. Optional request body may include RoleInBoard. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ExpertProgramSummaryDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -121,10 +121,10 @@ public class ExpertController : ControllerBase
     // =========================================================================
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update expert information",
-        Description = "Updates the details of a specific expert by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Updates the details of a specific expert by its ID. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -149,10 +149,10 @@ public class ExpertController : ControllerBase
     // =========================================================================
 
     [HttpPut("{expertId:guid}/programs/{programId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update expert program assignment",
-        Description = "Updates the program assignment for an expert. Requires SuperAdmin or Manager role.")]
+        Description = "Updates the program assignment for an expert. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ExpertProgramSummaryDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -169,10 +169,10 @@ public class ExpertController : ControllerBase
     // =========================================================================
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete an expert",
-        Description = "Soft-deletes an expert by its ID. Requires SuperAdmin or Manager role.")]
+        Description = "Soft-deletes an expert by its ID. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -194,10 +194,10 @@ public class ExpertController : ControllerBase
     // =========================================================================
 
     [HttpDelete("{expertId:guid}/programs/{programId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Manager")]
+    [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Remove program from expert",
-        Description = "Removes a program assignment from an expert. Requires SuperAdmin or Manager role.")]
+        Description = "Removes a program assignment from an expert. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

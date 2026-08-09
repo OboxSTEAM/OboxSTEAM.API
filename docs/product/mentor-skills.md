@@ -44,7 +44,7 @@ Structured evidence entries linked to a `MentorSkill`:
 | Viewer | Skills returned |
 | --- | --- |
 | Mentor (own profile / me/skills) | All owned skills |
-| Manager / SuperAdmin | All skills on that mentor |
+| Manager / Admin | All skills on that mentor |
 | Student (mentor profile by id) | Only `IsPublic == true` |
 
 ## Out of scope (current slice)

@@ -44,7 +44,7 @@ public sealed class RetrospectiveController : ControllerBase
     }
 
     [HttpGet("submissions/{submissionId:guid}/retrospective")]
-    [Authorize(Roles = "Student,Parent,Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Student,Parent,Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Get a retrospective submission",
         Description = "Returns plain-text content and status for a retrospective submission. "

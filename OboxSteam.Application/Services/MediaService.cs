@@ -1054,7 +1054,7 @@ public class MediaService : IMediaService
 
     private static void EnsureCanManageTags(User currentUser)
     {
-        if (currentUser.Role is not (RoleType.Mentor or RoleType.Manager or RoleType.SuperAdmin))
+        if (currentUser.Role is not (RoleType.Mentor or RoleType.Manager or RoleType.Admin))
             throw ErrorHelper.Forbidden("Only mentors and managers can manage media tags.");
     }
 
@@ -1087,7 +1087,7 @@ public class MediaService : IMediaService
     {
         switch (currentUser.Role)
         {
-            case RoleType.SuperAdmin:
+            case RoleType.Admin:
             case RoleType.Manager:
                 return;
             case RoleType.Mentor:
@@ -1105,7 +1105,7 @@ public class MediaService : IMediaService
     {
         switch (currentUser.Role)
         {
-            case RoleType.SuperAdmin:
+            case RoleType.Admin:
             case RoleType.Manager:
                 return;
             case RoleType.Mentor:
@@ -1143,7 +1143,7 @@ public class MediaService : IMediaService
     {
         switch (currentUser.Role)
         {
-            case RoleType.SuperAdmin:
+            case RoleType.Admin:
             case RoleType.Manager:
             {
                 if (classId.HasValue)
@@ -1205,7 +1205,7 @@ public class MediaService : IMediaService
 
     private async Task EnsureCanManageMediaStudentAsync(User currentUser, MediaAsset media, Guid studentId)
     {
-        if (currentUser.Role is RoleType.Manager or RoleType.SuperAdmin)
+        if (currentUser.Role is RoleType.Manager or RoleType.Admin)
             return;
 
         if (currentUser.Role != RoleType.Mentor)

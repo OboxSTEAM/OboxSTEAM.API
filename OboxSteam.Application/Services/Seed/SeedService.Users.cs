@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -23,12 +23,12 @@ public partial class SeedService
                 new User
                 {
                     Id = Guid.NewGuid(),
-                    Code = "SAD-001",
-                    Email = "superadmin@oboxsteam.com",
+                    Code = "ADM-001",
+                    Email = "admin@oboxsteam.com",
                     PasswordHash = new PasswordHasher().HashPassword("Admin@123")!,
-                    FullName = "Super Admin",
+                    FullName = "Admin",
                     Phone = "0123456789",
-                    Role = RoleType.SuperAdmin,
+                    Role = RoleType.Admin,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
                     CreatedAt = DateTime.UtcNow,

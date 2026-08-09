@@ -21,7 +21,7 @@ public sealed class SkillController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "List skill catalog",
         Description = "Paged STEAM skill catalog for class requiredSkillIds and mentor skill pickers. Soft-deleted skills are excluded.")]

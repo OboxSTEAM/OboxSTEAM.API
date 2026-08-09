@@ -11,7 +11,7 @@ namespace OboxSteam.API.Controllers;
 
 [Route("api/dashboard")]
 [ApiController]
-[Authorize(Roles = "SuperAdmin,Manager")]
+[Authorize(Roles = "Admin,Manager")]
 public class DashboardController : ControllerBase
 {
     private readonly IDashboardService _dashboardService;

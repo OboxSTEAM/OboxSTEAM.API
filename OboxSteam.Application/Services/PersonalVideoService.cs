@@ -802,7 +802,7 @@ public class PersonalVideoService : IPersonalVideoService
 
     /// <summary>
     /// Students may only access their own stacks. Mentors must own the class.
-    /// Manager and SuperAdmin are allowed for any enrolled student.
+    /// Manager and Admin are allowed for any enrolled student.
     /// </summary>
     private async Task EnsureCallerCanAccessStudentAsync(Guid classId, Guid studentId)
     {
@@ -821,7 +821,7 @@ public class PersonalVideoService : IPersonalVideoService
             return;
         }
 
-        if (caller.Role is RoleType.Manager or RoleType.SuperAdmin)
+        if (caller.Role is RoleType.Manager or RoleType.Admin)
             return;
 
         if (caller.Role == RoleType.Mentor)

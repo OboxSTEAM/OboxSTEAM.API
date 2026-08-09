@@ -12,7 +12,7 @@ namespace OboxSteam.API.Controllers;
 /// </summary>
 [Route("api/highlight-video")]
 [ApiController]
-[Authorize(Roles = "Student,Mentor,Manager,SuperAdmin")]
+[Authorize(Roles = "Student,Mentor,Manager,Admin")]
 public class HighlightVideoController : ControllerBase
 {
     private readonly IPersonalVideoService _personalVideoService;

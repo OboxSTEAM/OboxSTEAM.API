@@ -50,7 +50,7 @@ public class ModuleEnrollmentController : ControllerBase
     // =========================================================================
 
     [HttpGet("{id:guid}")]
-    [Authorize(Roles = "Student,Parent,SuperAdmin,Manager")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get module enrollment by ID",
         Description = "Retrieve a module enrollment. Students see their own; parents see linked students; admins see all.")]

@@ -142,7 +142,7 @@ public sealed class ClassQuizQuestionSetService : IClassQuizQuestionSetService
         {
             await MentorScopeValidator.EnsureMentorOwnsClassAsync(_unitOfWork, userId, classId);
         }
-        else if (user.Role is not (RoleType.Manager or RoleType.SuperAdmin))
+        else if (user.Role is not (RoleType.Manager or RoleType.Admin))
         {
             throw ErrorHelper.Forbidden("Only mentors of this class, managers, or super admins can view the quiz set.");
         }

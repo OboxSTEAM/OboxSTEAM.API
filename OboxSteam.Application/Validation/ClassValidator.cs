@@ -41,7 +41,7 @@ public static class ClassValidator
             throw ErrorHelper.NotFound($"Mentor with id '{mentorId}' not found.");
         }
 
-        if (mentor.Role is not (RoleType.Mentor or RoleType.Manager or RoleType.SuperAdmin))
+        if (mentor.Role is not (RoleType.Mentor or RoleType.Manager or RoleType.Admin))
         {
             throw ErrorHelper.BadRequest($"User '{mentorId}' is not eligible to mentor a class.");
         }

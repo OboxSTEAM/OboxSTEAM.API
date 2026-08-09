@@ -436,12 +436,12 @@ public sealed class MentorServiceTests
     }
 
     [Fact]
-    public async Task GetMentors_AllowsSuperAdmin()
+    public async Task GetMentors_AllowsAdmin()
     {
-        var superAdminId = Guid.Parse("10101010-1010-1010-1010-101010101010");
-        SeedUser(superAdminId, RoleType.SuperAdmin, "SA-001");
+        var adminId = Guid.Parse("10101010-1010-1010-1010-101010101010");
+        SeedUser(adminId, RoleType.Admin, "ADM-001");
         SeedUser(_mentorId, RoleType.Mentor, "MNT-001", "Mentor");
-        var sut = CreateSut(superAdminId);
+        var sut = CreateSut(adminId);
 
         var result = await sut.GetMentorsAsync(null, 1, 10);
 

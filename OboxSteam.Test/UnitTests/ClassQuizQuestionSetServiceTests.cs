@@ -19,7 +19,7 @@ public sealed class ClassQuizQuestionSetServiceTests
     private readonly Guid _otherMentorId = Guid.Parse("15151515-1515-1515-1515-151515151515");
     private readonly Guid _managerId = Guid.Parse("13131313-1313-1313-1313-131313131313");
     private readonly Guid _studentId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private readonly Guid _superAdminId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+    private readonly Guid _adminId = Guid.Parse("12121212-1212-1212-1212-121212121212");
     private readonly Guid _programId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly Guid _otherProgramId = Guid.Parse("23232323-2323-2323-2323-232323232323");
     private readonly Guid _moduleId = Guid.Parse("33333333-3333-3333-3333-333333333333");
@@ -456,13 +456,13 @@ public sealed class ClassQuizQuestionSetServiceTests
     }
 
     [Fact]
-    public async Task GetAsync_ReturnsSet_ForSuperAdmin()
+    public async Task GetAsync_ReturnsSet_ForAdmin()
     {
-        SeedUser(_superAdminId, RoleType.SuperAdmin, "SA-001");
+        SeedUser(_adminId, RoleType.Admin, "ADM-001");
         SeedProgram();
         SeedClass();
         SeedPulledSet();
-        var sut = CreateSut(_superAdminId);
+        var sut = CreateSut(_adminId);
 
         var result = await sut.GetAsync(_assignmentId, _classId);
 

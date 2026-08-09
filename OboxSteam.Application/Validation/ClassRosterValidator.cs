@@ -47,7 +47,7 @@ public static class ClassRosterValidator
             return;
         }
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
         {
             return;
         }

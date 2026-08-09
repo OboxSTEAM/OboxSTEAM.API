@@ -7,7 +7,7 @@ public class LoginRequestDto
 {
     [Required(ErrorMessage = "Email is required")]
     [EmailAddress(ErrorMessage = "Invalid email format")]
-    [DefaultValue("superadmin@oboxsteam.com")]
+    [DefaultValue("admin@oboxsteam.com")]
     public string Email { get; set; } = null!;
 
     [Required(ErrorMessage = "Password is required")]

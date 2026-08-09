@@ -124,7 +124,7 @@ public static class QuizAttemptValidator
     /// <summary>
     /// Authorizes viewing an in-progress or graded quiz submission.
     /// Students: own submission only. Mentors: students in their class for the module's program.
-    /// Manager / SuperAdmin: unrestricted.
+    /// Manager / Admin: unrestricted.
     /// </summary>
     public static async Task EnsureCanViewQuizSubmissionAsync(
         IUnitOfWork unitOfWork,
@@ -147,7 +147,7 @@ public static class QuizAttemptValidator
             return;
         }
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
             return;
 
         if (user.Role == RoleType.Mentor)

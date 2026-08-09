@@ -19,7 +19,7 @@ public static class SessionAttendanceValidator
         "You do not have permission to view this session attendance roster.";
 
     public const string UpdateSessionAttendanceForbiddenMessage =
-        "Only Mentor, Manager, and SuperAdmin can update session attendance.";
+        "Only Mentor, Manager, and Admin can update session attendance.";
 
     public static void ValidateSessionAttendanceExists(SessionAttendance? entity, Guid id)
     {
@@ -68,7 +68,7 @@ public static class SessionAttendanceValidator
             return user;
         }
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
         {
             return user;
         }
@@ -101,7 +101,7 @@ public static class SessionAttendanceValidator
 
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
         {
             return;
         }
@@ -122,7 +122,7 @@ public static class SessionAttendanceValidator
     {
         var user = await GetCurrentUserAsync(unitOfWork, claimsService);
 
-        if (user.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (user.Role is RoleType.Admin or RoleType.Manager)
         {
             return user;
         }

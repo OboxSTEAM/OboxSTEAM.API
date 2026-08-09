@@ -19,10 +19,10 @@ public sealed class ResearchSubmissionController : ControllerBase
     }
 
     [HttpPost("research-submissions/start")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Open a research submission for a student",
-        Description = "Mentor, Manager, or SuperAdmin opens a submission slot for a student on a research milestone. "
+        Description = "Mentor, Manager, or Admin opens a submission slot for a student on a research milestone. "
             + "The student can then submit work within the assignment availability window.")]
     [ProducesResponseType(typeof(ApiResult<ResearchSubmissionResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
@@ -45,10 +45,10 @@ public sealed class ResearchSubmissionController : ControllerBase
     }
 
     [HttpPost("research-submissions/start-for-class")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Open research submissions for a class",
-        Description = "Mentor, Manager, or SuperAdmin opens submission slots for all active students in a class "
+        Description = "Mentor, Manager, or Admin opens submission slots for all active students in a class "
             + "on a research milestone. Students without an active module enrollment or an existing submission are skipped.")]
     [ProducesResponseType(typeof(ApiResult<StartResearchSubmissionForClassResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<StartResearchSubmissionForClassResponseDto>), 200)]
@@ -81,7 +81,7 @@ public sealed class ResearchSubmissionController : ControllerBase
     }
 
     [HttpGet("research-submissions/{submissionId:guid}")]
-    [Authorize(Roles = "Student,Parent,Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Student,Parent,Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Get research submission by ID",
         Description = "Returns a research milestone submission. Access is enforced per role.")]
@@ -157,10 +157,10 @@ public sealed class ResearchSubmissionController : ControllerBase
     }
 
     [HttpPost("research-submissions/{submissionId:guid}/grade")]
-    [Authorize(Roles = "Mentor,Manager,SuperAdmin")]
+    [Authorize(Roles = "Mentor,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Grade a research submission",
-        Description = "Mentor, Manager, or SuperAdmin grades a turned-in submission or returns it for revision.")]
+        Description = "Mentor, Manager, or Admin grades a turned-in submission or returns it for revision.")]
     [ProducesResponseType(typeof(ApiResult<ResearchSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

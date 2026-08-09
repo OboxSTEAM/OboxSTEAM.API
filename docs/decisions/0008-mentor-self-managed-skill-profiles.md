@@ -23,7 +23,7 @@ value in this phase.
 3. Add `MentorSkillEvidence` (title, issuer, HTTPS URL, optional issue date,
    optional credential ID) as child rows.
 4. Students see only `IsPublic` skills on mentor profiles. Managers and
-   SuperAdmins see all skills when reviewing mentors for assignment.
+   Admins see all skills when reviewing mentors for assignment.
 5. Skills still reference the shared `Skill` catalog — no free-text skill names
    outside the taxonomy.
 

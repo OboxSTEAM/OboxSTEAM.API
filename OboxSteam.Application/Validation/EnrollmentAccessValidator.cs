@@ -78,7 +78,7 @@ public static class EnrollmentAccessValidator
             throw ErrorHelper.NotFound("Current user not found.");
         }
 
-        if (user.Role is not (RoleType.Student or RoleType.Parent or RoleType.SuperAdmin or RoleType.Manager))
+        if (user.Role is not (RoleType.Student or RoleType.Parent or RoleType.Admin or RoleType.Manager))
         {
             throw ErrorHelper.Forbidden(viewPermissionDeniedMessage);
         }
@@ -109,7 +109,7 @@ public static class EnrollmentAccessValidator
             throw ErrorHelper.NotFound("Current user not found.");
         }
 
-        if (currentUser.Role is RoleType.SuperAdmin or RoleType.Manager)
+        if (currentUser.Role is RoleType.Admin or RoleType.Manager)
         {
             return;
         }
