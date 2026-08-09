@@ -225,6 +225,28 @@ public class PortfolioController : ControllerBase
                 "Class gallery media imported successfully."));
     }
 
+    [HttpPost("me/media/from-highlight-reel")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Attach highlight reel video to portfolio Gallery",
+        Description = "Copies a completed highlight reel into an independent portfolio Video asset and " +
+                      "appends it to a Gallery section. Idempotent by highlight video item id. " +
+                      "Does not create HighlightReel portfolio items or mutate the highlight job.")]
+    [ProducesResponseType(typeof(ApiResult<ImportClassGalleryMediaResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> ImportHighlightReelMedia(
+        [FromBody, SwaggerParameter("Highlight item and Gallery section")] ImportHighlightReelMediaRequestDto dto)
+    {
+        var result = await _portfolioService.ImportHighlightReelMediaAsync(dto);
+        return Ok(ApiResult<ImportClassGalleryMediaResponseDto>.Success(
+            result,
+            "OK",
+            "Đã gắn highlight vào thư viện."));
+    }
+
     [HttpPost("me/items")]
     [Authorize(Roles = "Student")]
     [SwaggerOperation(

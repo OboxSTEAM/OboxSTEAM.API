@@ -98,5 +98,6 @@ timeline (face windows when a face timeline exists).
 API: `/api/highlight-video/stacks` (`classId` query/body; optional `studentId`).
 Trim / add-segment / delete under `/api/highlight-video/stacks/{stackId}/...`.
 AWS completion: `/api/webhooks/aws`.
-Completed reels can be auto-imported into the student portfolio via
-`POST /api/portfolios/me/sync` as `HighlightReel` items (keyed by stack id).
+Completed reels are attached to a portfolio Gallery section via
+`POST /api/portfolios/me/media/from-highlight-reel` (copies into portfolio-owned
+Video media). Sync no longer creates `HighlightReel` project items.

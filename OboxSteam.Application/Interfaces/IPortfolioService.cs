@@ -42,6 +42,14 @@ public interface IPortfolioService
     Task<ImportClassGalleryMediaResponseDto> ImportClassGalleryMediaAsync(
         ImportClassGalleryMediaRequestDto dto);
 
+    /// <summary>
+    /// Copies a completed highlight reel into a portfolio-owned Video asset and appends it
+    /// to a Gallery section. Idempotent by (portfolioId, sourceHighlightVideoItemId).
+    /// Does not create HighlightReel portfolio items.
+    /// </summary>
+    Task<ImportClassGalleryMediaResponseDto> ImportHighlightReelMediaAsync(
+        ImportHighlightReelMediaRequestDto dto);
+
     Task<PortfolioSectionResponseDto> CreateSectionAsync(CreatePortfolioSectionRequestDto dto);
 
     Task<PortfolioSectionResponseDto> UpdateSectionAsync(Guid sectionId, UpdatePortfolioSectionRequestDto dto);

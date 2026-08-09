@@ -852,7 +852,7 @@ public sealed class PortfolioServiceTests
     // ── SyncMyPortfolioAsync ─────────────────────────────────────────────────────
 
     [Fact]
-    public async Task SyncMyPortfolioAsync_ImportsCertificatesHighlightReelsAndCapstone()
+    public async Task SyncMyPortfolioAsync_ImportsCertificatesAndCapstone_NotHighlightReels()
     {
         var student = SeedStudent();
         SeedPortfolio(student: student);
@@ -961,10 +961,10 @@ public sealed class PortfolioServiceTests
         var sut = CreateSut();
         var result = await sut.SyncMyPortfolioAsync();
 
-        Assert.Equal(3, result.Items.Count);
+        Assert.Equal(2, result.Items.Count);
         Assert.Contains(result.Items, i => i.ItemType == PortfolioItemType.InternalCertificate);
-        Assert.Contains(result.Items, i => i.ItemType == PortfolioItemType.HighlightReel);
         Assert.Contains(result.Items, i => i.ItemType == PortfolioItemType.CapstoneProject);
+        Assert.DoesNotContain(result.Items, i => i.ItemType == PortfolioItemType.HighlightReel);
     }
 
     // ── Additional validation / edge paths ───────────────────────────────────────
@@ -1797,8 +1797,9 @@ public sealed class PortfolioServiceTests
         Assert.Equal("Updated capstone body", capstone.Description);
         Assert.Equal("Updated feedback", capstone.MentorEndorsement);
         Assert.Equal("https://cdn.example.com/updated.pdf", capstone.MediaUrl);
-        Assert.Equal("Updated highlight title", reel.Title);
-        Assert.Equal("https://cdn.example.com/new-highlight.mp4", reel.MediaUrl);
+        // Sync no longer refreshes HighlightReel items; existing rows are left as-is.
+        Assert.Equal("Old highlight", reel.Title);
+        Assert.Equal("https://cdn.example.com/old.mp4", reel.MediaUrl);
     }
 
     [Fact]
@@ -2105,6 +2106,328 @@ public sealed class PortfolioServiceTests
             sut.ImportClassGalleryMediaAsync(new ImportClassGalleryMediaRequestDto
             {
                 MediaAssetIds = [videoMediaId],
+            }));
+    }
+
+    [Fact]
+    public async Task ImportHighlightReelMediaAsync_CopiesCompletedVideoAndAppendsToGallery()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+        var gallerySectionId = Guid.Parse("47474747-4747-4747-4747-474747474747");
+        var stackId = Guid.Parse("48484848-4848-4848-4848-484848484848");
+        var highlightItemId = Guid.Parse("49494949-4949-4949-4949-494949494949");
+        var classId = Guid.Parse("4a4a4a4a-4a4a-4a4a-4a4a-4a4a4a4a4a4a");
+        var programId = Guid.Parse("4b4b4b4b-4b4b-4b4b-4b4b-4b4b4b4b4b4b");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-HL",
+            Name = "Highlight Program",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+        });
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-HL",
+            Name = "Highlight Class",
+            ProgramId = programId,
+            MaxCapacity = 20,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(30),
+            Status = ClassStatus.Open,
+            IsDeleted = false,
+        });
+        _db.PortfolioSections.Seed(new PortfolioSection
+        {
+            Id = gallerySectionId,
+            PortfolioId = _portfolioId,
+            Kind = PortfolioSectionKind.Gallery,
+            Title = "Gallery",
+            DisplayOrder = 0,
+            IsVisible = true,
+            IsDeleted = false,
+        });
+        _db.HighlightVideoStacks.Seed(new HighlightVideoStack
+        {
+            Id = stackId,
+            ClassId = classId,
+            StudentId = _studentId,
+            StrengthDescription = "Teamwork highlights",
+            IsDeleted = false,
+        });
+        _db.HighlightVideoItems.Seed(new HighlightVideoItem
+        {
+            Id = highlightItemId,
+            StackId = stackId,
+            Status = HighlightVideoStatus.Completed,
+            VideoUrl = "https://obox-bucket.s3.ap-southeast-1.amazonaws.com/personal-videos/reel.mp4",
+            OutputS3Key = "personal-videos/reel.mp4",
+            CreatedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        var result = await sut.ImportHighlightReelMediaAsync(new ImportHighlightReelMediaRequestDto
+        {
+            HighlightVideoItemId = highlightItemId,
+            PortfolioSectionId = gallerySectionId,
+        });
+
+        Assert.Single(result.Assets);
+        Assert.Equal(PortfolioMediaType.Video, result.Assets[0].Type);
+        Assert.Equal("video/mp4", result.Assets[0].ContentType);
+        Assert.Null(result.Item);
+        Assert.NotNull(result.Section);
+        Assert.Equal(gallerySectionId, result.Section!.Id);
+        Assert.Single(result.Section.MediaAssets);
+        Assert.Equal("Teamwork highlights", result.Section.MediaAssets[0].Caption);
+        Assert.Equal(PortfolioMediaType.Video, result.Section.MediaAssets[0].Type);
+
+        var stored = _db.PortfolioMediaAssets.Items.Single(a => !a.IsDeleted);
+        Assert.Equal(highlightItemId, stored.SourceHighlightVideoItemId);
+        _blobService.Verify(
+            b => b.CopyObjectAsync(
+                "personal-videos/reel.mp4",
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ImportHighlightReelMediaAsync_IsIdempotent_AndAppendsPlacementWhenMissing()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+        var gallerySectionId = Guid.Parse("4c4c4c4c-4c4c-4c4c-4c4c-4c4c4c4c4c4c");
+        var stackId = Guid.Parse("4d4d4d4d-4d4d-4d4d-4d4d-4d4d4d4d4d4d");
+        var highlightItemId = Guid.Parse("4e4e4e4e-4e4e-4e4e-4e4e-4e4e4e4e4e4e");
+        var existingAssetId = Guid.Parse("4f4f4f4f-4f4f-4f4f-4f4f-4f4f4f4f4f4f");
+        var classId = Guid.Parse("50505050-5050-5050-5050-505050505050");
+        var programId = Guid.Parse("51515151-5151-5151-5151-515151515151");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-HL2",
+            Name = "Highlight Program 2",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+        });
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-HL2",
+            Name = "Highlight Class 2",
+            ProgramId = programId,
+            MaxCapacity = 20,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(30),
+            Status = ClassStatus.Open,
+            IsDeleted = false,
+        });
+        _db.PortfolioSections.Seed(new PortfolioSection
+        {
+            Id = gallerySectionId,
+            PortfolioId = _portfolioId,
+            Kind = PortfolioSectionKind.Gallery,
+            Title = "Gallery",
+            DisplayOrder = 0,
+            IsVisible = true,
+            IsDeleted = false,
+        });
+        _db.HighlightVideoStacks.Seed(new HighlightVideoStack
+        {
+            Id = stackId,
+            ClassId = classId,
+            StudentId = _studentId,
+            StrengthDescription = "",
+            IsDeleted = false,
+        });
+        _db.HighlightVideoItems.Seed(new HighlightVideoItem
+        {
+            Id = highlightItemId,
+            StackId = stackId,
+            Status = HighlightVideoStatus.Completed,
+            VideoUrl = "https://cdn.example.com/reel.mp4",
+            OutputS3Key = "personal-videos/reel.mp4",
+            CreatedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+        _db.PortfolioMediaAssets.Seed(new PortfolioMediaAsset
+        {
+            Id = existingAssetId,
+            PortfolioId = _portfolioId,
+            Type = PortfolioMediaType.Video,
+            Url = "https://cdn.example.com/portfolio/existing.mp4",
+            S3Key = "portfolio/existing.mp4",
+            FileName = "existing.mp4",
+            ContentType = "video/mp4",
+            SizeBytes = 0,
+            SourceHighlightVideoItemId = highlightItemId,
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        var result = await sut.ImportHighlightReelMediaAsync(new ImportHighlightReelMediaRequestDto
+        {
+            HighlightVideoItemId = highlightItemId,
+            PortfolioSectionId = gallerySectionId,
+            Caption = "Custom caption",
+        });
+
+        Assert.Single(result.Assets);
+        Assert.Equal(existingAssetId, result.Assets[0].Id);
+        Assert.Single(_db.PortfolioMediaAssets.Items, a => !a.IsDeleted);
+        Assert.Single(_db.PortfolioMediaPlacements.Items, p => !p.IsDeleted);
+        Assert.Equal("Custom caption", result.Section!.MediaAssets[0].Caption);
+        _blobService.Verify(
+            b => b.CopyObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        // Second call: no duplicate placement
+        var again = await sut.ImportHighlightReelMediaAsync(new ImportHighlightReelMediaRequestDto
+        {
+            HighlightVideoItemId = highlightItemId,
+            PortfolioSectionId = gallerySectionId,
+        });
+        Assert.Equal(existingAssetId, again.Assets[0].Id);
+        Assert.Single(_db.PortfolioMediaPlacements.Items, p => !p.IsDeleted);
+    }
+
+    [Fact]
+    public async Task ImportHighlightReelMediaAsync_Throws_WhenSectionNotGallery()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+        SeedBuiltInSections(_portfolioId);
+        var stackId = Guid.Parse("52525252-5252-5252-5252-525252525252");
+        var highlightItemId = Guid.Parse("53535353-5353-5353-5353-535353535353");
+        var classId = Guid.Parse("54545454-5454-5454-5454-545454545454");
+        var programId = Guid.Parse("55555555-5555-5555-5555-555555555556");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-HL3",
+            Name = "Highlight Program 3",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+        });
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-HL3",
+            Name = "Highlight Class 3",
+            ProgramId = programId,
+            MaxCapacity = 20,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(30),
+            Status = ClassStatus.Open,
+            IsDeleted = false,
+        });
+        _db.HighlightVideoStacks.Seed(new HighlightVideoStack
+        {
+            Id = stackId,
+            ClassId = classId,
+            StudentId = _studentId,
+            StrengthDescription = "Strength",
+            IsDeleted = false,
+        });
+        _db.HighlightVideoItems.Seed(new HighlightVideoItem
+        {
+            Id = highlightItemId,
+            StackId = stackId,
+            Status = HighlightVideoStatus.Completed,
+            VideoUrl = "https://cdn.example.com/reel.mp4",
+            OutputS3Key = "personal-videos/reel.mp4",
+            CreatedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.ImportHighlightReelMediaAsync(new ImportHighlightReelMediaRequestDto
+            {
+                HighlightVideoItemId = highlightItemId,
+                PortfolioSectionId = _builtInSectionId,
+            }));
+    }
+
+    [Fact]
+    public async Task ImportHighlightReelMediaAsync_Throws_WhenItemNotCompleted()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+        var gallerySectionId = Guid.Parse("56565656-5656-5656-5656-565656565656");
+        var stackId = Guid.Parse("57575757-5757-5757-5757-575757575757");
+        var highlightItemId = Guid.Parse("58585858-5858-5858-5858-585858585858");
+        var classId = Guid.Parse("59595959-5959-5959-5959-595959595960");
+        var programId = Guid.Parse("5a5a5a5a-5a5a-5a5a-5a5a-5a5a5a5a5a5a");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-HL4",
+            Name = "Highlight Program 4",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+        });
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-HL4",
+            Name = "Highlight Class 4",
+            ProgramId = programId,
+            MaxCapacity = 20,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(30),
+            Status = ClassStatus.Open,
+            IsDeleted = false,
+        });
+        _db.PortfolioSections.Seed(new PortfolioSection
+        {
+            Id = gallerySectionId,
+            PortfolioId = _portfolioId,
+            Kind = PortfolioSectionKind.Gallery,
+            Title = "Gallery",
+            DisplayOrder = 0,
+            IsVisible = true,
+            IsDeleted = false,
+        });
+        _db.HighlightVideoStacks.Seed(new HighlightVideoStack
+        {
+            Id = stackId,
+            ClassId = classId,
+            StudentId = _studentId,
+            StrengthDescription = "Strength",
+            IsDeleted = false,
+        });
+        _db.HighlightVideoItems.Seed(new HighlightVideoItem
+        {
+            Id = highlightItemId,
+            StackId = stackId,
+            Status = HighlightVideoStatus.Processing,
+            VideoUrl = null,
+            CreatedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.ImportHighlightReelMediaAsync(new ImportHighlightReelMediaRequestDto
+            {
+                HighlightVideoItemId = highlightItemId,
+                PortfolioSectionId = gallerySectionId,
             }));
     }
 }

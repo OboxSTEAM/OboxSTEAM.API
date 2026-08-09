@@ -535,7 +535,6 @@ public sealed class PortfolioService : IPortfolioService
 
         await SyncCertificatesAsync(portfolio, items);
         await SyncCapstoneProjectsAsync(portfolio, items);
-        await SyncHighlightReelsAsync(portfolio, items);
 
         MarkDraftDirty(portfolio);
         await _unitOfWork.Portfolios.Update(portfolio);
@@ -860,6 +859,116 @@ public sealed class PortfolioService : IPortfolioService
             Assets = imported.Select(MapUploadResponse).ToList(),
             Item = itemResponse,
             Section = sectionResponse,
+        };
+    }
+
+    public async Task<ImportClassGalleryMediaResponseDto> ImportHighlightReelMediaAsync(
+        ImportHighlightReelMediaRequestDto dto)
+    {
+        if (dto == null)
+            throw ErrorHelper.BadRequest("Highlight reel attach data is required.");
+
+        if (dto.HighlightVideoItemId == Guid.Empty)
+            throw ErrorHelper.BadRequest("Highlight video item id is required.");
+
+        if (dto.PortfolioSectionId == Guid.Empty)
+            throw ErrorHelper.BadRequest("Portfolio section id is required.");
+
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+
+        var item = await _unitOfWork.HighlightVideoItems.FirstOrDefaultAsync(
+            i => i.Id == dto.HighlightVideoItemId && !i.IsDeleted);
+        if (item == null)
+            throw ErrorHelper.NotFound($"Highlight video item with id '{dto.HighlightVideoItemId}' not found.");
+
+        var stack = await _unitOfWork.HighlightVideoStacks.FirstOrDefaultAsync(
+            s => s.Id == item.StackId && !s.IsDeleted);
+        if (stack == null || stack.StudentId != student.Id)
+            throw ErrorHelper.NotFound($"Highlight video item with id '{dto.HighlightVideoItemId}' not found.");
+
+        if (item.Status != HighlightVideoStatus.Completed
+            || (string.IsNullOrWhiteSpace(item.VideoUrl) && string.IsNullOrWhiteSpace(item.OutputS3Key)))
+        {
+            throw ErrorHelper.BadRequest(
+                "Highlight video item must be Completed with a video URL before it can be attached.");
+        }
+
+        var section = await GetOwnedSectionOrThrowAsync(portfolio.Id, dto.PortfolioSectionId);
+        if (section.Kind != PortfolioSectionKind.Gallery)
+            throw ErrorHelper.BadRequest("Portfolio section must be a Gallery section.");
+
+        var caption = NormalizeCaption(dto.Caption)
+                      ?? (string.IsNullOrWhiteSpace(stack.StrengthDescription)
+                          ? "Highlight reel"
+                          : stack.StrengthDescription.Trim());
+        if (caption.Length > 255)
+            caption = caption[..255];
+
+        var existing = await _unitOfWork.PortfolioMediaAssets.FirstOrDefaultAsync(
+            a => a.PortfolioId == portfolio.Id
+                 && a.SourceHighlightVideoItemId == item.Id
+                 && !a.IsDeleted);
+
+        PortfolioMediaAsset asset;
+        if (existing != null)
+        {
+            asset = existing;
+        }
+        else
+        {
+            var sourceKey = !string.IsNullOrWhiteSpace(item.OutputS3Key)
+                ? item.OutputS3Key.Trim()
+                : ExtractS3KeyFromFileUrl(item.VideoUrl);
+
+            if (string.IsNullOrWhiteSpace(sourceKey))
+                throw ErrorHelper.BadRequest("Could not resolve S3 key for the highlight video.");
+
+            var extension = Path.GetExtension(sourceKey);
+            if (string.IsNullOrWhiteSpace(extension))
+                extension = ".mp4";
+
+            var fileName = $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
+            var folder = $"portfolio/{student.Id}/{portfolio.Id}";
+            var destKey = $"{folder}/{fileName}";
+
+            await _blobService.CopyObjectAsync(sourceKey, destKey);
+            var url = await _blobService.GetPreviewUrlAsync(destKey);
+
+            asset = new PortfolioMediaAsset
+            {
+                Id = Guid.NewGuid(),
+                PortfolioId = portfolio.Id,
+                Type = PortfolioMediaType.Video,
+                Url = url,
+                S3Key = destKey,
+                FileName = Path.GetFileName(sourceKey),
+                ContentType = InferContentType(extension, isVideo: true),
+                SizeBytes = 0,
+                SourceHighlightVideoItemId = item.Id,
+            };
+
+            await _unitOfWork.PortfolioMediaAssets.AddAsync(asset);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        await AppendPlacementsAsync(
+            portfolio.Id,
+            itemId: null,
+            sectionId: section.Id,
+            assets: [asset],
+            caption: caption);
+
+        MarkDraftDirty(portfolio);
+        await _unitOfWork.Portfolios.Update(portfolio);
+        await _unitOfWork.SaveChangesAsync();
+
+        var mediaBySectionId = await LoadSectionMediaPlacementsAsync([section.Id]);
+        return new ImportClassGalleryMediaResponseDto
+        {
+            Assets = [MapUploadResponse(asset)],
+            Item = null,
+            Section = MapSectionResponse(section, mediaBySectionId.GetValueOrDefault(section.Id)),
         };
     }
 
@@ -1369,93 +1478,6 @@ public sealed class PortfolioService : IPortfolioService
             }
 
             await SyncCapstoneAppendixAsync(existing, submission, portfolio.StudentId);
-        }
-    }
-
-    /// <summary>
-    /// Imports completed class-scoped highlight videos as <see cref="PortfolioItemType.HighlightReel"/>
-    /// items. Keyed by stack id so regenerations/trims refresh the same portfolio row.
-    /// </summary>
-    private async Task SyncHighlightReelsAsync(Portfolio portfolio, List<PortfolioCustomItem> items)
-    {
-        var stacks = await _unitOfWork.HighlightVideoStacks.GetAllAsync(
-            s => s.StudentId == portfolio.StudentId && !s.IsDeleted);
-
-        if (stacks.Count == 0)
-            return;
-
-        var stackIds = stacks.Select(s => s.Id).ToList();
-        var stackItems = await _unitOfWork.HighlightVideoItems.GetAllAsync(
-            i => stackIds.Contains(i.StackId) && !i.IsDeleted);
-
-        var latestCompletedByStack = stackItems
-            .Where(i => i.Status == HighlightVideoStatus.Completed
-                        && !string.IsNullOrWhiteSpace(i.VideoUrl))
-            .GroupBy(i => i.StackId)
-            .ToDictionary(
-                g => g.Key,
-                g => g.OrderByDescending(i => i.CreatedAt).First());
-
-        if (latestCompletedByStack.Count == 0)
-            return;
-
-        var classIds = stacks.Select(s => s.ClassId).Distinct().ToList();
-        var classes = (await _unitOfWork.Classes.GetAllAsync(
-                c => classIds.Contains(c.Id) && !c.IsDeleted))
-            .ToDictionary(c => c.Id);
-
-        var programIds = classes.Values.Select(c => c.ProgramId).Distinct().ToList();
-        var programs = programIds.Count == 0
-            ? new Dictionary<Guid, Program>()
-            : (await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id) && !p.IsDeleted))
-                .ToDictionary(p => p.Id);
-
-        var nextOrder = items.Count == 0 ? 0 : items.Max(i => i.DisplayOrder) + 1;
-
-        foreach (var stack in stacks)
-        {
-            if (!latestCompletedByStack.TryGetValue(stack.Id, out var video))
-                continue;
-
-            classes.TryGetValue(stack.ClassId, out var classEntity);
-            programs.TryGetValue(classEntity?.ProgramId ?? Guid.Empty, out var program);
-
-            var title = string.IsNullOrWhiteSpace(stack.StrengthDescription)
-                ? $"{program?.Name ?? classEntity?.Name ?? "Class"} Highlights"
-                : stack.StrengthDescription.Trim();
-
-            var existing = items.FirstOrDefault(
-                i => i.ItemType == PortfolioItemType.HighlightReel
-                     && i.ReferenceId == stack.Id
-                     && !i.IsDeleted);
-
-            if (existing == null)
-            {
-                var item = new PortfolioCustomItem
-                {
-                    PortfolioId = portfolio.Id,
-                    ItemType = PortfolioItemType.HighlightReel,
-                    ReferenceId = stack.Id,
-                    ProgramId = classEntity?.ProgramId,
-                    Title = title,
-                    MediaUrl = video.VideoUrl,
-                    DisplayOrder = nextOrder++,
-                    IsVisible = true,
-                    Source = PortfolioItemSource.AutoImported,
-                };
-
-                await _unitOfWork.PortfolioCustomItems.AddAsync(item);
-                items.Add(item);
-                continue;
-            }
-
-            if (existing.Source == PortfolioItemSource.StudentEdited)
-                continue;
-
-            existing.ProgramId = classEntity?.ProgramId;
-            existing.Title = title;
-            existing.MediaUrl = video.VideoUrl;
-            await _unitOfWork.PortfolioCustomItems.Update(existing);
         }
     }
 
@@ -2003,7 +2025,8 @@ public sealed class PortfolioService : IPortfolioService
         Guid portfolioId,
         Guid? itemId,
         Guid? sectionId,
-        List<PortfolioMediaAsset> assets)
+        List<PortfolioMediaAsset> assets,
+        string? caption = null)
     {
         if (itemId.HasValue == sectionId.HasValue)
             throw ErrorHelper.BadRequest("Exactly one media owner (item or section) is required.");
@@ -2035,12 +2058,15 @@ public sealed class PortfolioService : IPortfolioService
             ? 0
             : existingPlacements.Max(p => p.DisplayOrder) + 1;
 
+        var normalizedCaption = NormalizeCaption(caption);
+
         var newPlacements = toAdd
             .Select((asset, index) => new PortfolioMediaPlacement
             {
                 PortfolioMediaAssetId = asset.Id,
                 PortfolioCustomItemId = itemId,
                 PortfolioSectionId = sectionId,
+                Caption = normalizedCaption,
                 DisplayOrder = nextOrder + index,
             })
             .ToList();

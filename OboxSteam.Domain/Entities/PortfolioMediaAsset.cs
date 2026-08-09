@@ -36,6 +36,13 @@ public class PortfolioMediaAsset : BaseEntity
     public Guid? SourceMediaAssetId { get; set; }
     public MediaAsset? SourceMediaAsset { get; set; }
 
+    /// <summary>
+    /// When this asset was copied from a completed <see cref="HighlightVideoItem"/>,
+    /// stores the source id for provenance and idempotent re-attach.
+    /// </summary>
+    public Guid? SourceHighlightVideoItemId { get; set; }
+    public HighlightVideoItem? SourceHighlightVideoItem { get; set; }
+
     // Navigation
     public ICollection<PortfolioMediaPlacement> Placements { get; set; } =
         new List<PortfolioMediaPlacement>();

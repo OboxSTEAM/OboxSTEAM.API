@@ -708,8 +708,16 @@ public class OboxSteamDbContext : DbContext
                 .HasForeignKey(m => m.SourceMediaAssetId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            entity.HasOne(m => m.SourceHighlightVideoItem)
+                .WithMany()
+                .HasForeignKey(m => m.SourceHighlightVideoItemId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasIndex(m => m.PortfolioId);
             entity.HasIndex(m => new { m.PortfolioId, m.SourceMediaAssetId });
+            entity.HasIndex(m => new { m.PortfolioId, m.SourceHighlightVideoItemId })
+                .IsUnique()
+                .HasFilter("\"SourceHighlightVideoItemId\" IS NOT NULL AND \"IsDeleted\" = false");
         });
 
         // =============================================

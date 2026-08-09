@@ -1,0 +1,1380 @@
+// OboxSTEAM Database Schema
+// Generated from OboxSteamDbContextModelSnapshot + OboxSteamDbContext
+// Paste into https://dbdiagram.io
+
+Project OboxSTEAM {
+  database_type: 'PostgreSQL'
+  Note: 'OboxSTEAM STEAM education platform - EF Core 8 / PostgreSQL'
+}
+
+// Enums are stored as text (UseStringForEnums). Notable values:
+// RoleType, AccountStatus, ProgramCategory, ModuleType, ActivityType, SchedulingMode,
+// EnrollmentStatus, ClassStatus, ClassEnrollmentStatus, ClassSessionStatus, SessionKind,
+// AttendanceStatus, AssignmentType, DifficultyLevel, SubmissionStatus, BookingStatus,
+// ActivityStatus, CompletionSource, PaymentStatus, PaymentGateway, PaymentRequestStatus,
+// PlanType, SkillCategory, SkillProficiencyLevel, SkillAssessmentSource,
+// ClassMentorRequestStatus, NotificationType, MaterialType, OtpPurpose,
+// Portfolio* enums, HighlightVideo*, VideoProcessingStatus
+
+// ============================================
+// 1. Core Users & Roles
+// ============================================
+
+Table OtpStorages {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  ExpiredAt timestamptz [not null]
+  IsDeleted boolean [not null]
+  IsUsed boolean [not null]
+  OtpCode varchar(10) [not null]
+  Purpose text [not null]
+  Target varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: OtpStorage'
+}
+
+Table ParentStudents {
+  ParentId uuid [pk, not null]
+  StudentId uuid [pk, not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Id uuid [not null]
+  IsDeleted boolean [not null]
+  IsVerified boolean [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ParentStudent'
+}
+
+Table Users {
+  Id uuid [pk]
+  AvatarUrl text [null]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Email varchar(255) [not null]
+  FullName varchar(255) [null]
+  IsDeleted boolean [not null]
+  IsEmailVerified boolean [not null]
+  MaxConcurrentClasses int [null]
+  PasswordHash text [null]
+  Phone varchar(20) [null]
+  RefreshToken varchar(128) [null]
+  RefreshTokenExpiryTime timestamptz [null]
+  Role text [not null]
+  Status text [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: User'
+}
+
+// ============================================
+// 2. VIP Experts & PR Board
+// ============================================
+
+Table Experts {
+  Id uuid [pk]
+  Achievements text [null]
+  AvatarUrl text [null]
+  Bio text [null]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  FullName varchar(255) [not null]
+  IsDeleted boolean [not null]
+  LinkedInUrl text [null]
+  Organization varchar(255) [null]
+  Title varchar(255) [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  UserId uuid [null]
+  Note: 'Entity: Expert'
+}
+
+// ============================================
+// 3. Student Academic Profile
+// ============================================
+
+Table MentorProfiles {
+  MentorId uuid [pk, not null]
+  Achievements text [null]
+  Bio text [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Id uuid [not null]
+  IsDeleted boolean [not null]
+  LinkedInUrl text [null]
+  Organization varchar(255) [null]
+  Title varchar(255) [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: MentorProfile'
+}
+
+Table MentorSkillEvidences {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  CredentialId varchar(100) [null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  IssuedAt timestamptz [null]
+  Issuer varchar(255) [null]
+  MentorSkillId uuid [not null]
+  Title varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Url varchar(2000) [not null]
+  Note: 'Entity: MentorSkillEvidence'
+}
+
+Table MentorSkills {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  IsDeleted boolean [not null]
+  IsPublic boolean [not null, increment, default: `true`]
+  MentorId uuid [not null]
+  Notes varchar(500) [null]
+  ProficiencyLevel text [not null]
+  SkillId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  YearsOfExperience int [not null]
+  Note: 'Entity: MentorSkill'
+}
+
+Table Skills {
+  Id uuid [pk]
+  Category text [not null]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  IsDeleted boolean [not null]
+  Name varchar(255) [not null]
+  Subcategory varchar(100) [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Skill'
+}
+
+Table StandardizedTests {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  IssueDate date [null]
+  Score varchar(50) [null]
+  StudentId uuid [not null]
+  TestName varchar(100) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: StandardizedTest'
+}
+
+Table StudentProfiles {
+  StudentId uuid [pk, not null]
+  CareerOrientation varchar(255) [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  CurrentSchool varchar(255) [null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  GpaOverall decimal [null]
+  GpaStem decimal [null]
+  GradeLevel int [null]
+  Id uuid [not null]
+  IntendedYear int [null]
+  IsDeleted boolean [not null]
+  PersonalStatement text [null]
+  TargetCountry varchar(255) [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: StudentProfile'
+}
+
+Table StudentSkillEvidences {
+  Id uuid [pk]
+  CertificateId uuid [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  MediaAssetId uuid [null]
+  StudentSkillId uuid [not null]
+  SubmissionId uuid [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: StudentSkillEvidence'
+}
+
+Table StudentSkills {
+  Id uuid [pk]
+  ConfidenceScore decimal [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  EvidenceSummary text [null]
+  IsDeleted boolean [not null]
+  LastAssessedAt timestamptz [null]
+  ProficiencyLevel text [not null]
+  Reasoning text [null]
+  SkillId uuid [not null]
+  Source text [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  VerifiedAt timestamptz [null]
+  VerifiedBy uuid [null]
+  Note: 'Entity: StudentSkill'
+}
+
+// ============================================
+// 4. LMS Hierarchy
+// ============================================
+
+Table Activities {
+  Id uuid [pk]
+  ActivityOrder int [not null]
+  ActivityType text [not null]
+  Code varchar(50) [not null]
+  CourseId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  EndTime timestamptz [null]
+  IsDeleted boolean [not null]
+  Location varchar(500) [null]
+  MaxCapacity int [null]
+  Name varchar(255) [not null]
+  RequireMediaEvidence boolean [not null]
+  RequireQrCheckin boolean [not null]
+  SchedulingMode text [not null]
+  StartTime timestamptz [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Activity'
+}
+
+Table Courses {
+  Id uuid [pk]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  IsDeleted boolean [not null]
+  ModuleId uuid [not null]
+  Name varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Course'
+}
+
+Table Materials {
+  Id uuid [pk]
+  ActivityId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  FileSizeBytes bigint [null]
+  FileUrl text [null]
+  IsDeleted boolean [not null]
+  MaterialType text [not null]
+  Title varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Material'
+}
+
+Table Modules {
+  Id uuid [pk]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DefaultSchedulingMode text [null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  IsMandatory boolean [not null]
+  LearningOutcomes text[] [not null, increment, default: `ARRAY[]::text[]`]
+  ModuleOrder int [not null]
+  ModuleType text [not null]
+  Name varchar(255) [not null]
+  PrerequisiteModuleId uuid [null]
+  Price decimal [not null]
+  ProgramId uuid [not null]
+  RetakeFee decimal [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Module'
+}
+
+Table ProgramBoards {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  ExpertId uuid [not null]
+  IsDeleted boolean [not null]
+  ProgramId uuid [not null]
+  RoleInBoard varchar(255) [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ProgramBoard'
+}
+
+Table Programs {
+  Id uuid [pk]
+  Category text [not null]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  EstimatedDuration varchar(255) [null]
+  IsDeleted boolean [not null]
+  Level text [not null]
+  Name varchar(255) [not null]
+  Price decimal [null]
+  Rating decimal [null]
+  SeriesName varchar(255) [null]
+  SkillsGained text [null]
+  Status varchar(50) [null]
+  ThumbnailUrl text [null]
+  TotalReviews int [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Program'
+}
+
+// ============================================
+// 5. Enrollments & Tracking
+// ============================================
+
+Table ActivityBookings {
+  Id uuid [pk]
+  ActivityId uuid [not null]
+  BookedAt timestamptz [null]
+  CheckedInAt timestamptz [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  Status text [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ActivityBooking'
+}
+
+Table ActivityProgresses {
+  Id uuid [pk]
+  ActivityId uuid [not null]
+  ActivityStatus text [not null, increment, default: `NotStart`]
+  CompletedAt timestamptz [null]
+  CompletionSource text [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsCompleted boolean [not null]
+  IsDeleted boolean [not null]
+  LastAccessedAt timestamptz [null]
+  ModuleEnrollmentId uuid [not null]
+  ResumeState text [null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ActivityProgress'
+}
+
+Table CourseEnrollments {
+  Id uuid [pk]
+  CompletedAt timestamptz [null]
+  CourseId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  JoinedAt timestamptz [null]
+  StartedAt timestamptz [null]
+  Status text [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: CourseEnrollment'
+}
+
+Table ModuleEnrollments {
+  Id uuid [pk]
+  AssignmentFailureCount int [not null]
+  AttemptNumber int [not null]
+  CompletedAt timestamptz [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  EnrolledAt timestamptz [null]
+  FinalGrade decimal [null]
+  IsDeleted boolean [not null]
+  ModuleId uuid [not null]
+  ProgramEnrollmentId uuid [null]
+  ProgressPercent decimal [not null]
+  StartedAt timestamptz [null]
+  Status text [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ModuleEnrollment'
+}
+
+Table ProgramEnrollments {
+  Id uuid [pk]
+  CompletedAt timestamptz [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  EnrolledAt timestamptz [null]
+  IsDeleted boolean [not null]
+  ProgramId uuid [not null]
+  ProgressPercent decimal [not null]
+  StartedAt timestamptz [null]
+  Status text [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ProgramEnrollment'
+}
+
+// ============================================
+// 5b. Class Delivery
+// ============================================
+
+Table ClassEnrollments {
+  Id uuid [pk]
+  ClassId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  EnrolledAt timestamptz [null]
+  IsDeleted boolean [not null]
+  ProgramEnrollmentId uuid [not null]
+  Status text [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ClassEnrollment'
+}
+
+Table Classes {
+  Id uuid [pk]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  EndDate timestamptz [not null]
+  IsDeleted boolean [not null]
+  MaxCapacity int [not null]
+  MentorId uuid [null]
+  MinHoursBeforeAssignmentJoin int [not null]
+  Name varchar(255) [not null]
+  ProgramId uuid [not null]
+  ScheduleSummary varchar(255) [null]
+  StartDate timestamptz [not null]
+  Status text [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Class'
+}
+
+Table ClassMentorRequests {
+  Id uuid [pk]
+  ClassId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DecidedAt timestamptz [null]
+  DecidedBy uuid [null]
+  DecisionNote varchar(1000) [null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  MentorId uuid [not null]
+  Message varchar(1000) [null]
+  Status text [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ClassMentorRequest'
+}
+
+Table ClassQuizQuestionOptions {
+  Id uuid [pk]
+  ClassQuizQuestionId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsCorrect boolean [not null]
+  IsDeleted boolean [not null]
+  OptionText text [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ClassQuizQuestionOption'
+}
+
+Table ClassQuizQuestions {
+  Id uuid [pk]
+  ClassQuizQuestionSetId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  DifficultyLevel int [not null]
+  IsDeleted boolean [not null]
+  OrderIndex int [not null]
+  Points decimal [not null]
+  QuestionText text [not null]
+  QuestionType varchar(50) [not null]
+  SourceBankQuestionId uuid [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ClassQuizQuestion'
+}
+
+Table ClassQuizQuestionSets {
+  Id uuid [pk]
+  AssignmentId uuid [not null]
+  ClassId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  PulledAt timestamptz [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ClassQuizQuestionSet'
+}
+
+Table ClassSessions {
+  Id uuid [pk]
+  ActivityId uuid [null]
+  AssignmentId uuid [null]
+  ClassId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  EndTime timestamptz [not null]
+  IsDeleted boolean [not null]
+  Location varchar(500) [null]
+  MaxCapacity int [null]
+  ModuleId uuid [not null]
+  RequiresAttendance boolean [not null]
+  RequiresMentorCheckIn boolean [not null]
+  SessionKind text [not null]
+  StartTime timestamptz [not null]
+  Status text [not null]
+  Title varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ClassSession'
+}
+
+Table ClassSkills {
+  Id uuid [pk]
+  ClassId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  SkillId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ClassSkill'
+}
+
+Table SessionAttendances {
+  Id uuid [pk]
+  CheckedInAt timestamptz [null]
+  ClassSessionId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  ModuleEnrollmentId uuid [not null]
+  RecordedBy uuid [null]
+  Status text [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: SessionAttendance'
+}
+
+// ============================================
+// 6. Assessments & Submissions
+// ============================================
+
+Table Assignments {
+  Id uuid [pk]
+  AllowShuffle boolean [not null]
+  AssignmentType text [not null]
+  AvailableFrom timestamptz [null]
+  AvailableUntil timestamptz [null]
+  Code varchar(50) [not null]
+  CourseId uuid [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  DueDate timestamptz [null]
+  EasyPercent int [not null]
+  HardPercent int [not null]
+  IsDeleted boolean [not null]
+  IsRequiredForModulePass boolean [not null]
+  MaxAttempts int [not null]
+  MaxPoints int [not null]
+  MediumPercent int [not null]
+  ModuleId uuid [not null]
+  PassScore decimal [not null]
+  QuestionBankId uuid [null]
+  QuestionCount int [null]
+  ShuffleOptions boolean [not null]
+  TimeLimitMinutes int [null]
+  Title varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Assignment'
+}
+
+Table BankQuestionOptions {
+  Id uuid [pk]
+  BankQuestionId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsCorrect boolean [not null]
+  IsDeleted boolean [not null]
+  OptionText text [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: BankQuestionOption'
+}
+
+Table BankQuestions {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  DifficultyLevel int [not null]
+  IsDeleted boolean [not null]
+  OrderIndex int [not null]
+  Points decimal [not null]
+  QuestionBankId uuid [not null]
+  QuestionText text [not null]
+  QuestionType varchar(50) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: BankQuestion'
+}
+
+Table QuestionBanks {
+  Id uuid [pk]
+  CourseId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  IsDeleted boolean [not null]
+  Name varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: QuestionBank'
+}
+
+Table QuizAnswers {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  QuizOptionId uuid [not null]
+  QuizQuestionId uuid [not null]
+  SubmissionId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: QuizAnswer'
+}
+
+Table QuizOptions {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsCorrect boolean [not null]
+  IsDeleted boolean [not null]
+  OptionText text [not null]
+  QuestionId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: QuizOption'
+}
+
+Table QuizQuestions {
+  Id uuid [pk]
+  AssignmentId uuid [not null]
+  AttemptNumber int [not null]
+  BankQuestionId uuid [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  OrderIndex int [not null]
+  Points decimal [not null]
+  QuestionText text [not null]
+  QuestionType varchar(50) [not null]
+  SubmissionId uuid [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: QuizQuestion'
+}
+
+Table SubmissionEvidences {
+  SubmissionId uuid [pk, not null]
+  MediaId uuid [pk, not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Id uuid [not null]
+  IsDeleted boolean [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: SubmissionEvidence'
+}
+
+Table Submissions {
+  Id uuid [pk]
+  AssignedGrade decimal [null]
+  AssignmentId uuid [not null]
+  AttemptNumber int [not null]
+  Code varchar(50) [not null]
+  ContentText text [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  ExpiresAt timestamptz [null]
+  FileUrl text [null]
+  GradedAt timestamptz [null]
+  IsDeleted boolean [not null]
+  MentorFeedback text [null]
+  ModuleEnrollmentId uuid [null]
+  ResearchMilestoneId uuid [null]
+  StartedAt timestamptz [null]
+  Status text [not null]
+  StudentId uuid [not null]
+  SubmittedAt timestamptz [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  VerifiedBy uuid [null]
+  Note: 'Entity: Submission'
+}
+
+// ============================================
+// 7. Certificates & Portfolio
+// ============================================
+
+Table Certificates {
+  Id uuid [pk]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  IssueDate timestamptz [null]
+  ModuleId uuid [null]
+  PdfUrl text [null]
+  ProgramId uuid [null]
+  SkillsAcquired text [null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  VerificationUrl text [null]
+  Note: 'Entity: Certificate'
+}
+
+Table PortfolioCustomItems {
+  Id uuid [pk]
+  AccentColor varchar(20) [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  DisplayOrder int [not null]
+  EndDate timestamptz [null]
+  ExternalUrl text [null]
+  IsDeleted boolean [not null]
+  IsFeatured boolean [null]
+  IsVisible boolean [not null]
+  ItemType text [not null]
+  MediaUrl text [null]
+  MentorEndorsement text [null]
+  ModuleEnrollmentId uuid [null]
+  ModuleId uuid [null]
+  Organization varchar(255) [null]
+  PortfolioId uuid [not null]
+  ProgramEnrollmentId uuid [null]
+  ProgramId uuid [null]
+  ReferenceId uuid [null]
+  Source text [not null]
+  Span text [null]
+  StartDate timestamptz [null]
+  StudentEditedBody text [null]
+  SubmissionId uuid [null]
+  Subtitle varchar(255) [null]
+  Title varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: PortfolioCustomItem'
+}
+
+Table PortfolioItemSubmissions {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  DisplayOrder int [not null]
+  IsDeleted boolean [not null]
+  PortfolioCustomItemId uuid [not null]
+  SectionTitle varchar(255) [not null]
+  SubmissionId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: PortfolioItemSubmission'
+}
+
+Table PortfolioMediaAssets {
+  Id uuid [pk]
+  ContentType varchar(100) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  FileName varchar(255) [not null]
+  IsDeleted boolean [not null]
+  PortfolioId uuid [not null]
+  S3Key varchar(512) [not null]
+  SizeBytes bigint [not null]
+  SourceHighlightVideoItemId uuid [null]
+  SourceMediaAssetId uuid [null]
+  Type text [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Url varchar(500) [not null]
+  Note: 'Entity: PortfolioMediaAsset'
+}
+
+Table PortfolioMediaPlacements {
+  Id uuid [pk]
+  Caption varchar(255) [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  DisplayOrder int [not null]
+  IsDeleted boolean [not null]
+  PortfolioCustomItemId uuid [null]
+  PortfolioMediaAssetId uuid [not null]
+  PortfolioSectionId uuid [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: PortfolioMediaPlacement'
+}
+
+Table Portfolios {
+  Id uuid [pk]
+  AvatarUrl varchar(500) [null]
+  Code varchar(50) [not null]
+  CoverImageUrl varchar(500) [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  DisplayName varchar(255) [null]
+  HasUnpublishedChanges boolean [not null, increment, default: `false`]
+  Headline varchar(255) [null]
+  IsDeleted boolean [not null]
+  IsPublic boolean [not null, increment, default: `false`]
+  LastPublishedAt timestamptz [null]
+  Links text [null]
+  ParentPortfolioId uuid [null]
+  PlanType text [not null]
+  PrimaryColor varchar(20) [null]
+  PublishedSnapshot jsonb [null]
+  StudentId uuid [not null]
+  Subdomain varchar(100) [null]
+  Summary text [null]
+  Tagline varchar(255) [null]
+  TemplateId varchar(100) [null]
+  ThemeConfig text [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  VersionName varchar(255) [null]
+  Note: 'Entity: Portfolio'
+}
+
+Table PortfolioSections {
+  Id uuid [pk]
+  ContentHtml text [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  DisplayOrder int [not null]
+  IsDeleted boolean [not null]
+  IsVisible boolean [not null, increment, default: `true`]
+  Kind text [not null]
+  PortfolioId uuid [not null]
+  SettingsJson jsonb [null]
+  Title varchar(255) [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: PortfolioSection'
+}
+
+// ============================================
+// 7b. Research Milestones
+// ============================================
+
+Table ResearchMilestoneActivities {
+  Id uuid [pk]
+  ActivityId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  DisplayOrder int [not null]
+  IsDeleted boolean [not null]
+  IsRequiredForSubmission boolean [not null]
+  ResearchMilestoneId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ResearchMilestoneActivity'
+}
+
+Table ResearchMilestones {
+  Id uuid [pk]
+  AssignmentId uuid [not null]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Description text [null]
+  IsCapstone boolean [not null]
+  IsDeleted boolean [not null]
+  MilestoneOrder int [not null]
+  ModuleId uuid [not null]
+  Title varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ResearchMilestone'
+}
+
+// ============================================
+// 8. AI Engine & Media
+// ============================================
+
+Table FaceEmbeddings {
+  Id uuid [pk]
+  AwsFaceId varchar(255) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: FaceEmbedding'
+}
+
+Table HighlightVideoItems {
+  Id uuid [pk]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  DurationMs bigint [null]
+  FailureReason varchar(1024) [null]
+  GenerationKind text [not null]
+  IsDeleted boolean [not null]
+  OutputS3Key varchar(1024) [null]
+  ParentItemId uuid [null]
+  PersonalVideoJobRef varchar(255) [null]
+  RequestedAt timestamptz [null]
+  SourceSegmentsJson text [null]
+  StackId uuid [not null]
+  Status text [not null]
+  TrimDescription varchar(2000) [null]
+  TrimExcludeRangesJson text [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  VideoUrl text [null]
+  Note: 'Entity: HighlightVideoItem'
+}
+
+Table HighlightVideoStacks {
+  Id uuid [pk]
+  ClassId uuid [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  StrengthDescription varchar(2000) [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: HighlightVideoStack'
+}
+
+Table MediaAssets {
+  Id uuid [pk]
+  ClassId uuid [not null]
+  ClassSessionId uuid [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  FaceSearchJobId varchar(512) [null]
+  FileType varchar(50) [null]
+  FileUrl text [null]
+  IsDeleted boolean [not null]
+  LabelJobRef varchar(512) [null]
+  LabelTimelineJson text [null]
+  MediaConvertJobId varchar(512) [null]
+  RawVideoS3Key varchar(512) [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  UploadedAt timestamptz [null]
+  UploaderId uuid [not null]
+  VideoStatus text [not null]
+  Note: 'Entity: MediaAsset'
+}
+
+Table MediaTags {
+  MediaId uuid [pk, not null]
+  StudentId uuid [pk, not null]
+  ConfidenceScore decimal [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  FaceSegmentsJson text [null]
+  HasOtherFaces boolean [not null]
+  Id uuid [not null]
+  IsDeleted boolean [not null]
+  IsVerified boolean [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: MediaTag'
+}
+
+// ============================================
+// 9. Payments
+// ============================================
+
+Table Invoices {
+  Id uuid [pk]
+  BillingEmail varchar(255) [not null]
+  BillingName varchar(255) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  Currency varchar(3) [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  InvoiceNumber varchar(50) [not null]
+  IsDeleted boolean [not null]
+  IssuedToId uuid [not null]
+  ItemDescription varchar(255) [not null]
+  PaymentId uuid [not null]
+  SubTotal numeric(18,2) [not null]
+  TotalAmount numeric(18,2) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Invoice'
+}
+
+Table PaymentRequests {
+  Id uuid [pk]
+  Amount decimal [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  Currency varchar(3) [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  ExpiresAt timestamptz [not null]
+  IsDeleted boolean [not null]
+  ModuleEnrollmentId uuid [null]
+  ModuleId uuid [null]
+  ParentId uuid [not null]
+  PaymentId uuid [null]
+  ProgramEnrollmentId uuid [null]
+  ProgramId uuid [null]
+  Status text [not null]
+  StudentId uuid [not null]
+  Token varchar(255) [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: PaymentRequest'
+}
+
+Table Payments {
+  Id uuid [pk]
+  Amount decimal [not null]
+  CheckoutSessionId varchar(255) [null]
+  Code varchar(50) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  Currency varchar(3) [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  Gateway text [not null]
+  IsDeleted boolean [not null]
+  ModuleEnrollmentId uuid [null]
+  PaidAt timestamptz [null]
+  PaidById uuid [not null]
+  ProgramEnrollmentId uuid [null]
+  Status text [not null]
+  StudentId uuid [not null]
+  TransactionId varchar(255) [null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Payment'
+}
+
+// ============================================
+// 10. Reviews
+// ============================================
+
+Table ProgramReviews {
+  Id uuid [pk]
+  Comment varchar(2000) [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  IsDeleted boolean [not null]
+  ProgramId uuid [not null]
+  StarRating int [not null]
+  StudentId uuid [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: ProgramReview'
+}
+
+// ============================================
+// 11. Notifications
+// ============================================
+
+Table Notifications {
+  Id uuid [pk]
+  ActorUserId uuid [null]
+  Body varchar(2000) [null]
+  CreatedAt timestamptz [not null]
+  CreatedBy uuid [not null]
+  DeletedAt timestamptz [null]
+  DeletedBy uuid [null]
+  EntityId uuid [null]
+  EntityType varchar(100) [null]
+  IsDeleted boolean [not null]
+  PayloadJson text [null]
+  ReadAt timestamptz [null]
+  RecipientUserId uuid [not null]
+  Title varchar(200) [not null]
+  Type text [not null]
+  UpdatedAt timestamptz [null]
+  UpdatedBy uuid [null]
+  Note: 'Entity: Notification'
+}
+
+// ============================================
+// Relationships
+// ============================================
+
+Ref: Activities.CourseId > Courses.Id [delete: cascade] // Course
+Ref: ActivityBookings.ActivityId > Activities.Id [delete: cascade] // Activity
+Ref: ActivityBookings.StudentId > Users.Id [delete: cascade] // Student
+Ref: ActivityProgresses.ActivityId > Activities.Id [delete: restrict] // Activity
+Ref: ActivityProgresses.ModuleEnrollmentId > ModuleEnrollments.Id [delete: cascade] // ModuleEnrollment
+Ref: ActivityProgresses.StudentId > Users.Id [delete: restrict] // Student
+Ref: Assignments.CourseId > Courses.Id // Course
+Ref: Assignments.ModuleId > Modules.Id [delete: cascade] // Module
+Ref: Assignments.QuestionBankId > QuestionBanks.Id [delete: set null] // QuestionBank
+Ref: BankQuestions.QuestionBankId > QuestionBanks.Id [delete: cascade] // QuestionBank
+Ref: BankQuestionOptions.BankQuestionId > BankQuestions.Id [delete: cascade] // BankQuestion
+Ref: Certificates.ModuleId > Modules.Id // Module
+Ref: Certificates.ProgramId > Programs.Id // Program
+Ref: Certificates.StudentId > Users.Id [delete: cascade] // Student
+Ref: Classes.ProgramId > Programs.Id [delete: restrict] // Program
+Ref: Classes.MentorId > Users.Id [delete: set null] // Mentor
+Ref: ClassEnrollments.ClassId > Classes.Id [delete: restrict] // Class
+Ref: ClassEnrollments.ProgramEnrollmentId > ProgramEnrollments.Id [delete: restrict] // ProgramEnrollment
+Ref: ClassEnrollments.StudentId > Users.Id [delete: restrict] // Student
+Ref: ClassMentorRequests.ClassId > Classes.Id [delete: restrict] // Class
+Ref: ClassMentorRequests.DecidedBy > Users.Id [delete: set null] // Decider
+Ref: ClassMentorRequests.MentorId > Users.Id [delete: restrict] // Mentor
+Ref: ClassQuizQuestions.ClassQuizQuestionSetId > ClassQuizQuestionSets.Id [delete: cascade] // ClassQuizQuestionSet
+Ref: ClassQuizQuestionOptions.ClassQuizQuestionId > ClassQuizQuestions.Id [delete: cascade] // ClassQuizQuestion
+Ref: ClassQuizQuestionSets.AssignmentId > Assignments.Id [delete: cascade] // Assignment
+Ref: ClassQuizQuestionSets.ClassId > Classes.Id [delete: cascade] // Class
+Ref: ClassSessions.ActivityId > Activities.Id [delete: set null] // Activity
+Ref: ClassSessions.AssignmentId > Assignments.Id [delete: set null] // Assignment
+Ref: ClassSessions.ClassId > Classes.Id [delete: cascade] // Class
+Ref: ClassSessions.ModuleId > Modules.Id [delete: restrict] // Module
+Ref: ClassSkills.ClassId > Classes.Id [delete: restrict] // Class
+Ref: ClassSkills.SkillId > Skills.Id [delete: restrict] // Skill
+Ref: Courses.ModuleId > Modules.Id [delete: cascade] // Module
+Ref: CourseEnrollments.CourseId > Courses.Id [delete: cascade] // Course
+Ref: CourseEnrollments.StudentId > Users.Id [delete: cascade] // Student
+Ref: Experts.UserId - Users.Id [delete: set null] // User
+Ref: FaceEmbeddings.StudentId - Users.Id [delete: cascade] // Student
+Ref: HighlightVideoItems.ParentItemId > HighlightVideoItems.Id [delete: restrict] // ParentItem
+Ref: HighlightVideoItems.StackId > HighlightVideoStacks.Id [delete: cascade] // Stack
+Ref: HighlightVideoStacks.ClassId > Classes.Id [delete: restrict] // Class
+Ref: HighlightVideoStacks.StudentId > Users.Id [delete: restrict] // Student
+Ref: Invoices.PaymentId - Payments.Id [delete: restrict] // Payment
+Ref: Invoices.IssuedToId > Users.Id [delete: restrict] // IssuedTo
+Ref: Materials.ActivityId - Activities.Id [delete: cascade] // Activity
+Ref: MediaAssets.ClassId > Classes.Id [delete: restrict] // Class
+Ref: MediaAssets.ClassSessionId > ClassSessions.Id [delete: restrict] // ClassSession
+Ref: MediaAssets.UploaderId > Users.Id [delete: cascade] // Uploader
+Ref: MediaTags.MediaId > MediaAssets.Id [delete: cascade] // Media
+Ref: MediaTags.StudentId > Users.Id [delete: cascade] // Student
+Ref: MentorProfiles.MentorId - Users.Id [delete: cascade] // Mentor
+Ref: MentorSkills.SkillId > Skills.Id [delete: restrict] // Skill
+Ref: MentorSkills.MentorId > Users.Id [delete: restrict] // Mentor
+Ref: MentorSkillEvidences.MentorSkillId > MentorSkills.Id [delete: cascade] // MentorSkill
+Ref: Modules.PrerequisiteModuleId > Modules.Id [delete: set null] // PrerequisiteModule
+Ref: Modules.ProgramId > Programs.Id [delete: cascade] // Program
+Ref: ModuleEnrollments.ModuleId > Modules.Id [delete: cascade] // Module
+Ref: ModuleEnrollments.ProgramEnrollmentId > ProgramEnrollments.Id [delete: restrict] // ProgramEnrollment
+Ref: ModuleEnrollments.StudentId > Users.Id [delete: restrict] // Student
+Ref: Notifications.RecipientUserId > Users.Id [delete: cascade] // Recipient
+Ref: ParentStudents.ParentId > Users.Id [delete: restrict] // Parent
+Ref: ParentStudents.StudentId > Users.Id [delete: restrict] // Student
+Ref: Payments.ModuleEnrollmentId > ModuleEnrollments.Id // ModuleEnrollment
+Ref: Payments.ProgramEnrollmentId > ProgramEnrollments.Id // ProgramEnrollment
+Ref: Payments.PaidById > Users.Id [delete: restrict] // PaidBy
+Ref: Payments.StudentId > Users.Id [delete: restrict] // Student
+Ref: PaymentRequests.ModuleId > Modules.Id [delete: restrict] // Module
+Ref: PaymentRequests.ModuleEnrollmentId > ModuleEnrollments.Id [delete: restrict] // ModuleEnrollment
+Ref: PaymentRequests.PaymentId > Payments.Id [delete: set null] // Payment
+Ref: PaymentRequests.ProgramId > Programs.Id [delete: restrict] // Program
+Ref: PaymentRequests.ProgramEnrollmentId > ProgramEnrollments.Id [delete: restrict] // ProgramEnrollment
+Ref: PaymentRequests.ParentId > Users.Id [delete: restrict] // Parent
+Ref: PaymentRequests.StudentId > Users.Id [delete: restrict] // Student
+Ref: Portfolios.ParentPortfolioId > Portfolios.Id [delete: set null] // ParentPortfolio
+Ref: Portfolios.StudentId > Users.Id [delete: cascade] // Student
+Ref: PortfolioCustomItems.ModuleId > Modules.Id [delete: set null] // Module
+Ref: PortfolioCustomItems.ModuleEnrollmentId > ModuleEnrollments.Id [delete: set null] // ModuleEnrollment
+Ref: PortfolioCustomItems.PortfolioId > Portfolios.Id [delete: cascade] // Portfolio
+Ref: PortfolioCustomItems.ProgramId > Programs.Id [delete: set null] // Program
+Ref: PortfolioCustomItems.ProgramEnrollmentId > ProgramEnrollments.Id [delete: set null] // ProgramEnrollment
+Ref: PortfolioCustomItems.SubmissionId > Submissions.Id [delete: set null] // Submission
+Ref: PortfolioItemSubmissions.PortfolioCustomItemId > PortfolioCustomItems.Id [delete: cascade] // PortfolioCustomItem
+Ref: PortfolioItemSubmissions.SubmissionId > Submissions.Id [delete: restrict] // Submission
+Ref: PortfolioMediaAssets.SourceMediaAssetId > MediaAssets.Id [delete: set null] // SourceMediaAsset
+Ref: PortfolioMediaAssets.SourceHighlightVideoItemId > HighlightVideoItems.Id [delete: set null] // SourceHighlightVideoItem
+Ref: PortfolioMediaAssets.PortfolioId > Portfolios.Id [delete: cascade] // Portfolio
+Ref: PortfolioMediaPlacements.PortfolioCustomItemId > PortfolioCustomItems.Id [delete: cascade] // PortfolioCustomItem
+Ref: PortfolioMediaPlacements.PortfolioMediaAssetId > PortfolioMediaAssets.Id [delete: restrict] // MediaAsset
+Ref: PortfolioMediaPlacements.PortfolioSectionId > PortfolioSections.Id [delete: cascade] // PortfolioSection
+Ref: PortfolioSections.PortfolioId > Portfolios.Id [delete: cascade] // Portfolio
+Ref: ProgramBoards.ExpertId > Experts.Id [delete: cascade] // Expert
+Ref: ProgramBoards.ProgramId > Programs.Id [delete: cascade] // Program
+Ref: ProgramEnrollments.ProgramId > Programs.Id [delete: cascade] // Program
+Ref: ProgramEnrollments.StudentId > Users.Id [delete: cascade] // Student
+Ref: ProgramReviews.ProgramId > Programs.Id [delete: cascade] // Program
+Ref: ProgramReviews.StudentId > Users.Id [delete: restrict] // Student
+Ref: QuestionBanks.CourseId > Courses.Id [delete: cascade] // Course
+Ref: QuizAnswers.QuizOptionId > QuizOptions.Id [delete: restrict] // QuizOption
+Ref: QuizAnswers.QuizQuestionId > QuizQuestions.Id [delete: cascade] // QuizQuestion
+Ref: QuizAnswers.SubmissionId > Submissions.Id [delete: restrict] // Submission
+Ref: QuizOptions.QuestionId > QuizQuestions.Id [delete: cascade] // Question
+Ref: QuizQuestions.AssignmentId > Assignments.Id [delete: cascade] // Assignment
+Ref: QuizQuestions.BankQuestionId > BankQuestions.Id [delete: set null] // BankQuestion
+Ref: QuizQuestions.SubmissionId > Submissions.Id [delete: set null] // Submission
+Ref: ResearchMilestones.AssignmentId - Assignments.Id [delete: restrict] // Assignment
+Ref: ResearchMilestones.ModuleId > Modules.Id [delete: restrict] // Module
+Ref: ResearchMilestoneActivities.ActivityId > Activities.Id [delete: restrict] // Activity
+Ref: ResearchMilestoneActivities.ResearchMilestoneId > ResearchMilestones.Id [delete: cascade] // ResearchMilestone
+Ref: SessionAttendances.ClassSessionId > ClassSessions.Id [delete: cascade] // ClassSession
+Ref: SessionAttendances.ModuleEnrollmentId > ModuleEnrollments.Id [delete: restrict] // ModuleEnrollment
+Ref: SessionAttendances.RecordedBy > Users.Id [delete: set null] // Recorder
+Ref: SessionAttendances.StudentId > Users.Id [delete: restrict] // Student
+Ref: StandardizedTests.StudentId > Users.Id [delete: cascade] // Student
+Ref: StudentProfiles.StudentId - Users.Id [delete: cascade] // Student
+Ref: StudentSkills.SkillId > Skills.Id [delete: restrict] // Skill
+Ref: StudentSkills.StudentId > Users.Id [delete: restrict] // Student
+Ref: StudentSkills.VerifiedBy > Users.Id [delete: set null] // Verifier
+Ref: StudentSkillEvidences.CertificateId > Certificates.Id [delete: restrict] // Certificate
+Ref: StudentSkillEvidences.MediaAssetId > MediaAssets.Id [delete: restrict] // MediaAsset
+Ref: StudentSkillEvidences.StudentSkillId > StudentSkills.Id [delete: cascade] // StudentSkill
+Ref: StudentSkillEvidences.SubmissionId > Submissions.Id [delete: restrict] // Submission
+Ref: Submissions.AssignmentId > Assignments.Id [delete: cascade] // Assignment
+Ref: Submissions.ModuleEnrollmentId > ModuleEnrollments.Id [delete: restrict] // ModuleEnrollment
+Ref: Submissions.ResearchMilestoneId > ResearchMilestones.Id [delete: set null] // ResearchMilestone
+Ref: Submissions.StudentId > Users.Id [delete: restrict] // Student
+Ref: Submissions.VerifiedBy > Users.Id [delete: set null] // Verifier
+Ref: SubmissionEvidences.MediaId > MediaAssets.Id [delete: cascade] // Media
+Ref: SubmissionEvidences.SubmissionId > Submissions.Id [delete: cascade] // Submission
