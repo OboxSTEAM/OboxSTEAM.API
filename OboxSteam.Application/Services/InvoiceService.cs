@@ -23,7 +23,10 @@ public class InvoiceService : IInvoiceService
         var currentUser = await _unitOfWork.Users.GetByIdAsync(currentUserId)
             ?? throw ErrorHelper.Unauthorized("User not found.");
 
-        var invoice = await _unitOfWork.Invoices.GetByIdAsync(invoiceId, i => i.Payment)
+        var invoice = await _unitOfWork.Invoices.GetByIdAsync(
+            invoiceId,
+            i => i.Payment,
+            i => i.Payment.ProgramEnrollment!)
             ?? throw ErrorHelper.NotFound($"Invoice '{invoiceId}' not found.");
 
         // Check ownership: Admin/Manager can view all, otherwise must be IssuedTo
@@ -46,7 +49,8 @@ public class InvoiceService : IInvoiceService
 
         var invoice = await _unitOfWork.Invoices.FirstOrDefaultAsync(
             i => i.PaymentId == paymentId && !i.IsDeleted,
-            i => i.Payment)
+            i => i.Payment,
+            i => i.Payment.ProgramEnrollment!)
             ?? throw ErrorHelper.NotFound($"Invoice for payment '{paymentId}' not found.");
 
         // Check ownership: Admin/Manager can view all, otherwise must be IssuedTo
@@ -65,10 +69,11 @@ public class InvoiceService : IInvoiceService
     {
         var userId = _claimsService.GetCurrentUserId;
 
-        // Eager load Payment to prevent N+1 query issue
+        // Eager load Payment + ProgramEnrollment to prevent N+1 query issue
         var invoices = await _unitOfWork.Invoices.GetAllAsync(
             i => i.IssuedToId == userId && !i.IsDeleted,
-            i => i.Payment);
+            i => i.Payment,
+            i => i.Payment.ProgramEnrollment!);
 
         return invoices.OrderByDescending(i => i.CreatedAt)
             .Select(invoice => MapToDto(invoice, invoice.Payment?.Code))
@@ -76,19 +81,27 @@ public class InvoiceService : IInvoiceService
     }
 
     private static InvoiceResponseDto MapToDto(
-        Domain.Entities.Invoice invoice, string? paymentCode) => new()
+        Domain.Entities.Invoice invoice, string? paymentCode)
     {
-        Id = invoice.Id,
-        InvoiceNumber = invoice.InvoiceNumber,
-        PaymentId = invoice.PaymentId,
-        PaymentCode = paymentCode ?? string.Empty,
-        IssuedToId = invoice.IssuedToId,
-        BillingName = invoice.BillingName,
-        BillingEmail = invoice.BillingEmail,
-        ItemDescription = invoice.ItemDescription,
-        SubTotal = invoice.SubTotal,
-        TotalAmount = invoice.TotalAmount,
-        Currency = invoice.Currency,
-        CreatedAt = invoice.CreatedAt
-    };
+        var programId = invoice.Payment?.ProgramEnrollment?.ProgramId
+            ?? throw ErrorHelper.NotFound(
+                $"Program enrollment for invoice '{invoice.Id}' not found.");
+
+        return new()
+        {
+            Id = invoice.Id,
+            InvoiceNumber = invoice.InvoiceNumber,
+            PaymentId = invoice.PaymentId,
+            PaymentCode = paymentCode ?? string.Empty,
+            ProgramId = programId,
+            IssuedToId = invoice.IssuedToId,
+            BillingName = invoice.BillingName,
+            BillingEmail = invoice.BillingEmail,
+            ItemDescription = invoice.ItemDescription,
+            SubTotal = invoice.SubTotal,
+            TotalAmount = invoice.TotalAmount,
+            Currency = invoice.Currency,
+            CreatedAt = invoice.CreatedAt
+        };
+    }
 }

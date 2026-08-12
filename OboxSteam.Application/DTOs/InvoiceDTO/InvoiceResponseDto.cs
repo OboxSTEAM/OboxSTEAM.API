@@ -8,6 +8,7 @@ public class InvoiceResponseDto
 
     public Guid PaymentId { get; set; }
     public string PaymentCode { get; set; } = null!;
+    public Guid ProgramId { get; set; }
 
     public Guid IssuedToId { get; set; }
     public string BillingName { get; set; } = null!;

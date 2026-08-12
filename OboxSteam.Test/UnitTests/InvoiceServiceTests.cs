@@ -18,6 +18,9 @@ public sealed class InvoiceServiceTests
     private readonly Guid _otherPaymentId = Guid.Parse("23232323-2323-2323-2323-232323232323");
     private readonly Guid _invoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private readonly Guid _otherInvoiceId = Guid.Parse("34343434-3434-3434-3434-343434343434");
+    private readonly Guid _programId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+    private readonly Guid _programEnrollmentId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+    private readonly Guid _otherProgramEnrollmentId = Guid.Parse("56565656-5656-5656-5656-565656565656");
 
     private readonly DateTime _now = DateTime.UtcNow;
     private readonly InMemoryUnitOfWork _db = new();
@@ -48,15 +51,32 @@ public sealed class InvoiceServiceTests
         Guid? issuedToId = null,
         string paymentCode = "PAY-001",
         DateTime? createdAt = null,
-        bool isDeleted = false)
+        bool isDeleted = false,
+        Guid? programEnrollmentId = null)
     {
         var pid = paymentId ?? _paymentId;
+        var enrollmentId = programEnrollmentId
+            ?? (pid == _otherPaymentId ? _otherProgramEnrollmentId : _programEnrollmentId);
+        var studentId = issuedToId ?? _studentId;
+
+        var enrollment = new ProgramEnrollment
+        {
+            Id = enrollmentId,
+            StudentId = studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.Active,
+            IsDeleted = false,
+        };
+        _db.ProgramEnrollments.Seed(enrollment);
+
         var payment = new Payment
         {
             Id = pid,
             Code = paymentCode,
-            StudentId = issuedToId ?? _studentId,
-            PaidById = issuedToId ?? _studentId,
+            StudentId = studentId,
+            PaidById = studentId,
+            ProgramEnrollmentId = enrollmentId,
+            ProgramEnrollment = enrollment,
             Amount = 100m,
             Gateway = PaymentGateway.Stripe,
             Status = PaymentStatus.Success,
@@ -71,7 +91,7 @@ public sealed class InvoiceServiceTests
             InvoiceNumber = "INV-001",
             PaymentId = pid,
             Payment = payment,
-            IssuedToId = issuedToId ?? _studentId,
+            IssuedToId = studentId,
             BillingName = "Alice",
             BillingEmail = "alice@test.com",
             ItemDescription = "Program fee",
@@ -96,6 +116,7 @@ public sealed class InvoiceServiceTests
 
         Assert.Equal(_invoiceId, result.Id);
         Assert.Equal("PAY-001", result.PaymentCode);
+        Assert.Equal(_programId, result.ProgramId);
         Assert.Equal("Alice", result.BillingName);
     }
 
@@ -147,6 +168,7 @@ public sealed class InvoiceServiceTests
 
         Assert.Equal(_invoiceId, result.Id);
         Assert.Equal(_paymentId, result.PaymentId);
+        Assert.Equal(_programId, result.ProgramId);
     }
 
     [Fact]
@@ -180,7 +202,9 @@ public sealed class InvoiceServiceTests
 
         Assert.Equal(2, result.Count);
         Assert.Equal(_invoiceId, result[0].Id);
+        Assert.Equal(_programId, result[0].ProgramId);
         Assert.Equal(_otherInvoiceId, result[1].Id);
+        Assert.Equal(_programId, result[1].ProgramId);
     }
 
     [Fact]
@@ -198,5 +222,43 @@ public sealed class InvoiceServiceTests
 
         Assert.Single(result);
         Assert.Equal(_invoiceId, result[0].Id);
+        Assert.Equal(_programId, result[0].ProgramId);
+    }
+
+    [Fact]
+    public async Task GetById_Throws_WhenProgramEnrollmentMissing()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        var payment = new Payment
+        {
+            Id = _paymentId,
+            Code = "PAY-001",
+            StudentId = _studentId,
+            PaidById = _studentId,
+            Amount = 100m,
+            Gateway = PaymentGateway.Stripe,
+            Status = PaymentStatus.Success,
+            PaidAt = _now,
+            IsDeleted = false,
+        };
+        _db.Payments.Seed(payment);
+        _db.Invoices.Seed(new Invoice
+        {
+            Id = _invoiceId,
+            InvoiceNumber = "INV-001",
+            PaymentId = _paymentId,
+            Payment = payment,
+            IssuedToId = _studentId,
+            BillingName = "Alice",
+            BillingEmail = "alice@test.com",
+            ItemDescription = "Program fee",
+            SubTotal = 100m,
+            TotalAmount = 100m,
+            Currency = "VND",
+            CreatedAt = _now,
+            IsDeleted = false,
+        });
+
+        await Assert.ThrowsAsync<NotFoundException>(() => CreateSut().GetById(_invoiceId));
     }
 }
