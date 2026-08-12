@@ -46,6 +46,17 @@ public enum NotificationType
     ClassMentorRequestApproved,
     ClassMentorRequestRejected,
 
+    // Assessment recovery
+    AssessmentRecoveryRequested,
+    AssessmentRecoveryApproved,
+    AssessmentRecoveryRejected,
+
+    // Class re-delivery
+    ClassRedeliveryPendingManager,
+    ClassRedeliveryMatchedPendingPayment,
+    ClassRedeliveryRejected,
+    ClassRedeliveryCompleted,
+
     // Class enrollment
     ClassEnrolled,
     ClassTransferred,

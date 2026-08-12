@@ -78,10 +78,16 @@ public sealed class ValidatorAndUtilsTests
                 Guid.NewGuid()));
         Assert.Throws<ConflictException>(() =>
             ModuleEnrollmentValidator.ValidateNoActiveEnrollment(new ModuleEnrollment()));
-        Assert.Throws<BadRequestException>(() => ModuleEnrollmentValidator.ValidateRetakeEligibility(null));
+        Assert.Throws<BadRequestException>(() =>
+            ModuleEnrollmentValidator.ValidateRetakeEligibility(null, ModuleType.Experiential));
         Assert.Throws<BadRequestException>(() =>
             ModuleEnrollmentValidator.ValidateRetakeEligibility(
-                new ModuleEnrollment { AssignmentFailureCount = 1 }));
+                new ModuleEnrollment { AssignmentFailureCount = 1 },
+                ModuleType.Theory));
+        Assert.NotNull(
+            ModuleEnrollmentValidator.ValidateRetakeEligibility(
+                new ModuleEnrollment { AssignmentFailureCount = 0 },
+                ModuleType.Experiential));
         Assert.Throws<BadRequestException>(() =>
             ModuleEnrollmentValidator.ValidateProgramEnrollmentLink(null));
     }

@@ -261,4 +261,77 @@ public sealed class InvoiceServiceTests
 
         await Assert.ThrowsAsync<NotFoundException>(() => CreateSut().GetById(_invoiceId));
     }
+
+    [Fact]
+    public async Task GetMyInvoices_IncludesModuleRetakeInvoice_WithoutProgramEnrollment()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        var moduleId = Guid.Parse("77777777-7777-7777-7777-777777777777");
+        var moduleEnrollmentId = Guid.Parse("88888888-8888-8888-8888-888888888888");
+        var retakePaymentId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+        var retakeInvoiceId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+        var module = new Module
+        {
+            Id = moduleId,
+            Code = "MOD-R",
+            Name = "Robotics Lab",
+            ProgramId = _programId,
+            ModuleType = ModuleType.Experiential,
+            IsDeleted = false,
+        };
+        _db.Modules.Seed(module);
+
+        var moduleEnrollment = new ModuleEnrollment
+        {
+            Id = moduleEnrollmentId,
+            StudentId = _studentId,
+            ModuleId = moduleId,
+            Module = module,
+            Status = EnrollmentStatus.Active,
+            IsDeleted = false,
+        };
+        _db.ModuleEnrollments.Seed(moduleEnrollment);
+
+        var payment = new Payment
+        {
+            Id = retakePaymentId,
+            Code = "PAY-RETAKE",
+            StudentId = _studentId,
+            PaidById = _studentId,
+            ModuleEnrollmentId = moduleEnrollmentId,
+            ModuleEnrollment = moduleEnrollment,
+            Amount = 50m,
+            Gateway = PaymentGateway.Stripe,
+            Status = PaymentStatus.Success,
+            PaidAt = _now,
+            IsDeleted = false,
+        };
+        _db.Payments.Seed(payment);
+
+        _db.Invoices.Seed(new Invoice
+        {
+            Id = retakeInvoiceId,
+            InvoiceNumber = "INV-RETAKE",
+            PaymentId = retakePaymentId,
+            Payment = payment,
+            IssuedToId = _studentId,
+            BillingName = "Alice",
+            BillingEmail = "alice@test.com",
+            ItemDescription = "Module Retake: Robotics Lab",
+            SubTotal = 50m,
+            TotalAmount = 50m,
+            Currency = "VND",
+            CreatedAt = _now,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().GetMyInvoices();
+
+        Assert.Single(result);
+        Assert.Equal(retakeInvoiceId, result[0].Id);
+        Assert.Equal(_programId, result[0].ProgramId);
+        Assert.Equal(moduleId, result[0].ModuleId);
+        Assert.Contains("Module Retake", result[0].ItemDescription);
+    }
 }

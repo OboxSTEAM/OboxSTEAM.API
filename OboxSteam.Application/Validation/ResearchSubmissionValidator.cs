@@ -56,14 +56,20 @@ public static class ResearchSubmissionValidator
         }
     }
 
-    public static void ValidateAssignmentAvailability(Assignment assignment, DateTime utcNow)
+    public static void ValidateAssignmentAvailability(
+        Assignment assignment,
+        DateTime utcNow,
+        DateTime? personalAvailableUntil = null)
     {
         if (assignment.AvailableFrom.HasValue && utcNow < assignment.AvailableFrom.Value)
         {
             throw ErrorHelper.Forbidden("Assignment is not yet available.");
         }
 
-        if (assignment.AvailableUntil.HasValue && utcNow > assignment.AvailableUntil.Value)
+        var effectiveUntil = AssessmentAttemptPolicy.ResolveEffectiveAvailableUntil(
+            assignment,
+            personalAvailableUntil);
+        if (effectiveUntil.HasValue && utcNow > effectiveUntil.Value)
         {
             throw ErrorHelper.Conflict("Assignment is no longer available.");
         }
@@ -148,6 +154,31 @@ public static class ResearchSubmissionValidator
         {
             throw ErrorHelper.Conflict(
                 $"Maximum number of attempts ({assignment.MaxAttempts}) has been reached for this assignment.");
+        }
+    }
+
+    public static async Task ValidateMaxAttemptsNotExceededAsync(
+        IUnitOfWork unitOfWork,
+        Assignment assignment,
+        Guid studentId,
+        int nextAttemptNumber,
+        Guid? moduleEnrollmentId = null)
+    {
+        var effectiveMax = await AssessmentAttemptPolicy.GetEffectiveMaxAttemptsAsync(
+            unitOfWork,
+            assignment,
+            studentId,
+            moduleEnrollmentId);
+
+        if (effectiveMax == int.MaxValue)
+        {
+            return;
+        }
+
+        if (nextAttemptNumber > effectiveMax)
+        {
+            throw ErrorHelper.Conflict(
+                $"Maximum number of attempts ({effectiveMax}) has been reached for this assignment.");
         }
     }
 

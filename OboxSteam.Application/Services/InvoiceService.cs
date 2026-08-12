@@ -26,19 +26,13 @@ public class InvoiceService : IInvoiceService
         var invoice = await _unitOfWork.Invoices.GetByIdAsync(
             invoiceId,
             i => i.Payment,
-            i => i.Payment.ProgramEnrollment!)
+            i => i.Payment.ProgramEnrollment!,
+            i => i.Payment.ModuleEnrollment!,
+            i => i.Payment.ModuleEnrollment!.Module)
             ?? throw ErrorHelper.NotFound($"Invoice '{invoiceId}' not found.");
 
-        // Check ownership: Admin/Manager can view all, otherwise must be IssuedTo
-        if (currentUser.Role != RoleType.Admin && currentUser.Role != RoleType.Manager)
-        {
-            if (invoice.IssuedToId != currentUserId)
-            {
-                throw ErrorHelper.Forbidden("You do not have permission to view this invoice.");
-            }
-        }
-
-        return MapToDto(invoice, invoice.Payment?.Code);
+        EnsureCanView(currentUser, invoice.IssuedToId);
+        return await MapToDtoAsync(invoice, invoice.Payment?.Code);
     }
 
     public async Task<InvoiceResponseDto> GetByPaymentId(Guid paymentId)
@@ -50,42 +44,86 @@ public class InvoiceService : IInvoiceService
         var invoice = await _unitOfWork.Invoices.FirstOrDefaultAsync(
             i => i.PaymentId == paymentId && !i.IsDeleted,
             i => i.Payment,
-            i => i.Payment.ProgramEnrollment!)
+            i => i.Payment.ProgramEnrollment!,
+            i => i.Payment.ModuleEnrollment!,
+            i => i.Payment.ModuleEnrollment!.Module)
             ?? throw ErrorHelper.NotFound($"Invoice for payment '{paymentId}' not found.");
 
-        // Check ownership: Admin/Manager can view all, otherwise must be IssuedTo
-        if (currentUser.Role != RoleType.Admin && currentUser.Role != RoleType.Manager)
-        {
-            if (invoice.IssuedToId != currentUserId)
-            {
-                throw ErrorHelper.Forbidden("You do not have permission to view this invoice.");
-            }
-        }
-
-        return MapToDto(invoice, invoice.Payment?.Code);
+        EnsureCanView(currentUser, invoice.IssuedToId);
+        return await MapToDtoAsync(invoice, invoice.Payment?.Code);
     }
 
     public async Task<List<InvoiceResponseDto>> GetMyInvoices()
     {
         var userId = _claimsService.GetCurrentUserId;
 
-        // Eager load Payment + ProgramEnrollment to prevent N+1 query issue
         var invoices = await _unitOfWork.Invoices.GetAllAsync(
             i => i.IssuedToId == userId && !i.IsDeleted,
             i => i.Payment,
-            i => i.Payment.ProgramEnrollment!);
+            i => i.Payment.ProgramEnrollment!,
+            i => i.Payment.ModuleEnrollment!,
+            i => i.Payment.ModuleEnrollment!.Module);
 
-        return invoices.OrderByDescending(i => i.CreatedAt)
-            .Select(invoice => MapToDto(invoice, invoice.Payment?.Code))
-            .ToList();
+        var result = new List<InvoiceResponseDto>();
+        foreach (var invoice in invoices.OrderByDescending(i => i.CreatedAt))
+        {
+            result.Add(await MapToDtoAsync(invoice, invoice.Payment?.Code));
+        }
+
+        return result;
     }
 
-    private static InvoiceResponseDto MapToDto(
-        Domain.Entities.Invoice invoice, string? paymentCode)
+    private static void EnsureCanView(Domain.Entities.User currentUser, Guid issuedToId)
     {
-        var programId = invoice.Payment?.ProgramEnrollment?.ProgramId
-            ?? throw ErrorHelper.NotFound(
-                $"Program enrollment for invoice '{invoice.Id}' not found.");
+        if (currentUser.Role != RoleType.Admin && currentUser.Role != RoleType.Manager)
+        {
+            if (issuedToId != currentUser.Id)
+            {
+                throw ErrorHelper.Forbidden("You do not have permission to view this invoice.");
+            }
+        }
+    }
+
+    private async Task<InvoiceResponseDto> MapToDtoAsync(
+        Domain.Entities.Invoice invoice,
+        string? paymentCode)
+    {
+        var payment = invoice.Payment;
+        Guid? programId = payment?.ProgramEnrollment?.ProgramId;
+        Guid? moduleId = payment?.ModuleEnrollment?.ModuleId;
+
+        if (!programId.HasValue && payment?.ModuleEnrollment?.Module != null)
+        {
+            programId = payment.ModuleEnrollment.Module.ProgramId;
+        }
+
+        if (!programId.HasValue && payment?.ModuleEnrollmentId.HasValue == true)
+        {
+            var moduleEnrollment = payment.ModuleEnrollment
+                ?? await _unitOfWork.ModuleEnrollments.GetByIdAsync(payment.ModuleEnrollmentId.Value);
+            if (moduleEnrollment != null)
+            {
+                moduleId ??= moduleEnrollment.ModuleId;
+                if (moduleEnrollment.ProgramEnrollmentId.HasValue)
+                {
+                    var pe = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                        moduleEnrollment.ProgramEnrollmentId.Value);
+                    programId = pe?.ProgramId;
+                }
+
+                if (!programId.HasValue)
+                {
+                    var module = await _unitOfWork.Modules.GetByIdAsync(moduleEnrollment.ModuleId);
+                    programId = module?.ProgramId;
+                }
+            }
+        }
+
+        if (!programId.HasValue)
+        {
+            throw ErrorHelper.NotFound(
+                $"Program for invoice '{invoice.Id}' could not be resolved from payment.");
+        }
 
         return new()
         {
@@ -93,7 +131,8 @@ public class InvoiceService : IInvoiceService
             InvoiceNumber = invoice.InvoiceNumber,
             PaymentId = invoice.PaymentId,
             PaymentCode = paymentCode ?? string.Empty,
-            ProgramId = programId,
+            ProgramId = programId.Value,
+            ModuleId = moduleId,
             IssuedToId = invoice.IssuedToId,
             BillingName = invoice.BillingName,
             BillingEmail = invoice.BillingEmail,

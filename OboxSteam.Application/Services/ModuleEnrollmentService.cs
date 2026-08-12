@@ -107,7 +107,9 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
             .OrderByDescending(me => me.AttemptNumber)
             .FirstOrDefault();
 
-        var previousFailedAttempt = ModuleEnrollmentValidator.ValidateRetakeEligibility(failedEnrollment);
+        var previousFailedAttempt = ModuleEnrollmentValidator.ValidateRetakeEligibility(
+            failedEnrollment,
+            module.ModuleType);
 
         var nextAttemptNumber = previousFailedAttempt.AttemptNumber + 1;
         var now = DateTime.UtcNow;

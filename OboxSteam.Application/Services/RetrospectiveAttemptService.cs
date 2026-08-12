@@ -194,10 +194,16 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
 
         RetrospectiveAttemptValidator.ValidateFinalContentText(mergedContent);
 
-        if (submission.Status == SubmissionStatus.ReturnedForRevision)
+        if (submission.Status == SubmissionStatus.ReturnedForRevision
+            || submission.Status == SubmissionStatus.Graded)
         {
             var nextAttemptNumber = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
-            ResearchSubmissionValidator.ValidateMaxAttemptsNotExceeded(assignment!, nextAttemptNumber);
+            await ResearchSubmissionValidator.ValidateMaxAttemptsNotExceededAsync(
+                _unitOfWork,
+                assignment!,
+                student.Id,
+                nextAttemptNumber,
+                submission.ModuleEnrollmentId);
             submission.AttemptNumber = nextAttemptNumber;
         }
 

@@ -44,12 +44,23 @@ public sealed class QuizAttemptService : IQuizAttemptService
 
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(assignmentId);
         QuizAttemptValidator.ValidateAssignmentForQuizStart(assignment);
-        QuizAttemptValidator.ValidateAssignmentAvailability(assignment!, DateTime.UtcNow);
 
         var enrollment = await QuizAttemptValidator.ValidateActiveModuleEnrollmentAsync(
             _unitOfWork,
             student.Id,
             assignment!);
+
+        var (personalDue, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
+            _unitOfWork,
+            student.Id,
+            assignment!.Id,
+            enrollment.Id);
+
+        QuizAttemptValidator.ValidateAssignmentAvailability(
+            assignment,
+            DateTime.UtcNow,
+            personalDue,
+            personalUntil);
 
         var pendingSubmission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.AssignmentId == assignmentId
@@ -110,7 +121,11 @@ public sealed class QuizAttemptService : IQuizAttemptService
             };
         }
 
-        await QuizAttemptValidator.ValidateMaxAttemptsForNewStartAsync(_unitOfWork, assignment!, student.Id);
+        await QuizAttemptValidator.ValidateMaxAttemptsForNewStartAsync(
+            _unitOfWork,
+            assignment!,
+            student.Id,
+            enrollment.Id);
 
         var classId = await ResolveStudentClassIdForAssignmentAsync(student.Id, assignment!);
         ClassQuizQuestionSet? classSet = null;

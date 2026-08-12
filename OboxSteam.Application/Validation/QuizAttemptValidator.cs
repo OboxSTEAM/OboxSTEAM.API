@@ -38,15 +38,23 @@ public static class QuizAttemptValidator
         return assignment;
     }
 
-    public static void ValidateAssignmentAvailability(Assignment assignment, DateTime utcNow)
+    public static void ValidateAssignmentAvailability(
+        Assignment assignment,
+        DateTime utcNow,
+        DateTime? personalDueDate = null,
+        DateTime? personalAvailableUntil = null)
     {
         if (assignment.AvailableFrom.HasValue && utcNow < assignment.AvailableFrom.Value)
             throw ErrorHelper.Forbidden("Assignment is not yet available.");
 
-        if (assignment.AvailableUntil.HasValue && utcNow > assignment.AvailableUntil.Value)
+        var effectiveUntil = AssessmentAttemptPolicy.ResolveEffectiveAvailableUntil(
+            assignment,
+            personalAvailableUntil);
+        if (effectiveUntil.HasValue && utcNow > effectiveUntil.Value)
             throw ErrorHelper.Conflict("Assignment is no longer available.");
 
-        if (assignment.DueDate.HasValue && utcNow > assignment.DueDate.Value)
+        var effectiveDue = AssessmentAttemptPolicy.ResolveEffectiveDueDate(assignment, personalDueDate);
+        if (effectiveDue.HasValue && utcNow > effectiveDue.Value)
             throw ErrorHelper.Conflict("Assignment is past due date.");
     }
 
@@ -170,18 +178,30 @@ public static class QuizAttemptValidator
     public static async Task ValidateMaxAttemptsForNewStartAsync(
         IUnitOfWork unitOfWork,
         Assignment assignment,
-        Guid studentId)
+        Guid studentId,
+        Guid? moduleEnrollmentId = null)
     {
+        var effectiveMax = await AssessmentAttemptPolicy.GetEffectiveMaxAttemptsAsync(
+            unitOfWork,
+            assignment,
+            studentId,
+            moduleEnrollmentId);
+
+        if (effectiveMax == int.MaxValue)
+        {
+            return;
+        }
+
         var completedAttempts = await unitOfWork.Submissions.GetAllAsync(
             s => s.AssignmentId == assignment.Id
                  && s.StudentId == studentId
                  && !s.IsDeleted
                  && (s.Status == SubmissionStatus.Graded || s.Status == SubmissionStatus.TurnedIn));
 
-        if (completedAttempts.Count >= assignment.MaxAttempts)
+        if (completedAttempts.Count >= effectiveMax)
         {
             throw ErrorHelper.Conflict(
-                $"Maximum number of attempts ({assignment.MaxAttempts}) has been reached for this assignment.");
+                $"Maximum number of attempts ({effectiveMax}) has been reached for this assignment.");
         }
     }
 

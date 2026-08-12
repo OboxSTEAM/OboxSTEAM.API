@@ -421,10 +421,20 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         }
 
         var now = DateTime.UtcNow;
-        ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now);
+        var (_, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
+            _unitOfWork,
+            student.Id,
+            assignment.Id,
+            submission.ModuleEnrollmentId);
+        ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now, personalUntil);
 
         var nextAttemptNumber = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
-        ResearchSubmissionValidator.ValidateMaxAttemptsNotExceeded(assignment, nextAttemptNumber);
+        await ResearchSubmissionValidator.ValidateMaxAttemptsNotExceededAsync(
+            _unitOfWork,
+            assignment,
+            student.Id,
+            nextAttemptNumber,
+            submission.ModuleEnrollmentId);
 
         ModuleEnrollment? moduleEnrollment = null;
         if (submission.ModuleEnrollmentId.HasValue)
@@ -515,9 +525,33 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         submission.GradedAt = now;
         submission.UpdatedAt = now;
         submission.UpdatedBy = grader.Id;
-        submission.Status = request.ReturnForRevision
-            ? SubmissionStatus.ReturnedForRevision
-            : SubmissionStatus.Graded;
+
+        if (request.ReturnForRevision)
+        {
+            submission.Status = SubmissionStatus.ReturnedForRevision;
+        }
+        else
+        {
+            var passedGrade = request.AssignedGrade >= assignment.PassScore;
+            if (passedGrade)
+            {
+                submission.Status = SubmissionStatus.Graded;
+            }
+            else
+            {
+                // Reopen last failed milestone for another attempt when budget remains.
+                var nextAttempt = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
+                var effectiveMax = await AssessmentAttemptPolicy.GetEffectiveMaxAttemptsAsync(
+                    _unitOfWork,
+                    assignment,
+                    submission.StudentId,
+                    submission.ModuleEnrollmentId);
+
+                submission.Status = nextAttempt <= effectiveMax
+                    ? SubmissionStatus.ReturnedForRevision
+                    : SubmissionStatus.Graded;
+            }
+        }
 
         await _unitOfWork.Submissions.Update(submission);
         await _unitOfWork.SaveChangesAsync();

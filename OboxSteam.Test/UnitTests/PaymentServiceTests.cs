@@ -94,7 +94,12 @@ public sealed class PaymentServiceTests
             _emailService.Object,
             CreateConfiguration(),
             NullLogger<PaymentService>.Instance,
-            _notificationPublisher.Object);
+            _notificationPublisher.Object,
+            new ClassRedeliveryRequestService(
+                _db,
+                _claimsService.Object,
+                _notificationPublisher.Object,
+                NullLogger<ClassRedeliveryRequestService>.Instance));
     }
 
     private User SeedStudent(Guid? id = null)

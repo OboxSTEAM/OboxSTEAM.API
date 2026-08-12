@@ -32,7 +32,7 @@ public sealed class RetrospectiveAttemptServiceTests
             NullLogger<RetrospectiveAttemptService>.Instance);
     }
 
-    private void SeedStudentAndEnrollment()
+    private void SeedStudentAndEnrollment(ModuleType moduleType = ModuleType.Theory)
     {
         _db.Users.Seed(new User
         {
@@ -49,7 +49,7 @@ public sealed class RetrospectiveAttemptServiceTests
             Code = "MOD-001",
             Name = "Module 1",
             ProgramId = _programId,
-            ModuleType = ModuleType.Theory,
+            ModuleType = moduleType,
             IsDeleted = false
         });
 
@@ -460,7 +460,7 @@ public sealed class RetrospectiveAttemptServiceTests
     [Fact]
     public async Task SubmitRetrospective_ThrowsConflict_WhenMaxAttemptsExceededOnRevision()
     {
-        SeedStudentAndEnrollment();
+        SeedStudentAndEnrollment(ModuleType.Experiential);
         SeedRetrospectiveAssignment(maxAttempts: 1);
         var submission = SeedSubmission(
             status: SubmissionStatus.ReturnedForRevision,

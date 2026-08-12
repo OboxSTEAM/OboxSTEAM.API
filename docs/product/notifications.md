@@ -61,6 +61,13 @@ service emits it.
 | `ClassMentorRequestSubmitted`    | `ForManagers`                                                | `ClassMentorRequestService`                 |
 | `ClassMentorRequestApproved`     | Mentor via `ForUser`                                         | `ClassMentorRequestService`, `ClassService` |
 | `ClassMentorRequestRejected`     | Mentor via `ForUser`                                         | `ClassMentorRequestService`, `ClassService` |
+| `AssessmentRecoveryRequested`    | Class mentor (or managers)                                   | `AssessmentRecoveryRequestService`          |
+| `AssessmentRecoveryApproved`     | `ForStudentAndParents`                                       | `AssessmentRecoveryRequestService`          |
+| `AssessmentRecoveryRejected`     | `ForStudentAndParents`                                       | `AssessmentRecoveryRequestService`          |
+| `ClassRedeliveryPendingManager`  | `ForManagers`                                                | `ClassRedeliveryRequestService`             |
+| `ClassRedeliveryMatchedPendingPayment` | `ForStudentAndParents`                                 | `ClassRedeliveryRequestService`             |
+| `ClassRedeliveryRejected`        | `ForStudentAndParents`                                       | `ClassRedeliveryRequestService`             |
+| `ClassRedeliveryCompleted`       | `ForStudentAndParents`                                       | `ClassRedeliveryRequestService`             |
 | `ClassEnrolled`                  | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassTransferred`               | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassSessionScheduled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |

@@ -34,6 +34,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<SessionAttendance> SessionAttendances { get; } = new();
     public InMemoryRepository<ClassSkill> ClassSkills { get; } = new();
     public InMemoryRepository<ClassMentorRequest> ClassMentorRequests { get; } = new();
+    public InMemoryRepository<AssessmentRecoveryRequest> AssessmentRecoveryRequests { get; } = new();
+    public InMemoryRepository<ClassRedeliveryRequest> ClassRedeliveryRequests { get; } = new();
     public InMemoryRepository<ClassQuizQuestionSet> ClassQuizQuestionSets { get; } = new();
     public InMemoryRepository<ClassQuizQuestion> ClassQuizQuestions { get; } = new();
     public InMemoryRepository<ClassQuizQuestionOption> ClassQuizQuestionOptions { get; } = new();
@@ -95,6 +97,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<SessionAttendance> IUnitOfWork.SessionAttendances => SessionAttendances;
     IGenericRepository<ClassSkill> IUnitOfWork.ClassSkills => ClassSkills;
     IGenericRepository<ClassMentorRequest> IUnitOfWork.ClassMentorRequests => ClassMentorRequests;
+    IGenericRepository<AssessmentRecoveryRequest> IUnitOfWork.AssessmentRecoveryRequests => AssessmentRecoveryRequests;
+    IGenericRepository<ClassRedeliveryRequest> IUnitOfWork.ClassRedeliveryRequests => ClassRedeliveryRequests;
     IGenericRepository<ClassQuizQuestionSet> IUnitOfWork.ClassQuizQuestionSets => ClassQuizQuestionSets;
     IGenericRepository<ClassQuizQuestion> IUnitOfWork.ClassQuizQuestions => ClassQuizQuestions;
     IGenericRepository<ClassQuizQuestionOption> IUnitOfWork.ClassQuizQuestionOptions => ClassQuizQuestionOptions;
@@ -160,6 +164,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(SessionAttendance) => SessionAttendances,
             nameof(ClassSkill) => ClassSkills,
             nameof(ClassMentorRequest) => ClassMentorRequests,
+            nameof(AssessmentRecoveryRequest) => AssessmentRecoveryRequests,
+            nameof(ClassRedeliveryRequest) => ClassRedeliveryRequests,
             nameof(ClassQuizQuestionSet) => ClassQuizQuestionSets,
             nameof(ClassQuizQuestion) => ClassQuizQuestions,
             nameof(ClassQuizQuestionOption) => ClassQuizQuestionOptions,

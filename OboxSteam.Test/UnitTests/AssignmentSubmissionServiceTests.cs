@@ -81,7 +81,7 @@ public sealed class AssignmentSubmissionServiceTests
         });
     }
 
-    private void SeedModule()
+    private void SeedModule(ModuleType moduleType = ModuleType.Theory)
     {
         _db.Modules.Seed(new Module
         {
@@ -89,7 +89,7 @@ public sealed class AssignmentSubmissionServiceTests
             Code = "MOD-001",
             Name = "Module 1",
             ProgramId = _programId,
-            ModuleType = ModuleType.Theory,
+            ModuleType = moduleType,
             IsDeleted = false
         });
     }
@@ -151,10 +151,11 @@ public sealed class AssignmentSubmissionServiceTests
 
     private void SeedStudentModuleAndAssignment(
         int maxAttempts = 3,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        ModuleType moduleType = ModuleType.Theory)
     {
         SeedStudent();
-        SeedModule();
+        SeedModule(moduleType);
         SeedActiveEnrollment(programEnrollmentId);
         SeedFileUploadAssignment(maxAttempts: maxAttempts);
     }
@@ -165,7 +166,8 @@ public sealed class AssignmentSubmissionServiceTests
         SubmissionStatus status = SubmissionStatus.TurnedIn,
         int attemptNumber = 1,
         bool isDeleted = false,
-        Guid? studentId = null)
+        Guid? studentId = null,
+        decimal? assignedGrade = null)
     {
         var submission = new Submission
         {
@@ -177,6 +179,7 @@ public sealed class AssignmentSubmissionServiceTests
             ResearchMilestoneId = researchMilestoneId,
             AttemptNumber = attemptNumber,
             Status = status,
+            AssignedGrade = assignedGrade,
             ContentText = "Work",
             FileUrl = "https://cdn.example.com/old.pdf",
             SubmittedAt = DateTime.UtcNow.AddHours(-1),
@@ -421,7 +424,7 @@ public sealed class AssignmentSubmissionServiceTests
     public async Task SubmitAssignment_ThrowsConflict_WhenAlreadyGraded()
     {
         SeedStudentModuleAndAssignment();
-        SeedTurnedInSubmission(status: SubmissionStatus.Graded);
+        SeedTurnedInSubmission(status: SubmissionStatus.Graded, assignedGrade: 10m);
         var sut = CreateSut();
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() =>
@@ -437,7 +440,7 @@ public sealed class AssignmentSubmissionServiceTests
     [Fact]
     public async Task SubmitAssignment_ThrowsConflict_WhenMaxAttemptsReached()
     {
-        SeedStudentModuleAndAssignment(maxAttempts: 1);
+        SeedStudentModuleAndAssignment(maxAttempts: 1, moduleType: ModuleType.Experiential);
         SeedTurnedInSubmission(status: SubmissionStatus.ReturnedForRevision, attemptNumber: 1);
         var sut = CreateSut();
 

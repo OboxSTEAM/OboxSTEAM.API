@@ -10,6 +10,9 @@ public class InvoiceResponseDto
     public string PaymentCode { get; set; } = null!;
     public Guid ProgramId { get; set; }
 
+    /// <summary>Set when the payment is a module retake / re-delivery fee.</summary>
+    public Guid? ModuleId { get; set; }
+
     public Guid IssuedToId { get; set; }
     public string BillingName { get; set; } = null!;
     public string BillingEmail { get; set; } = null!;

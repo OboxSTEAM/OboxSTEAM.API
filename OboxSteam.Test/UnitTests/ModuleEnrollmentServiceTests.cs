@@ -93,7 +93,7 @@ public sealed class ModuleEnrollmentServiceTests
             Code = "MOD-001",
             Name = name,
             ProgramId = programId ?? _programId,
-            ModuleType = ModuleType.Theory,
+            ModuleType = ModuleType.Experiential,
             ModuleOrder = order,
             Price = 100m,
             RetakeFee = 50m,
@@ -213,21 +213,22 @@ public sealed class ModuleEnrollmentServiceTests
 
         var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.RetakeModuleAsync(BuildRetakeRequest()));
-        Assert.Contains("only allowed after failing", ex.Message);
+        Assert.Contains("class re-delivery", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task Retake_ThrowsBadRequest_WhenFailureCountInsufficient()
+    public async Task Retake_ThrowsBadRequest_ForTheoryModule()
     {
         SeedStudent();
         SeedProgramEnrollment();
         var module = SeedModule();
-        SeedModuleEnrollment(module: module, status: EnrollmentStatus.Failed, failureCount: 1);
+        module.ModuleType = ModuleType.Theory;
+        SeedModuleEnrollment(module: module, status: EnrollmentStatus.Failed, failureCount: 2);
         var sut = CreateSut();
 
         var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.RetakeModuleAsync(BuildRetakeRequest()));
-        Assert.Contains("two failed assignment attempts", ex.Message);
+        Assert.Contains("Theory modules", ex.Message);
     }
 
     [Fact]

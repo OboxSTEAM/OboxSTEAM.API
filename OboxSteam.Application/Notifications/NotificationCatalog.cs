@@ -485,6 +485,161 @@ public static class NotificationCatalog
             entityType: "ClassMentorRequest",
             entityId: requestId);
 
+    // ── Assessment recovery ───────────────────────────────────────────────────
+
+    public static NotificationCommand AssessmentRecoveryRequested(
+        Guid requestId,
+        Guid studentId,
+        Guid assignmentId,
+        Guid moduleId,
+        Guid? classId,
+        string? assignmentTitle = null)
+        => new(
+            NotificationType.AssessmentRecoveryRequested,
+            classId.HasValue
+                ? NotificationAudience.ForClassMentor(classId.Value)
+                : NotificationAudience.ForManagers(),
+            "Assessment recovery requested",
+            string.IsNullOrWhiteSpace(assignmentTitle)
+                ? "A student requested another attempt on an assignment."
+                : $"A student requested another attempt on \"{assignmentTitle}\".",
+            payload: new NotificationPayload
+            {
+                AssessmentRecoveryRequestId = requestId,
+                StudentId = studentId,
+                AssignmentId = assignmentId,
+                ModuleId = moduleId,
+                ClassId = classId,
+            },
+            actorUserId: studentId,
+            entityType: "AssessmentRecoveryRequest",
+            entityId: requestId);
+
+    public static NotificationCommand AssessmentRecoveryApproved(
+        Guid requestId,
+        Guid studentId,
+        Guid assignmentId,
+        int extraAttempts,
+        string? assignmentTitle = null)
+        => new(
+            NotificationType.AssessmentRecoveryApproved,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Assessment recovery approved",
+            string.IsNullOrWhiteSpace(assignmentTitle)
+                ? $"Your recovery request was approved (+{extraAttempts} attempt(s))."
+                : $"Recovery for \"{assignmentTitle}\" was approved (+{extraAttempts} attempt(s)).",
+            payload: new NotificationPayload
+            {
+                AssessmentRecoveryRequestId = requestId,
+                AssignmentId = assignmentId,
+            },
+            entityType: "AssessmentRecoveryRequest",
+            entityId: requestId);
+
+    public static NotificationCommand AssessmentRecoveryRejected(
+        Guid requestId,
+        Guid studentId,
+        Guid assignmentId)
+        => new(
+            NotificationType.AssessmentRecoveryRejected,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Assessment recovery rejected",
+            "Your assessment recovery request was rejected.",
+            payload: new NotificationPayload
+            {
+                AssessmentRecoveryRequestId = requestId,
+                AssignmentId = assignmentId,
+            },
+            entityType: "AssessmentRecoveryRequest",
+            entityId: requestId);
+
+    // ── Class re-delivery ─────────────────────────────────────────────────────
+
+    public static NotificationCommand ClassRedeliveryPendingManager(
+        Guid requestId,
+        Guid studentId,
+        Guid moduleId,
+        Guid programId,
+        string? moduleName = null)
+        => new(
+            NotificationType.ClassRedeliveryPendingManager,
+            NotificationAudience.ForManagers(),
+            "Class re-delivery needs decision",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? "No eligible class found; a re-delivery request needs manager action."
+                : $"No eligible class for re-delivery of \"{moduleName}\"; manager action needed.",
+            payload: new NotificationPayload
+            {
+                ClassRedeliveryRequestId = requestId,
+                StudentId = studentId,
+                ModuleId = moduleId,
+                ProgramId = programId,
+            },
+            entityType: "ClassRedeliveryRequest",
+            entityId: requestId);
+
+    public static NotificationCommand ClassRedeliveryMatchedPendingPayment(
+        Guid requestId,
+        Guid studentId,
+        Guid moduleId,
+        Guid targetClassId,
+        Guid retakeModuleEnrollmentId,
+        string? moduleName = null,
+        string? className = null)
+        => new(
+            NotificationType.ClassRedeliveryMatchedPendingPayment,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Pay retake fee to join another class",
+            string.IsNullOrWhiteSpace(className)
+                ? "A class was matched for re-delivery. Complete retake payment to transfer."
+                : $"Matched class \"{className}\" for re-delivery of \"{moduleName}\". Complete payment to transfer.",
+            payload: new NotificationPayload
+            {
+                ClassRedeliveryRequestId = requestId,
+                StudentId = studentId,
+                ModuleId = moduleId,
+                ClassId = targetClassId,
+                ModuleEnrollmentId = retakeModuleEnrollmentId,
+            },
+            entityType: "ClassRedeliveryRequest",
+            entityId: requestId);
+
+    public static NotificationCommand ClassRedeliveryRejected(
+        Guid requestId,
+        Guid studentId,
+        Guid moduleId)
+        => new(
+            NotificationType.ClassRedeliveryRejected,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Class re-delivery rejected",
+            "Your class re-delivery request was rejected.",
+            payload: new NotificationPayload
+            {
+                ClassRedeliveryRequestId = requestId,
+                ModuleId = moduleId,
+            },
+            entityType: "ClassRedeliveryRequest",
+            entityId: requestId);
+
+    public static NotificationCommand ClassRedeliveryCompleted(
+        Guid requestId,
+        Guid studentId,
+        Guid moduleId,
+        Guid targetClassId)
+        => new(
+            NotificationType.ClassRedeliveryCompleted,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Class re-delivery completed",
+            "You have been transferred for module re-delivery.",
+            payload: new NotificationPayload
+            {
+                ClassRedeliveryRequestId = requestId,
+                ModuleId = moduleId,
+                ClassId = targetClassId,
+            },
+            entityType: "ClassRedeliveryRequest",
+            entityId: requestId);
+
     // ── Class enrollment ──────────────────────────────────────────────────────
 
     public static NotificationCommand ClassEnrolled(

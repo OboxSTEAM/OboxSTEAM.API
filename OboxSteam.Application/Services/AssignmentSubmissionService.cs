@@ -105,18 +105,44 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         {
             if (submission.Status == SubmissionStatus.Graded)
             {
-                throw ErrorHelper.Conflict(
-                    "This assignment has already been graded for the current module attempt.");
-            }
+                var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+                var passed = submission.AssignedGrade.HasValue
+                    && submission.AssignedGrade.Value >= assignment.PassScore;
+                if (passed)
+                {
+                    throw ErrorHelper.Conflict(
+                        "This assignment has already been graded for the current module attempt.");
+                }
 
-            ResearchSubmissionValidator.ValidateMaxAttemptsNotExceeded(
-                assignment,
-                ResearchSubmissionValidator.GetNextAttemptNumber(submission));
+                await ResearchSubmissionValidator.ValidateMaxAttemptsNotExceededAsync(
+                    _unitOfWork,
+                    assignment,
+                    student.Id,
+                    ResearchSubmissionValidator.GetNextAttemptNumber(submission),
+                    enrollment.Id);
+            }
+            else if (submission.Status is SubmissionStatus.Pending or SubmissionStatus.ReturnedForRevision)
+            {
+                await ResearchSubmissionValidator.ValidateMaxAttemptsNotExceededAsync(
+                    _unitOfWork,
+                    assignment,
+                    student.Id,
+                    ResearchSubmissionValidator.GetNextAttemptNumber(submission),
+                    enrollment.Id);
+            }
+            else if (submission.Status == SubmissionStatus.TurnedIn)
+            {
+                throw ErrorHelper.Conflict("Submission is pending mentor review.");
+            }
 
             submission.ContentText = request.ContentText?.Trim();
             submission.FileUrl = request.FileUrl?.Trim();
             submission.AttemptNumber = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
             submission.Status = SubmissionStatus.TurnedIn;
+            submission.AssignedGrade = null;
+            submission.MentorFeedback = null;
+            submission.GradedAt = null;
+            submission.VerifiedBy = null;
             submission.SubmittedAt = now;
             submission.UpdatedAt = now;
             submission.UpdatedBy = student.Id;

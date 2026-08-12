@@ -34,19 +34,27 @@ public static class RetrospectiveAttemptValidator
         return assignment;
     }
 
-    public static void ValidateAssignmentAvailability(Assignment assignment, DateTime utcNow)
+    public static void ValidateAssignmentAvailability(
+        Assignment assignment,
+        DateTime utcNow,
+        DateTime? personalDueDate = null,
+        DateTime? personalAvailableUntil = null)
     {
         if (assignment.AvailableFrom.HasValue && utcNow < assignment.AvailableFrom.Value)
         {
             throw ErrorHelper.Forbidden("Assignment is not yet available.");
         }
 
-        if (assignment.AvailableUntil.HasValue && utcNow > assignment.AvailableUntil.Value)
+        var effectiveUntil = AssessmentAttemptPolicy.ResolveEffectiveAvailableUntil(
+            assignment,
+            personalAvailableUntil);
+        if (effectiveUntil.HasValue && utcNow > effectiveUntil.Value)
         {
             throw ErrorHelper.Conflict("Assignment is no longer available.");
         }
 
-        if (assignment.DueDate.HasValue && utcNow > assignment.DueDate.Value)
+        var effectiveDue = AssessmentAttemptPolicy.ResolveEffectiveDueDate(assignment, personalDueDate);
+        if (effectiveDue.HasValue && utcNow > effectiveDue.Value)
         {
             throw ErrorHelper.Conflict("Assignment is past due date.");
         }

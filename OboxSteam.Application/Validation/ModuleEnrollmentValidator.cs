@@ -119,18 +119,22 @@ public static class ModuleEnrollmentValidator
         }
     }
 
-    public static ModuleEnrollment ValidateRetakeEligibility(ModuleEnrollment? failedEnrollment)
+    public static ModuleEnrollment ValidateRetakeEligibility(
+        ModuleEnrollment? failedEnrollment,
+        ModuleType moduleType)
     {
+        if (moduleType == ModuleType.Theory)
+        {
+            throw ErrorHelper.BadRequest(
+                "Theory modules support unlimited assignment retries on the same enrollment. "
+                + "Use assignment redo or assessment recovery for a personal deadline — not module retake payment.");
+        }
+
         if (failedEnrollment == null)
         {
             throw ErrorHelper.BadRequest(
-                "Module retake is only allowed after failing the module (two failed assignment attempts).");
-        }
-
-        if (failedEnrollment.AssignmentFailureCount < 2)
-        {
-            throw ErrorHelper.BadRequest(
-                "Module retake requires two failed assignment attempts on the previous attempt.");
+                "Module retake / class re-delivery is only available after the prior module attempt is no longer active. "
+                + "Prefer AssessmentRecoveryRequest first; use ClassRedeliveryRequest for hands-on re-experience.");
         }
 
         return failedEnrollment;

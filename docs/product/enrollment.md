@@ -58,11 +58,25 @@ passing grade shows `completed`.
 `ActivityProgress` tracks completion per student per activity.
 `ActivityBooking` handles booking for capacity-limited activities.
 
+## Assessment recovery vs class re-delivery
+
+- **Same class:** mentor-granted extra attempts never transfer the student.
+- **Theory:** unlimited assignment retries; never pay or transfer only to redo a test.
+- **Class re-delivery** (`ClassRedeliveryRequest`): when Experiential/Research needs
+  hands-on again (or recovery request cap is hit). System auto-matches another
+  `Open`/`InProgress` class in the same program that has not reached that module
+  yet (no `InProgress`/`Completed` `ClassSession` for the module). On match,
+  student pays `RetakeFee` then transfers. If no eligible class, request goes to
+  the manager queue.
+- Module retake invoices appear in `GET /api/invoices/me` alongside program tuition.
+
+API: `/api/class-redelivery-requests`.
+
 ## Payments
 
 `Payment` entity and `PaymentStatus` / `PaymentGateway` enums exist in the
-domain model. Payment integration endpoints should be verified against current
-controllers before documenting public contract details.
+domain model. Program tuition and module `RetakeFee` (class re-delivery) both
+create `Invoice` rows visible via invoice endpoints.
 
 ## Parent Visibility
 

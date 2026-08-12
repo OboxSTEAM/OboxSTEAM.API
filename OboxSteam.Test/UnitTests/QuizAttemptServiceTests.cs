@@ -45,7 +45,7 @@ public sealed class QuizAttemptServiceTests
             NullLogger<QuizAttemptService>.Instance);
     }
 
-    private void SeedStudentAndEnrollment()
+    private void SeedStudentAndEnrollment(ModuleType moduleType = ModuleType.Theory)
     {
         _db.Users.Seed(new User
         {
@@ -62,7 +62,7 @@ public sealed class QuizAttemptServiceTests
             Code = "MOD-001",
             Name = "Module 1",
             ProgramId = _programId,
-            ModuleType = ModuleType.Theory,
+            ModuleType = moduleType,
             IsDeleted = false
         });
 
@@ -298,8 +298,9 @@ public sealed class QuizAttemptServiceTests
     [Fact]
     public async Task StartQuiz_ThrowsConflict_WhenMaxAttemptsReached()
     {
-        SeedStudentAndEnrollment();
+        SeedStudentAndEnrollment(ModuleType.Experiential);
         SeedQuizAssignment(maxAttempts: 1);
+        SeedBankQuestion();
 
         _db.Submissions.Seed(new Submission
         {

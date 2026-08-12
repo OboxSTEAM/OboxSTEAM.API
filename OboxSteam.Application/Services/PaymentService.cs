@@ -21,6 +21,7 @@ public class PaymentService : IPaymentService
     private readonly IConfiguration _configuration;
     private readonly ILogger<PaymentService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly IClassRedeliveryRequestService _classRedeliveryRequestService;
 
     public PaymentService(
         IUnitOfWork unitOfWork,
@@ -30,7 +31,8 @@ public class PaymentService : IPaymentService
         IEmailService emailService,
         IConfiguration configuration,
         ILogger<PaymentService> logger,
-        INotificationPublisher notificationPublisher)
+        INotificationPublisher notificationPublisher,
+        IClassRedeliveryRequestService classRedeliveryRequestService)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
@@ -40,6 +42,7 @@ public class PaymentService : IPaymentService
         _configuration = configuration;
         _logger = logger;
         _notificationPublisher = notificationPublisher;
+        _classRedeliveryRequestService = classRedeliveryRequestService;
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -734,6 +737,8 @@ public class PaymentService : IPaymentService
         _logger.LogInformation(
             "[HandlePaymentSuccess] Payment {PaymentId} confirmed. Invoice={InvoiceNumber}. Student={StudentId}",
             payment.Id, invoice.InvoiceNumber, payment.StudentId);
+
+        await _classRedeliveryRequestService.CompleteAfterPaymentAsync(payment.Id);
     }
 
     private async Task<Guid?> ResolveProgramIdForPaymentAsync(Payment payment)

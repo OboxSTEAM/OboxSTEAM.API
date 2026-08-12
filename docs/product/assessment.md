@@ -15,8 +15,16 @@ Assignments belong to a `Module` and optionally a `Course`. Fields include
 `MaxPoints`, `PassScore`, `IsRequiredForModulePass`, availability window, and
 `DueDate`.
 
+### Attempt limits by module type
+
+| ModuleType | `MaxAttempts` | Recovery |
+| --- | --- | --- |
+| Theory | Not enforced — unlimited free retries on the same class | No attempt grant needed; mentor may extend personal deadline if the window closed |
+| Experiential / Research | Enforced | After exhaustion, student submits `AssessmentRecoveryRequest`; mentor grants extra attempts ± personal deadline (same class). Cap: 2 requests per assignment per module enrollment |
+
 API: `/api/assignments` — CRUD for Manager/Admin; student submission
 flows via assignment, quiz, and retrospective services.
+Assessment recovery: `/api/assessment-recovery-requests`.
 
 ## Question Banks
 

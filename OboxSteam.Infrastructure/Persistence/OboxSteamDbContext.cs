@@ -51,6 +51,8 @@ public class OboxSteamDbContext : DbContext
     public DbSet<SessionAttendance> SessionAttendances { get; set; }
     public DbSet<ClassSkill> ClassSkills { get; set; }
     public DbSet<ClassMentorRequest> ClassMentorRequests { get; set; }
+    public DbSet<AssessmentRecoveryRequest> AssessmentRecoveryRequests { get; set; }
+    public DbSet<ClassRedeliveryRequest> ClassRedeliveryRequests { get; set; }
     public DbSet<ClassQuizQuestionSet> ClassQuizQuestionSets { get; set; }
     public DbSet<ClassQuizQuestion> ClassQuizQuestions { get; set; }
     public DbSet<ClassQuizQuestionOption> ClassQuizQuestionOptions { get; set; }
@@ -137,6 +139,8 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<SessionAttendance>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassSkill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassMentorRequest>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<AssessmentRecoveryRequest>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ClassRedeliveryRequest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassQuizQuestionSet>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassQuizQuestion>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassQuizQuestionOption>().HasQueryFilter(e => !e.IsDeleted);
@@ -1017,6 +1021,100 @@ public class OboxSteamDbContext : DbContext
 
             entity.HasOne(r => r.Decider)
                 .WithMany(u => u.DecidedClassMentorRequests)
+                .HasForeignKey(r => r.DecidedBy)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // ASSESSMENT RECOVERY REQUEST
+        // =============================================
+        modelBuilder.Entity<AssessmentRecoveryRequest>(entity =>
+        {
+            entity.HasIndex(r => new { r.StudentId, r.AssignmentId, r.Status })
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(r => new { r.ModuleEnrollmentId, r.AssignmentId })
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(r => r.Student)
+                .WithMany()
+                .HasForeignKey(r => r.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.ModuleEnrollment)
+                .WithMany()
+                .HasForeignKey(r => r.ModuleEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Assignment)
+                .WithMany()
+                .HasForeignKey(r => r.AssignmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Class)
+                .WithMany()
+                .HasForeignKey(r => r.ClassId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(r => r.Decider)
+                .WithMany()
+                .HasForeignKey(r => r.DecidedBy)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // CLASS REDELIVERY REQUEST
+        // =============================================
+        modelBuilder.Entity<ClassRedeliveryRequest>(entity =>
+        {
+            entity.HasIndex(r => new { r.StudentId, r.Status })
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(r => new { r.ModuleId, r.Status })
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(r => r.Student)
+                .WithMany()
+                .HasForeignKey(r => r.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.ModuleEnrollment)
+                .WithMany()
+                .HasForeignKey(r => r.ModuleEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Module)
+                .WithMany()
+                .HasForeignKey(r => r.ModuleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.SourceClass)
+                .WithMany()
+                .HasForeignKey(r => r.SourceClassId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.RequestedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.RequestedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.TargetClass)
+                .WithMany()
+                .HasForeignKey(r => r.TargetClassId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(r => r.Payment)
+                .WithMany()
+                .HasForeignKey(r => r.PaymentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(r => r.RetakeModuleEnrollment)
+                .WithMany()
+                .HasForeignKey(r => r.RetakeModuleEnrollmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(r => r.Decider)
+                .WithMany()
                 .HasForeignKey(r => r.DecidedBy)
                 .OnDelete(DeleteBehavior.SetNull);
         });
