@@ -39,335 +39,6 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         _logger = logger;
     }
 
-    public async Task<ResearchSubmissionResponseDto> StartSubmission(StartResearchSubmissionRequestDto request)
-    {
-        var enrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(request.ModuleEnrollmentId);
-        if (enrollment == null || enrollment.IsDeleted)
-        {
-            throw ErrorHelper.NotFound(
-                $"Module enrollment with id '{request.ModuleEnrollmentId}' not found.");
-        }
-
-        if (enrollment.Status != EnrollmentStatus.Active)
-        {
-            throw ErrorHelper.Forbidden("Module enrollment is not active.");
-        }
-
-        var milestone = await _unitOfWork.ResearchMilestones.GetByIdAsync(request.ResearchMilestoneId);
-        ResearchMilestoneValidator.ValidateMilestoneExists(milestone, request.ResearchMilestoneId);
-
-        if (milestone!.ModuleId != enrollment.ModuleId)
-        {
-            throw ErrorHelper.BadRequest(
-                "Research milestone does not belong to the enrollment module.");
-        }
-
-        var module = await _unitOfWork.Modules.GetByIdAsync(enrollment.ModuleId);
-        ResearchMilestoneValidator.ValidateResearchModule(module, enrollment.ModuleId);
-
-        var opener = await ResearchSubmissionValidator.EnsureCanStartSubmissionAsync(
-            _unitOfWork,
-            _claimsService,
-            enrollment.ModuleId,
-            enrollment.StudentId);
-
-        var assignment = await _unitOfWork.Assignments.GetByIdAsync(milestone.AssignmentId);
-        if (assignment == null || assignment.IsDeleted)
-        {
-            throw ErrorHelper.NotFound($"Assignment with id '{milestone.AssignmentId}' not found.");
-        }
-
-        var existingSubmission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
-            s => s.ModuleEnrollmentId == request.ModuleEnrollmentId
-                 && s.ResearchMilestoneId == request.ResearchMilestoneId
-                 && !s.IsDeleted);
-
-        if (existingSubmission != null)
-        {
-            throw ErrorHelper.Conflict(
-                "A research submission already exists for this enrollment and milestone.");
-        }
-
-        var now = DateTime.UtcNow;
-        ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now);
-
-        var milestoneIds = await ResearchSubmissionValidator.LoadModuleMilestoneIdsAsync(
-            _unitOfWork,
-            enrollment.ModuleId);
-        var submissions = await _unitOfWork.Submissions.GetAllAsync(
-            s => s.ModuleEnrollmentId == request.ModuleEnrollmentId
-                 && s.ResearchMilestoneId.HasValue
-                 && milestoneIds.Contains(s.ResearchMilestoneId.Value)
-                 && !s.IsDeleted);
-
-        var assignments = await _unitOfWork.Assignments.GetAllAsync(
-            a => submissions.Select(s => s.AssignmentId).Contains(a.Id) && !a.IsDeleted);
-        var assignmentsById = assignments.ToDictionary(a => a.Id);
-        var submissionsByMilestoneId = submissions
-            .GroupBy(s => s.ResearchMilestoneId!.Value)
-            .ToDictionary(
-                group => group.Key,
-                group => group.OrderByDescending(s => s.AttemptNumber).ThenByDescending(s => s.CreatedAt).First());
-
-        var activityProgresses = await _unitOfWork.ActivityProgresses.GetAllAsync(
-            ap => ap.ModuleEnrollmentId == request.ModuleEnrollmentId && !ap.IsDeleted);
-        var completedActivityIds = activityProgresses
-            .Where(ap => ap.IsCompleted)
-            .Select(ap => ap.ActivityId)
-            .ToHashSet();
-
-        await ResearchSubmissionValidator.ValidateMilestoneReadyForOpenAsync(
-            _unitOfWork,
-            enrollment,
-            milestone,
-            assignment,
-            submissionsByMilestoneId,
-            assignmentsById,
-            completedActivityIds,
-            now);
-
-        var submission = new Submission
-        {
-            Id = Guid.NewGuid(),
-            Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-            AssignmentId = assignment.Id,
-            StudentId = enrollment.StudentId,
-            ModuleEnrollmentId = enrollment.Id,
-            ResearchMilestoneId = milestone.Id,
-            AttemptNumber = 0,
-            Status = SubmissionStatus.Pending,
-            CreatedAt = now,
-            CreatedBy = opener.Id,
-            IsDeleted = false
-        };
-
-        await _unitOfWork.Submissions.AddAsync(submission);
-        await _unitOfWork.SaveChangesAsync();
-
-        await _notificationPublisher.PublishAsync(NotificationCatalog.ResearchSubmissionOpened(
-            enrollment.StudentId,
-            submission.Id,
-            assignment.Id,
-            module!.ProgramId));
-
-        _logger.LogInformation(
-            "StartSubmission opened research submission. SubmissionId={SubmissionId}, MilestoneId={MilestoneId}, StudentId={StudentId}, OpenedBy={OpenedBy}",
-            submission.Id,
-            milestone.Id,
-            enrollment.StudentId,
-            opener.Id);
-
-        return await MapSubmissionToResponseDtoAsync(submission, assignment);
-    }
-
-    public async Task<StartResearchSubmissionForClassResponseDto> StartSubmissionForClass(
-        StartResearchSubmissionForClassRequestDto request)
-    {
-        var classEntity = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
-        ClassValidator.ValidateClassExists(classEntity, request.ClassId);
-
-        var milestone = await _unitOfWork.ResearchMilestones.GetByIdAsync(request.ResearchMilestoneId);
-        ResearchMilestoneValidator.ValidateMilestoneExists(milestone, request.ResearchMilestoneId);
-
-        var module = await _unitOfWork.Modules.GetByIdAsync(milestone!.ModuleId);
-        ResearchMilestoneValidator.ValidateResearchModule(module, milestone.ModuleId);
-
-        if (module!.ProgramId != classEntity!.ProgramId)
-        {
-            throw ErrorHelper.BadRequest(MentorScopeValidator.ClassProgramMismatchMessage);
-        }
-
-        var opener = await ResearchSubmissionValidator.EnsureCanStartSubmissionForClassAsync(
-            _unitOfWork,
-            _claimsService,
-            request.ClassId,
-            milestone.ModuleId);
-
-        var assignment = await _unitOfWork.Assignments.GetByIdAsync(milestone.AssignmentId);
-        if (assignment == null || assignment.IsDeleted)
-        {
-            throw ErrorHelper.NotFound($"Assignment with id '{milestone.AssignmentId}' not found.");
-        }
-
-        var now = DateTime.UtcNow;
-        ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now);
-
-        var classEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
-            ce => ce.ClassId == request.ClassId
-                  && ce.Status == ClassEnrollmentStatus.Active
-                  && !ce.IsDeleted);
-
-        var response = new StartResearchSubmissionForClassResponseDto
-        {
-            ClassId = request.ClassId,
-            ResearchMilestoneId = request.ResearchMilestoneId,
-            TotalClassStudents = classEnrollments.Count
-        };
-
-        if (classEnrollments.Count == 0)
-        {
-            return response;
-        }
-
-        var studentIds = classEnrollments.Select(ce => ce.StudentId).Distinct().ToList();
-        var programEnrollmentIds = classEnrollments
-            .Select(ce => ce.ProgramEnrollmentId)
-            .Distinct()
-            .ToList();
-
-        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
-            me => studentIds.Contains(me.StudentId)
-                  && me.ModuleId == milestone.ModuleId
-                  && me.Status == EnrollmentStatus.Active
-                  && !me.IsDeleted
-                  && me.ProgramEnrollmentId.HasValue
-                  && programEnrollmentIds.Contains(me.ProgramEnrollmentId.Value));
-
-        var moduleEnrollmentByStudentProgram = moduleEnrollments
-            .GroupBy(me => (me.StudentId, me.ProgramEnrollmentId!.Value))
-            .ToDictionary(
-                group => group.Key,
-                group => group.OrderByDescending(me => me.AttemptNumber).ThenByDescending(me => me.CreatedAt).First());
-
-        var matchedModuleEnrollmentIds = classEnrollments
-            .Select(ce => moduleEnrollmentByStudentProgram.TryGetValue(
-                (ce.StudentId, ce.ProgramEnrollmentId),
-                out var enrollment)
-                ? enrollment.Id
-                : (Guid?)null)
-            .Where(id => id.HasValue)
-            .Select(id => id!.Value)
-            .ToList();
-
-        var existingSubmissions = matchedModuleEnrollmentIds.Count == 0
-            ? []
-            : await _unitOfWork.Submissions.GetAllAsync(
-                s => s.ModuleEnrollmentId.HasValue
-                     && matchedModuleEnrollmentIds.Contains(s.ModuleEnrollmentId.Value)
-                     && s.ResearchMilestoneId == request.ResearchMilestoneId
-                     && !s.IsDeleted);
-
-        var existingSubmissionByEnrollmentId = existingSubmissions
-            .GroupBy(s => s.ModuleEnrollmentId!.Value)
-            .ToDictionary(group => group.Key, group => group.First());
-
-        var submissionsToAdd = new List<Submission>();
-
-        foreach (var classEnrollment in classEnrollments)
-        {
-            if (!moduleEnrollmentByStudentProgram.TryGetValue(
-                    (classEnrollment.StudentId, classEnrollment.ProgramEnrollmentId),
-                    out var moduleEnrollment))
-            {
-                response.Skipped.Add(new StartResearchSubmissionForClassSkippedDto
-                {
-                    StudentId = classEnrollment.StudentId,
-                    Reason = "No active module enrollment for this research module."
-                });
-                continue;
-            }
-
-            if (existingSubmissionByEnrollmentId.ContainsKey(moduleEnrollment.Id))
-            {
-                response.Skipped.Add(new StartResearchSubmissionForClassSkippedDto
-                {
-                    StudentId = classEnrollment.StudentId,
-                    Reason = "A research submission already exists for this enrollment and milestone."
-                });
-                continue;
-            }
-
-            submissionsToAdd.Add(new Submission
-            {
-                Id = Guid.NewGuid(),
-                Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-                AssignmentId = assignment.Id,
-                StudentId = moduleEnrollment.StudentId,
-                ModuleEnrollmentId = moduleEnrollment.Id,
-                ResearchMilestoneId = milestone.Id,
-                AttemptNumber = 0,
-                Status = SubmissionStatus.Pending,
-                CreatedAt = now,
-                CreatedBy = opener.Id,
-                IsDeleted = false
-            });
-        }
-
-        if (submissionsToAdd.Count > 0)
-        {
-            await _unitOfWork.Submissions.AddRangeAsync(submissionsToAdd);
-            await _unitOfWork.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "StartSubmissionForClass opened {OpenedCount} research submission(s). ClassId={ClassId}, MilestoneId={MilestoneId}, OpenedBy={OpenedBy}",
-                submissionsToAdd.Count,
-                request.ClassId,
-                milestone.Id,
-                opener.Id);
-        }
-
-        foreach (var submission in submissionsToAdd)
-        {
-            response.Opened.Add(await MapSubmissionToResponseDtoAsync(submission, assignment));
-        }
-
-        response.OpenedCount = response.Opened.Count;
-        response.SkippedCount = response.Skipped.Count;
-
-        return response;
-    }
-
-    public async Task<CreateResearchSubmissionRequestDto> UploadSubmissionFile(
-        Guid submissionId,
-        IFormFile file,
-        bool isEvidence = false)
-    {
-        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
-            _unitOfWork,
-            _claimsService,
-            ResearchSubmissionValidator.SubmitResearchForbiddenMessage);
-
-        var submission = await _unitOfWork.Submissions.GetByIdAsync(submissionId);
-        ResearchSubmissionValidator.ValidateSubmissionExists(submission, submissionId);
-        ResearchSubmissionValidator.ValidateResearchSubmission(submission!);
-        ResearchSubmissionValidator.ValidateSubmissionOwnership(submission!, student.Id);
-        ResearchSubmissionValidator.ValidateSubmissionOpenForSubmit(submission!);
-        ResearchSubmissionValidator.ValidateUploadFile(file);
-
-        if (submission!.ModuleEnrollmentId.HasValue)
-        {
-            var enrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(submission.ModuleEnrollmentId.Value);
-            if (enrollment == null || enrollment.IsDeleted || enrollment.Status != EnrollmentStatus.Active)
-            {
-                throw ErrorHelper.Forbidden("Module enrollment is not active.");
-            }
-        }
-
-        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var folder = $"{SubmissionFolder}/{submissionId}";
-        var fileName = $"{submissionId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
-        var s3Key = $"{folder}/{fileName}";
-
-        _logger.LogInformation(
-            "UploadSubmissionFile uploading to S3. SubmissionId={SubmissionId}, S3Key={S3Key}, IsEvidence={IsEvidence}",
-            submissionId,
-            s3Key,
-            isEvidence);
-
-        await using var stream = file.OpenReadStream();
-        await _blobService.UploadFileAsync(fileName, stream, folder);
-        var fileUrl = await _blobService.GetPreviewUrlAsync(s3Key);
-
-        _logger.LogInformation(
-            "UploadSubmissionFile completed. SubmissionId={SubmissionId}, StudentId={StudentId}",
-            submissionId,
-            student.Id);
-
-        return isEvidence
-            ? new CreateResearchSubmissionRequestDto { EvidenceUrls = [fileUrl] }
-            : new CreateResearchSubmissionRequestDto { FileUrl = fileUrl };
-    }
-
     public async Task<ResearchSubmissionResponseDto?> GetSubmission(Guid submissionId)
     {
         var submission = await _unitOfWork.Submissions.GetByIdAsync(submissionId);
@@ -397,9 +68,64 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         return await MapSubmissionToResponseDtoAsync(submission, assignment, passed);
     }
 
-    public async Task<ResearchSubmissionResponseDto> SubmitResearchWork(
-        Guid submissionId,
-        CreateResearchSubmissionRequestDto request)
+    public async Task<UploadResearchSubmissionResponseDto> UploadSubmissionFile(
+        Guid moduleEnrollmentId,
+        Guid researchMilestoneId,
+        IFormFile file,
+        bool isEvidence = false)
+    {
+        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
+            _unitOfWork,
+            _claimsService,
+            ResearchSubmissionValidator.SubmitResearchForbiddenMessage);
+
+        ResearchSubmissionValidator.ValidateUploadFile(file);
+
+        var (enrollment, milestone, assignment, now, personalUntil) =
+            await ResolveStudentMilestoneContextAsync(student.Id, moduleEnrollmentId, researchMilestoneId);
+
+        var submission = await EnsurePendingDraftAsync(
+            student.Id,
+            enrollment,
+            milestone,
+            assignment,
+            now,
+            personalUntil);
+
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var folder = $"{SubmissionFolder}/{submission.Id}";
+        var fileName = $"{submission.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
+        var s3Key = $"{folder}/{fileName}";
+
+        _logger.LogInformation(
+            "UploadSubmissionFile uploading to S3. SubmissionId={SubmissionId}, S3Key={S3Key}, IsEvidence={IsEvidence}",
+            submission.Id,
+            s3Key,
+            isEvidence);
+
+        await using var stream = file.OpenReadStream();
+        await _blobService.UploadFileAsync(fileName, stream, folder);
+        var fileUrl = await _blobService.GetPreviewUrlAsync(s3Key);
+
+        _logger.LogInformation(
+            "UploadSubmissionFile completed. SubmissionId={SubmissionId}, StudentId={StudentId}",
+            submission.Id,
+            student.Id);
+
+        return isEvidence
+            ? new UploadResearchSubmissionResponseDto
+            {
+                SubmissionId = submission.Id,
+                EvidenceUrls = [fileUrl]
+            }
+            : new UploadResearchSubmissionResponseDto
+            {
+                SubmissionId = submission.Id,
+                FileUrl = fileUrl
+            };
+    }
+
+    public async Task<ResearchSubmissionResponseDto> SubmitResearchWork(SubmitResearchWorkRequestDto request)
     {
         var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
             _unitOfWork,
@@ -408,67 +134,99 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
 
         ResearchSubmissionValidator.ValidateSubmitContent(request);
 
-        var submission = await _unitOfWork.Submissions.GetByIdAsync(submissionId);
-        ResearchSubmissionValidator.ValidateSubmissionExists(submission, submissionId);
-        ResearchSubmissionValidator.ValidateResearchSubmission(submission!);
-        ResearchSubmissionValidator.ValidateSubmissionOwnership(submission!, student.Id);
-        ResearchSubmissionValidator.ValidateSubmissionOpenForSubmit(submission!);
+        var (enrollment, milestone, assignment, now, personalUntil) =
+            await ResolveStudentMilestoneContextAsync(
+                student.Id,
+                request.ModuleEnrollmentId,
+                request.ResearchMilestoneId);
 
-        var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission!.AssignmentId);
-        if (assignment == null || assignment.IsDeleted)
+        var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+            s => s.ModuleEnrollmentId == enrollment.Id
+                 && s.ResearchMilestoneId == milestone.Id
+                 && !s.IsDeleted);
+
+        if (submission == null)
         {
-            throw ErrorHelper.NotFound($"Assignment with id '{submission.AssignmentId}' not found.");
-        }
+            await ValidateMilestoneReadyAsync(enrollment, milestone, assignment, now, personalUntil);
 
-        var now = DateTime.UtcNow;
-        var (_, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
-            _unitOfWork,
-            student.Id,
-            assignment.Id,
-            submission.ModuleEnrollmentId);
-        ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now, personalUntil);
+            var nextAttemptNumber = 1;
+            await ResearchSubmissionValidator.ValidateMaxAttemptsNotExceededAsync(
+                _unitOfWork,
+                assignment,
+                student.Id,
+                nextAttemptNumber,
+                enrollment.Id);
 
-        var nextAttemptNumber = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
-        await ResearchSubmissionValidator.ValidateMaxAttemptsNotExceededAsync(
-            _unitOfWork,
-            assignment,
-            student.Id,
-            nextAttemptNumber,
-            submission.ModuleEnrollmentId);
-
-        ModuleEnrollment? moduleEnrollment = null;
-        if (submission.ModuleEnrollmentId.HasValue)
-        {
-            moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(submission.ModuleEnrollmentId.Value);
-            if (moduleEnrollment == null || moduleEnrollment.IsDeleted || moduleEnrollment.Status != EnrollmentStatus.Active)
+            submission = new Submission
             {
-                throw ErrorHelper.Forbidden("Module enrollment is not active.");
-            }
+                Id = Guid.NewGuid(),
+                Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
+                AssignmentId = assignment.Id,
+                StudentId = student.Id,
+                ModuleEnrollmentId = enrollment.Id,
+                ResearchMilestoneId = milestone.Id,
+                AttemptNumber = nextAttemptNumber,
+                Status = SubmissionStatus.TurnedIn,
+                ContentText = request.ContentText?.Trim(),
+                FileUrl = request.FileUrl?.Trim(),
+                SubmittedAt = now,
+                CreatedAt = now,
+                CreatedBy = student.Id,
+                IsDeleted = false
+            };
+
+            await ResearchSubmissionValidator.ReplaceEvidenceUrlsAsync(
+                _unitOfWork,
+                submission,
+                request.EvidenceUrls,
+                student.Id,
+                now);
+            await _unitOfWork.Submissions.AddAsync(submission);
+        }
+        else
+        {
+            ResearchSubmissionValidator.ValidateResearchSubmission(submission);
+            ResearchSubmissionValidator.ValidateSubmissionOwnership(submission, student.Id);
+            ResearchSubmissionValidator.ValidateSubmissionOpenForSubmit(submission);
+            ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now, personalUntil);
+
+            var nextAttemptNumber = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
+            await ResearchSubmissionValidator.ValidateMaxAttemptsNotExceededAsync(
+                _unitOfWork,
+                assignment,
+                student.Id,
+                nextAttemptNumber,
+                enrollment.Id);
+
+            submission.ContentText = request.ContentText?.Trim();
+            submission.FileUrl = request.FileUrl?.Trim();
+            submission.AttemptNumber = nextAttemptNumber;
+            submission.Status = SubmissionStatus.TurnedIn;
+            submission.AssignedGrade = null;
+            submission.MentorFeedback = null;
+            submission.GradedAt = null;
+            submission.VerifiedBy = null;
+            submission.SubmittedAt = now;
+            submission.UpdatedAt = now;
+            submission.UpdatedBy = student.Id;
+
+            await ResearchSubmissionValidator.ReplaceEvidenceUrlsAsync(
+                _unitOfWork,
+                submission,
+                request.EvidenceUrls,
+                student.Id,
+                now);
+            await _unitOfWork.Submissions.Update(submission);
         }
 
-        submission.ContentText = request.ContentText?.Trim();
-        submission.FileUrl = request.FileUrl?.Trim();
-        submission.AttemptNumber = nextAttemptNumber;
-        submission.Status = SubmissionStatus.TurnedIn;
-        submission.SubmittedAt = now;
-        submission.UpdatedAt = now;
-        submission.UpdatedBy = student.Id;
-
-        await ResearchSubmissionValidator.ReplaceEvidenceUrlsAsync(
-            _unitOfWork,
-            submission,
-            request.EvidenceUrls,
-            student.Id,
-            now);
-        await _unitOfWork.Submissions.Update(submission);
         await _unitOfWork.SaveChangesAsync();
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
         Guid? classId = null;
-        if (moduleEnrollment?.ProgramEnrollmentId != null)
+        if (enrollment.ProgramEnrollmentId.HasValue)
         {
             var classEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
-                ce => ce.ProgramEnrollmentId == moduleEnrollment.ProgramEnrollmentId.Value
+                ce => ce.ProgramEnrollmentId == enrollment.ProgramEnrollmentId.Value
                       && ce.Status == ClassEnrollmentStatus.Active
                       && !ce.IsDeleted);
             classId = classEnrollment?.ClassId;
@@ -591,6 +349,155 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             : null;
 
         return await MapSubmissionToResponseDtoAsync(submission, assignment, passed);
+    }
+
+    private async Task<(
+        ModuleEnrollment Enrollment,
+        ResearchMilestone Milestone,
+        Assignment Assignment,
+        DateTime Now,
+        DateTime? PersonalUntil)> ResolveStudentMilestoneContextAsync(
+        Guid studentId,
+        Guid moduleEnrollmentId,
+        Guid researchMilestoneId)
+    {
+        var enrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId);
+        if (enrollment == null || enrollment.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Module enrollment with id '{moduleEnrollmentId}' not found.");
+        }
+
+        if (enrollment.StudentId != studentId)
+        {
+            throw ErrorHelper.Forbidden("Module enrollment does not belong to the current student.");
+        }
+
+        if (enrollment.Status != EnrollmentStatus.Active)
+        {
+            throw ErrorHelper.Forbidden("Module enrollment is not active.");
+        }
+
+        var milestone = await _unitOfWork.ResearchMilestones.GetByIdAsync(researchMilestoneId);
+        ResearchMilestoneValidator.ValidateMilestoneExists(milestone, researchMilestoneId);
+
+        if (milestone!.ModuleId != enrollment.ModuleId)
+        {
+            throw ErrorHelper.BadRequest(
+                "Research milestone does not belong to the enrollment module.");
+        }
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(enrollment.ModuleId);
+        ResearchMilestoneValidator.ValidateResearchModule(module, enrollment.ModuleId);
+
+        var assignment = await _unitOfWork.Assignments.GetByIdAsync(milestone.AssignmentId);
+        if (assignment == null || assignment.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Assignment with id '{milestone.AssignmentId}' not found.");
+        }
+
+        var now = DateTime.UtcNow;
+        var (_, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
+            _unitOfWork,
+            studentId,
+            assignment.Id,
+            enrollment.Id);
+
+        return (enrollment, milestone, assignment, now, personalUntil);
+    }
+
+    private async Task ValidateMilestoneReadyAsync(
+        ModuleEnrollment enrollment,
+        ResearchMilestone milestone,
+        Assignment assignment,
+        DateTime now,
+        DateTime? personalUntil)
+    {
+        var milestoneIds = await ResearchSubmissionValidator.LoadModuleMilestoneIdsAsync(
+            _unitOfWork,
+            enrollment.ModuleId);
+        var submissions = await _unitOfWork.Submissions.GetAllAsync(
+            s => s.ModuleEnrollmentId == enrollment.Id
+                 && s.ResearchMilestoneId.HasValue
+                 && milestoneIds.Contains(s.ResearchMilestoneId.Value)
+                 && !s.IsDeleted);
+
+        var assignments = await _unitOfWork.Assignments.GetAllAsync(
+            a => submissions.Select(s => s.AssignmentId).Contains(a.Id) && !a.IsDeleted);
+        var assignmentsById = assignments.ToDictionary(a => a.Id);
+        var submissionsByMilestoneId = submissions
+            .GroupBy(s => s.ResearchMilestoneId!.Value)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(s => s.AttemptNumber).ThenByDescending(s => s.CreatedAt).First());
+
+        var activityProgresses = await _unitOfWork.ActivityProgresses.GetAllAsync(
+            ap => ap.ModuleEnrollmentId == enrollment.Id && !ap.IsDeleted);
+        var completedActivityIds = activityProgresses
+            .Where(ap => ap.IsCompleted)
+            .Select(ap => ap.ActivityId)
+            .ToHashSet();
+
+        await ResearchSubmissionValidator.ValidateMilestoneReadyForSubmitAsync(
+            _unitOfWork,
+            enrollment,
+            milestone,
+            assignment,
+            submissionsByMilestoneId,
+            assignmentsById,
+            completedActivityIds,
+            now,
+            personalUntil);
+    }
+
+    private async Task<Submission> EnsurePendingDraftAsync(
+        Guid studentId,
+        ModuleEnrollment enrollment,
+        ResearchMilestone milestone,
+        Assignment assignment,
+        DateTime now,
+        DateTime? personalUntil)
+    {
+        var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+            s => s.ModuleEnrollmentId == enrollment.Id
+                 && s.ResearchMilestoneId == milestone.Id
+                 && !s.IsDeleted);
+
+        if (existing != null)
+        {
+            ResearchSubmissionValidator.ValidateResearchSubmission(existing);
+            ResearchSubmissionValidator.ValidateSubmissionOwnership(existing, studentId);
+            ResearchSubmissionValidator.ValidateSubmissionOpenForSubmit(existing);
+            ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now, personalUntil);
+            return existing;
+        }
+
+        await ValidateMilestoneReadyAsync(enrollment, milestone, assignment, now, personalUntil);
+
+        var submission = new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
+            AssignmentId = assignment.Id,
+            StudentId = studentId,
+            ModuleEnrollmentId = enrollment.Id,
+            ResearchMilestoneId = milestone.Id,
+            AttemptNumber = 0,
+            Status = SubmissionStatus.Pending,
+            CreatedAt = now,
+            CreatedBy = studentId,
+            IsDeleted = false
+        };
+
+        await _unitOfWork.Submissions.AddAsync(submission);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "EnsurePendingDraftAsync created draft. SubmissionId={SubmissionId}, MilestoneId={MilestoneId}, StudentId={StudentId}",
+            submission.Id,
+            milestone.Id,
+            studentId);
+
+        return submission;
     }
 
     /// <summary>

@@ -18,68 +18,6 @@ public sealed class ResearchSubmissionController : ControllerBase
         _researchSubmissionService = researchSubmissionService;
     }
 
-    [HttpPost("research-submissions/start")]
-    [Authorize(Roles = "Mentor,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "Open a research submission for a student",
-        Description = "Mentor, Manager, or Admin opens a submission slot for a student on a research milestone. "
-            + "The student can then submit work within the assignment availability window.")]
-    [ProducesResponseType(typeof(ApiResult<ResearchSubmissionResponseDto>), 201)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> StartSubmission(
-        [FromBody, SwaggerParameter("Start submission request")] StartResearchSubmissionRequestDto request)
-    {
-        var result = await _researchSubmissionService.StartSubmission(request);
-
-        return CreatedAtAction(
-            nameof(GetSubmission),
-            new { submissionId = result.Id },
-            ApiResult<ResearchSubmissionResponseDto>.Success(
-                result,
-                "201",
-                "Research submission opened successfully."));
-    }
-
-    [HttpPost("research-submissions/start-for-class")]
-    [Authorize(Roles = "Mentor,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "Open research submissions for a class",
-        Description = "Mentor, Manager, or Admin opens submission slots for all active students in a class "
-            + "on a research milestone. Students without an active module enrollment or an existing submission are skipped.")]
-    [ProducesResponseType(typeof(ApiResult<StartResearchSubmissionForClassResponseDto>), 201)]
-    [ProducesResponseType(typeof(ApiResult<StartResearchSubmissionForClassResponseDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> StartSubmissionForClass(
-        [FromBody, SwaggerParameter("Start class submission request")]
-        StartResearchSubmissionForClassRequestDto request)
-    {
-        var result = await _researchSubmissionService.StartSubmissionForClass(request);
-
-        if (result.OpenedCount > 0)
-        {
-            return StatusCode(
-                StatusCodes.Status201Created,
-                ApiResult<StartResearchSubmissionForClassResponseDto>.Success(
-                    result,
-                    "201",
-                    $"Opened {result.OpenedCount} research submission(s) for the class."));
-        }
-
-        return Ok(ApiResult<StartResearchSubmissionForClassResponseDto>.Success(
-            result,
-            "200",
-            result.TotalClassStudents == 0
-                ? "No active students in this class."
-                : "No new research submissions were opened. See skipped details."));
-    }
-
     [HttpGet("research-submissions/{submissionId:guid}")]
     [Authorize(Roles = "Student,Parent,Mentor,Manager,Admin")]
     [SwaggerOperation(
@@ -103,41 +41,48 @@ public sealed class ResearchSubmissionController : ControllerBase
             "Research submission retrieved successfully."));
     }
 
-    [HttpPost("research-submissions/{submissionId:guid}/upload")]
+    [HttpPost("research-submissions/upload")]
     [Authorize(Roles = "Student")]
     [RequestSizeLimit(3L * 1024 * 1024 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = 3L * 1024 * 1024 * 1024)]
     [SwaggerOperation(
         Summary = "Upload research submission file to S3",
-        Description = "Uploads a deliverable or evidence file to S3 only (no DB write). "
-            + "Returns CreateResearchSubmissionRequestDto with FileUrl or EvidenceUrls for use in submit. "
+        Description = "Uploads a deliverable or evidence file to S3. Lazy-creates a Pending draft when the "
+            + "milestone is unlocked. Returns FileUrl or EvidenceUrls (and SubmissionId) for use in submit. "
             + "Set isEvidence=true for supporting evidence files.")]
-    [ProducesResponseType(typeof(ApiResult<CreateResearchSubmissionRequestDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<UploadResearchSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> UploadSubmissionFile(
-        [FromRoute] Guid submissionId,
+        [FromQuery, SwaggerParameter("Module enrollment id")] Guid moduleEnrollmentId,
+        [FromQuery, SwaggerParameter("Research milestone id")] Guid researchMilestoneId,
         IFormFile file,
         [FromQuery, SwaggerParameter("When true, URL is returned in EvidenceUrls instead of FileUrl")]
         bool isEvidence = false)
     {
-        var result = await _researchSubmissionService.UploadSubmissionFile(submissionId, file, isEvidence);
+        var result = await _researchSubmissionService.UploadSubmissionFile(
+            moduleEnrollmentId,
+            researchMilestoneId,
+            file,
+            isEvidence);
 
-        return Ok(ApiResult<CreateResearchSubmissionRequestDto>.Success(
+        return Ok(ApiResult<UploadResearchSubmissionResponseDto>.Success(
             result,
             "200",
             "Research submission file uploaded successfully."));
     }
 
-    [HttpPost("research-submissions/{submissionId:guid}/submit")]
+    [HttpPost("research-submissions/submit")]
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Submit research work",
-        Description = "Student submits research deliverable content in a single action. "
-            + "No draft saving. Resubmission after ReturnedForRevision does not require mentor to reopen.")]
+        Description = "Student submits research deliverable content for a milestone. Creates the submission "
+            + "when none exists (milestone unlock + required activities + availability). "
+            + "Resubmission after ReturnedForRevision does not require mentor to reopen. "
+            + "Personal AvailableUntil from approved assessment recovery is honored.")]
     [ProducesResponseType(typeof(ApiResult<ResearchSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -145,10 +90,9 @@ public sealed class ResearchSubmissionController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> SubmitResearchWork(
-        [FromRoute] Guid submissionId,
-        [FromBody, SwaggerParameter("Research work content")] CreateResearchSubmissionRequestDto request)
+        [FromBody, SwaggerParameter("Research work content")] SubmitResearchWorkRequestDto request)
     {
-        var result = await _researchSubmissionService.SubmitResearchWork(submissionId, request);
+        var result = await _researchSubmissionService.SubmitResearchWork(request);
 
         return Ok(ApiResult<ResearchSubmissionResponseDto>.Success(
             result,

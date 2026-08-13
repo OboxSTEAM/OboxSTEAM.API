@@ -5,40 +5,28 @@ namespace OboxSteam.Application.Interfaces;
 
 /// <summary>
 /// Research deliverable submission flow for milestone-linked assignments.
+/// Students submit when milestone unlock, required activities, and availability pass.
+/// Window extensions use approved <c>AssessmentRecoveryRequest</c> personal deadlines.
 /// </summary>
 public interface IResearchSubmissionService
 {
-    /// <summary>
-    /// Mentor, Manager, or Admin opens a <c>Pending</c> submission for a student on a milestone.
-    /// </summary>
-    Task<ResearchSubmissionResponseDto> StartSubmission(StartResearchSubmissionRequestDto request);
-
-    /// <summary>
-    /// Opens <c>Pending</c> submissions for all active students in a class on a milestone.
-    /// Per-student eligibility gates are not applied; students without a module enrollment or
-    /// an existing submission are skipped.
-    /// </summary>
-    Task<StartResearchSubmissionForClassResponseDto> StartSubmissionForClass(
-        StartResearchSubmissionForClassRequestDto request);
-
     Task<ResearchSubmissionResponseDto?> GetSubmission(Guid submissionId);
 
     /// <summary>
-    /// Uploads a file to S3 only. Returns <see cref="CreateResearchSubmissionRequestDto"/> fields
-    /// (<c>FileUrl</c> or <c>EvidenceUrls</c>) for the client to pass into submit.
+    /// Uploads a file to S3. Lazy-creates a student-owned <c>Pending</c> draft when unlocked.
+    /// Returns URLs for the client to pass into submit.
     /// </summary>
-    Task<CreateResearchSubmissionRequestDto> UploadSubmissionFile(
-        Guid submissionId,
+    Task<UploadResearchSubmissionResponseDto> UploadSubmissionFile(
+        Guid moduleEnrollmentId,
+        Guid researchMilestoneId,
         IFormFile file,
         bool isEvidence = false);
 
     /// <summary>
-    /// Student submits research work in a single action (no draft saving).
+    /// Student submits research work in a single action (create or turn in existing draft).
     /// Resubmission after <c>ReturnedForRevision</c> does not require mentor to reopen.
     /// </summary>
-    Task<ResearchSubmissionResponseDto> SubmitResearchWork(
-        Guid submissionId,
-        CreateResearchSubmissionRequestDto request);
+    Task<ResearchSubmissionResponseDto> SubmitResearchWork(SubmitResearchWorkRequestDto request);
 
     /// <summary>
     /// Mentor, Manager, or Admin grades a submission or returns it for revision.

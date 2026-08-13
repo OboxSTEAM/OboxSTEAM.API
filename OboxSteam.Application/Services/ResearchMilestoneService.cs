@@ -781,12 +781,19 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
                 .Select(a => $"Required activity '{a.Title}' is not completed.")
                 .ToList();
 
+            var (_, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
+                _unitOfWork,
+                enrollmentEntity.StudentId,
+                assignment.Id,
+                moduleEnrollmentId);
+
             var (canSubmit, submitBlockReasons) = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
                 isUnlocked,
                 activityBlockReasons,
                 assignment,
                 latestSubmission,
-                now);
+                now,
+                personalUntil);
 
             var passed = latestSubmission != null
                 && latestSubmission.Status == SubmissionStatus.Graded

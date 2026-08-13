@@ -26,9 +26,6 @@ public static class ResearchSubmissionValidator
 
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".mp4", ".mov", ".avi", ".mkv" };
-    public const string StartSubmissionForbiddenMessage =
-        "Only Mentor, Manager, and Admin can open a research submission for a student.";
-
     public const string SubmitResearchForbiddenMessage =
         "Only students can submit research work.";
 
@@ -76,10 +73,19 @@ public static class ResearchSubmissionValidator
     }
 
     public static void ValidateSubmitContent(CreateResearchSubmissionRequestDto request)
+        => ValidateSubmitContent(request.ContentText, request.FileUrl, request.EvidenceUrls);
+
+    public static void ValidateSubmitContent(SubmitResearchWorkRequestDto request)
+        => ValidateSubmitContent(request.ContentText, request.FileUrl, request.EvidenceUrls);
+
+    public static void ValidateSubmitContent(
+        string? contentText,
+        string? fileUrl,
+        List<string>? evidenceUrls)
     {
-        var hasText = !string.IsNullOrWhiteSpace(request.ContentText);
-        var hasFile = !string.IsNullOrWhiteSpace(request.FileUrl);
-        var hasEvidence = request.EvidenceUrls?.Any(url => !string.IsNullOrWhiteSpace(url)) == true;
+        var hasText = !string.IsNullOrWhiteSpace(contentText);
+        var hasFile = !string.IsNullOrWhiteSpace(fileUrl);
+        var hasEvidence = evidenceUrls?.Any(url => !string.IsNullOrWhiteSpace(url)) == true;
 
         if (!hasText && !hasFile && !hasEvidence)
         {
@@ -187,7 +193,8 @@ public static class ResearchSubmissionValidator
         IReadOnlyList<string> activityBlockReasons,
         Assignment assignment,
         Submission? submission,
-        DateTime utcNow)
+        DateTime utcNow,
+        DateTime? personalAvailableUntil = null)
     {
         var submitBlockReasons = new List<string>();
 
@@ -203,15 +210,24 @@ public static class ResearchSubmissionValidator
             submitBlockReasons.Add("Assignment is not yet available.");
         }
 
-        if (assignment.AvailableUntil.HasValue && utcNow > assignment.AvailableUntil.Value)
+        var effectiveUntil = AssessmentAttemptPolicy.ResolveEffectiveAvailableUntil(
+            assignment,
+            personalAvailableUntil);
+        if (effectiveUntil.HasValue && utcNow > effectiveUntil.Value)
         {
             submitBlockReasons.Add("Assignment is no longer available.");
         }
 
         if (submission == null)
         {
-            submitBlockReasons.Add("Mentor has not opened submission yet.");
-            return (false, submitBlockReasons);
+            if (assignment.MaxAttempts < 1)
+            {
+                submitBlockReasons.Add(
+                    $"Maximum number of attempts ({assignment.MaxAttempts}) has been reached for this assignment.");
+                return (false, submitBlockReasons);
+            }
+
+            return (submitBlockReasons.Count == 0, submitBlockReasons);
         }
 
         if (submission.Status == SubmissionStatus.TurnedIn)
@@ -246,64 +262,6 @@ public static class ResearchSubmissionValidator
 
         submitBlockReasons.Add("Submission is not open for submission.");
         return (false, submitBlockReasons);
-    }
-
-    public static async Task<User> EnsureCanStartSubmissionAsync(
-        IUnitOfWork unitOfWork,
-        IClaimsService claimsService,
-        Guid moduleId,
-        Guid studentId)
-    {
-        var user = await GetCurrentUserAsync(unitOfWork, claimsService);
-
-        if (user.Role is RoleType.Admin or RoleType.Manager)
-        {
-            return user;
-        }
-
-        if (user.Role == RoleType.Mentor)
-        {
-            var module = await unitOfWork.Modules.GetByIdAsync(moduleId);
-            if (module == null || module.IsDeleted)
-            {
-                throw ErrorHelper.NotFound($"Module with id '{moduleId}' not found.");
-            }
-
-            await MentorScopeValidator.EnsureMentorOwnsStudentInProgramAsync(
-                unitOfWork,
-                user.Id,
-                studentId,
-                module.ProgramId);
-            return user;
-        }
-
-        throw ErrorHelper.Forbidden(StartSubmissionForbiddenMessage);
-    }
-
-    public static async Task<User> EnsureCanStartSubmissionForClassAsync(
-        IUnitOfWork unitOfWork,
-        IClaimsService claimsService,
-        Guid classId,
-        Guid moduleId)
-    {
-        var user = await GetCurrentUserAsync(unitOfWork, claimsService);
-
-        if (user.Role is RoleType.Admin or RoleType.Manager)
-        {
-            return user;
-        }
-
-        if (user.Role == RoleType.Mentor)
-        {
-            await MentorScopeValidator.EnsureMentorOwnsClassForModuleAsync(
-                unitOfWork,
-                user.Id,
-                classId,
-                moduleId);
-            return user;
-        }
-
-        throw ErrorHelper.Forbidden(StartSubmissionForbiddenMessage);
     }
 
     public static async Task<User> EnsureCanGradeSubmissionAsync(
@@ -403,7 +361,7 @@ public static class ResearchSubmissionValidator
         throw ErrorHelper.Forbidden(ViewSubmissionForbiddenMessage);
     }
 
-    public static async Task ValidateMilestoneReadyForOpenAsync(
+    public static async Task ValidateMilestoneReadyForSubmitAsync(
         IUnitOfWork unitOfWork,
         ModuleEnrollment enrollment,
         ResearchMilestone milestone,
@@ -411,7 +369,8 @@ public static class ResearchSubmissionValidator
         IReadOnlyDictionary<Guid, Submission> submissionsByMilestoneId,
         IReadOnlyDictionary<Guid, Assignment> assignmentsById,
         IReadOnlySet<Guid> completedActivityIds,
-        DateTime utcNow)
+        DateTime utcNow,
+        DateTime? personalAvailableUntil = null)
     {
         var moduleMilestones = await unitOfWork.ResearchMilestones.GetAllAsync(
             rm => rm.ModuleId == milestone.ModuleId && !rm.IsDeleted);
@@ -432,7 +391,7 @@ public static class ResearchSubmissionValidator
                     assignmentsById))
             {
                 throw ErrorHelper.Forbidden(
-                    $"Complete milestone '{previousMilestone.Title}' with a passing grade before opening this milestone.");
+                    $"Complete milestone '{previousMilestone.Title}' with a passing grade before submitting this milestone.");
             }
         }
 
@@ -451,7 +410,7 @@ public static class ResearchSubmissionValidator
             }
         }
 
-        ValidateAssignmentAvailability(assignment, utcNow);
+        ValidateAssignmentAvailability(assignment, utcNow, personalAvailableUntil);
     }
 
     public static string GenerateSubmissionCode()

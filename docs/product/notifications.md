@@ -84,7 +84,6 @@ service emits it.
 | `ResearchGradedPassed`           | `ForStudentAndParents`                                       | `ResearchSubmissionService`                 |
 | `ResearchGradedFailed`           | `ForStudentAndParents`                                       | `ResearchSubmissionService`                 |
 | `ResearchReturnedForRevision`    | `ForStudentAndParents`                                       | `ResearchSubmissionService`                 |
-| `ResearchSubmissionOpened`       | Student via `ForUser`                                        | `ResearchSubmissionService`                 |
 | `ResearchWorkSubmitted`          | `ForClassMentor`; student fallback when no class is resolved | `ResearchSubmissionService`                 |
 | `MediaVideoReady`                | Uploader via `ForUser`                                       | `MediaService`                              |
 | `MediaProcessingFailed`          | Uploader via `ForUser`                                       | `MediaService`                              |

@@ -569,7 +569,13 @@ public sealed class ValidatorAndUtilsTests
         var locked = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
             false, ["Activity incomplete"], assignment, null, now);
         Assert.False(locked.CanSubmit);
-        Assert.Contains("Mentor has not opened submission yet.", locked.SubmitBlockReasons);
+        Assert.Contains("Milestone is locked.", locked.SubmitBlockReasons);
+        Assert.Contains("Activity incomplete", locked.SubmitBlockReasons);
+        Assert.DoesNotContain(locked.SubmitBlockReasons, r => r.Contains("Mentor has not opened", StringComparison.Ordinal));
+
+        var unlockedNoSubmission = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
+            true, [], assignment, null, now);
+        Assert.True(unlockedNoSubmission.CanSubmit);
 
         var pending = new Submission { Status = SubmissionStatus.Pending, AttemptNumber = 1 };
         var canSubmit = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
@@ -599,6 +605,24 @@ public sealed class ValidatorAndUtilsTests
             pending,
             now);
         Assert.Contains(notYetAvailable.SubmitBlockReasons, r => r.Contains("not yet available", StringComparison.OrdinalIgnoreCase));
+
+        var expiredWithoutPersonal = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
+            true,
+            [],
+            new Assignment { MaxAttempts = 2, AvailableUntil = now.AddHours(-1) },
+            null,
+            now);
+        Assert.False(expiredWithoutPersonal.CanSubmit);
+        Assert.Contains("Assignment is no longer available.", expiredWithoutPersonal.SubmitBlockReasons);
+
+        var expiredWithPersonal = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
+            true,
+            [],
+            new Assignment { MaxAttempts = 2, AvailableUntil = now.AddHours(-1) },
+            null,
+            now,
+            personalAvailableUntil: now.AddDays(1));
+        Assert.True(expiredWithPersonal.CanSubmit);
     }
 
     // ── ProgramCurriculumTreeMapper ───────────────────────────────────────────

@@ -722,8 +722,8 @@ public sealed class ResearchMilestoneServiceTests
         Assert.True(result.Milestones[0].Passed);
         Assert.True(result.Milestones[1].IsUnlocked);
         Assert.Null(result.Milestones[1].UnlockReason);
-        Assert.False(result.Milestones[1].CanSubmit);
-        Assert.Contains("Mentor has not opened submission yet.", result.Milestones[1].SubmitBlockReasons);
+        Assert.True(result.Milestones[1].CanSubmit);
+        Assert.Empty(result.Milestones[1].SubmitBlockReasons);
     }
 
     [Fact]

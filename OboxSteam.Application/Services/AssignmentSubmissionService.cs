@@ -73,7 +73,12 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
             assignment);
 
         var now = DateTime.UtcNow;
-        ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now);
+        var (_, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
+            _unitOfWork,
+            student.Id,
+            assignment.Id,
+            enrollment.Id);
+        ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now, personalUntil);
 
         var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.AssignmentId == assignment.Id

@@ -266,6 +266,53 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
+    public async Task SubmitAssignment_AllowsWhenPersonalAvailableUntilExtendsWindow()
+    {
+        SeedStudent();
+        SeedModule(ModuleType.Experiential);
+        SeedActiveEnrollment();
+        SeedFileUploadAssignment(availableUntil: DateTime.UtcNow.AddHours(-1));
+        _db.AssessmentRecoveryRequests.Seed(new AssessmentRecoveryRequest
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleEnrollmentId = _enrollmentId,
+            AssignmentId = _assignmentId,
+            Status = AssessmentRecoveryRequestStatus.Approved,
+            ExtraAttemptsGranted = 0,
+            PersonalAvailableUntil = DateTime.UtcNow.AddDays(2),
+            DecidedAt = DateTime.UtcNow.AddMinutes(-5),
+            IsDeleted = false
+        });
+        var sut = CreateSut();
+
+        var result = await sut.SubmitAssignment(new SubmitAssignmentRequestDto
+        {
+            AssignmentId = _assignmentId,
+            ContentText = "Late but granted"
+        });
+
+        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
+    }
+
+    [Fact]
+    public async Task SubmitAssignment_ThrowsConflict_WhenWindowClosedWithoutPersonalGrant()
+    {
+        SeedStudent();
+        SeedModule(ModuleType.Experiential);
+        SeedActiveEnrollment();
+        SeedFileUploadAssignment(availableUntil: DateTime.UtcNow.AddHours(-1));
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.SubmitAssignment(new SubmitAssignmentRequestDto
+            {
+                AssignmentId = _assignmentId,
+                ContentText = "Too late"
+            }));
+    }
+
+    [Fact]
     public async Task SubmitAssignment_ThrowsBadRequest_WhenContentAndFileMissing()
     {
         SeedStudentModuleAndAssignment();

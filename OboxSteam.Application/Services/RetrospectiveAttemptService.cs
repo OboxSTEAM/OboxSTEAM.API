@@ -41,12 +41,22 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
         RetrospectiveAttemptValidator.ValidateAssignmentForRetrospective(assignment);
 
         var now = DateTime.UtcNow;
-        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(assignment!, now);
 
         var enrollment = await QuizAttemptValidator.ValidateActiveModuleEnrollmentAsync(
             _unitOfWork,
             student.Id,
             assignment!);
+
+        var (personalDue, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
+            _unitOfWork,
+            student.Id,
+            assignment!.Id,
+            enrollment.Id);
+        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(
+            assignment,
+            now,
+            personalDue,
+            personalUntil);
 
         var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.AssignmentId == assignment!.Id
@@ -143,7 +153,16 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
             assignment!);
 
         var now = DateTime.UtcNow;
-        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(assignment!, now);
+        var (personalDue, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
+            _unitOfWork,
+            student.Id,
+            assignment!.Id,
+            submission.ModuleEnrollmentId);
+        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(
+            assignment,
+            now,
+            personalDue,
+            personalUntil);
 
         submission.ContentText = RetrospectiveAttemptValidator.NormalizeDraftContentText(request.ContentText);
         submission.UpdatedAt = now;
@@ -187,7 +206,16 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
             assignment!);
 
         var now = DateTime.UtcNow;
-        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(assignment!, now);
+        var (personalDue, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
+            _unitOfWork,
+            student.Id,
+            assignment!.Id,
+            submission.ModuleEnrollmentId);
+        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(
+            assignment,
+            now,
+            personalDue,
+            personalUntil);
 
         var mergedContent = RetrospectiveAttemptValidator.NormalizeDraftContentText(request.ContentText)
             ?? submission.ContentText;
