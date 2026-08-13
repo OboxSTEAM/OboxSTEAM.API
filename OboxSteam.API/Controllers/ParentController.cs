@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.DTOs.AuthDTO;
 using OboxSteam.Application.DTOs.ParentDTO;
+using OboxSteam.Application.DTOs.ParentProgressionDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace OboxSteam.API.Controllers;
 
@@ -12,11 +14,16 @@ namespace OboxSteam.API.Controllers;
 public class ParentController : ControllerBase
 {
     private readonly IParentService _parentService;
+    private readonly IParentProgressionService _parentProgressionService;
     private readonly IConfiguration _configuration;
 
-    public ParentController(IParentService parentService, IConfiguration configuration)
+    public ParentController(
+        IParentService parentService,
+        IParentProgressionService parentProgressionService,
+        IConfiguration configuration)
     {
         _parentService = parentService;
+        _parentProgressionService = parentProgressionService;
         _configuration = configuration;
     }
 
@@ -58,5 +65,41 @@ public class ParentController : ControllerBase
     {
         var result = await _parentService.GetParentStudentRelationsAsync();
         return Ok(ApiResult<List<ParentStudentRelationDto>>.Success(result, "200", "Retrieved associated accounts successfully."));
+    }
+
+    [HttpGet("children/{studentId:guid}/progression")]
+    [Authorize(Roles = "Parent")]
+    [SwaggerOperation(
+        Summary = "Get linked child progression brief",
+        Description = "Parent-only summary for a verified linked student: enrollments, current stage, blockers, and recent milestones.")]
+    [ProducesResponseType(typeof(ApiResult<ParentChildProgressionDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetChildProgression(Guid studentId)
+    {
+        var result = await _parentProgressionService.GetChildProgressionAsync(studentId);
+        return Ok(ApiResult<ParentChildProgressionDto>.Success(
+            result,
+            "200",
+            "Child progression retrieved successfully."));
+    }
+
+    [HttpGet("children/{studentId:guid}/enrollments/{enrollmentId:guid}/progression")]
+    [Authorize(Roles = "Parent")]
+    [SwaggerOperation(
+        Summary = "Get program progression drill-down for a linked child",
+        Description = "Parent-only module timeline and assignment outcomes for one program enrollment. No curriculum content or resume state.")]
+    [ProducesResponseType(typeof(ApiResult<ParentEnrollmentProgressionDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetEnrollmentProgression(Guid studentId, Guid enrollmentId)
+    {
+        var result = await _parentProgressionService.GetEnrollmentProgressionAsync(studentId, enrollmentId);
+        return Ok(ApiResult<ParentEnrollmentProgressionDto>.Success(
+            result,
+            "200",
+            "Enrollment progression retrieved successfully."));
     }
 }

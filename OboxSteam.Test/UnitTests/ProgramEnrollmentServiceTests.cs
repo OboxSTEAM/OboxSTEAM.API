@@ -321,6 +321,7 @@ public sealed class ProgramEnrollmentServiceTests
             Id = Guid.NewGuid(),
             ParentId = _parentId,
             StudentId = _studentId,
+            IsVerified = true,
             IsDeleted = false
         });
         var sut = CreateSut(currentUserId: _parentId);

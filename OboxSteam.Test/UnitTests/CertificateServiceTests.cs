@@ -431,6 +431,7 @@ public sealed class CertificateServiceTests
             Id = Guid.NewGuid(),
             ParentId = _parentId,
             StudentId = _studentId,
+            IsVerified = true,
             IsDeleted = false,
         });
         var sut = CreateSut(_parentId);

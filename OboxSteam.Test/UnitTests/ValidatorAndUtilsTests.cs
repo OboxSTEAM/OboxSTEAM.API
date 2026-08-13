@@ -240,6 +240,7 @@ public sealed class ValidatorAndUtilsTests
             Id = Guid.NewGuid(),
             ParentId = parentId,
             StudentId = studentId,
+            IsVerified = true,
             IsDeleted = false,
         });
         await EnrollmentAccessValidator.EnsureCanViewEnrollmentAsync(
@@ -249,6 +250,67 @@ public sealed class ValidatorAndUtilsTests
         _db.Users.Seed(new User { Id = managerId, Role = RoleType.Manager, IsDeleted = false });
         await EnrollmentAccessValidator.EnsureCanViewEnrollmentAsync(
             _db, _claimsService.Object, studentId, "denied");
+    }
+
+    [Fact]
+    public async Task EnrollmentAccessValidator_EnsureCanViewEnrollmentAsync_ForbidsUnverifiedParent()
+    {
+        var studentId = Guid.NewGuid();
+        var parentId = Guid.NewGuid();
+
+        _claimsService.Setup(c => c.GetCurrentUserId).Returns(parentId);
+        _db.Users.Seed(new User { Id = parentId, Role = RoleType.Parent, IsDeleted = false });
+        _db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = parentId,
+            StudentId = studentId,
+            IsVerified = false,
+            IsDeleted = false,
+        });
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            EnrollmentAccessValidator.EnsureCanViewEnrollmentAsync(
+                _db, _claimsService.Object, studentId, "denied"));
+    }
+
+    [Fact]
+    public async Task EnrollmentAccessValidator_EnsureVerifiedParentOfAsync_ReturnsStudentAndLink()
+    {
+        var studentId = Guid.NewGuid();
+        var parentId = Guid.NewGuid();
+
+        _claimsService.Setup(c => c.GetCurrentUserId).Returns(parentId);
+        _db.Users.Seed(new User
+        {
+            Id = parentId,
+            Role = RoleType.Parent,
+            Email = "parent@test.com",
+            IsDeleted = false,
+        });
+        _db.Users.Seed(new User
+        {
+            Id = studentId,
+            Role = RoleType.Student,
+            Email = "student@test.com",
+            IsDeleted = false,
+        });
+        _db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = parentId,
+            StudentId = studentId,
+            IsVerified = true,
+            IsDeleted = false,
+        });
+
+        var (student, link) = await EnrollmentAccessValidator.EnsureVerifiedParentOfAsync(
+            _db,
+            _claimsService.Object,
+            studentId);
+
+        Assert.Equal(studentId, student.Id);
+        Assert.True(link.IsVerified);
     }
 
     [Fact]

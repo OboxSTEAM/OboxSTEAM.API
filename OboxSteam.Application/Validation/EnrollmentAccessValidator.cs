@@ -117,7 +117,10 @@ public static class EnrollmentAccessValidator
         if (currentUser.Role == RoleType.Parent)
         {
             var parentLink = await unitOfWork.ParentStudents.FirstOrDefaultAsync(
-                ps => ps.ParentId == currentUserId && ps.StudentId == studentId && !ps.IsDeleted);
+                ps => ps.ParentId == currentUserId
+                      && ps.StudentId == studentId
+                      && ps.IsVerified
+                      && !ps.IsDeleted);
 
             if (parentLink != null)
             {
@@ -128,5 +131,51 @@ public static class EnrollmentAccessValidator
         }
 
         throw ErrorHelper.Forbidden(viewEnrollmentForbiddenMessage);
+    }
+
+    /// <summary>
+    /// Requires the caller to be a Parent with a verified link to <paramref name="studentId"/>.
+    /// Returns the student user and the verified parent-student link.
+    /// </summary>
+    public static async Task<(User Student, ParentStudent Link)> EnsureVerifiedParentOfAsync(
+        IUnitOfWork unitOfWork,
+        IClaimsService claimsService,
+        Guid studentId)
+    {
+        var currentUserId = claimsService.GetCurrentUserId;
+        if (currentUserId == Guid.Empty)
+        {
+            throw ErrorHelper.Unauthorized("Unauthorized access.");
+        }
+
+        var currentUser = await unitOfWork.Users.GetByIdAsync(currentUserId);
+        if (currentUser == null || currentUser.IsDeleted)
+        {
+            throw ErrorHelper.NotFound("Current user not found.");
+        }
+
+        if (currentUser.Role != RoleType.Parent)
+        {
+            throw ErrorHelper.Forbidden("Only parents can access this resource.");
+        }
+
+        var student = await unitOfWork.Users.GetByIdAsync(studentId);
+        if (student == null || student.IsDeleted || student.Role != RoleType.Student)
+        {
+            throw ErrorHelper.NotFound($"Student '{studentId}' not found.");
+        }
+
+        var parentLink = await unitOfWork.ParentStudents.FirstOrDefaultAsync(
+            ps => ps.ParentId == currentUserId
+                  && ps.StudentId == studentId
+                  && ps.IsVerified
+                  && !ps.IsDeleted);
+
+        if (parentLink == null)
+        {
+            throw ErrorHelper.Forbidden("You can only view progress of students with a verified link to your account.");
+        }
+
+        return (student, parentLink);
     }
 }

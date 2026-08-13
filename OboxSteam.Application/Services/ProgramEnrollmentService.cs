@@ -415,7 +415,7 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
         Guid parentId)
     {
         var parentLinks = await _unitOfWork.ParentStudents.GetAllAsync(
-            ps => ps.ParentId == parentId && !ps.IsDeleted);
+            ps => ps.ParentId == parentId && ps.IsVerified && !ps.IsDeleted);
 
         var linkedStudentIds = parentLinks.Select(ps => ps.StudentId).Distinct().ToList();
 
