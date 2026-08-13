@@ -594,7 +594,9 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         Assignment assignment,
         bool? passed = null)
     {
-        var evidenceUrls = await ResearchSubmissionValidator.LoadEvidenceUrlsAsync(_unitOfWork, submission.Id);
+        var (evidenceMediaIds, evidenceUrls) = await ResearchSubmissionValidator.LoadEvidenceAsync(
+            _unitOfWork,
+            submission.Id);
         var resolvedEvidenceUrls = new List<string>(evidenceUrls.Count);
         foreach (var evidenceUrl in evidenceUrls)
         {
@@ -618,6 +620,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             ContentText = submission.ContentText,
             FileUrl = await ResolvePresignedFileUrlAsync(submission.FileUrl),
             EvidenceUrls = resolvedEvidenceUrls,
+            EvidenceMediaAssetIds = evidenceMediaIds,
             AssignedGrade = submission.AssignedGrade,
             PassScore = assignment.PassScore,
             MaxPoints = assignment.MaxPoints,

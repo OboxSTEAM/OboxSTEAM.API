@@ -510,6 +510,7 @@ public sealed class ResearchSubmissionServiceTests
 
         Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
         Assert.Equal("https://presigned.example.com/submissions/file.pdf", result.FileUrl);
+        Assert.Equal([mediaId], result.EvidenceMediaAssetIds);
         Assert.Single(_db.MediaAssets.Items, m => !m.IsDeleted);
         Assert.Single(_db.SubmissionEvidences.Items, se => !se.IsDeleted);
         Assert.Equal(mediaId, _db.SubmissionEvidences.Items.Single(se => !se.IsDeleted).MediaId);
@@ -859,6 +860,43 @@ public sealed class ResearchSubmissionServiceTests
         Assert.Equal(_submissionId, result!.Id);
         Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
         Assert.Equal(70m, result.PassScore);
+        Assert.Empty(result.EvidenceMediaAssetIds);
+    }
+
+    [Fact]
+    public async Task GetSubmission_ReturnsEvidenceMediaAssetIds()
+    {
+        SeedResearchCurriculum();
+        SeedAssignment();
+        SeedMilestone();
+        SeedStudentEnrollmentChain();
+        SeedSubmission(status: SubmissionStatus.ReturnedForRevision, attemptNumber: 1);
+        var mediaId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = mediaId,
+            UploaderId = _studentId,
+            ClassId = _classId,
+            FileType = "image",
+            FileUrl = "https://cdn.example.com/media/evidence.jpg",
+            VideoStatus = VideoProcessingStatus.None,
+            IsDeleted = false,
+        });
+        _db.SubmissionEvidences.Seed(new SubmissionEvidence
+        {
+            SubmissionId = _submissionId,
+            MediaId = mediaId,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = _studentId,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetSubmission(_submissionId);
+
+        Assert.NotNull(result);
+        Assert.Equal([mediaId], result!.EvidenceMediaAssetIds);
+        Assert.Single(result.EvidenceUrls);
     }
 
     [Fact]

@@ -460,7 +460,7 @@ public static class ResearchSubmissionValidator
         return milestones.Select(rm => rm.Id).ToList();
     }
 
-    public static async Task<List<string>> LoadEvidenceUrlsAsync(
+    public static async Task<(List<Guid> MediaAssetIds, List<string> FileUrls)> LoadEvidenceAsync(
         IUnitOfWork unitOfWork,
         Guid submissionId)
     {
@@ -468,10 +468,41 @@ public static class ResearchSubmissionValidator
             se => se.SubmissionId == submissionId && !se.IsDeleted,
             se => se.Media);
 
-        return evidences
-            .Where(se => se.Media != null && !se.Media.IsDeleted && !string.IsNullOrWhiteSpace(se.Media.FileUrl))
-            .Select(se => se.Media!.FileUrl!)
-            .ToList();
+        var mediaAssetIds = new List<Guid>();
+        var fileUrls = new List<string>();
+
+        foreach (var evidence in evidences)
+        {
+            var media = evidence.Media;
+            if (media == null || media.IsDeleted)
+            {
+                media = await unitOfWork.MediaAssets.GetByIdAsync(evidence.MediaId);
+                if (media == null || media.IsDeleted)
+                    continue;
+            }
+
+            mediaAssetIds.Add(evidence.MediaId);
+            if (!string.IsNullOrWhiteSpace(media.FileUrl))
+                fileUrls.Add(media.FileUrl);
+        }
+
+        return (mediaAssetIds, fileUrls);
+    }
+
+    public static async Task<List<string>> LoadEvidenceUrlsAsync(
+        IUnitOfWork unitOfWork,
+        Guid submissionId)
+    {
+        var (_, fileUrls) = await LoadEvidenceAsync(unitOfWork, submissionId);
+        return fileUrls;
+    }
+
+    public static async Task<List<Guid>> LoadEvidenceMediaAssetIdsAsync(
+        IUnitOfWork unitOfWork,
+        Guid submissionId)
+    {
+        var (mediaAssetIds, _) = await LoadEvidenceAsync(unitOfWork, submissionId);
+        return mediaAssetIds;
     }
 
     /// <summary>
