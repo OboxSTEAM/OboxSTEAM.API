@@ -43,9 +43,9 @@ public interface IMediaService
     /// <summary>
     /// Student class gallery: all media for a class (any <see cref="VideoProcessingStatus"/>),
     /// without face tags. Caller must be a Student with Active enrollment in <paramref name="classId"/>.
-    /// Research submission evidence (<c>submissions/</c> storage) is excluded; those assets remain
-    /// available for highlight processing. Supports the same pagination / filter / sort options as
-    /// <see cref="GetMediaAsync"/>.
+    /// Research submission evidence (linked via <c>SubmissionEvidence</c>) is excluded; those assets
+    /// remain available for highlight processing and mentor <see cref="GetMediaAsync"/>.
+    /// Supports the same pagination / filter / sort options as <see cref="GetMediaAsync"/>.
     /// </summary>
     Task<Pagination<ClassGalleryMediaDto>> GetClassGalleryAsync(
         Guid classId,

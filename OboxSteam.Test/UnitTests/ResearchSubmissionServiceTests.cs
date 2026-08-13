@@ -36,6 +36,7 @@ public sealed class ResearchSubmissionServiceTests
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<IBlobService> _blobService = new();
+    private readonly Mock<IMediaService> _mediaService = new();
     private readonly Mock<ICertificateService> _certificateService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
 
@@ -69,6 +70,7 @@ public sealed class ResearchSubmissionServiceTests
             _claimsService.Object,
             _db,
             _blobService.Object,
+            _mediaService.Object,
             _certificateService.Object,
             _notificationPublisher.Object,
             NullLogger<ResearchSubmissionService>.Instance);
@@ -321,13 +323,26 @@ public sealed class ResearchSubmissionServiceTests
     }
 
     [Fact]
-    public async Task UploadSubmissionFile_UploadsEvidence_ReturnsEvidenceUrls()
+    public async Task UploadSubmissionFile_UploadsEvidence_ReturnsMediaAssetId()
     {
         SeedResearchCurriculum();
         SeedAssignment();
         SeedMilestone();
         SeedStudentEnrollmentChain();
         SeedSubmission();
+        var mediaId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        _mediaService
+            .Setup(m => m.UploadMediaAsync(It.IsAny<IFormFile>(), _classId, null))
+            .ReturnsAsync(new OboxSteam.Application.DTOs.MediaDTO.MediaAssetDto
+            {
+                Id = mediaId,
+                UploaderId = _studentId,
+                ClassId = _classId,
+                FileUrl = "https://cdn.example.com/media/evidence.jpg",
+                FileType = "image",
+                VideoStatus = VideoProcessingStatus.None,
+                IsReady = true,
+            });
         var sut = CreateSut();
 
         var result = await sut.UploadSubmissionFile(
@@ -337,8 +352,37 @@ public sealed class ResearchSubmissionServiceTests
             isEvidence: true);
 
         Assert.Null(result.FileUrl);
+        Assert.Equal(mediaId, result.MediaAssetId);
         Assert.Single(result.EvidenceUrls!);
-        Assert.Equal("https://cdn.example.com/submissions/file.pdf", result.EvidenceUrls![0]);
+        Assert.Equal("https://cdn.example.com/media/evidence.jpg", result.EvidenceUrls![0]);
+        Assert.Single(_db.SubmissionEvidences.Items, se => !se.IsDeleted);
+        Assert.Equal(mediaId, _db.SubmissionEvidences.Items.Single(se => !se.IsDeleted).MediaId);
+        _mediaService.Verify(m => m.UploadMediaAsync(It.IsAny<IFormFile>(), _classId, null), Times.Once);
+        _blobService.Verify(
+            b => b.UploadFileAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task UploadSubmissionFile_EvidenceRejectsPdf()
+    {
+        SeedResearchCurriculum();
+        SeedAssignment();
+        SeedMilestone();
+        SeedStudentEnrollmentChain();
+        SeedSubmission();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UploadSubmissionFile(
+                _moduleEnrollmentId,
+                _milestoneId,
+                CreateFormFile("work.pdf").Object,
+                isEvidence: true));
     }
 
     [Fact]
@@ -427,13 +471,33 @@ public sealed class ResearchSubmissionServiceTests
     }
 
     [Fact]
-    public async Task SubmitResearchWork_SubmitsWithFileUrl_AndEvidence()
+    public async Task SubmitResearchWork_SubmitsWithFileUrl_AndEvidenceMediaIds()
     {
         SeedResearchCurriculum();
         SeedAssignment();
         SeedMilestone();
         SeedStudentEnrollmentChain();
         SeedSubmission();
+        var mediaId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = mediaId,
+            UploaderId = _studentId,
+            ClassId = _classId,
+            FileType = "image",
+            FileUrl = "https://cdn.example.com/media/evidence.jpg",
+            VideoStatus = VideoProcessingStatus.None,
+            UploadedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+        _db.SubmissionEvidences.Seed(new SubmissionEvidence
+        {
+            SubmissionId = _submissionId,
+            MediaId = mediaId,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = _studentId,
+            IsDeleted = false,
+        });
         var sut = CreateSut();
 
         var result = await sut.SubmitResearchWork(new SubmitResearchWorkRequestDto
@@ -441,14 +505,44 @@ public sealed class ResearchSubmissionServiceTests
             ModuleEnrollmentId = _moduleEnrollmentId,
             ResearchMilestoneId = _milestoneId,
             FileUrl = "https://cdn.example.com/submissions/file.pdf",
-            EvidenceUrls = ["https://cdn.example.com/submissions/evidence.jpg"],
+            EvidenceMediaAssetIds = [mediaId],
         });
 
         Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
         Assert.Equal("https://presigned.example.com/submissions/file.pdf", result.FileUrl);
-        Assert.Single(_db.MediaAssets.Items);
-        Assert.Equal("https://cdn.example.com/submissions/evidence.jpg", _db.MediaAssets.Items[0].FileUrl);
-        Assert.Single(_db.SubmissionEvidences.Items);
+        Assert.Single(_db.MediaAssets.Items, m => !m.IsDeleted);
+        Assert.Single(_db.SubmissionEvidences.Items, se => !se.IsDeleted);
+        Assert.Equal(mediaId, _db.SubmissionEvidences.Items.Single(se => !se.IsDeleted).MediaId);
+    }
+
+    [Fact]
+    public async Task SubmitResearchWork_Throws_WhenEvidenceMediaNotOwned()
+    {
+        SeedResearchCurriculum();
+        SeedAssignment();
+        SeedMilestone();
+        SeedStudentEnrollmentChain();
+        SeedSubmission();
+        var mediaId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = mediaId,
+            UploaderId = _otherStudentId,
+            ClassId = _classId,
+            FileType = "image",
+            FileUrl = "https://cdn.example.com/media/other.jpg",
+            VideoStatus = VideoProcessingStatus.None,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.SubmitResearchWork(new SubmitResearchWorkRequestDto
+            {
+                ModuleEnrollmentId = _moduleEnrollmentId,
+                ResearchMilestoneId = _milestoneId,
+                EvidenceMediaAssetIds = [mediaId],
+            }));
     }
 
     [Fact]

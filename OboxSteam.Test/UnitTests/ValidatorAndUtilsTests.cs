@@ -556,8 +556,12 @@ public sealed class ValidatorAndUtilsTests
 
         ResearchSubmissionValidator.ValidateSubmitContent(new CreateResearchSubmissionRequestDto
         {
-            EvidenceUrls = ["https://cdn.example.com/proof.png"],
+            EvidenceMediaAssetIds = [Guid.NewGuid()],
         });
+
+        ResearchSubmissionValidator.ValidateEvidenceUploadFile(CreateFormFile("clip.mp4", 1024).Object);
+        Assert.Throws<BadRequestException>(() =>
+            ResearchSubmissionValidator.ValidateEvidenceUploadFile(CreateFormFile("paper.pdf", 1024).Object));
     }
 
     [Fact]

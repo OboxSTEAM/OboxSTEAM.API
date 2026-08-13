@@ -26,6 +26,13 @@ public static class ResearchSubmissionValidator
 
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".mp4", ".mov", ".avi", ".mkv" };
+
+    /// <summary>Evidence must match <c>MediaService.UploadMediaAsync</c> supported types.</summary>
+    private static readonly HashSet<string> EvidenceImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".jpg", ".jpeg", ".png" };
+
+    private static readonly HashSet<string> EvidenceVideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".mp4", ".mov" };
     public const string SubmitResearchForbiddenMessage =
         "Only students can submit research work.";
 
@@ -73,24 +80,24 @@ public static class ResearchSubmissionValidator
     }
 
     public static void ValidateSubmitContent(CreateResearchSubmissionRequestDto request)
-        => ValidateSubmitContent(request.ContentText, request.FileUrl, request.EvidenceUrls);
+        => ValidateSubmitContent(request.ContentText, request.FileUrl, request.EvidenceMediaAssetIds);
 
     public static void ValidateSubmitContent(SubmitResearchWorkRequestDto request)
-        => ValidateSubmitContent(request.ContentText, request.FileUrl, request.EvidenceUrls);
+        => ValidateSubmitContent(request.ContentText, request.FileUrl, request.EvidenceMediaAssetIds);
 
     public static void ValidateSubmitContent(
         string? contentText,
         string? fileUrl,
-        List<string>? evidenceUrls)
+        List<Guid>? evidenceMediaAssetIds)
     {
         var hasText = !string.IsNullOrWhiteSpace(contentText);
         var hasFile = !string.IsNullOrWhiteSpace(fileUrl);
-        var hasEvidence = evidenceUrls?.Any(url => !string.IsNullOrWhiteSpace(url)) == true;
+        var hasEvidence = evidenceMediaAssetIds?.Any(id => id != Guid.Empty) == true;
 
         if (!hasText && !hasFile && !hasEvidence)
         {
             throw ErrorHelper.BadRequest(
-                "At least one of ContentText, FileUrl, or EvidenceUrls is required.");
+                "At least one of ContentText, FileUrl, or EvidenceMediaAssetIds is required.");
         }
     }
 
@@ -125,6 +132,33 @@ public static class ResearchSubmissionValidator
 
             throw ErrorHelper.BadRequest(label);
         }
+    }
+
+    /// <summary>
+    /// Research evidence must be image/video types supported by the class media AI pipeline.
+    /// </summary>
+    public static void ValidateEvidenceUploadFile(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+        {
+            throw ErrorHelper.BadRequest("File is required.");
+        }
+
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var isImage = EvidenceImageExtensions.Contains(extension);
+        var isVideo = EvidenceVideoExtensions.Contains(extension);
+
+        if (!isImage && !isVideo)
+        {
+            throw ErrorHelper.BadRequest(
+                "Evidence must be an image (.jpg, .jpeg, .png) or video (.mp4, .mov).");
+        }
+
+        if (isImage && file.Length > MaxImageSize)
+            throw ErrorHelper.BadRequest("Image file size must not exceed 10 MB.");
+
+        if (isVideo && file.Length > MaxVideoSize)
+            throw ErrorHelper.BadRequest("Video file size must not exceed 3 GB.");
     }
 
     public static void ValidateSubmissionOwnership(Submission submission, Guid studentId)
@@ -440,62 +474,77 @@ public static class ResearchSubmissionValidator
             .ToList();
     }
 
-    public static async Task ReplaceEvidenceUrlsAsync(
+    /// <summary>
+    /// Links existing pipeline <see cref="MediaAsset"/> rows as evidence. Does not create media from URLs.
+    /// Soft-removes prior evidence links and soft-deletes media that drop out of the new set.
+    /// </summary>
+    public static async Task ReplaceEvidenceMediaAsync(
         IUnitOfWork unitOfWork,
         Submission submission,
-        List<string>? evidenceUrls,
-        Guid uploaderId,
+        List<Guid>? evidenceMediaAssetIds,
+        Guid studentId,
         DateTime now)
     {
         var existingEvidences = await unitOfWork.SubmissionEvidences.GetAllAsync(
             se => se.SubmissionId == submission.Id && !se.IsDeleted);
 
+        var keepIds = evidenceMediaAssetIds?
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToHashSet() ?? [];
+
         foreach (var evidence in existingEvidences)
         {
             await unitOfWork.SubmissionEvidences.SoftRemove(evidence);
+
+            if (!keepIds.Contains(evidence.MediaId))
+            {
+                var droppedMedia = await unitOfWork.MediaAssets.GetByIdAsync(evidence.MediaId);
+                if (droppedMedia != null && !droppedMedia.IsDeleted)
+                    await unitOfWork.MediaAssets.SoftRemove(droppedMedia);
+            }
         }
 
-        var urls = evidenceUrls?
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .Select(url => url.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList() ?? [];
-
-        if (urls.Count == 0)
+        if (keepIds.Count == 0)
             return;
 
         var classId = await ResolveEvidenceClassIdAsync(unitOfWork, submission);
 
-        foreach (var url in urls)
+        foreach (var mediaId in keepIds)
         {
-            var media = new MediaAsset
-            {
-                Id = Guid.NewGuid(),
-                UploaderId = uploaderId,
-                ClassId = classId,
-                FileUrl = url,
-                UploadedAt = now,
-                CreatedAt = now,
-                CreatedBy = uploaderId,
-                IsDeleted = false
-            };
+            var media = await unitOfWork.MediaAssets.GetByIdAsync(mediaId);
+            if (media == null || media.IsDeleted)
+                throw ErrorHelper.NotFound($"Media asset '{mediaId}' not found.");
 
-            await unitOfWork.MediaAssets.AddAsync(media);
+            if (media.UploaderId != studentId)
+                throw ErrorHelper.Forbidden("Evidence media must be uploaded by the current student.");
+
+            if (media.ClassId != classId)
+                throw ErrorHelper.BadRequest("Evidence media does not belong to the student's class.");
+
+            var linkedElsewhere = await unitOfWork.SubmissionEvidences.FirstOrDefaultAsync(
+                se => se.MediaId == mediaId
+                      && se.SubmissionId != submission.Id
+                      && !se.IsDeleted);
+            if (linkedElsewhere != null)
+            {
+                throw ErrorHelper.Conflict(
+                    $"Media asset '{mediaId}' is already linked to another submission.");
+            }
 
             var evidence = new SubmissionEvidence
             {
                 SubmissionId = submission.Id,
-                MediaId = media.Id,
+                MediaId = mediaId,
                 CreatedAt = now,
-                CreatedBy = uploaderId,
+                CreatedBy = studentId,
                 IsDeleted = false
             };
-
             await unitOfWork.SubmissionEvidences.AddAsync(evidence);
         }
     }
 
-    private static async Task<Guid> ResolveEvidenceClassIdAsync(IUnitOfWork unitOfWork, Submission submission)
+    public static async Task<Guid> ResolveEvidenceClassIdAsync(IUnitOfWork unitOfWork, Submission submission)
     {
         if (submission.ModuleEnrollmentId.HasValue)
         {

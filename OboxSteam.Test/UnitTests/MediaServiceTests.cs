@@ -491,7 +491,40 @@ public sealed class MediaServiceTests
     }
 
     [Fact]
-    public async Task GetClassGalleryAsync_ExcludesResearchSubmissionEvidenceUrls()
+    public async Task GetMediaAsync_Manager_IncludesResearchEvidenceMedia()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        SeedMediaAssets();
+        var evidenceMediaId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = evidenceMediaId,
+            UploaderId = _studentId,
+            ClassId = _classId,
+            FileType = "video",
+            FileUrl = "https://cdn.example.com/media/evidence.mp4",
+            VideoStatus = VideoProcessingStatus.Transcoding,
+            UploadedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+        _db.SubmissionEvidences.Seed(new SubmissionEvidence
+        {
+            SubmissionId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            MediaId = evidenceMediaId,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = _studentId,
+            IsDeleted = false,
+        });
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.GetMediaAsync(_classId, null);
+
+        Assert.Contains(result.Items, m => m.Id == evidenceMediaId);
+    }
+
+    [Fact]
+    public async Task GetClassGalleryAsync_ExcludesResearchSubmissionEvidenceLinks()
     {
         SeedBase();
         SeedActiveEnrollment(_studentId);
@@ -503,11 +536,17 @@ public sealed class MediaServiceTests
             UploaderId = _studentId,
             ClassId = _classId,
             FileType = "image",
-            FileUrl =
-                "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/submissions/" +
-                "320b79f9-06d1-41c7-b890-17b3feefa635/320b79f9-06d1-41c7-b890-17b3feefa635_1786635059.jpg",
+            FileUrl = "https://cdn.example.com/media/evidence.jpg",
             VideoStatus = VideoProcessingStatus.None,
             UploadedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+        _db.SubmissionEvidences.Seed(new SubmissionEvidence
+        {
+            SubmissionId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            MediaId = evidenceMediaId,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = _studentId,
             IsDeleted = false,
         });
         var sut = CreateSut(_studentId);
@@ -516,10 +555,6 @@ public sealed class MediaServiceTests
 
         Assert.Equal(4, result.TotalCount);
         Assert.DoesNotContain(result.Items, m => m.Id == evidenceMediaId);
-        Assert.DoesNotContain(
-            result.Items,
-            m => m.FileUrl != null
-                 && m.FileUrl.Contains("/submissions/", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

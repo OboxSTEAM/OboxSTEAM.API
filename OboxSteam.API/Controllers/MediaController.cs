@@ -108,7 +108,7 @@ public class MediaController : ControllerBase
         Description = "Returns paginated media for a class without face tags. " +
                       "Student must be Active-enrolled in the class. " +
                       "Includes all video statuses (Transcoding, PendingTagging, TaggingComplete, Failed). " +
-                      "Excludes research submission evidence (submissions/ storage used for highlight AI). " +
+                      "Excludes research submission evidence (SubmissionEvidence-linked media). " +
                       "Supports the same filters/sort/pagination as GET /api/media."
     )]
     [ProducesResponseType(typeof(ApiResult<Pagination<ClassGalleryMediaDto>>), 200)]
@@ -142,7 +142,7 @@ public class MediaController : ControllerBase
         Summary = "Get my enrollment gallery (student)",
         Description = "Returns paginated class media from every class the student is Active-enrolled in. " +
                       "Filter with programId and/or classId. Same filters/sort/pagination as class gallery. " +
-                      "Excludes research submission evidence (submissions/ storage). " +
+                      "Excludes research submission evidence (SubmissionEvidence-linked media). " +
                       "Use POST /api/portfolios/me/media/from-class-gallery to copy selected items into the portfolio."
     )]
     [ProducesResponseType(typeof(ApiResult<Pagination<ClassGalleryMediaDto>>), 200)]

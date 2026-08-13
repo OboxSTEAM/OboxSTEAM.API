@@ -6,5 +6,5 @@ public class CreateResearchSubmissionRequestDto
 
     public string? FileUrl { get; set; }
 
-    public List<string>? EvidenceUrls { get; set; }
+    public List<Guid>? EvidenceMediaAssetIds { get; set; }
 }

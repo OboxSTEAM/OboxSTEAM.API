@@ -322,7 +322,9 @@ public class MediaService : IMediaService
         var mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
             m => !m.IsDeleted && m.ClassId == classId);
 
-        mediaList = ApplyGalleryFilters(mediaList, classSessionId, fileType, videoStatus, sortBy, isDescending);
+        var evidenceMediaIds = await LoadActiveEvidenceMediaIdsAsync(mediaList.Select(m => m.Id));
+        mediaList = ApplyGalleryFilters(
+            mediaList, classSessionId, fileType, videoStatus, sortBy, isDescending, evidenceMediaIds);
 
         var totalCount = mediaList.Count;
         var pageItems = mediaList
@@ -402,7 +404,9 @@ public class MediaService : IMediaService
         var mediaList = await _unitOfWork.MediaAssets.GetAllAsync(
             m => !m.IsDeleted && enrolledClassIds.Contains(m.ClassId));
 
-        mediaList = ApplyGalleryFilters(mediaList, classSessionId, fileType, videoStatus, sortBy, isDescending);
+        var evidenceMediaIds = await LoadActiveEvidenceMediaIdsAsync(mediaList.Select(m => m.Id));
+        mediaList = ApplyGalleryFilters(
+            mediaList, classSessionId, fileType, videoStatus, sortBy, isDescending, evidenceMediaIds);
 
         var totalCount = mediaList.Count;
         var pageItems = mediaList
@@ -1752,11 +1756,17 @@ public class MediaService : IMediaService
         string? fileType,
         VideoProcessingStatus? videoStatus,
         string? sortBy,
-        bool isDescending)
+        bool isDescending,
+        HashSet<Guid>? excludeEvidenceMediaIds = null)
     {
-        // Research evidence is stored as MediaAsset (for highlight AI) under submissions/,
-        // but must not appear in student class / enrollment galleries.
-        mediaList = mediaList.Where(m => !IsResearchSubmissionEvidenceStorageUrl(m.FileUrl)).ToList();
+        // Research evidence MediaAssets (linked via SubmissionEvidence) stay available for mentor
+        // AI processing / highlights but must not appear in student galleries.
+        if (excludeEvidenceMediaIds is { Count: > 0 })
+        {
+            mediaList = mediaList
+                .Where(m => !excludeEvidenceMediaIds.Contains(m.Id))
+                .ToList();
+        }
 
         if (classSessionId.HasValue)
             mediaList = mediaList.Where(m => m.ClassSessionId == classSessionId.Value).ToList();
@@ -1774,16 +1784,16 @@ public class MediaService : IMediaService
         return SortMediaList(mediaList, sortBy, isDescending);
     }
 
-    /// <summary>
-    /// Research milestone evidence files live under the <c>submissions/</c> S3 prefix.
-    /// Class gallery uploads use <c>media/</c> or <c>raw/</c>.
-    /// </summary>
-    private static bool IsResearchSubmissionEvidenceStorageUrl(string? fileUrl)
+    private async Task<HashSet<Guid>> LoadActiveEvidenceMediaIdsAsync(IEnumerable<Guid> mediaIds)
     {
-        if (string.IsNullOrWhiteSpace(fileUrl))
-            return false;
+        var ids = mediaIds.Distinct().ToList();
+        if (ids.Count == 0)
+            return [];
 
-        return fileUrl.Contains("/submissions/", StringComparison.OrdinalIgnoreCase);
+        var evidences = await _unitOfWork.SubmissionEvidences.GetAllAsync(
+            se => !se.IsDeleted && ids.Contains(se.MediaId));
+
+        return evidences.Select(se => se.MediaId).ToHashSet();
     }
 
     private async Task<List<ClassGalleryMediaDto>> MapGalleryDtosAsync(List<MediaAsset> pageItems)

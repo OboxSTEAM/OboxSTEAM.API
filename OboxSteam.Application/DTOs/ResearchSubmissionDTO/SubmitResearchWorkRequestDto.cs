@@ -4,7 +4,8 @@ namespace OboxSteam.Application.DTOs.ResearchSubmissionDTO;
 
 /// <summary>
 /// Student request to turn in research work for a milestone.
-/// At least one of <see cref="ContentText"/>, <see cref="FileUrl"/>, or <see cref="EvidenceUrls"/> is required.
+/// At least one of <see cref="ContentText"/>, <see cref="FileUrl"/>, or
+/// <see cref="EvidenceMediaAssetIds"/> is required.
 /// </summary>
 public class SubmitResearchWorkRequestDto
 {
@@ -18,5 +19,9 @@ public class SubmitResearchWorkRequestDto
 
     public string? FileUrl { get; set; }
 
-    public List<string>? EvidenceUrls { get; set; }
+    /// <summary>
+    /// MediaAsset ids returned from evidence upload (<c>isEvidence=true</c>).
+    /// Must already exist from the media AI pipeline — not created from URLs here.
+    /// </summary>
+    public List<Guid>? EvidenceMediaAssetIds { get; set; }
 }

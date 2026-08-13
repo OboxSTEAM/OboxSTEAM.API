@@ -19,6 +19,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
+    private readonly IMediaService _mediaService;
     private readonly ICertificateService _certificateService;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<ResearchSubmissionService> _logger;
@@ -27,6 +28,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
         IBlobService blobService,
+        IMediaService mediaService,
         ICertificateService certificateService,
         INotificationPublisher notificationPublisher,
         ILogger<ResearchSubmissionService> logger)
@@ -34,6 +36,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _blobService = blobService;
+        _mediaService = mediaService;
         _certificateService = certificateService;
         _notificationPublisher = notificationPublisher;
         _logger = logger;
@@ -79,7 +82,10 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             _claimsService,
             ResearchSubmissionValidator.SubmitResearchForbiddenMessage);
 
-        ResearchSubmissionValidator.ValidateUploadFile(file);
+        if (isEvidence)
+            ResearchSubmissionValidator.ValidateEvidenceUploadFile(file);
+        else
+            ResearchSubmissionValidator.ValidateUploadFile(file);
 
         var (enrollment, milestone, assignment, now, personalUntil) =
             await ResolveStudentMilestoneContextAsync(student.Id, moduleEnrollmentId, researchMilestoneId);
@@ -92,37 +98,74 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             now,
             personalUntil);
 
+        if (isEvidence)
+        {
+            var classId = await ResearchSubmissionValidator.ResolveEvidenceClassIdAsync(
+                _unitOfWork,
+                submission);
+
+            _logger.LogInformation(
+                "UploadSubmissionFile evidence via media pipeline. SubmissionId={SubmissionId}, ClassId={ClassId}",
+                submission.Id,
+                classId);
+
+            var media = await _mediaService.UploadMediaAsync(file, classId, classSessionId: null);
+
+            var alreadyLinked = await _unitOfWork.SubmissionEvidences.FirstOrDefaultAsync(
+                se => se.SubmissionId == submission.Id
+                      && se.MediaId == media.Id
+                      && !se.IsDeleted);
+            if (alreadyLinked == null)
+            {
+                await _unitOfWork.SubmissionEvidences.AddAsync(new SubmissionEvidence
+                {
+                    SubmissionId = submission.Id,
+                    MediaId = media.Id,
+                    CreatedAt = now,
+                    CreatedBy = student.Id,
+                    IsDeleted = false
+                });
+                await _unitOfWork.SaveChangesAsync();
+            }
+
+            _logger.LogInformation(
+                "UploadSubmissionFile evidence completed. SubmissionId={SubmissionId}, MediaAssetId={MediaAssetId}, StudentId={StudentId}",
+                submission.Id,
+                media.Id,
+                student.Id);
+
+            return new UploadResearchSubmissionResponseDto
+            {
+                SubmissionId = submission.Id,
+                MediaAssetId = media.Id,
+                EvidenceUrls = string.IsNullOrWhiteSpace(media.FileUrl) ? null : [media.FileUrl]
+            };
+        }
+
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var folder = $"{SubmissionFolder}/{submission.Id}";
         var fileName = $"{submission.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
         var s3Key = $"{folder}/{fileName}";
 
         _logger.LogInformation(
-            "UploadSubmissionFile uploading to S3. SubmissionId={SubmissionId}, S3Key={S3Key}, IsEvidence={IsEvidence}",
+            "UploadSubmissionFile uploading primary to S3. SubmissionId={SubmissionId}, S3Key={S3Key}",
             submission.Id,
-            s3Key,
-            isEvidence);
+            s3Key);
 
         await using var stream = file.OpenReadStream();
         await _blobService.UploadFileAsync(fileName, stream, folder);
         var fileUrl = await _blobService.GetPreviewUrlAsync(s3Key);
 
         _logger.LogInformation(
-            "UploadSubmissionFile completed. SubmissionId={SubmissionId}, StudentId={StudentId}",
+            "UploadSubmissionFile primary completed. SubmissionId={SubmissionId}, StudentId={StudentId}",
             submission.Id,
             student.Id);
 
-        return isEvidence
-            ? new UploadResearchSubmissionResponseDto
-            {
-                SubmissionId = submission.Id,
-                EvidenceUrls = [fileUrl]
-            }
-            : new UploadResearchSubmissionResponseDto
-            {
-                SubmissionId = submission.Id,
-                FileUrl = fileUrl
-            };
+        return new UploadResearchSubmissionResponseDto
+        {
+            SubmissionId = submission.Id,
+            FileUrl = fileUrl
+        };
     }
 
     public async Task<ResearchSubmissionResponseDto> SubmitResearchWork(SubmitResearchWorkRequestDto request)
@@ -175,10 +218,10 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
                 IsDeleted = false
             };
 
-            await ResearchSubmissionValidator.ReplaceEvidenceUrlsAsync(
+            await ResearchSubmissionValidator.ReplaceEvidenceMediaAsync(
                 _unitOfWork,
                 submission,
-                request.EvidenceUrls,
+                request.EvidenceMediaAssetIds,
                 student.Id,
                 now);
             await _unitOfWork.Submissions.AddAsync(submission);
@@ -210,10 +253,10 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             submission.UpdatedAt = now;
             submission.UpdatedBy = student.Id;
 
-            await ResearchSubmissionValidator.ReplaceEvidenceUrlsAsync(
+            await ResearchSubmissionValidator.ReplaceEvidenceMediaAsync(
                 _unitOfWork,
                 submission,
-                request.EvidenceUrls,
+                request.EvidenceMediaAssetIds,
                 student.Id,
                 now);
             await _unitOfWork.Submissions.Update(submission);

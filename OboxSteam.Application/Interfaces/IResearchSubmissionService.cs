@@ -13,8 +13,9 @@ public interface IResearchSubmissionService
     Task<ResearchSubmissionResponseDto?> GetSubmission(Guid submissionId);
 
     /// <summary>
-    /// Uploads a file to S3. Lazy-creates a student-owned <c>Pending</c> draft when unlocked.
-    /// Returns URLs for the client to pass into submit.
+    /// Uploads a primary deliverable to <c>submissions/</c>, or evidence through the class media
+    /// AI pipeline (<c>isEvidence=true</c>). Lazy-creates a Pending draft when unlocked.
+    /// Evidence returns <c>MediaAssetId</c> for submit; primary returns <c>FileUrl</c>.
     /// </summary>
     Task<UploadResearchSubmissionResponseDto> UploadSubmissionFile(
         Guid moduleEnrollmentId,

@@ -47,9 +47,12 @@ public sealed class ResearchSubmissionController : ControllerBase
     [RequestFormLimits(MultipartBodyLengthLimit = 3L * 1024 * 1024 * 1024)]
     [SwaggerOperation(
         Summary = "Upload research submission file to S3",
-        Description = "Uploads a deliverable or evidence file to S3. Lazy-creates a Pending draft when the "
-            + "milestone is unlocked. Returns FileUrl or EvidenceUrls (and SubmissionId) for use in submit. "
-            + "Set isEvidence=true for supporting evidence files.")]
+        Description = "Uploads a primary deliverable (docs/images/videos under submissions/) or evidence. "
+            + "Lazy-creates a Pending draft when the milestone is unlocked. "
+            + "Primary returns FileUrl for submit. "
+            + "Evidence (isEvidence=true) must be image (.jpg/.jpeg/.png) or video (.mp4/.mov), "
+            + "runs the class media AI pipeline, links SubmissionEvidence, and returns MediaAssetId "
+            + "(plus EvidenceUrls preview) for submit as EvidenceMediaAssetIds.")]
     [ProducesResponseType(typeof(ApiResult<UploadResearchSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -60,7 +63,7 @@ public sealed class ResearchSubmissionController : ControllerBase
         [FromQuery, SwaggerParameter("Module enrollment id")] Guid moduleEnrollmentId,
         [FromQuery, SwaggerParameter("Research milestone id")] Guid researchMilestoneId,
         IFormFile file,
-        [FromQuery, SwaggerParameter("When true, URL is returned in EvidenceUrls instead of FileUrl")]
+        [FromQuery, SwaggerParameter("When true, runs media AI pipeline and returns MediaAssetId")]
         bool isEvidence = false)
     {
         var result = await _researchSubmissionService.UploadSubmissionFile(
@@ -82,7 +85,8 @@ public sealed class ResearchSubmissionController : ControllerBase
         Description = "Student submits research deliverable content for a milestone. Creates the submission "
             + "when none exists (milestone unlock + required activities + availability). "
             + "Resubmission after ReturnedForRevision does not require mentor to reopen. "
-            + "Personal AvailableUntil from approved assessment recovery is honored.")]
+            + "Personal AvailableUntil from approved assessment recovery is honored. "
+            + "Pass EvidenceMediaAssetIds from evidence upload (isEvidence=true); primary FileUrl stays a document URL.")]
     [ProducesResponseType(typeof(ApiResult<ResearchSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
