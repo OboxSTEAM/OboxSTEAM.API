@@ -43,7 +43,9 @@ public interface IMediaService
     /// <summary>
     /// Student class gallery: all media for a class (any <see cref="VideoProcessingStatus"/>),
     /// without face tags. Caller must be a Student with Active enrollment in <paramref name="classId"/>.
-    /// Supports the same pagination / filter / sort options as <see cref="GetMediaAsync"/>.
+    /// Research submission evidence (<c>submissions/</c> storage) is excluded; those assets remain
+    /// available for highlight processing. Supports the same pagination / filter / sort options as
+    /// <see cref="GetMediaAsync"/>.
     /// </summary>
     Task<Pagination<ClassGalleryMediaDto>> GetClassGalleryAsync(
         Guid classId,
@@ -58,6 +60,7 @@ public interface IMediaService
     /// <summary>
     /// Student portfolio picker gallery: media from all Active-enrolled classes,
     /// optionally filtered by <paramref name="programId"/> / <paramref name="classId"/>.
+    /// Research submission evidence is excluded (same rule as <see cref="GetClassGalleryAsync"/>).
     /// Same filters/sort/pagination as <see cref="GetClassGalleryAsync"/>.
     /// </summary>
     Task<Pagination<ClassGalleryMediaDto>> GetMyGalleryAsync(

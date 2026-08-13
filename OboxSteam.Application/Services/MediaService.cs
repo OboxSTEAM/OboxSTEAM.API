@@ -1754,6 +1754,10 @@ public class MediaService : IMediaService
         string? sortBy,
         bool isDescending)
     {
+        // Research evidence is stored as MediaAsset (for highlight AI) under submissions/,
+        // but must not appear in student class / enrollment galleries.
+        mediaList = mediaList.Where(m => !IsResearchSubmissionEvidenceStorageUrl(m.FileUrl)).ToList();
+
         if (classSessionId.HasValue)
             mediaList = mediaList.Where(m => m.ClassSessionId == classSessionId.Value).ToList();
 
@@ -1768,6 +1772,18 @@ public class MediaService : IMediaService
             mediaList = mediaList.Where(m => m.VideoStatus == videoStatus.Value).ToList();
 
         return SortMediaList(mediaList, sortBy, isDescending);
+    }
+
+    /// <summary>
+    /// Research milestone evidence files live under the <c>submissions/</c> S3 prefix.
+    /// Class gallery uploads use <c>media/</c> or <c>raw/</c>.
+    /// </summary>
+    private static bool IsResearchSubmissionEvidenceStorageUrl(string? fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+            return false;
+
+        return fileUrl.Contains("/submissions/", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<List<ClassGalleryMediaDto>> MapGalleryDtosAsync(List<MediaAsset> pageItems)

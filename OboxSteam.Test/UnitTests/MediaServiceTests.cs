@@ -491,6 +491,38 @@ public sealed class MediaServiceTests
     }
 
     [Fact]
+    public async Task GetClassGalleryAsync_ExcludesResearchSubmissionEvidenceUrls()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        SeedMediaAssets();
+        var evidenceMediaId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        _db.MediaAssets.Seed(new MediaAsset
+        {
+            Id = evidenceMediaId,
+            UploaderId = _studentId,
+            ClassId = _classId,
+            FileType = "image",
+            FileUrl =
+                "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/submissions/" +
+                "320b79f9-06d1-41c7-b890-17b3feefa635/320b79f9-06d1-41c7-b890-17b3feefa635_1786635059.jpg",
+            VideoStatus = VideoProcessingStatus.None,
+            UploadedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.GetClassGalleryAsync(_classId);
+
+        Assert.Equal(4, result.TotalCount);
+        Assert.DoesNotContain(result.Items, m => m.Id == evidenceMediaId);
+        Assert.DoesNotContain(
+            result.Items,
+            m => m.FileUrl != null
+                 && m.FileUrl.Contains("/submissions/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task GetClassGalleryAsync_Mentor_ThrowsForbidden()
     {
         SeedBase();

@@ -99,6 +99,7 @@ public class MediaController : ControllerBase
 
     /// <summary>
     /// Student class gallery: all media for a class (no face tags).
+    /// Research submission evidence is excluded.
     /// </summary>
     [HttpGet("class/{classId:guid}/gallery")]
     [Authorize(Roles = "Student")]
@@ -107,6 +108,7 @@ public class MediaController : ControllerBase
         Description = "Returns paginated media for a class without face tags. " +
                       "Student must be Active-enrolled in the class. " +
                       "Includes all video statuses (Transcoding, PendingTagging, TaggingComplete, Failed). " +
+                      "Excludes research submission evidence (submissions/ storage used for highlight AI). " +
                       "Supports the same filters/sort/pagination as GET /api/media."
     )]
     [ProducesResponseType(typeof(ApiResult<Pagination<ClassGalleryMediaDto>>), 200)]
@@ -140,6 +142,7 @@ public class MediaController : ControllerBase
         Summary = "Get my enrollment gallery (student)",
         Description = "Returns paginated class media from every class the student is Active-enrolled in. " +
                       "Filter with programId and/or classId. Same filters/sort/pagination as class gallery. " +
+                      "Excludes research submission evidence (submissions/ storage). " +
                       "Use POST /api/portfolios/me/media/from-class-gallery to copy selected items into the portfolio."
     )]
     [ProducesResponseType(typeof(ApiResult<Pagination<ClassGalleryMediaDto>>), 200)]
