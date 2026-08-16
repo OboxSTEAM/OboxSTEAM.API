@@ -43,6 +43,18 @@ public sealed class CertificateService : ICertificateService
 
     public async Task<CertificateDetailDto?> EnsureProgramCertificateAsync(Guid programEnrollmentId)
     {
+        return await EnsureProgramCertificateCoreAsync(programEnrollmentId, requireCallerAuth: true);
+    }
+
+    public async Task<CertificateDetailDto?> EnsureProgramCertificateForSeedAsync(Guid programEnrollmentId)
+    {
+        return await EnsureProgramCertificateCoreAsync(programEnrollmentId, requireCallerAuth: false);
+    }
+
+    private async Task<CertificateDetailDto?> EnsureProgramCertificateCoreAsync(
+        Guid programEnrollmentId,
+        bool requireCallerAuth)
+    {
         if (programEnrollmentId == Guid.Empty)
         {
             throw ErrorHelper.BadRequest("Program enrollment id is required.");
@@ -54,7 +66,10 @@ public sealed class CertificateService : ICertificateService
             throw ErrorHelper.NotFound($"Program enrollment with id '{programEnrollmentId}' not found.");
         }
 
-        await EnsureCallerCanIssueAsync(enrollment.StudentId);
+        if (requireCallerAuth)
+        {
+            await EnsureCallerCanIssueAsync(enrollment.StudentId);
+        }
 
         if (!await AreAllProgramActivitiesDoneAsync(enrollment))
         {

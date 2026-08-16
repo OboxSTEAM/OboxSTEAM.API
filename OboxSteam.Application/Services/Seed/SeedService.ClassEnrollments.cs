@@ -15,6 +15,10 @@ public partial class SeedService
         ("CLS-OPEN-005", ["STD-021", "STD-022", "STD-023", "STD-024"]),
     ];
 
+    /// <summary>
+    /// STD-025 is enrolled in PRG-ROBOTICS but intentionally has NO robotics class enrollment.
+    /// FE fixture for the post-payment "choose / join a class" flow.
+    /// </summary>
     private static readonly string[] RoboticsProgramOnlyStudentCodes =
     [
         "STD-025",
@@ -36,7 +40,7 @@ public partial class SeedService
 
         if (existingEnrollment != null)
         {
-            _loggerService.LogInformation("Open class enrollments already seeded, skipping");
+            _loggerService.LogInformation("Open class enrollments already seeded, skipping open-class plan");
         }
         else
         {
@@ -88,13 +92,17 @@ public partial class SeedService
                             continue;
                         }
 
+                        var classStatus = programEnrollment.Status == EnrollmentStatus.Completed
+                            ? ClassEnrollmentStatus.Completed
+                            : ClassEnrollmentStatus.Active;
+
                         enrollmentsToAdd.Add(new ClassEnrollment
                         {
                             Id = Guid.NewGuid(),
                             ClassId = classEntity.Id,
                             StudentId = student.Id,
                             ProgramEnrollmentId = programEnrollment.Id,
-                            Status = ClassEnrollmentStatus.Active,
+                            Status = classStatus,
                             EnrolledAt = seedTime.AddDays(-3),
                             CreatedAt = seedTime,
                             CreatedBy = Guid.Empty,
@@ -120,6 +128,7 @@ public partial class SeedService
         }
 
         await SeedCertificateTestClassEnrollmentsAsync();
+        await BackfillMissingClassEnrollmentsForActiveCompletedAsync();
     }
 
     private async Task SeedCertificateTestClassEnrollmentsAsync()
@@ -196,6 +205,144 @@ public partial class SeedService
         _loggerService.LogInformation(
             "Finished seed certificate test class enrollments — {Count} enrollment(s).",
             enrollmentsToAdd.Count);
+    }
+
+    /// <summary>
+    /// Ensures every Active/Completed program enrollment has a class enrollment,
+    /// except STD-025 on PRG-ROBOTICS (join-class UI fixture).
+    /// </summary>
+    private async Task BackfillMissingClassEnrollmentsForActiveCompletedAsync()
+    {
+        _loggerService.LogInformation("Backfilling class enrollments for Active/Completed program enrollments");
+
+        var roboticsProgram = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == OpenClassProgramCode);
+        var roboticsOnlyStudentIds = new HashSet<Guid>();
+        foreach (var code in RoboticsProgramOnlyStudentCodes)
+        {
+            var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == code);
+            if (student != null)
+            {
+                roboticsOnlyStudentIds.Add(student.Id);
+            }
+        }
+
+        var programEnrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => !pe.IsDeleted
+                  && (pe.Status == EnrollmentStatus.Active || pe.Status == EnrollmentStatus.Completed));
+
+        var allClasses = await _unitOfWork.Classes.GetAllAsync(c => !c.IsDeleted);
+        var classesByProgramId = allClasses
+            .GroupBy(c => c.ProgramId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var existingClassEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(ce => !ce.IsDeleted);
+        var peIdsWithClass = existingClassEnrollments
+            .Select(ce => ce.ProgramEnrollmentId)
+            .ToHashSet();
+
+        var seatsByClassId = existingClassEnrollments
+            .Where(ce => ce.Status is ClassEnrollmentStatus.Active or ClassEnrollmentStatus.Completed)
+            .GroupBy(ce => ce.ClassId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var seedTime = DateTime.UtcNow;
+        var toAdd = new List<ClassEnrollment>();
+
+        foreach (var pe in programEnrollments)
+        {
+            if (peIdsWithClass.Contains(pe.Id))
+            {
+                continue;
+            }
+
+            // Keep STD-025 without a robotics class so FE can test join-class.
+            if (roboticsProgram != null
+                && pe.ProgramId == roboticsProgram.Id
+                && roboticsOnlyStudentIds.Contains(pe.StudentId))
+            {
+                continue;
+            }
+
+            if (!classesByProgramId.TryGetValue(pe.ProgramId, out var programClasses) || programClasses.Count == 0)
+            {
+                _loggerService.LogWarning(
+                    "No class available for program enrollment {EnrollmentId} (program {ProgramId}). Skipping.",
+                    pe.Id,
+                    pe.ProgramId);
+                continue;
+            }
+
+            var preferred = PickClassForEnrollment(programClasses, seatsByClassId);
+            if (preferred == null)
+            {
+                _loggerService.LogWarning(
+                    "No capacity on classes for program enrollment {EnrollmentId}. Skipping.",
+                    pe.Id);
+                continue;
+            }
+
+            var status = pe.Status == EnrollmentStatus.Completed
+                ? ClassEnrollmentStatus.Completed
+                : ClassEnrollmentStatus.Active;
+
+            toAdd.Add(new ClassEnrollment
+            {
+                Id = Guid.NewGuid(),
+                ClassId = preferred.Id,
+                StudentId = pe.StudentId,
+                ProgramEnrollmentId = pe.Id,
+                Status = status,
+                EnrolledAt = pe.EnrolledAt ?? seedTime.AddDays(-3),
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+
+            seatsByClassId[preferred.Id] = seatsByClassId.GetValueOrDefault(preferred.Id) + 1;
+            peIdsWithClass.Add(pe.Id);
+        }
+
+        if (toAdd.Count == 0)
+        {
+            _loggerService.LogInformation("No missing class enrollments to backfill.");
+            return;
+        }
+
+        await _unitOfWork.ClassEnrollments.AddRangeAsync(toAdd);
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Backfilled {Count} class enrollment(s) for Active/Completed program enrollments.",
+            toAdd.Count);
+    }
+
+    private static Class? PickClassForEnrollment(
+        List<Class> programClasses,
+        IReadOnlyDictionary<Guid, int> seatsByClassId)
+    {
+        // Prefer Open open-class codes, then other Open/InProgress with capacity, then Draft seed classes.
+        static int Rank(Class c)
+        {
+            var isOpenCode = OpenClassCodes.Contains(c.Code) ? 0 : 1;
+            var statusRank = c.Status switch
+            {
+                ClassStatus.Open => 0,
+                ClassStatus.InProgress => 1,
+                ClassStatus.Draft => 2,
+                _ => 3,
+            };
+            return (isOpenCode * 10) + statusRank;
+        }
+
+        return programClasses
+            .OrderBy(Rank)
+            .ThenBy(c => c.Code)
+            .FirstOrDefault(c =>
+            {
+                var taken = seatsByClassId.GetValueOrDefault(c.Id);
+                return taken < c.MaxCapacity;
+            })
+            // If every class is full, still assign to the highest-ranked (capacity soft for seed).
+            ?? programClasses.OrderBy(Rank).ThenBy(c => c.Code).FirstOrDefault();
     }
 
     private async Task EnsureRoboticsProgramEnrollmentsForOpenClassesAsync(Guid programId)

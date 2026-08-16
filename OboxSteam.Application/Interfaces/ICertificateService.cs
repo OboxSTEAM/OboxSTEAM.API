@@ -10,6 +10,12 @@ public interface ICertificateService
     /// </summary>
     Task<CertificateDetailDto?> EnsureProgramCertificateAsync(Guid programEnrollmentId);
 
+    /// <summary>
+    /// Seed/system variant of <see cref="EnsureProgramCertificateAsync"/> that skips caller auth.
+    /// Still requires all program activities to be Done. Idempotent.
+    /// </summary>
+    Task<CertificateDetailDto?> EnsureProgramCertificateForSeedAsync(Guid programEnrollmentId);
+
     Task<List<CertificateListItemDto>> GetMyCertificatesAsync();
 
     Task<CertificateDetailDto> GetCertificateByIdAsync(Guid id);

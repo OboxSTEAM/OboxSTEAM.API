@@ -12,12 +12,18 @@ public partial class SeedService : ISeedService
     private readonly ILogger _loggerService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
+    private readonly ICertificateService _certificateService;
 
-    public SeedService(ILogger<SeedService> loggerService, IUnitOfWork unitOfWork, IBlobService blobService)
+    public SeedService(
+        ILogger<SeedService> loggerService,
+        IUnitOfWork unitOfWork,
+        IBlobService blobService,
+        ICertificateService certificateService)
     {
         _loggerService = loggerService;
         _unitOfWork = unitOfWork;
         _blobService = blobService;
+        _certificateService = certificateService;
     }
 
     public async Task SeedAllDataAsync()
@@ -45,6 +51,7 @@ public partial class SeedService : ISeedService
         await SeedProgramReviewsAsync();
         await SeedMentorClassesAsync();
         await SeedMentorSkillsAsync();
+        await SeedMentorBoardClassesAsync();
         await SeedRoboticsClassSessionsAsync();
         await SeedClassesAsync();
         await SeedClassEnrollmentsAsync();
@@ -63,6 +70,7 @@ public partial class SeedService : ISeedService
         await SeedDashboardSupportDataAsync();
         // After class enrollments so STD-002 can be moved onto CLS-ROBOTICS-2026A for mentor UI.
         await SeedGradedCapstoneSubmissionForUiAsync();
+        await SeedCompletedProgramCertificatesAsync();
         await SeedNotificationsAsync();
 
         _loggerService.LogInformation("Finished seed all data");

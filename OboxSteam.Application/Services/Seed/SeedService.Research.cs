@@ -402,7 +402,8 @@ public partial class SeedService
             }
         }
 
-        var moduleRobotics1 = modules.FirstOrDefault(m => m.Code == "MOD-ROBOTICS-01");
+        // Keep ALL robotics module enrollments Active so FE is not blocked waiting for
+        // curriculum unlock / course-page provisioning. Only progress and deliverables reset.
         var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
             me => me.StudentId == student.Id && moduleIds.Contains(me.ModuleId) && !me.IsDeleted);
 
@@ -424,24 +425,18 @@ public partial class SeedService
 
         foreach (var moduleEnrollment in moduleEnrollments)
         {
-            var isPrimaryModule = moduleRobotics1 != null && moduleEnrollment.ModuleId == moduleRobotics1.Id;
-
-            if (!isPrimaryModule)
-            {
-                await _unitOfWork.ModuleEnrollments.SoftRemove(moduleEnrollment);
-                changed = true;
-                continue;
-            }
-
             if (moduleEnrollment.ProgressPercent != 0m
                 || moduleEnrollment.Status != EnrollmentStatus.Active
                 || moduleEnrollment.CompletedAt.HasValue
-                || moduleEnrollment.StartedAt.HasValue)
+                || moduleEnrollment.FinalGrade.HasValue
+                || moduleEnrollment.AssignmentFailureCount != 0)
             {
                 moduleEnrollment.ProgressPercent = 0m;
                 moduleEnrollment.Status = EnrollmentStatus.Active;
                 moduleEnrollment.CompletedAt = null;
-                moduleEnrollment.StartedAt = null;
+                moduleEnrollment.FinalGrade = null;
+                moduleEnrollment.AssignmentFailureCount = 0;
+                moduleEnrollment.StartedAt ??= DateTime.UtcNow.AddDays(-1);
                 await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
                 changed = true;
             }

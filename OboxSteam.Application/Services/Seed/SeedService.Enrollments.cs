@@ -242,6 +242,12 @@ public partial class SeedService
             _loggerService.LogInformation("Program enrollments already exist, skipping seeding");
         }
 
+        // Ensure robotics PEs for open-class students exist before module/course backfill.
+        var roboticsProgram = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+        if (roboticsProgram != null)
+        {
+            await EnsureRoboticsProgramEnrollmentsForOpenClassesAsync(roboticsProgram.Id);
+        }
     }
 }
 
