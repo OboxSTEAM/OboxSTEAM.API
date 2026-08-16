@@ -516,7 +516,10 @@ public partial class SeedService
             definition.ClassCode,
             definition.ClassName,
             definition.ScheduleSummary,
-            seedTime);
+            seedTime,
+            ClassStatus.InProgress,
+            startDate: seedTime.AddDays(-7),
+            endDate: seedTime.AddDays(60));
 
         await EnsureDemoClassSessionsAsync(
             classEntity,
@@ -529,6 +532,24 @@ public partial class SeedService
             researchLive,
             researchOffline,
             seedTime);
+
+        // Open / not-started cohort for newly registered students to join.
+        var openClassCode = definition.ClassCode.EndsWith("2026A", StringComparison.OrdinalIgnoreCase)
+            ? definition.ClassCode[..^5] + "2026B"
+            : $"{definition.ClassCode}-OPEN";
+        var openClassName = definition.ClassName.Contains("Cohort A", StringComparison.Ordinal)
+            ? definition.ClassName.Replace("Cohort A", "Cohort B", StringComparison.Ordinal)
+            : $"{definition.ClassName} (Open)";
+        await EnsureDemoClassAsync(
+            program.Id,
+            mentorId,
+            openClassCode,
+            openClassName,
+            $"{definition.ScheduleSummary} (upcoming cohort)",
+            seedTime,
+            ClassStatus.Open,
+            startDate: seedTime.AddDays(14),
+            endDate: seedTime.AddDays(90));
 
         await EnsureDemoStudentEnrollmentsAsync(
             program,
@@ -1058,29 +1079,32 @@ public partial class SeedService
         string classCode,
         string className,
         string scheduleSummary,
-        DateTime seedTime)
+        DateTime seedTime,
+        ClassStatus status,
+        DateTime startDate,
+        DateTime endDate)
     {
         var existing = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == classCode && !c.IsDeleted);
         if (existing != null)
         {
-            var targetStart = seedTime.AddDays(-7);
-            var targetEnd = seedTime.AddDays(60);
             var needsUpdate =
                 existing.MentorId != mentorId
-                || existing.Status != ClassStatus.InProgress
-                || existing.StartDate != targetStart
-                || existing.EndDate != targetEnd
-                || existing.ScheduleSummary != scheduleSummary;
+                || existing.Status != status
+                || existing.StartDate != startDate
+                || existing.EndDate != endDate
+                || existing.ScheduleSummary != scheduleSummary
+                || existing.Name != className;
 
             if (!needsUpdate)
             {
                 return existing;
             }
 
+            existing.Name = className;
             existing.MentorId = mentorId;
-            existing.Status = ClassStatus.InProgress;
-            existing.StartDate = targetStart;
-            existing.EndDate = targetEnd;
+            existing.Status = status;
+            existing.StartDate = startDate;
+            existing.EndDate = endDate;
             existing.ScheduleSummary = scheduleSummary;
             existing.UpdatedAt = seedTime;
             existing.UpdatedBy = Guid.Empty;
@@ -1096,10 +1120,10 @@ public partial class SeedService
             Name = className,
             ProgramId = programId,
             MentorId = mentorId,
-            StartDate = seedTime.AddDays(-7),
-            EndDate = seedTime.AddDays(60),
+            StartDate = startDate,
+            EndDate = endDate,
             MaxCapacity = 20,
-            Status = ClassStatus.InProgress,
+            Status = status,
             MinHoursBeforeAssignmentJoin = 48,
             ScheduleSummary = scheduleSummary,
             CreatedAt = seedTime,
