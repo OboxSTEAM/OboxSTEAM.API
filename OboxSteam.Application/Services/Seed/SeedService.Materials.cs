@@ -266,6 +266,9 @@ public partial class SeedService
     private const string RoboticsResearchMaterialUrl =
         "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/Gi%C3%A1o+tr%C3%ACnh+k%E1%BB%B9+thu%E1%BA%ADt+robot+-+%C4%90%C3%A0o+V%C4%83n+Hi%E1%BB%87p.pdf";
 
+    private const string DemoShowcaseVideoMaterialUrl =
+        "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/Robotics-video.mp4";
+
     private static readonly string[] RoboticsClassCodes =
     [
         "CLS-ROBOTICS-2026A",

@@ -392,26 +392,27 @@ public partial class SeedService
             requireMediaEvidence: true,
             seedTime);
 
+        // Reuse the same Seed/Material PDFs as robotics; experiential SelfPaced uses the new demo video.
         await EnsureDemoMaterialAsync(
             theorySelfPaced.Id,
             $"{definition.TheoryCourseName} Reading Pack",
             MaterialType.PDF,
-            "https://storage.oboxsteam.com/materials/pdf/demo-theory-reading.pdf",
-            256_000L,
+            RoboticsTheoryMaterialUrl,
+            4_200_000L,
             seedTime);
         await EnsureDemoMaterialAsync(
             experientialSelfPaced.Id,
-            $"{definition.ExperientialCourseName} Prep Pack",
-            MaterialType.PDF,
-            "https://storage.oboxsteam.com/materials/pdf/demo-lab-prep.pdf",
-            180_000L,
+            $"{definition.ExperientialCourseName} Prep Video",
+            MaterialType.Video,
+            DemoShowcaseVideoMaterialUrl,
+            85_000_000L,
             seedTime);
         await EnsureDemoMaterialAsync(
             researchSelfPaced.Id,
             $"{definition.ResearchCourseName} Brief Pack",
             MaterialType.PDF,
-            "https://storage.oboxsteam.com/materials/pdf/demo-research-brief.pdf",
-            198_000L,
+            RoboticsResearchMaterialUrl,
+            3_800_000L,
             seedTime);
 
         var bank = await EnsureDemoQuestionBankAsync(
@@ -628,6 +629,22 @@ public partial class SeedService
             m => m.ActivityId == activityId && !m.IsDeleted);
         if (existing != null)
         {
+            if (existing.Title == title
+                && existing.MaterialType == materialType
+                && existing.FileUrl == fileUrl
+                && existing.FileSizeBytes == fileSizeBytes)
+            {
+                return;
+            }
+
+            existing.Title = title;
+            existing.MaterialType = materialType;
+            existing.FileUrl = fileUrl;
+            existing.FileSizeBytes = fileSizeBytes;
+            existing.UpdatedAt = seedTime;
+            existing.UpdatedBy = Guid.Empty;
+            await _unitOfWork.Materials.Update(existing);
+            await _unitOfWork.SaveChangesAsync();
             return;
         }
 
