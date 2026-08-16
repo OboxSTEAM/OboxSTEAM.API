@@ -111,7 +111,34 @@ public static class QuizAttemptValidator
     }
 
     /// <summary>
-    /// When the current user is a Student, requires an active enrollment in the assignment's module.
+    /// Requires any non-deleted module enrollment (any status) for read-only assignment access.
+    /// Prefer the latest attempt when multiple enrollments exist.
+    /// </summary>
+    public static async Task<ModuleEnrollment> ValidateModuleEnrollmentForReadAsync(
+        IUnitOfWork unitOfWork,
+        Guid studentId,
+        Assignment assignment)
+    {
+        var enrollments = await unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.StudentId == studentId
+                  && me.ModuleId == assignment.ModuleId
+                  && !me.IsDeleted);
+
+        var enrollment = enrollments
+            .OrderByDescending(me => me.AttemptNumber)
+            .FirstOrDefault();
+
+        if (enrollment == null)
+        {
+            throw ErrorHelper.Forbidden(
+                "You must have a module enrollment to view this assignment.");
+        }
+
+        return enrollment;
+    }
+
+    /// <summary>
+    /// When the current user is a Student, requires a module enrollment (any status) in the assignment's module.
     /// </summary>
     public static async Task ValidateStudentModuleAccessAsync(
         IUnitOfWork unitOfWork,
@@ -126,12 +153,13 @@ public static class QuizAttemptValidator
         if (user == null || user.IsDeleted || user.Role != RoleType.Student)
             return;
 
-        await ValidateActiveModuleEnrollmentAsync(unitOfWork, userId, assignment);
+        await ValidateModuleEnrollmentForReadAsync(unitOfWork, userId, assignment);
     }
 
     /// <summary>
     /// Authorizes viewing an in-progress or graded quiz submission.
-    /// Students: own submission only. Mentors: students in their class for the module's program.
+    /// Students: own submission only, with any non-deleted module enrollment.
+    /// Mentors: students in their class for the module's program.
     /// Manager / Admin: unrestricted.
     /// </summary>
     public static async Task EnsureCanViewQuizSubmissionAsync(
@@ -151,7 +179,7 @@ public static class QuizAttemptValidator
         if (user.Role == RoleType.Student)
         {
             ValidateSubmissionOwnership(submission, user.Id);
-            await ValidateActiveModuleEnrollmentAsync(unitOfWork, user.Id, assignment);
+            await ValidateModuleEnrollmentForReadAsync(unitOfWork, user.Id, assignment);
             return;
         }
 

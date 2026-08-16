@@ -695,6 +695,73 @@ public sealed class QuizAttemptServiceTests
     }
 
     [Fact]
+    public async Task GetQuizResult_AllowsStudent_WhenModuleEnrollmentCompleted()
+    {
+        SeedStudentAndEnrollment();
+        var enrollment = _db.ModuleEnrollments.Items.Single(me => me.Id == _enrollmentId);
+        enrollment.Status = EnrollmentStatus.Completed;
+        SeedQuizAssignment(maxPoints: 10m, passScore: 5m);
+
+        var submissionId = Guid.NewGuid();
+        var questionId = Guid.NewGuid();
+        var correctOptionId = Guid.NewGuid();
+
+        _db.Submissions.Seed(new Submission
+        {
+            Id = submissionId,
+            Code = "SUB-RESULT02",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _enrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 10,
+            StartedAt = DateTime.UtcNow.AddMinutes(-10),
+            SubmittedAt = DateTime.UtcNow.AddMinutes(-1),
+            IsDeleted = false
+        });
+
+        _db.QuizQuestions.Seed(new QuizQuestion
+        {
+            Id = questionId,
+            AssignmentId = _assignmentId,
+            SubmissionId = submissionId,
+            QuestionText = "Q",
+            QuestionType = QuestionTypeConstants.SingleChoice,
+            Points = 1,
+            OrderIndex = 1,
+            AttemptNumber = 1,
+            IsDeleted = false
+        });
+
+        _db.QuizOptions.Seed(new QuizOption
+        {
+            Id = correctOptionId,
+            QuestionId = questionId,
+            OptionText = "OK",
+            IsCorrect = true,
+            IsDeleted = false
+        });
+
+        _db.QuizAnswers.Seed(new QuizAnswer
+        {
+            Id = Guid.NewGuid(),
+            SubmissionId = submissionId,
+            QuizQuestionId = questionId,
+            QuizOptionId = correctOptionId,
+            IsDeleted = false
+        });
+
+        var sut = CreateSut();
+
+        var result = await sut.GetQuizResult(submissionId);
+
+        Assert.NotNull(result);
+        Assert.Equal(10m, result!.AssignedGrade);
+        Assert.True(result.Passed);
+    }
+
+    [Fact]
     public async Task GetQuizResult_ThrowsConflict_WhenSubmissionStillPending()
     {
         SeedStudentAndEnrollment();

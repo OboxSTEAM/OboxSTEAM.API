@@ -45,8 +45,8 @@ public class QuizController : ControllerBase
     [SwaggerOperation(
         Summary = "Get in-progress quiz",
         Description = "Returns quiz questions and saved answers for a Pending submission. "
-            + "Students may only access their own attempt. Mentors may access students in their class. "
-            + "Manager and Admin may access any submission.")]
+            + "Students may only access their own attempt and must have a module enrollment (any status). "
+            + "Mentors may access students in their class. Manager and Admin may access any submission.")]
     [ProducesResponseType(typeof(ApiResult<QuizAttemptResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -111,8 +111,8 @@ public class QuizController : ControllerBase
     [SwaggerOperation(
         Summary = "Get quiz result",
         Description = "Returns the graded result for a submission. "
-            + "Students may only access their own result. Mentors may access students in their class. "
-            + "Manager and Admin may access any submission.")]
+            + "Students may only access their own result and must have a module enrollment (any status). "
+            + "Mentors may access students in their class. Manager and Admin may access any submission.")]
     [ProducesResponseType(typeof(ApiResult<QuizResultResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

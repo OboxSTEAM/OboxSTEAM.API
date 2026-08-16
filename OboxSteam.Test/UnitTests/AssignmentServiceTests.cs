@@ -750,6 +750,41 @@ public sealed class AssignmentServiceTests
         Assert.Equal(_assignmentId, result!.Id);
     }
 
+    [Theory]
+    [InlineData(EnrollmentStatus.Completed)]
+    [InlineData(EnrollmentStatus.Failed)]
+    [InlineData(EnrollmentStatus.Dropped)]
+    [InlineData(EnrollmentStatus.Deferred)]
+    [InlineData(EnrollmentStatus.PendingPayment)]
+    public async Task GetAssignmentById_AllowsStudent_WhenEnrolledWithAnyStatus(EnrollmentStatus status)
+    {
+        SeedModule();
+        SeedAssignment();
+        _db.Users.Seed(new User
+        {
+            Id = _studentId,
+            Code = "STD-001",
+            Email = "student@test.com",
+            Role = RoleType.Student,
+            IsDeleted = false
+        });
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = _moduleId,
+            Status = status,
+            AttemptNumber = 1,
+            IsDeleted = false
+        });
+        var sut = CreateSut(currentUserId: _studentId);
+
+        var result = await sut.GetAssignmentById(_assignmentId);
+
+        Assert.NotNull(result);
+        Assert.Equal(_assignmentId, result!.Id);
+    }
+
     // ── UpdateAssignment ──────────────────────────────────────────────────────
 
     [Fact]
