@@ -60,7 +60,7 @@ public sealed class ResearchSubmissionServiceTests
             .Setup(b => b.GetFileUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string key, CancellationToken _) => $"https://presigned.example.com/{key}");
         _certificateService
-            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ReturnsAsync((CertificateDetailDto?)null);
         _notificationPublisher
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
@@ -705,7 +705,7 @@ public sealed class ResearchSubmissionServiceTests
         SeedStudentEnrollmentChain();
         SeedSubmission(status: SubmissionStatus.TurnedIn, attemptNumber: 1);
         _certificateService
-            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ThrowsAsync(new InvalidOperationException("cert down"));
         var sut = CreateSut(_managerId);
 
@@ -743,7 +743,7 @@ public sealed class ResearchSubmissionServiceTests
         _notificationPublisher.Verify(
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _certificateService.Verify(c => c.EnsureProgramCertificateAsync(_programEnrollmentId), Times.Once);
+        _certificateService.Verify(c => c.EnsureProgramCertificateInternalAsync(_programEnrollmentId), Times.Once);
     }
 
     [Fact]

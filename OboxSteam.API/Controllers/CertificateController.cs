@@ -94,7 +94,11 @@ public class CertificateController : ControllerBase
     [Authorize(Roles = "Student,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Ensure / retry program certificate issuance",
-        Description = "Issues a program certificate when all activities are Done. Regenerates and re-uploads the PDF (including avatar/thumbnail images). Reuses the same certificate code when already issued.")]
+        Description = "Issues a program certificate when all activities are Done. "
+            + "Regenerates and re-uploads the PDF (including avatar/thumbnail images). "
+            + "Reuses the same certificate code when already issued. "
+            + "Idempotent FE fallback for completed enrollments missing a certificate. "
+            + "Requires Student (own enrollment), Admin, or Manager.")]
     [ProducesResponseType(typeof(ApiResult<CertificateDetailDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

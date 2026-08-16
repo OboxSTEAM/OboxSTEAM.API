@@ -36,7 +36,7 @@ public sealed class ActivityProgressServiceTests
     {
         _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _studentId);
         _certificateService
-            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ReturnsAsync((CertificateDetailDto?)null);
         _notificationPublisher
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
@@ -419,7 +419,7 @@ public sealed class ActivityProgressServiceTests
         Assert.Equal(100m, result.ModuleProgressPercent);
         Assert.NotNull(result.ProgramProgressPercent);
         Assert.Equal(EnrollmentStatus.Completed, _db.ModuleEnrollments.Items[0].Status);
-        _certificateService.Verify(c => c.EnsureProgramCertificateAsync(_programEnrollmentId), Times.Once);
+        _certificateService.Verify(c => c.EnsureProgramCertificateInternalAsync(_programEnrollmentId), Times.Once);
         _notificationPublisher.Verify(
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
@@ -433,7 +433,7 @@ public sealed class ActivityProgressServiceTests
         SeedInProgress();
         var sut = CreateSut();
         _certificateService
-            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ThrowsAsync(new InvalidOperationException("cert failed"));
 
         var result = await sut.UpdateActivityProgressAsync(new UpdateActivityProgressRequestDto
@@ -529,7 +529,7 @@ public sealed class ActivityProgressServiceTests
         Assert.Equal(CompletionSource.Video, _db.ActivityProgresses.Items[0].CompletionSource);
         Assert.NotNull(_db.ModuleEnrollments.Items[0].StartedAt);
         Assert.NotNull(_db.ProgramEnrollments.Items[0].StartedAt);
-        _certificateService.Verify(c => c.EnsureProgramCertificateAsync(_programEnrollmentId), Times.Once);
+        _certificateService.Verify(c => c.EnsureProgramCertificateInternalAsync(_programEnrollmentId), Times.Once);
     }
 
     [Fact]
@@ -627,7 +627,7 @@ public sealed class ActivityProgressServiceTests
         Assert.Equal(100m, result.ModuleProgressPercent);
         Assert.NotNull(result.ProgramProgressPercent);
         Assert.Equal(CompletionSource.Manual, _db.ActivityProgresses.Items[0].CompletionSource);
-        _certificateService.Verify(c => c.EnsureProgramCertificateAsync(_programEnrollmentId), Times.Once);
+        _certificateService.Verify(c => c.EnsureProgramCertificateInternalAsync(_programEnrollmentId), Times.Once);
     }
 
     [Fact]

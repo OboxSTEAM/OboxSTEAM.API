@@ -34,7 +34,7 @@ public sealed class QuizAttemptServiceTests
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         _certificateService
-            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ReturnsAsync((OboxSteam.Application.DTOs.CertificateDTO.CertificateDetailDto?)null);
 
         return new QuizAttemptService(
@@ -1202,7 +1202,7 @@ public sealed class QuizAttemptServiceTests
 
         Assert.Equal(SubmissionStatus.Graded, result.Status);
         _certificateService.Verify(
-            c => c.EnsureProgramCertificateAsync(programEnrollmentId),
+            c => c.EnsureProgramCertificateInternalAsync(programEnrollmentId),
             Times.Once);
     }
 
@@ -1224,7 +1224,7 @@ public sealed class QuizAttemptServiceTests
         var (submissionId, questionId, correctOptionId, _) = SeedAttemptSnapshot();
         var sut = CreateSut();
         _certificateService
-            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ThrowsAsync(new InvalidOperationException("cert failed"));
 
         var result = await sut.SubmitQuiz(submissionId, new SubmitQuizAnswersRequestDto

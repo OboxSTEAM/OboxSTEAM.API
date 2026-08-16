@@ -816,7 +816,8 @@ public sealed class ActivityProgressService : IActivityProgressService
     {
         try
         {
-            await _certificateService.EnsureProgramCertificateAsync(programEnrollmentId);
+            // Internal: mentor session-complete / force-complete must still be able to issue.
+            await _certificateService.EnsureProgramCertificateInternalAsync(programEnrollmentId);
         }
         catch (Exception ex)
         {

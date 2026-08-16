@@ -363,6 +363,35 @@ public sealed class CertificateServiceTests
     }
 
     [Fact]
+    public async Task Ensure_Throws_Forbidden_WhenMentorUsesPublicEnsure()
+    {
+        var mentorId = Guid.Parse("15151515-1515-1515-1515-151515151515");
+        SeedUser(mentorId, RoleType.Mentor, "MNT-001");
+        SeedProgramCurriculum();
+        SeedEnrollmentChain();
+        var sut = CreateSut(mentorId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.EnsureProgramCertificateAsync(_programEnrollmentId));
+    }
+
+    [Fact]
+    public async Task EnsureInternal_Issues_WhenCalledAsMentor()
+    {
+        var mentorId = Guid.Parse("15151515-1515-1515-1515-151515151515");
+        SeedUser(mentorId, RoleType.Mentor, "MNT-001");
+        SeedProgramCurriculum();
+        SeedEnrollmentChain();
+        var sut = CreateSut(mentorId);
+
+        var result = await sut.EnsureProgramCertificateInternalAsync(_programEnrollmentId);
+
+        Assert.NotNull(result);
+        Assert.Equal(_studentId, result!.Student.Id);
+        Assert.Single(_db.Certificates.Items);
+    }
+
+    [Fact]
     public async Task Ensure_AllowsManager_ToIssueForStudent()
     {
         SeedUser(_managerId, RoleType.Manager, "MGR-001");

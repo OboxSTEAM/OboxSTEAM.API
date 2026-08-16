@@ -46,7 +46,7 @@ public sealed class AssignmentSubmissionServiceTests
             .Setup(b => b.GetPreviewUrlAsync(It.IsAny<string>()))
             .ReturnsAsync("https://cdn.example.com/submissions/file.pdf");
         _certificateService
-            .Setup(c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()))
+            .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ReturnsAsync((CertificateDetailDto?)null);
 
         return new AssignmentSubmissionService(
@@ -529,7 +529,7 @@ public sealed class AssignmentSubmissionServiceTests
         Assert.NotNull(result.GradedAt);
         Assert.True(_db.SaveChangesCallCount >= 1);
         _certificateService.Verify(
-            c => c.EnsureProgramCertificateAsync(_programEnrollmentId),
+            c => c.EnsureProgramCertificateInternalAsync(_programEnrollmentId),
             Times.Once);
     }
 
@@ -551,7 +551,7 @@ public sealed class AssignmentSubmissionServiceTests
 
         Assert.Equal(SubmissionStatus.Graded, result.Status);
         _certificateService.Verify(
-            c => c.EnsureProgramCertificateAsync(It.IsAny<Guid>()),
+            c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()),
             Times.Never);
     }
 

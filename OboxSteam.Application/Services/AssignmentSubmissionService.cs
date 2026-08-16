@@ -347,7 +347,8 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
     {
         try
         {
-            await _certificateService.EnsureProgramCertificateAsync(programEnrollmentId);
+            // Internal: mentor grading must still be able to issue on program completion.
+            await _certificateService.EnsureProgramCertificateInternalAsync(programEnrollmentId);
         }
         catch (Exception ex)
         {

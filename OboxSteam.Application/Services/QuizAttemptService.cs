@@ -782,7 +782,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
     {
         try
         {
-            await _certificateService.EnsureProgramCertificateAsync(programEnrollmentId);
+            await _certificateService.EnsureProgramCertificateInternalAsync(programEnrollmentId);
         }
         catch (Exception ex)
         {

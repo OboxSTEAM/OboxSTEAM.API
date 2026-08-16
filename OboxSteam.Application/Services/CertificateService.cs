@@ -46,10 +46,13 @@ public sealed class CertificateService : ICertificateService
         return await EnsureProgramCertificateCoreAsync(programEnrollmentId, requireCallerAuth: true);
     }
 
-    public async Task<CertificateDetailDto?> EnsureProgramCertificateForSeedAsync(Guid programEnrollmentId)
+    public async Task<CertificateDetailDto?> EnsureProgramCertificateInternalAsync(Guid programEnrollmentId)
     {
         return await EnsureProgramCertificateCoreAsync(programEnrollmentId, requireCallerAuth: false);
     }
+
+    public Task<CertificateDetailDto?> EnsureProgramCertificateForSeedAsync(Guid programEnrollmentId)
+        => EnsureProgramCertificateInternalAsync(programEnrollmentId);
 
     private async Task<CertificateDetailDto?> EnsureProgramCertificateCoreAsync(
         Guid programEnrollmentId,
