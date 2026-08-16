@@ -63,6 +63,8 @@ public partial class SeedService : ISeedService
         await BackfillActivityProgressStatusAsync();
         await SeedResearchSubmissionsAsync();
         await SeedExtendedResearchDataAsync();
+        // Idempotent demo showcase programs (safe on already-seeded DBs; does not alter existing programs).
+        await SeedDemoShowcaseProgramsAsync();
         await SeedMaterialsAsync();
         await ResetIntroductionToRoboticsFeTestProgressAsync();
         // After robotics FE reset so STD-001 research enrollment / submissions are not wiped.
