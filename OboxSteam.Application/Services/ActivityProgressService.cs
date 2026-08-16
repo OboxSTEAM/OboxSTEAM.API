@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ActivityProgressDTO;
+using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
@@ -576,6 +577,239 @@ public sealed class ActivityProgressService : IActivityProgressService
             ModuleProgressPercent = moduleProgressPercent,
             ProgramProgressPercent = programProgressPercent,
         };
+    }
+
+    public async Task<MentorCompleteBulkResponseDto> MentorCompleteClassSessionAsync(
+        MentorCompleteBulkRequestDto request)
+    {
+        MentorCompleteValidator.ValidateRequest(request);
+
+        var classSession = await _unitOfWork.ClassSessions.GetByIdAsync(request.ClassSessionId);
+        ClassSessionValidator.ValidateClassSessionExists(classSession, request.ClassSessionId);
+
+        await SessionAttendanceValidator.EnsureCanUpdateSessionAttendanceAsync(
+            _unitOfWork,
+            _claimsService,
+            classSession!);
+
+        MentorCompleteValidator.ValidateSessionLinkedToActivity(classSession!, request.ActivityId);
+
+        var activityEntity = await _unitOfWork.Activities.GetByIdAsync(request.ActivityId);
+        var activity = ActivityProgressValidator.ValidateActivityExists(activityEntity, request.ActivityId);
+        CurriculumAccessValidator.ValidateActivityTypeForMentorComplete(activity);
+
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(classSession!.ClassId);
+        ClassValidator.ValidateClassExists(classEntity, classSession.ClassId);
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(classSession.ModuleId);
+        if (module == null || module.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Module with id '{classSession.ModuleId}' not found.");
+        }
+
+        var courseActivities = await _unitOfWork.Activities.GetAllAsync(
+            a => a.CourseId == activity.CourseId && !a.IsDeleted);
+        var orderedCourseActivityIds = courseActivities
+            .OrderBy(a => a.ActivityOrder)
+            .Select(a => a.Id)
+            .ToList();
+
+        var roster = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ClassId == classSession.ClassId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        var attendances = await _unitOfWork.SessionAttendances.GetAllAsync(
+            sa => sa.ClassSessionId == request.ClassSessionId && !sa.IsDeleted);
+        var attendanceByStudentId = attendances
+            .GroupBy(sa => sa.StudentId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(sa => sa.UpdatedAt ?? sa.CreatedAt).First());
+
+        var results = new List<MentorCompleteStudentResultDto>();
+
+        foreach (var classEnrollment in roster)
+        {
+            results.Add(await TryMentorCompleteStudentAsync(
+                classEnrollment,
+                classSession,
+                activity,
+                module,
+                orderedCourseActivityIds,
+                attendanceByStudentId));
+        }
+
+        _logger.LogInformation(
+            "[MentorCompleteClassSessionAsync] Session {SessionId} activity {ActivityId}: {Completed} completed, {AlreadyDone} already done, {Skipped} skipped of {Total} roster.",
+            request.ClassSessionId,
+            request.ActivityId,
+            results.Count(r => r.Outcome == MentorCompleteOutcome.Completed),
+            results.Count(r => r.Outcome == MentorCompleteOutcome.AlreadyDone),
+            results.Count(r => r.Outcome == MentorCompleteOutcome.Skipped),
+            results.Count);
+
+        return new MentorCompleteBulkResponseDto
+        {
+            ClassSessionId = request.ClassSessionId,
+            ActivityId = request.ActivityId,
+            Results = results,
+        };
+    }
+
+    private async Task<MentorCompleteStudentResultDto> TryMentorCompleteStudentAsync(
+        ClassEnrollment classEnrollment,
+        ClassSession classSession,
+        Activity activity,
+        Module module,
+        IReadOnlyList<Guid> orderedCourseActivityIds,
+        IReadOnlyDictionary<Guid, SessionAttendance> attendanceByStudentId)
+    {
+        var studentId = classEnrollment.StudentId;
+
+        try
+        {
+            attendanceByStudentId.TryGetValue(studentId, out var attendance);
+            var attendanceSkipReason = MentorCompleteValidator.GetAttendanceSkipReason(attendance);
+            if (attendanceSkipReason != null)
+            {
+                return Skipped(studentId, attendanceSkipReason);
+            }
+
+            var moduleEnrollment = await ResolveActiveModuleEnrollmentForSessionAsync(
+                studentId,
+                classSession.ModuleId,
+                classEnrollment.ProgramEnrollmentId);
+
+            if (moduleEnrollment == null)
+            {
+                return Skipped(
+                    studentId,
+                    "Student does not have an active module enrollment for this session.");
+            }
+
+            if (!await IsModulePrerequisiteMetAsync(module, studentId, classEnrollment.ProgramEnrollmentId))
+            {
+                return Skipped(studentId, CurriculumAccessValidator.ActivityLockedMessage);
+            }
+
+            if (!await IsCourseSequenceUnlockedAsync(
+                    activity.Id,
+                    moduleEnrollment.Id,
+                    orderedCourseActivityIds))
+            {
+                return Skipped(studentId, CurriculumAccessValidator.ActivityLockedMessage);
+            }
+
+            var existingProgress = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+                ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
+                      && ap.ActivityId == activity.Id
+                      && !ap.IsDeleted);
+
+            if (existingProgress != null
+                && (existingProgress.ActivityStatus == ActivityStatus.Done || existingProgress.IsCompleted))
+            {
+                return new MentorCompleteStudentResultDto
+                {
+                    StudentId = studentId,
+                    Outcome = MentorCompleteOutcome.AlreadyDone,
+                };
+            }
+
+            var progress = await CompleteActivityForModuleEnrollmentAsync(
+                moduleEnrollment.Id,
+                activity.Id,
+                studentId,
+                CompletionSource.Mentor);
+
+            return new MentorCompleteStudentResultDto
+            {
+                StudentId = studentId,
+                Outcome = MentorCompleteOutcome.Completed,
+                Progress = progress,
+            };
+        }
+        catch (AppException ex)
+        {
+            return Skipped(studentId, ex.Message);
+        }
+    }
+
+    private static MentorCompleteStudentResultDto Skipped(Guid studentId, string reason)
+        => new()
+        {
+            StudentId = studentId,
+            Outcome = MentorCompleteOutcome.Skipped,
+            Reason = reason,
+        };
+
+    private async Task<ModuleEnrollment?> ResolveActiveModuleEnrollmentForSessionAsync(
+        Guid studentId,
+        Guid moduleId,
+        Guid programEnrollmentId)
+    {
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.StudentId == studentId
+                  && me.ModuleId == moduleId
+                  && me.ProgramEnrollmentId == programEnrollmentId
+                  && me.Status == EnrollmentStatus.Active
+                  && !me.IsDeleted);
+
+        return moduleEnrollments
+            .OrderByDescending(me => me.AttemptNumber)
+            .FirstOrDefault();
+    }
+
+    private async Task<bool> IsModulePrerequisiteMetAsync(
+        Module module,
+        Guid studentId,
+        Guid programEnrollmentId)
+    {
+        if (!module.PrerequisiteModuleId.HasValue)
+        {
+            return true;
+        }
+
+        var prerequisiteEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.StudentId == studentId
+                  && me.ModuleId == module.PrerequisiteModuleId.Value
+                  && me.ProgramEnrollmentId == programEnrollmentId
+                  && !me.IsDeleted);
+
+        var latest = prerequisiteEnrollments
+            .OrderByDescending(me => me.AttemptNumber)
+            .FirstOrDefault();
+
+        return latest != null && latest.ProgressPercent >= 100m;
+    }
+
+    private async Task<bool> IsCourseSequenceUnlockedAsync(
+        Guid activityId,
+        Guid moduleEnrollmentId,
+        IReadOnlyList<Guid> orderedCourseActivityIds)
+    {
+        var index = -1;
+        for (var i = 0; i < orderedCourseActivityIds.Count; i++)
+        {
+            if (orderedCourseActivityIds[i] == activityId)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index <= 0)
+        {
+            return true;
+        }
+
+        var priorIds = orderedCourseActivityIds.Take(index).ToList();
+        var doneProgresses = await _unitOfWork.ActivityProgresses.GetAllAsync(
+            ap => ap.ModuleEnrollmentId == moduleEnrollmentId
+                  && priorIds.Contains(ap.ActivityId)
+                  && ap.ActivityStatus == ActivityStatus.Done
+                  && !ap.IsDeleted);
+
+        var doneIds = doneProgresses.Select(ap => ap.ActivityId).ToHashSet();
+        return priorIds.All(id => doneIds.Contains(id));
     }
 
     private async Task TryEnsureProgramCertificateAsync(Guid programEnrollmentId)

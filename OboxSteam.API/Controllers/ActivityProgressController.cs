@@ -96,4 +96,32 @@ public class ActivityProgressController : ControllerBase
             "200",
             "Activity force-completed successfully."));
     }
+
+    // =========================================================================
+    // MENTOR COMPLETE BULK  —  POST /api/activity-progresses/mentor-complete-bulk
+    // [Mentor, Manager]
+    // =========================================================================
+
+    [HttpPost("mentor-complete-bulk")]
+    [Authorize(Roles = "Mentor,Manager")]
+    [SwaggerOperation(
+        Summary = "Mentor-complete a session activity for the class roster",
+        Description = "Marks a LiveOnline or Offline activity Done for every active student on the "
+            + "class roster of the given class session who has Present, Late, or Excused attendance. "
+            + "Returns per-student outcomes (Completed, AlreadyDone, Skipped). Requires Mentor or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<MentorCompleteBulkResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> MentorCompleteClassSession(
+        [FromBody, SwaggerParameter("Mentor complete bulk request")] MentorCompleteBulkRequestDto dto)
+    {
+        var result = await _activityProgressService.MentorCompleteClassSessionAsync(dto);
+
+        return Ok(ApiResult<MentorCompleteBulkResponseDto>.Success(
+            result,
+            "200",
+            "Mentor bulk complete finished."));
+    }
 }

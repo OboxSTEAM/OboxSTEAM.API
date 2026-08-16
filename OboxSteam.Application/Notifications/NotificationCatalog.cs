@@ -138,6 +138,29 @@ public static class NotificationCatalog
             entityType: "Module",
             entityId: moduleId);
 
+    public static NotificationCommand ModuleFailed(
+        Guid studentId,
+        Guid moduleId,
+        Guid? moduleEnrollmentId = null,
+        Guid? programId = null,
+        string? moduleName = null)
+        => new(
+            NotificationType.ModuleFailed,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Module failed",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? "A module attempt was marked as failed due to excess absences. A retake is required."
+                : $"Module \"{moduleName}\" was marked as failed due to excess absences. A retake is required.",
+            payload: new NotificationPayload
+            {
+                ModuleId = moduleId,
+                ModuleEnrollmentId = moduleEnrollmentId,
+                ProgramId = programId,
+                StudentId = studentId
+            },
+            entityType: "Module",
+            entityId: moduleId);
+
     public static NotificationCommand ModuleUnlocked(
         Guid studentId,
         Guid moduleId,

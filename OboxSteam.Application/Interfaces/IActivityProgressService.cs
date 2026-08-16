@@ -22,6 +22,14 @@ public interface IActivityProgressService
     /// </summary>
     Task<ActivityProgressResponseDto> ForceCompleteActivityAsync(Guid studentId, Guid activityId);
 
+    /// <summary>
+    /// Mentor/Manager: marks a LiveOnline/Offline session activity Done for every
+    /// active student on the class roster who has Present/Late/Excused attendance
+    /// for the given class session. Per-student outcomes are returned; the batch
+    /// never fails wholesale.
+    /// </summary>
+    Task<MentorCompleteBulkResponseDto> MentorCompleteClassSessionAsync(MentorCompleteBulkRequestDto request);
+
     Task<ActivityProgressResponseDto> SaveCheckpointForModuleEnrollmentAsync(
         Guid moduleEnrollmentId,
         Guid activityId,

@@ -6,6 +6,7 @@ using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -694,5 +695,283 @@ public sealed class ActivityProgressServiceTests
             sut.ForceCompleteActivityAsync(_studentId, _activityId));
 
         Assert.Contains("No module enrollment found", ex.Message);
+    }
+
+    // ── MentorCompleteClassSessionAsync ───────────────────────────────────────
+
+    private readonly Guid _mentorId = Guid.Parse("14141414-1414-1414-1414-141414141414");
+    private readonly Guid _classId = Guid.Parse("a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1");
+    private readonly Guid _sessionId = Guid.Parse("b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2");
+
+    private void SeedMentor()
+    {
+        _db.Users.Seed(new User
+        {
+            Id = _mentorId,
+            Code = "MNT-001",
+            Email = "mentor@test.com",
+            Role = RoleType.Mentor,
+            IsDeleted = false
+        });
+    }
+
+    private void SeedClassForMentor(Guid? mentorId = null)
+    {
+        _db.Classes.Seed(new Class
+        {
+            Id = _classId,
+            Code = "CLS-001",
+            Name = "Cohort A",
+            ProgramId = _programId,
+            MentorId = mentorId ?? _mentorId,
+            Status = ClassStatus.InProgress,
+            MaxCapacity = 30,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(60),
+            IsDeleted = false
+        });
+    }
+
+    private void SeedSessionActivityGraph(ActivityType type = ActivityType.Offline)
+    {
+        SeedModule();
+        SeedCourse();
+        SeedActivity(type: type);
+        SeedClassForMentor();
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = _sessionId,
+            ClassId = _classId,
+            ModuleId = _moduleId,
+            ActivityId = _activityId,
+            Title = "Lab Session",
+            SessionKind = SessionKind.Lesson,
+            StartTime = DateTime.UtcNow.AddHours(-1),
+            EndTime = DateTime.UtcNow.AddHours(2),
+            RequiresAttendance = true,
+            Status = ClassSessionStatus.InProgress,
+            IsDeleted = false
+        });
+    }
+
+    private void SeedRosterStudent(
+        Guid studentId,
+        Guid programEnrollmentId,
+        Guid moduleEnrollmentId,
+        AttendanceStatus? attendanceStatus)
+    {
+        _db.Users.Seed(new User
+        {
+            Id = studentId,
+            Code = $"STD-{studentId.ToString()[..8]}",
+            Email = $"{studentId}@test.com",
+            Role = RoleType.Student,
+            IsDeleted = false
+        });
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = programEnrollmentId,
+            StudentId = studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.Active,
+            IsDeleted = false
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _classId,
+            StudentId = studentId,
+            ProgramEnrollmentId = programEnrollmentId,
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false
+        });
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = moduleEnrollmentId,
+            StudentId = studentId,
+            ModuleId = _moduleId,
+            ProgramEnrollmentId = programEnrollmentId,
+            Status = EnrollmentStatus.Active,
+            AttemptNumber = 1,
+            IsDeleted = false
+        });
+
+        if (attendanceStatus.HasValue)
+        {
+            _db.SessionAttendances.Seed(new SessionAttendance
+            {
+                Id = Guid.NewGuid(),
+                ClassSessionId = _sessionId,
+                StudentId = studentId,
+                ModuleEnrollmentId = moduleEnrollmentId,
+                Status = attendanceStatus.Value,
+                IsDeleted = false
+            });
+        }
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_CompletesPresentStudents_SkipsAbsent()
+    {
+        SeedMentor();
+        SeedManager();
+        SeedSessionActivityGraph(ActivityType.Offline);
+
+        var presentEnrollmentId = Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1");
+        var absentEnrollmentId = Guid.Parse("c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2");
+        var presentPeId = Guid.Parse("d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1");
+        var absentPeId = Guid.Parse("d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2");
+
+        SeedRosterStudent(_studentId, presentPeId, presentEnrollmentId, AttendanceStatus.Present);
+        SeedRosterStudent(_otherStudentId, absentPeId, absentEnrollmentId, AttendanceStatus.Absent);
+
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+        {
+            ClassSessionId = _sessionId,
+            ActivityId = _activityId,
+        });
+
+        Assert.Equal(2, result.Results.Count);
+        var presentResult = Assert.Single(result.Results, r => r.StudentId == _studentId);
+        Assert.Equal(MentorCompleteOutcome.Completed, presentResult.Outcome);
+        Assert.NotNull(presentResult.Progress);
+        Assert.Equal(CompletionSource.Mentor, _db.ActivityProgresses.Items
+            .Single(ap => ap.StudentId == _studentId).CompletionSource);
+
+        var absentResult = Assert.Single(result.Results, r => r.StudentId == _otherStudentId);
+        Assert.Equal(MentorCompleteOutcome.Skipped, absentResult.Outcome);
+        Assert.Contains("Present, Late, or Excused", absentResult.Reason);
+    }
+
+    [Theory]
+    [InlineData(AttendanceStatus.Late)]
+    [InlineData(AttendanceStatus.Excused)]
+    public async Task MentorCompleteBulk_AllowsLateAndExcused(AttendanceStatus status)
+    {
+        SeedManager();
+        SeedSessionActivityGraph(ActivityType.LiveOnline);
+        SeedRosterStudent(
+            _studentId,
+            _programEnrollmentId,
+            _enrollmentId,
+            status);
+
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+        {
+            ClassSessionId = _sessionId,
+            ActivityId = _activityId,
+        });
+
+        Assert.Equal(MentorCompleteOutcome.Completed, Assert.Single(result.Results).Outcome);
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_RejectsSelfPaced()
+    {
+        SeedManager();
+        SeedSessionActivityGraph(ActivityType.SelfPaced);
+        SeedRosterStudent(_studentId, _programEnrollmentId, _enrollmentId, AttendanceStatus.Present);
+        var sut = CreateSut(_managerId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+            {
+                ClassSessionId = _sessionId,
+                ActivityId = _activityId,
+            }));
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_RejectsSessionActivityMismatch()
+    {
+        SeedManager();
+        SeedSessionActivityGraph(ActivityType.Offline);
+        var otherActivityId = Guid.Parse("e5e5e5e5-e5e5-e5e5-e5e5-e5e5e5e5e5e5");
+        SeedActivity(activityId: otherActivityId, type: ActivityType.Offline, order: 2);
+        var sut = CreateSut(_managerId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+            {
+                ClassSessionId = _sessionId,
+                ActivityId = otherActivityId,
+            }));
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_ReportsAlreadyDone()
+    {
+        SeedManager();
+        SeedSessionActivityGraph(ActivityType.Offline);
+        SeedRosterStudent(_studentId, _programEnrollmentId, _enrollmentId, AttendanceStatus.Present);
+        SeedInProgress(ActivityStatus.Done, isCompleted: true);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+        {
+            ClassSessionId = _sessionId,
+            ActivityId = _activityId,
+        });
+
+        Assert.Equal(MentorCompleteOutcome.AlreadyDone, Assert.Single(result.Results).Outcome);
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_SkipsWhenSequenceLocked()
+    {
+        SeedManager();
+        SeedModule();
+        SeedCourse();
+        var priorActivityId = Guid.Parse("f1f1f1f1-f1f1-f1f1-f1f1-f1f1f1f1f1f1");
+        SeedActivity(activityId: priorActivityId, type: ActivityType.Offline, order: 1);
+        SeedActivity(type: ActivityType.Offline, order: 2);
+        SeedClassForMentor();
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = _sessionId,
+            ClassId = _classId,
+            ModuleId = _moduleId,
+            ActivityId = _activityId,
+            Title = "Lab Session 2",
+            SessionKind = SessionKind.Lesson,
+            StartTime = DateTime.UtcNow.AddHours(-1),
+            EndTime = DateTime.UtcNow.AddHours(2),
+            RequiresAttendance = true,
+            Status = ClassSessionStatus.InProgress,
+            IsDeleted = false
+        });
+        SeedRosterStudent(_studentId, _programEnrollmentId, _enrollmentId, AttendanceStatus.Present);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+        {
+            ClassSessionId = _sessionId,
+            ActivityId = _activityId,
+        });
+
+        var skipped = Assert.Single(result.Results);
+        Assert.Equal(MentorCompleteOutcome.Skipped, skipped.Outcome);
+        Assert.Equal(CurriculumAccessValidator.ActivityLockedMessage, skipped.Reason);
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_ThrowsForbidden_WhenMentorDoesNotOwnClass()
+    {
+        SeedMentor();
+        SeedSessionActivityGraph(ActivityType.Offline);
+        _db.Classes.Items.Single().MentorId = Guid.NewGuid();
+        SeedRosterStudent(_studentId, _programEnrollmentId, _enrollmentId, AttendanceStatus.Present);
+        var sut = CreateSut(_mentorId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+            {
+                ClassSessionId = _sessionId,
+                ActivityId = _activityId,
+            }));
     }
 }

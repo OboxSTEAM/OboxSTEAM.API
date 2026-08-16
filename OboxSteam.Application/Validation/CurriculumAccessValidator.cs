@@ -14,6 +14,8 @@ public static class CurriculumAccessValidator
     public const string ActivityLockedMessage = "This activity is locked until prerequisites are met.";
     public const string EnrollmentNotActiveMessage = "Program enrollment must be active to access curriculum.";
     public const string SelfPacedOnlyMessage = "Only SelfPaced activities can be marked complete via this endpoint.";
+    public const string MentorSessionOnlyMessage =
+        "Only LiveOnline or Offline session activities can be mentor-completed.";
 
     public static void ValidateProgramEnrollmentForCurriculum(ProgramEnrollment enrollment)
     {
@@ -72,6 +74,14 @@ public static class CurriculumAccessValidator
         if (activity.ActivityType != ActivityType.SelfPaced)
         {
             throw ErrorHelper.BadRequest(SelfPacedOnlyMessage);
+        }
+    }
+
+    public static void ValidateActivityTypeForMentorComplete(Activity activity)
+    {
+        if (activity.ActivityType is not (ActivityType.LiveOnline or ActivityType.Offline))
+        {
+            throw ErrorHelper.BadRequest(MentorSessionOnlyMessage);
         }
     }
 }

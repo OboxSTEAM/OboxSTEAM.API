@@ -210,6 +210,11 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
                 classId,
                 currentUser.Id));
 
+        if (request.Status == AttendanceStatus.Absent)
+        {
+            await TryFailModuleForExcessAbsencesAsync(moduleEnrollment);
+        }
+
         _logger.LogInformation(
             "[UpdateSessionAttendanceAsync] Attendance updated — sessionId: {SessionId}, studentId: {StudentId}, status: {Status}, by: {UserId}.",
             sessionId,
@@ -229,5 +234,45 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             CreatedAt = attendance.CreatedAt,
             UpdatedAt = attendance.UpdatedAt,
         };
+    }
+
+    private async Task TryFailModuleForExcessAbsencesAsync(ModuleEnrollment moduleEnrollment)
+    {
+        if (moduleEnrollment.Status != EnrollmentStatus.Active)
+        {
+            return;
+        }
+
+        var missed = await ModuleAbsencePolicy.CountMissedAsync(_unitOfWork, moduleEnrollment.Id);
+        var total = await ModuleAbsencePolicy.CountSessionActivitiesAsync(
+            _unitOfWork,
+            moduleEnrollment.ModuleId);
+
+        if (!ModuleAbsencePolicy.ShouldFail(missed, total))
+        {
+            return;
+        }
+
+        moduleEnrollment.Status = EnrollmentStatus.Failed;
+        await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+        await _unitOfWork.SaveChangesAsync();
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(moduleEnrollment.ModuleId);
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ModuleFailed(
+                moduleEnrollment.StudentId,
+                moduleEnrollment.ModuleId,
+                moduleEnrollment.Id,
+                module?.ProgramId,
+                module?.Name));
+
+        _logger.LogWarning(
+            "[TryFailModuleForExcessAbsencesAsync] Module enrollment {EnrollmentId} failed — student {StudentId} missed {Missed}/{Total} session activities (>= {Threshold}%).",
+            moduleEnrollment.Id,
+            moduleEnrollment.StudentId,
+            missed,
+            total,
+            ModuleAbsencePolicy.MaxAbsencePercent);
     }
 }

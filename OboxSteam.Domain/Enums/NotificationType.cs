@@ -20,6 +20,7 @@ public enum NotificationType
     ProgramPendingPayment,
     ProgramActivated,
     ModuleCompleted,
+    ModuleFailed,
     ModuleUnlocked,
     ModuleRetakePendingPayment,
     ModuleRetakeInitiated,

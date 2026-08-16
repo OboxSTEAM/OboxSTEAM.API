@@ -664,4 +664,156 @@ public sealed class SessionAttendanceServiceTests
                 _studentId,
                 new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Present }));
     }
+
+    // ── Absence fail rule ─────────────────────────────────────────────────────
+
+    private void SeedModuleEntity()
+    {
+        _db.Modules.Seed(new Module
+        {
+            Id = _moduleId,
+            Code = "MOD-001",
+            Name = "Module 1",
+            ProgramId = _programId,
+            ModuleType = ModuleType.Experiential,
+            IsDeleted = false,
+        });
+    }
+
+    private void SeedActivityLinkedSessions(int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var activityId = Guid.Parse($"aaaaaaaa-aaaa-aaaa-aaaa-{i + 1:D12}");
+            _db.ClassSessions.Seed(new ClassSession
+            {
+                Id = i == 0 ? _sessionId : Guid.Parse($"bbbbbbbb-bbbb-bbbb-bbbb-{i + 1:D12}"),
+                ClassId = _classId,
+                ModuleId = _moduleId,
+                ActivityId = activityId,
+                Title = $"Session {i + 1}",
+                SessionKind = SessionKind.Lesson,
+                StartTime = _now.AddDays(i).AddHours(-1),
+                EndTime = _now.AddDays(i).AddHours(2),
+                RequiresAttendance = true,
+                Status = ClassSessionStatus.InProgress,
+                IsDeleted = false,
+            });
+        }
+    }
+
+    [Fact]
+    public async Task Update_Absent_BelowThreshold_KeepsModuleActive()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedModuleEntity();
+        SeedClass();
+        SeedActivityLinkedSessions(count: 6);
+        SeedStudentRoster();
+        var sut = CreateSut(_managerId);
+
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent });
+
+        var enrollment = _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId);
+        Assert.Equal(EnrollmentStatus.Active, enrollment.Status);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Update_Absent_AtThreshold_FailsModule_AndNotifies()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedModuleEntity();
+        SeedClass();
+        SeedActivityLinkedSessions(count: 5);
+        SeedStudentRoster();
+        var sut = CreateSut(_managerId);
+
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent });
+
+        var enrollment = _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId);
+        Assert.Equal(EnrollmentStatus.Failed, enrollment.Status);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_Present_NeverTriggersModuleFail()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedModuleEntity();
+        SeedClass();
+        SeedActivityLinkedSessions(count: 5);
+        SeedStudentRoster();
+        var sut = CreateSut(_managerId);
+
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Present });
+
+        Assert.Equal(
+            EnrollmentStatus.Active,
+            _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId).Status);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Update_Absent_AfterModuleFailed_RejectsFurtherAttendance()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedModuleEntity();
+        SeedClass();
+        SeedActivityLinkedSessions(count: 5);
+        SeedStudentRoster();
+        var sut = CreateSut(_managerId);
+
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent });
+
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId).Status);
+
+        var otherSessionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-000000000002");
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateSessionAttendanceAsync(
+                _classId,
+                otherSessionId,
+                _studentId,
+                new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent }));
+
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 }
