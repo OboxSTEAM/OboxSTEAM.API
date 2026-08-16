@@ -70,6 +70,8 @@ public partial class SeedService : ISeedService
         // After robotics FE reset so STD-001 research enrollment / submissions are not wiped.
         await SeedPortfolioDataAsync();
         await SeedDashboardSupportDataAsync();
+        // Dashboard seed used to attach SUB-DASHR* rows to any assignment; keep demos clean.
+        await ClearDemoProgramSubmissionsAsync();
         // After class enrollments so STD-002 can be moved onto CLS-ROBOTICS-2026A for mentor UI.
         await SeedGradedCapstoneSubmissionForUiAsync();
         await SeedCompletedProgramCertificatesAsync();

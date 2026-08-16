@@ -42,26 +42,37 @@ public partial class SeedService
         _loggerService.LogInformation("Finished seed demo showcase programs");
     }
 
-    /// <summary>
-    /// Removes any submissions on demo showcase assignments so the track stays clean for live demos.
-    /// Demo seed never creates submissions; this clears leftovers from prior manual testing.
-    /// </summary>
-    private async Task ClearDemoProgramSubmissionsAsync()
-    {
-        var demoProgramCodes = GetDemoProgramDefinitions()
+    private static HashSet<string> GetDemoProgramCodeSet()
+        => GetDemoProgramDefinitions()
             .Select(d => d.ProgramCode)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Program ids for demo showcase tracks. Used to keep dashboard/global seeds off live-demo data.
+    /// </summary>
+    private async Task<HashSet<Guid>> GetDemoProgramIdsAsync()
+    {
+        var demoProgramCodes = GetDemoProgramCodeSet();
         var demoPrograms = await _unitOfWork.Programs.GetAllAsync(
             p => demoProgramCodes.Contains(p.Code) && !p.IsDeleted);
-        if (demoPrograms.Count == 0)
+        return demoPrograms.Select(p => p.Id).ToHashSet();
+    }
+
+    /// <summary>
+    /// Removes any submissions on demo showcase assignments so the track stays clean for live demos.
+    /// Demo seed never creates submissions; this clears leftovers from prior manual testing
+    /// and from global seeds that previously targeted every assignment.
+    /// </summary>
+    private async Task ClearDemoProgramSubmissionsAsync()
+    {
+        var demoProgramIds = await GetDemoProgramIdsAsync();
+        if (demoProgramIds.Count == 0)
         {
             return;
         }
 
-        var programIds = demoPrograms.Select(p => p.Id).ToHashSet();
         var modules = await _unitOfWork.Modules.GetAllAsync(
-            m => programIds.Contains(m.ProgramId) && !m.IsDeleted);
+            m => demoProgramIds.Contains(m.ProgramId) && !m.IsDeleted);
         if (modules.Count == 0)
         {
             return;

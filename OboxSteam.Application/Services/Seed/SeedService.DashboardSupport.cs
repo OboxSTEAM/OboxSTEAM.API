@@ -112,6 +112,7 @@ public partial class SeedService
         _loggerService.LogInformation("Starting seed dashboard enrollment diversity (rich)");
 
         var programs = (await _unitOfWork.Programs.GetAllAsync(p => !p.IsDeleted))
+            .Where(p => !GetDemoProgramCodeSet().Contains(p.Code))
             .OrderBy(p => p.Code)
             .ToList();
         var students = (await _unitOfWork.Users.GetAllAsync(
@@ -283,7 +284,9 @@ public partial class SeedService
     {
         _loggerService.LogInformation("Starting seed dashboard module enrollment statuses");
 
-        var modules = (await _unitOfWork.Modules.GetAllAsync(m => !m.IsDeleted))
+        var demoProgramIds = await GetDemoProgramIdsAsync();
+        var modules = (await _unitOfWork.Modules.GetAllAsync(
+                m => !m.IsDeleted && !demoProgramIds.Contains(m.ProgramId)))
             .OrderBy(m => m.Code)
             .Take(8)
             .ToList();
@@ -635,11 +638,22 @@ public partial class SeedService
 
         // Keep dashboard volume off research milestone deliverables so SUB-RML* UI seeds
         // are not blocked / mixed with SUB-DASHR* rows that have no FileUrl / milestone.
+        // Also keep demo showcase assignments submission-free for live mentor grading demos.
         var researchAssignmentIds = (await _unitOfWork.ResearchMilestones.GetAllAsync(rm => !rm.IsDeleted))
             .Select(rm => rm.AssignmentId)
             .ToHashSet();
+        var demoProgramIds = await GetDemoProgramIdsAsync();
+        var demoModuleIds = demoProgramIds.Count == 0
+            ? new HashSet<Guid>()
+            : (await _unitOfWork.Modules.GetAllAsync(
+                    m => demoProgramIds.Contains(m.ProgramId) && !m.IsDeleted))
+                .Select(m => m.Id)
+                .ToHashSet();
         var assignments = (await _unitOfWork.Assignments.GetAllAsync(
-                a => !a.IsDeleted && !researchAssignmentIds.Contains(a.Id)))
+                a => !a.IsDeleted
+                     && !researchAssignmentIds.Contains(a.Id)
+                     && !demoModuleIds.Contains(a.ModuleId)))
+            .OrderBy(a => a.Code)
             .Take(8)
             .ToList();
 
