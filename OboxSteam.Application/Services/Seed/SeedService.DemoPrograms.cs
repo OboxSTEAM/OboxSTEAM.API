@@ -30,11 +30,10 @@ public partial class SeedService
         }
 
         var seedTime = DateTime.UtcNow;
-        var baseDate = seedTime.Date;
 
         foreach (var definition in GetDemoProgramDefinitions())
         {
-            await SeedOneDemoProgramAsync(definition, mentor.Id, seedTime, baseDate);
+            await SeedOneDemoProgramAsync(definition, mentor.Id, seedTime);
         }
 
         _loggerService.LogInformation("Finished seed demo showcase programs");
@@ -224,8 +223,7 @@ public partial class SeedService
     private async Task SeedOneDemoProgramAsync(
         DemoProgramDefinition definition,
         Guid mentorId,
-        DateTime seedTime,
-        DateTime baseDate)
+        DateTime seedTime)
     {
         var slug = definition.ProgramCode.Replace("PRG-DEMO-", string.Empty, StringComparison.OrdinalIgnoreCase);
 
@@ -291,7 +289,8 @@ public partial class SeedService
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
-        await EnsureDemoActivityAsync(
+        // Scheduled activities use open windows (started already) so the live demo is not blocked.
+        var theoryLive = await EnsureDemoActivityAsync(
             theoryCourse.Id,
             $"ACT-DEMO-{slug}-01-02",
             $"{definition.TheoryCourseName} Live Session",
@@ -299,8 +298,8 @@ public partial class SeedService
             2,
             "Live online walkthrough of key ideas.",
             $"https://meet.google.com/demo-{slug.ToLowerInvariant()}-theory",
-            baseDate.AddDays(3).AddHours(9),
-            baseDate.AddDays(3).AddHours(10),
+            seedTime.AddHours(-2),
+            seedTime.AddDays(30),
             20,
             requireQrCheckin: false,
             requireMediaEvidence: false,
@@ -320,7 +319,7 @@ public partial class SeedService
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
-        await EnsureDemoActivityAsync(
+        var experientialLive = await EnsureDemoActivityAsync(
             experientialCourse.Id,
             $"ACT-DEMO-{slug}-02-02",
             $"{definition.ExperientialCourseName} Live Coaching",
@@ -328,13 +327,13 @@ public partial class SeedService
             2,
             "Live coaching session for the hands-on build.",
             $"https://meet.google.com/demo-{slug.ToLowerInvariant()}-lab",
-            baseDate.AddDays(7).AddHours(14),
-            baseDate.AddDays(7).AddHours(15),
+            seedTime.AddHours(-2),
+            seedTime.AddDays(30),
             20,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
-        await EnsureDemoActivityAsync(
+        var experientialOffline = await EnsureDemoActivityAsync(
             experientialCourse.Id,
             $"ACT-DEMO-{slug}-02-03",
             $"{definition.ExperientialCourseName} Offline Lab",
@@ -342,8 +341,8 @@ public partial class SeedService
             3,
             "On-site lab to practice skills and gather evidence.",
             "Demo STEAM Lab",
-            baseDate.AddDays(10).AddHours(9),
-            baseDate.AddDays(10).AddHours(11),
+            seedTime.AddHours(-2),
+            seedTime.AddDays(30),
             16,
             requireQrCheckin: true,
             requireMediaEvidence: true,
@@ -371,8 +370,8 @@ public partial class SeedService
             2,
             "Live check-in before the first milestone upload.",
             $"https://meet.google.com/demo-{slug.ToLowerInvariant()}-research",
-            baseDate.AddDays(14).AddHours(16),
-            baseDate.AddDays(14).AddHours(17),
+            seedTime.AddHours(-2),
+            seedTime.AddDays(30),
             20,
             requireQrCheckin: false,
             requireMediaEvidence: false,
@@ -385,8 +384,8 @@ public partial class SeedService
             3,
             "On-site showcase lab for the final milestone.",
             "Demo Showcase Room",
-            baseDate.AddDays(18).AddHours(9),
-            baseDate.AddDays(18).AddHours(11),
+            seedTime.AddHours(-2),
+            seedTime.AddDays(30),
             16,
             requireQrCheckin: true,
             requireMediaEvidence: true,
@@ -453,6 +452,18 @@ public partial class SeedService
             definition.ClassCode,
             definition.ClassName,
             definition.ScheduleSummary,
+            seedTime);
+
+        await EnsureDemoClassSessionsAsync(
+            classEntity,
+            theoryModule.Id,
+            experientialModule.Id,
+            researchModule.Id,
+            theoryLive,
+            experientialLive,
+            experientialOffline,
+            researchLive,
+            researchOffline,
             seedTime);
 
         await EnsureDemoStudentEnrollmentsAsync(
@@ -589,6 +600,29 @@ public partial class SeedService
         var existing = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == code && !a.IsDeleted);
         if (existing != null)
         {
+            var needsUpdate =
+                existing.Location != location
+                || existing.StartTime != startTime
+                || existing.EndTime != endTime
+                || existing.MaxCapacity != maxCapacity
+                || existing.RequireQrCheckin != requireQrCheckin
+                || existing.RequireMediaEvidence != requireMediaEvidence;
+
+            if (!needsUpdate)
+            {
+                return existing;
+            }
+
+            existing.Location = location;
+            existing.StartTime = startTime;
+            existing.EndTime = endTime;
+            existing.MaxCapacity = maxCapacity;
+            existing.RequireQrCheckin = requireQrCheckin;
+            existing.RequireMediaEvidence = requireMediaEvidence;
+            existing.UpdatedAt = seedTime;
+            existing.UpdatedBy = Guid.Empty;
+            await _unitOfWork.Activities.Update(existing);
+            await _unitOfWork.SaveChangesAsync();
             return existing;
         }
 
@@ -965,14 +999,29 @@ public partial class SeedService
         var existing = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == classCode && !c.IsDeleted);
         if (existing != null)
         {
-            if (existing.MentorId != mentorId)
+            var targetStart = seedTime.AddDays(-7);
+            var targetEnd = seedTime.AddDays(60);
+            var needsUpdate =
+                existing.MentorId != mentorId
+                || existing.Status != ClassStatus.InProgress
+                || existing.StartDate != targetStart
+                || existing.EndDate != targetEnd
+                || existing.ScheduleSummary != scheduleSummary;
+
+            if (!needsUpdate)
             {
-                existing.MentorId = mentorId;
-                existing.Status = ClassStatus.InProgress;
-                await _unitOfWork.Classes.Update(existing);
-                await _unitOfWork.SaveChangesAsync();
+                return existing;
             }
 
+            existing.MentorId = mentorId;
+            existing.Status = ClassStatus.InProgress;
+            existing.StartDate = targetStart;
+            existing.EndDate = targetEnd;
+            existing.ScheduleSummary = scheduleSummary;
+            existing.UpdatedAt = seedTime;
+            existing.UpdatedBy = Guid.Empty;
+            await _unitOfWork.Classes.Update(existing);
+            await _unitOfWork.SaveChangesAsync();
             return existing;
         }
 
@@ -997,6 +1046,87 @@ public partial class SeedService
         await _unitOfWork.Classes.AddAsync(classEntity);
         await _unitOfWork.SaveChangesAsync();
         return classEntity;
+    }
+
+    private async Task EnsureDemoClassSessionsAsync(
+        Class classEntity,
+        Guid theoryModuleId,
+        Guid experientialModuleId,
+        Guid researchModuleId,
+        Activity theoryLive,
+        Activity experientialLive,
+        Activity experientialOffline,
+        Activity researchLive,
+        Activity researchOffline,
+        DateTime seedTime)
+    {
+        var sessionDefs = new (Guid ModuleId, Activity Activity, SessionKind Kind, string Title)[]
+        {
+            (theoryModuleId, theoryLive, SessionKind.Lesson, theoryLive.Name),
+            (experientialModuleId, experientialLive, SessionKind.Lesson, experientialLive.Name),
+            (experientialModuleId, experientialOffline, SessionKind.FieldTrip, experientialOffline.Name),
+            (researchModuleId, researchLive, SessionKind.Lesson, researchLive.Name),
+            (researchModuleId, researchOffline, SessionKind.FieldTrip, researchOffline.Name),
+        };
+
+        var sessionsToAdd = new List<ClassSession>();
+
+        foreach (var definition in sessionDefs)
+        {
+            var existing = await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
+                cs => cs.ClassId == classEntity.Id
+                      && cs.ActivityId == definition.Activity.Id
+                      && !cs.IsDeleted);
+
+            var startTime = definition.Activity.StartTime ?? seedTime.AddHours(-2);
+            var endTime = definition.Activity.EndTime ?? seedTime.AddDays(30);
+
+            if (existing != null)
+            {
+                if (existing.Status == ClassSessionStatus.InProgress
+                    && existing.StartTime == startTime
+                    && existing.EndTime == endTime)
+                {
+                    continue;
+                }
+
+                existing.Status = ClassSessionStatus.InProgress;
+                existing.StartTime = startTime;
+                existing.EndTime = endTime;
+                existing.Location = definition.Activity.Location;
+                existing.UpdatedAt = seedTime;
+                existing.UpdatedBy = Guid.Empty;
+                await _unitOfWork.ClassSessions.Update(existing);
+                continue;
+            }
+
+            sessionsToAdd.Add(new ClassSession
+            {
+                Id = Guid.NewGuid(),
+                ClassId = classEntity.Id,
+                ModuleId = definition.ModuleId,
+                ActivityId = definition.Activity.Id,
+                SessionKind = definition.Kind,
+                Title = definition.Title,
+                Description = definition.Activity.Description,
+                StartTime = startTime,
+                EndTime = endTime,
+                Location = definition.Activity.Location,
+                RequiresAttendance = true,
+                RequiresMentorCheckIn = definition.Activity.ActivityType == ActivityType.Offline,
+                Status = ClassSessionStatus.InProgress,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+        }
+
+        if (sessionsToAdd.Count > 0)
+        {
+            await _unitOfWork.ClassSessions.AddRangeAsync(sessionsToAdd);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
     }
 
     private async Task EnsureDemoStudentEnrollmentsAsync(
