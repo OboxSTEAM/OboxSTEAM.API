@@ -36,7 +36,60 @@ public partial class SeedService
             await SeedOneDemoProgramAsync(definition, mentor.Id, seedTime);
         }
 
+        // Demo programs stay submission-free (quiz / retrospective / research file uploads).
+        await ClearDemoProgramSubmissionsAsync();
+
         _loggerService.LogInformation("Finished seed demo showcase programs");
+    }
+
+    /// <summary>
+    /// Removes any submissions on demo showcase assignments so the track stays clean for live demos.
+    /// Demo seed never creates submissions; this clears leftovers from prior manual testing.
+    /// </summary>
+    private async Task ClearDemoProgramSubmissionsAsync()
+    {
+        var demoProgramCodes = GetDemoProgramDefinitions()
+            .Select(d => d.ProgramCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var demoPrograms = await _unitOfWork.Programs.GetAllAsync(
+            p => demoProgramCodes.Contains(p.Code) && !p.IsDeleted);
+        if (demoPrograms.Count == 0)
+        {
+            return;
+        }
+
+        var programIds = demoPrograms.Select(p => p.Id).ToHashSet();
+        var modules = await _unitOfWork.Modules.GetAllAsync(
+            m => programIds.Contains(m.ProgramId) && !m.IsDeleted);
+        if (modules.Count == 0)
+        {
+            return;
+        }
+
+        var moduleIds = modules.Select(m => m.Id).ToHashSet();
+        var assignments = await _unitOfWork.Assignments.GetAllAsync(
+            a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted);
+        if (assignments.Count == 0)
+        {
+            return;
+        }
+
+        var assignmentIds = assignments.Select(a => a.Id).ToHashSet();
+        var submissions = await _unitOfWork.Submissions.GetAllAsync(
+            s => assignmentIds.Contains(s.AssignmentId) && !s.IsDeleted);
+
+        if (submissions.Count == 0)
+        {
+            _loggerService.LogInformation("Demo showcase programs have no submissions to clear.");
+            return;
+        }
+
+        await _unitOfWork.Submissions.SoftRemoveRange(submissions);
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Cleared {Count} submission(s) from demo showcase program assignments.",
+            submissions.Count);
     }
 
     private sealed record DemoProgramDefinition(
