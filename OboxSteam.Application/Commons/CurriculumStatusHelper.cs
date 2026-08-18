@@ -19,22 +19,10 @@ public static class CurriculumStatusHelper
 
     public static bool IsActivityCompleted(
         Guid activityId,
-        Activity activity,
-        IReadOnlyDictionary<Guid, ActivityProgress> progressByActivityId,
-        IReadOnlySet<Guid> checkedInActivityIds)
+        IReadOnlyDictionary<Guid, ActivityProgress> progressByActivityId)
     {
-        if (checkedInActivityIds.Contains(activityId))
-        {
-            return true;
-        }
-
-        if (progressByActivityId.TryGetValue(activityId, out var progress)
-            && progress.ActivityStatus == ActivityStatus.Done)
-        {
-            return true;
-        }
-
-        return false;
+        return progressByActivityId.TryGetValue(activityId, out var progress)
+               && progress.ActivityStatus == ActivityStatus.Done;
     }
 
     public static bool IsModuleUnlocked(

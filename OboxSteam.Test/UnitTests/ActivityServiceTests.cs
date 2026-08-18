@@ -389,7 +389,6 @@ public sealed class ActivityServiceTests
         activity.Location = "Zoom";
         activity.StartTime = start;
         activity.EndTime = end;
-        activity.MaxCapacity = 30;
         activity.RequireQrCheckin = false;
         var sut = CreateSut();
 
@@ -402,7 +401,6 @@ public sealed class ActivityServiceTests
         Assert.Null(result.Location);
         Assert.Null(result.StartTime);
         Assert.Null(result.EndTime);
-        Assert.Null(result.MaxCapacity);
         Assert.False(result.RequireQrCheckin);
     }
 
@@ -420,14 +418,12 @@ public sealed class ActivityServiceTests
             StartTime = start,
             EndTime = end,
             Location = "Room B",
-            MaxCapacity = 50,
             RequireQrCheckin = false,
         });
 
         Assert.NotNull(result);
         Assert.True(result!.RequireMediaEvidence);
         Assert.Equal("Room B", result.Location);
-        Assert.Equal(50, result.MaxCapacity);
     }
 
     [Fact]

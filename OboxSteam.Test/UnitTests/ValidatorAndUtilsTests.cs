@@ -392,8 +392,6 @@ public sealed class ValidatorAndUtilsTests
             ClassSessionValidator.ValidateClassSessionExists(null, Guid.NewGuid()));
         Assert.Throws<BadRequestException>(() =>
             ClassSessionValidator.ValidateActivityOrAssignmentRequired(null, null));
-        Assert.Throws<BadRequestException>(() =>
-            ClassSessionValidator.ValidateMaxCapacity(0));
     }
 
     // ── Utils ─────────────────────────────────────────────────────────────────

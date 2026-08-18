@@ -120,7 +120,6 @@ public sealed class ActivityProgressServiceTests
             CourseId = courseId ?? _courseId,
             ActivityType = type,
             ActivityOrder = order,
-            SchedulingMode = SchedulingMode.SelfPaced,
             IsDeleted = isDeleted
         };
         _db.Activities.Seed(activity);

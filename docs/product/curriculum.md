@@ -28,7 +28,6 @@ A stage within a program. Types: `Theory`, `Experiential`, `Research`.
 - Ordered via `ModuleOrder`.
 - Optional `PrerequisiteModuleId` gates access.
 - `IsMandatory`, `Price`, `RetakeFee` support modular purchasing.
-- `DefaultSchedulingMode` hints activity scheduling defaults.
 
 API: `/api/modules`.
 
@@ -49,11 +48,8 @@ Individual learning tasks within a course.
 | LiveOnline | Scheduled online session |
 | Offline | Physical session; may require QR check-in |
 
-`SchedulingMode` on the activity and `ClassSession` on cohorts define when
-students attend. Template times on `Activity` are defaults; cohort-specific
-times live on `ClassSession`.
-
-Flags: `RequireQrCheckin`, `RequireMediaEvidence`.
+Flags: `RequireQrCheckin`, `RequireMediaEvidence`. Template times on `Activity`
+are defaults; cohort-specific times live on `ClassSession`.
 
 API: `/api/activities`.
 

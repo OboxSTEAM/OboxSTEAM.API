@@ -46,7 +46,6 @@ public static class ClassSessionValidator
 
         ValidateActivityOrAssignmentRequired(request.ActivityId, request.AssignmentId);
         ScheduleTimeValidator.ValidateFutureRange(request.StartTime, request.EndTime);
-        ValidateMaxCapacity(request.MaxCapacity);
     }
 
     public static void ValidateActivityOrAssignmentRequired(Guid? activityId, Guid? assignmentId)
@@ -54,14 +53,6 @@ public static class ClassSessionValidator
         if (!activityId.HasValue && !assignmentId.HasValue)
         {
             throw ErrorHelper.BadRequest("At least one of ActivityId or AssignmentId must be provided.");
-        }
-    }
-
-    public static void ValidateMaxCapacity(int? maxCapacity)
-    {
-        if (maxCapacity.HasValue && maxCapacity.Value < 1)
-        {
-            throw ErrorHelper.BadRequest("MaxCapacity must be at least 1 when provided.");
         }
     }
 

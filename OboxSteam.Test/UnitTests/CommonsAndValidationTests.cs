@@ -251,18 +251,16 @@ public sealed class CommonsAndValidationTests
     // ── CurriculumStatusHelper ────────────────────────────────────────────────
 
     [Fact]
-    public void CurriculumStatusHelper_IsActivityCompleted_UsesProgressOrCheckIn()
+    public void CurriculumStatusHelper_IsActivityCompleted_UsesProgressDone()
     {
         var activityId = Guid.NewGuid();
-        var activity = new Activity { Id = activityId };
         var progress = new Dictionary<Guid, ActivityProgress>
         {
             [activityId] = new() { ActivityStatus = ActivityStatus.Done },
         };
 
-        Assert.True(CurriculumStatusHelper.IsActivityCompleted(activityId, activity, progress, new HashSet<Guid>()));
-        Assert.True(CurriculumStatusHelper.IsActivityCompleted(activityId, activity, new Dictionary<Guid, ActivityProgress>(), new HashSet<Guid> { activityId }));
-        Assert.False(CurriculumStatusHelper.IsActivityCompleted(activityId, activity, new Dictionary<Guid, ActivityProgress>(), new HashSet<Guid>()));
+        Assert.True(CurriculumStatusHelper.IsActivityCompleted(activityId, progress));
+        Assert.False(CurriculumStatusHelper.IsActivityCompleted(activityId, new Dictionary<Guid, ActivityProgress>()));
     }
 
     [Fact]

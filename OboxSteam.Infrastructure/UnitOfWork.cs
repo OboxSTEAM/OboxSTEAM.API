@@ -47,7 +47,6 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<QuizQuestion> QuizQuestions => Repository<QuizQuestion>();
     public IGenericRepository<QuizOption> QuizOptions => Repository<QuizOption>();
     public IGenericRepository<Activity> Activities => Repository<Activity>();
-    public IGenericRepository<ActivityBooking> ActivityBookings => Repository<ActivityBooking>();
     public IGenericRepository<ActivityProgress> ActivityProgresses => Repository<ActivityProgress>();
     public IGenericRepository<Class> Classes => Repository<Class>();
     public IGenericRepository<ClassEnrollment> ClassEnrollments => Repository<ClassEnrollment>();

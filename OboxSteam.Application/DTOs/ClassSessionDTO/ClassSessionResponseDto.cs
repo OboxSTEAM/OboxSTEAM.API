@@ -15,7 +15,6 @@ public class ClassSessionResponseDto
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
     public string? Location { get; set; }
-    public int? MaxCapacity { get; set; }
     public bool RequiresAttendance { get; set; }
     public bool RequiresMentorCheckIn { get; set; }
     public ClassSessionStatus Status { get; set; }

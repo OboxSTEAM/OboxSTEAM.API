@@ -36,8 +36,6 @@ public class CreateClassSessionRequestDto
     [MaxLength(500)]
     public string? Location { get; set; }
 
-    public int? MaxCapacity { get; set; }
-
     public bool RequiresAttendance { get; set; } = true;
 
     public bool RequiresMentorCheckIn { get; set; }
