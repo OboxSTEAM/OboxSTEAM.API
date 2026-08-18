@@ -42,12 +42,35 @@ public class FaceRecognitionService : IFaceRecognitionService
     {
         _logger.LogInformation("IndexFaceAsync started for UserId: {UserId}", userId);
 
+        var imageBytes = await ReadStreamAsync(imageStream);
+        var detectResponse = await _rekognition.DetectFacesAsync(new DetectFacesRequest
+        {
+            Image = new Image { Bytes = new MemoryStream(imageBytes) }
+        });
+
+        var detectedFaceCount = detectResponse.FaceDetails?.Count ?? 0;
+        if (detectedFaceCount == 0)
+        {
+            _logger.LogWarning("No face detected in image for UserId: {UserId}", userId);
+            throw ErrorHelper.BadRequest("No face detected in image. Please upload a clear photo of your face.");
+        }
+
+        if (detectedFaceCount > 1)
+        {
+            _logger.LogWarning(
+                "Multiple faces detected in image for UserId: {UserId}. FaceCount: {FaceCount}",
+                userId,
+                detectedFaceCount);
+            throw ErrorHelper.BadRequest(
+                "Multiple faces detected in image. Please upload a photo containing only one face.");
+        }
+
         await EnsureCollectionExistsAsync();
 
         var response = await _rekognition.IndexFacesAsync(new IndexFacesRequest
         {
             CollectionId = CollectionId,
-            Image = new Image { Bytes = new MemoryStream(await ReadStreamAsync(imageStream)) },
+            Image = new Image { Bytes = new MemoryStream(imageBytes) },
             MaxFaces = 1,
             QualityFilter = QualityFilter.NONE,
             ExternalImageId = userId.ToString()
