@@ -60,7 +60,7 @@ public partial class SeedService
             d => d,
             StringComparer.OrdinalIgnoreCase);
 
-        var existingMaterials = await _unitOfWork.Materials.GetAllAsync(m => !m.IsDeleted);
+        var existingMaterials = await _unitOfWork.Materials.GetAllAsync();
         var activityIdsWithMaterial = existingMaterials
             .Select(m => m.ActivityId)
             .ToHashSet();

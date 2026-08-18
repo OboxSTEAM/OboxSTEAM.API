@@ -124,7 +124,7 @@ public class ActivityService : IActivityService
 
         MaterialResponseDto? materialDto = null;
         var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
-            m => m.ActivityId == activityId && !m.IsDeleted);
+            m => m.ActivityId == activityId);
 
         if (material != null)
         {

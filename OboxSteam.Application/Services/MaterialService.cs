@@ -90,7 +90,7 @@ public class MaterialService : IMaterialService
         MaterialValidator.ValidateSelfPacedOnly(activity!);
 
         var existing = await _unitOfWork.Materials.FirstOrDefaultAsync(
-            m => m.ActivityId == request.ActivityId && !m.IsDeleted);
+            m => m.ActivityId == request.ActivityId);
 
         if (existing != null)
         {
@@ -188,9 +188,7 @@ public class MaterialService : IMaterialService
         Guid? courseId,
         Guid? activityId)
     {
-        var query = _unitOfWork.Materials
-            .GetQueryable()
-            .Where(m => !m.IsDeleted);
+        var query = _unitOfWork.Materials.GetQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -250,7 +248,7 @@ public class MaterialService : IMaterialService
         MaterialValidator.ValidateSelfPacedOnly(activity!);
 
         var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
-            m => m.ActivityId == activityId && !m.IsDeleted);
+            m => m.ActivityId == activityId);
 
         return material == null ? null : MapToDto(material);
     }
@@ -272,7 +270,7 @@ public class MaterialService : IMaterialService
         MaterialValidator.ValidateSelfPacedOnly(activity!);
 
         var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
-            m => m.ActivityId == activityId && !m.IsDeleted);
+            m => m.ActivityId == activityId);
 
         if (material == null)
         {
@@ -294,7 +292,7 @@ public class MaterialService : IMaterialService
         _logger.LogInformation("UpdateMaterialAsync: MaterialId={MaterialId}", materialId);
 
         var material = await _unitOfWork.Materials.GetByIdAsync(materialId);
-        if (material == null || material.IsDeleted)
+        if (material == null)
         {
             throw ErrorHelper.NotFound("Material not found.");
         }
@@ -329,36 +327,17 @@ public class MaterialService : IMaterialService
         _logger.LogInformation("DeleteMaterialAsync: MaterialId={MaterialId}", materialId);
 
         var material = await _unitOfWork.Materials.GetByIdAsync(materialId);
-        if (material == null || material.IsDeleted)
+        if (material == null)
         {
             throw ErrorHelper.NotFound("Material not found.");
         }
 
-        if (!string.IsNullOrWhiteSpace(material.FileUrl))
-        {
-            try
-            {
-                var s3Key = ExtractS3Key(material.FileUrl, _blobService.BucketName);
-                if (string.IsNullOrWhiteSpace(s3Key))
-                {
-                    s3Key = material.FileUrl;
-                }
+        await DeleteMaterialFileFromS3Async(material);
 
-                await _blobService.DeleteByKeyAsync(s3Key);
-                _logger.LogInformation("Deleted S3 object: {S3Key}", s3Key);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Failed to delete S3 file for MaterialId={MaterialId}. Manual cleanup may be needed.",
-                    materialId);
-            }
-        }
-
-        await _unitOfWork.Materials.SoftRemove(material);
+        await _unitOfWork.Materials.HardRemoveRange([material]);
         await _unitOfWork.SaveChangesAsync();
 
-        _logger.LogInformation("Material deleted (soft): {MaterialId}", materialId);
+        _logger.LogInformation("Material deleted: {MaterialId}", materialId);
     }
 
     // =========================================================================
@@ -402,6 +381,23 @@ public class MaterialService : IMaterialService
             .ToList();
 
         await _notificationPublisher.PublishManyAsync(commands);
+    }
+
+    private async Task DeleteMaterialFileFromS3Async(Material material)
+    {
+        if (string.IsNullOrWhiteSpace(material.FileUrl))
+        {
+            return;
+        }
+
+        var s3Key = ExtractS3Key(material.FileUrl, _blobService.BucketName);
+        if (string.IsNullOrWhiteSpace(s3Key))
+        {
+            s3Key = material.FileUrl;
+        }
+
+        await _blobService.DeleteByKeyAsync(s3Key);
+        _logger.LogInformation("Deleted S3 object: {S3Key}", s3Key);
     }
 
     internal static MaterialResponseDto MapToDto(Material m) => new()

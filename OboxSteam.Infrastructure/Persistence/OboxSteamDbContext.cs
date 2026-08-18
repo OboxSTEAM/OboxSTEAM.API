@@ -127,7 +127,6 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Module>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Course>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Activity>().HasQueryFilter(e => !e.IsDeleted);
-        modelBuilder.Entity<Material>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramEnrollment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ModuleEnrollment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CourseEnrollment>().HasQueryFilter(e => !e.IsDeleted);

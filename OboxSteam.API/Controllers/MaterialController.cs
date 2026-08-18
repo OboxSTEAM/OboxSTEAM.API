@@ -177,12 +177,12 @@ public class MaterialController : ControllerBase
     // =========================================================================
 
     /// <summary>
-    /// Delete material (soft delete + delete file from S3).
+    /// Hard-delete material: remove file from S3 first, then delete the database record.
     /// </summary>
     [HttpDelete("{materialId:guid}")]
     [SwaggerOperation(
         Summary = "Delete material",
-        Description = "Soft-deletes the material and removes the corresponding file from S3."
+        Description = "Deletes the material file from S3, then removes the database record."
     )]
     [ProducesResponseType(typeof(ApiResult), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]

@@ -43,7 +43,7 @@ public interface IMaterialService
     Task<MaterialResponseDto> UpdateMaterialAsync(Guid materialId, UpdateMaterialRequestDto request);
 
     /// <summary>
-    /// Soft-delete material and remove file from S3.
+    /// Hard-delete material: remove file from S3 first, then delete the database record.
     /// </summary>
     Task DeleteMaterialAsync(Guid materialId);
 }

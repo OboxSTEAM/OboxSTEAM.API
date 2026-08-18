@@ -745,7 +745,7 @@ public partial class SeedService
         DateTime seedTime)
     {
         var existing = await _unitOfWork.Materials.FirstOrDefaultAsync(
-            m => m.ActivityId == activityId && !m.IsDeleted);
+            m => m.ActivityId == activityId);
         if (existing != null)
         {
             if (existing.Title == title

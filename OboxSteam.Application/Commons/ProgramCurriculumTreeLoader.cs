@@ -76,7 +76,7 @@ public static class ProgramCurriculumTreeLoader
 
         var materials = allActivityIds.Count > 0
             ? await unitOfWork.Materials.GetAllAsync(
-                m => allActivityIds.Contains(m.ActivityId) && !m.IsDeleted)
+                m => allActivityIds.Contains(m.ActivityId))
             : new List<Material>();
 
         var moduleIds = modules.Select(m => m.Id).ToList();

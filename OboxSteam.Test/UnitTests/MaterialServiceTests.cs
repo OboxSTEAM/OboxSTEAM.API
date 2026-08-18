@@ -460,21 +460,21 @@ public sealed class MaterialServiceTests
     // ── DeleteMaterialAsync ───────────────────────────────────────────────────
 
     [Fact]
-    public async Task Delete_SoftDeletesAndRemovesBlob()
+    public async Task Delete_HardDeletesAndRemovesBlob()
     {
         SeedMaterial();
         var sut = CreateSut();
 
         await sut.DeleteMaterialAsync(_materialId);
 
-        Assert.True(_db.Materials.Items[0].IsDeleted);
+        Assert.Empty(_db.Materials.Items);
         _blobService.Verify(b => b.DeleteByKeyAsync(
             It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task Delete_Continues_WhenBlobDeleteFails()
+    public async Task Delete_Throws_WhenBlobDeleteFails()
     {
         var material = SeedMaterial();
         material.FileUrl = "materials/pdf/raw-key.pdf";
@@ -483,9 +483,10 @@ public sealed class MaterialServiceTests
             .Setup(b => b.DeleteByKeyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("S3 unavailable"));
 
-        await sut.DeleteMaterialAsync(_materialId);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.DeleteMaterialAsync(_materialId));
 
-        Assert.True(_db.Materials.Items[0].IsDeleted);
+        Assert.Single(_db.Materials.Items);
     }
 
     [Fact]
