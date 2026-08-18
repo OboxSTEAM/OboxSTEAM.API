@@ -11,6 +11,7 @@ namespace OboxSteam.Infrastructure.Services;
 public class FaceRecognitionService : IFaceRecognitionService
 {
     private const string CollectionId = "oboxsteam-faces";
+    private const float DefaultFaceMatchThreshold = 80f;
 
     /// <summary>
     /// When collapsing raw Rekognition timestamps into segments, detections within
@@ -48,7 +49,7 @@ public class FaceRecognitionService : IFaceRecognitionService
             CollectionId = CollectionId,
             Image = new Image { Bytes = new MemoryStream(await ReadStreamAsync(imageStream)) },
             MaxFaces = 1,
-            QualityFilter = QualityFilter.AUTO,
+            QualityFilter = QualityFilter.NONE,
             ExternalImageId = userId.ToString()
         });
 
@@ -90,7 +91,10 @@ public class FaceRecognitionService : IFaceRecognitionService
     /// Nhận s3Bucket + s3Key thay vì Stream để tránh giới hạn 5MB của Rekognition Image.Bytes.
     /// Rekognition đọc ảnh trực tiếp từ S3, hỗ trợ ảnh tối đa 15MB.
     /// </remarks>
-    public async Task<List<FaceMatchResult>> SearchFacesAsync(string s3Bucket, string s3Key, float minConfidence = 90f)
+    public async Task<List<FaceMatchResult>> SearchFacesAsync(
+        string s3Bucket,
+        string s3Key,
+        float minConfidence = DefaultFaceMatchThreshold)
     {
         _logger.LogInformation("SearchFacesAsync started. Bucket={Bucket}, Key={Key}, MinConfidence={MinConfidence}",
             s3Bucket, s3Key, minConfidence);
@@ -107,6 +111,7 @@ public class FaceRecognitionService : IFaceRecognitionService
                 }
             },
             FaceMatchThreshold = minConfidence,
+            QualityFilter = QualityFilter.NONE,
             MaxFaces = 10
         });
 
@@ -146,9 +151,14 @@ public class FaceRecognitionService : IFaceRecognitionService
     }
 
     /// <inheritdoc />
-    public async Task<string> StartVideoFaceSearchAsync(string s3Bucket, string s3Key, float minConfidence = 90f)
+    public async Task<string> StartVideoFaceSearchAsync(
+        string s3Bucket,
+        string s3Key,
+        float minConfidence = DefaultFaceMatchThreshold)
     {
-        _logger.LogInformation("StartVideoFaceSearchAsync: Bucket={Bucket}, Key={Key}", s3Bucket, s3Key);
+        _logger.LogInformation(
+            "StartVideoFaceSearchAsync: Bucket={Bucket}, Key={Key}, MinConfidence={MinConfidence}",
+            s3Bucket, s3Key, minConfidence);
 
         await EnsureCollectionExistsAsync();
 
