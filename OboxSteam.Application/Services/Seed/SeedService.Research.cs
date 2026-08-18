@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -380,24 +380,6 @@ public partial class SeedService
             foreach (var activityProgress in activityProgresses)
             {
                 await _unitOfWork.ActivityProgresses.SoftRemove(activityProgress);
-                changed = true;
-            }
-
-            var activityBookings = await _unitOfWork.ActivityBookings.GetAllAsync(
-                ab => ab.StudentId == student.Id
-                      && programActivityIds.Contains(ab.ActivityId)
-                      && !ab.IsDeleted);
-
-            foreach (var booking in activityBookings)
-            {
-                if (booking.Status != BookingStatus.CheckedIn && booking.CheckedInAt == null)
-                {
-                    continue;
-                }
-
-                booking.Status = BookingStatus.Booked;
-                booking.CheckedInAt = null;
-                await _unitOfWork.ActivityBookings.Update(booking);
                 changed = true;
             }
         }
@@ -922,19 +904,17 @@ public partial class SeedService
             var activities = new List<Activity>
             {
                 NewActivity("ACT-WEBDEV-03-01", "Responsive Design Brief", ActivityType.SelfPaced, 1,
-                    "Review responsive design requirements and breakpoints.", null, null, null, null, false, false),
+                    "Review responsive design requirements and breakpoints.", null, null, null, false, false),
                 NewActivity("ACT-WEBDEV-03-02", "Deployment Workshop", ActivityType.LiveOnline, 2,
                     "Live session on hosting and deployment pipelines.",
                     "https://meet.google.com/webdev-deploy",
                     seedTime.AddDays(10).Date.AddHours(10),
-                    seedTime.AddDays(10).Date.AddHours(12),
-                    20, false, false),
+                    seedTime.AddDays(10).Date.AddHours(12), false, false),
                 NewActivity("ACT-WEBDEV-03-03", "Capstone Demo Day", ActivityType.LiveOnline, 3,
                     "Present deployed capstone sites to mentors.",
                     "https://meet.google.com/webdev-capstone",
                     seedTime.AddDays(28).Date.AddHours(14),
-                    seedTime.AddDays(28).Date.AddHours(16),
-                    30, false, true)
+                    seedTime.AddDays(28).Date.AddHours(16), false, true)
             };
 
             foreach (var activity in activities)

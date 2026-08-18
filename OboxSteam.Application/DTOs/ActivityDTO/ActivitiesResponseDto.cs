@@ -16,7 +16,6 @@ public class ActivitiesResponseDto
     public string? Location { get; set; }
     public DateTime? StartTime { get; set; }
     public DateTime? EndTime { get; set; }
-    public int? MaxCapacity { get; set; }
     public bool RequireQrCheckin { get; set; }
     public bool RequireMediaEvidence { get; set; }
     public DateTime CreatedAt { get; set; }

@@ -92,7 +92,6 @@ public class ActivityService : IActivityService
             Location = a.Location,
             StartTime = a.StartTime,
             EndTime = a.EndTime,
-            MaxCapacity = a.MaxCapacity,
             RequireQrCheckin = a.RequireQrCheckin,
             RequireMediaEvidence = a.RequireMediaEvidence,
             CreatedAt = a.CreatedAt,
@@ -143,7 +142,6 @@ public class ActivityService : IActivityService
             Location = activity.Location,
             StartTime = activity.StartTime,
             EndTime = activity.EndTime,
-            MaxCapacity = activity.MaxCapacity,
             RequireQrCheckin = activity.RequireQrCheckin,
             RequireMediaEvidence = activity.RequireMediaEvidence,
             CreatedAt = activity.CreatedAt,
@@ -222,7 +220,6 @@ public class ActivityService : IActivityService
             Location = request.Location,
             StartTime = request.StartTime,
             EndTime = request.EndTime,
-            MaxCapacity = request.MaxCapacity,
             RequireQrCheckin = request.RequireQrCheckin,
             RequireMediaEvidence = request.RequireMediaEvidence,
         };
@@ -245,7 +242,6 @@ public class ActivityService : IActivityService
             Location = activity.Location,
             StartTime = activity.StartTime,
             EndTime = activity.EndTime,
-            MaxCapacity = activity.MaxCapacity,
             RequireQrCheckin = activity.RequireQrCheckin,
             RequireMediaEvidence = activity.RequireMediaEvidence,
             CreatedAt = activity.CreatedAt,
@@ -297,7 +293,7 @@ public class ActivityService : IActivityService
             ActivityValidator.ValidateCourseExists(targetCourse, targetCourseId);
         }
 
-        // When an activity is SelfPaced it has no schedule; clear location/times/capacity
+        // When an activity is SelfPaced it has no schedule; clear location/times
         // (and QR check-in, which the domain only permits for Offline) so a stale schedule is
         // never persisted or returned after the type switches.
         var resolvedActivityType = request.ActivityType ?? activity.ActivityType;
@@ -306,7 +302,6 @@ public class ActivityService : IActivityService
         var resolvedStartTime = isSelfPaced ? null : request.StartTime ?? activity.StartTime;
         var resolvedEndTime = isSelfPaced ? null : request.EndTime ?? activity.EndTime;
         var resolvedLocation = isSelfPaced ? null : request.Location ?? activity.Location;
-        var resolvedMaxCapacity = isSelfPaced ? null : request.MaxCapacity ?? activity.MaxCapacity;
         var resolvedRequireQrCheckin = !isSelfPaced && (request.RequireQrCheckin ?? activity.RequireQrCheckin);
 
         await ActivityValidator.ValidateActivityTypeForCourseAsync(
@@ -348,7 +343,6 @@ public class ActivityService : IActivityService
         activity.Location = resolvedLocation;
         activity.StartTime = resolvedStartTime;
         activity.EndTime = resolvedEndTime;
-        activity.MaxCapacity = resolvedMaxCapacity;
         activity.RequireQrCheckin = resolvedRequireQrCheckin;
 
         if (request.RequireMediaEvidence.HasValue)
@@ -373,7 +367,6 @@ public class ActivityService : IActivityService
             Location = activity.Location,
             StartTime = activity.StartTime,
             EndTime = activity.EndTime,
-            MaxCapacity = activity.MaxCapacity,
             RequireQrCheckin = activity.RequireQrCheckin,
             RequireMediaEvidence = activity.RequireMediaEvidence,
             CreatedAt = activity.CreatedAt,

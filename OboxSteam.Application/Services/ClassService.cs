@@ -197,7 +197,6 @@ public sealed class ClassService : IClassService
                 StartTime = cs.StartTime,
                 EndTime = cs.EndTime,
                 Location = cs.Location,
-                MaxCapacity = cs.MaxCapacity,
                 RequiresAttendance = cs.RequiresAttendance,
                 RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
                 Status = cs.Status,

@@ -8,9 +8,9 @@ Project OboxSTEAM {
 }
 
 // Enums are stored as text (UseStringForEnums). Notable values:
-// RoleType, AccountStatus, ProgramCategory, ModuleType, ActivityType, SchedulingMode,
+// RoleType, AccountStatus, ProgramCategory, ModuleType, ActivityType,
 // EnrollmentStatus, ClassStatus, ClassEnrollmentStatus, ClassSessionStatus, SessionKind,
-// AttendanceStatus, AssignmentType, DifficultyLevel, SubmissionStatus, BookingStatus,
+// AttendanceStatus, AssignmentType, DifficultyLevel, SubmissionStatus,
 // ActivityStatus, CompletionSource, PaymentStatus, PaymentGateway, PaymentRequestStatus,
 // PlanType, SkillCategory, SkillProficiencyLevel, SkillAssessmentSource,
 // ClassMentorRequestStatus, NotificationType, MaterialType, OtpPurpose,
@@ -270,11 +270,9 @@ Table Activities {
   EndTime timestamptz [null]
   IsDeleted boolean [not null]
   Location varchar(500) [null]
-  MaxCapacity int [null]
   Name varchar(255) [not null]
   RequireMediaEvidence boolean [not null]
   RequireQrCheckin boolean [not null]
-  SchedulingMode text [not null]
   StartTime timestamptz [null]
   UpdatedAt timestamptz [null]
   UpdatedBy uuid [null]
@@ -319,7 +317,6 @@ Table Modules {
   Code varchar(50) [not null]
   CreatedAt timestamptz [not null]
   CreatedBy uuid [not null]
-  DefaultSchedulingMode text [null]
   DeletedAt timestamptz [null]
   DeletedBy uuid [null]
   IsDeleted boolean [not null]
@@ -380,23 +377,6 @@ Table Programs {
 // ============================================
 // 5. Enrollments & Tracking
 // ============================================
-
-Table ActivityBookings {
-  Id uuid [pk]
-  ActivityId uuid [not null]
-  BookedAt timestamptz [null]
-  CheckedInAt timestamptz [null]
-  CreatedAt timestamptz [not null]
-  CreatedBy uuid [not null]
-  DeletedAt timestamptz [null]
-  DeletedBy uuid [null]
-  IsDeleted boolean [not null]
-  Status text [not null]
-  StudentId uuid [not null]
-  UpdatedAt timestamptz [null]
-  UpdatedBy uuid [null]
-  Note: 'Entity: ActivityBooking'
-}
 
 Table ActivityProgresses {
   Id uuid [pk]
@@ -603,7 +583,6 @@ Table ClassSessions {
   EndTime timestamptz [not null]
   IsDeleted boolean [not null]
   Location varchar(500) [null]
-  MaxCapacity int [null]
   ModuleId uuid [not null]
   RequiresAttendance boolean [not null]
   RequiresMentorCheckIn boolean [not null]
@@ -1252,8 +1231,6 @@ Table Notifications {
 // ============================================
 
 Ref: Activities.CourseId > Courses.Id [delete: cascade] // Course
-Ref: ActivityBookings.ActivityId > Activities.Id [delete: cascade] // Activity
-Ref: ActivityBookings.StudentId > Users.Id [delete: cascade] // Student
 Ref: ActivityProgresses.ActivityId > Activities.Id [delete: restrict] // Activity
 Ref: ActivityProgresses.ModuleEnrollmentId > ModuleEnrollments.Id [delete: cascade] // ModuleEnrollment
 Ref: ActivityProgresses.StudentId > Users.Id [delete: restrict] // Student

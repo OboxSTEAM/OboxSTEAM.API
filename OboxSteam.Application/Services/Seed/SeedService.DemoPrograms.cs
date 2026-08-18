@@ -349,7 +349,6 @@ public partial class SeedService
             null,
             null,
             null,
-            null,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
@@ -364,7 +363,6 @@ public partial class SeedService
             $"https://meet.google.com/demo-{slug.ToLowerInvariant()}-theory",
             seedTime.AddHours(-2),
             seedTime.AddDays(30),
-            20,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
@@ -376,7 +374,6 @@ public partial class SeedService
             ActivityType.SelfPaced,
             1,
             "Self-paced prep before the hands-on lab.",
-            null,
             null,
             null,
             null,
@@ -393,7 +390,6 @@ public partial class SeedService
             $"https://meet.google.com/demo-{slug.ToLowerInvariant()}-lab",
             seedTime.AddHours(-2),
             seedTime.AddDays(30),
-            20,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
@@ -407,7 +403,6 @@ public partial class SeedService
             "Demo STEAM Lab",
             seedTime.AddHours(-2),
             seedTime.AddDays(30),
-            16,
             requireQrCheckin: true,
             requireMediaEvidence: true,
             seedTime);
@@ -419,7 +414,6 @@ public partial class SeedService
             ActivityType.SelfPaced,
             1,
             "Self-paced research brief before milestone uploads.",
-            null,
             null,
             null,
             null,
@@ -436,7 +430,6 @@ public partial class SeedService
             $"https://meet.google.com/demo-{slug.ToLowerInvariant()}-research",
             seedTime.AddHours(-2),
             seedTime.AddDays(30),
-            20,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
@@ -450,7 +443,6 @@ public partial class SeedService
             "Demo Showcase Room",
             seedTime.AddHours(-2),
             seedTime.AddDays(30),
-            16,
             requireQrCheckin: true,
             requireMediaEvidence: true,
             seedTime);
@@ -677,7 +669,6 @@ public partial class SeedService
         string? location,
         DateTime? startTime,
         DateTime? endTime,
-        int? maxCapacity,
         bool requireQrCheckin,
         bool requireMediaEvidence,
         DateTime seedTime)
@@ -689,7 +680,6 @@ public partial class SeedService
                 existing.Location != location
                 || existing.StartTime != startTime
                 || existing.EndTime != endTime
-                || existing.MaxCapacity != maxCapacity
                 || existing.RequireQrCheckin != requireQrCheckin
                 || existing.RequireMediaEvidence != requireMediaEvidence;
 
@@ -701,7 +691,6 @@ public partial class SeedService
             existing.Location = location;
             existing.StartTime = startTime;
             existing.EndTime = endTime;
-            existing.MaxCapacity = maxCapacity;
             existing.RequireQrCheckin = requireQrCheckin;
             existing.RequireMediaEvidence = requireMediaEvidence;
             existing.UpdatedAt = seedTime;
@@ -723,7 +712,6 @@ public partial class SeedService
             Location = location,
             StartTime = startTime,
             EndTime = endTime,
-            MaxCapacity = maxCapacity,
             RequireQrCheckin = requireQrCheckin,
             RequireMediaEvidence = requireMediaEvidence,
             CreatedAt = seedTime,

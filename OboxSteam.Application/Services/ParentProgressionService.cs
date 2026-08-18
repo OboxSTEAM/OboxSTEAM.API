@@ -867,19 +867,6 @@ public sealed class ParentProgressionService : IParentProgressionService
                 g => g.Key,
                 g => g.OrderByDescending(ap => ap.UpdatedAt ?? ap.CreatedAt).First());
 
-        var activityIds = snapshot.GlobalActivityOrder;
-        var bookings = activityIds.Count > 0
-            ? await _unitOfWork.ActivityBookings.GetAllAsync(
-                ab => ab.StudentId == enrollment.StudentId
-                      && activityIds.Contains(ab.ActivityId)
-                      && !ab.IsDeleted)
-            : [];
-
-        var checkedInActivityIds = bookings
-            .Where(ab => ab.Status == BookingStatus.CheckedIn)
-            .Select(ab => ab.ActivityId)
-            .ToHashSet();
-
         var assignmentIds = snapshot.AssignmentsById.Keys.ToList();
         var submissions = assignmentIds.Count > 0
             ? await _unitOfWork.Submissions.GetAllAsync(
@@ -904,7 +891,6 @@ public sealed class ParentProgressionService : IParentProgressionService
             LatestEnrollmentByModuleId = latestEnrollmentByModuleId,
             ModulesById = modulesById,
             ProgressByActivityId = progressByActivityId,
-            CheckedInActivityIds = checkedInActivityIds,
             SubmissionsByAssignmentId = submissionsByAssignmentId,
             SubmissionsByMilestoneId = submissionsByMilestoneId,
         };
@@ -926,16 +912,14 @@ public sealed class ParentProgressionService : IParentProgressionService
         ProgramCurriculumTreeSnapshot snapshot,
         ProgressContext context)
     {
-        if (!snapshot.ActivitiesById.TryGetValue(activityId, out var activity))
+        if (!snapshot.ActivitiesById.ContainsKey(activityId))
         {
             return false;
         }
 
         return CurriculumStatusHelper.IsActivityCompleted(
             activityId,
-            activity,
-            context.ProgressByActivityId,
-            context.CheckedInActivityIds);
+            context.ProgressByActivityId);
     }
 
     private static bool IsActivityAccessible(
@@ -970,8 +954,6 @@ public sealed class ParentProgressionService : IParentProgressionService
         public Dictionary<Guid, Module> ModulesById { get; init; } = new();
 
         public Dictionary<Guid, ActivityProgress> ProgressByActivityId { get; init; } = new();
-
-        public HashSet<Guid> CheckedInActivityIds { get; init; } = [];
 
         public Dictionary<Guid, List<Submission>> SubmissionsByAssignmentId { get; init; } = new();
 

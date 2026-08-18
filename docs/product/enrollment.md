@@ -56,7 +56,8 @@ passing grade shows `completed`.
 ## Progress
 
 `ActivityProgress` tracks completion per student per activity.
-`ActivityBooking` handles booking for capacity-limited activities.
+Capacity is a class-level seat count (`Class.MaxCapacity`); there is no
+per-activity or per-session booking.
 
 ## Assessment recovery vs class re-delivery
 

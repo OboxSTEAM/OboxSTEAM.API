@@ -204,8 +204,6 @@ public class EnrollmentCurriculumMindMapActivityInfoDto
 
     public ActivityType ActivityType { get; set; }
 
-    public SchedulingMode SchedulingMode { get; set; }
-
     public string? Description { get; set; }
 
     public EnrollmentCurriculumMaterialDto? Material { get; set; }

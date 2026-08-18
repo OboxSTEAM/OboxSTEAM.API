@@ -245,7 +245,6 @@ public sealed class EnrollmentCurriculumServiceTests
             Name = "Video Lesson",
             CourseId = _courseId,
             ActivityType = ActivityType.SelfPaced,
-            SchedulingMode = SchedulingMode.SelfPaced,
             ActivityOrder = 1,
             IsDeleted = false,
         };
@@ -256,7 +255,6 @@ public sealed class EnrollmentCurriculumServiceTests
             Name = "Reading Lesson",
             CourseId = _courseId,
             ActivityType = ActivityType.SelfPaced,
-            SchedulingMode = SchedulingMode.SelfPaced,
             ActivityOrder = 2,
             IsDeleted = false,
         };
@@ -267,7 +265,6 @@ public sealed class EnrollmentCurriculumServiceTests
             Name = "Live Session",
             CourseId = _courseId,
             ActivityType = ActivityType.LiveOnline,
-            SchedulingMode = SchedulingMode.ClassSynchronized,
             ActivityOrder = 3,
             IsDeleted = false,
         };
@@ -278,7 +275,6 @@ public sealed class EnrollmentCurriculumServiceTests
             Name = "Research Reading",
             CourseId = researchCourseId,
             ActivityType = ActivityType.SelfPaced,
-            SchedulingMode = SchedulingMode.SelfPaced,
             ActivityOrder = 1,
             IsDeleted = false,
         };

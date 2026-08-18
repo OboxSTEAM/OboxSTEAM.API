@@ -26,7 +26,6 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<QuizQuestion> QuizQuestions { get; } = new();
     public InMemoryRepository<QuizOption> QuizOptions { get; } = new();
     public InMemoryRepository<Activity> Activities { get; } = new();
-    public InMemoryRepository<ActivityBooking> ActivityBookings { get; } = new();
     public InMemoryRepository<ActivityProgress> ActivityProgresses { get; } = new();
     public InMemoryRepository<Class> Classes { get; } = new();
     public InMemoryRepository<ClassEnrollment> ClassEnrollments { get; } = new();
@@ -89,7 +88,6 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<QuizQuestion> IUnitOfWork.QuizQuestions => QuizQuestions;
     IGenericRepository<QuizOption> IUnitOfWork.QuizOptions => QuizOptions;
     IGenericRepository<Activity> IUnitOfWork.Activities => Activities;
-    IGenericRepository<ActivityBooking> IUnitOfWork.ActivityBookings => ActivityBookings;
     IGenericRepository<ActivityProgress> IUnitOfWork.ActivityProgresses => ActivityProgresses;
     IGenericRepository<Class> IUnitOfWork.Classes => Classes;
     IGenericRepository<ClassEnrollment> IUnitOfWork.ClassEnrollments => ClassEnrollments;
@@ -156,7 +154,6 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(QuizQuestion) => QuizQuestions,
             nameof(QuizOption) => QuizOptions,
             nameof(Activity) => Activities,
-            nameof(ActivityBooking) => ActivityBookings,
             nameof(ActivityProgress) => ActivityProgresses,
             nameof(Class) => Classes,
             nameof(ClassEnrollment) => ClassEnrollments,

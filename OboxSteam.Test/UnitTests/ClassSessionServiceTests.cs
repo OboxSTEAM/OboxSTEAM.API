@@ -228,7 +228,6 @@ public sealed class ClassSessionServiceTests
             StartTime = startTime,
             EndTime = end ?? startTime.AddHours(2),
             Location = "Room A",
-            MaxCapacity = 20,
             RequiresAttendance = true,
         };
     }
@@ -663,7 +662,6 @@ public sealed class ClassSessionServiceTests
             Title = "  Updated Title  ",
             Description = "  New desc  ",
             Location = "  Lab 2  ",
-            MaxCapacity = 15,
             RequiresAttendance = false,
             RequiresMentorCheckIn = true,
             SessionKind = SessionKind.FieldTrip,
@@ -672,7 +670,6 @@ public sealed class ClassSessionServiceTests
         Assert.Equal("Updated Title", result.Title);
         Assert.Equal("New desc", result.Description);
         Assert.Equal("Lab 2", result.Location);
-        Assert.Equal(15, result.MaxCapacity);
         Assert.False(result.RequiresAttendance);
         Assert.True(result.RequiresMentorCheckIn);
         Assert.Equal(SessionKind.FieldTrip, result.SessionKind);

@@ -6,8 +6,7 @@ namespace OboxSteam.Domain.Entities;
 /// Tracks completion of a single <see cref="Activity"/> (lesson) by a student
 /// within a specific module enrollment attempt. Used to evaluate the
 /// "all lessons completed" condition required to pass a module.
-/// For Live/Offline activities, completion is driven by attendance
-/// (<see cref="ActivityBooking"/>); this entity primarily covers SelfPaced activities.
+/// Curriculum completion is based on this record reaching <see cref="ActivityStatus.Done"/>.
 /// </summary>
 public class ActivityProgress : BaseEntity
 {

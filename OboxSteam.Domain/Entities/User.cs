@@ -53,7 +53,6 @@ public class User : BaseEntity
     public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
     public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
     public ICollection<Submission> VerifiedSubmissions { get; set; } = new List<Submission>();
-    public ICollection<ActivityBooking> ActivityBookings { get; set; } = new List<ActivityBooking>();
     public ICollection<CourseEnrollment> CourseEnrollments { get; set; } = new List<CourseEnrollment>();
     public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();
     public ICollection<ActivityProgress> ActivityProgresses { get; set; } = new List<ActivityProgress>();

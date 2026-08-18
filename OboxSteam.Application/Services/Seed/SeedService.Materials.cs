@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -143,29 +143,29 @@ public partial class SeedService
         AddActivities("CRS-WEBDEV-01", new[]
         {
             NewActivity("ACT-WEBDEV-01-01", "HTML Structure Overview", ActivityType.SelfPaced, 1,
-                "Video lessons on semantic HTML and document structure.", null, null, null, null, false, false),
+                "Video lessons on semantic HTML and document structure.", null, null, null, false, false),
             NewActivity("ACT-WEBDEV-01-02", "Live CSS Layout Session", ActivityType.LiveOnline, 2,
                 "Live session on flexbox and grid layouts.",
                 "https://meet.google.com/webdev-css",
-                baseDate.AddDays(4).AddHours(18), baseDate.AddDays(4).AddHours(20), 35, false, false),
+                baseDate.AddDays(4).AddHours(18), baseDate.AddDays(4).AddHours(20), false, false),
             NewActivity("ACT-WEBDEV-01-03", "Responsive Layout Exercises", ActivityType.SelfPaced, 3,
-                "Self-paced responsive layout practice exercises.", null, null, null, null, false, false),
+                "Self-paced responsive layout practice exercises.", null, null, null, false, false),
         });
 
         AddActivities("CRS-WEBDEV-02", new[]
         {
             NewActivity("ACT-WEBDEV-02-01", "JavaScript Variables & Types", ActivityType.SelfPaced, 1,
-                "Self-paced module on JS fundamentals.", null, null, null, null, false, false),
+                "Self-paced module on JS fundamentals.", null, null, null, false, false),
             NewActivity("ACT-WEBDEV-02-02", "DOM Manipulation Lab", ActivityType.Offline, 2,
                 "Hands-on lab for DOM manipulation exercises.",
                 "Computer Lab 202",
-                baseDate.AddDays(6).AddHours(10), baseDate.AddDays(6).AddHours(12), 30, true, false),
+                baseDate.AddDays(6).AddHours(10), baseDate.AddDays(6).AddHours(12), true, false),
             NewActivity("ACT-WEBDEV-02-03", "Weekend Hackathon", ActivityType.Offline, 3,
                 "Build a simple interactive page in teams.",
                 "Computer Lab 202",
-                baseDate.AddDays(12).AddHours(9), baseDate.AddDays(12).AddHours(15), 24, true, true),
+                baseDate.AddDays(12).AddHours(9), baseDate.AddDays(12).AddHours(15), true, true),
             NewActivity("ACT-WEBDEV-02-04", "Code Review Checklist", ActivityType.SelfPaced, 4,
-                "Self-paced code review checklist and mentor feedback guide.", null, null, null, null, false, false),
+                "Self-paced code review checklist and mentor feedback guide.", null, null, null, false, false),
         });
 
         AddActivities("CRS-STEAM-01", new[]
@@ -173,58 +173,58 @@ public partial class SeedService
             NewActivity("ACT-STEAM-01-01", "STEAM Lab Orientation", ActivityType.LiveOnline, 1,
                 "Orientation to interdisciplinary STEAM projects.",
                 "https://meet.google.com/steam-kickoff",
-                baseDate.AddDays(3).AddHours(9), baseDate.AddDays(3).AddHours(10), 40, false, false),
+                baseDate.AddDays(3).AddHours(9), baseDate.AddDays(3).AddHours(10), false, false),
             NewActivity("ACT-STEAM-01-02", "Science Experiment Kit", ActivityType.SelfPaced, 2,
-                "Complete the at-home science experiment kit.", null, null, null, null, false, true),
+                "Complete the at-home science experiment kit.", null, null, null, false, true),
             NewActivity("ACT-STEAM-01-03", "Art & Engineering Discussion", ActivityType.LiveOnline, 3,
                 "Live discussion on combining art and engineering in projects.",
                 "https://meet.google.com/steam-art-engineering",
-                baseDate.AddDays(9).AddHours(13), baseDate.AddDays(9).AddHours(16), 16, false, true),
+                baseDate.AddDays(9).AddHours(13), baseDate.AddDays(9).AddHours(16), false, true),
         });
 
         AddActivities("CRS-STEAM-02", new[]
         {
             NewActivity("ACT-STEAM-02-01", "Prototyping Principles", ActivityType.SelfPaced, 1,
-                "Introduction to rapid prototyping methods.", null, null, null, null, false, false),
+                "Introduction to rapid prototyping methods.", null, null, null, false, false),
             NewActivity("ACT-STEAM-02-02", "Material Exploration Lab", ActivityType.Offline, 2,
                 "Explore recycled materials and simple circuits.",
                 "STEAM Studio 2",
-                baseDate.AddDays(11).AddHours(10), baseDate.AddDays(11).AddHours(13), 14, true, true),
+                baseDate.AddDays(11).AddHours(10), baseDate.AddDays(11).AddHours(13), true, true),
             NewActivity("ACT-STEAM-02-03", "Design Critique Worksheet", ActivityType.SelfPaced, 3,
-                "Complete the peer design critique worksheet.", null, null, null, null, false, false),
+                "Complete the peer design critique worksheet.", null, null, null, false, false),
             NewActivity("ACT-STEAM-02-04", "Portfolio Documentation", ActivityType.SelfPaced, 4,
-                "Document your prototype with photos and a short write-up.", null, null, null, null, false, true),
+                "Document your prototype with photos and a short write-up.", null, null, null, false, true),
         });
 
         AddActivities("CRS-IOT-01", new[]
         {
             NewActivity("ACT-IOT-01-01", "Microcontroller Basics", ActivityType.SelfPaced, 1,
-                "Self-paced intro to Arduino and GPIO pins.", null, null, null, null, false, false),
+                "Self-paced intro to Arduino and GPIO pins.", null, null, null, false, false),
             NewActivity("ACT-IOT-01-02", "Sensor Wiring Guide", ActivityType.SelfPaced, 2,
-                "Self-paced guide for wiring temperature and humidity sensors.", null, null, null, null, false, false),
+                "Self-paced guide for wiring temperature and humidity sensors.", null, null, null, false, false),
             NewActivity("ACT-IOT-01-03", "Live Q&A: Sensor Data", ActivityType.LiveOnline, 3,
                 "Live Q&A on reading and interpreting sensor data.",
                 "https://meet.google.com/iot-sensors",
-                baseDate.AddDays(8).AddHours(14), baseDate.AddDays(8).AddHours(15), 25, false, false),
+                baseDate.AddDays(8).AddHours(14), baseDate.AddDays(8).AddHours(15), false, false),
         });
 
         AddActivities("CRS-IOT-02", new[]
         {
             NewActivity("ACT-IOT-02-01", "MQTT Concepts", ActivityType.SelfPaced, 1,
-                "Learn MQTT publish/subscribe patterns.", null, null, null, null, false, false),
+                "Learn MQTT publish/subscribe patterns.", null, null, null, false, false),
             NewActivity("ACT-IOT-02-02", "Cloud Dashboard Setup Guide", ActivityType.SelfPaced, 2,
-                "Self-paced guide for setting up a cloud dashboard.", null, null, null, null, false, false),
+                "Self-paced guide for setting up a cloud dashboard.", null, null, null, false, false),
             NewActivity("ACT-IOT-02-03", "Device Deployment Lab", ActivityType.Offline, 3,
                 "Deploy a device and verify cloud connectivity.",
                 "Electronics Lab 302",
-                baseDate.AddDays(13).AddHours(9), baseDate.AddDays(13).AddHours(13), 12, true, true),
+                baseDate.AddDays(13).AddHours(9), baseDate.AddDays(13).AddHours(13), true, true),
         });
 
         AddActivities("CRS-CERT-TEST-01", new[]
         {
             NewActivity("ACT-CERT-TEST-01-01", "Certificate Test Reading", ActivityType.SelfPaced, 1,
                 "Self-paced reading activity for certificate generation testing.",
-                null, null, null, null, false, false),
+                null, null, null, false, false),
         });
 
         return activities;
@@ -239,7 +239,6 @@ public partial class SeedService
         string? location,
         DateTime? startTime,
         DateTime? endTime,
-        int? maxCapacity,
         bool requireQrCheckin,
         bool requireMediaEvidence) => new()
         {
@@ -252,7 +251,6 @@ public partial class SeedService
             Location = location,
             StartTime = startTime,
             EndTime = endTime,
-            MaxCapacity = maxCapacity,
             RequireQrCheckin = requireQrCheckin,
             RequireMediaEvidence = requireMediaEvidence,
         };
@@ -398,127 +396,127 @@ public partial class SeedService
         AddCourseActivities("CRS-ROBOTICS-01", new[]
         {
             NewActivity("ACT-ROBOTICS-01-01", "Robot Fundamentals Reading", ActivityType.SelfPaced, 1,
-                "Self-paced reading from the robotics techniques textbook.", null, null, null, null, false, false),
+                "Self-paced reading from the robotics techniques textbook.", null, null, null, false, false),
             NewActivity("ACT-ROBOTICS-01-02", "Introduction to Robotics", ActivityType.LiveOnline, 2,
                 "Live online introduction to robotics systems.",
                 "https://meet.google.com/robotics-theory-intro",
-                baseDate.AddDays(1).AddHours(9), baseDate.AddDays(1).AddHours(11), 30, false, false),
+                baseDate.AddDays(1).AddHours(9), baseDate.AddDays(1).AddHours(11), false, false),
             NewActivity("ACT-ROBOTICS-01-03", "Components Overview Workshop", ActivityType.LiveOnline, 3,
                 "Live workshop reviewing core robot components.",
                 "https://meet.google.com/robotics-components",
-                baseDate.AddDays(4).AddHours(14), baseDate.AddDays(4).AddHours(16), 30, false, false),
+                baseDate.AddDays(4).AddHours(14), baseDate.AddDays(4).AddHours(16), false, false),
         });
 
         AddCourseActivities("CRS-ROBOTICS-02", new[]
         {
             NewActivity("ACT-ROBOTICS-02-01", "Mechanics Reading", ActivityType.SelfPaced, 1,
-                "Self-paced reading on mechanics and actuators.", null, null, null, null, false, false),
+                "Self-paced reading on mechanics and actuators.", null, null, null, false, false),
             NewActivity("ACT-ROBOTICS-02-02", "Actuator Design Lecture", ActivityType.LiveOnline, 2,
                 "Live lecture on actuator selection and torque planning.",
                 "https://meet.google.com/robotics-actuators",
-                baseDate.AddDays(2).AddHours(10), baseDate.AddDays(2).AddHours(12), 28, false, false),
+                baseDate.AddDays(2).AddHours(10), baseDate.AddDays(2).AddHours(12), false, false),
             NewActivity("ACT-ROBOTICS-02-03", "Mechanical Structures Q&A", ActivityType.LiveOnline, 3,
                 "Live Q&A on mechanical structures and actuator integration.",
                 "https://meet.google.com/robotics-mechanics-qa",
-                baseDate.AddDays(6).AddHours(9), baseDate.AddDays(6).AddHours(10), 28, false, false),
+                baseDate.AddDays(6).AddHours(9), baseDate.AddDays(6).AddHours(10), false, false),
         });
 
         AddCourseActivities("CRS-ROBOTICS-03", new[]
         {
             NewActivity("ACT-ROBOTICS-03-01", "Safety Guidelines Reading", ActivityType.SelfPaced, 1,
-                "Self-paced reading on robotics lab safety practices.", null, null, null, null, false, false),
+                "Self-paced reading on robotics lab safety practices.", null, null, null, false, false),
             NewActivity("ACT-ROBOTICS-03-02", "Lab Safety Briefing", ActivityType.LiveOnline, 2,
                 "Live briefing on lab rules and emergency procedures.",
                 "https://meet.google.com/robotics-safety",
-                baseDate.AddDays(3).AddHours(9), baseDate.AddDays(3).AddHours(10), 35, false, false),
+                baseDate.AddDays(3).AddHours(9), baseDate.AddDays(3).AddHours(10), false, false),
             NewActivity("ACT-ROBOTICS-03-03", "Safety Case Study Review", ActivityType.LiveOnline, 3,
                 "Live review of lab safety case studies and documentation practices.",
                 "https://meet.google.com/robotics-safety-review",
-                baseDate.AddDays(10).AddHours(14), baseDate.AddDays(10).AddHours(15), 30, false, false),
+                baseDate.AddDays(10).AddHours(14), baseDate.AddDays(10).AddHours(15), false, false),
         });
 
         AddCourseActivities("CRS-ROBOTICS-04", new[]
         {
             NewActivity("ACT-ROBOTICS-04-01", "Careers in Robotics Video", ActivityType.SelfPaced, 1,
-                "Watch the CNBC feature on robotics engineering careers.", null, null, null, null, false, false),
+                "Watch the CNBC feature on robotics engineering careers.", null, null, null, false, false),
             NewActivity("ACT-ROBOTICS-04-02", "Field Trip Preparation Briefing", ActivityType.LiveOnline, 2,
                 "Live briefing with your mentor on what to bring and safety rules for the sensor field trip.",
                 "https://meet.google.com/robotics-trip-prep",
-                baseDate.AddDays(7).AddHours(15), baseDate.AddDays(7).AddHours(16), 30, false, false),
+                baseDate.AddDays(7).AddHours(15), baseDate.AddDays(7).AddHours(16), false, false),
             NewActivity("ACT-ROBOTICS-04-03", "Sensor Exploration Field Trip", ActivityType.Offline, 3,
                 "On-site field trip exploring ultrasonic and infrared sensors in a real lab environment.",
                 "Electronics Lab 201",
-                baseDate.AddDays(11).AddHours(9), baseDate.AddDays(11).AddHours(12), 24, true, true),
+                baseDate.AddDays(11).AddHours(9), baseDate.AddDays(11).AddHours(12), true, true),
         });
 
         AddCourseActivities("CRS-ROBOTICS-05", new[]
         {
             NewActivity("ACT-ROBOTICS-05-01", "Industry Insights Video", ActivityType.SelfPaced, 1,
-                "Self-paced CNBC video on real-world robotics engineering work.", null, null, null, null, false, false),
+                "Self-paced CNBC video on real-world robotics engineering work.", null, null, null, false, false),
             NewActivity("ACT-ROBOTICS-05-02", "Movement Trip Preparation", ActivityType.LiveOnline, 2,
                 "Live mentor session on preparing equipment and goals for the motor control field challenge.",
                 "https://meet.google.com/robotics-movement-prep",
-                baseDate.AddDays(9).AddHours(10), baseDate.AddDays(9).AddHours(11), 28, false, false),
+                baseDate.AddDays(9).AddHours(10), baseDate.AddDays(9).AddHours(11), false, false),
             NewActivity("ACT-ROBOTICS-05-03", "Motor Control Field Challenge", ActivityType.Offline, 3,
                 "On-site challenge to tune motor speed and direction control.",
                 "Maker Space B",
-                baseDate.AddDays(13).AddHours(9), baseDate.AddDays(13).AddHours(13), 18, true, true),
+                baseDate.AddDays(13).AddHours(9), baseDate.AddDays(13).AddHours(13), true, true),
         });
 
         AddCourseActivities("CRS-ROBOTICS-06", new[]
         {
             NewActivity("ACT-ROBOTICS-06-01", "Field Insights Video", ActivityType.SelfPaced, 1,
-                "Self-paced video on robotics careers and industry demand.", null, null, null, null, false, false),
+                "Self-paced video on robotics careers and industry demand.", null, null, null, false, false),
             NewActivity("ACT-ROBOTICS-06-02", "Calibration Trip Preparation", ActivityType.LiveOnline, 2,
                 "Live mentor briefing on calibration tools, clothing, and checklist before the field lab.",
                 "https://meet.google.com/robotics-calibration-prep",
-                baseDate.AddDays(12).AddHours(14), baseDate.AddDays(12).AddHours(15), 24, false, false),
+                baseDate.AddDays(12).AddHours(14), baseDate.AddDays(12).AddHours(15), false, false),
             NewActivity("ACT-ROBOTICS-06-03", "Calibration Techniques Field Lab", ActivityType.Offline, 3,
                 "On-site calibration techniques for line-following robots.",
                 "Lab Room 104",
-                baseDate.AddDays(15).AddHours(9), baseDate.AddDays(15).AddHours(12), 16, true, true),
+                baseDate.AddDays(15).AddHours(9), baseDate.AddDays(15).AddHours(12), true, true),
         });
 
         AddCourseActivities("CRS-ROBOTICS-07", new[]
         {
             NewActivity("ACT-ROBOTICS-07-01", "Research Design Brief Reading", ActivityType.SelfPaced, 1,
-                "Read the research design brief and project requirements.", null, null, null, null, false, false),
+                "Read the research design brief and project requirements.", null, null, null, false, false),
             NewActivity("ACT-ROBOTICS-07-02", "Prototype Build Preparation", ActivityType.LiveOnline, 2,
                 "Live mentor session on team roles, materials, and build-day logistics.",
                 "https://meet.google.com/robotics-build-prep",
-                baseDate.AddDays(14).AddHours(10), baseDate.AddDays(14).AddHours(11), 24, false, false),
+                baseDate.AddDays(14).AddHours(10), baseDate.AddDays(14).AddHours(11), false, false),
             NewActivity("ACT-ROBOTICS-07-03", "Team Prototype Build", ActivityType.Offline, 3,
                 "Full-day team session to assemble and test prototypes.",
                 "Maker Space A",
-                baseDate.AddDays(16).AddHours(9), baseDate.AddDays(16).AddHours(17), 12, true, true),
+                baseDate.AddDays(16).AddHours(9), baseDate.AddDays(16).AddHours(17), true, true),
         });
 
         AddCourseActivities("CRS-ROBOTICS-08", new[]
         {
             NewActivity("ACT-ROBOTICS-08-01", "Research Methods Reading", ActivityType.SelfPaced, 1,
-                "Self-paced reading on scientific research methodology.", null, null, null, null, false, false),
+                "Self-paced reading on scientific research methodology.", null, null, null, false, false),
             NewActivity("ACT-ROBOTICS-08-02", "Iteration Planning Session", ActivityType.LiveOnline, 2,
                 "Live session to plan prototype iterations based on mentor feedback.",
                 "https://meet.google.com/robotics-iteration-prep",
-                baseDate.AddDays(18).AddHours(10), baseDate.AddDays(18).AddHours(11), 24, false, false),
+                baseDate.AddDays(18).AddHours(10), baseDate.AddDays(18).AddHours(11), false, false),
             NewActivity("ACT-ROBOTICS-08-03", "Prototype Iteration Lab", ActivityType.Offline, 3,
                 "Iterate on prototype design and run bench tests.",
                 "Maker Space A",
-                baseDate.AddDays(20).AddHours(9), baseDate.AddDays(20).AddHours(15), 12, true, true),
+                baseDate.AddDays(20).AddHours(9), baseDate.AddDays(20).AddHours(15), true, true),
         });
 
         AddCourseActivities("CRS-ROBOTICS-09", new[]
         {
             NewActivity("ACT-ROBOTICS-09-01", "Capstone Documentation Reading", ActivityType.SelfPaced, 1,
-                "Self-paced guide for documenting capstone research outcomes.", null, null, null, null, false, false),
+                "Self-paced guide for documenting capstone research outcomes.", null, null, null, false, false),
             NewActivity("ACT-ROBOTICS-09-02", "Final Testing Preparation", ActivityType.LiveOnline, 2,
                 "Live briefing on final test procedures, safety checks, and demo setup.",
                 "https://meet.google.com/robotics-finals-prep",
-                baseDate.AddDays(22).AddHours(14), baseDate.AddDays(22).AddHours(15), 30, false, false),
+                baseDate.AddDays(22).AddHours(14), baseDate.AddDays(22).AddHours(15), false, false),
             NewActivity("ACT-ROBOTICS-09-03", "Final Testing & Showcase", ActivityType.Offline, 3,
                 "On-site final testing, performance validation, and capstone showcase.",
                 "Maker Space A",
-                baseDate.AddDays(24).AddHours(9), baseDate.AddDays(24).AddHours(15), 40, true, true),
+                baseDate.AddDays(24).AddHours(9), baseDate.AddDays(24).AddHours(15), true, true),
         });
     }
 }

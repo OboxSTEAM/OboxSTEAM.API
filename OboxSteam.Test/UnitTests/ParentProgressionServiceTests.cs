@@ -132,7 +132,6 @@ public sealed class ParentProgressionServiceTests
                 Name = "Video Lesson",
                 CourseId = _courseId,
                 ActivityType = ActivityType.SelfPaced,
-                SchedulingMode = SchedulingMode.SelfPaced,
                 ActivityOrder = 1,
                 IsDeleted = false,
             },
@@ -143,7 +142,6 @@ public sealed class ParentProgressionServiceTests
                 Name = "Reading Lesson",
                 CourseId = _courseId,
                 ActivityType = ActivityType.SelfPaced,
-                SchedulingMode = SchedulingMode.SelfPaced,
                 ActivityOrder = 2,
                 IsDeleted = false,
             });

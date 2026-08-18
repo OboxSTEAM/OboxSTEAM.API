@@ -41,7 +41,6 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ProgramEnrollment> ProgramEnrollments { get; set; }
     public DbSet<ModuleEnrollment> ModuleEnrollments { get; set; }
     public DbSet<CourseEnrollment> CourseEnrollments { get; set; }
-    public DbSet<ActivityBooking> ActivityBookings { get; set; }
     public DbSet<ActivityProgress> ActivityProgresses { get; set; }
 
     // ── 5b. Class Delivery (cohort scheduling) ──
@@ -130,7 +129,6 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ProgramEnrollment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ModuleEnrollment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CourseEnrollment>().HasQueryFilter(e => !e.IsDeleted);
-        modelBuilder.Entity<ActivityBooking>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ActivityProgress>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Class>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassEnrollment>().HasQueryFilter(e => !e.IsDeleted);
@@ -397,14 +395,6 @@ public class OboxSteamDbContext : DbContext
                 .WithOne(a => a.Material)
                 .HasForeignKey<Material>(m => m.ActivityId)
                 .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        // =============================================
-        // ACTIVITY BOOKING (Unique: student + activity)
-        // =============================================
-        modelBuilder.Entity<ActivityBooking>(entity =>
-        {
-            entity.HasIndex(ab => new { ab.StudentId, ab.ActivityId }).IsUnique();
         });
 
         // =============================================

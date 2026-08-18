@@ -34,9 +34,6 @@ public class ClassSession : BaseEntity
     [MaxLength(500)]
     public string? Location { get; set; }
 
-    /// <summary>Used for overflow / optional booking sessions only.</summary>
-    public int? MaxCapacity { get; set; }
-
     public bool RequiresAttendance { get; set; } = true;
 
     /// <summary>Whether the assigned mentor must check in for this specific session instance.</summary>
