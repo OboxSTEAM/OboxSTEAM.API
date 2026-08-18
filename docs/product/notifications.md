@@ -3,9 +3,11 @@
 ## Delivery Contract
 
 Business services create notification commands through `NotificationCatalog`.
-`NotificationPublisher` resolves each command's audience, persists one inbox
-record per distinct recipient, and then attempts real-time delivery through
-SignalR. Persistence is the source of truth if real-time delivery fails.
+`NotificationPublisher` resolves each command's audience to
+`(UserId, Role, ContextStudentId)`, renders the matching role variant with
+token interpolation, persists one inbox record per `(recipient, context student)`,
+and then attempts real-time delivery through SignalR. Persistence is the source
+of truth if real-time delivery fails.
 
 `NotificationService` provides inbox queries and read-state operations; it does
 not publish business notifications.
@@ -14,7 +16,7 @@ not publish business notifications.
 
 | Audience | Recipients |
 | --- | --- |
-| `ForUser` | One specified user |
+| `ForUser` | One specified user, with optional context student id |
 | `ForStudentAndParents` | The student and parents with verified links |
 | `ForClassRoster` | Students with active class enrollments |
 | `ForClassRosterAndParents` | Active class-roster students and their verified parents |
@@ -23,8 +25,34 @@ not publish business notifications.
 | `ForClassRosterAndParentsAndMentor` | Active class-roster students, their verified parents, and the class mentor |
 | `ForManagers` | All active manager accounts |
 
-Recipient IDs are distinct. Unverified parent links and inactive class
-enrollments do not qualify.
+Recipient rows are distinct by `(UserId, ContextStudentId)`, not by user id
+alone. A parent with two actively enrolled children receives one inbox row per
+child, with that child's name in the copy. Unverified parent links and inactive
+class enrollments do not qualify.
+
+`ForUser` may pass an optional context student id (used for parent-only events
+such as payment requests) so `{studentName}` still interpolates.
+
+## Role templates and tokens
+
+Each catalog event supplies a default copy plus optional Student, Parent,
+Mentor, and Manager variants. Missing variants fall back to default. Copy may
+include `{token}` placeholders interpolated at publish time:
+
+| Token | Source |
+| --- | --- |
+| `{studentName}` | `User.FullName` (else email) of `ContextStudentId` |
+| `{actorName}` | `User.FullName` (else email) of `ActorUserId` |
+| `{className}` | Catalog token |
+| `{programName}` | Catalog token |
+| `{moduleName}` | Catalog token |
+| `{activityName}` | Catalog token |
+| `{assignmentTitle}` | Catalog token |
+| `{extraAttempts}` | Catalog token |
+
+Student copy uses second-person ("You completed…"). Parent copy names the child
+("{studentName} completed…"). Vietnamese localization of these templates is a
+separate follow-up.
 
 ## Strict Type-to-Audience-to-Publisher Matrix
 

@@ -14,7 +14,7 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<IReadOnlyList<Guid>> ResolveAsync(
+    public async Task<IReadOnlyList<NotificationRecipient>> ResolveAsync(
         NotificationAudience audience,
         CancellationToken cancellationToken = default)
     {
@@ -22,7 +22,7 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
 
         return audience.Kind switch
         {
-            NotificationAudienceKind.User => ResolveUser(audience),
+            NotificationAudienceKind.User => await ResolveUserAsync(audience),
             NotificationAudienceKind.StudentAndParents => await ResolveStudentAndParentsAsync(audience),
             NotificationAudienceKind.ClassRoster => await ResolveClassRosterAsync(audience),
             NotificationAudienceKind.ClassRosterAndParents => await ResolveClassRosterAndParentsAsync(audience),
@@ -31,45 +31,54 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
             NotificationAudienceKind.ClassRosterAndParentsAndMentor =>
                 await ResolveClassRosterAndParentsAndMentorAsync(audience),
             NotificationAudienceKind.Managers => await ResolveManagersAsync(),
-            _ => Array.Empty<Guid>()
+            _ => Array.Empty<NotificationRecipient>()
         };
     }
 
-    private static IReadOnlyList<Guid> ResolveUser(NotificationAudience audience)
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveUserAsync(NotificationAudience audience)
     {
         if (audience.UserId is null || audience.UserId == Guid.Empty)
         {
-            return Array.Empty<Guid>();
+            return Array.Empty<NotificationRecipient>();
         }
 
-        return new[] { audience.UserId.Value };
+        var userId = audience.UserId.Value;
+        var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        var role = user?.Role ?? RoleType.Student;
+        return new[] { new NotificationRecipient(userId, role, audience.StudentId) };
     }
 
-    private async Task<IReadOnlyList<Guid>> ResolveStudentAndParentsAsync(NotificationAudience audience)
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveStudentAndParentsAsync(
+        NotificationAudience audience)
     {
         if (audience.StudentId is null || audience.StudentId == Guid.Empty)
         {
-            return Array.Empty<Guid>();
+            return Array.Empty<NotificationRecipient>();
         }
 
         var studentId = audience.StudentId.Value;
+        var recipients = new List<NotificationRecipient>
+        {
+            new(studentId, RoleType.Student, studentId)
+        };
+
         var parents = await _unitOfWork.ParentStudents.GetAllAsync(
             ps => ps.StudentId == studentId && ps.IsVerified);
 
-        var ids = new HashSet<Guid> { studentId };
         foreach (var link in parents)
         {
-            ids.Add(link.ParentId);
+            recipients.Add(new NotificationRecipient(link.ParentId, RoleType.Parent, studentId));
         }
 
-        return ids.ToList();
+        return recipients;
     }
 
-    private async Task<IReadOnlyList<Guid>> ResolveClassRosterAsync(NotificationAudience audience)
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveClassRosterAsync(
+        NotificationAudience audience)
     {
         if (audience.ClassId is null || audience.ClassId == Guid.Empty)
         {
-            return Array.Empty<Guid>();
+            return Array.Empty<NotificationRecipient>();
         }
 
         var enrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
@@ -79,10 +88,12 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
         return enrollments
             .Select(ce => ce.StudentId)
             .Distinct()
+            .Select(studentId => new NotificationRecipient(studentId, RoleType.Student, studentId))
             .ToList();
     }
 
-    private async Task<IReadOnlyList<Guid>> ResolveClassRosterAndParentsAsync(NotificationAudience audience)
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveClassRosterAndParentsAsync(
+        NotificationAudience audience)
     {
         var roster = await ResolveClassRosterAsync(audience);
         if (roster.Count == 0)
@@ -90,52 +101,67 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
             return roster;
         }
 
-        var studentIds = roster.Distinct().ToList();
+        var studentIds = roster
+            .Select(r => r.ContextStudentId)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
         var parentLinks = await _unitOfWork.ParentStudents.GetAllAsync(
             ps => studentIds.Contains(ps.StudentId) && ps.IsVerified);
 
-        return studentIds
-            .Concat(parentLinks.Select(link => link.ParentId))
-            .Distinct()
-            .ToList();
+        var recipients = new List<NotificationRecipient>(roster);
+        foreach (var link in parentLinks)
+        {
+            recipients.Add(new NotificationRecipient(link.ParentId, RoleType.Parent, link.StudentId));
+        }
+
+        return recipients;
     }
 
-    private async Task<IReadOnlyList<Guid>> ResolveClassMentorAsync(NotificationAudience audience)
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveClassMentorAsync(
+        NotificationAudience audience)
     {
         if (audience.ClassId is null || audience.ClassId == Guid.Empty)
         {
-            return Array.Empty<Guid>();
+            return Array.Empty<NotificationRecipient>();
         }
 
         var clazz = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Id == audience.ClassId.Value);
         if (clazz is null || clazz.MentorId is null || clazz.MentorId == Guid.Empty)
         {
-            return Array.Empty<Guid>();
+            return Array.Empty<NotificationRecipient>();
         }
 
-        return new[] { clazz.MentorId.Value };
+        return new[] { new NotificationRecipient(clazz.MentorId.Value, RoleType.Mentor) };
     }
 
-    private async Task<IReadOnlyList<Guid>> ResolveClassRosterAndMentorAsync(NotificationAudience audience)
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveClassRosterAndMentorAsync(
+        NotificationAudience audience)
     {
         var roster = await ResolveClassRosterAsync(audience);
         var mentor = await ResolveClassMentorAsync(audience);
-        return roster.Concat(mentor).Distinct().ToList();
+        return roster.Concat(mentor).ToList();
     }
 
-    private async Task<IReadOnlyList<Guid>> ResolveClassRosterAndParentsAndMentorAsync(
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveClassRosterAndParentsAndMentorAsync(
         NotificationAudience audience)
     {
         var rosterAndParents = await ResolveClassRosterAndParentsAsync(audience);
         var mentor = await ResolveClassMentorAsync(audience);
-        return rosterAndParents.Concat(mentor).Distinct().ToList();
+        return rosterAndParents.Concat(mentor).ToList();
     }
 
-    private async Task<IReadOnlyList<Guid>> ResolveManagersAsync()
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveManagersAsync()
     {
         var managers = await _unitOfWork.Users.GetAllAsync(
             u => u.Role == RoleType.Manager && u.Status == AccountStatus.Active);
 
-        return managers.Select(u => u.Id).Distinct().ToList();
+        return managers
+            .Select(u => u.Id)
+            .Distinct()
+            .Select(id => new NotificationRecipient(id, RoleType.Manager))
+            .ToList();
     }
 }

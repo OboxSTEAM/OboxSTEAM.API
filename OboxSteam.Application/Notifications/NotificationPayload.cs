@@ -24,4 +24,29 @@ public sealed class NotificationPayload
     public Guid? ParentStudentId { get; set; }
     public Guid? StudentId { get; set; }
     public string? Extra { get; set; }
+
+    public NotificationPayload Clone() => new()
+    {
+        ProgramId = ProgramId,
+        ProgramEnrollmentId = ProgramEnrollmentId,
+        ModuleId = ModuleId,
+        ModuleEnrollmentId = ModuleEnrollmentId,
+        ActivityId = ActivityId,
+        ClassId = ClassId,
+        ClassEnrollmentId = ClassEnrollmentId,
+        ClassSessionId = ClassSessionId,
+        ClassMentorRequestId = ClassMentorRequestId,
+        AssessmentRecoveryRequestId = AssessmentRecoveryRequestId,
+        ClassRedeliveryRequestId = ClassRedeliveryRequestId,
+        PaymentId = PaymentId,
+        PaymentRequestId = PaymentRequestId,
+        AssignmentId = AssignmentId,
+        SubmissionId = SubmissionId,
+        MaterialId = MaterialId,
+        MediaAssetId = MediaAssetId,
+        HighlightVideoId = HighlightVideoId,
+        ParentStudentId = ParentStudentId,
+        StudentId = StudentId,
+        Extra = Extra
+    };
 }

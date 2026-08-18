@@ -16,8 +16,12 @@ public sealed class NotificationAudience
         ClassId = classId;
     }
 
-    public static NotificationAudience ForUser(Guid userId)
-        => new(NotificationAudienceKind.User, userId: userId);
+    /// <param name="contextStudentId">
+    /// Optional student this message is about (e.g. a parent-only payment request).
+    /// Used as <c>ContextStudentId</c> when resolving the recipient.
+    /// </param>
+    public static NotificationAudience ForUser(Guid userId, Guid? contextStudentId = null)
+        => new(NotificationAudienceKind.User, userId: userId, studentId: contextStudentId);
 
     public static NotificationAudience ForStudentAndParents(Guid studentId)
         => new(NotificationAudienceKind.StudentAndParents, studentId: studentId);

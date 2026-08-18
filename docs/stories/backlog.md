@@ -36,6 +36,8 @@ Durable status: `scripts/bin/harness-cli query matrix`.
 ```text
 docs/stories/epics/E01-auth-accounts/US-003-auth-role-tests.md
 docs/stories/epics/E04-assessment/US-002-quiz-grading-tests.md
+docs/stories/epics/E06-parent-experts/US-E06-001-parent-notification-coverage.md
+docs/stories/epics/E06-parent-experts/US-E06-002-notification-template-engine.md
 ```
 
 High-risk stories use `docs/templates/high-risk-story/` folders.

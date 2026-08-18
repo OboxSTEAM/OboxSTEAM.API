@@ -3,7 +3,7 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Application.Notifications;
 
 /// <summary>
-/// Static factories for consistent notification type, audience, copy, and payload.
+/// Static factories for consistent notification type, audience, role copy, tokens, and payload.
 /// Business services should call these methods instead of building raw <see cref="NotificationCommand"/>s.
 /// </summary>
 public static class NotificationCatalog
@@ -42,9 +42,10 @@ public static class NotificationCatalog
     public static NotificationCommand ParentLinkRequested(Guid parentId, Guid studentId, Guid? actorUserId = null)
         => new(
             NotificationType.ParentLinkRequested,
-            NotificationAudience.ForUser(parentId),
-            "Parent link requested",
-            "A parent–student link request is waiting for verification.",
+            NotificationAudience.ForUser(parentId, studentId),
+            NotificationRoleTemplates.FromDefault(
+                "Parent link requested",
+                "A parent–student link request for {studentName} is waiting for verification."),
             payload: new NotificationPayload { StudentId = studentId },
             actorUserId: actorUserId,
             entityType: "ParentStudent",
@@ -53,9 +54,10 @@ public static class NotificationCatalog
     public static NotificationCommand ParentLinkVerified(Guid parentId, Guid studentId)
         => new(
             NotificationType.ParentLinkVerified,
-            NotificationAudience.ForUser(parentId),
-            "Parent link verified",
-            "Your link with the student has been verified.",
+            NotificationAudience.ForUser(parentId, studentId),
+            NotificationRoleTemplates.FromDefault(
+                "Parent link verified",
+                "Your link with {studentName} has been verified."),
             payload: new NotificationPayload { StudentId = studentId },
             entityType: "ParentStudent",
             entityId: studentId);
@@ -78,13 +80,16 @@ public static class NotificationCatalog
         Guid programId,
         Guid programEnrollmentId,
         string? programName = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ProgramPendingPayment,
             NotificationAudience.ForStudentAndParents(studentId),
             "Payment required",
             string.IsNullOrWhiteSpace(programName)
                 ? "Complete payment to activate your program enrollment."
-                : $"Complete payment to activate enrollment in \"{programName}\".",
+                : "Complete payment to activate enrollment in \"{programName}\".",
+            string.IsNullOrWhiteSpace(programName)
+                ? "Complete payment to activate {studentName}'s program enrollment."
+                : "Complete payment to activate {studentName}'s enrollment in \"{programName}\".",
             payload: new NotificationPayload
             {
                 ProgramId = programId,
@@ -92,20 +97,24 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "ProgramEnrollment",
-            entityId: programEnrollmentId);
+            entityId: programEnrollmentId,
+            tokens: NotificationTokenKeys.Create(programName: programName));
 
     public static NotificationCommand ProgramActivated(
         Guid studentId,
         Guid programId,
         Guid programEnrollmentId,
         string? programName = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ProgramActivated,
             NotificationAudience.ForStudentAndParents(studentId),
             "Program enrollment activated",
             string.IsNullOrWhiteSpace(programName)
                 ? "Your program enrollment is now active."
-                : $"Your enrollment in \"{programName}\" is now active.",
+                : "Your enrollment in \"{programName}\" is now active.",
+            string.IsNullOrWhiteSpace(programName)
+                ? "{studentName}'s program enrollment is now active."
+                : "{studentName}'s enrollment in \"{programName}\" is now active.",
             payload: new NotificationPayload
             {
                 ProgramId = programId,
@@ -113,7 +122,8 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "ProgramEnrollment",
-            entityId: programEnrollmentId);
+            entityId: programEnrollmentId,
+            tokens: NotificationTokenKeys.Create(programName: programName));
 
     public static NotificationCommand ModuleCompleted(
         Guid studentId,
@@ -121,13 +131,16 @@ public static class NotificationCatalog
         Guid? moduleEnrollmentId = null,
         Guid? programId = null,
         string? moduleName = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ModuleCompleted,
             NotificationAudience.ForStudentAndParents(studentId),
             "Module completed",
             string.IsNullOrWhiteSpace(moduleName)
                 ? "You completed a module."
-                : $"You completed \"{moduleName}\".",
+                : "You completed \"{moduleName}\".",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? "{studentName} completed a module."
+                : "{studentName} completed \"{moduleName}\".",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -136,7 +149,8 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "Module",
-            entityId: moduleId);
+            entityId: moduleId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
 
     public static NotificationCommand ModuleFailed(
         Guid studentId,
@@ -144,13 +158,16 @@ public static class NotificationCatalog
         Guid? moduleEnrollmentId = null,
         Guid? programId = null,
         string? moduleName = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ModuleFailed,
             NotificationAudience.ForStudentAndParents(studentId),
             "Module failed",
             string.IsNullOrWhiteSpace(moduleName)
                 ? "A module attempt was marked as failed due to excess absences. A retake is required."
-                : $"Module \"{moduleName}\" was marked as failed due to excess absences. A retake is required.",
+                : "Module \"{moduleName}\" was marked as failed due to excess absences. A retake is required.",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? "{studentName}'s module attempt was marked as failed due to excess absences. A retake is required."
+                : "{studentName}'s module \"{moduleName}\" was marked as failed due to excess absences. A retake is required.",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -159,20 +176,24 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "Module",
-            entityId: moduleId);
+            entityId: moduleId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
 
     public static NotificationCommand ModuleUnlocked(
         Guid studentId,
         Guid moduleId,
         Guid? programId = null,
         string? moduleName = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ModuleUnlocked,
             NotificationAudience.ForStudentAndParents(studentId),
             "Module unlocked",
             string.IsNullOrWhiteSpace(moduleName)
                 ? "A new module is now available."
-                : $"Module \"{moduleName}\" is now available.",
+                : "Module \"{moduleName}\" is now available.",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? "A new module is now available for {studentName}."
+                : "Module \"{moduleName}\" is now available for {studentName}.",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -180,20 +201,24 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "Module",
-            entityId: moduleId);
+            entityId: moduleId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
 
     public static NotificationCommand ModuleRetakePendingPayment(
         Guid studentId,
         Guid moduleId,
         Guid? moduleEnrollmentId = null,
         string? moduleName = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ModuleRetakePendingPayment,
             NotificationAudience.ForStudentAndParents(studentId),
             "Retake payment required",
             string.IsNullOrWhiteSpace(moduleName)
                 ? "Complete payment to retake this module."
-                : $"Complete payment to retake \"{moduleName}\".",
+                : "Complete payment to retake \"{moduleName}\".",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? "Complete payment so {studentName} can retake this module."
+                : "Complete payment so {studentName} can retake \"{moduleName}\".",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -201,20 +226,24 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "ModuleEnrollment",
-            entityId: moduleEnrollmentId ?? moduleId);
+            entityId: moduleEnrollmentId ?? moduleId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
 
     public static NotificationCommand ModuleRetakeInitiated(
         Guid studentId,
         Guid moduleId,
         Guid? moduleEnrollmentId = null,
         string? moduleName = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ModuleRetakeInitiated,
             NotificationAudience.ForStudentAndParents(studentId),
             "Module retake started",
             string.IsNullOrWhiteSpace(moduleName)
                 ? "Your module retake has been initiated."
-                : $"Retake of \"{moduleName}\" has been initiated.",
+                : "Retake of \"{moduleName}\" has been initiated.",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? "{studentName}'s module retake has been initiated."
+                : "Retake of \"{moduleName}\" has been initiated for {studentName}.",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -222,17 +251,19 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "ModuleEnrollment",
-            entityId: moduleEnrollmentId ?? moduleId);
+            entityId: moduleEnrollmentId ?? moduleId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
 
     public static NotificationCommand PendingPaymentExpired(
         Guid studentId,
         Guid programEnrollmentId,
         Guid? programId = null)
-        => new(
+        => StudentAndParent(
             NotificationType.PendingPaymentExpired,
             NotificationAudience.ForStudentAndParents(studentId),
             "Pending enrollment expired",
             "Your pending program enrollment expired because payment was not completed in time.",
+            "{studentName}'s pending program enrollment expired because payment was not completed in time.",
             payload: new NotificationPayload
             {
                 ProgramEnrollmentId = programEnrollmentId,
@@ -248,13 +279,16 @@ public static class NotificationCatalog
         Guid? moduleId = null,
         Guid? programId = null,
         string? activityName = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ActivityCompleted,
             NotificationAudience.ForStudentAndParents(studentId),
             "Activity completed",
             string.IsNullOrWhiteSpace(activityName)
                 ? "You completed an activity."
-                : $"You completed \"{activityName}\".",
+                : "You completed \"{activityName}\".",
+            string.IsNullOrWhiteSpace(activityName)
+                ? "{studentName} completed an activity."
+                : "{studentName} completed \"{activityName}\".",
             payload: new NotificationPayload
             {
                 ActivityId = activityId,
@@ -263,7 +297,8 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "Activity",
-            entityId: activityId);
+            entityId: activityId,
+            tokens: NotificationTokenKeys.Create(activityName: activityName));
 
     // ── Payment ───────────────────────────────────────────────────────────────
 
@@ -272,11 +307,12 @@ public static class NotificationCatalog
         Guid paymentId,
         Guid? programId = null,
         Guid? programEnrollmentId = null)
-        => new(
+        => StudentAndParent(
             NotificationType.PaymentSucceeded,
             NotificationAudience.ForStudentAndParents(studentId),
             "Payment succeeded",
             "Your payment was successful.",
+            "{studentName}'s payment was successful.",
             payload: new NotificationPayload
             {
                 PaymentId = paymentId,
@@ -291,11 +327,12 @@ public static class NotificationCatalog
         Guid studentId,
         Guid paymentId,
         Guid? programId = null)
-        => new(
+        => StudentAndParent(
             NotificationType.PaymentFailed,
             NotificationAudience.ForStudentAndParents(studentId),
             "Payment failed",
             "Your payment could not be completed. Please try again.",
+            "{studentName}'s payment could not be completed. Please try again.",
             payload: new NotificationPayload
             {
                 PaymentId = paymentId,
@@ -309,11 +346,12 @@ public static class NotificationCatalog
         Guid studentId,
         Guid paymentId,
         Guid? programId = null)
-        => new(
+        => StudentAndParent(
             NotificationType.PaymentCancelled,
             NotificationAudience.ForStudentAndParents(studentId),
             "Payment cancelled",
             "Your payment was cancelled.",
+            "{studentName}'s payment was cancelled.",
             payload: new NotificationPayload
             {
                 PaymentId = paymentId,
@@ -331,9 +369,10 @@ public static class NotificationCatalog
         Guid? programEnrollmentId = null)
         => new(
             NotificationType.ParentPaymentRequested,
-            NotificationAudience.ForUser(parentId),
-            "Payment request from student",
-            "Your student requested that you complete a program payment.",
+            NotificationAudience.ForUser(parentId, studentId),
+            NotificationRoleTemplates.FromDefault(
+                "Payment request from student",
+                "{studentName} requested that you complete a program payment."),
             payload: new NotificationPayload
             {
                 PaymentRequestId = paymentRequestId,
@@ -352,9 +391,10 @@ public static class NotificationCatalog
         Guid? moduleId = null)
         => new(
             NotificationType.ParentModuleRetakeRequested,
-            NotificationAudience.ForUser(parentId),
-            "Module retake payment request",
-            "Your student requested that you complete a module retake payment.",
+            NotificationAudience.ForUser(parentId, studentId),
+            NotificationRoleTemplates.FromDefault(
+                "Module retake payment request",
+                "{studentName} requested that you complete a module retake payment."),
             payload: new NotificationPayload
             {
                 PaymentRequestId = paymentRequestId,
@@ -371,73 +411,105 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassCreated,
             NotificationAudience.ForManagers(),
-            "Class created",
-            string.IsNullOrWhiteSpace(className)
-                ? "A new class was created."
-                : $"Class \"{className}\" was created.",
+            NotificationRoleTemplates.FromDefault(
+                "Class created",
+                string.IsNullOrWhiteSpace(className)
+                    ? "A new class was created."
+                    : "Class \"{className}\" was created."),
             payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
             entityType: "Class",
-            entityId: classId);
+            entityId: classId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     public static NotificationCommand ClassUpdated(Guid classId, Guid programId, string? className = null)
-        => new(
+        => StudentParentMentor(
             NotificationType.ClassUpdated,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Class updated",
             string.IsNullOrWhiteSpace(className)
                 ? "Class details were updated."
-                : $"Class \"{className}\" was updated.",
+                : "Class \"{className}\" was updated.",
+            string.IsNullOrWhiteSpace(className)
+                ? "{studentName}'s class details were updated."
+                : "{studentName}'s class \"{className}\" was updated.",
+            string.IsNullOrWhiteSpace(className)
+                ? "Class details were updated."
+                : "Class \"{className}\" was updated.",
             payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
             entityType: "Class",
-            entityId: classId);
+            entityId: classId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     public static NotificationCommand ClassOpenForEnrollment(Guid classId, Guid programId, string? className = null)
         => new(
             NotificationType.ClassOpenForEnrollment,
             NotificationAudience.ForManagers(),
-            "Class open for enrollment",
-            string.IsNullOrWhiteSpace(className)
-                ? "A class is now open for enrollment."
-                : $"Class \"{className}\" is now open for enrollment.",
+            NotificationRoleTemplates.FromDefault(
+                "Class open for enrollment",
+                string.IsNullOrWhiteSpace(className)
+                    ? "A class is now open for enrollment."
+                    : "Class \"{className}\" is now open for enrollment."),
             payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
             entityType: "Class",
-            entityId: classId);
+            entityId: classId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     public static NotificationCommand ClassStarted(Guid classId, Guid programId, string? className = null)
-        => new(
+        => StudentParentMentor(
             NotificationType.ClassStarted,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Class started",
             string.IsNullOrWhiteSpace(className)
                 ? "Your class has started."
-                : $"Class \"{className}\" has started.",
+                : "Class \"{className}\" has started.",
+            string.IsNullOrWhiteSpace(className)
+                ? "{studentName}'s class has started."
+                : "{studentName}'s class \"{className}\" has started.",
+            string.IsNullOrWhiteSpace(className)
+                ? "Your class has started."
+                : "Class \"{className}\" has started.",
             payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
             entityType: "Class",
-            entityId: classId);
+            entityId: classId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     public static NotificationCommand ClassAutoStarted(Guid classId, Guid programId, string? className = null)
-        => new(
+        => StudentParentMentor(
             NotificationType.ClassAutoStarted,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Class auto-started",
             string.IsNullOrWhiteSpace(className)
                 ? "Your class was automatically started."
-                : $"Class \"{className}\" was automatically started.",
+                : "Class \"{className}\" was automatically started.",
+            string.IsNullOrWhiteSpace(className)
+                ? "{studentName}'s class was automatically started."
+                : "{studentName}'s class \"{className}\" was automatically started.",
+            string.IsNullOrWhiteSpace(className)
+                ? "Your class was automatically started."
+                : "Class \"{className}\" was automatically started.",
             payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
             entityType: "Class",
-            entityId: classId);
+            entityId: classId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     public static NotificationCommand ClassCompleted(Guid classId, Guid programId, string? className = null)
-        => new(
+        => StudentParentMentor(
             NotificationType.ClassCompleted,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Class completed",
             string.IsNullOrWhiteSpace(className)
                 ? "Your class has been completed."
-                : $"Class \"{className}\" has been completed.",
+                : "Class \"{className}\" has been completed.",
+            string.IsNullOrWhiteSpace(className)
+                ? "{studentName}'s class has been completed."
+                : "{studentName}'s class \"{className}\" has been completed.",
+            string.IsNullOrWhiteSpace(className)
+                ? "Your class has been completed."
+                : "Class \"{className}\" has been completed.",
             payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
             entityType: "Class",
-            entityId: classId);
+            entityId: classId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     // ── Class mentor assignment ───────────────────────────────────────────────
 
@@ -450,10 +522,11 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassMentorRequestSubmitted,
             NotificationAudience.ForManagers(),
-            "Mentor request submitted",
-            string.IsNullOrWhiteSpace(className)
-                ? "A mentor requested assignment to a class."
-                : $"A mentor requested assignment to class \"{className}\".",
+            NotificationRoleTemplates.FromDefault(
+                "Mentor request submitted",
+                string.IsNullOrWhiteSpace(className)
+                    ? "A mentor requested assignment to a class."
+                    : "A mentor requested assignment to class \"{className}\"."),
             payload: new NotificationPayload
             {
                 ClassMentorRequestId = requestId,
@@ -462,7 +535,8 @@ public static class NotificationCatalog
             },
             actorUserId: mentorId,
             entityType: "ClassMentorRequest",
-            entityId: requestId);
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     public static NotificationCommand ClassMentorRequestApproved(
         Guid requestId,
@@ -473,10 +547,11 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassMentorRequestApproved,
             NotificationAudience.ForUser(mentorId),
-            "Mentor request approved",
-            string.IsNullOrWhiteSpace(className)
-                ? "Your class assignment request was approved."
-                : $"Your request for class \"{className}\" was approved.",
+            NotificationRoleTemplates.FromDefault(
+                "Mentor request approved",
+                string.IsNullOrWhiteSpace(className)
+                    ? "Your class assignment request was approved."
+                    : "Your request for class \"{className}\" was approved."),
             payload: new NotificationPayload
             {
                 ClassMentorRequestId = requestId,
@@ -484,7 +559,8 @@ public static class NotificationCatalog
                 ProgramId = programId,
             },
             entityType: "ClassMentorRequest",
-            entityId: requestId);
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     public static NotificationCommand ClassMentorRequestRejected(
         Guid requestId,
@@ -495,10 +571,11 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassMentorRequestRejected,
             NotificationAudience.ForUser(mentorId),
-            "Mentor request rejected",
-            string.IsNullOrWhiteSpace(className)
-                ? "Your class assignment request was rejected."
-                : $"Your request for class \"{className}\" was rejected.",
+            NotificationRoleTemplates.FromDefault(
+                "Mentor request rejected",
+                string.IsNullOrWhiteSpace(className)
+                    ? "Your class assignment request was rejected."
+                    : "Your request for class \"{className}\" was rejected."),
             payload: new NotificationPayload
             {
                 ClassMentorRequestId = requestId,
@@ -506,7 +583,8 @@ public static class NotificationCatalog
                 ProgramId = programId,
             },
             entityType: "ClassMentorRequest",
-            entityId: requestId);
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     // ── Assessment recovery ───────────────────────────────────────────────────
 
@@ -522,10 +600,11 @@ public static class NotificationCatalog
             classId.HasValue
                 ? NotificationAudience.ForClassMentor(classId.Value)
                 : NotificationAudience.ForManagers(),
-            "Assessment recovery requested",
-            string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "A student requested another attempt on an assignment."
-                : $"A student requested another attempt on \"{assignmentTitle}\".",
+            NotificationRoleTemplates.FromDefault(
+                "Assessment recovery requested",
+                string.IsNullOrWhiteSpace(assignmentTitle)
+                    ? "{actorName} requested another attempt on an assignment."
+                    : "{actorName} requested another attempt on \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 AssessmentRecoveryRequestId = requestId,
@@ -536,7 +615,8 @@ public static class NotificationCatalog
             },
             actorUserId: studentId,
             entityType: "AssessmentRecoveryRequest",
-            entityId: requestId);
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
 
     public static NotificationCommand AssessmentRecoveryApproved(
         Guid requestId,
@@ -544,30 +624,37 @@ public static class NotificationCatalog
         Guid assignmentId,
         int extraAttempts,
         string? assignmentTitle = null)
-        => new(
+        => StudentAndParent(
             NotificationType.AssessmentRecoveryApproved,
             NotificationAudience.ForStudentAndParents(studentId),
             "Assessment recovery approved",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? $"Your recovery request was approved (+{extraAttempts} attempt(s))."
-                : $"Recovery for \"{assignmentTitle}\" was approved (+{extraAttempts} attempt(s)).",
+                ? "Your recovery request was approved (+{extraAttempts} attempt(s))."
+                : "Recovery for \"{assignmentTitle}\" was approved (+{extraAttempts} attempt(s)).",
+            string.IsNullOrWhiteSpace(assignmentTitle)
+                ? "{studentName}'s recovery request was approved (+{extraAttempts} attempt(s))."
+                : "Recovery for \"{assignmentTitle}\" was approved for {studentName} (+{extraAttempts} attempt(s)).",
             payload: new NotificationPayload
             {
                 AssessmentRecoveryRequestId = requestId,
                 AssignmentId = assignmentId,
             },
             entityType: "AssessmentRecoveryRequest",
-            entityId: requestId);
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(
+                assignmentTitle: assignmentTitle,
+                extraAttempts: extraAttempts.ToString()));
 
     public static NotificationCommand AssessmentRecoveryRejected(
         Guid requestId,
         Guid studentId,
         Guid assignmentId)
-        => new(
+        => StudentAndParent(
             NotificationType.AssessmentRecoveryRejected,
             NotificationAudience.ForStudentAndParents(studentId),
             "Assessment recovery rejected",
             "Your assessment recovery request was rejected.",
+            "{studentName}'s assessment recovery request was rejected.",
             payload: new NotificationPayload
             {
                 AssessmentRecoveryRequestId = requestId,
@@ -587,10 +674,11 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassRedeliveryPendingManager,
             NotificationAudience.ForManagers(),
-            "Class re-delivery needs decision",
-            string.IsNullOrWhiteSpace(moduleName)
-                ? "No eligible class found; a re-delivery request needs manager action."
-                : $"No eligible class for re-delivery of \"{moduleName}\"; manager action needed.",
+            NotificationRoleTemplates.FromDefault(
+                "Class re-delivery needs decision",
+                string.IsNullOrWhiteSpace(moduleName)
+                    ? "No eligible class found; a re-delivery request needs manager action."
+                    : "No eligible class for re-delivery of \"{moduleName}\"; manager action needed."),
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
@@ -599,7 +687,8 @@ public static class NotificationCatalog
                 ProgramId = programId,
             },
             entityType: "ClassRedeliveryRequest",
-            entityId: requestId);
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
 
     public static NotificationCommand ClassRedeliveryMatchedPendingPayment(
         Guid requestId,
@@ -609,13 +698,16 @@ public static class NotificationCatalog
         Guid retakeModuleEnrollmentId,
         string? moduleName = null,
         string? className = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ClassRedeliveryMatchedPendingPayment,
             NotificationAudience.ForStudentAndParents(studentId),
             "Pay retake fee to join another class",
             string.IsNullOrWhiteSpace(className)
                 ? "A class was matched for re-delivery. Complete retake payment to transfer."
-                : $"Matched class \"{className}\" for re-delivery of \"{moduleName}\". Complete payment to transfer.",
+                : "Matched class \"{className}\" for re-delivery of \"{moduleName}\". Complete payment to transfer.",
+            string.IsNullOrWhiteSpace(className)
+                ? "A class was matched for {studentName}'s re-delivery. Complete retake payment to transfer."
+                : "Matched class \"{className}\" for re-delivery of \"{moduleName}\" for {studentName}. Complete payment to transfer.",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
@@ -625,17 +717,19 @@ public static class NotificationCatalog
                 ModuleEnrollmentId = retakeModuleEnrollmentId,
             },
             entityType: "ClassRedeliveryRequest",
-            entityId: requestId);
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName, className: className));
 
     public static NotificationCommand ClassRedeliveryRejected(
         Guid requestId,
         Guid studentId,
         Guid moduleId)
-        => new(
+        => StudentAndParent(
             NotificationType.ClassRedeliveryRejected,
             NotificationAudience.ForStudentAndParents(studentId),
             "Class re-delivery rejected",
             "Your class re-delivery request was rejected.",
+            "{studentName}'s class re-delivery request was rejected.",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
@@ -649,11 +743,12 @@ public static class NotificationCatalog
         Guid studentId,
         Guid moduleId,
         Guid targetClassId)
-        => new(
+        => StudentAndParent(
             NotificationType.ClassRedeliveryCompleted,
             NotificationAudience.ForStudentAndParents(studentId),
             "Class re-delivery completed",
             "You have been transferred for module re-delivery.",
+            "{studentName} has been transferred for module re-delivery.",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
@@ -671,13 +766,16 @@ public static class NotificationCatalog
         Guid classEnrollmentId,
         Guid? programId = null,
         string? className = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ClassEnrolled,
             NotificationAudience.ForStudentAndParents(studentId),
             "Enrolled in class",
             string.IsNullOrWhiteSpace(className)
                 ? "You have been enrolled in a class."
-                : $"You have been enrolled in \"{className}\".",
+                : "You have been enrolled in \"{className}\".",
+            string.IsNullOrWhiteSpace(className)
+                ? "{studentName} has been enrolled in a class."
+                : "{studentName} has been enrolled in \"{className}\".",
             payload: new NotificationPayload
             {
                 ClassId = classId,
@@ -686,7 +784,8 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "ClassEnrollment",
-            entityId: classEnrollmentId);
+            entityId: classEnrollmentId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     public static NotificationCommand ClassTransferred(
         Guid studentId,
@@ -694,13 +793,16 @@ public static class NotificationCatalog
         Guid classEnrollmentId,
         Guid? programId = null,
         string? className = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ClassTransferred,
             NotificationAudience.ForStudentAndParents(studentId),
             "Transferred to another class",
             string.IsNullOrWhiteSpace(className)
                 ? "You have been transferred to another class."
-                : $"You have been transferred to \"{className}\".",
+                : "You have been transferred to \"{className}\".",
+            string.IsNullOrWhiteSpace(className)
+                ? "{studentName} has been transferred to another class."
+                : "{studentName} has been transferred to \"{className}\".",
             payload: new NotificationPayload
             {
                 ClassId = classId,
@@ -709,7 +811,8 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "ClassEnrollment",
-            entityId: classEnrollmentId);
+            entityId: classEnrollmentId,
+            tokens: NotificationTokenKeys.Create(className: className));
 
     // ── Class session ─────────────────────────────────────────────────────────
 
@@ -717,10 +820,12 @@ public static class NotificationCatalog
         Guid classId,
         Guid classSessionId,
         Guid? programId = null)
-        => new(
+        => StudentParentMentor(
             NotificationType.ClassSessionScheduled,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Session scheduled",
+            "A new class session has been scheduled.",
+            "A new class session has been scheduled for {studentName}.",
             "A new class session has been scheduled.",
             payload: new NotificationPayload
             {
@@ -735,10 +840,12 @@ public static class NotificationCatalog
         Guid classId,
         Guid classSessionId,
         Guid? programId = null)
-        => new(
+        => StudentParentMentor(
             NotificationType.ClassSessionRescheduled,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Session rescheduled",
+            "A class session has been rescheduled.",
+            "A class session has been rescheduled for {studentName}.",
             "A class session has been rescheduled.",
             payload: new NotificationPayload
             {
@@ -789,10 +896,12 @@ public static class NotificationCatalog
         Guid classId,
         Guid classSessionId,
         Guid? programId = null)
-        => new(
+        => StudentParentMentor(
             NotificationType.ClassSessionCancelled,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
             "Session cancelled",
+            "A class session has been cancelled.",
+            "A class session has been cancelled for {studentName}.",
             "A class session has been cancelled.",
             payload: new NotificationPayload
             {
@@ -812,35 +921,41 @@ public static class NotificationCatalog
         Guid? classId = null,
         Guid? actorUserId = null)
     {
-        var (type, title, body) = status switch
+        var (type, title, studentBody, parentBody) = status switch
         {
             AttendanceStatus.Present => (
                 NotificationType.AttendanceMarkedPresent,
                 "Marked present",
-                "You were marked present for a class session."),
+                "You were marked present for a class session.",
+                "{studentName} was marked present for a class session."),
             AttendanceStatus.Late => (
                 NotificationType.AttendanceMarkedLate,
                 "Marked late",
-                "You were marked late for a class session."),
+                "You were marked late for a class session.",
+                "{studentName} was marked late for a class session."),
             AttendanceStatus.Absent => (
                 NotificationType.AttendanceMarkedAbsent,
                 "Marked absent",
-                "You were marked absent for a class session."),
+                "You were marked absent for a class session.",
+                "{studentName} was marked absent for a class session."),
             AttendanceStatus.Excused => (
                 NotificationType.AttendanceMarkedExcused,
                 "Marked excused",
-                "You were marked excused for a class session."),
+                "You were marked excused for a class session.",
+                "{studentName} was marked excused for a class session."),
             _ => (
                 NotificationType.AttendanceMarkedPresent,
                 "Attendance updated",
-                "Your attendance was updated for a class session.")
+                "Your attendance was updated for a class session.",
+                "{studentName}'s attendance was updated for a class session.")
         };
 
-        return new NotificationCommand(
+        return StudentAndParent(
             type,
             NotificationAudience.ForStudentAndParents(studentId),
             title,
-            body,
+            studentBody,
+            parentBody,
             payload: new NotificationPayload
             {
                 ClassSessionId = classSessionId,
@@ -861,15 +976,20 @@ public static class NotificationCatalog
         bool passed,
         Guid? programId = null,
         string? assignmentTitle = null)
-        => new(
+        => StudentAndParent(
             passed ? NotificationType.QuizPassed : NotificationType.QuizFailed,
             NotificationAudience.ForStudentAndParents(studentId),
             passed ? "Quiz passed" : "Quiz needs attention",
             string.IsNullOrWhiteSpace(assignmentTitle)
                 ? (passed ? "You passed a quiz." : "A quiz was not passed.")
                 : (passed
-                    ? $"You passed \"{assignmentTitle}\"."
-                    : $"\"{assignmentTitle}\" was not passed."),
+                    ? "You passed \"{assignmentTitle}\"."
+                    : "\"{assignmentTitle}\" was not passed."),
+            string.IsNullOrWhiteSpace(assignmentTitle)
+                ? (passed ? "{studentName} passed a quiz." : "{studentName} did not pass a quiz.")
+                : (passed
+                    ? "{studentName} passed \"{assignmentTitle}\"."
+                    : "{studentName} did not pass \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
@@ -878,7 +998,8 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "Submission",
-            entityId: submissionId);
+            entityId: submissionId,
+            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
 
     public static NotificationCommand ResearchGraded(
         Guid studentId,
@@ -887,13 +1008,20 @@ public static class NotificationCatalog
         bool passed,
         Guid? programId = null,
         string? assignmentTitle = null)
-        => new(
+        => StudentAndParent(
             passed ? NotificationType.ResearchGradedPassed : NotificationType.ResearchGradedFailed,
             NotificationAudience.ForStudentAndParents(studentId),
             passed ? "Assignment passed" : "Assignment needs attention",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? (passed ? "Your research submission was graded as passed." : "Your research submission was graded and needs attention.")
-                : $"Your submission for \"{assignmentTitle}\" was graded.",
+                ? (passed
+                    ? "Your research submission was graded as passed."
+                    : "Your research submission was graded and needs attention.")
+                : "Your submission for \"{assignmentTitle}\" was graded.",
+            string.IsNullOrWhiteSpace(assignmentTitle)
+                ? (passed
+                    ? "{studentName}'s research submission was graded as passed."
+                    : "{studentName}'s research submission was graded and needs attention.")
+                : "{studentName}'s submission for \"{assignmentTitle}\" was graded.",
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
@@ -902,7 +1030,8 @@ public static class NotificationCatalog
                 StudentId = studentId
             },
             entityType: "Submission",
-            entityId: submissionId);
+            entityId: submissionId,
+            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
 
     public static NotificationCommand ResearchReturnedForRevision(
         Guid studentId,
@@ -911,13 +1040,16 @@ public static class NotificationCatalog
         Guid? programId = null,
         string? assignmentTitle = null,
         Guid? actorUserId = null)
-        => new(
+        => StudentAndParent(
             NotificationType.ResearchReturnedForRevision,
             NotificationAudience.ForStudentAndParents(studentId),
             "Submission returned for revision",
             string.IsNullOrWhiteSpace(assignmentTitle)
                 ? "Your research submission was returned for revision."
-                : $"Your submission for \"{assignmentTitle}\" was returned for revision.",
+                : "Your submission for \"{assignmentTitle}\" was returned for revision.",
+            string.IsNullOrWhiteSpace(assignmentTitle)
+                ? "{studentName}'s research submission was returned for revision."
+                : "{studentName}'s submission for \"{assignmentTitle}\" was returned for revision.",
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
@@ -927,7 +1059,8 @@ public static class NotificationCatalog
             },
             actorUserId: actorUserId,
             entityType: "Submission",
-            entityId: submissionId);
+            entityId: submissionId,
+            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
 
     public static NotificationCommand ResearchSubmissionOpened(
         Guid studentId,
@@ -961,10 +1094,11 @@ public static class NotificationCatalog
             classId.HasValue
                 ? NotificationAudience.ForClassMentor(classId.Value)
                 : NotificationAudience.ForUser(studentId),
-            "Research work submitted",
-            string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "A student submitted research work for review."
-                : $"Research work was submitted for \"{assignmentTitle}\".",
+            NotificationRoleTemplates.FromDefault(
+                "Research work submitted",
+                string.IsNullOrWhiteSpace(assignmentTitle)
+                    ? "{actorName} submitted research work for review."
+                    : "Research work was submitted for \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
@@ -975,7 +1109,8 @@ public static class NotificationCatalog
             },
             actorUserId: studentId,
             entityType: "Submission",
-            entityId: submissionId);
+            entityId: submissionId,
+            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
 
     // ── Media ─────────────────────────────────────────────────────────────────
 
@@ -1036,11 +1171,12 @@ public static class NotificationCatalog
             entityId: highlightVideoId);
 
     public static NotificationCommand HighlightVideoReady(Guid studentId, Guid highlightVideoId)
-        => new(
+        => StudentAndParent(
             NotificationType.HighlightVideoReady,
             NotificationAudience.ForStudentAndParents(studentId),
             "Highlight video ready",
             "Your personal highlight video is ready.",
+            "{studentName}'s personal highlight video is ready.",
             payload: new NotificationPayload
             {
                 HighlightVideoId = highlightVideoId,
@@ -1070,13 +1206,16 @@ public static class NotificationCatalog
         Guid assignmentId,
         Guid? programId = null,
         string? assignmentTitle = null)
-        => new(
+        => StudentAndParent(
             NotificationType.AssignmentPublished,
             NotificationAudience.ForClassRosterAndParents(classId),
             "New assignment published",
             string.IsNullOrWhiteSpace(assignmentTitle)
                 ? "A new assignment is available."
-                : $"Assignment \"{assignmentTitle}\" is now available.",
+                : "Assignment \"{assignmentTitle}\" is now available.",
+            string.IsNullOrWhiteSpace(assignmentTitle)
+                ? "A new assignment is available for {studentName}."
+                : "Assignment \"{assignmentTitle}\" is now available for {studentName}.",
             payload: new NotificationPayload
             {
                 AssignmentId = assignmentId,
@@ -1084,7 +1223,8 @@ public static class NotificationCatalog
                 ProgramId = programId
             },
             entityType: "Assignment",
-            entityId: assignmentId);
+            entityId: assignmentId,
+            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
 
     public static NotificationCommand MaterialUpdated(
         Guid classId,
@@ -1119,10 +1259,11 @@ public static class NotificationCatalog
         => new(
             NotificationType.AssignmentEditedByMentor,
             NotificationAudience.ForManagers(),
-            "Assignment edited by mentor",
-            string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "A mentor updated assignment details."
-                : $"Mentor updated assignment \"{assignmentTitle}\".",
+            NotificationRoleTemplates.FromDefault(
+                "Assignment edited by mentor",
+                string.IsNullOrWhiteSpace(assignmentTitle)
+                    ? "A mentor updated assignment details."
+                    : "Mentor updated assignment \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 AssignmentId = assignmentId,
@@ -1130,7 +1271,8 @@ public static class NotificationCatalog
             },
             actorUserId: mentorId,
             entityType: "Assignment",
-            entityId: assignmentId);
+            entityId: assignmentId,
+            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
 
     public static NotificationCommand ClassQuizSetEditedByMentor(
         Guid assignmentId,
@@ -1156,4 +1298,47 @@ public static class NotificationCatalog
             actorUserId: mentorId,
             entityType: "ClassQuizQuestionSet",
             entityId: assignmentId);
+
+    private static NotificationCommand StudentAndParent(
+        NotificationType type,
+        NotificationAudience audience,
+        string title,
+        string studentBody,
+        string parentBody,
+        NotificationPayload? payload = null,
+        Guid? actorUserId = null,
+        string? entityType = null,
+        Guid? entityId = null,
+        IReadOnlyDictionary<string, string>? tokens = null)
+        => new(
+            type,
+            audience,
+            NotificationRoleTemplates.ForStudentAndParent(title, studentBody, parentBody),
+            payload,
+            actorUserId,
+            entityType,
+            entityId,
+            tokens);
+
+    private static NotificationCommand StudentParentMentor(
+        NotificationType type,
+        NotificationAudience audience,
+        string title,
+        string studentBody,
+        string parentBody,
+        string mentorBody,
+        NotificationPayload? payload = null,
+        Guid? actorUserId = null,
+        string? entityType = null,
+        Guid? entityId = null,
+        IReadOnlyDictionary<string, string>? tokens = null)
+        => new(
+            type,
+            audience,
+            NotificationRoleTemplates.ForStudentParentAndMentor(title, studentBody, parentBody, mentorBody),
+            payload,
+            actorUserId,
+            entityType,
+            entityId,
+            tokens);
 }
