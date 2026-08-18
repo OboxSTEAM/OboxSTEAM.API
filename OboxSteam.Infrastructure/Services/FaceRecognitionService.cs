@@ -11,7 +11,7 @@ namespace OboxSteam.Infrastructure.Services;
 public class FaceRecognitionService : IFaceRecognitionService
 {
     private const string CollectionId = "oboxsteam-faces";
-    private const float DefaultFaceMatchThreshold = 80f;
+    private const float DefaultFaceMatchThreshold = 70f;
 
     /// <summary>
     /// When collapsing raw Rekognition timestamps into segments, detections within
@@ -72,7 +72,7 @@ public class FaceRecognitionService : IFaceRecognitionService
             CollectionId = CollectionId,
             Image = new Image { Bytes = new MemoryStream(imageBytes) },
             MaxFaces = 1,
-            QualityFilter = QualityFilter.NONE,
+            QualityFilter = QualityFilter.AUTO,
             ExternalImageId = userId.ToString()
         });
 
@@ -134,7 +134,7 @@ public class FaceRecognitionService : IFaceRecognitionService
                 }
             },
             FaceMatchThreshold = minConfidence,
-            QualityFilter = QualityFilter.NONE,
+            QualityFilter = QualityFilter.AUTO,
             MaxFaces = 10
         });
 

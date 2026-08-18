@@ -16,7 +16,7 @@ public interface IFaceRecognitionService
     Task<string> IndexFaceAsync(Guid userId, Stream imageStream);
 
     /// <summary>Finds matching users in an uploaded image (S3-backed).</summary>
-    Task<List<FaceMatchResult>> SearchFacesAsync(string s3Bucket, string s3Key, float minConfidence = 80f);
+    Task<List<FaceMatchResult>> SearchFacesAsync(string s3Bucket, string s3Key, float minConfidence = 70f);
 
     /// <summary>Removes a face when a user account is deleted.</summary>
     Task DeleteFaceAsync(string faceId);
@@ -27,7 +27,7 @@ public interface IFaceRecognitionService
     /// completion is delivered via SNS; otherwise callers must poll
     /// <see cref="GetVideoFaceSearchResultsAsync"/>.
     /// </summary>
-    Task<string> StartVideoFaceSearchAsync(string s3Bucket, string s3Key, float minConfidence = 80f);
+    Task<string> StartVideoFaceSearchAsync(string s3Bucket, string s3Key, float minConfidence = 70f);
 
     /// <summary>
     /// Polls face-search results for a video job.
