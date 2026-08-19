@@ -39,6 +39,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<ClassQuizQuestion> ClassQuizQuestions { get; } = new();
     public InMemoryRepository<ClassQuizQuestionOption> ClassQuizQuestionOptions { get; } = new();
     public InMemoryRepository<Expert> Experts { get; } = new();
+    public InMemoryRepository<ExpertDegree> ExpertDegrees { get; } = new();
+    public InMemoryRepository<ExpertPublication> ExpertPublications { get; } = new();
     public InMemoryRepository<Certificate> Certificates { get; } = new();
     public InMemoryRepository<MediaAsset> MediaAssets { get; } = new();
     public InMemoryRepository<MediaTag> MediaTags { get; } = new();
@@ -101,6 +103,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<ClassQuizQuestion> IUnitOfWork.ClassQuizQuestions => ClassQuizQuestions;
     IGenericRepository<ClassQuizQuestionOption> IUnitOfWork.ClassQuizQuestionOptions => ClassQuizQuestionOptions;
     IGenericRepository<Expert> IUnitOfWork.Experts => Experts;
+    IGenericRepository<ExpertDegree> IUnitOfWork.ExpertDegrees => ExpertDegrees;
+    IGenericRepository<ExpertPublication> IUnitOfWork.ExpertPublications => ExpertPublications;
     IGenericRepository<Certificate> IUnitOfWork.Certificates => Certificates;
     IGenericRepository<MediaAsset> IUnitOfWork.MediaAssets => MediaAssets;
     IGenericRepository<MediaTag> IUnitOfWork.MediaTags => MediaTags;
@@ -167,6 +171,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(ClassQuizQuestion) => ClassQuizQuestions,
             nameof(ClassQuizQuestionOption) => ClassQuizQuestionOptions,
             nameof(Expert) => Experts,
+            nameof(ExpertDegree) => ExpertDegrees,
+            nameof(ExpertPublication) => ExpertPublications,
             nameof(Certificate) => Certificates,
             nameof(MediaAsset) => MediaAssets,
             nameof(MediaTag) => MediaTags,

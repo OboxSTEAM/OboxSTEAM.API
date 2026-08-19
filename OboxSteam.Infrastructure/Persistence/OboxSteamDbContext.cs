@@ -18,6 +18,8 @@ public class OboxSteamDbContext : DbContext
 
     // ── 2. VIP Experts & PR Board ──
     public DbSet<Expert> Experts { get; set; }
+    public DbSet<ExpertDegree> ExpertDegrees { get; set; }
+    public DbSet<ExpertPublication> ExpertPublications { get; set; }
 
     // ── 3. Student Academic Profile ──
     public DbSet<StudentProfile> StudentProfiles { get; set; }
@@ -115,6 +117,8 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ParentStudent>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<OtpStorage>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Expert>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExpertDegree>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExpertPublication>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramBoard>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Skill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StudentSkill>().HasQueryFilter(e => !e.IsDeleted);
@@ -204,10 +208,42 @@ public class OboxSteamDbContext : DbContext
         {
             entity.HasIndex(e => e.Code).IsUnique();
 
+            entity.Property(e => e.Specialization)
+                .HasColumnType("text[]")
+                .HasDefaultValueSql("ARRAY[]::text[]");
+
             entity.HasOne(e => e.User)
                 .WithOne(u => u.Expert)
                 .HasForeignKey<Expert>(e => e.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // EXPERT DEGREE
+        // =============================================
+        modelBuilder.Entity<ExpertDegree>(entity =>
+        {
+            entity.HasOne(d => d.Expert)
+                .WithMany(e => e.Degrees)
+                .HasForeignKey(d => d.ExpertId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(d => d.ExpertId)
+                .HasFilter("\"IsDeleted\" = false");
+        });
+
+        // =============================================
+        // EXPERT PUBLICATION
+        // =============================================
+        modelBuilder.Entity<ExpertPublication>(entity =>
+        {
+            entity.HasOne(p => p.Expert)
+                .WithMany(e => e.Publications)
+                .HasForeignKey(p => p.ExpertId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(p => p.ExpertId)
+                .HasFilter("\"IsDeleted\" = false");
         });
 
         // =============================================

@@ -31,6 +31,11 @@ public class Expert : BaseEntity
 
     public string? Achievements { get; set; }
 
+    /// <summary>Free-form specialization tags (e.g. Robotics, AI education).</summary>
+    public string[] Specialization { get; set; } = Array.Empty<string>();
+
     // Navigation
     public ICollection<ProgramBoard> ProgramBoards { get; set; } = new List<ProgramBoard>();
+    public ICollection<ExpertDegree> Degrees { get; set; } = new List<ExpertDegree>();
+    public ICollection<ExpertPublication> Publications { get; set; } = new List<ExpertPublication>();
 }

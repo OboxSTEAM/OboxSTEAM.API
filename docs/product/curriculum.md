@@ -58,7 +58,8 @@ API: `/api/activities`.
 `Class` is a running cohort (đợt học) for a program: date range, capacity,
 mentor, `MinHoursBeforeAssignmentJoin`, `ScheduleSummary`.
 
-`ClassSession` schedules concrete session instances. `SessionAttendance` records
+`ClassSession` schedules concrete session instances. LiveOnline join links live
+on `MeetingUrl` (separate from free-text `Location`). `SessionAttendance` records
 attendance status per student.
 
 Class APIs are exposed through program and enrollment flows; entities exist in
@@ -74,7 +75,9 @@ Types via `MaterialType` enum. API: `/api/materials`.
 ## Experts
 
 External experts associated with programs via `ProgramBoard` and `Expert`
-entity.
+entity. Profile credentials: `Specialization` tags, `ExpertDegree`, and
+`ExpertPublication`. CRUD endpoints for degrees/publications land in a follow-up
+story.
 
 API: `/api/experts`.
 

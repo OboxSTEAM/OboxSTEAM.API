@@ -34,6 +34,8 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<ClassQuizQuestion> ClassQuizQuestions { get; }
     IGenericRepository<ClassQuizQuestionOption> ClassQuizQuestionOptions { get; }
     IGenericRepository<Expert> Experts { get; }
+    IGenericRepository<ExpertDegree> ExpertDegrees { get; }
+    IGenericRepository<ExpertPublication> ExpertPublications { get; }
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }
     IGenericRepository<MediaTag> MediaTags { get; }

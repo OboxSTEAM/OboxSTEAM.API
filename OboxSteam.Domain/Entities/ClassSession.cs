@@ -34,6 +34,10 @@ public class ClassSession : BaseEntity
     [MaxLength(500)]
     public string? Location { get; set; }
 
+    /// <summary>Join URL for LiveOnline sessions (kept separate from free-text <see cref="Location"/>).</summary>
+    [MaxLength(2048)]
+    public string? MeetingUrl { get; set; }
+
     public bool RequiresAttendance { get; set; } = true;
 
     /// <summary>Whether the assigned mentor must check in for this specific session instance.</summary>

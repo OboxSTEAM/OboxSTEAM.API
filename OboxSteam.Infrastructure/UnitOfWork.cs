@@ -60,6 +60,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ClassQuizQuestion> ClassQuizQuestions => Repository<ClassQuizQuestion>();
     public IGenericRepository<ClassQuizQuestionOption> ClassQuizQuestionOptions => Repository<ClassQuizQuestionOption>();
     public IGenericRepository<Expert> Experts => Repository<Expert>();
+    public IGenericRepository<ExpertDegree> ExpertDegrees => Repository<ExpertDegree>();
+    public IGenericRepository<ExpertPublication> ExpertPublications => Repository<ExpertPublication>();
     public IGenericRepository<Certificate> Certificates => Repository<Certificate>();
     public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();
     public IGenericRepository<MediaTag> MediaTags => Repository<MediaTag>();
