@@ -1572,10 +1572,21 @@ public class MediaService : IMediaService
               .ToDictionary(u => u.Id)
             : new Dictionary<Guid, User>();
 
+        var activeExistingTags = media.MediaTags.Where(t => !t.IsDeleted).ToList();
+        if (activeExistingTags.Count > 0)
+        {
+            await _unitOfWork.MediaTags.HardRemoveRange(activeExistingTags);
+            foreach (var existingTag in activeExistingTags)
+            {
+                media.MediaTags.Remove(existingTag);
+            }
+        }
+
+        var taggedStudentIds = new HashSet<Guid>();
         foreach (var match in inClassMatches)
         {
-            // Skip duplicates already in DB
-            if (media.MediaTags.Any(t => t.StudentId == match.UserId))
+            // Replace mode: dedupe current Rekognition payload only.
+            if (!taggedStudentIds.Add(match.UserId))
             {
                 _logger.LogDebug(
                     "DoProcessVideoTagsAsync: skipping duplicate tag for StudentId={StudentId}, MediaId={MediaId}",
@@ -1601,10 +1612,10 @@ public class MediaService : IMediaService
             newTags.Add(tag);
         }
 
-        // Persist captured timelines onto every tag (new + existing) for this media.
+        // Persist captured timelines onto newly inserted tags only.
         if (timelines != null)
         {
-            foreach (var tag in media.MediaTags.Concat(newTags))
+            foreach (var tag in newTags)
             {
                 if (timelines.TryGetValue(tag.StudentId, out var timeline))
                 {

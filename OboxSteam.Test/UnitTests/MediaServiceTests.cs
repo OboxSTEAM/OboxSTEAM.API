@@ -458,6 +458,104 @@ public sealed class MediaServiceTests
     }
 
     [Fact]
+    public async Task TryProcessVideoTagsAsync_ReplacesAllExistingTags_WithLatestResult()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        SeedActiveEnrollment(_outsideStudentId);
+        SeedMediaAssets();
+
+        var manualTag = new MediaTag
+        {
+            Id = Guid.Parse("12121212-1212-1212-1212-121212121212"),
+            MediaId = _pendingId,
+            StudentId = _outsideStudentId,
+            ConfidenceScore = 100m,
+            IsVerified = true,
+            IsDeleted = false,
+            FaceSegmentsJson = "[]",
+        };
+        var aiTag = new MediaTag
+        {
+            Id = Guid.Parse("34343434-3434-3434-3434-343434343434"),
+            MediaId = _pendingId,
+            StudentId = _studentId,
+            ConfidenceScore = 92m,
+            IsVerified = false,
+            IsDeleted = false,
+            FaceSegmentsJson = "[{\"StartMs\":10,\"EndMs\":20}]",
+        };
+
+        var pendingMedia = _db.MediaAssets.Items.Single(m => m.Id == _pendingId);
+        pendingMedia.MediaTags.Add(manualTag);
+        pendingMedia.MediaTags.Add(aiTag);
+        _db.MediaTags.Seed(manualTag, aiTag);
+
+        _faceRecognition
+            .Setup(f => f.GetVideoFaceSearchResultsAsync("rek-job-1"))
+            .ReturnsAsync(new VideoFaceSearchResult(
+                "SUCCEEDED",
+                [new FaceMatchResult(_outsideStudentId, "face-new", 97f)]));
+        _faceRecognition
+            .Setup(f => f.GetAllFaceTimelinesAsync("rek-job-1"))
+            .ReturnsAsync(new Dictionary<Guid, VideoFaceTimelineResult>
+            {
+                [_outsideStudentId] = new VideoFaceTimelineResult(false, [new FaceTimestampSegment(0, 2000)]),
+            });
+
+        var sut = CreateSut(_managerId);
+        var done = await sut.TryProcessVideoTagsAsync(_pendingId);
+
+        Assert.True(done);
+        Assert.DoesNotContain(_db.MediaTags.Items, t => t.Id == manualTag.Id);
+        Assert.DoesNotContain(_db.MediaTags.Items, t => t.Id == aiTag.Id);
+
+        var activeTags = _db.MediaTags.Items
+            .Where(t => t.MediaId == _pendingId && !t.IsDeleted)
+            .ToList();
+        Assert.Single(activeTags);
+        Assert.Equal(_outsideStudentId, activeTags[0].StudentId);
+        Assert.False(activeTags[0].IsVerified);
+        Assert.NotEqual(manualTag.Id, activeTags[0].Id);
+    }
+
+    [Fact]
+    public async Task TryProcessVideoTagsAsync_EmptyMatches_ClearsAllExistingTags()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        SeedMediaAssets();
+
+        var existingTag = new MediaTag
+        {
+            Id = Guid.Parse("56565656-5656-5656-5656-565656565656"),
+            MediaId = _pendingId,
+            StudentId = _studentId,
+            ConfidenceScore = 95m,
+            IsVerified = true,
+            IsDeleted = false,
+        };
+
+        var pendingMedia = _db.MediaAssets.Items.Single(m => m.Id == _pendingId);
+        pendingMedia.MediaTags.Add(existingTag);
+        _db.MediaTags.Seed(existingTag);
+
+        _faceRecognition
+            .Setup(f => f.GetVideoFaceSearchResultsAsync("rek-job-1"))
+            .ReturnsAsync(new VideoFaceSearchResult("SUCCEEDED", []));
+        _faceRecognition
+            .Setup(f => f.GetAllFaceTimelinesAsync("rek-job-1"))
+            .ReturnsAsync(new Dictionary<Guid, VideoFaceTimelineResult>());
+
+        var sut = CreateSut(_managerId);
+        var done = await sut.TryProcessVideoTagsAsync(_pendingId);
+
+        Assert.True(done);
+        Assert.DoesNotContain(_db.MediaTags.Items, t => t.Id == existingTag.Id);
+        Assert.DoesNotContain(_db.MediaTags.Items, t => t.MediaId == _pendingId && !t.IsDeleted);
+    }
+
+    [Fact]
     public async Task GetClassGalleryAsync_Student_ReturnsAllStatusesWithoutTags()
     {
         SeedBase();
