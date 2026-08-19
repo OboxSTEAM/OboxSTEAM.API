@@ -12,7 +12,10 @@ public class ExpertResponseDto
     public string? AvatarUrl { get; set; }
     public string? LinkedInUrl { get; set; }
     public string? Achievements { get; set; }
+    public string[] Specialization { get; set; } = [];
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<ExpertProgramSummaryDto> Programs { get; set; } = new();
+    public List<ExpertDegreeResponseDto> Degrees { get; set; } = new();
+    public List<ExpertPublicationResponseDto> Publications { get; set; } = new();
 }

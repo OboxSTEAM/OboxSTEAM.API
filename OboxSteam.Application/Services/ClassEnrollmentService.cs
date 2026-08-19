@@ -77,6 +77,10 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             request.ClassId,
             classToJoin.MaxCapacity);
         await ClassEnrollmentValidator.ValidateLateJoinAllowedAsync(_unitOfWork, classToJoin);
+        await ScheduleConflictValidator.ValidateStudentCanJoinClassAsync(
+            _unitOfWork,
+            student.Id,
+            request.ClassId);
 
         var now = DateTime.UtcNow;
         var enrollment = new ClassEnrollment
@@ -162,6 +166,11 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             request.ClassId,
             targetClass.MaxCapacity);
         await ClassEnrollmentValidator.ValidateLateJoinAllowedAsync(_unitOfWork, targetClass);
+        await ScheduleConflictValidator.ValidateStudentCanJoinClassAsync(
+            _unitOfWork,
+            student.Id,
+            request.ClassId,
+            excludeClassId: enrollment.ClassId);
 
         enrollment.ClassId = request.ClassId;
         enrollment.EnrolledAt = DateTime.UtcNow;
@@ -250,6 +259,11 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             _unitOfWork,
             request.ClassId,
             targetClass.MaxCapacity);
+        await ScheduleConflictValidator.ValidateStudentCanJoinClassAsync(
+            _unitOfWork,
+            student.Id,
+            request.ClassId,
+            excludeClassId: enrollment.ClassId);
 
         enrollment.Status = ClassEnrollmentStatus.Transferred;
 
@@ -418,6 +432,42 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             totalCount);
 
         return new Pagination<ClassEnrollmentResponseDto>(dtos, totalCount, page, pageSize);
+    }
+
+    public async Task<List<StudentScheduleIntervalDto>> GetMyScheduleAsync()
+    {
+        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
+            _unitOfWork,
+            _claimsService,
+            "Only students can view their class schedule.");
+
+        var sessions = await ScheduleConflictValidator.GetStudentBusySessionsAsync(_unitOfWork, student.Id);
+        var classIds = sessions.Select(cs => cs.ClassId).Distinct().ToList();
+        var classes = classIds.Count == 0
+            ? []
+            : await _unitOfWork.Classes.GetAllAsync(c => classIds.Contains(c.Id));
+        var classesById = classes.ToDictionary(c => c.Id);
+
+        return sessions
+            .OrderBy(cs => cs.StartTime)
+            .ThenBy(cs => cs.Title)
+            .Select(cs =>
+            {
+                classesById.TryGetValue(cs.ClassId, out var classEntity);
+                return new StudentScheduleIntervalDto
+                {
+                    ClassSessionId = cs.Id,
+                    ClassId = cs.ClassId,
+                    ClassCode = classEntity?.Code ?? string.Empty,
+                    ClassName = classEntity?.Name ?? string.Empty,
+                    Title = cs.Title,
+                    StartTime = cs.StartTime,
+                    EndTime = cs.EndTime,
+                    SessionKind = cs.SessionKind,
+                    Status = cs.Status,
+                };
+            })
+            .ToList();
     }
 
     private async Task<ClassResponseDto> MapClassResponseAsync(Class classEntity)

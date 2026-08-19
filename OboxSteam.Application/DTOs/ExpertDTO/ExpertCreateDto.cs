@@ -13,6 +13,7 @@ public class ExpertCreateDto
     public string? AvatarUrl { get; set; }
     public string? LinkedInUrl { get; set; }
     public string? Achievements { get; set; }
+    public string[]? Specialization { get; set; }
 
     /// <summary>Optional. Program board assignments; omit or send empty to create an expert without programs.</summary>
     public List<ExpertProgramAssignmentDto>? Programs { get; set; }

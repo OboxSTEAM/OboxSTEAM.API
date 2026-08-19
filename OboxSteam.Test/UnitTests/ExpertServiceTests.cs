@@ -118,6 +118,8 @@ public sealed class ExpertServiceTests
         Assert.Single(result.Programs);
         Assert.Equal("STEAM Program", result.Programs[0].Name);
         Assert.Equal("Advisor", result.Programs[0].RoleInBoard);
+        Assert.Empty(result.Degrees);
+        Assert.Empty(result.Publications);
     }
 
     [Fact]
@@ -541,5 +543,85 @@ public sealed class ExpertServiceTests
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<NotFoundException>(() => sut.DeleteExpertAsync(_expertId));
+    }
+
+    [Fact]
+    public async Task Add_PersistsSpecializationTags()
+    {
+        var sut = CreateSut();
+
+        var result = await sut.AddExpertAsync(new ExpertCreateDto
+        {
+            Code = "EXP-SPEC",
+            FullName = "Spec Expert",
+            Specialization = ["Robotics", "AI"],
+        });
+
+        Assert.Equal(["Robotics", "AI"], result.Specialization);
+    }
+
+    [Fact]
+    public async Task DegreeAndPublication_Crud_AndPublicProfileIncludesThem()
+    {
+        SeedExpert();
+        var sut = CreateSut();
+
+        var degree = await sut.AddDegreeAsync(_expertId, new ExpertDegreeRequestDto
+        {
+            Title = "PhD",
+            Institution = "MIT",
+            Year = 2018,
+        });
+        var publication = await sut.AddPublicationAsync(_expertId, new ExpertPublicationRequestDto
+        {
+            Title = "Kids and robots",
+            Venue = "STEAM Conf",
+            Year = 2022,
+            Url = "https://example.com/paper",
+        });
+
+        var profile = await sut.GetExpertByIdAsync(_expertId);
+        Assert.Single(profile.Degrees);
+        Assert.Equal("PhD", profile.Degrees[0].Title);
+        Assert.Single(profile.Publications);
+        Assert.Equal("Kids and robots", profile.Publications[0].Title);
+
+        var updatedDegree = await sut.UpdateDegreeAsync(_expertId, degree.Id, new ExpertDegreeRequestDto
+        {
+            Title = "Ph.D. Robotics",
+            Institution = "MIT",
+            Year = 2019,
+        });
+        Assert.Equal("Ph.D. Robotics", updatedDegree.Title);
+
+        var updatedPub = await sut.UpdatePublicationAsync(_expertId, publication.Id, new ExpertPublicationRequestDto
+        {
+            Title = "Kids and robots (revised)",
+            Venue = "STEAM Conf",
+            Year = 2023,
+        });
+        Assert.Equal(2023, updatedPub.Year);
+
+        await sut.DeleteDegreeAsync(_expertId, degree.Id);
+        await sut.DeletePublicationAsync(_expertId, publication.Id);
+
+        var afterDelete = await sut.GetExpertByIdAsync(_expertId);
+        Assert.Empty(afterDelete.Degrees);
+        Assert.Empty(afterDelete.Publications);
+    }
+
+    [Fact]
+    public async Task AddDegree_Throws_WhenYearOutOfRange()
+    {
+        SeedExpert();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.AddDegreeAsync(_expertId, new ExpertDegreeRequestDto
+            {
+                Title = "BSc",
+                Institution = "Uni",
+                Year = 1900,
+            }));
     }
 }

@@ -3,6 +3,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ExpertDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Interfaces;
 
@@ -107,6 +108,7 @@ public class ExpertService : IExpertService
             AvatarUrl = expert.AvatarUrl,
             LinkedInUrl = expert.LinkedInUrl,
             Achievements = expert.Achievements,
+            Specialization = expert.Specialization ?? [],
             CreatedAt = expert.CreatedAt,
             UpdatedAt = expert.UpdatedAt,
             Programs = expert.ProgramBoards
@@ -118,6 +120,16 @@ public class ExpertService : IExpertService
                     Name = programsById[pb.ProgramId].Name,
                     RoleInBoard = pb.RoleInBoard
                 })
+                .ToList(),
+            Degrees = (await _unitOfWork.ExpertDegrees.GetAllAsync(d => d.ExpertId == expert.Id && !d.IsDeleted))
+                .OrderByDescending(d => d.Year)
+                .ThenBy(d => d.Title)
+                .Select(MapDegree)
+                .ToList(),
+            Publications = (await _unitOfWork.ExpertPublications.GetAllAsync(p => p.ExpertId == expert.Id && !p.IsDeleted))
+                .OrderByDescending(p => p.Year)
+                .ThenBy(p => p.Title)
+                .Select(MapPublication)
                 .ToList()
         };
 
@@ -176,9 +188,22 @@ public class ExpertService : IExpertService
             ? await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id))
             : new List<Program>();
 
+        var degrees = expertIds.Count == 0
+            ? new List<ExpertDegree>()
+            : await _unitOfWork.ExpertDegrees.GetAllAsync(d => expertIds.Contains(d.ExpertId) && !d.IsDeleted);
+        var publications = expertIds.Count == 0
+            ? new List<ExpertPublication>()
+            : await _unitOfWork.ExpertPublications.GetAllAsync(p => expertIds.Contains(p.ExpertId) && !p.IsDeleted);
+
         var programsById = programs.ToDictionary(p => p.Id, p => p);
         var programBoardsByExpert = programBoards
             .GroupBy(pb => pb.ExpertId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var degreesByExpert = degrees
+            .GroupBy(d => d.ExpertId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var publicationsByExpert = publications
+            .GroupBy(p => p.ExpertId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var dtos = items.Select(expert => new ExpertResponseDto
@@ -193,6 +218,7 @@ public class ExpertService : IExpertService
             AvatarUrl = expert.AvatarUrl,
             LinkedInUrl = expert.LinkedInUrl,
             Achievements = expert.Achievements,
+            Specialization = expert.Specialization ?? [],
             CreatedAt = expert.CreatedAt,
             UpdatedAt = expert.UpdatedAt,
             Programs = programBoardsByExpert.TryGetValue(expert.Id, out var expertBoards)
@@ -206,7 +232,13 @@ public class ExpertService : IExpertService
                         RoleInBoard = pb.RoleInBoard
                     })
                     .ToList()
-                : new List<ExpertProgramSummaryDto>()
+                : new List<ExpertProgramSummaryDto>(),
+            Degrees = degreesByExpert.TryGetValue(expert.Id, out var expertDegrees)
+                ? expertDegrees.OrderByDescending(d => d.Year).ThenBy(d => d.Title).Select(MapDegree).ToList()
+                : [],
+            Publications = publicationsByExpert.TryGetValue(expert.Id, out var expertPublications)
+                ? expertPublications.OrderByDescending(p => p.Year).ThenBy(p => p.Title).Select(MapPublication).ToList()
+                : []
         }).ToList();
 
         _logger.LogInformation("[GetAllExpertsAsync] Retrieved {Count}/{Total} experts.", dtos.Count, totalCount);
@@ -280,7 +312,8 @@ public class ExpertService : IExpertService
             Bio = expertCreateDto.Bio,
             AvatarUrl = expertCreateDto.AvatarUrl,
             LinkedInUrl = expertCreateDto.LinkedInUrl,
-            Achievements = expertCreateDto.Achievements
+            Achievements = expertCreateDto.Achievements,
+            Specialization = expertCreateDto.Specialization ?? []
         };
 
         await _unitOfWork.Experts.AddAsync(expert);
@@ -521,5 +554,148 @@ public class ExpertService : IExpertService
         return true;
     }
 
+    public async Task<ExpertDegreeResponseDto> AddDegreeAsync(Guid expertId, ExpertDegreeRequestDto dto)
+    {
+        await RequireExpertAsync(expertId);
+        ExpertProfileValidator.ValidateDegreeRequest(dto.Title, dto.Institution, dto.Year);
 
+        var degree = new ExpertDegree
+        {
+            ExpertId = expertId,
+            Title = dto.Title.Trim(),
+            Institution = dto.Institution.Trim(),
+            Year = dto.Year,
+        };
+
+        await _unitOfWork.ExpertDegrees.AddAsync(degree);
+        await _unitOfWork.SaveChangesAsync();
+        return MapDegree(degree);
+    }
+
+    public async Task<ExpertDegreeResponseDto> UpdateDegreeAsync(
+        Guid expertId,
+        Guid degreeId,
+        ExpertDegreeRequestDto dto)
+    {
+        await RequireExpertAsync(expertId);
+        ExpertProfileValidator.ValidateDegreeRequest(dto.Title, dto.Institution, dto.Year);
+
+        var degree = await _unitOfWork.ExpertDegrees.GetByIdAsync(degreeId);
+        if (degree == null || degree.IsDeleted || degree.ExpertId != expertId)
+        {
+            throw ErrorHelper.NotFound($"Degree with id '{degreeId}' not found.");
+        }
+
+        degree.Title = dto.Title.Trim();
+        degree.Institution = dto.Institution.Trim();
+        degree.Year = dto.Year;
+        await _unitOfWork.ExpertDegrees.Update(degree);
+        await _unitOfWork.SaveChangesAsync();
+        return MapDegree(degree);
+    }
+
+    public async Task<bool> DeleteDegreeAsync(Guid expertId, Guid degreeId)
+    {
+        await RequireExpertAsync(expertId);
+
+        var degree = await _unitOfWork.ExpertDegrees.GetByIdAsync(degreeId);
+        if (degree == null || degree.IsDeleted || degree.ExpertId != expertId)
+        {
+            throw ErrorHelper.NotFound($"Degree with id '{degreeId}' not found.");
+        }
+
+        await _unitOfWork.ExpertDegrees.SoftRemove(degree);
+        await _unitOfWork.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<ExpertPublicationResponseDto> AddPublicationAsync(
+        Guid expertId,
+        ExpertPublicationRequestDto dto)
+    {
+        await RequireExpertAsync(expertId);
+        ExpertProfileValidator.ValidatePublicationRequest(dto.Title, dto.Year);
+
+        var publication = new ExpertPublication
+        {
+            ExpertId = expertId,
+            Title = dto.Title.Trim(),
+            Venue = string.IsNullOrWhiteSpace(dto.Venue) ? null : dto.Venue.Trim(),
+            Year = dto.Year,
+            Url = string.IsNullOrWhiteSpace(dto.Url) ? null : dto.Url.Trim(),
+        };
+
+        await _unitOfWork.ExpertPublications.AddAsync(publication);
+        await _unitOfWork.SaveChangesAsync();
+        return MapPublication(publication);
+    }
+
+    public async Task<ExpertPublicationResponseDto> UpdatePublicationAsync(
+        Guid expertId,
+        Guid publicationId,
+        ExpertPublicationRequestDto dto)
+    {
+        await RequireExpertAsync(expertId);
+        ExpertProfileValidator.ValidatePublicationRequest(dto.Title, dto.Year);
+
+        var publication = await _unitOfWork.ExpertPublications.GetByIdAsync(publicationId);
+        if (publication == null || publication.IsDeleted || publication.ExpertId != expertId)
+        {
+            throw ErrorHelper.NotFound($"Publication with id '{publicationId}' not found.");
+        }
+
+        publication.Title = dto.Title.Trim();
+        publication.Venue = string.IsNullOrWhiteSpace(dto.Venue) ? null : dto.Venue.Trim();
+        publication.Year = dto.Year;
+        publication.Url = string.IsNullOrWhiteSpace(dto.Url) ? null : dto.Url.Trim();
+        await _unitOfWork.ExpertPublications.Update(publication);
+        await _unitOfWork.SaveChangesAsync();
+        return MapPublication(publication);
+    }
+
+    public async Task<bool> DeletePublicationAsync(Guid expertId, Guid publicationId)
+    {
+        await RequireExpertAsync(expertId);
+
+        var publication = await _unitOfWork.ExpertPublications.GetByIdAsync(publicationId);
+        if (publication == null || publication.IsDeleted || publication.ExpertId != expertId)
+        {
+            throw ErrorHelper.NotFound($"Publication with id '{publicationId}' not found.");
+        }
+
+        await _unitOfWork.ExpertPublications.SoftRemove(publication);
+        await _unitOfWork.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task<Expert> RequireExpertAsync(Guid expertId)
+    {
+        var expert = await _unitOfWork.Experts.GetByIdAsync(expertId);
+        if (expert == null || expert.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Expert with id '{expertId}' not found.");
+        }
+
+        return expert;
+    }
+
+    private static ExpertDegreeResponseDto MapDegree(ExpertDegree degree) => new()
+    {
+        Id = degree.Id,
+        ExpertId = degree.ExpertId,
+        Title = degree.Title,
+        Institution = degree.Institution,
+        Year = degree.Year,
+    };
+
+    private static ExpertPublicationResponseDto MapPublication(ExpertPublication publication) => new()
+    {
+        Id = publication.Id,
+        ExpertId = publication.ExpertId,
+        Title = publication.Title,
+        Venue = publication.Venue,
+        Year = publication.Year,
+        Url = publication.Url,
+    };
 }
+

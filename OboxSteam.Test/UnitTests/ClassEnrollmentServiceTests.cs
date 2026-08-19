@@ -92,13 +92,15 @@ public sealed class ClassEnrollmentServiceTests
     private void SeedProgramEnrollment(
         EnrollmentStatus status = EnrollmentStatus.Active,
         Guid? studentId = null,
-        bool isDeleted = false)
+        bool isDeleted = false,
+        Guid? id = null,
+        Guid? programId = null)
     {
         _db.ProgramEnrollments.Seed(new ProgramEnrollment
         {
-            Id = _programEnrollmentId,
+            Id = id ?? _programEnrollmentId,
             StudentId = studentId ?? _studentId,
-            ProgramId = _programId,
+            ProgramId = programId ?? _programId,
             Status = status,
             IsDeleted = isDeleted
         });
@@ -138,7 +140,8 @@ public sealed class ClassEnrollmentServiceTests
         ClassEnrollmentStatus status = ClassEnrollmentStatus.Active,
         Class? classEntity = null,
         DateTime? enrolledAt = null,
-        bool isDeleted = false)
+        bool isDeleted = false,
+        Guid? programEnrollmentId = null)
     {
         var enrollment = new ClassEnrollment
         {
@@ -146,7 +149,7 @@ public sealed class ClassEnrollmentServiceTests
             ClassId = classId ?? _classId,
             Class = classEntity!,
             StudentId = _studentId,
-            ProgramEnrollmentId = _programEnrollmentId,
+            ProgramEnrollmentId = programEnrollmentId ?? _programEnrollmentId,
             Status = status,
             EnrolledAt = enrolledAt ?? DateTime.UtcNow.AddDays(-3),
             CreatedAt = DateTime.UtcNow.AddDays(-3),
@@ -154,6 +157,27 @@ public sealed class ClassEnrollmentServiceTests
         };
         _db.ClassEnrollments.Seed(enrollment);
         return enrollment;
+    }
+
+    private void SeedSession(
+        Guid classId,
+        DateTime start,
+        DateTime end,
+        string title = "Session",
+        ClassSessionStatus status = ClassSessionStatus.Scheduled)
+    {
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            ModuleId = Guid.NewGuid(),
+            Title = title,
+            StartTime = start,
+            EndTime = end,
+            SessionKind = SessionKind.Lesson,
+            Status = status,
+            IsDeleted = false,
+        });
     }
 
     // ── EnrollClassAsync ──────────────────────────────────────────────────────
@@ -638,5 +662,173 @@ public sealed class ClassEnrollmentServiceTests
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.GetClassEnrollmentsByProgramEnrollmentAsync(_programEnrollmentId, null, true, 0, 10));
+    }
+
+    [Fact]
+    public async Task Enroll_ThrowsConflict_WhenSessionOverlapsOtherProgramClass()
+    {
+        var start = DateTime.UtcNow.AddDays(10);
+        var end = start.AddHours(2);
+        var otherProgramId = Guid.Parse("26262626-2626-2626-2626-262626262626");
+        var otherPeId = Guid.Parse("36363636-3636-3636-3636-363636363636");
+        var otherClassId = Guid.Parse("46464646-4646-4646-4646-464646464646");
+
+        SeedStudent();
+        SeedProgramEnrollment();
+        var classA = SeedClass();
+        SeedClassEnrollment(classEntity: classA);
+        SeedSession(classA.Id, start, end, "Robotics Saturday");
+
+        SeedProgramEnrollment(id: otherPeId, programId: otherProgramId);
+        SeedClass(id: otherClassId, code: "CLS-B", name: "Cohort B", programId: otherProgramId);
+        SeedSession(otherClassId, start.AddMinutes(30), end.AddMinutes(30), "Coding Saturday");
+
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.EnrollClassAsync(new CreateClassEnrollmentRequestDto
+            {
+                ProgramEnrollmentId = otherPeId,
+                ClassId = otherClassId,
+            }));
+
+        Assert.Contains("overlaps", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Enroll_Succeeds_WhenOtherClassSessionsDoNotOverlap()
+    {
+        var saturday = DateTime.UtcNow.AddDays(10);
+        var sunday = saturday.AddDays(1);
+        var otherProgramId = Guid.Parse("26262626-2626-2626-2626-262626262626");
+        var otherPeId = Guid.Parse("36363636-3636-3636-3636-363636363636");
+        var otherClassId = Guid.Parse("46464646-4646-4646-4646-464646464646");
+
+        SeedStudent();
+        SeedProgramEnrollment();
+        var classA = SeedClass();
+        SeedClassEnrollment(classEntity: classA);
+        SeedSession(classA.Id, saturday, saturday.AddHours(2), "Saturday");
+
+        SeedProgramEnrollment(id: otherPeId, programId: otherProgramId);
+        SeedClass(id: otherClassId, code: "CLS-B", programId: otherProgramId);
+        SeedSession(otherClassId, sunday, sunday.AddHours(2), "Sunday");
+
+        var sut = CreateSut();
+
+        var result = await sut.EnrollClassAsync(new CreateClassEnrollmentRequestDto
+        {
+            ProgramEnrollmentId = otherPeId,
+            ClassId = otherClassId,
+        });
+
+        Assert.Equal(otherClassId, result.Class.Id);
+    }
+
+    [Fact]
+    public async Task Transfer_ThrowsConflict_WhenTargetOverlapsOtherProgramClass()
+    {
+        var start = DateTime.UtcNow.AddDays(12);
+        var end = start.AddHours(2);
+        var otherProgramId = Guid.Parse("26262626-2626-2626-2626-262626262626");
+        var otherPeId = Guid.Parse("36363636-3636-3636-3636-363636363636");
+        var otherClassId = Guid.Parse("46464646-4646-4646-4646-464646464646");
+        var otherEnrollmentId = Guid.Parse("56565656-5656-5656-5656-565656565656");
+
+        SeedStudent();
+        SeedProgramEnrollment();
+        var classA = SeedClass();
+        SeedClassEnrollment(classEntity: classA);
+        SeedSession(classA.Id, start.AddDays(7), start.AddDays(7).AddHours(2), "Later A");
+
+        SeedProgramEnrollment(id: otherPeId, programId: otherProgramId);
+        var classB = SeedClass(id: otherClassId, code: "CLS-B", programId: otherProgramId);
+        SeedClassEnrollment(
+            id: otherEnrollmentId,
+            classId: otherClassId,
+            classEntity: classB,
+            programEnrollmentId: otherPeId);
+        SeedSession(otherClassId, start, end, "Busy B");
+
+        var classC = SeedClass(id: _targetClassId, code: "CLS-C", name: "Cohort C");
+        SeedSession(_targetClassId, start, end, "Clash C");
+
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.TransferClassAsync(
+                _classEnrollmentId,
+                new UpdateClassEnrollmentRequestDto { ClassId = _targetClassId }));
+    }
+
+    [Fact]
+    public async Task ManagerTransfer_ThrowsConflict_WhenTargetOverlapsOtherProgramClass()
+    {
+        var start = DateTime.UtcNow.AddDays(12);
+        var end = start.AddHours(2);
+        var otherProgramId = Guid.Parse("26262626-2626-2626-2626-262626262626");
+        var otherPeId = Guid.Parse("36363636-3636-3636-3636-363636363636");
+        var otherClassId = Guid.Parse("46464646-4646-4646-4646-464646464646");
+        var otherEnrollmentId = Guid.Parse("56565656-5656-5656-5656-565656565656");
+
+        SeedStudent();
+        SeedManager();
+        SeedProgramEnrollment();
+        var classA = SeedClass();
+        SeedClassEnrollment(classEntity: classA);
+
+        SeedProgramEnrollment(id: otherPeId, programId: otherProgramId);
+        var classB = SeedClass(id: otherClassId, code: "CLS-B", programId: otherProgramId);
+        SeedClassEnrollment(
+            id: otherEnrollmentId,
+            classId: otherClassId,
+            classEntity: classB,
+            programEnrollmentId: otherPeId);
+        SeedSession(otherClassId, start, end, "Busy B");
+
+        SeedClass(id: _targetClassId, code: "CLS-C");
+        SeedSession(_targetClassId, start, end, "Clash C");
+
+        var sut = CreateSut(currentUserId: _managerId);
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.TransferClassByManagerAsync(
+                _studentId,
+                new ManagerTransferClassRequestDto { ClassId = _targetClassId }));
+    }
+
+    [Fact]
+    public async Task GetMySchedule_ReturnsActiveClassIntervals_ExcludingCancelled()
+    {
+        var start = DateTime.UtcNow.AddDays(3);
+        SeedStudent();
+        SeedProgramEnrollment();
+        var classA = SeedClass();
+        SeedClassEnrollment(classEntity: classA);
+        SeedSession(classA.Id, start, start.AddHours(2), "Keep");
+        SeedSession(
+            classA.Id,
+            start.AddDays(1),
+            start.AddDays(1).AddHours(2),
+            "Cancelled",
+            ClassSessionStatus.Cancelled);
+
+        var sut = CreateSut();
+
+        var result = await sut.GetMyScheduleAsync();
+
+        Assert.Single(result);
+        Assert.Equal("Keep", result[0].Title);
+        Assert.Equal("CLS-001", result[0].ClassCode);
+        Assert.Equal(classA.Id, result[0].ClassId);
+    }
+
+    [Fact]
+    public async Task GetMySchedule_ThrowsForbidden_WhenNotStudent()
+    {
+        SeedManager();
+        var sut = CreateSut(currentUserId: _managerId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => sut.GetMyScheduleAsync());
     }
 }

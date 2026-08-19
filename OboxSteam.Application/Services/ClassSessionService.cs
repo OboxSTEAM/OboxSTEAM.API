@@ -113,6 +113,7 @@ public sealed class ClassSessionService : IClassSessionService
             StartTime = cs.StartTime,
             EndTime = cs.EndTime,
             Location = cs.Location,
+            MeetingUrl = cs.MeetingUrl,
             RequiresAttendance = cs.RequiresAttendance,
             RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
             Status = cs.Status,
@@ -151,6 +152,7 @@ public sealed class ClassSessionService : IClassSessionService
             StartTime = entity.StartTime,
             EndTime = entity.EndTime,
             Location = entity.Location,
+            MeetingUrl = entity.MeetingUrl,
             RequiresAttendance = entity.RequiresAttendance,
             RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
             Status = entity.Status,
@@ -262,6 +264,7 @@ public sealed class ClassSessionService : IClassSessionService
             StartTime = session.StartTime,
             EndTime = session.EndTime,
             Location = session.Location,
+            MeetingUrl = session.MeetingUrl,
             RequiresAttendance = session.RequiresAttendance,
             RequiresMentorCheckIn = session.RequiresMentorCheckIn,
             Status = session.Status,
@@ -319,6 +322,7 @@ public sealed class ClassSessionService : IClassSessionService
             StartTime = request.StartTime,
             EndTime = request.EndTime,
             Location = request.Location?.Trim(),
+            MeetingUrl = string.IsNullOrWhiteSpace(request.MeetingUrl) ? null : request.MeetingUrl.Trim(),
             RequiresAttendance = request.RequiresAttendance,
             RequiresMentorCheckIn = request.RequiresMentorCheckIn,
             Status = ClassSessionStatus.Scheduled,
@@ -348,6 +352,7 @@ public sealed class ClassSessionService : IClassSessionService
             StartTime = entity.StartTime,
             EndTime = entity.EndTime,
             Location = entity.Location,
+            MeetingUrl = entity.MeetingUrl,
             RequiresAttendance = entity.RequiresAttendance,
             RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
             Status = entity.Status,
@@ -468,6 +473,13 @@ public sealed class ClassSessionService : IClassSessionService
                 : request.Location.Trim();
         }
 
+        if (request.MeetingUrl != null)
+        {
+            session.MeetingUrl = string.IsNullOrWhiteSpace(request.MeetingUrl)
+                ? null
+                : request.MeetingUrl.Trim();
+        }
+
         if (request.RequiresAttendance.HasValue)
         {
             session.RequiresAttendance = request.RequiresAttendance.Value;
@@ -537,6 +549,7 @@ public sealed class ClassSessionService : IClassSessionService
             StartTime = session.StartTime,
             EndTime = session.EndTime,
             Location = session.Location,
+            MeetingUrl = session.MeetingUrl,
             RequiresAttendance = session.RequiresAttendance,
             RequiresMentorCheckIn = session.RequiresMentorCheckIn,
             Status = session.Status,

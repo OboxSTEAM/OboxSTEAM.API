@@ -19,4 +19,10 @@ public interface IExpertService
     Task<ExpertProgramSummaryDto> UpdateProgramOfExpertAsync(Guid expertId, Guid programId);
     Task<bool> DeleteExpertAsync(Guid id);
     Task<bool> RemoveProgramFromExpertAsync(Guid expertId, Guid programId);
+    Task<ExpertDegreeResponseDto> AddDegreeAsync(Guid expertId, ExpertDegreeRequestDto dto);
+    Task<ExpertDegreeResponseDto> UpdateDegreeAsync(Guid expertId, Guid degreeId, ExpertDegreeRequestDto dto);
+    Task<bool> DeleteDegreeAsync(Guid expertId, Guid degreeId);
+    Task<ExpertPublicationResponseDto> AddPublicationAsync(Guid expertId, ExpertPublicationRequestDto dto);
+    Task<ExpertPublicationResponseDto> UpdatePublicationAsync(Guid expertId, Guid publicationId, ExpertPublicationRequestDto dto);
+    Task<bool> DeletePublicationAsync(Guid expertId, Guid publicationId);
 }

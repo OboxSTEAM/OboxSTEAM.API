@@ -76,10 +76,12 @@ Types via `MaterialType` enum. API: `/api/materials`.
 
 External experts associated with programs via `ProgramBoard` and `Expert`
 entity. Profile credentials: `Specialization` tags, `ExpertDegree`, and
-`ExpertPublication`. CRUD endpoints for degrees/publications land in a follow-up
-story.
+`ExpertPublication`. Manager/Admin CRUD:
 
-API: `/api/experts`.
+- `POST|PUT|DELETE /api/experts/{id}/degrees`
+- `POST|PUT|DELETE /api/experts/{id}/publications`
+
+Public reads: `GET /api/experts/{id}` and `GET /api/experts/{id}/profile`.
 
 ## Highlight Videos
 

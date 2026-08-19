@@ -36,6 +36,9 @@ public class CreateClassSessionRequestDto
     [MaxLength(500)]
     public string? Location { get; set; }
 
+    [MaxLength(2048)]
+    public string? MeetingUrl { get; set; }
+
     public bool RequiresAttendance { get; set; } = true;
 
     public bool RequiresMentorCheckIn { get; set; }

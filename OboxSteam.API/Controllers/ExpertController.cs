@@ -54,7 +54,7 @@ public class ExpertController : ControllerBase
     [HttpGet("{id:guid}")]
     [SwaggerOperation(
         Summary = "Get expert details",
-        Description = "Retrieve detailed information for a specific expert by its ID.")]
+        Description = "Public expert profile including specialization, degrees, publications, and program board membership.")]
     [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetExpertById([FromRoute] Guid id)
@@ -206,5 +206,129 @@ public class ExpertController : ControllerBase
     {
         var result = await _expertService.RemoveProgramFromExpertAsync(expertId, programId);
         return Ok(ApiResult<bool>.Success(result, "200", "Program removed from expert successfully."));
+    }
+
+    [HttpGet("{id:guid}/profile")]
+    [SwaggerOperation(
+        Summary = "Get public expert profile",
+        Description = "Public profile including specialization, degrees, publications, and program board membership.")]
+    [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetPublicProfile([FromRoute] Guid id)
+    {
+        var result = await _expertService.GetExpertByIdAsync(id);
+        return Ok(ApiResult<ExpertResponseDto>.Success(result, "200", "Expert profile retrieved successfully."));
+    }
+
+    [HttpPost("{expertId:guid}/degrees")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Add expert degree",
+        Description = "Adds an academic credential to the expert profile. Requires Admin or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<ExpertDegreeResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> AddDegree(
+        [FromRoute] Guid expertId,
+        [FromBody] ExpertDegreeRequestDto dto)
+    {
+        var result = await _expertService.AddDegreeAsync(expertId, dto);
+        return CreatedAtAction(
+            nameof(GetExpertById),
+            new { id = expertId },
+            ApiResult<ExpertDegreeResponseDto>.Success(result, "201", "Degree added successfully."));
+    }
+
+    [HttpPut("{expertId:guid}/degrees/{degreeId:guid}")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Update expert degree",
+        Description = "Updates an academic credential. Requires Admin or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<ExpertDegreeResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UpdateDegree(
+        [FromRoute] Guid expertId,
+        [FromRoute] Guid degreeId,
+        [FromBody] ExpertDegreeRequestDto dto)
+    {
+        var result = await _expertService.UpdateDegreeAsync(expertId, degreeId, dto);
+        return Ok(ApiResult<ExpertDegreeResponseDto>.Success(result, "200", "Degree updated successfully."));
+    }
+
+    [HttpDelete("{expertId:guid}/degrees/{degreeId:guid}")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Delete expert degree",
+        Description = "Soft-deletes an academic credential. Requires Admin or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<bool>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> DeleteDegree([FromRoute] Guid expertId, [FromRoute] Guid degreeId)
+    {
+        var result = await _expertService.DeleteDegreeAsync(expertId, degreeId);
+        return Ok(ApiResult<bool>.Success(result, "200", "Degree deleted successfully."));
+    }
+
+    [HttpPost("{expertId:guid}/publications")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Add expert publication",
+        Description = "Adds a publication to the expert profile. Requires Admin or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<ExpertPublicationResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> AddPublication(
+        [FromRoute] Guid expertId,
+        [FromBody] ExpertPublicationRequestDto dto)
+    {
+        var result = await _expertService.AddPublicationAsync(expertId, dto);
+        return CreatedAtAction(
+            nameof(GetExpertById),
+            new { id = expertId },
+            ApiResult<ExpertPublicationResponseDto>.Success(result, "201", "Publication added successfully."));
+    }
+
+    [HttpPut("{expertId:guid}/publications/{publicationId:guid}")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Update expert publication",
+        Description = "Updates a publication. Requires Admin or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<ExpertPublicationResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UpdatePublication(
+        [FromRoute] Guid expertId,
+        [FromRoute] Guid publicationId,
+        [FromBody] ExpertPublicationRequestDto dto)
+    {
+        var result = await _expertService.UpdatePublicationAsync(expertId, publicationId, dto);
+        return Ok(ApiResult<ExpertPublicationResponseDto>.Success(result, "200", "Publication updated successfully."));
+    }
+
+    [HttpDelete("{expertId:guid}/publications/{publicationId:guid}")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Delete expert publication",
+        Description = "Soft-deletes a publication. Requires Admin or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<bool>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> DeletePublication(
+        [FromRoute] Guid expertId,
+        [FromRoute] Guid publicationId)
+    {
+        var result = await _expertService.DeletePublicationAsync(expertId, publicationId);
+        return Ok(ApiResult<bool>.Success(result, "200", "Publication deleted successfully."));
     }
 }

@@ -217,6 +217,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     {
         SaveChangesCallCount++;
         SyncExpertProgramBoards();
+        SyncExpertCredentials();
         SyncPortfolioMediaPlacements();
         SyncPortfolioItemSubmissions();
         return Task.FromResult(1);
@@ -232,6 +233,19 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
         {
             expert.ProgramBoards = ProgramBoards.Items
                 .Where(pb => pb.ExpertId == expert.Id && !pb.IsDeleted)
+                .ToList();
+        }
+    }
+
+    private void SyncExpertCredentials()
+    {
+        foreach (var expert in Experts.Items)
+        {
+            expert.Degrees = ExpertDegrees.Items
+                .Where(d => d.ExpertId == expert.Id && !d.IsDeleted)
+                .ToList();
+            expert.Publications = ExpertPublications.Items
+                .Where(p => p.ExpertId == expert.Id && !p.IsDeleted)
                 .ToList();
         }
     }

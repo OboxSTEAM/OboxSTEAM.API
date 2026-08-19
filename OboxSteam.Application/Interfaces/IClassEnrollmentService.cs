@@ -19,4 +19,6 @@ public interface IClassEnrollmentService
         bool isDescending,
         int page,
         int pageSize);
+
+    Task<List<StudentScheduleIntervalDto>> GetMyScheduleAsync();
 }

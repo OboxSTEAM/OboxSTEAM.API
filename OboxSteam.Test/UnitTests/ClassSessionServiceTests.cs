@@ -228,6 +228,7 @@ public sealed class ClassSessionServiceTests
             StartTime = startTime,
             EndTime = end ?? startTime.AddHours(2),
             Location = "Room A",
+            MeetingUrl = "https://meet.example.com/room-a",
             RequiresAttendance = true,
         };
     }
@@ -483,6 +484,7 @@ public sealed class ClassSessionServiceTests
         Assert.Equal("New Session", result.Title);
         Assert.Equal(ClassSessionStatus.Scheduled, result.Status);
         Assert.Equal(_classId, result.ClassId);
+        Assert.Equal("https://meet.example.com/room-a", result.MeetingUrl);
         Assert.Single(_db.ClassSessions.Items);
         Assert.Equal(1, _db.SaveChangesCallCount);
         _notificationPublisher.Verify(
@@ -662,6 +664,7 @@ public sealed class ClassSessionServiceTests
             Title = "  Updated Title  ",
             Description = "  New desc  ",
             Location = "  Lab 2  ",
+            MeetingUrl = "  https://meet.example.com/lab-2  ",
             RequiresAttendance = false,
             RequiresMentorCheckIn = true,
             SessionKind = SessionKind.FieldTrip,
@@ -670,6 +673,7 @@ public sealed class ClassSessionServiceTests
         Assert.Equal("Updated Title", result.Title);
         Assert.Equal("New desc", result.Description);
         Assert.Equal("Lab 2", result.Location);
+        Assert.Equal("https://meet.example.com/lab-2", result.MeetingUrl);
         Assert.False(result.RequiresAttendance);
         Assert.True(result.RequiresMentorCheckIn);
         Assert.Equal(SessionKind.FieldTrip, result.SessionKind);

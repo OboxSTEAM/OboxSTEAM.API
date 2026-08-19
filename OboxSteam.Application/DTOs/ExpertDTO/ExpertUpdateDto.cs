@@ -11,5 +11,6 @@ public class ExpertUpdateDto
     public string? AvatarUrl { get; set; }
     public string? LinkedInUrl { get; set; }
     public string? Achievements { get; set; }
+    public string[]? Specialization { get; set; }
     public List<ExpertProgramAssignmentDto>? Programs { get; set; }
 }
