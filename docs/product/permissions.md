@@ -59,6 +59,9 @@ Create, update, delete for:
 
 - Assigned via `Course.MentorId` and `Class.MentorId`; mentor-scoped behavior
   is enforced in services, not only at controller level.
+- Class curriculum progress rollup: `GET /api/classes/{classId}/curriculum-progress`
+  (assigned mentor only). Returns activity Done/InProgress and assignment
+  submitted/graded aggregates over active enrollments — no roster PII.
 - Media review: list media for mentored class activities; add/remove/verify
   student tags on that media (`Mentor,Manager,Admin` on tag mutation routes).
   AI tags start with `IsVerified = false` until mentor approval.
