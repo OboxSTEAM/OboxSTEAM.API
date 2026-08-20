@@ -65,6 +65,8 @@ public partial class SeedService : ISeedService
         // Idempotent demo showcase programs (safe on already-seeded DBs; does not alter existing programs).
         await SeedDemoShowcaseProgramsAsync();
         await SeedMaterialsAsync();
+        // After all curriculum seeds so the schedulable-item set is final.
+        await EnsureClassSessionCoverageAsync();
         await ResetIntroductionToRoboticsFeTestProgressAsync();
         // After robotics FE reset so STD-001 research enrollment / submissions are not wiped.
         await SeedPortfolioDataAsync();

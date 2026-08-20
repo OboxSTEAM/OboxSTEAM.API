@@ -6,6 +6,7 @@ using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Realtime;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Interfaces;
 
@@ -90,6 +91,7 @@ public sealed class CourseService : ICourseService
             "name" => isDescending ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
             "code" => isDescending ? query.OrderByDescending(c => c.Code) : query.OrderBy(c => c.Code),
             "moduleid" => isDescending ? query.OrderByDescending(c => c.ModuleId) : query.OrderBy(c => c.ModuleId),
+            "courseorder" => isDescending ? query.OrderByDescending(c => c.CourseOrder) : query.OrderBy(c => c.CourseOrder),
             "createdat" => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
             _ => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
         };
@@ -108,6 +110,7 @@ public sealed class CourseService : ICourseService
             ModuleId = c.ModuleId,
             Name = c.Name,
             Description = c.Description,
+            CourseOrder = c.CourseOrder,
             CreatedAt = c.CreatedAt,
             UpdatedAt = c.UpdatedAt,
         }).ToList();
@@ -141,6 +144,7 @@ public sealed class CourseService : ICourseService
             ModuleId = course.ModuleId,
             Name = course.Name,
             Description = course.Description,
+            CourseOrder = course.CourseOrder,
             CreatedAt = course.CreatedAt,
             UpdatedAt = course.UpdatedAt,
             Activities = course.Activities?
@@ -155,9 +159,7 @@ public sealed class CourseService : ICourseService
                     ActivityType = a.ActivityType,
                     Description = a.Description,
                     ActivityOrder = a.ActivityOrder,
-                    Location = a.Location,
-                    StartTime = a.StartTime,
-                    EndTime = a.EndTime,
+                    DurationMinutes = a.DurationMinutes,
                     RequireQrCheckin = a.RequireQrCheckin,
                     RequireMediaEvidence = a.RequireMediaEvidence,
                     CreatedAt = a.CreatedAt,
@@ -197,6 +199,7 @@ public sealed class CourseService : ICourseService
             ModuleId = course.ModuleId,
             Name = course.Name,
             Description = course.Description,
+            CourseOrder = course.CourseOrder,
             CreatedAt = course.CreatedAt,
             UpdatedAt = course.UpdatedAt,
             Activities = course.Activities?
@@ -211,9 +214,7 @@ public sealed class CourseService : ICourseService
                     ActivityType = a.ActivityType,
                     Description = a.Description,
                     ActivityOrder = a.ActivityOrder,
-                    Location = a.Location,
-                    StartTime = a.StartTime,
-                    EndTime = a.EndTime,
+                    DurationMinutes = a.DurationMinutes,
                     RequireQrCheckin = a.RequireQrCheckin,
                     RequireMediaEvidence = a.RequireMediaEvidence,
                     CreatedAt = a.CreatedAt,
@@ -248,12 +249,40 @@ public sealed class CourseService : ICourseService
             throw new ConflictException($"Course with code '{request.Code}' already exists.");
         }
 
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module.ProgramId);
+
+        var moduleCourses = await _unitOfWork.Courses.GetAllAsync(
+            c => c.ModuleId == request.ModuleId && !c.IsDeleted);
+
+        SequentialOrderValidator.ValidateWithinRange(
+            request.CourseOrder,
+            minOrder: 1,
+            maxOrder: moduleCourses.Count + 1,
+            orderPropertyName: "CourseOrder",
+            scopeDescription: $"module '{request.ModuleId}'");
+
+        // Insert-in-the-middle: shift existing courses at or after the requested slot.
+        var coursesToShift = moduleCourses
+            .Where(c => c.CourseOrder >= request.CourseOrder)
+            .ToList();
+
+        foreach (var existingCourse in coursesToShift)
+        {
+            existingCourse.CourseOrder += 1;
+        }
+
+        if (coursesToShift.Count > 0)
+        {
+            await _unitOfWork.Courses.UpdateRange(coursesToShift);
+        }
+
         var course = new Course
         {
             Code = request.Code,
             ModuleId = request.ModuleId,
             Name = request.Name,
             Description = request.Description,
+            CourseOrder = request.CourseOrder,
         };
 
         await _unitOfWork.Courses.AddAsync(course);
@@ -271,6 +300,7 @@ public sealed class CourseService : ICourseService
             ModuleId = course.ModuleId,
             Name = course.Name,
             Description = course.Description,
+            CourseOrder = course.CourseOrder,
             CreatedAt = course.CreatedAt,
             UpdatedAt = course.UpdatedAt,
         };
@@ -309,17 +339,41 @@ public sealed class CourseService : ICourseService
             course.Code = request.Code;
         }
 
-        if (request.ModuleId.HasValue && course.ModuleId != request.ModuleId.Value)
-        {
-            var module = await _unitOfWork.Modules.GetByIdAsync(request.ModuleId.Value);
+        var oldModuleId = course.ModuleId;
+        var oldOrder = course.CourseOrder;
+        var moduleChanged = request.ModuleId.HasValue && request.ModuleId.Value != oldModuleId;
+        var targetModuleId = moduleChanged ? request.ModuleId!.Value : oldModuleId;
 
-            if (module == null || module.IsDeleted)
+        var currentModule = await _unitOfWork.Modules.GetByIdAsync(oldModuleId);
+        if (currentModule != null && !currentModule.IsDeleted)
+        {
+            await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, currentModule.ProgramId);
+        }
+
+        Module? targetModule = null;
+        if (moduleChanged)
+        {
+            targetModule = await _unitOfWork.Modules.GetByIdAsync(targetModuleId);
+
+            if (targetModule == null || targetModule.IsDeleted)
             {
-                _logger.LogWarning("[UpdateCourseAsync] Module with Id {Id} not found.", request.ModuleId.Value);
+                _logger.LogWarning("[UpdateCourseAsync] Module with Id {Id} not found.", targetModuleId);
                 throw new NotFoundException($"Module with id '{request.ModuleId}' not found.");
             }
 
-            course.ModuleId = request.ModuleId.Value;
+            if (currentModule == null || targetModule.ProgramId != currentModule.ProgramId)
+            {
+                await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, targetModule.ProgramId);
+            }
+        }
+
+        if (moduleChanged)
+        {
+            await MoveCourseToModuleAsync(course, oldModuleId, oldOrder, targetModuleId, request.CourseOrder);
+        }
+        else if (request.CourseOrder.HasValue && request.CourseOrder.Value != oldOrder)
+        {
+            await ReorderWithinModuleAsync(course, targetModuleId, oldOrder, request.CourseOrder.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Name) && course.Name != request.Name)
@@ -346,9 +400,97 @@ public sealed class CourseService : ICourseService
             ModuleId = course.ModuleId,
             Name = course.Name,
             Description = course.Description,
+            CourseOrder = course.CourseOrder,
             CreatedAt = course.CreatedAt,
             UpdatedAt = course.UpdatedAt,
         };
+    }
+
+    private async Task ReorderWithinModuleAsync(Course course, Guid moduleId, int oldOrder, int newOrder)
+    {
+        var moduleCourses = await _unitOfWork.Courses.GetAllAsync(
+            c => c.ModuleId == moduleId && !c.IsDeleted);
+
+        SequentialOrderValidator.ValidateWithinRange(
+            newOrder,
+            minOrder: 1,
+            maxOrder: moduleCourses.Count,
+            orderPropertyName: "CourseOrder",
+            scopeDescription: $"module '{moduleId}'");
+
+        var others = moduleCourses.Where(c => c.Id != course.Id).ToList();
+
+        var shifted = newOrder < oldOrder
+            ? others.Where(c => c.CourseOrder >= newOrder && c.CourseOrder < oldOrder).ToList()
+            : others.Where(c => c.CourseOrder > oldOrder && c.CourseOrder <= newOrder).ToList();
+
+        var delta = newOrder < oldOrder ? 1 : -1;
+
+        foreach (var neighbor in shifted)
+        {
+            neighbor.CourseOrder += delta;
+        }
+
+        if (shifted.Count > 0)
+        {
+            await _unitOfWork.Courses.UpdateRange(shifted);
+        }
+
+        course.CourseOrder = newOrder;
+    }
+
+    /// <summary>
+    /// Moves <paramref name="course"/> to a different module: closes the gap it leaves in the old
+    /// module and inserts it at the requested slot (or appends) in the new module, shifting neighbors.
+    /// </summary>
+    private async Task MoveCourseToModuleAsync(
+        Course course,
+        Guid oldModuleId,
+        int oldOrder,
+        Guid newModuleId,
+        int? requestedOrder)
+    {
+        var oldModuleCourses = await _unitOfWork.Courses.GetAllAsync(
+            c => c.ModuleId == oldModuleId && !c.IsDeleted && c.Id != course.Id);
+        var newModuleCourses = await _unitOfWork.Courses.GetAllAsync(
+            c => c.ModuleId == newModuleId && !c.IsDeleted);
+
+        var targetOrder = requestedOrder ?? newModuleCourses.Count + 1;
+
+        SequentialOrderValidator.ValidateWithinRange(
+            targetOrder,
+            minOrder: 1,
+            maxOrder: newModuleCourses.Count + 1,
+            orderPropertyName: "CourseOrder",
+            scopeDescription: $"module '{newModuleId}'");
+
+        var gapShifted = oldModuleCourses
+            .Where(c => c.CourseOrder > oldOrder)
+            .ToList();
+
+        foreach (var neighbor in gapShifted)
+        {
+            neighbor.CourseOrder -= 1;
+        }
+
+        var insertShifted = newModuleCourses
+            .Where(c => c.CourseOrder >= targetOrder)
+            .ToList();
+
+        foreach (var neighbor in insertShifted)
+        {
+            neighbor.CourseOrder += 1;
+        }
+
+        var toUpdate = gapShifted.Concat(insertShifted).ToList();
+
+        if (toUpdate.Count > 0)
+        {
+            await _unitOfWork.Courses.UpdateRange(toUpdate);
+        }
+
+        course.ModuleId = newModuleId;
+        course.CourseOrder = targetOrder;
     }
 
     // =========================================================================
@@ -365,6 +507,29 @@ public sealed class CourseService : ICourseService
         {
             _logger.LogWarning("[DeleteCourseAsync] Course with Id {Id} not found.", courseId);
             return false;
+        }
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(course.ModuleId);
+        if (module != null && !module.IsDeleted)
+        {
+            await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module.ProgramId);
+        }
+
+        // Close the ordering gap the deleted course leaves behind.
+        var coursesToShift = await _unitOfWork.Courses.GetAllAsync(
+            c => c.ModuleId == course.ModuleId
+                 && !c.IsDeleted
+                 && c.Id != courseId
+                 && c.CourseOrder > course.CourseOrder);
+
+        foreach (var neighbor in coursesToShift)
+        {
+            neighbor.CourseOrder -= 1;
+        }
+
+        if (coursesToShift.Count > 0)
+        {
+            await _unitOfWork.Courses.UpdateRange(coursesToShift);
         }
 
         await _unitOfWork.Courses.SoftRemove(course);

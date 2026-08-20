@@ -100,10 +100,11 @@ public sealed class ClassMentorRequestServiceTests
         Guid? id = null,
         string code = "CLS-001",
         string name = "Cohort A",
-        ClassStatus status = ClassStatus.Open,
+        ClassStatus status = ClassStatus.Draft,
         Guid? mentorId = null,
         Guid? programId = null,
-        DateTime? createdAt = null)
+        DateTime? createdAt = null,
+        bool withSchedule = true)
     {
         var entity = new Class
         {
@@ -121,6 +122,22 @@ public sealed class ClassMentorRequestServiceTests
             IsDeleted = false,
         };
         _db.Classes.Seed(entity);
+
+        if (withSchedule)
+        {
+            _db.ClassSessions.Seed(new ClassSession
+            {
+                Id = Guid.NewGuid(),
+                ClassId = entity.Id,
+                Title = "Seeded session",
+                SessionKind = SessionKind.Lesson,
+                StartTime = _now.AddDays(5),
+                EndTime = _now.AddDays(5).AddHours(2),
+                Status = ClassSessionStatus.Scheduled,
+                IsDeleted = false,
+            });
+        }
+
         return entity;
     }
 
@@ -171,10 +188,12 @@ public sealed class ClassMentorRequestServiceTests
     // ── GetMentorBoardAsync ───────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetMentorBoard_ReturnsUnassignedDraftAndOpenClasses()
+    public async Task GetMentorBoard_ReturnsScheduledDraftClassesOnly()
     {
         SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
         SeedProgram();
+        // Open classes always have a mentor requirement to open — an unassigned open
+        // class is legacy data and must not be requestable.
         SeedClass(status: ClassStatus.Open, mentorId: null);
         SeedClass(
             id: _otherClassId,
@@ -185,19 +204,24 @@ public sealed class ClassMentorRequestServiceTests
         SeedClass(
             id: Guid.Parse("46464646-4646-4646-4646-464646464646"),
             code: "CLS-ASSIGNED",
-            status: ClassStatus.Open,
+            status: ClassStatus.Draft,
             mentorId: _otherMentorId);
         SeedClass(
             id: Guid.Parse("47474747-4747-4747-4747-474747474747"),
             code: "CLS-DONE",
             status: ClassStatus.Completed,
             mentorId: null);
+        SeedClass(
+            id: Guid.Parse("48484848-4848-4848-4848-484848484848"),
+            code: "CLS-NOSCHED",
+            status: ClassStatus.Draft,
+            mentorId: null,
+            withSchedule: false);
         var sut = CreateSut();
 
         var result = await sut.GetMentorBoardAsync(null, null, false, 1, 10);
 
-        Assert.Equal(2, result.TotalCount);
-        Assert.Contains(result.Items, i => i.Code == "CLS-001");
+        Assert.Equal(1, result.TotalCount);
         Assert.Contains(result.Items, i => i.Code == "CLS-002");
     }
 
@@ -312,11 +336,36 @@ public sealed class ClassMentorRequestServiceTests
         await Assert.ThrowsAsync<ConflictException>(() =>
             sut.CreateRequestAsync(new CreateClassMentorRequestDto { ClassId = _classId }));
 
-        SeedClass(id: _otherClassId, code: "CLS-002", status: ClassStatus.Open, mentorId: null);
+        SeedClass(id: _otherClassId, code: "CLS-002", status: ClassStatus.Draft, mentorId: null);
         SeedRequest(classId: _otherClassId);
 
         await Assert.ThrowsAsync<ConflictException>(() =>
             sut.CreateRequestAsync(new CreateClassMentorRequestDto { ClassId = _otherClassId }));
+    }
+
+    [Fact]
+    public async Task CreateRequest_Throws_WhenClassHasNoSchedule()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft, mentorId: null, withSchedule: false);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateRequestAsync(new CreateClassMentorRequestDto { ClassId = _classId }));
+        Assert.Contains("no schedule", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateRequest_Throws_WhenClassNotDraft()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
+        SeedProgram();
+        SeedClass(status: ClassStatus.Open, mentorId: null);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateRequestAsync(new CreateClassMentorRequestDto { ClassId = _classId }));
     }
 
     [Fact]
@@ -337,7 +386,7 @@ public sealed class ClassMentorRequestServiceTests
             EndDate = _now.AddDays(20),
             IsDeleted = false,
         });
-        SeedClass(status: ClassStatus.Open, mentorId: null);
+        SeedClass(status: ClassStatus.Draft, mentorId: null);
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<ConflictException>(() =>
@@ -363,8 +412,9 @@ public sealed class ClassMentorRequestServiceTests
             id: _otherClassId,
             code: "CLS-BUSY",
             status: ClassStatus.InProgress,
-            mentorId: _mentorId);
-        var targetClass = SeedClass(status: ClassStatus.Open, mentorId: null);
+            mentorId: _mentorId,
+            withSchedule: false);
+        var targetClass = SeedClass(status: ClassStatus.Draft, mentorId: null, withSchedule: false);
         var start = _now.AddDays(2);
         _db.ClassSessions.Seed(
             new ClassSession
@@ -407,7 +457,7 @@ public sealed class ClassMentorRequestServiceTests
     {
         SeedUser(_mentorId, RoleType.Mentor, "MNT-001", "Mentor One");
         SeedProgram();
-        var targetClass = SeedClass(status: ClassStatus.Open, mentorId: null);
+        var targetClass = SeedClass(status: ClassStatus.Draft, mentorId: null, withSchedule: false);
         _db.ClassSessions.Seed(new ClassSession
         {
             Id = Guid.Parse("66666666-6666-6666-6666-666666666666"),
@@ -567,8 +617,9 @@ public sealed class ClassMentorRequestServiceTests
             id: _otherClassId,
             code: "CLS-BUSY",
             status: ClassStatus.Open,
-            mentorId: _mentorId);
-        SeedClass(status: ClassStatus.Open, mentorId: null);
+            mentorId: _mentorId,
+            withSchedule: false);
+        SeedClass(status: ClassStatus.Draft, mentorId: null, withSchedule: false);
         SeedRequest();
         var start = _now.AddDays(2);
         var end = start.AddHours(2);
@@ -603,6 +654,23 @@ public sealed class ClassMentorRequestServiceTests
 
         await Assert.ThrowsAsync<ConflictException>(() =>
             sut.ApproveRequestAsync(_requestId, null));
+    }
+
+    [Fact]
+    public async Task ApproveRequest_Throws_WhenClassScheduleWasDeleted()
+    {
+        // The mentor requested when a schedule existed; the manager deleted the sessions
+        // afterwards. Approving into a timetable-less class is pointless — block it.
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft, mentorId: null, withSchedule: false);
+        SeedRequest();
+        var sut = CreateSut(_managerId);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.ApproveRequestAsync(_requestId, null));
+        Assert.Contains("no schedule", ex.Message);
     }
 
     [Fact]

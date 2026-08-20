@@ -57,7 +57,8 @@ public sealed class CourseServiceTests
         string code = "CRS-001",
         Guid? moduleId = null,
         List<Activity>? activities = null,
-        bool isDeleted = false)
+        bool isDeleted = false,
+        int courseOrder = 1)
     {
         var module = SeedModule(moduleId ?? _moduleId);
         var course = new Course
@@ -68,6 +69,7 @@ public sealed class CourseServiceTests
             ModuleId = module.Id,
             Module = module,
             Description = "Course desc",
+            CourseOrder = courseOrder,
             Activities = activities ?? [],
             CreatedAt = DateTime.UtcNow.AddDays(-3),
             IsDeleted = isDeleted,
@@ -201,6 +203,7 @@ public sealed class CourseServiceTests
             ModuleId = _moduleId,
             Name = "New Course",
             Description = "Desc",
+            CourseOrder = 1,
         });
 
         Assert.Equal("CRS-NEW", result.Code);
@@ -312,5 +315,184 @@ public sealed class CourseServiceTests
         var sut = CreateSut();
 
         Assert.False(await sut.DeleteCourseAsync(_courseId));
+    }
+
+    // ── CourseOrder ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Create_Throws_WhenCourseOrderOutOfRange()
+    {
+        SeedCourse();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateCourseAsync(new CreateCourseRequestDto
+            {
+                Code = "CRS-NEW",
+                ModuleId = _moduleId,
+                Name = "New Course",
+                CourseOrder = 3, // only 1 course exists — max allowed is 2
+            }));
+    }
+
+    [Fact]
+    public async Task Create_InsertInMiddle_ShiftsExistingCourses()
+    {
+        SeedCourse();
+        SeedCourse(id: _otherCourseId, name: "Second", code: "CRS-002", courseOrder: 2);
+        var sut = CreateSut();
+
+        await sut.CreateCourseAsync(new CreateCourseRequestDto
+        {
+            Code = "CRS-NEW",
+            ModuleId = _moduleId,
+            Name = "Inserted",
+            CourseOrder = 1,
+        });
+
+        var ordered = _db.Courses.Items.OrderBy(c => c.CourseOrder).ToList();
+        Assert.Equal(new[] { "CRS-NEW", "CRS-001", "CRS-002" }, ordered.Select(c => c.Code).ToArray());
+        Assert.Equal(new[] { 1, 2, 3 }, ordered.Select(c => c.CourseOrder).ToArray());
+    }
+
+    [Fact]
+    public async Task Update_ReordersWithinModule()
+    {
+        SeedCourse();
+        SeedCourse(id: _otherCourseId, name: "Second", code: "CRS-002", courseOrder: 2);
+        var sut = CreateSut();
+
+        var result = await sut.UpdateCourseAsync(_otherCourseId, new UpdateCourseRequestDto
+        {
+            CourseOrder = 1,
+        });
+
+        Assert.Equal(1, result!.CourseOrder);
+        Assert.Equal(2, _db.Courses.Items.Single(c => c.Id == _courseId).CourseOrder);
+    }
+
+    [Fact]
+    public async Task Update_MovesCourseToAnotherModule_AppendsAtEnd()
+    {
+        SeedCourse();
+        SeedCourse(id: _otherCourseId, name: "Second", code: "CRS-002", courseOrder: 2);
+        SeedModule(_otherModuleId, "Advanced Module");
+        var sut = CreateSut();
+
+        var result = await sut.UpdateCourseAsync(_courseId, new UpdateCourseRequestDto
+        {
+            ModuleId = _otherModuleId,
+        });
+
+        Assert.Equal(_otherModuleId, result!.ModuleId);
+        Assert.Equal(1, result.CourseOrder);
+        Assert.Equal(1, _db.Courses.Items.Single(c => c.Id == _otherCourseId).CourseOrder);
+    }
+
+    [Fact]
+    public async Task Delete_ClosesOrderGap()
+    {
+        SeedCourse();
+        SeedCourse(id: _otherCourseId, name: "Second", code: "CRS-002", courseOrder: 2);
+        var sut = CreateSut();
+
+        await sut.DeleteCourseAsync(_courseId);
+
+        Assert.Equal(1, _db.Courses.Items.Single(c => c.Id == _otherCourseId).CourseOrder);
+    }
+
+    [Fact]
+    public async Task Create_Throws_WhenProgramCurriculumLocked()
+    {
+        SeedModule(); // also seeds the program
+        _db.Classes.Seed(new Class
+        {
+            Id = Guid.NewGuid(),
+            Code = "CLS-IP",
+            Name = "In progress",
+            ProgramId = _programId,
+            Status = ClassStatus.InProgress,
+            MaxCapacity = 10,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(30),
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.CreateCourseAsync(new CreateCourseRequestDto
+            {
+                Code = "CRS-NEW",
+                ModuleId = _moduleId,
+                Name = "New Course",
+                CourseOrder = 1,
+            }));
+    }
+
+    [Fact]
+    public async Task Create_Throws_WhenOpenClassHasEnrolledStudents()
+    {
+        SeedModule(); // also seeds the program
+        var classId = Guid.NewGuid();
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-OPEN",
+            Name = "Recruiting",
+            ProgramId = _programId,
+            Status = ClassStatus.Open,
+            MaxCapacity = 10,
+            StartDate = DateTime.UtcNow.AddDays(7),
+            EndDate = DateTime.UtcNow.AddDays(60),
+            IsDeleted = false,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = Guid.NewGuid(),
+            ProgramEnrollmentId = Guid.NewGuid(),
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.CreateCourseAsync(new CreateCourseRequestDto
+            {
+                Code = "CRS-NEW",
+                ModuleId = _moduleId,
+                Name = "New Course",
+                CourseOrder = 1,
+            }));
+    }
+
+    [Fact]
+    public async Task Create_Succeeds_WhenOpenClassHasNoStudents()
+    {
+        SeedModule(); // also seeds the program
+        _db.Classes.Seed(new Class
+        {
+            Id = Guid.NewGuid(),
+            Code = "CLS-OPEN",
+            Name = "Recruiting, still empty",
+            ProgramId = _programId,
+            Status = ClassStatus.Open,
+            MaxCapacity = 10,
+            StartDate = DateTime.UtcNow.AddDays(7),
+            EndDate = DateTime.UtcNow.AddDays(60),
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.CreateCourseAsync(new CreateCourseRequestDto
+        {
+            Code = "CRS-NEW",
+            ModuleId = _moduleId,
+            Name = "New Course",
+            CourseOrder = 1,
+        });
+
+        Assert.Equal("CRS-NEW", result.Code);
     }
 }

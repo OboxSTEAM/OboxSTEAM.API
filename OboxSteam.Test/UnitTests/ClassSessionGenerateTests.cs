@@ -24,9 +24,24 @@ public sealed class ClassSessionGenerateTests
     private readonly Guid _classId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private readonly Guid _otherClassId = Guid.Parse("45454545-4545-4545-4545-454545454545");
 
-    // 2026-08-22 is a Saturday.
-    private readonly DateTime _classStart = new(2026, 8, 22, 0, 0, 0, DateTimeKind.Utc);
-    private readonly DateTime _classEnd = new(2026, 10, 31, 0, 0, 0, DateTimeKind.Utc);
+    // Anchor the class on the next Saturday at least 7 days out, so the enrollment-buffer
+    // guard never trips by accident and the tests stay time-independent.
+    private static readonly DateTime FirstSaturday =
+        NextDayOfWeek(DateTime.UtcNow.Date.AddDays(7), DayOfWeek.Saturday);
+
+    private readonly DateTime _classStart = FirstSaturday;
+    private readonly DateTime _classEnd = FirstSaturday.AddDays(70);
+
+    private static DateTime NextDayOfWeek(DateTime from, DayOfWeek day)
+    {
+        var date = from;
+        while (date.DayOfWeek != day)
+        {
+            date = date.AddDays(1);
+        }
+
+        return date;
+    }
 
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
@@ -55,7 +70,7 @@ public sealed class ClassSessionGenerateTests
         SessionEndTime = new TimeOnly(11, 0),
     };
 
-    private Class SeedClass(Guid? mentorId = null, DateTime? endDate = null)
+    private Class SeedClass(Guid? mentorId = null, DateTime? endDate = null, DateTime? startDate = null)
     {
         var entity = new Class
         {
@@ -66,7 +81,7 @@ public sealed class ClassSessionGenerateTests
             MentorId = mentorId,
             Status = ClassStatus.Open,
             MaxCapacity = 20,
-            StartDate = _classStart,
+            StartDate = startDate ?? _classStart,
             EndDate = endDate ?? _classEnd,
             IsDeleted = false,
         };
@@ -91,6 +106,7 @@ public sealed class ClassSessionGenerateTests
             Code = "CRS-001",
             ModuleId = _moduleId,
             Name = "Course 1",
+            CourseOrder = 1,
             IsDeleted = false,
         });
         _db.Activities.Seed(
@@ -102,7 +118,7 @@ public sealed class ClassSessionGenerateTests
                 Name = "Live lesson",
                 ActivityType = ActivityType.LiveOnline,
                 ActivityOrder = 1,
-                Location = "https://meet.example.com/live",
+                DurationMinutes = 120,
                 IsDeleted = false,
             },
             new Activity
@@ -113,7 +129,7 @@ public sealed class ClassSessionGenerateTests
                 Name = "Field trip",
                 ActivityType = ActivityType.Offline,
                 ActivityOrder = 2,
-                Location = "123 Le Loi, HCMC",
+                DurationMinutes = 90,
                 IsDeleted = false,
             },
             new Activity
@@ -151,23 +167,29 @@ public sealed class ClassSessionGenerateTests
         var live = result[0];
         Assert.Equal(_liveActivityId, live.ActivityId);
         Assert.Equal(SessionKind.Lesson, live.SessionKind);
-        Assert.Equal(new DateTime(2026, 8, 22, 9, 0, 0, DateTimeKind.Utc), live.StartTime);
-        Assert.Equal(new DateTime(2026, 8, 22, 11, 0, 0, DateTimeKind.Utc), live.EndTime);
-        Assert.Equal("https://meet.example.com/live", live.MeetingUrl);
+        Assert.Equal(FirstSaturday.AddHours(9), live.StartTime);
+        // EndTime comes from the activity's DurationMinutes (120), not the request window.
+        Assert.Equal(FirstSaturday.AddHours(11), live.EndTime);
+        // Venue/join link are filled per session by the manager afterwards.
+        Assert.Null(live.MeetingUrl);
         Assert.Null(live.Location);
         Assert.True(live.RequiresAttendance);
 
         var offline = result[1];
         Assert.Equal(_offlineActivityId, offline.ActivityId);
         Assert.Equal(SessionKind.FieldTrip, offline.SessionKind);
-        Assert.Equal(new DateTime(2026, 8, 29, 9, 0, 0, DateTimeKind.Utc), offline.StartTime);
-        Assert.Equal("123 Le Loi, HCMC", offline.Location);
+        Assert.Equal(FirstSaturday.AddDays(7).AddHours(9), offline.StartTime);
+        // 90-minute activity.
+        Assert.Equal(FirstSaturday.AddDays(7).AddHours(10).AddMinutes(30), offline.EndTime);
+        Assert.Null(offline.Location);
         Assert.Null(offline.MeetingUrl);
 
         var assignment = result[2];
         Assert.Equal(_assignmentId, assignment.AssignmentId);
         Assert.Equal(SessionKind.AssignmentWindow, assignment.SessionKind);
-        Assert.Equal(new DateTime(2026, 9, 5, 9, 0, 0, DateTimeKind.Utc), assignment.StartTime);
+        Assert.Equal(FirstSaturday.AddDays(14).AddHours(9), assignment.StartTime);
+        // Assignments have no duration; the request window (09:00–11:00) is the default length.
+        Assert.Equal(FirstSaturday.AddDays(14).AddHours(11), assignment.EndTime);
         Assert.False(assignment.RequiresAttendance);
 
         Assert.Equal(3, _db.ClassSessions.Items.Count);
@@ -206,20 +228,43 @@ public sealed class ClassSessionGenerateTests
     }
 
     [Fact]
-    public async Task Generate_ThrowsBadRequest_WhenClassHasNoMentor()
+    public async Task Generate_WithoutMentor_GeneratesWithoutOverlapCheck()
     {
+        // Schedules are generated while the class is still a draft without a mentor —
+        // mentors review the timetable before requesting. Overlap is enforced at
+        // request/approve time instead.
         SeedClass(mentorId: null);
         SeedCurriculum();
         var sut = CreateSut();
 
-        await Assert.ThrowsAsync<BadRequestException>(() =>
+        var result = await sut.GenerateClassSessionsAsync(_classId, SaturdayPattern());
+
+        Assert.Equal(3, result.Count);
+    }
+
+    [Fact]
+    public async Task Generate_ThrowsConflict_WhenOpenClassHasEnrolledStudents()
+    {
+        SeedClass(mentorId: _mentorId);
+        SeedCurriculum();
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _classId,
+            StudentId = Guid.NewGuid(),
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
             sut.GenerateClassSessionsAsync(_classId, SaturdayPattern()));
     }
 
     [Fact]
     public async Task Generate_ThrowsBadRequest_WhenDateRangeTooShort()
     {
-        SeedClass(mentorId: _mentorId, endDate: new DateTime(2026, 8, 23, 0, 0, 0, DateTimeKind.Utc));
+        SeedClass(mentorId: _mentorId, endDate: FirstSaturday.AddDays(1));
         SeedCurriculum();
         var sut = CreateSut();
 
@@ -238,6 +283,90 @@ public sealed class ClassSessionGenerateTests
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.GenerateClassSessionsAsync(_classId, SaturdayPattern()));
+    }
+
+    [Fact]
+    public async Task Generate_ThrowsBadRequest_WhenActivityMissingDuration()
+    {
+        SeedClass(mentorId: _mentorId);
+        _db.Modules.Seed(new Module
+        {
+            Id = _moduleId,
+            Code = "MOD-001",
+            ProgramId = _programId,
+            Name = "Module 1",
+            ModuleOrder = 1,
+            IsDeleted = false,
+        });
+        _db.Courses.Seed(new Course
+        {
+            Id = _courseId,
+            Code = "CRS-001",
+            ModuleId = _moduleId,
+            Name = "Course 1",
+            CourseOrder = 1,
+            IsDeleted = false,
+        });
+        _db.Activities.Seed(new Activity
+        {
+            Id = _liveActivityId,
+            Code = "ACT-001",
+            CourseId = _courseId,
+            Name = "Live lesson",
+            ActivityType = ActivityType.LiveOnline,
+            ActivityOrder = 1,
+            DurationMinutes = null,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.GenerateClassSessionsAsync(_classId, SaturdayPattern()));
+
+        Assert.Contains("DurationMinutes", ex.Message);
+        Assert.Empty(_db.ClassSessions.Items);
+    }
+
+    [Fact]
+    public async Task Generate_ThrowsBadRequest_WhenFirstSlotIsInThePast()
+    {
+        SeedClass(
+            mentorId: _mentorId,
+            startDate: DateTime.UtcNow.Date.AddDays(-30),
+            endDate: DateTime.UtcNow.Date.AddDays(60));
+        SeedCurriculum();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.GenerateClassSessionsAsync(_classId, SaturdayPattern()));
+
+        Assert.Contains("in the past", ex.Message);
+        Assert.Empty(_db.ClassSessions.Items);
+    }
+
+    [Fact]
+    public async Task Generate_ThrowsBadRequest_WhenFirstSlotIsInsideEnrollmentBuffer()
+    {
+        // Class starts today with sessions tomorrow 09:00 UTC — always inside the
+        // default 48-hour MinHoursBeforeAssignmentJoin buffer.
+        var tomorrow = DateTime.UtcNow.Date.AddDays(1);
+        SeedClass(
+            mentorId: _mentorId,
+            startDate: DateTime.UtcNow.Date,
+            endDate: DateTime.UtcNow.Date.AddDays(70));
+        SeedCurriculum();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.GenerateClassSessionsAsync(_classId, new GenerateClassSessionsRequestDto
+            {
+                DaysOfWeek = new List<DayOfWeek> { tomorrow.DayOfWeek },
+                SessionStartTime = new TimeOnly(9, 0),
+                SessionEndTime = new TimeOnly(11, 0),
+            }));
+
+        Assert.Contains("enrollment buffer", ex.Message);
+        Assert.Empty(_db.ClassSessions.Items);
     }
 
     [Fact]
@@ -266,8 +395,8 @@ public sealed class ClassSessionGenerateTests
             ClassId = _otherClassId,
             ModuleId = _moduleId,
             Title = "Busy session",
-            StartTime = new DateTime(2026, 8, 22, 10, 0, 0, DateTimeKind.Utc),
-            EndTime = new DateTime(2026, 8, 22, 12, 0, 0, DateTimeKind.Utc),
+            StartTime = FirstSaturday.AddHours(10),
+            EndTime = FirstSaturday.AddHours(12),
             Status = ClassSessionStatus.Scheduled,
             Class = busyClass,
             IsDeleted = false,

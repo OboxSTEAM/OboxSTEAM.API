@@ -120,6 +120,77 @@ public sealed class ClassServiceTests
         return entity;
     }
 
+    private void SeedSchedulableCurriculum(int liveActivityCount = 1, int assignmentCount = 0)
+    {
+        var moduleId = Guid.NewGuid();
+        var courseId = Guid.NewGuid();
+
+        _db.Modules.Seed(new Module
+        {
+            Id = moduleId,
+            Code = "MOD-SCHED",
+            ProgramId = _programId,
+            Name = "Schedulable module",
+            ModuleType = ModuleType.Theory,
+            ModuleOrder = 1,
+            IsDeleted = false,
+        });
+        _db.Courses.Seed(new Course
+        {
+            Id = courseId,
+            Code = "CRS-SCHED",
+            ModuleId = moduleId,
+            Name = "Schedulable course",
+            CourseOrder = 1,
+            IsDeleted = false,
+        });
+
+        for (var i = 0; i < liveActivityCount; i++)
+        {
+            _db.Activities.Seed(new Activity
+            {
+                Id = Guid.NewGuid(),
+                Code = $"ACT-SCHED-{i}",
+                CourseId = courseId,
+                Name = $"Live activity {i}",
+                ActivityType = ActivityType.LiveOnline,
+                ActivityOrder = i + 1,
+                DurationMinutes = 60,
+                IsDeleted = false,
+            });
+        }
+
+        for (var i = 0; i < assignmentCount; i++)
+        {
+            _db.Assignments.Seed(new Assignment
+            {
+                Id = Guid.NewGuid(),
+                Code = $"ASM-SCHED-{i}",
+                ModuleId = moduleId,
+                Title = $"Assignment {i}",
+                IsDeleted = false,
+            });
+        }
+    }
+
+    private void SeedCoveringSessions(int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            _db.ClassSessions.Seed(new ClassSession
+            {
+                Id = Guid.NewGuid(),
+                ClassId = _classId,
+                Title = $"Session {i}",
+                SessionKind = SessionKind.Lesson,
+                StartTime = _now.AddDays(1 + i),
+                EndTime = _now.AddDays(1 + i).AddHours(2),
+                Status = ClassSessionStatus.Scheduled,
+                IsDeleted = false,
+            });
+        }
+    }
+
     private void SeedEnrollment(Guid studentId, Guid? classId = null, DateTime? enrolledAt = null)
     {
         _db.ClassEnrollments.Seed(new ClassEnrollment
@@ -146,8 +217,8 @@ public sealed class ClassServiceTests
             Name = "  New Cohort  ",
             ProgramId = _programId,
             MentorId = mentorId,
-            StartDate = _now.AddDays(2),
-            EndDate = _now.AddDays(40),
+            StartDate = _now.AddDays(21),
+            EndDate = _now.AddDays(60),
             MaxCapacity = 20,
             MinHoursBeforeAssignmentJoin = 24,
             ScheduleSummary = "  Weekends  ",
@@ -625,7 +696,9 @@ public sealed class ClassServiceTests
     public async Task Open_TransitionsDraftToOpen()
     {
         SeedProgram();
-        SeedClass(status: ClassStatus.Draft);
+        SeedClass(status: ClassStatus.Draft, mentorId: _mentorId);
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
         var sut = CreateSut();
 
         var result = await sut.OpenClassAsync(_classId);
@@ -648,15 +721,75 @@ public sealed class ClassServiceTests
     }
 
     [Fact]
+    public async Task Open_Throws_WhenNoMentorAssigned()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft);
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.OpenClassAsync(_classId));
+        Assert.Contains("mentor", ex.Message);
+    }
+
+    [Fact]
+    public async Task Open_Throws_WhenNoScheduleGenerated()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft, mentorId: _mentorId);
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.OpenClassAsync(_classId));
+        Assert.Contains("schedule", ex.Message);
+    }
+
+    [Fact]
+    public async Task Open_Throws_WhenScheduleDoesNotCoverCurriculum()
+    {
+        // Curriculum gained an activity after the schedule was generated — the draft
+        // class cannot open until the manager regenerates (or adds the missing session).
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft, mentorId: _mentorId);
+        SeedSchedulableCurriculum(liveActivityCount: 2);
+        SeedCoveringSessions(1);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.OpenClassAsync(_classId));
+        Assert.Contains("no longer matches the curriculum", ex.Message);
+    }
+
+    [Fact]
     public async Task Start_TransitionsOpenToInProgress()
     {
         SeedProgram();
-        SeedClass(status: ClassStatus.Open);
+        SeedClass(status: ClassStatus.Open, mentorId: _mentorId);
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
         var sut = CreateSut();
 
         var result = await sut.StartClassAsync(_classId);
 
         Assert.Equal(ClassStatus.InProgress, result.Status);
+    }
+
+    [Fact]
+    public async Task Start_Throws_WhenScheduleNoLongerCoversCurriculum()
+    {
+        // Curriculum changed while the class was open but still empty — the stale
+        // schedule must be fixed before the class can start.
+        SeedProgram();
+        SeedClass(status: ClassStatus.Open, mentorId: _mentorId);
+        SeedSchedulableCurriculum(liveActivityCount: 2);
+        SeedCoveringSessions(1);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.StartClassAsync(_classId));
     }
 
     [Fact]
@@ -682,6 +815,8 @@ public sealed class ClassServiceTests
             maxCapacity: 2,
             startDate: _now.AddHours(-1),
             endDate: _now.AddDays(20));
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
         SeedEnrollment(_studentId);
         SeedEnrollment(_otherStudentId);
         var sut = CreateSut();
@@ -719,6 +854,8 @@ public sealed class ClassServiceTests
             maxCapacity: 1,
             startDate: _now.AddHours(-2),
             endDate: _now.AddDays(10));
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
         SeedEnrollment(_studentId);
         SeedClass(
             id: Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"),
@@ -737,6 +874,119 @@ public sealed class ClassServiceTests
         _notificationPublisher.Verify(
             n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_Throws_WhenStartDateWithinLeadTime()
+    {
+        SeedProgram();
+        var sut = CreateSut();
+        var request = BuildCreateRequest();
+        request.StartDate = _now.AddDays(3);
+        request.EndDate = _now.AddDays(40);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.CreateClassAsync(request));
+        Assert.Contains("14 days", ex.Message);
+    }
+
+    [Fact]
+    public async Task Open_Throws_WhenStartDateAlreadyPassed()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft, mentorId: _mentorId, startDate: _now.AddDays(-2));
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.OpenClassAsync(_classId));
+        Assert.Contains("already passed", ex.Message);
+    }
+
+    [Fact]
+    public async Task Update_Throws_WhenDateChangeOrphansSessions()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft);
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _classId,
+            ModuleId = Guid.NewGuid(),
+            Title = "Lab 1",
+            StartTime = _now.AddDays(10),
+            EndTime = _now.AddDays(10).AddHours(2),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateClassAsync(_classId, new UpdateClassRequestDto { EndDate = _now.AddDays(5) }));
+        Assert.Contains("outside the new class date range", ex.Message);
+    }
+
+    [Fact]
+    public async Task Update_Succeeds_WhenDateChangeKeepsSessionsCovered()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft);
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _classId,
+            ModuleId = Guid.NewGuid(),
+            Title = "Lab 1",
+            StartTime = _now.AddDays(10),
+            EndTime = _now.AddDays(10).AddHours(2),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.UpdateClassAsync(_classId, new UpdateClassRequestDto { EndDate = _now.AddDays(20) });
+
+        Assert.Equal(_now.AddDays(20), result.EndDate);
+    }
+
+    [Fact]
+    public async Task AutoStartEligible_SkipsClass_WhenScheduleStale()
+    {
+        // Curriculum gained an activity while the class was open but empty; the class
+        // then filled up and reached its start date. Auto-start must not put it
+        // InProgress on a stale schedule — the manager has to regenerate first.
+        SeedProgram();
+        SeedClass(
+            status: ClassStatus.Open,
+            maxCapacity: 1,
+            startDate: _now.AddHours(-2),
+            endDate: _now.AddDays(10));
+        SeedSchedulableCurriculum(liveActivityCount: 2);
+        SeedCoveringSessions(1);
+        SeedEnrollment(_studentId);
+        var sut = CreateSut();
+
+        var started = await sut.AutoStartEligibleOpenClassesAsync();
+
+        Assert.Equal(0, started);
+        Assert.Equal(ClassStatus.Open, _db.Classes.Items.Single(c => c.Id == _classId).Status);
+    }
+
+    [Fact]
+    public async Task TryAutoStart_SkipsClass_WhenScheduleStale()
+    {
+        SeedProgram();
+        SeedClass(
+            status: ClassStatus.Open,
+            maxCapacity: 2,
+            startDate: _now.AddHours(-1),
+            endDate: _now.AddDays(20));
+        SeedSchedulableCurriculum(liveActivityCount: 2);
+        SeedCoveringSessions(1);
+        SeedEnrollment(_studentId);
+        SeedEnrollment(_otherStudentId);
+        var sut = CreateSut();
+
+        await sut.TryAutoStartClassIfReadyAsync(_classId);
+
+        Assert.Equal(ClassStatus.Open, _db.Classes.Items.Single(c => c.Id == _classId).Status);
     }
 
     [Fact]

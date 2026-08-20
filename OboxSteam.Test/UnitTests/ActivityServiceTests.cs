@@ -25,12 +25,6 @@ public sealed class ActivityServiceTests
     private ActivityService CreateSut() =>
         new(_db, NullLogger<ActivityService>.Instance, new FakeSyncEventPublisher());
 
-    private static (DateTime Start, DateTime End) FutureSchedule()
-    {
-        var start = DateTime.UtcNow.AddDays(3);
-        return (start, start.AddHours(2));
-    }
-
     private void SeedProgram()
     {
         _db.Programs.Seed(new Program
@@ -93,6 +87,7 @@ public sealed class ActivityServiceTests
             CourseId = courseId ?? _courseId,
             ActivityType = activityType,
             ActivityOrder = activityOrder,
+            DurationMinutes = activityType == ActivityType.SelfPaced ? null : 60,
             IsDeleted = isDeleted,
         };
         _db.Activities.Seed(activity);
@@ -135,11 +130,8 @@ public sealed class ActivityServiceTests
     [Fact]
     public async Task GetAll_AppliesAlternateSortColumns()
     {
-        var (start, end) = FutureSchedule();
         var first = SeedActivity(code: "ACT-A", activityOrder: 1);
         first.CreatedAt = DateTime.UtcNow.AddDays(-5);
-        first.StartTime = start;
-        first.EndTime = end;
 
         var second = SeedActivity(
             id: _activity2Id,
@@ -147,25 +139,23 @@ public sealed class ActivityServiceTests
             activityType: ActivityType.LiveOnline,
             activityOrder: 2);
         second.CreatedAt = DateTime.UtcNow.AddDays(-1);
-        second.StartTime = start.AddDays(1);
-        second.EndTime = end.AddDays(1);
-        second.Location = "Room A";
+        second.DurationMinutes = 90;
 
         var sut = CreateSut();
 
         var byOrder = await sut.GetAllActivitiesAsync(null, "activityorder", true, 1, 10, null, null);
         var byType = await sut.GetAllActivitiesAsync(null, "activitytype", false, 1, 10, null, null);
-        var byStart = await sut.GetAllActivitiesAsync(null, "starttime", true, 1, 10, null, null);
+        var byDuration = await sut.GetAllActivitiesAsync(null, "durationminutes", true, 1, 10, null, null);
 
         Assert.Equal("ACT-B", byOrder.Items[0].Code);
         Assert.Equal(ActivityType.SelfPaced, byType.Items[0].ActivityType);
-        Assert.Equal("ACT-B", byStart.Items[0].Code);
+        Assert.Equal("ACT-B", byDuration.Items[0].Code);
     }
 
     [Theory]
     [InlineData("name", false)]
     [InlineData("code", true)]
-    [InlineData("endtime", false)]
+    [InlineData("durationminutes", false)]
     [InlineData("createdat", true)]
     [InlineData("xxx", false)]
     public async Task GetAll_SortByExtraColumns_ReturnsResults(string sortBy, bool desc)
@@ -266,14 +256,12 @@ public sealed class ActivityServiceTests
                 Name = "Field trip",
                 ActivityType = ActivityType.Offline,
                 ActivityOrder = 1,
-                Location = "Campus",
-                StartTime = FutureSchedule().Start,
-                EndTime = FutureSchedule().End,
+                DurationMinutes = 60,
             }));
     }
 
     [Fact]
-    public async Task Create_Throws_WhenLiveOnlineMissingSchedule()
+    public async Task Create_Throws_WhenLiveOnlineMissingDuration()
     {
         SeedCourse();
         var sut = CreateSut();
@@ -302,7 +290,6 @@ public sealed class ActivityServiceTests
             ModuleId = _experientialModuleId,
             IsDeleted = false,
         });
-        var (start, end) = FutureSchedule();
         var sut = CreateSut();
 
         var result = await sut.CreateActivityAsync(new CreateActivitiesRequestDto
@@ -312,9 +299,7 @@ public sealed class ActivityServiceTests
             Name = "Workshop",
             ActivityType = ActivityType.Offline,
             ActivityOrder = 1,
-            Location = "Lab",
-            StartTime = start,
-            EndTime = end,
+            DurationMinutes = 120,
             RequireQrCheckin = true,
         });
 
@@ -382,13 +367,10 @@ public sealed class ActivityServiceTests
     }
 
     [Fact]
-    public async Task Update_ClearsSchedule_WhenSwitchingToSelfPaced()
+    public async Task Update_ClearsDuration_WhenSwitchingToSelfPaced()
     {
-        var (start, end) = FutureSchedule();
         var activity = SeedActivity(activityType: ActivityType.LiveOnline);
-        activity.Location = "Zoom";
-        activity.StartTime = start;
-        activity.EndTime = end;
+        activity.DurationMinutes = 90;
         activity.RequireQrCheckin = false;
         var sut = CreateSut();
 
@@ -398,16 +380,13 @@ public sealed class ActivityServiceTests
         });
 
         Assert.Equal(ActivityType.SelfPaced, result!.ActivityType);
-        Assert.Null(result.Location);
-        Assert.Null(result.StartTime);
-        Assert.Null(result.EndTime);
+        Assert.Null(result.DurationMinutes);
         Assert.False(result.RequireQrCheckin);
     }
 
     [Fact]
     public async Task Update_SetsAllOptionalFields_ForLiveOnline()
     {
-        var (start, end) = FutureSchedule();
         SeedActivity(activityType: ActivityType.LiveOnline);
         var sut = CreateSut();
 
@@ -415,15 +394,13 @@ public sealed class ActivityServiceTests
         {
             ActivityType = ActivityType.LiveOnline,
             RequireMediaEvidence = true,
-            StartTime = start,
-            EndTime = end,
-            Location = "Room B",
+            DurationMinutes = 90,
             RequireQrCheckin = false,
         });
 
         Assert.NotNull(result);
         Assert.True(result!.RequireMediaEvidence);
-        Assert.Equal("Room B", result.Location);
+        Assert.Equal(90, result.DurationMinutes);
     }
 
     [Fact]

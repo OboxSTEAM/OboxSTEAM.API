@@ -366,6 +366,13 @@ public sealed class ClassService : IClassService
         if (request.StartDate.HasValue || request.EndDate.HasValue)
         {
             ClassValidator.ValidateDateRange(startDate, endDate);
+
+            var activeSessions = await _unitOfWork.ClassSessions.GetAllAsync(
+                s => s.ClassId == id
+                     && !s.IsDeleted
+                     && s.Status != ClassSessionStatus.Cancelled);
+            ClassValidator.ValidateDateRangeCoversSessions(startDate, endDate, activeSessions);
+
             classEntity.StartDate = startDate;
             classEntity.EndDate = endDate;
             isUpdated = true;
@@ -430,6 +437,48 @@ public sealed class ClassService : IClassService
         return await MapToResponseDtoAsync(classEntity, updatedSeatsTaken);
     }
 
+    private int CountActiveSessions(Guid classId)
+        => _unitOfWork.ClassSessions
+            .GetQueryable()
+            .Count(s => s.ClassId == classId
+                        && !s.IsDeleted
+                        && s.Status != ClassSessionStatus.Cancelled);
+
+    /// <summary>
+    /// Number of curriculum items that must each have a session: every LiveOnline/Offline
+    /// activity plus every assignment across the program's modules. Mirrors the item
+    /// selection in ClassSessionService.GenerateClassSessionsAsync.
+    /// </summary>
+    private async Task<int> CountSchedulableCurriculumItemsAsync(Guid programId)
+    {
+        var moduleIds = (await _unitOfWork.Modules.GetAllAsync(
+                m => m.ProgramId == programId && !m.IsDeleted))
+            .Select(m => m.Id)
+            .ToList();
+
+        if (moduleIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var courseIds = (await _unitOfWork.Courses.GetAllAsync(
+                c => moduleIds.Contains(c.ModuleId) && !c.IsDeleted))
+            .Select(c => c.Id)
+            .ToList();
+
+        var activityCount = (await _unitOfWork.Activities.GetAllAsync(
+                a => courseIds.Contains(a.CourseId)
+                     && !a.IsDeleted
+                     && (a.ActivityType == ActivityType.LiveOnline || a.ActivityType == ActivityType.Offline)))
+            .Count;
+
+        var assignmentCount = (await _unitOfWork.Assignments.GetAllAsync(
+                a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted))
+            .Count;
+
+        return activityCount + assignmentCount;
+    }
+
     public async Task<ClassResponseDto> OpenClassAsync(Guid id)
     {
         _logger.LogInformation("[OpenClassAsync] class {Id} -> {Status}", id, ClassStatus.Open);
@@ -437,6 +486,10 @@ public sealed class ClassService : IClassService
         var entity = await _unitOfWork.Classes.GetByIdAsync(id);
         ClassValidator.ValidateTransitionToStatus(entity, id, ClassStatus.Open);
         var classEntity = entity!;
+
+        var openActiveSessions = CountActiveSessions(id);
+        var openSchedulableItems = await CountSchedulableCurriculumItemsAsync(classEntity.ProgramId);
+        ClassValidator.ValidateOpenRequirements(classEntity, openActiveSessions, openSchedulableItems);
 
         classEntity.Status = ClassStatus.Open;
 
@@ -460,6 +513,12 @@ public sealed class ClassService : IClassService
         var entity = await _unitOfWork.Classes.GetByIdAsync(id);
         ClassValidator.ValidateTransitionToStatus(entity, id, ClassStatus.InProgress);
         var classEntity = entity!;
+
+        // Final gate: the curriculum may have changed while the class was open but still
+        // empty — never let a class start on a schedule that no longer covers it.
+        var startActiveSessions = CountActiveSessions(id);
+        var startSchedulableItems = await CountSchedulableCurriculumItemsAsync(classEntity.ProgramId);
+        ClassValidator.ValidateOpenRequirements(classEntity, startActiveSessions, startSchedulableItems);
 
         classEntity.Status = ClassStatus.InProgress;
 
@@ -492,6 +551,19 @@ public sealed class ClassService : IClassService
         var now = DateTime.UtcNow;
         if (!ClassValidator.IsReadyForAutoStart(entity, activeEnrollments.Count, now))
         {
+            return;
+        }
+
+        // Same coverage gate as the manual Start: never auto-start on a stale schedule.
+        var sessionCount = CountActiveSessions(classId);
+        var schedulableCount = await CountSchedulableCurriculumItemsAsync(entity.ProgramId);
+        if (sessionCount == 0 || sessionCount != schedulableCount)
+        {
+            _logger.LogWarning(
+                "[TryAutoStartClassIfReadyAsync] class {Id} skipped — schedule does not cover the current curriculum ({Sessions}/{Items} sessions).",
+                classId,
+                sessionCount,
+                schedulableCount);
             return;
         }
 
@@ -641,6 +713,18 @@ public sealed class ClassService : IClassService
             .Select(g => new { ClassId = g.Key, Count = g.Count() })
             .ToDictionary(x => x.ClassId, x => x.Count);
 
+        // The Start gate applies here too: a class whose curriculum changed after its
+        // schedule was generated must not auto-start on a stale schedule — skip it and
+        // let the manager regenerate instead.
+        var sessionCounts = _unitOfWork.ClassSessions
+            .GetQueryable()
+            .Where(s => classIds.Contains(s.ClassId)
+                        && !s.IsDeleted
+                        && s.Status != ClassSessionStatus.Cancelled)
+            .GroupBy(s => s.ClassId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var schedulableCountByProgram = new Dictionary<Guid, int>();
         var startedCount = 0;
         var startedClasses = new List<Class>();
 
@@ -650,6 +734,23 @@ public sealed class ClassService : IClassService
 
             if (!ClassValidator.IsReadyForAutoStart(classEntity, activeEnrollmentCount, now))
             {
+                continue;
+            }
+
+            if (!schedulableCountByProgram.TryGetValue(classEntity.ProgramId, out var schedulableCount))
+            {
+                schedulableCount = await CountSchedulableCurriculumItemsAsync(classEntity.ProgramId);
+                schedulableCountByProgram[classEntity.ProgramId] = schedulableCount;
+            }
+
+            var sessionCount = sessionCounts.GetValueOrDefault(classEntity.Id, 0);
+            if (sessionCount == 0 || sessionCount != schedulableCount)
+            {
+                _logger.LogWarning(
+                    "[AutoStartEligibleOpenClassesAsync] class {Id} skipped — schedule does not cover the current curriculum ({Sessions}/{Items} sessions).",
+                    classEntity.Id,
+                    sessionCount,
+                    schedulableCount);
                 continue;
             }
 

@@ -347,12 +347,9 @@ public partial class SeedService
             1,
             "Self-paced intro reading for the demo theory course.",
             null,
-            null,
-            null,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
-        // Scheduled activities use open windows (started already) so the live demo is not blocked.
         var theoryLive = await EnsureDemoActivityAsync(
             theoryCourse.Id,
             $"ACT-DEMO-{slug}-01-02",
@@ -360,9 +357,7 @@ public partial class SeedService
             ActivityType.LiveOnline,
             2,
             "Live online walkthrough of key ideas.",
-            $"https://meet.google.com/demo-{slug.ToLowerInvariant()}-theory",
-            seedTime.AddHours(-2),
-            seedTime.AddDays(30),
+            120,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
@@ -375,8 +370,6 @@ public partial class SeedService
             1,
             "Self-paced prep before the hands-on lab.",
             null,
-            null,
-            null,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
@@ -387,9 +380,7 @@ public partial class SeedService
             ActivityType.LiveOnline,
             2,
             "Live coaching session for the hands-on build.",
-            $"https://meet.google.com/demo-{slug.ToLowerInvariant()}-lab",
-            seedTime.AddHours(-2),
-            seedTime.AddDays(30),
+            120,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
@@ -400,9 +391,7 @@ public partial class SeedService
             ActivityType.Offline,
             3,
             "On-site lab to practice skills and gather evidence.",
-            "Demo STEAM Lab",
-            seedTime.AddHours(-2),
-            seedTime.AddDays(30),
+            180,
             requireQrCheckin: true,
             requireMediaEvidence: true,
             seedTime);
@@ -415,8 +404,6 @@ public partial class SeedService
             1,
             "Self-paced research brief before milestone uploads.",
             null,
-            null,
-            null,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
@@ -427,9 +414,7 @@ public partial class SeedService
             ActivityType.LiveOnline,
             2,
             "Live check-in before the first milestone upload.",
-            $"https://meet.google.com/demo-{slug.ToLowerInvariant()}-research",
-            seedTime.AddHours(-2),
-            seedTime.AddDays(30),
+            60,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
@@ -440,9 +425,7 @@ public partial class SeedService
             ActivityType.Offline,
             3,
             "On-site showcase lab for the final milestone.",
-            "Demo Showcase Room",
-            seedTime.AddHours(-2),
-            seedTime.AddDays(30),
+            180,
             requireQrCheckin: true,
             requireMediaEvidence: true,
             seedTime);
@@ -649,6 +632,8 @@ public partial class SeedService
             ModuleId = moduleId,
             Name = name,
             Description = description,
+            // Demo tracks create one course per module.
+            CourseOrder = 1,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,
@@ -666,9 +651,7 @@ public partial class SeedService
         ActivityType activityType,
         int activityOrder,
         string description,
-        string? location,
-        DateTime? startTime,
-        DateTime? endTime,
+        int? durationMinutes,
         bool requireQrCheckin,
         bool requireMediaEvidence,
         DateTime seedTime)
@@ -677,9 +660,7 @@ public partial class SeedService
         if (existing != null)
         {
             var needsUpdate =
-                existing.Location != location
-                || existing.StartTime != startTime
-                || existing.EndTime != endTime
+                existing.DurationMinutes != durationMinutes
                 || existing.RequireQrCheckin != requireQrCheckin
                 || existing.RequireMediaEvidence != requireMediaEvidence;
 
@@ -688,9 +669,7 @@ public partial class SeedService
                 return existing;
             }
 
-            existing.Location = location;
-            existing.StartTime = startTime;
-            existing.EndTime = endTime;
+            existing.DurationMinutes = durationMinutes;
             existing.RequireQrCheckin = requireQrCheckin;
             existing.RequireMediaEvidence = requireMediaEvidence;
             existing.UpdatedAt = seedTime;
@@ -709,9 +688,7 @@ public partial class SeedService
             ActivityType = activityType,
             Description = description,
             ActivityOrder = activityOrder,
-            Location = location,
-            StartTime = startTime,
-            EndTime = endTime,
+            DurationMinutes = durationMinutes,
             RequireQrCheckin = requireQrCheckin,
             RequireMediaEvidence = requireMediaEvidence,
             CreatedAt = seedTime,
@@ -1154,8 +1131,8 @@ public partial class SeedService
                       && cs.ActivityId == definition.Activity.Id
                       && !cs.IsDeleted);
 
-            var startTime = definition.Activity.StartTime ?? seedTime.AddHours(-2);
-            var endTime = definition.Activity.EndTime ?? seedTime.AddDays(30);
+            var startTime = seedTime.AddHours(-2);
+            var endTime = startTime.AddMinutes(definition.Activity.DurationMinutes ?? 120);
 
             if (existing != null)
             {
@@ -1169,7 +1146,7 @@ public partial class SeedService
                 existing.Status = ClassSessionStatus.InProgress;
                 existing.StartTime = startTime;
                 existing.EndTime = endTime;
-                existing.Location = definition.Activity.Location;
+                existing.Location = null;
                 existing.UpdatedAt = seedTime;
                 existing.UpdatedBy = Guid.Empty;
                 await _unitOfWork.ClassSessions.Update(existing);
@@ -1187,7 +1164,7 @@ public partial class SeedService
                 Description = definition.Activity.Description,
                 StartTime = startTime,
                 EndTime = endTime,
-                Location = definition.Activity.Location,
+                Location = null,
                 RequiresAttendance = true,
                 RequiresMentorCheckIn = definition.Activity.ActivityType == ActivityType.Offline,
                 Status = ClassSessionStatus.InProgress,

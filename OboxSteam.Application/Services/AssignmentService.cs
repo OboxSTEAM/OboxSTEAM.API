@@ -35,6 +35,17 @@ public sealed class AssignmentService : IAssignmentService
         _syncEventPublisher = syncEventPublisher;
     }
 
+    private async Task EnsureCurriculumEditableForModuleAsync(Guid moduleId)
+    {
+        var module = await _unitOfWork.Modules.GetByIdAsync(moduleId);
+        if (module is null || module.IsDeleted)
+        {
+            return;
+        }
+
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module.ProgramId);
+    }
+
     private async Task PublishCurriculumStructureChangedForModuleAsync(Guid moduleId)
     {
         var module = await _unitOfWork.Modules.GetByIdAsync(moduleId);
@@ -260,6 +271,8 @@ public sealed class AssignmentService : IAssignmentService
         var module = await _unitOfWork.Modules.GetByIdAsync(request.ModuleId);
         AssignmentValidator.ValidateModuleExists(module);
 
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module!.ProgramId);
+
         await AssignmentValidator.ValidateCourseBelongsToModuleAsync(
             _unitOfWork, request.CourseId, request.ModuleId);
 
@@ -418,6 +431,12 @@ public sealed class AssignmentService : IAssignmentService
                     "Mentors may only update Title, Description, DueDate, AvailableFrom, and AvailableUntil.");
             }
         }
+        else
+        {
+            // Manager edits are structural curriculum changes; mentor edits (due dates etc.)
+            // are operational and stay allowed while their class is in progress.
+            await EnsureCurriculumEditableForModuleAsync(originalModuleId);
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Code)
             && !string.Equals(request.Code.Trim(), assignment.Code, StringComparison.OrdinalIgnoreCase))
@@ -436,6 +455,11 @@ public sealed class AssignmentService : IAssignmentService
         {
             var module = await _unitOfWork.Modules.GetByIdAsync(moduleId);
             AssignmentValidator.ValidateModuleExists(module);
+
+            if (moduleId != originalModuleId)
+            {
+                await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module!.ProgramId);
+            }
         }
 
         var courseId = request.CourseId ?? assignment.CourseId;
@@ -624,6 +648,8 @@ public sealed class AssignmentService : IAssignmentService
             s => s.AssignmentId == assignmentId && !s.IsDeleted);
 
         AssignmentValidator.ValidateCanDelete(submissions.Count);
+
+        await EnsureCurriculumEditableForModuleAsync(assignment.ModuleId);
 
         await _unitOfWork.Assignments.SoftRemove(assignment);
         await _unitOfWork.SaveChangesAsync();

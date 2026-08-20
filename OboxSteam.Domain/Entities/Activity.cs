@@ -6,8 +6,8 @@ namespace OboxSteam.Domain.Entities;
 /// <summary>
 /// Activities represent individual learning tasks within a course.
 /// Can be SelfPaced (no scheduling), LiveOnline, or Offline.
-/// StartTime/EndTime/Location are template defaults; actual cohort
-/// schedule lives on <see cref="ClassSession"/>.
+/// Activities are curriculum templates: where and when a cohort actually meets lives on
+/// <see cref="ClassSession"/>; an activity only declares how long a session of it lasts.
 /// </summary>
 public class Activity : BaseEntity
 {
@@ -26,12 +26,12 @@ public class Activity : BaseEntity
 
     public int ActivityOrder { get; set; }
 
-    // Template scheduling hints — cohort times are on ClassSession
-    [MaxLength(500)]
-    public string? Location { get; set; } // Google Meet link or physical address
-
-    public DateTime? StartTime { get; set; }
-    public DateTime? EndTime { get; set; }
+    /// <summary>
+    /// How long one session of this activity lasts, in minutes. Required for
+    /// LiveOnline/Offline (drives <see cref="ClassSession.EndTime"/> when generating
+    /// sessions); must be null for SelfPaced activities, which are never scheduled.
+    /// </summary>
+    public int? DurationMinutes { get; set; }
 
     public bool RequireQrCheckin { get; set; } // True only for Offline
     public bool RequireMediaEvidence { get; set; }

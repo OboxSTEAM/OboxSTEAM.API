@@ -70,8 +70,26 @@ public static class ClassValidator
         }
 
         ValidateDateRange(request.StartDate, request.EndDate);
+        ValidateStartDateLeadTime(request.StartDate, DateTime.UtcNow);
         ValidateMaxCapacity(request.MaxCapacity);
         ValidateMinHoursBeforeAssignmentJoin(request.MinHoursBeforeAssignmentJoin);
+    }
+
+    /// <summary>
+    /// Minimum gap between class creation and StartDate so enrollment has a real window
+    /// (students must be able to discover the class, enroll, and be confirmed before day one).
+    /// </summary>
+    public const int MinStartDateLeadTimeDays = 14;
+
+    public static void ValidateStartDateLeadTime(DateTime startDate, DateTime utcNow)
+    {
+        var earliest = utcNow.Date.AddDays(MinStartDateLeadTimeDays);
+        if (startDate < earliest)
+        {
+            throw ErrorHelper.BadRequest(
+                $"StartDate must be at least {MinStartDateLeadTimeDays} days in the future " +
+                $"(earliest allowed: {earliest:yyyy-MM-dd}) to leave room for enrollment.");
+        }
     }
 
     public static void ValidateDateRange(DateTime startDate, DateTime endDate)
@@ -80,6 +98,36 @@ public static class ClassValidator
         {
             throw ErrorHelper.BadRequest("EndDate must be after StartDate.");
         }
+    }
+
+    /// <summary>
+    /// Changing class dates must not orphan existing sessions: every active session has to
+    /// stay inside the new range, otherwise the manager must cancel/reschedule them first.
+    /// Without this the schedule silently "leaks" outside the class window while the
+    /// coverage counts still match.
+    /// </summary>
+    public static void ValidateDateRangeCoversSessions(
+        DateTime startDate,
+        DateTime endDate,
+        IReadOnlyCollection<ClassSession> activeSessions)
+    {
+        var offenders = activeSessions
+            .Where(s => s.StartTime < startDate || s.EndTime > endDate)
+            .OrderBy(s => s.StartTime)
+            .ToList();
+
+        if (offenders.Count == 0)
+        {
+            return;
+        }
+
+        var preview = string.Join(", ", offenders
+            .Take(3)
+            .Select(s => $"'{s.Title}' ({s.StartTime:yyyy-MM-dd HH:mm})"));
+
+        throw ErrorHelper.BadRequest(
+            $"{offenders.Count} active session(s) fall outside the new class date range: {preview}. " +
+            "Cancel or reschedule those sessions before changing the class dates.");
     }
 
     public static void ValidateMaxCapacity(int maxCapacity)
@@ -110,8 +158,48 @@ public static class ClassValidator
     public static void ValidateReadyToOpen(Class entity)
     {
         ValidateDateRange(entity.StartDate, entity.EndDate);
+
+        // A Draft class can sit long enough for its StartDate to lapse — enrollment into
+        // an already-started window is meaningless, so re-check at the Open gate.
+        if (entity.StartDate <= DateTime.UtcNow)
+        {
+            throw ErrorHelper.BadRequest(
+                "StartDate has already passed — move the class start date to the future before opening enrollment.");
+        }
+
         ValidateMaxCapacity(entity.MaxCapacity);
         ValidateMinHoursBeforeAssignmentJoin(entity.MinHoursBeforeAssignmentJoin);
+    }
+
+    /// <summary>
+    /// A class only opens for enrollment once students can see the full picture: an assigned
+    /// mentor and a generated schedule that still covers the whole curriculum (every
+    /// LiveOnline/Offline activity plus every assignment). When the curriculum changed after
+    /// the schedule was generated the counts diverge and the manager must regenerate.
+    /// </summary>
+    public static void ValidateOpenRequirements(Class entity, int activeSessionCount, int schedulableItemCount)
+    {
+        if (entity.MentorId is null)
+        {
+            throw ErrorHelper.BadRequest(
+                "Assign a mentor to the class before opening enrollment.");
+        }
+
+        if (activeSessionCount == 0)
+        {
+            throw ErrorHelper.BadRequest(
+                "Generate the class schedule before opening enrollment — " +
+                "students must see the full timetable and mentor up front.");
+        }
+
+        if (activeSessionCount != schedulableItemCount)
+        {
+            throw ErrorHelper.BadRequest(
+                $"The schedule no longer matches the curriculum ({activeSessionCount} sessions " +
+                $"for {schedulableItemCount} schedulable items). The curriculum changed after the " +
+                "schedule was generated — delete the existing sessions and generate a new schedule, " +
+                "or add the missing sessions manually.");
+        }
     }
 
     public static void ValidateStatusTransition(ClassStatus currentStatus, ClassStatus targetStatus)

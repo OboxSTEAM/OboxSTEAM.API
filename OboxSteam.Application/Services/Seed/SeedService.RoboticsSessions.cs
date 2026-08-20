@@ -95,7 +95,9 @@ public partial class SeedService
                     Description = template.Description,
                     StartTime = startTime,
                     EndTime = endTime,
-                    Location = activity.Location,
+                    // Venue is set per session by the manager; curriculum activities no
+                    // longer carry a template location.
+                    Location = null,
                     RequiresAttendance = activity.ActivityType != ActivityType.SelfPaced,
                     Status = ClassSessionStatus.Scheduled,
                     CreatedAt = seedTime,

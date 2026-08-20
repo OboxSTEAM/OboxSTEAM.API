@@ -49,11 +49,21 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
             .Select(ms => ms.SkillId)
             .ToHashSet();
 
+        // Mentors browse draft classes whose schedule is already generated — the
+        // timetable is what they review before requesting. (Open classes always have
+        // a mentor, so they never appear here.)
+        var scheduledClassIds = _unitOfWork.ClassSessions
+            .GetQueryable()
+            .Where(s => !s.IsDeleted && s.Status != ClassSessionStatus.Cancelled)
+            .Select(s => s.ClassId)
+            .Distinct();
+
         var query = _unitOfWork.Classes
             .GetQueryable()
             .Where(c => !c.IsDeleted
                         && c.MentorId == null
-                        && (c.Status == ClassStatus.Draft || c.Status == ClassStatus.Open));
+                        && c.Status == ClassStatus.Draft
+                        && scheduledClassIds.Contains(c.Id));
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -173,6 +183,13 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
         ClassValidator.ValidateClassExists(classEntity, request.ClassId);
         ClassMentorRequestValidator.ValidateClassOpenForRequests(classEntity!);
+
+        var hasActiveSessions = _unitOfWork.ClassSessions
+            .GetQueryable()
+            .Any(s => s.ClassId == request.ClassId
+                      && !s.IsDeleted
+                      && s.Status != ClassSessionStatus.Cancelled);
+        ClassMentorRequestValidator.ValidateClassHasSchedule(classEntity!, hasActiveSessions);
 
         var existingPending = await _unitOfWork.ClassMentorRequests.FirstOrDefaultAsync(
             r => r.ClassId == request.ClassId
@@ -313,6 +330,15 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(entity!.ClassId);
         ClassValidator.ValidateClassExists(classEntity, entity.ClassId);
         ClassMentorRequestValidator.ValidateClassOpenForRequests(classEntity!);
+
+        // The schedule may have been deleted after the request was made — never approve
+        // a mentor into a class that no longer has a timetable.
+        var hasActiveSessions = _unitOfWork.ClassSessions
+            .GetQueryable()
+            .Any(s => s.ClassId == classEntity!.Id
+                      && !s.IsDeleted
+                      && s.Status != ClassSessionStatus.Cancelled);
+        ClassMentorRequestValidator.ValidateClassHasSchedule(classEntity!, hasActiveSessions);
 
         var mentor = await _unitOfWork.Users.GetByIdAsync(entity.MentorId);
         ClassMentorRequestValidator.ValidateMentorEligible(mentor, entity.MentorId);

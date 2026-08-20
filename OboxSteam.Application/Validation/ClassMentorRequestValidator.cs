@@ -34,10 +34,26 @@ public static class ClassMentorRequestValidator
                 $"Class '{classEntity.Code}' already has an assigned mentor.");
         }
 
-        if (classEntity.Status is not (ClassStatus.Draft or ClassStatus.Open))
+        // Mentors join while the class is still a draft: a class only opens for
+        // enrollment once it has a mentor, so an open class never accepts requests.
+        if (classEntity.Status != ClassStatus.Draft)
         {
             throw ErrorHelper.BadRequest(
-                $"Only Draft or Open classes accept mentor requests (status: {classEntity.Status}).");
+                $"Only Draft classes accept mentor requests (status: {classEntity.Status}).");
+        }
+    }
+
+    /// <summary>
+    /// Mentors decide based on the timetable — the schedule must be generated before
+    /// they can request the class.
+    /// </summary>
+    public static void ValidateClassHasSchedule(Class classEntity, bool hasActiveSessions)
+    {
+        if (!hasActiveSessions)
+        {
+            throw ErrorHelper.BadRequest(
+                $"Class '{classEntity.Code}' has no schedule yet — " +
+                "mentors can only request classes with a generated timetable.");
         }
     }
 
