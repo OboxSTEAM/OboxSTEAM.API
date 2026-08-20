@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -17,6 +17,7 @@ public partial class SeedService
 
         if (!existingPrograms.Any())
         {
+            var publishedAt = AtMonths(-12);
             var programs = new List<Program>
             {
                 new Program
@@ -35,7 +36,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1518314916381-77a37c2a49ae?q=80&w=1171&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 1_200_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -55,7 +56,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=1172&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 2_200_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -75,7 +76,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1596658591534-591d75e2f2f7?q=80&w=1171&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 1_950_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -96,7 +97,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1649180556628-9ba704115795?q=80&w=1162&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 1_450_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -116,7 +117,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1635372722656-389f87a941b7?q=80&w=1331&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 1_100_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -136,7 +137,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1588876315093-ce09afb34028?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 1_800_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -156,7 +157,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://plus.unsplash.com/premium_photo-1661380732508-93beb2601f24?q=80&w=1169&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 2_050_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -176,7 +177,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1547194936-28214bd75193?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 2_300_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -196,7 +197,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1526378722484-bd91ca387e72?q=80&w=1334&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 2_450_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -216,7 +217,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?q=80&w=1313&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 1_350_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -236,7 +237,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://plus.unsplash.com/premium_photo-1721080251127-76315300cc5c?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 2_700_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -256,7 +257,7 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 1_600_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -276,28 +277,27 @@ public partial class SeedService
                     ThumbnailUrl = "https://images.unsplash.com/photo-1666875753105-c63a6f3bdc86?q=80&w=1173&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 1_950_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
-                // Minimal program for certificate generation testing (1 module / 1 course / 1 activity).
                 new Program
                 {
                     Id = Guid.NewGuid(),
                     Code = "PRG-CERT-TEST",
-                    Name = "Certificate Test Program",
-                    SeriesName = "QA Fixtures",
-                    Description = "Minimal single-module program used to test program certificate PDF generation.",
+                    Name = "Short Skills Workshop",
+                    SeriesName = "Workshops",
+                    Description = "A one-week self-paced workshop covering study skills and program completion habits.",
                     Level = DifficultyLevel.Beginner,
                     Category = ProgramCategory.Technology,
                     EstimatedDuration = "1 week at 1 hour a week",
-                    SkillsGained = "Certificate testing, self-paced reading, progress completion",
-                    Rating = 5.0m,
-                    TotalReviews = 1,
+                    SkillsGained = "Study skills, self-paced reading, progress tracking",
+                    Rating = 4.2m,
+                    TotalReviews = 18,
                     ThumbnailUrl = "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = "Active",
                     Price = 100_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = publishedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 }

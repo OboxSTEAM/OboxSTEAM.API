@@ -1,4 +1,3 @@
-using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.Services;
@@ -67,18 +66,4 @@ public partial class SeedService
                 "Final Testing & Showcase",
                 "On-site final testing and capstone showcase."),
         ];
-
-    private static (DateTime StartTime, DateTime EndTime) ResolveIntroductionToRoboticsSessionTimes(
-        Class classEntity,
-        int sessionIndex,
-        int sessionCount)
-    {
-        var durationDays = Math.Max((classEntity.EndDate.Date - classEntity.StartDate.Date).TotalDays, 1);
-        var fraction = (sessionIndex + 1) / (double)(sessionCount + 1);
-        var sessionDate = classEntity.StartDate.Date.AddDays(durationDays * fraction);
-        var startHour = sessionIndex % 2 == 0 ? 9 : 14;
-        var startTime = sessionDate.AddHours(startHour);
-        var endTime = startTime.AddHours(2).AddMinutes(30);
-        return (startTime, endTime);
-    }
 }

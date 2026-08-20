@@ -13,7 +13,7 @@ public partial class SeedService
         var existing = await _unitOfWork.Skills.GetAllAsync(s => !s.IsDeleted);
         var existingCodes = existing.Select(s => s.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var catalog = BuildSkillCatalog();
+        var catalog = BuildSkillCatalog(_seedNow);
         var toAdd = catalog
             .Where(s => !existingCodes.Contains(s.Code))
             .ToList();
@@ -32,10 +32,8 @@ public partial class SeedService
             catalog.Count);
     }
 
-    private static List<Skill> BuildSkillCatalog()
+    private static List<Skill> BuildSkillCatalog(DateTime now)
     {
-        var now = DateTime.UtcNow;
-
         Skill Create(
             string code,
             string name,

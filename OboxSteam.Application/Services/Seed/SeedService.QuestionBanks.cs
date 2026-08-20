@@ -86,7 +86,7 @@ public partial class SeedService
     private async Task SeedRoboticsQuestionBanksAsync()
     {
         _loggerService.LogInformation("Starting seed robotics question banks");
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
 
         await SeedQuestionBankForCourseAsync(
             "CRS-ROBOTICS-01",

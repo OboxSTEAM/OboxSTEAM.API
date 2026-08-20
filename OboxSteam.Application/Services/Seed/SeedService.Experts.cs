@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -33,7 +33,7 @@ public partial class SeedService
                     AvatarUrl = "https://images.unsplash.com/photo-1758685848006-1bc450061624?q=80&w=1332&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                     Achievements = "National STEM Educator Award",
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -49,7 +49,7 @@ public partial class SeedService
                     AvatarUrl = "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                     Achievements = "Published 20+ STEAM research papers",
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -65,7 +65,7 @@ public partial class SeedService
                     AvatarUrl = "https://images.unsplash.com/photo-1555436169-20e93ea9a7ff?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                     Achievements = "10+ years industry experience",
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -81,7 +81,7 @@ public partial class SeedService
                     AvatarUrl = "https://placeholder.local/avatars/exp-004",
                     LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                     Achievements = "Led 5 national AI education initiatives",
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -97,7 +97,7 @@ public partial class SeedService
                     AvatarUrl = "https://images.unsplash.com/photo-1561346745-5db62ae43861?q=80&w=1283&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                     Achievements = "Author of 3 popular math textbooks",
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -113,7 +113,7 @@ public partial class SeedService
                     AvatarUrl = "https://plus.unsplash.com/premium_photo-1658506656752-4f1b1c1d5916?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                     Achievements = "Award-winning digital artist",
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -129,7 +129,7 @@ public partial class SeedService
                     AvatarUrl = "https://images.unsplash.com/photo-1581368129682-e2d66324045b?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
                     Achievements = "UN Youth Climate Ambassador 2023",
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 }

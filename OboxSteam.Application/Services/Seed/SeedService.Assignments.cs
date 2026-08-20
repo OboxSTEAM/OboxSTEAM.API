@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
@@ -19,7 +19,7 @@ public partial class SeedService
     private async Task SeedAssignmentsAsync()
     {
         _loggerService.LogInformation("Starting seed assignments");
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
 
         await SeedRoboticsModule1QuizzesAsync(seedTime);
         await SeedRoboticsModule2RetrospectiveAsync(seedTime);

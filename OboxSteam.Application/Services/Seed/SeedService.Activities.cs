@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -19,7 +19,7 @@ public partial class SeedService
         {
             var allCourses = await _unitOfWork.Courses.GetAllAsync();
             var courseByCode = allCourses.ToDictionary(c => c.Code, c => c);
-            var seedTime = DateTime.UtcNow;
+            var seedTime = _seedNow;
 
             var activities = CreateSeedActivities(courseByCode, seedTime);
 

@@ -10,23 +10,20 @@ public partial class SeedService
     private const string GradedCapstoneSubmissionCode = "SUB-RML0303B";
     private const string GradedCapstoneAssignmentCode = "ASG-ROBOTICS-03-03";
     private const string GradedCapstoneMilestoneCode = "RML-ROBOTICS-03-03";
-    private const string GradedCapstoneStudentCode = "STD-002";
-    private const string GradedCapstoneTargetClassCode = "CLS-ROBOTICS-2026A";
-    private const string GradedCapstoneSeedFileName = "ASG-ROBOTICS-03-03-std002-capstone.pdf";
+    private const string GradedCapstoneStudentCode = "STD-009";
+    private const string GradedCapstoneSeedFileName = "ASG-ROBOTICS-03-03-std009-capstone.pdf";
 
     private const string DesignBriefSubmissionCode = "SUB-RML0301B";
     private const string DesignBriefSeedFileName = "ASG-ROBOTICS-03-01-std002-design-brief.pdf";
 
     /// <summary>
-    /// Ensures research UI seeds have real S3 files under <c>Seed/Submission/</c>:
-    /// Capstone Graded (<c>SUB-RML0303B</c>) and Design Brief with openable PDF (<c>SUB-RML0301B</c>).
-    /// Soft-removes conflicting dashboard rows that blocked Capstone seeding.
+    /// Ensures research FileUpload seeds have real S3 files under <c>Seed/Submission/</c>:
+    /// Capstone Graded (<c>SUB-RML0303B</c>) for STD-009 and Design Brief PDF (<c>SUB-RML0301B</c>).
     /// </summary>
     private async Task SeedGradedCapstoneSubmissionForUiAsync()
     {
-        _loggerService.LogInformation("Starting seed research FileUpload submissions with S3 files for UI testing");
+        _loggerService.LogInformation("Starting seed research FileUpload submissions with S3 files");
 
-        await EnsureStudentOnRoboticsClassAsync(GradedCapstoneStudentCode, GradedCapstoneTargetClassCode);
         await SeedGradedCapstoneWithFileAsync();
         await EnsureDesignBriefHasOpenableFileAsync();
 
@@ -45,7 +42,7 @@ public partial class SeedService
         }
 
         var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == GradedCapstoneStudentCode);
-        var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
+        var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-002");
         var milestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
             rm => rm.Code == GradedCapstoneMilestoneCode && !rm.IsDeleted);
         var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(
@@ -54,7 +51,7 @@ public partial class SeedService
         if (student == null || mentor == null || milestone == null || moduleRobotics3 == null)
         {
             _loggerService.LogWarning(
-                "Missing prerequisites for graded Capstone seed (STD-002 / MNT-001 / milestone / module). Skipping.");
+                "Missing prerequisites for graded Capstone seed (STD-009 / MNT-002 / milestone / module). Skipping.");
             return;
         }
 
@@ -77,7 +74,7 @@ public partial class SeedService
         if (enrollment == null)
         {
             _loggerService.LogWarning(
-                "STD-002 has no MOD-ROBOTICS-03 enrollment. Skipping graded Capstone seed.");
+                "STD-009 has no MOD-ROBOTICS-03 enrollment. Skipping graded Capstone seed.");
             return;
         }
 
@@ -88,7 +85,7 @@ public partial class SeedService
         var fileUrl = await UploadSeedSubmissionPdfAsync(
             GradedCapstoneSeedFileName,
             "OboxSTEAM Seed Capstone Deliverable");
-        var seedTime = DateTime.UtcNow;
+        var seedTime = AtDays(-95);
 
         await _unitOfWork.Submissions.AddAsync(new Submission
         {
@@ -190,7 +187,7 @@ public partial class SeedService
         }
 
         submission.FileUrl = await UploadSeedSubmissionPdfAsync(fileName, pdfTitle);
-        submission.UpdatedAt = DateTime.UtcNow;
+        submission.UpdatedAt = _seedNow;
         submission.UpdatedBy = Guid.Empty;
         await _unitOfWork.Submissions.Update(submission);
         await _unitOfWork.SaveChangesAsync();
@@ -210,81 +207,6 @@ public partial class SeedService
         }
 
         return await _blobService.GetPreviewUrlAsync(s3Key);
-    }
-
-    private async Task EnsureStudentOnRoboticsClassAsync(string studentCode, string targetClassCode)
-    {
-        var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
-        var targetClass = await _unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.Code == targetClassCode && !c.IsDeleted);
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
-
-        if (student == null || targetClass == null || program == null)
-        {
-            _loggerService.LogWarning(
-                "Cannot place {StudentCode} on {ClassCode}: student/class/program missing.",
-                studentCode,
-                targetClassCode);
-            return;
-        }
-
-        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-            pe => pe.StudentId == student.Id
-                  && pe.ProgramId == program.Id
-                  && !pe.IsDeleted);
-        if (programEnrollment == null)
-        {
-            _loggerService.LogWarning(
-                "No PRG-ROBOTICS enrollment for {StudentCode}; cannot move to {ClassCode}.",
-                studentCode,
-                targetClassCode);
-            return;
-        }
-
-        var classEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
-            ce => ce.ProgramEnrollmentId == programEnrollment.Id
-                  && ce.Status == ClassEnrollmentStatus.Active
-                  && !ce.IsDeleted);
-
-        if (classEnrollment == null)
-        {
-            await _unitOfWork.ClassEnrollments.AddAsync(new ClassEnrollment
-            {
-                Id = Guid.NewGuid(),
-                ClassId = targetClass.Id,
-                StudentId = student.Id,
-                ProgramEnrollmentId = programEnrollment.Id,
-                Status = ClassEnrollmentStatus.Active,
-                EnrolledAt = DateTime.UtcNow.AddDays(-3),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
-            await _unitOfWork.SaveChangesAsync();
-            _loggerService.LogInformation(
-                "Created Active class enrollment for {StudentCode} on {ClassCode}.",
-                studentCode,
-                targetClassCode);
-            return;
-        }
-
-        if (classEnrollment.ClassId == targetClass.Id)
-        {
-            return;
-        }
-
-        var previousClass = await _unitOfWork.Classes.GetByIdAsync(classEnrollment.ClassId);
-        classEnrollment.ClassId = targetClass.Id;
-        classEnrollment.UpdatedAt = DateTime.UtcNow;
-        classEnrollment.UpdatedBy = Guid.Empty;
-        await _unitOfWork.ClassEnrollments.Update(classEnrollment);
-        await _unitOfWork.SaveChangesAsync();
-
-        _loggerService.LogInformation(
-            "Moved {StudentCode} Active class enrollment from {FromClass} to {ToClass}.",
-            studentCode,
-            previousClass?.Code ?? classEnrollment.ClassId.ToString(),
-            targetClassCode);
     }
 
     /// <summary>Minimal one-page PDF so seed does not depend on QuestPDF in Application.</summary>

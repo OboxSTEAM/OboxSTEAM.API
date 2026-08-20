@@ -6,397 +6,83 @@ namespace OboxSteam.Application.Services;
 
 public partial class SeedService
 {
-    private static readonly (string ClassCode, string[] StudentCodes)[] OpenClassEnrollmentPlan =
-    [
-        ("CLS-OPEN-001", ["STD-001", "STD-002", "STD-003", "STD-004", "STD-005"]),
-        ("CLS-OPEN-002", ["STD-006", "STD-007", "STD-008", "STD-009", "STD-010"]),
-        ("CLS-OPEN-003", ["STD-011", "STD-012", "STD-013", "STD-014", "STD-015"]),
-        ("CLS-OPEN-004", ["STD-016", "STD-017", "STD-018", "STD-019", "STD-020"]),
-        ("CLS-OPEN-005", ["STD-021", "STD-022", "STD-023", "STD-024"]),
-    ];
-
-    /// <summary>
-    /// STD-025 is enrolled in PRG-ROBOTICS but intentionally has NO robotics class enrollment.
-    /// FE fixture for the post-payment "choose / join a class" flow.
-    /// </summary>
-    private static readonly string[] RoboticsProgramOnlyStudentCodes =
-    [
-        "STD-025",
-    ];
-
-    private static readonly string[] CertificateTestStudentCodes =
-    [
-        "STD-024", // incomplete — no activity progress
-        "STD-025", // complete — all activities Done
-    ];
-
     private async Task SeedClassEnrollmentsAsync()
     {
-        _loggerService.LogInformation("Starting seed class enrollments for open classes");
+        _loggerService.LogInformation("Starting seed academic-year class enrollments");
 
-        var existingEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
-            ce => OpenClassCodes.Contains(ce.Class.Code) && !ce.IsDeleted,
-            ce => ce.Class);
-
-        if (existingEnrollment != null)
+        var existing = await _unitOfWork.ClassEnrollments.GetAllAsync(ce => !ce.IsDeleted);
+        if (existing.Count > 0)
         {
-            _loggerService.LogInformation("Open class enrollments already seeded, skipping open-class plan");
-        }
-        else
-        {
-            var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == OpenClassProgramCode);
-            if (program == null)
-            {
-                _loggerService.LogWarning(
-                    "Program {ProgramCode} not found. Skipping open class enrollment seeding.",
-                    OpenClassProgramCode);
-            }
-            else
-            {
-                await EnsureRoboticsProgramEnrollmentsForOpenClassesAsync(program.Id);
-
-                var seedTime = DateTime.UtcNow;
-                var enrollmentsToAdd = new List<ClassEnrollment>();
-
-                foreach (var plan in OpenClassEnrollmentPlan)
-                {
-                    var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == plan.ClassCode);
-                    if (classEntity == null)
-                    {
-                        _loggerService.LogWarning("Class {ClassCode} not found. Skipping enrollments.", plan.ClassCode);
-                        continue;
-                    }
-
-                    foreach (var studentCode in plan.StudentCodes)
-                    {
-                        var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
-                        if (student == null)
-                        {
-                            _loggerService.LogWarning(
-                                "Student {StudentCode} not found for class {ClassCode}. Skipping.",
-                                studentCode,
-                                plan.ClassCode);
-                            continue;
-                        }
-
-                        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                            pe => pe.StudentId == student.Id
-                                  && pe.ProgramId == program.Id
-                                  && !pe.IsDeleted);
-
-                        if (programEnrollment == null)
-                        {
-                            _loggerService.LogWarning(
-                                "Program enrollment not found for student {StudentCode}. Skipping.",
-                                studentCode);
-                            continue;
-                        }
-
-                        var classStatus = programEnrollment.Status == EnrollmentStatus.Completed
-                            ? ClassEnrollmentStatus.Completed
-                            : ClassEnrollmentStatus.Active;
-
-                        enrollmentsToAdd.Add(new ClassEnrollment
-                        {
-                            Id = Guid.NewGuid(),
-                            ClassId = classEntity.Id,
-                            StudentId = student.Id,
-                            ProgramEnrollmentId = programEnrollment.Id,
-                            Status = classStatus,
-                            EnrolledAt = seedTime.AddDays(-3),
-                            CreatedAt = seedTime,
-                            CreatedBy = Guid.Empty,
-                            IsDeleted = false,
-                        });
-                    }
-                }
-
-                if (enrollmentsToAdd.Count == 0)
-                {
-                    _loggerService.LogWarning("No open class enrollments created.");
-                }
-                else
-                {
-                    await _unitOfWork.ClassEnrollments.AddRangeAsync(enrollmentsToAdd);
-                    await _unitOfWork.SaveChangesAsync();
-
-                    _loggerService.LogInformation(
-                        "Finished seed class enrollments — {Count} enrollment(s) created.",
-                        enrollmentsToAdd.Count);
-                }
-            }
-        }
-
-        await SeedCertificateTestClassEnrollmentsAsync();
-        await BackfillMissingClassEnrollmentsForActiveCompletedAsync();
-    }
-
-    private async Task SeedCertificateTestClassEnrollmentsAsync()
-    {
-        var existing = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
-            ce => ce.Class.Code == CertificateTestClassCode && !ce.IsDeleted,
-            ce => ce.Class);
-        if (existing != null)
-        {
-            _loggerService.LogInformation("Certificate test class enrollments already seeded, skipping");
+            _loggerService.LogInformation("Class enrollments already exist, skipping");
             return;
         }
 
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == CertificateTestProgramCode);
-        var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == CertificateTestClassCode);
-        if (program == null || classEntity == null)
-        {
-            _loggerService.LogWarning(
-                "Certificate test program/class not found. Skipping certificate test class enrollments.");
-            return;
-        }
+        var students = (await _unitOfWork.Users.GetAllAsync(u => u.Role == RoleType.Student && !u.IsDeleted))
+            .ToDictionary(u => u.Code, u => u, StringComparer.OrdinalIgnoreCase);
+        var classes = (await _unitOfWork.Classes.GetAllAsync(c => !c.IsDeleted))
+            .ToDictionary(c => c.Code, c => c, StringComparer.OrdinalIgnoreCase);
+        var programEnrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(pe => !pe.IsDeleted);
 
-        var seedTime = DateTime.UtcNow;
         var enrollmentsToAdd = new List<ClassEnrollment>();
 
-        foreach (var studentCode in CertificateTestStudentCodes)
+        foreach (var plan in AcademicYearClassEnrollmentPlan)
         {
-            var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
-            if (student == null)
+            if (!classes.TryGetValue(plan.ClassCode, out var classEntity))
             {
-                _loggerService.LogWarning(
-                    "Student {StudentCode} not found for certificate test class. Skipping.",
-                    studentCode);
+                _loggerService.LogWarning("Class {ClassCode} not found. Skipping enrollments.", plan.ClassCode);
                 continue;
             }
 
-            var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                pe => pe.StudentId == student.Id
-                      && pe.ProgramId == program.Id
-                      && !pe.IsDeleted);
-
-            if (programEnrollment == null)
+            foreach (var studentCode in plan.StudentCodes)
             {
-                _loggerService.LogWarning(
-                    "Program enrollment not found for student {StudentCode} on {ProgramCode}. Skipping.",
-                    studentCode,
-                    CertificateTestProgramCode);
-                continue;
+                if (!students.TryGetValue(studentCode, out var student))
+                {
+                    _loggerService.LogWarning(
+                        "Student {StudentCode} not found for class {ClassCode}. Skipping.",
+                        studentCode,
+                        plan.ClassCode);
+                    continue;
+                }
+
+                var programEnrollment = programEnrollments.FirstOrDefault(
+                    pe => pe.StudentId == student.Id
+                          && pe.ProgramId == classEntity.ProgramId
+                          && !pe.IsDeleted);
+                if (programEnrollment == null)
+                {
+                    _loggerService.LogWarning(
+                        "Program enrollment not found for student {StudentCode} on class {ClassCode}. Skipping.",
+                        studentCode,
+                        plan.ClassCode);
+                    continue;
+                }
+
+                var enrolledAt = programEnrollment.EnrolledAt ?? classEntity.StartDate;
+                enrollmentsToAdd.Add(new ClassEnrollment
+                {
+                    Id = Guid.NewGuid(),
+                    ClassId = classEntity.Id,
+                    StudentId = student.Id,
+                    ProgramEnrollmentId = programEnrollment.Id,
+                    Status = plan.Status,
+                    EnrolledAt = enrolledAt,
+                    CreatedAt = enrolledAt,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
             }
-
-            enrollmentsToAdd.Add(new ClassEnrollment
-            {
-                Id = Guid.NewGuid(),
-                ClassId = classEntity.Id,
-                StudentId = student.Id,
-                ProgramEnrollmentId = programEnrollment.Id,
-                Status = ClassEnrollmentStatus.Active,
-                EnrolledAt = seedTime.AddDays(-2),
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
         }
 
         if (enrollmentsToAdd.Count == 0)
         {
-            _loggerService.LogWarning("No certificate test class enrollments created.");
+            _loggerService.LogWarning("No class enrollments created.");
             return;
         }
 
         await _unitOfWork.ClassEnrollments.AddRangeAsync(enrollmentsToAdd);
         await _unitOfWork.SaveChangesAsync();
-
         _loggerService.LogInformation(
-            "Finished seed certificate test class enrollments — {Count} enrollment(s).",
-            enrollmentsToAdd.Count);
-    }
-
-    /// <summary>
-    /// Ensures every Active/Completed program enrollment has a class enrollment,
-    /// except STD-025 on PRG-ROBOTICS (join-class UI fixture).
-    /// </summary>
-    private async Task BackfillMissingClassEnrollmentsForActiveCompletedAsync()
-    {
-        _loggerService.LogInformation("Backfilling class enrollments for Active/Completed program enrollments");
-
-        var roboticsProgram = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == OpenClassProgramCode);
-        var roboticsOnlyStudentIds = new HashSet<Guid>();
-        foreach (var code in RoboticsProgramOnlyStudentCodes)
-        {
-            var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == code);
-            if (student != null)
-            {
-                roboticsOnlyStudentIds.Add(student.Id);
-            }
-        }
-
-        var programEnrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
-            pe => !pe.IsDeleted
-                  && (pe.Status == EnrollmentStatus.Active || pe.Status == EnrollmentStatus.Completed));
-
-        var allClasses = await _unitOfWork.Classes.GetAllAsync(c => !c.IsDeleted);
-        var classesByProgramId = allClasses
-            .GroupBy(c => c.ProgramId)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        var existingClassEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(ce => !ce.IsDeleted);
-        var peIdsWithClass = existingClassEnrollments
-            .Select(ce => ce.ProgramEnrollmentId)
-            .ToHashSet();
-
-        var seatsByClassId = existingClassEnrollments
-            .Where(ce => ce.Status is ClassEnrollmentStatus.Active or ClassEnrollmentStatus.Completed)
-            .GroupBy(ce => ce.ClassId)
-            .ToDictionary(g => g.Key, g => g.Count());
-
-        var seedTime = DateTime.UtcNow;
-        var toAdd = new List<ClassEnrollment>();
-
-        foreach (var pe in programEnrollments)
-        {
-            if (peIdsWithClass.Contains(pe.Id))
-            {
-                continue;
-            }
-
-            // Keep STD-025 without a robotics class so FE can test join-class.
-            if (roboticsProgram != null
-                && pe.ProgramId == roboticsProgram.Id
-                && roboticsOnlyStudentIds.Contains(pe.StudentId))
-            {
-                continue;
-            }
-
-            if (!classesByProgramId.TryGetValue(pe.ProgramId, out var programClasses) || programClasses.Count == 0)
-            {
-                _loggerService.LogWarning(
-                    "No class available for program enrollment {EnrollmentId} (program {ProgramId}). Skipping.",
-                    pe.Id,
-                    pe.ProgramId);
-                continue;
-            }
-
-            var preferred = PickClassForEnrollment(programClasses, seatsByClassId);
-            if (preferred == null)
-            {
-                _loggerService.LogWarning(
-                    "No capacity on classes for program enrollment {EnrollmentId}. Skipping.",
-                    pe.Id);
-                continue;
-            }
-
-            var status = pe.Status == EnrollmentStatus.Completed
-                ? ClassEnrollmentStatus.Completed
-                : ClassEnrollmentStatus.Active;
-
-            toAdd.Add(new ClassEnrollment
-            {
-                Id = Guid.NewGuid(),
-                ClassId = preferred.Id,
-                StudentId = pe.StudentId,
-                ProgramEnrollmentId = pe.Id,
-                Status = status,
-                EnrolledAt = pe.EnrolledAt ?? seedTime.AddDays(-3),
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
-
-            seatsByClassId[preferred.Id] = seatsByClassId.GetValueOrDefault(preferred.Id) + 1;
-            peIdsWithClass.Add(pe.Id);
-        }
-
-        if (toAdd.Count == 0)
-        {
-            _loggerService.LogInformation("No missing class enrollments to backfill.");
-            return;
-        }
-
-        await _unitOfWork.ClassEnrollments.AddRangeAsync(toAdd);
-        await _unitOfWork.SaveChangesAsync();
-        _loggerService.LogInformation(
-            "Backfilled {Count} class enrollment(s) for Active/Completed program enrollments.",
-            toAdd.Count);
-    }
-
-    private static Class? PickClassForEnrollment(
-        List<Class> programClasses,
-        IReadOnlyDictionary<Guid, int> seatsByClassId)
-    {
-        // Prefer Open open-class codes, then other Open/InProgress with capacity, then Draft seed classes.
-        static int Rank(Class c)
-        {
-            var isOpenCode = OpenClassCodes.Contains(c.Code) ? 0 : 1;
-            var statusRank = c.Status switch
-            {
-                ClassStatus.Open => 0,
-                ClassStatus.InProgress => 1,
-                ClassStatus.Draft => 2,
-                _ => 3,
-            };
-            return (isOpenCode * 10) + statusRank;
-        }
-
-        return programClasses
-            .OrderBy(Rank)
-            .ThenBy(c => c.Code)
-            .FirstOrDefault(c =>
-            {
-                var taken = seatsByClassId.GetValueOrDefault(c.Id);
-                return taken < c.MaxCapacity;
-            })
-            // If every class is full, still assign to the highest-ranked (capacity soft for seed).
-            ?? programClasses.OrderBy(Rank).ThenBy(c => c.Code).FirstOrDefault();
-    }
-
-    private async Task EnsureRoboticsProgramEnrollmentsForOpenClassesAsync(Guid programId)
-    {
-        var requiredStudentCodes = OpenClassEnrollmentPlan
-            .SelectMany(plan => plan.StudentCodes)
-            .Concat(RoboticsProgramOnlyStudentCodes)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var seedTime = DateTime.UtcNow;
-        var enrollmentsToAdd = new List<ProgramEnrollment>();
-
-        foreach (var studentCode in requiredStudentCodes)
-        {
-            var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
-            if (student == null)
-            {
-                continue;
-            }
-
-            var existingEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                pe => pe.StudentId == student.Id && pe.ProgramId == programId && !pe.IsDeleted);
-
-            if (existingEnrollment != null)
-            {
-                continue;
-            }
-
-            enrollmentsToAdd.Add(new ProgramEnrollment
-            {
-                Id = Guid.NewGuid(),
-                StudentId = student.Id,
-                ProgramId = programId,
-                Status = EnrollmentStatus.Active,
-                ProgressPercent = 0m,
-                EnrolledAt = seedTime.AddDays(-7),
-                StartedAt = seedTime.AddDays(-5),
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
-        }
-
-        if (enrollmentsToAdd.Count == 0)
-        {
-            return;
-        }
-
-        await _unitOfWork.ProgramEnrollments.AddRangeAsync(enrollmentsToAdd);
-        await _unitOfWork.SaveChangesAsync();
-
-        _loggerService.LogInformation(
-            "Backfilled {Count} robotics program enrollment(s) for open class seeding.",
+            "Finished seed class enrollments — {Count} enrollment(s) created.",
             enrollmentsToAdd.Count);
     }
 }

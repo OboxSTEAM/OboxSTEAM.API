@@ -18,9 +18,9 @@ public partial class SeedService
     [
         (
             "CLS-BOARD-ROBOTICS-01",
-            "Robotics Mentor Board Draft Cohort",
+            "Robotics Mentor Board Cohort",
             "PRG-ROBOTICS",
-            ClassStatus.Draft,
+            ClassStatus.ReadyForMentor,
             40,
             130,
             "TBD — awaiting mentor assignment",
@@ -29,16 +29,16 @@ public partial class SeedService
             "CLS-BOARD-ROBOTICS-02",
             "Robotics Mentor Board Open Cohort",
             "PRG-ROBOTICS",
-            ClassStatus.Open,
+            ClassStatus.ReadyForMentor,
             45,
             135,
             "Weekend intensive — mentor TBD",
             ["SKL-TECH-ROBOTICS-IOT", "SKL-TECH-PROG-PYTHON"]),
         (
             "CLS-BOARD-WEBDEV-01",
-            "Web Dev Mentor Board Draft Cohort",
+            "Web Dev Mentor Board Cohort",
             "PRG-WEBDEV",
-            ClassStatus.Draft,
+            ClassStatus.ReadyForMentor,
             50,
             140,
             "Evening cohort — mentor TBD",
@@ -47,16 +47,16 @@ public partial class SeedService
             "CLS-BOARD-IOT-01",
             "IoT Mentor Board Open Cohort",
             "PRG-IOT",
-            ClassStatus.Open,
+            ClassStatus.ReadyForMentor,
             55,
             145,
             "Sensor lab cohort — mentor TBD",
             ["SKL-TECH-ROBOTICS-IOT", "SKL-ENG-SYSTEMS"]),
         (
             "CLS-BOARD-GAMEDEV-01",
-            "Game Dev Mentor Board Draft Cohort",
+            "Game Dev Mentor Board Cohort",
             "PRG-GAMEDEV",
-            ClassStatus.Draft,
+            ClassStatus.ReadyForMentor,
             60,
             150,
             "Unity studio — mentor TBD",
@@ -65,11 +65,44 @@ public partial class SeedService
             "CLS-BOARD-AIBASIC-01",
             "AI Basics Mentor Board Open Cohort",
             "PRG-AIBASIC",
-            ClassStatus.Open,
+            ClassStatus.ReadyForMentor,
             65,
             155,
             "ML intro lab — mentor TBD",
             ["SKL-TECH-PROG-PYTHON", "SKL-MATH-STATS"]),
+    ];
+
+    private static readonly (
+        string ClassCode,
+        string MentorCode,
+        ClassMentorRequestStatus Status,
+        string? Message,
+        string? DecisionNote)[] MentorBoardRequestPlan =
+    [
+        (
+            "CLS-BOARD-ROBOTICS-02",
+            "MNT-001",
+            ClassMentorRequestStatus.Pending,
+            "I can cover the weekend intensive; already mentoring Spring cohort.",
+            null),
+        (
+            "CLS-BOARD-WEBDEV-01",
+            "MNT-007",
+            ClassMentorRequestStatus.Withdrawn,
+            "Initially interested; withdrawing due to schedule conflict.",
+            null),
+        (
+            "CLS-BOARD-WEBDEV-01",
+            "MNT-004",
+            ClassMentorRequestStatus.Rejected,
+            "Interested in expanding into web foundations.",
+            "Skill profile is game-focused; prefer a web specialist for this cohort."),
+        (
+            "CLS-BOARD-GAMEDEV-01",
+            "MNT-004",
+            ClassMentorRequestStatus.Pending,
+            "Unity and creative direction are my primary track — ready to own this draft cohort.",
+            null),
     ];
 
     /// <summary>
@@ -80,7 +113,7 @@ public partial class SeedService
     {
         _loggerService.LogInformation("Starting seed mentor board (unassigned) classes");
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var classesToAdd = new List<Class>();
         var skillsToAdd = new List<ClassSkill>();
         var createdClassCodes = new List<string>();
@@ -171,43 +204,38 @@ public partial class SeedService
     {
         var manager = await _unitOfWork.Users.FirstOrDefaultAsync(
             u => u.Code == "MNG-001" || u.Role == RoleType.Manager);
-        var mentor7 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-007");
-        var mentor1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
-        var mentor4 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-004");
 
-        var roboticsOpen = await _unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.Code == "CLS-BOARD-ROBOTICS-02" && !c.IsDeleted);
-        var webDevDraft = await _unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.Code == "CLS-BOARD-WEBDEV-01" && !c.IsDeleted);
-        var gameDevDraft = await _unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.Code == "CLS-BOARD-GAMEDEV-01" && !c.IsDeleted);
+        var mentorsByCode = (await _unitOfWork.Users.GetAllAsync(u => u.Role == RoleType.Mentor && !u.IsDeleted))
+            .ToDictionary(u => u.Code, u => u, StringComparer.OrdinalIgnoreCase);
+        var boardCodes = MentorBoardRequestPlan
+            .Select(r => r.ClassCode)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var classesByCode = (await _unitOfWork.Classes.GetAllAsync(
+                c => boardCodes.Contains(c.Code) && !c.IsDeleted))
+            .ToDictionary(c => c.Code, c => c, StringComparer.OrdinalIgnoreCase);
 
         var requestsToAdd = new List<ClassMentorRequest>();
 
-        async Task TryAddAsync(
-            Class? classEntity,
-            User? mentor,
-            ClassMentorRequestStatus status,
-            string? message,
-            string? decisionNote)
+        foreach (var row in MentorBoardRequestPlan)
         {
-            if (classEntity == null || mentor == null)
+            if (!classesByCode.TryGetValue(row.ClassCode, out var classEntity)
+                || !mentorsByCode.TryGetValue(row.MentorCode, out var mentor))
             {
-                return;
+                continue;
             }
 
             var existing = await _unitOfWork.ClassMentorRequests.FirstOrDefaultAsync(
                 r => r.ClassId == classEntity.Id
                      && r.MentorId == mentor.Id
-                     && r.Status == status
+                     && r.Status == row.Status
                      && !r.IsDeleted);
             if (existing != null)
             {
-                return;
+                continue;
             }
 
-            // Avoid duplicate Pending for same mentor+class.
-            if (status == ClassMentorRequestStatus.Pending)
+            if (row.Status == ClassMentorRequestStatus.Pending)
             {
                 var pending = await _unitOfWork.ClassMentorRequests.FirstOrDefaultAsync(
                     r => r.ClassId == classEntity.Id
@@ -216,7 +244,7 @@ public partial class SeedService
                          && !r.IsDeleted);
                 if (pending != null)
                 {
-                    return;
+                    continue;
                 }
             }
 
@@ -225,67 +253,27 @@ public partial class SeedService
                 Id = Guid.NewGuid(),
                 ClassId = classEntity.Id,
                 MentorId = mentor.Id,
-                Status = status,
-                Message = message,
+                Status = row.Status,
+                Message = row.Message,
                 CreatedAt = seedTime.AddDays(-1),
                 CreatedBy = mentor.Id,
                 IsDeleted = false,
             };
 
-            if (status is ClassMentorRequestStatus.Rejected or ClassMentorRequestStatus.Approved)
+            if (row.Status is ClassMentorRequestStatus.Rejected or ClassMentorRequestStatus.Approved)
             {
                 request.DecidedAt = seedTime.AddHours(-6);
                 request.DecidedBy = manager?.Id;
-                request.DecisionNote = decisionNote;
+                request.DecisionNote = row.DecisionNote;
             }
 
-            if (status == ClassMentorRequestStatus.Withdrawn)
+            if (row.Status == ClassMentorRequestStatus.Withdrawn)
             {
                 request.DecidedAt = seedTime.AddHours(-3);
             }
 
             requestsToAdd.Add(request);
         }
-
-        // Pending — available mentor applying to open robotics board class (skill match).
-        await TryAddAsync(
-            roboticsOpen,
-            mentor7,
-            ClassMentorRequestStatus.Pending,
-            "Available capacity and strong Python/robotics overlap — happy to take this cohort.",
-            null);
-
-        // Pending — senior robotics mentor also applying (manager can choose).
-        await TryAddAsync(
-            roboticsOpen,
-            mentor1,
-            ClassMentorRequestStatus.Pending,
-            "I can cover the weekend intensive; already mentoring Spring cohort.",
-            null);
-
-        // Withdrawn — mentor changed mind on webdev draft.
-        await TryAddAsync(
-            webDevDraft,
-            mentor7,
-            ClassMentorRequestStatus.Withdrawn,
-            "Initially interested; withdrawing due to schedule conflict.",
-            null);
-
-        // Rejected — game mentor applied to webdev (poor skill fit example for manager UI).
-        await TryAddAsync(
-            webDevDraft,
-            mentor4,
-            ClassMentorRequestStatus.Rejected,
-            "Interested in expanding into web foundations.",
-            "Skill profile is game-focused; prefer a web specialist for this cohort.");
-
-        // Extra pending on game board for MNT-004 (strong match).
-        await TryAddAsync(
-            gameDevDraft,
-            mentor4,
-            ClassMentorRequestStatus.Pending,
-            "Unity and creative direction are my primary track — ready to own this draft cohort.",
-            null);
 
         if (requestsToAdd.Count == 0)
         {

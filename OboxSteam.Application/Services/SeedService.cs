@@ -29,6 +29,7 @@ public partial class SeedService : ISeedService
     public async Task SeedAllDataAsync()
     {
         _loggerService.LogInformation("Starting seed all data");
+        _seedNow = DateTime.UtcNow;
 
         await SeedUsersAsync();
         await EnsureAdditionalMentorUsersAsync();
@@ -46,36 +47,28 @@ public partial class SeedService : ISeedService
         await SeedCourseEnrollmentsAsync();
         await SeedRoboticsQuestionBanksAsync();
         await SeedAssignmentsAsync();
-        await SeedPaymentsAsync();
-        await SeedProgramReviewsAsync();
-        await SeedMentorClassesAsync();
         await SeedMentorSkillsAsync();
+        await SeedAcademicYearClassesAsync();
         await SeedMentorBoardClassesAsync();
-        await SeedRoboticsClassSessionsAsync();
-        await SeedClassesAsync();
+        await AlignUnassignedClassesToReadyForMentorAsync();
         await SeedClassEnrollmentsAsync();
-        await SeedClassSessionsAsync();
+        await SeedAcademicYearSessionsAsync();
         await SeedResearchMilestoneDataAsync();
         await SeedResearchModuleEnrollmentsAsync();
         await SeedResearchActivityProgressAsync();
-        await SeedEnrollmentActivityProgressAsync();
+        await SeedSessionAlignedActivityProgressAsync();
         await BackfillActivityProgressStatusAsync();
         await SeedResearchSubmissionsAsync();
         await SeedExtendedResearchDataAsync();
-        // Idempotent demo showcase programs (safe on already-seeded DBs; does not alter existing programs).
         await SeedDemoShowcaseProgramsAsync();
         await SeedMaterialsAsync();
-        // After all curriculum seeds so the schedulable-item set is final.
         await EnsureClassSessionCoverageAsync();
-        await ResetIntroductionToRoboticsFeTestProgressAsync();
-        // After robotics FE reset so STD-001 research enrollment / submissions are not wiped.
         await SeedPortfolioDataAsync();
-        await SeedDashboardSupportDataAsync();
-        // Dashboard seed used to attach SUB-DASHR* rows to any assignment; keep demos clean.
         await ClearDemoProgramSubmissionsAsync();
-        // After class enrollments so STD-002 can be moved onto CLS-ROBOTICS-2026A for mentor UI.
         await SeedGradedCapstoneSubmissionForUiAsync();
         await SeedCompletedProgramCertificatesAsync();
+        await SeedPaymentsAsync();
+        await SeedProgramReviewsAsync();
         await SeedNotificationsAsync();
 
         _loggerService.LogInformation("Finished seed all data");

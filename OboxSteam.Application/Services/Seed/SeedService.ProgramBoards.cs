@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -40,7 +40,7 @@ public partial class SeedService
             var program3DDesign = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-3DDESIGN");
 
             var programBoards = new List<ProgramBoard>();
-            var seedUtc = DateTime.UtcNow;
+            var seedUtc = _seedNow;
 
             void AddBoard(Expert? expert, Program? program, string role)
             {

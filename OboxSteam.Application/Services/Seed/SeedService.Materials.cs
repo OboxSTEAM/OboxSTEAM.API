@@ -30,14 +30,6 @@ public partial class SeedService
             "https://storage.oboxsteam.com/materials/doc/webdev-code-review-checklist.docx", 128_000L),
         new("ACT-WEBDEV-03-01", "Responsive Design Brief", MaterialType.PDF,
             "https://storage.oboxsteam.com/materials/pdf/responsive-design-brief.pdf", 512_000L),
-        new("ACT-STEAM-01-02", "Science Experiment Kit Guide", MaterialType.PDF,
-            "https://storage.oboxsteam.com/materials/pdf/steam-science-kit-guide.pdf", 680_000L),
-        new("ACT-STEAM-02-01", "Prototyping Principles", MaterialType.Video,
-            "https://storage.oboxsteam.com/materials/video/prototyping-principles.mp4", 44_600_000L),
-        new("ACT-STEAM-02-03", "Design Critique Worksheet", MaterialType.PDF,
-            "https://storage.oboxsteam.com/materials/pdf/design-critique-worksheet.pdf", 198_000L),
-        new("ACT-STEAM-02-04", "Portfolio Documentation Template", MaterialType.DOC,
-            "https://storage.oboxsteam.com/materials/doc/portfolio-documentation-template.docx", 156_000L),
         new("ACT-IOT-01-01", "Microcontroller Basics", MaterialType.Video,
             "https://storage.oboxsteam.com/materials/video/microcontroller-basics.mp4", 52_300_000L),
         new("ACT-IOT-01-02", "Sensor Wiring Guide", MaterialType.Image,
@@ -68,7 +60,7 @@ public partial class SeedService
         var selfPacedActivities = await _unitOfWork.Activities.GetAllAsync(
             a => !a.IsDeleted && a.ActivityType == ActivityType.SelfPaced);
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var materialsToAdd = new List<Material>();
 
         foreach (var activity in selfPacedActivities)
@@ -80,10 +72,12 @@ public partial class SeedService
 
             if (!definitionByCode.TryGetValue(activity.Code, out var definition))
             {
-                _loggerService.LogWarning(
-                    "No seed material definition for SelfPaced activity '{ActivityCode}'. Skipping.",
-                    activity.Code);
-                continue;
+                definition = new SeedMaterialDefinition(
+                    activity.Code,
+                    $"{activity.Name} reading",
+                    MaterialType.PDF,
+                    "https://storage.oboxsteam.com/materials/pdf/catalog-reading-guide.pdf",
+                    180_000L);
             }
 
             materialsToAdd.Add(new Material
@@ -161,26 +155,14 @@ public partial class SeedService
                 "Self-paced code review checklist and mentor feedback guide.", null, false, false),
         });
 
-        AddActivities("CRS-STEAM-01", new[]
+        AddActivities("CRS-WEBDEV-03", new[]
         {
-            NewActivity("ACT-STEAM-01-01", "STEAM Lab Orientation", ActivityType.LiveOnline, 1,
-                "Orientation to interdisciplinary STEAM projects.", 60, false, false),
-            NewActivity("ACT-STEAM-01-02", "Science Experiment Kit", ActivityType.SelfPaced, 2,
-                "Complete the at-home science experiment kit.", null, false, true),
-            NewActivity("ACT-STEAM-01-03", "Art & Engineering Discussion", ActivityType.LiveOnline, 3,
-                "Live discussion on combining art and engineering in projects.", 180, false, true),
-        });
-
-        AddActivities("CRS-STEAM-02", new[]
-        {
-            NewActivity("ACT-STEAM-02-01", "Prototyping Principles", ActivityType.SelfPaced, 1,
-                "Introduction to rapid prototyping methods.", null, false, false),
-            NewActivity("ACT-STEAM-02-02", "Material Exploration Lab", ActivityType.Offline, 2,
-                "Explore recycled materials and simple circuits.", 180, true, true),
-            NewActivity("ACT-STEAM-02-03", "Design Critique Worksheet", ActivityType.SelfPaced, 3,
-                "Complete the peer design critique worksheet.", null, false, false),
-            NewActivity("ACT-STEAM-02-04", "Portfolio Documentation", ActivityType.SelfPaced, 4,
-                "Document your prototype with photos and a short write-up.", null, false, true),
+            NewActivity("ACT-WEBDEV-03-01", "Responsive Design Brief", ActivityType.SelfPaced, 1,
+                "Plan a responsive page for multiple screen sizes.", null, false, false),
+            NewActivity("ACT-WEBDEV-03-02", "Launch Review Call", ActivityType.LiveOnline, 2,
+                "Live review before shipping the small web project.", 90, false, false),
+            NewActivity("ACT-WEBDEV-03-03", "Capstone Demo Day", ActivityType.LiveOnline, 3,
+                "Present deployed capstone sites to mentors.", 120, false, true),
         });
 
         AddActivities("CRS-IOT-01", new[]
@@ -203,6 +185,16 @@ public partial class SeedService
                 "Deploy a device and verify cloud connectivity.", 240, true, true),
         });
 
+        AddActivities("CRS-IOT-03", new[]
+        {
+            NewActivity("ACT-IOT-03-01", "Showcase Planning", ActivityType.SelfPaced, 1,
+                "Plan the IoT prototype demo and evidence pack.", null, false, false),
+            NewActivity("ACT-IOT-03-02", "Prototype Showcase", ActivityType.LiveOnline, 2,
+                "Present the device-to-cloud prototype to mentors.", 90, false, true),
+        });
+
+        AddThinCatalogActivities(AddActivities);
+
         AddActivities("CRS-CERT-TEST-01", new[]
         {
             NewActivity("ACT-CERT-TEST-01-01", "Certificate Test Reading", ActivityType.SelfPaced, 1,
@@ -216,6 +208,55 @@ public partial class SeedService
         });
 
         return activities;
+    }
+
+    private static void AddThinCatalogActivities(Action<string, IEnumerable<Activity>> addActivities)
+    {
+        (string CourseCode, string SelfPacedCode, string LiveCode, string Name)[] catalog =
+        [
+            ("CRS-PYBASIC-01", "ACT-PYBASIC-01-01", "ACT-PYBASIC-01-02", "Python Syntax"),
+            ("CRS-PYBASIC-02", "ACT-PYBASIC-02-01", "ACT-PYBASIC-02-02", "Functions and Loops"),
+            ("CRS-PYBASIC-03", "ACT-PYBASIC-03-01", "ACT-PYBASIC-03-02", "Python Mini-Project"),
+            ("CRS-MATHFUN-01", "ACT-MATHFUN-01-01", "ACT-MATHFUN-01-02", "Number Sense"),
+            ("CRS-MATHFUN-02", "ACT-MATHFUN-02-01", "ACT-MATHFUN-02-02", "Puzzle Reasoning"),
+            ("CRS-MATHFUN-03", "ACT-MATHFUN-03-01", "ACT-MATHFUN-03-02", "Math Challenge"),
+            ("CRS-DIGART-01", "ACT-DIGART-01-01", "ACT-DIGART-01-02", "Digital Drawing"),
+            ("CRS-DIGART-02", "ACT-DIGART-02-01", "ACT-DIGART-02-02", "Color and Character"),
+            ("CRS-DIGART-03", "ACT-DIGART-03-01", "ACT-DIGART-03-02", "Illustration Showcase"),
+            ("CRS-BIOTECH-01", "ACT-BIOTECH-01-01", "ACT-BIOTECH-01-02", "Cell Biology"),
+            ("CRS-BIOTECH-02", "ACT-BIOTECH-02-01", "ACT-BIOTECH-02-02", "Genetics Simulation"),
+            ("CRS-BIOTECH-03", "ACT-BIOTECH-03-01", "ACT-BIOTECH-03-02", "Biotech Case Study"),
+            ("CRS-3DDESIGN-01", "ACT-3DDESIGN-01-01", "ACT-3DDESIGN-01-02", "CAD Foundations"),
+            ("CRS-3DDESIGN-02", "ACT-3DDESIGN-02-01", "ACT-3DDESIGN-02-02", "Printable Prototype"),
+            ("CRS-3DDESIGN-03", "ACT-3DDESIGN-03-01", "ACT-3DDESIGN-03-02", "Design Review"),
+            ("CRS-AIBASIC-01", "ACT-AIBASIC-01-01", "ACT-AIBASIC-01-02", "AI Concepts"),
+            ("CRS-AIBASIC-02", "ACT-AIBASIC-02-01", "ACT-AIBASIC-02-02", "Image Recognition"),
+            ("CRS-AIBASIC-03", "ACT-AIBASIC-03-01", "ACT-AIBASIC-03-02", "Chatbot Mini-Project"),
+            ("CRS-ENVSCI-01", "ACT-ENVSCI-01-01", "ACT-ENVSCI-01-02", "Ecology Studio"),
+            ("CRS-ENVSCI-02", "ACT-ENVSCI-02-01", "ACT-ENVSCI-02-02", "Field Data"),
+            ("CRS-ENVSCI-03", "ACT-ENVSCI-03-01", "ACT-ENVSCI-03-02", "Sustainability Showcase"),
+            ("CRS-GAMEDEV-01", "ACT-GAMEDEV-01-01", "ACT-GAMEDEV-01-02", "Game Logic"),
+            ("CRS-GAMEDEV-02", "ACT-GAMEDEV-02-01", "ACT-GAMEDEV-02-02", "Level Design"),
+            ("CRS-GAMEDEV-03", "ACT-GAMEDEV-03-01", "ACT-GAMEDEV-03-02", "Sprite Animation"),
+            ("CRS-GAMEDEV-04", "ACT-GAMEDEV-04-01", "ACT-GAMEDEV-04-02", "Playable Prototype"),
+            ("CRS-MUSICTECH-01", "ACT-MUSICTECH-01-01", "ACT-MUSICTECH-01-02", "DAW Foundations"),
+            ("CRS-MUSICTECH-02", "ACT-MUSICTECH-02-01", "ACT-MUSICTECH-02-02", "Sound Design"),
+            ("CRS-MUSICTECH-03", "ACT-MUSICTECH-03-01", "ACT-MUSICTECH-03-02", "Track Mix"),
+            ("CRS-DATAMATH-01", "ACT-DATAMATH-01-01", "ACT-DATAMATH-01-02", "Statistics Studio"),
+            ("CRS-DATAMATH-02", "ACT-DATAMATH-02-01", "ACT-DATAMATH-02-02", "Probability Lab"),
+            ("CRS-DATAMATH-03", "ACT-DATAMATH-03-01", "ACT-DATAMATH-03-02", "Data Story"),
+        ];
+
+        foreach (var item in catalog)
+        {
+            addActivities(item.CourseCode, new[]
+            {
+                NewActivity(item.SelfPacedCode, $"{item.Name} reading", ActivityType.SelfPaced, 1,
+                    $"Self-paced introduction to {item.Name}.", null, false, false),
+                NewActivity(item.LiveCode, $"{item.Name} live session", ActivityType.LiveOnline, 2,
+                    $"Live cohort session for {item.Name}.", 90, false, false),
+            });
+        }
     }
 
     private static Activity NewActivity(
@@ -250,27 +291,6 @@ public partial class SeedService
 
     private const string DemoShowcaseVideoMaterialUrl =
         "https://oboxsteam-bucket-main.s3.ap-southeast-1.amazonaws.com/Seed/Material/Robotics-video.mp4";
-
-    private static readonly string[] RoboticsClassCodes =
-    [
-        "CLS-ROBOTICS-2026A",
-        "CLS-ROBOTICS-2026B",
-        "CLS-ROBOTICS-2026C",
-        "CLS-ROBOTICS-2026D",
-    ];
-
-    private static readonly HashSet<string> Mentor1RoboticsClassCodes =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "CLS-ROBOTICS-2026A",
-            "CLS-ROBOTICS-2026B",
-        };
-
-    private static readonly Dictionary<int, int> Mentor1SharedSessionDayOffsets = new()
-    {
-        [1] = 21,
-        [3] = 49,
-    };
 
     private static void AddRoboticsCourses(
         List<Course> courses,

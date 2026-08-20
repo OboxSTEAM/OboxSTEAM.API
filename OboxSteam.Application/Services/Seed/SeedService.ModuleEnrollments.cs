@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
@@ -8,8 +8,7 @@ public partial class SeedService
 {
     /// <summary>
     /// Ensures every Active/Completed program enrollment has an Active/Completed
-    /// <see cref="ModuleEnrollment"/> for every module in that program (bypasses
-    /// curriculum unlock / course-page provisioning).
+    /// <see cref="ModuleEnrollment"/> for every module in that program.
     /// </summary>
     private async Task SeedModuleEnrollmentsAsync()
     {
@@ -32,7 +31,6 @@ public partial class SeedService
             .GroupBy(m => m.ProgramId)
             .ToDictionary(g => g.Key, g => g.OrderBy(m => m.ModuleOrder).ToList());
 
-        var seedTime = DateTime.UtcNow;
         var toAdd = new List<ModuleEnrollment>();
         var created = 0;
         var linked = 0;
@@ -61,8 +59,6 @@ public partial class SeedService
                     continue;
                 }
 
-                // Also skip if an enrollment exists for this student+module under any PE link
-                // (legacy rows may have null ProgramEnrollmentId).
                 var anyExisting = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
                     me => me.StudentId == pe.StudentId
                           && me.ModuleId == module.Id
@@ -80,13 +76,14 @@ public partial class SeedService
                     continue;
                 }
 
-                var enrolledAt = pe.EnrolledAt ?? seedTime.AddDays(-14);
+                var enrolledAt = pe.EnrolledAt ?? _seedNow.AddDays(-14);
                 var startedAt = isCompleted
                     ? (pe.StartedAt ?? enrolledAt.AddDays(2))
                     : (pe.StartedAt ?? enrolledAt.AddDays(1));
                 DateTime? completedAt = isCompleted
-                    ? (pe.CompletedAt ?? seedTime.AddDays(-moduleIndex - 1))
+                    ? (pe.CompletedAt ?? _seedNow.AddDays(-moduleIndex - 1))
                     : null;
+                var rowCreatedAt = enrolledAt.AddDays(moduleIndex);
 
                 toAdd.Add(new ModuleEnrollment
                 {
@@ -99,10 +96,10 @@ public partial class SeedService
                     FinalGrade = isCompleted ? 85m + (module.ModuleOrder % 10) : null,
                     AttemptNumber = 1,
                     AssignmentFailureCount = 0,
-                    EnrolledAt = enrolledAt.AddDays(moduleIndex),
+                    EnrolledAt = rowCreatedAt,
                     StartedAt = startedAt.AddDays(moduleIndex),
                     CompletedAt = completedAt,
-                    CreatedAt = seedTime,
+                    CreatedAt = rowCreatedAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false,
                 });

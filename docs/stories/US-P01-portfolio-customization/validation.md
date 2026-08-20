@@ -19,8 +19,8 @@ Behavioral verification is manual via Swagger until a test project lands.
 
 ## Fixtures
 
-Seeded student `STD-001` portfolio (see `SeedService.Portfolio.cs`) with
-certificates and capstone items for augmentation checks.
+Seeded student `STD-001` has a completed Web Development enrollment and an unpublished
+portfolio (see `SeedService.Portfolio.cs`) with certificates and capstone items.
 
 ## Commands
 

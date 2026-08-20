@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -25,7 +25,7 @@ public partial class SeedService
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -40,7 +40,7 @@ public partial class SeedService
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -55,7 +55,7 @@ public partial class SeedService
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -70,7 +70,7 @@ public partial class SeedService
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -86,7 +86,7 @@ public partial class SeedService
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             }
@@ -185,7 +185,7 @@ public partial class SeedService
         };
 
         var profilesToAdd = new List<MentorProfile>();
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
 
         foreach (var definition in profileDefinitions)
         {
@@ -235,13 +235,13 @@ public partial class SeedService
 
     /// <summary>
     /// Seeds mentor skill tags aligned with the programs/classes each mentor teaches.
-    /// Runs after <see cref="SeedSkillsAsync"/> and <see cref="SeedMentorClassesAsync"/>.
+    /// Runs after <see cref="SeedSkillsAsync"/> and academic-year class seeding.
     /// </summary>
     private async Task SeedMentorSkillsAsync()
     {
         _loggerService.LogInformation("Starting seed mentor skills");
 
-        // Mentor → skills tied to the programs they teach in SeedMentorClassesAsync.
+        // Mentor → skills tied to the programs they teach in the academic-year roster.
         var skillDefinitions = new List<(
             string MentorCode,
             string SkillCode,
@@ -251,7 +251,7 @@ public partial class SeedService
             string Notes,
             bool IsPublic)>
         {
-            // MNT-001 — Robotics (CLS-ROBOTICS-2026A/B)
+            // MNT-001 — current robotics cohort
             ("MNT-001", "SKL-TECH-ROBOTICS-IOT", SkillProficiencyLevel.Expert, 10,
                 "Leads competition robot builds from chassis to autonomous challenge.",
                 "Primary skill for Robotics Spring/Summer cohorts (CLS-ROBOTICS-2026A/B).", true),
@@ -370,23 +370,20 @@ public partial class SeedService
             ("MNT-006", "SKL-SOFT-CREATIVE", SkillProficiencyLevel.Expert, 10,
                 "Creative storytelling through 3D animation.",
                 "Creative storytelling through 3D animation (CLS-3DDESIGN-2026B).", true),
-
-            // MNT-007 — available mentor, no class assignment yet
-            ("MNT-007", "SKL-TECH-PROG-PYTHON", SkillProficiencyLevel.Advanced, 6,
-                "Python fundamentals and project scaffolding for beginner cohorts.",
-                "Available capacity — not yet assigned to a class.", true),
-            ("MNT-007", "SKL-ENG-PROTOTYPE", SkillProficiencyLevel.Advanced, 5,
-                "Hands-on prototyping and maker-space facilitation.",
-                "Available capacity — not yet assigned to a class.", true),
-            ("MNT-007", "SKL-SOFT-COLLAB", SkillProficiencyLevel.Expert, 8,
-                "Team facilitation and peer collaboration coaching.",
-                "Available capacity — not yet assigned to a class.", true),
-            ("MNT-007", "SKL-TECH-COMP-THINK", SkillProficiencyLevel.Advanced, 7,
-                "Computational thinking workshops for mixed-age groups.",
-                "Available capacity — not yet assigned to a class.", true),
         };
 
         var skills = await _unitOfWork.Skills.GetAllAsync(s => !s.IsDeleted);
+        foreach (var skill in skills.OrderBy(s => s.Code, StringComparer.OrdinalIgnoreCase))
+        {
+            skillDefinitions.Add((
+                "MNT-007",
+                skill.Code,
+                SkillProficiencyLevel.Advanced,
+                6,
+                $"Can mentor {skill.Name} across STEAM cohorts.",
+                "Available mentor — full catalog coverage for class requests.",
+                true));
+        }
         var skillsByCode = skills.ToDictionary(s => s.Code, StringComparer.OrdinalIgnoreCase);
 
         var mentors = await _unitOfWork.Users.GetAllAsync(
@@ -399,7 +396,7 @@ public partial class SeedService
             .ToHashSet();
 
         var toAdd = new List<MentorSkill>();
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
 
         foreach (var definition in skillDefinitions)
         {
@@ -479,84 +476,6 @@ public partial class SeedService
             "Finished seed mentor skills — {Count} skill link(s) and {EvidenceCount} evidence row(s) created.",
             toAdd.Count,
             evidenceSeeds.Count);
-    }
-
-    private async Task SeedMentorClassesAsync()
-    {
-        _loggerService.LogInformation("Starting seed mentor classes");
-
-        var seedTime = DateTime.UtcNow;
-        var classDefinitions = new List<(string MentorCode, string ProgramCode, string Code, string Name, ClassStatus Status, int StartDaysOffset, int EndDaysOffset, int MaxCapacity, string ScheduleSummary)>
-        {
-            ("MNT-001", "PRG-ROBOTICS", "CLS-ROBOTICS-2026A", "Robotics Spring 2026 - Cohort A", ClassStatus.InProgress, -14, 84, 24, "Tuesday & Saturday 09:00-11:30"),
-            ("MNT-001", "PRG-ROBOTICS", "CLS-ROBOTICS-2026B", "Robotics Summer 2026 - Cohort B", ClassStatus.Open, 21, 105, 20, "Wednesday & Saturday 14:00-16:30"),
-            ("MNT-002", "PRG-ROBOTICS", "CLS-ROBOTICS-2026C", "Robotics Fall 2026 - Cohort C", ClassStatus.Open, 21, 119, 22, "Every Thursday 18:00-20:30"),
-            ("MNT-003", "PRG-ROBOTICS", "CLS-ROBOTICS-2026D", "Robotics Winter 2026 - Cohort D", ClassStatus.Draft, 35, 133, 18, "Every Monday 09:00-11:30"),
-            ("MNT-002", "PRG-IOT", "CLS-IOT-2026A", "IoT Sensors Spring 2026 - Cohort A", ClassStatus.InProgress, -10, 90, 22, "Every Tuesday 18:00-20:30"),
-            ("MNT-002", "PRG-IOT", "CLS-IOT-2026B", "IoT Cloud Summer 2026 - Cohort B", ClassStatus.Open, 18, 115, 18, "Every Thursday 19:00-21:30"),
-            ("MNT-003", "PRG-WEBDEV", "CLS-WEBDEV-2026A", "Web Foundations Spring 2026 - Cohort A", ClassStatus.InProgress, -12, 88, 24, "Every Monday 18:30-21:00"),
-            ("MNT-003", "PRG-WEBDEV", "CLS-WEBDEV-2026B", "JavaScript Bootcamp Summer 2026 - Cohort B", ClassStatus.Open, 20, 118, 20, "Every Wednesday 18:30-21:00"),
-            ("MNT-004", "PRG-GAMEDEV", "CLS-GAMEDEV-2026A", "Game Design Spring 2026 - Cohort A", ClassStatus.InProgress, -8, 92, 20, "Every Friday 15:00-18:00"),
-            ("MNT-004", "PRG-GAMEDEV", "CLS-GAMEDEV-2026B", "Unity Prototype Summer 2026 - Cohort B", ClassStatus.Open, 25, 125, 16, "Every Saturday 13:00-16:00"),
-            ("MNT-005", "PRG-AIBASIC", "CLS-AIBASIC-2026A", "AI Basics Spring 2026 - Cohort A", ClassStatus.InProgress, -6, 94, 26, "Every Tuesday 16:00-18:30"),
-            ("MNT-005", "PRG-AIBASIC", "CLS-AIBASIC-2026B", "Machine Learning Intro Summer 2026 - Cohort B", ClassStatus.Open, 22, 122, 22, "Every Sunday 09:00-11:30"),
-            ("MNT-006", "PRG-3DDESIGN", "CLS-3DDESIGN-2026A", "3D Modeling Spring 2026 - Cohort A", ClassStatus.InProgress, -9, 91, 18, "Every Thursday 14:00-17:00"),
-            ("MNT-006", "PRG-3DDESIGN", "CLS-3DDESIGN-2026B", "3D Animation Summer 2026 - Cohort B", ClassStatus.Open, 19, 119, 15, "Every Saturday 10:00-13:00")
-        };
-
-        var classesToAdd = new List<Class>();
-
-        foreach (var definition in classDefinitions)
-        {
-            var existingClass = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == definition.Code);
-            if (existingClass != null)
-            {
-                continue;
-            }
-
-            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == definition.MentorCode);
-            var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == definition.ProgramCode);
-
-            if (mentor == null || program == null)
-            {
-                _loggerService.LogWarning(
-                    "Skipping class {ClassCode}: mentor {MentorCode} or program {ProgramCode} not found.",
-                    definition.Code,
-                    definition.MentorCode,
-                    definition.ProgramCode);
-                continue;
-            }
-
-            classesToAdd.Add(new Class
-            {
-                Id = Guid.NewGuid(),
-                Code = definition.Code,
-                Name = definition.Name,
-                ProgramId = program.Id,
-                MentorId = mentor.Id,
-                StartDate = seedTime.AddDays(definition.StartDaysOffset),
-                EndDate = seedTime.AddDays(definition.EndDaysOffset),
-                MaxCapacity = definition.MaxCapacity,
-                Status = definition.Status,
-                MinHoursBeforeAssignmentJoin = 48,
-                ScheduleSummary = definition.ScheduleSummary,
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false
-            });
-        }
-
-        if (classesToAdd.Count == 0)
-        {
-            _loggerService.LogInformation("Mentor classes already seeded, skipping");
-            return;
-        }
-
-        await _unitOfWork.Classes.AddRangeAsync(classesToAdd);
-        await _unitOfWork.SaveChangesAsync();
-        _loggerService.LogInformation(
-            "Finished seed mentor classes — {Count} class(es) created.",
-            classesToAdd.Count);
     }
 }
 

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -18,7 +18,6 @@ public partial class SeedService
         {
             var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
             var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
-            var programSteam = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-STEAM-01");
             var programIot = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-IOT");
             var programPyBasic = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-PYBASIC");
             var programMathFun = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-MATHFUN");
@@ -49,7 +48,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 450_000m,
                         RetakeFee = 100_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -64,7 +63,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 500_000m,
                         RetakeFee = 120_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -78,7 +77,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 550_000m,
                         RetakeFee = 150_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -103,7 +102,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 700_000m,
                         RetakeFee = 150_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -117,7 +116,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 800_000m,
                         RetakeFee = 180_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -131,7 +130,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 700_000m,
                         RetakeFee = 150_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -139,45 +138,6 @@ public partial class SeedService
             else
             {
                 _loggerService.LogWarning("Program PRG-WEBDEV not found. Skipping web development module seeding.");
-            }
-
-            if (programSteam != null)
-            {
-                modules.AddRange(new List<Module>
-                {
-                    new Module
-                    {
-                        Id = Guid.NewGuid(),
-                        Code = "MOD-STEAM-01",
-                        ProgramId = programSteam.Id,
-                        Name = "STEAM Lab Kickoff",
-                        ModuleType = ModuleType.Theory,
-                        ModuleOrder = 1,
-                        IsMandatory = true,
-                        Price = 500_000m,
-                        RetakeFee = 110_000m,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = Guid.Empty
-                    },
-                    new Module
-                    {
-                        Id = Guid.NewGuid(),
-                        Code = "MOD-STEAM-02",
-                        ProgramId = programSteam.Id,
-                        Name = "Creative Prototyping",
-                        ModuleType = ModuleType.Experiential,
-                        ModuleOrder = 2,
-                        IsMandatory = true,
-                        Price = 550_000m,
-                        RetakeFee = 120_000m,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = Guid.Empty
-                    }
-                });
-            }
-            else
-            {
-                _loggerService.LogWarning("Program PRG-STEAM-01 not found. Skipping STEAM module seeding.");
             }
 
             if (programIot != null)
@@ -195,7 +155,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 650_000m,
                         RetakeFee = 130_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -209,7 +169,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 700_000m,
                         RetakeFee = 150_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -223,7 +183,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 600_000m,
                         RetakeFee = 120_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -249,7 +209,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 480_000m,
                         RetakeFee = 100_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -263,7 +223,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 500_000m,
                         RetakeFee = 110_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -277,7 +237,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 470_000m,
                         RetakeFee = 100_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -303,7 +263,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 380_000m,
                         RetakeFee = 80_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -317,7 +277,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 380_000m,
                         RetakeFee = 80_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -331,7 +291,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 340_000m,
                         RetakeFee = 70_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -357,7 +317,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 600_000m,
                         RetakeFee = 130_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -371,7 +331,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 650_000m,
                         RetakeFee = 140_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -385,7 +345,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 550_000m,
                         RetakeFee = 110_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -411,7 +371,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 700_000m,
                         RetakeFee = 150_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -425,7 +385,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 750_000m,
                         RetakeFee = 160_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -439,7 +399,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 600_000m,
                         RetakeFee = 120_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -465,7 +425,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 800_000m,
                         RetakeFee = 170_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -479,7 +439,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 850_000m,
                         RetakeFee = 180_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -493,7 +453,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 650_000m,
                         RetakeFee = 130_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -519,7 +479,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 800_000m,
                         RetakeFee = 170_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -533,7 +493,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 850_000m,
                         RetakeFee = 180_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -547,7 +507,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 800_000m,
                         RetakeFee = 160_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -573,7 +533,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 450_000m,
                         RetakeFee = 90_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -587,7 +547,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 500_000m,
                         RetakeFee = 100_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -601,7 +561,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 400_000m,
                         RetakeFee = 80_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -627,7 +587,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 900_000m,
                         RetakeFee = 190_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -641,7 +601,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 950_000m,
                         RetakeFee = 200_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -655,7 +615,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 950_000m,
                         RetakeFee = 200_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -669,7 +629,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 900_000m,
                         RetakeFee = 180_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -695,7 +655,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 550_000m,
                         RetakeFee = 110_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -709,7 +669,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 600_000m,
                         RetakeFee = 120_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -723,7 +683,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 450_000m,
                         RetakeFee = 90_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -749,7 +709,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 650_000m,
                         RetakeFee = 130_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -763,7 +723,7 @@ public partial class SeedService
                         IsMandatory = true,
                         Price = 700_000m,
                         RetakeFee = 140_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
                     new Module
@@ -777,7 +737,7 @@ public partial class SeedService
                         IsMandatory = false,
                         Price = 600_000m,
                         RetakeFee = 120_000m,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
                 });
@@ -800,7 +760,7 @@ public partial class SeedService
                     IsMandatory = true,
                     Price = 50_000m,
                     RetakeFee = 10_000m,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty
                 });
             }
@@ -861,18 +821,6 @@ public partial class SeedService
                             "Design responsive pages for multiple screen sizes",
                             "Understand deployment basics and hosting",
                             "Ship a small web project end-to-end"
-                        },
-                        "MOD-STEAM-01" => new[]
-                        {
-                            "Understand STEAM learning workflow and lab rules",
-                            "Explore core tools used in the program",
-                            "Practice collaboration and documentation"
-                        },
-                        "MOD-STEAM-02" => new[]
-                        {
-                            "Prototype ideas using simple materials and tools",
-                            "Iterate quickly based on feedback",
-                            "Communicate design choices clearly"
                         },
                         "MOD-IOT-01" => new[]
                         {
@@ -1018,18 +966,6 @@ public partial class SeedService
                             "Design responsive pages for multiple screen sizes",
                             "Understand deployment basics and hosting",
                             "Ship a small web project end-to-end"
-                        },
-                        "MOD-STEAM-01" => new[]
-                        {
-                            "Understand STEAM learning workflow and lab rules",
-                            "Explore core tools used in the program",
-                            "Practice collaboration and documentation"
-                        },
-                        "MOD-STEAM-02" => new[]
-                        {
-                            "Prototype ideas using simple materials and tools",
-                            "Iterate quickly based on feedback",
-                            "Communicate design choices clearly"
                         },
                         "MOD-IOT-01" => new[]
                         {

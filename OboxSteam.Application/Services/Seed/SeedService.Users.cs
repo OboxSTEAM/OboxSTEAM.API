@@ -31,7 +31,7 @@ public partial class SeedService
                     Role = RoleType.Admin,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -46,7 +46,7 @@ public partial class SeedService
                     Role = RoleType.Manager,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -61,7 +61,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -76,7 +76,7 @@ public partial class SeedService
                     Role = RoleType.Parent,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -91,7 +91,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -106,7 +106,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -121,7 +121,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -136,7 +136,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -151,7 +151,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -166,7 +166,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -181,7 +181,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -196,7 +196,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -211,7 +211,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -226,7 +226,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -241,7 +241,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -256,7 +256,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -271,7 +271,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -286,7 +286,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -301,7 +301,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -316,7 +316,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -331,7 +331,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -346,7 +346,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -361,7 +361,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -376,7 +376,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -391,7 +391,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -406,7 +406,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -421,7 +421,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -436,7 +436,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -451,7 +451,7 @@ public partial class SeedService
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -466,7 +466,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -481,7 +481,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -496,7 +496,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -511,7 +511,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -526,7 +526,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
                 },
@@ -559,7 +559,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -574,7 +574,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -589,7 +589,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -604,7 +604,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -619,7 +619,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -634,7 +634,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -649,7 +649,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -664,7 +664,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -679,7 +679,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -694,7 +694,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -709,7 +709,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -724,7 +724,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -739,7 +739,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -754,7 +754,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -769,7 +769,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -784,7 +784,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -799,7 +799,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -814,7 +814,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -829,7 +829,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -844,7 +844,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
@@ -859,7 +859,7 @@ public partial class SeedService
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             }

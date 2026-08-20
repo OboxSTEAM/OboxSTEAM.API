@@ -13,10 +13,8 @@ public partial class SeedService
     };
 
     /// <summary>
-    /// Seeds STD-001 (student1) with a fully completed PRG-WEBDEV enrollment, certificates,
-    /// graded research submissions, and a populated but unpublished portfolio for FE testing.
-    /// PRG-ROBOTICS is intentionally left untouched — it is reserved for curriculum FE testing
-    /// and its STD-001 progress is reset by <see cref="ResetIntroductionToRoboticsFeTestProgressAsync"/>.
+    /// Seeds STD-001 with a completed PRG-WEBDEV enrollment, certificates,
+    /// graded research submissions, and a populated but unpublished portfolio.
     /// </summary>
     private async Task SeedPortfolioDataAsync()
     {
@@ -36,7 +34,7 @@ public partial class SeedService
             return;
         }
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
 
         var programEnrollment = await EnsureCompletedWebDevProgramEnrollmentAsync(
             student,

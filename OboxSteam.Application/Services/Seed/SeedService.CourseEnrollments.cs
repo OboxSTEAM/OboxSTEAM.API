@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
@@ -42,7 +42,6 @@ public partial class SeedService
                     return courses.Where(c => ids.Contains(c.ModuleId)).ToList();
                 });
 
-        var seedTime = DateTime.UtcNow;
         var toAdd = new List<CourseEnrollment>();
         var created = 0;
         var updated = 0;
@@ -69,9 +68,9 @@ public partial class SeedService
                     if (isCompleted && existing.Status != EnrollmentStatus.Completed)
                     {
                         existing.Status = EnrollmentStatus.Completed;
-                        existing.StartedAt ??= pe.StartedAt ?? seedTime.AddDays(-10);
-                        existing.CompletedAt ??= pe.CompletedAt ?? seedTime.AddDays(-1);
-                        existing.JoinedAt ??= pe.EnrolledAt ?? seedTime.AddDays(-14);
+                        existing.StartedAt ??= pe.StartedAt ?? _seedNow.AddDays(-10);
+                        existing.CompletedAt ??= pe.CompletedAt ?? _seedNow.AddDays(-1);
+                        existing.JoinedAt ??= pe.EnrolledAt ?? _seedNow.AddDays(-14);
                         await _unitOfWork.CourseEnrollments.Update(existing);
                         updated++;
                     }
@@ -80,7 +79,7 @@ public partial class SeedService
                     continue;
                 }
 
-                var joinedAt = pe.EnrolledAt ?? seedTime.AddDays(-14);
+                var joinedAt = pe.EnrolledAt ?? _seedNow.AddDays(-14);
                 toAdd.Add(new CourseEnrollment
                 {
                     Id = Guid.NewGuid(),
@@ -90,9 +89,9 @@ public partial class SeedService
                     JoinedAt = joinedAt.AddDays(courseIndex),
                     StartedAt = (pe.StartedAt ?? joinedAt.AddDays(1)).AddDays(courseIndex),
                     CompletedAt = isCompleted
-                        ? (pe.CompletedAt ?? seedTime.AddDays(-courseIndex - 1))
+                        ? (pe.CompletedAt ?? _seedNow.AddDays(-courseIndex - 1))
                         : null,
-                    CreatedAt = seedTime,
+                    CreatedAt = joinedAt.AddDays(courseIndex),
                     CreatedBy = Guid.Empty,
                     IsDeleted = false,
                 });

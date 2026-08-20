@@ -22,18 +22,28 @@ public partial class SeedService
     {
         _loggerService.LogInformation("Starting seed demo showcase programs");
 
-        var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001" && !u.IsDeleted);
-        if (mentor == null)
-        {
-            _loggerService.LogWarning("Mentor MNT-001 not found. Skipping demo showcase program seeding.");
-            return;
-        }
-
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
+        var mentors = (await _unitOfWork.Users.GetAllAsync(u => u.Role == RoleType.Mentor && !u.IsDeleted))
+            .ToDictionary(u => u.Code, u => u, StringComparer.OrdinalIgnoreCase);
 
         foreach (var definition in GetDemoProgramDefinitions())
         {
-            await SeedOneDemoProgramAsync(definition, mentor.Id, seedTime);
+            if (!mentors.TryGetValue(definition.InProgressMentorCode, out var inProgressMentor)
+                || !mentors.TryGetValue(definition.OpenMentorCode, out var openMentor))
+            {
+                _loggerService.LogWarning(
+                    "Skipping demo program {ProgramCode}: mentor {InProgressMentor} or {OpenMentor} not found.",
+                    definition.ProgramCode,
+                    definition.InProgressMentorCode,
+                    definition.OpenMentorCode);
+                continue;
+            }
+
+            await SeedOneDemoProgramAsync(
+                definition,
+                inProgressMentor.Id,
+                openMentor.Id,
+                seedTime);
         }
 
         // Demo programs stay submission-free (quiz / retrospective / research file uploads).
@@ -117,6 +127,8 @@ public partial class SeedService
         string ClassCode,
         string ClassName,
         string ScheduleSummary,
+        string InProgressMentorCode,
+        string OpenMentorCode,
         string TheoryModuleName,
         string ExperientialModuleName,
         string ResearchModuleName,
@@ -133,7 +145,13 @@ public partial class SeedService
         string Milestone2Title,
         string Milestone2Description,
         string Milestone2AssignmentTitle,
-        (string Text, int Difficulty, string[] Options)[] BankQuestions);
+        (string Text, int Difficulty, string[] Options)[] BankQuestions)
+    {
+        public string ResolveOpenClassCode()
+            => ClassCode.EndsWith("2026A", StringComparison.OrdinalIgnoreCase)
+                ? ClassCode[..^5] + "2026B"
+                : $"{ClassCode}-OPEN";
+    }
 
     private static IReadOnlyList<DemoProgramDefinition> GetDemoProgramDefinitions() =>
     [
@@ -152,6 +170,8 @@ public partial class SeedService
             ClassCode: "CLS-DEMO-SCRATCH-2026A",
             ClassName: "Scratch Demo Cohort A",
             ScheduleSummary: "Every Saturday 09:00-11:00",
+            InProgressMentorCode: "MNT-001",
+            OpenMentorCode: "MNT-003",
             TheoryModuleName: "Scratch Basics",
             ExperientialModuleName: "Build a Mini-Game",
             ResearchModuleName: "Creative Project Showcase",
@@ -184,6 +204,8 @@ public partial class SeedService
             ClassCode: "CLS-DEMO-CLIMATE-2026A",
             ClassName: "Climate Detectives Cohort A",
             ScheduleSummary: "Every Sunday 10:00-12:00",
+            InProgressMentorCode: "MNT-002",
+            OpenMentorCode: "MNT-005",
             TheoryModuleName: "Climate Foundations",
             ExperientialModuleName: "Field Clues Lab",
             ResearchModuleName: "Evidence Report",
@@ -216,6 +238,8 @@ public partial class SeedService
             ClassCode: "CLS-DEMO-MAKER-2026A",
             ClassName: "Maker Lab Cohort A",
             ScheduleSummary: "Every Friday 14:00-16:00",
+            InProgressMentorCode: "MNT-004",
+            OpenMentorCode: "MNT-006",
             TheoryModuleName: "Maker Mindset",
             ExperientialModuleName: "Prototype Sprint",
             ResearchModuleName: "Build Journal",
@@ -286,7 +310,8 @@ public partial class SeedService
 
     private async Task SeedOneDemoProgramAsync(
         DemoProgramDefinition definition,
-        Guid mentorId,
+        Guid inProgressMentorId,
+        Guid openMentorId,
         DateTime seedTime)
     {
         var slug = definition.ProgramCode.Replace("PRG-DEMO-", string.Empty, StringComparison.OrdinalIgnoreCase);
@@ -487,7 +512,7 @@ public partial class SeedService
 
         var classEntity = await EnsureDemoClassAsync(
             program.Id,
-            mentorId,
+            inProgressMentorId,
             definition.ClassCode,
             definition.ClassName,
             definition.ScheduleSummary,
@@ -509,16 +534,14 @@ public partial class SeedService
             seedTime);
 
         // Open / not-started cohort for newly registered students to join.
-        var openClassCode = definition.ClassCode.EndsWith("2026A", StringComparison.OrdinalIgnoreCase)
-            ? definition.ClassCode[..^5] + "2026B"
-            : $"{definition.ClassCode}-OPEN";
+        // A different mentor than Cohort A so concurrent load and Saturday slots do not stack.
         var openClassName = definition.ClassName.Contains("Cohort A", StringComparison.Ordinal)
             ? definition.ClassName.Replace("Cohort A", "Cohort B", StringComparison.Ordinal)
             : $"{definition.ClassName} (Open)";
         await EnsureDemoClassAsync(
             program.Id,
-            mentorId,
-            openClassCode,
+            openMentorId,
+            definition.ResolveOpenClassCode(),
             openClassName,
             $"{definition.ScheduleSummary} (upcoming cohort)",
             seedTime,
@@ -1123,6 +1146,7 @@ public partial class SeedService
         };
 
         var sessionsToAdd = new List<ClassSession>();
+        var sessionIndex = 0;
 
         foreach (var definition in sessionDefs)
         {
@@ -1131,19 +1155,24 @@ public partial class SeedService
                       && cs.ActivityId == definition.Activity.Id
                       && !cs.IsDeleted);
 
-            var startTime = seedTime.AddHours(-2);
+            var slot = SeedTimeline.TryResolveSlotSequence(
+                classEntity.StartDate,
+                classEntity.EndDate,
+                DemoSaturdayMorning,
+                sessionIndex);
+            sessionIndex++;
+            if (slot == null)
+            {
+                continue;
+            }
+
+            var startTime = slot.Value.StartTime;
             var endTime = startTime.AddMinutes(definition.Activity.DurationMinutes ?? 120);
+            var status = SeedTimeline.ResolveSessionStatus(startTime, endTime, seedTime);
 
             if (existing != null)
             {
-                if (existing.Status == ClassSessionStatus.InProgress
-                    && existing.StartTime == startTime
-                    && existing.EndTime == endTime)
-                {
-                    continue;
-                }
-
-                existing.Status = ClassSessionStatus.InProgress;
+                existing.Status = status;
                 existing.StartTime = startTime;
                 existing.EndTime = endTime;
                 existing.Location = null;
@@ -1167,8 +1196,8 @@ public partial class SeedService
                 Location = null,
                 RequiresAttendance = true,
                 RequiresMentorCheckIn = definition.Activity.ActivityType == ActivityType.Offline,
-                Status = ClassSessionStatus.InProgress,
-                CreatedAt = seedTime,
+                Status = status,
+                CreatedAt = classEntity.CreatedAt,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
             });

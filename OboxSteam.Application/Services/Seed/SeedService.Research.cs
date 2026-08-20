@@ -47,7 +47,7 @@ public partial class SeedService
             return;
         }
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var availabilityFrom = seedTime.AddDays(-30);
         var availabilityUntil = seedTime.AddDays(90);
 
@@ -271,6 +271,88 @@ public partial class SeedService
             "Finished seed research milestones — 3 milestone(s) and 9 activity link(s) created.");
     }
 
+    private async Task SeedSessionAlignedActivityProgressAsync()
+    {
+        _loggerService.LogInformation("Starting seed activity progress from completed sessions");
+
+        var completedSessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => !cs.IsDeleted
+                  && cs.ActivityId != null
+                  && cs.Status == ClassSessionStatus.Completed);
+        if (completedSessions.Count == 0)
+        {
+            return;
+        }
+
+        var classEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => !ce.IsDeleted
+                  && (ce.Status == ClassEnrollmentStatus.Active
+                      || ce.Status == ClassEnrollmentStatus.Completed));
+        var rosterByClass = classEnrollments
+            .GroupBy(ce => ce.ClassId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(me => !me.IsDeleted);
+        var existingProgress = await _unitOfWork.ActivityProgresses.GetAllAsync(ap => !ap.IsDeleted);
+        var existingKeys = existingProgress
+            .Select(ap => (ap.StudentId, ap.ActivityId))
+            .ToHashSet();
+
+        var toAdd = new List<ActivityProgress>();
+        foreach (var session in completedSessions)
+        {
+            if (!rosterByClass.TryGetValue(session.ClassId, out var roster))
+            {
+                continue;
+            }
+
+            foreach (var enrollment in roster)
+            {
+                var activityId = session.ActivityId!.Value;
+                if (existingKeys.Contains((enrollment.StudentId, activityId)))
+                {
+                    continue;
+                }
+
+                var moduleEnrollment = moduleEnrollments.FirstOrDefault(
+                    me => me.StudentId == enrollment.StudentId
+                          && me.ModuleId == session.ModuleId);
+                if (moduleEnrollment == null)
+                {
+                    continue;
+                }
+
+                toAdd.Add(new ActivityProgress
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = enrollment.StudentId,
+                    ActivityId = activityId,
+                    ModuleEnrollmentId = moduleEnrollment.Id,
+                    ActivityStatus = ActivityStatus.Done,
+                    IsCompleted = true,
+                    CompletionSource = CompletionSource.Mentor,
+                    CompletedAt = session.EndTime,
+                    LastAccessedAt = session.EndTime,
+                    CreatedAt = session.EndTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
+                existingKeys.Add((enrollment.StudentId, activityId));
+            }
+        }
+
+        if (toAdd.Count == 0)
+        {
+            _loggerService.LogInformation("No new session-aligned activity progress to seed.");
+            return;
+        }
+
+        await _unitOfWork.ActivityProgresses.AddRangeAsync(toAdd);
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Finished seed session-aligned activity progress — {Count} row(s).",
+            toAdd.Count);
+    }
+
     private async Task SeedResearchModuleEnrollmentsAsync()
     {
         _loggerService.LogInformation("Starting seed research module enrollments");
@@ -283,12 +365,13 @@ public partial class SeedService
 
         var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
         var student3 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-003");
-        var enrollTime = DateTime.UtcNow;
+        var roboticsProgram = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
+        var enrollTime = _seedNow;
         var moduleEnrollments = new List<ModuleEnrollment>();
 
-        async Task TryAddEnrollmentAsync(User? student, Guid? programEnrollmentId, decimal progressPercent)
+        async Task TryAddEnrollmentAsync(User? student, decimal progressPercent)
         {
-            if (student == null)
+            if (student == null || roboticsProgram == null)
             {
                 return;
             }
@@ -303,24 +386,33 @@ public partial class SeedService
                 return;
             }
 
+            var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+                pe => pe.StudentId == student.Id
+                      && pe.ProgramId == roboticsProgram.Id
+                      && !pe.IsDeleted);
+            if (programEnrollment == null)
+            {
+                return;
+            }
+
             moduleEnrollments.Add(new ModuleEnrollment
             {
                 Id = Guid.NewGuid(),
                 StudentId = student.Id,
                 ModuleId = moduleRobotics3.Id,
-                ProgramEnrollmentId = programEnrollmentId,
+                ProgramEnrollmentId = programEnrollment.Id,
                 Status = EnrollmentStatus.Active,
                 ProgressPercent = progressPercent,
                 EnrolledAt = enrollTime.AddDays(-7),
                 StartedAt = enrollTime.AddDays(-5),
-                CreatedAt = enrollTime,
+                CreatedAt = enrollTime.AddDays(-7),
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             });
         }
 
-        await TryAddEnrollmentAsync(student2, null, 20m);
-        await TryAddEnrollmentAsync(student3, null, 10m);
+        await TryAddEnrollmentAsync(student2, 20m);
+        await TryAddEnrollmentAsync(student3, 10m);
 
         if (moduleEnrollments.Count == 0)
         {
@@ -333,125 +425,6 @@ public partial class SeedService
         _loggerService.LogInformation(
             "Finished seed research module enrollments — {Count} enrollment(s) created.",
             moduleEnrollments.Count);
-    }
-
-    private async Task ResetIntroductionToRoboticsFeTestProgressAsync()
-    {
-        _loggerService.LogInformation("Resetting Introduction to Robotics FE test progress for STD-001");
-
-        var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
-        if (student == null || program == null)
-        {
-            _loggerService.LogWarning(
-                "STD-001 or PRG-ROBOTICS not found. Skipping robotics FE test progress reset.");
-            return;
-        }
-
-        var modules = await _unitOfWork.Modules.GetAllAsync(
-            m => m.ProgramId == program.Id && !m.IsDeleted);
-        if (modules.Count == 0)
-        {
-            return;
-        }
-
-        var moduleIds = modules.Select(m => m.Id).ToList();
-        var programActivityIds = new HashSet<Guid>();
-        foreach (var module in modules)
-        {
-            var activityIds = await ActivityProgressCalculationHelper.GetModuleActivityIdsAsync(
-                _unitOfWork,
-                module.Id);
-            foreach (var activityId in activityIds)
-            {
-                programActivityIds.Add(activityId);
-            }
-        }
-
-        var changed = false;
-
-        if (programActivityIds.Count > 0)
-        {
-            var activityProgresses = await _unitOfWork.ActivityProgresses.GetAllAsync(
-                ap => ap.StudentId == student.Id
-                      && programActivityIds.Contains(ap.ActivityId)
-                      && !ap.IsDeleted);
-
-            foreach (var activityProgress in activityProgresses)
-            {
-                await _unitOfWork.ActivityProgresses.SoftRemove(activityProgress);
-                changed = true;
-            }
-        }
-
-        // Keep ALL robotics module enrollments Active so FE is not blocked waiting for
-        // curriculum unlock / course-page provisioning. Only progress and deliverables reset.
-        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
-            me => me.StudentId == student.Id && moduleIds.Contains(me.ModuleId) && !me.IsDeleted);
-
-        var moduleEnrollmentIds = moduleEnrollments.Select(me => me.Id).ToList();
-        if (moduleEnrollmentIds.Count > 0)
-        {
-            var submissions = await _unitOfWork.Submissions.GetAllAsync(
-                s => s.StudentId == student.Id
-                      && s.ModuleEnrollmentId.HasValue
-                      && moduleEnrollmentIds.Contains(s.ModuleEnrollmentId.Value)
-                      && !s.IsDeleted);
-
-            foreach (var submission in submissions)
-            {
-                await _unitOfWork.Submissions.SoftRemove(submission);
-                changed = true;
-            }
-        }
-
-        foreach (var moduleEnrollment in moduleEnrollments)
-        {
-            if (moduleEnrollment.ProgressPercent != 0m
-                || moduleEnrollment.Status != EnrollmentStatus.Active
-                || moduleEnrollment.CompletedAt.HasValue
-                || moduleEnrollment.FinalGrade.HasValue
-                || moduleEnrollment.AssignmentFailureCount != 0)
-            {
-                moduleEnrollment.ProgressPercent = 0m;
-                moduleEnrollment.Status = EnrollmentStatus.Active;
-                moduleEnrollment.CompletedAt = null;
-                moduleEnrollment.FinalGrade = null;
-                moduleEnrollment.AssignmentFailureCount = 0;
-                moduleEnrollment.StartedAt ??= DateTime.UtcNow.AddDays(-1);
-                await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
-                changed = true;
-            }
-        }
-
-        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-            pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted);
-
-        if (programEnrollment != null
-            && (programEnrollment.ProgressPercent != 0m
-                || programEnrollment.Status != EnrollmentStatus.Active
-                || programEnrollment.CompletedAt.HasValue
-                || programEnrollment.StartedAt.HasValue))
-        {
-            programEnrollment.ProgressPercent = 0m;
-            programEnrollment.Status = EnrollmentStatus.Active;
-            programEnrollment.CompletedAt = null;
-            programEnrollment.StartedAt = null;
-            await _unitOfWork.ProgramEnrollments.Update(programEnrollment);
-            changed = true;
-        }
-
-        if (!changed)
-        {
-            _loggerService.LogInformation("Introduction to Robotics FE test progress already clear for STD-001");
-            return;
-        }
-
-        await _unitOfWork.SaveChangesAsync();
-        _loggerService.LogInformation(
-            "Introduction to Robotics FE test progress reset for STD-001 — cleared {ActivityCount} program activities across {ModuleCount} module(s).",
-            programActivityIds.Count,
-            modules.Count);
     }
 
     private async Task SeedResearchActivityProgressAsync()
@@ -472,7 +445,7 @@ public partial class SeedService
         }
 
         var studentCodes = new[] { "STD-002", "STD-003" };
-        var progressTime = DateTime.UtcNow;
+        var progressTime = _seedNow;
         var activityProgresses = new List<ActivityProgress>();
 
         foreach (var studentCode in studentCodes)
@@ -571,7 +544,7 @@ public partial class SeedService
             "MOD-WEBDEV-01",
             "PRG-WEBDEV",
             [
-                ("ACT-WEBDEV-01-01", ActivityStatus.Done, DateTime.UtcNow.AddDays(-3)),
+                ("ACT-WEBDEV-01-01", ActivityStatus.Done, _seedNow.AddDays(-3)),
                 ("ACT-WEBDEV-01-02", ActivityStatus.InProgress, null),
             ]);
 
@@ -581,7 +554,7 @@ public partial class SeedService
             "MOD-CERT-TEST-01",
             "PRG-CERT-TEST",
             [
-                ("ACT-CERT-TEST-01-01", ActivityStatus.Done, DateTime.UtcNow.AddDays(-1)),
+                ("ACT-CERT-TEST-01-01", ActivityStatus.Done, _seedNow.AddDays(-1)),
             ]);
 
         _loggerService.LogInformation("Finished seed enrollment activity progress");
@@ -636,7 +609,7 @@ public partial class SeedService
 
         if (!moduleEnrollment.StartedAt.HasValue)
         {
-            moduleEnrollment.StartedAt = DateTime.UtcNow.AddDays(-7);
+            moduleEnrollment.StartedAt = _seedNow.AddDays(-7);
             enrollmentUpdated = true;
         }
 
@@ -645,7 +618,7 @@ public partial class SeedService
             await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
         }
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var progressChanged = enrollmentUpdated;
 
         foreach (var (activityCode, status, completedAt) in activitySeeds)
@@ -736,7 +709,7 @@ public partial class SeedService
             if (progress.IsCompleted && progress.ActivityStatus != ActivityStatus.Done)
             {
                 progress.ActivityStatus = ActivityStatus.Done;
-                progress.CompletedAt ??= DateTime.UtcNow;
+                progress.CompletedAt ??= _seedNow;
                 await _unitOfWork.ActivityProgresses.Update(progress);
                 moduleEnrollmentIds.Add(progress.ModuleEnrollmentId);
                 changed = true;
@@ -815,7 +788,7 @@ public partial class SeedService
             return;
         }
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var submissions = new List<Submission>();
 
         if (!await SubmissionCodeExistsAsync("SUB-RML0301B"))
@@ -883,7 +856,7 @@ public partial class SeedService
             return;
         }
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var courseWebDev3 = await _unitOfWork.Courses.FirstOrDefaultAsync(c => c.Code == "CRS-WEBDEV-03");
         if (courseWebDev3 == null)
         {
@@ -1084,7 +1057,7 @@ public partial class SeedService
                   && pe.ProgramId == programWebDev.Id
                   && !pe.IsDeleted);
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var moduleEnrollment = new ModuleEnrollment
         {
             Id = Guid.NewGuid(),
@@ -1150,7 +1123,7 @@ public partial class SeedService
             return;
         }
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var createdCount = 0;
 
         var gradedSubmission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
@@ -1163,11 +1136,12 @@ public partial class SeedService
             if (existingEvidence == null)
             {
                 var roboticsClass = await _unitOfWork.Classes.FirstOrDefaultAsync(
-                    c => c.Code == "CLS-ROBOTICS-2026A" && !c.IsDeleted);
+                    c => c.Code == RoboticsCurrentClassCode && !c.IsDeleted);
                 if (roboticsClass == null)
                 {
                     _loggerService.LogWarning(
-                        "CLS-ROBOTICS-2026A not found; skipping seed submission evidence media.");
+                        "{ClassCode} not found; skipping seed submission evidence media.",
+                        RoboticsCurrentClassCode);
                 }
                 else
                 {

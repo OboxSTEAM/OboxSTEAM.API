@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -31,7 +31,7 @@ public partial class SeedService
                         ParentId = parent.Id,
                         StudentId = student1.Id,
                         IsVerified = true,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
                     },
@@ -41,7 +41,7 @@ public partial class SeedService
                         ParentId = parent.Id,
                         StudentId = student2.Id,
                         IsVerified = true,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
                     }
@@ -55,7 +55,7 @@ public partial class SeedService
                         ParentId = parent.Id,
                         StudentId = student3.Id,
                         IsVerified = false,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false
                     });

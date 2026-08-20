@@ -83,7 +83,7 @@ public partial class SeedService
             return false;
         }
 
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var allActivityIds = new List<(Guid ActivityId, Guid ModuleId)>();
 
         foreach (var module in modules)
