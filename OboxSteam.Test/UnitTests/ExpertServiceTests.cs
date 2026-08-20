@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using OboxSteam.Application.DTOs.ExpertDTO;
 using OboxSteam.Application.Exceptions;
+using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -19,9 +22,20 @@ public sealed class ExpertServiceTests
     private readonly Guid _boardId = Guid.Parse("77777777-7777-7777-7777-777777777777");
 
     private readonly InMemoryUnitOfWork _db = new();
+    private readonly Mock<IBlobService> _blobService = new();
 
     private ExpertService CreateSut() =>
-        new(_db, NullLogger<ExpertService>.Instance);
+        new(_db, _blobService.Object, NullLogger<ExpertService>.Instance);
+
+    private static IFormFile CreateAvatarFile(string fileName = "avatar.png", long length = 1024)
+    {
+        var stream = new MemoryStream(new byte[length]);
+        var file = new Mock<IFormFile>();
+        file.Setup(f => f.FileName).Returns(fileName);
+        file.Setup(f => f.Length).Returns(length);
+        file.Setup(f => f.OpenReadStream()).Returns(stream);
+        return file.Object;
+    }
 
     private void SeedUser(Guid? id = null, string code = "USR-001")
     {
@@ -623,5 +637,53 @@ public sealed class ExpertServiceTests
                 Institution = "Uni",
                 Year = 1900,
             }));
+    }
+
+    [Fact]
+    public async Task UploadAvatar_UploadsAndReplacesOldFile()
+    {
+        SeedExpert();
+        _db.Experts.Items[0].AvatarUrl = "https://cdn.test/old.png";
+        _blobService
+            .Setup(b => b.DeleteFileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _blobService
+            .Setup(b => b.UploadFileAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _blobService
+            .Setup(b => b.GetPreviewUrlAsync(It.IsAny<string>()))
+            .ReturnsAsync("https://cdn.test/avatars/new.png");
+
+        var sut = CreateSut();
+
+        var result = await sut.UploadAvatarAsync(_expertId, CreateAvatarFile());
+
+        Assert.Equal("https://cdn.test/avatars/new.png", result.AvatarUrl);
+        _blobService.Verify(b => b.DeleteFileAsync("https://cdn.test/old.png", It.IsAny<CancellationToken>()), Times.Once);
+        _blobService.Verify(
+            b => b.UploadFileAsync(
+                It.Is<string>(n => n.StartsWith($"{_expertId}_")),
+                It.IsAny<Stream>(),
+                "avatars",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UploadAvatar_Throws_WhenInvalidFileOrMissingExpert()
+    {
+        SeedExpert();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UploadAvatarAsync(_expertId, CreateAvatarFile("doc.pdf")));
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UploadAvatarAsync(_expertId, CreateAvatarFile(length: 6 * 1024 * 1024)));
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.UploadAvatarAsync(Guid.NewGuid(), CreateAvatarFile()));
     }
 }

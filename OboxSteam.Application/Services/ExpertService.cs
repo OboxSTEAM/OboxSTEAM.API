@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ExpertDTO;
@@ -12,11 +13,13 @@ namespace OboxSteam.Application.Services;
 public class ExpertService : IExpertService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBlobService _blobService;
     private readonly ILogger<ExpertService> _logger;
 
-    public ExpertService(IUnitOfWork unitOfWork, ILogger<ExpertService> logger)
+    public ExpertService(IUnitOfWork unitOfWork, IBlobService blobService, ILogger<ExpertService> logger)
     {
         _unitOfWork = unitOfWork;
+        _blobService = blobService;
         _logger = logger;
     }
 
@@ -335,6 +338,48 @@ public class ExpertService : IExpertService
 
         _logger.LogInformation("[AddExpertAsync] Expert '{Code}' added successfully with Id {Id}.",
             expert.Code, expert.Id);
+
+        return await GetExpertByIdAsync(expert.Id);
+    }
+
+    /// <summary>
+    /// Upload avatar for an expert.
+    /// Deletes the old avatar (if any) before uploading the new one.
+    /// </summary>
+    public async Task<ExpertResponseDto> UploadAvatarAsync(Guid id, IFormFile file)
+    {
+        _logger.LogInformation("[UploadAvatarAsync] Uploading avatar for expert ID: {ExpertId}", id);
+
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif" };
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+
+        if (!allowedExtensions.Contains(extension))
+            throw ErrorHelper.BadRequest("Only image files (.jpg, .jpeg, .png, .gif) are allowed.");
+
+        if (file.Length > 5 * 1024 * 1024)
+            throw ErrorHelper.BadRequest("Avatar file size must not exceed 5 MB.");
+
+        var expert = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
+        if (expert == null)
+            throw ErrorHelper.NotFound($"Expert with id '{id}' not found.");
+
+        if (!string.IsNullOrWhiteSpace(expert.AvatarUrl))
+        {
+            _logger.LogInformation("[UploadAvatarAsync] Deleting old avatar for expert {ExpertId}", id);
+            await _blobService.DeleteFileAsync(expert.AvatarUrl);
+        }
+
+        var fileName = $"{id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
+        await using var stream = file.OpenReadStream();
+        await _blobService.UploadFileAsync(fileName, stream, "avatars");
+
+        var avatarUrl = await _blobService.GetPreviewUrlAsync($"avatars/{fileName}");
+        expert.AvatarUrl = avatarUrl;
+
+        await _unitOfWork.Experts.Update(expert);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[UploadAvatarAsync] Avatar uploaded successfully for expert ID: {ExpertId}", id);
 
         return await GetExpertByIdAsync(expert.Id);
     }

@@ -144,6 +144,28 @@ public class ExpertController : ControllerBase
         return Ok(ApiResult<ExpertResponseDto>.Success(result, "200", "Expert updated successfully."));
     }
 
+    /// <summary>
+    /// Upload avatar for a specific expert.
+    /// </summary>
+    /// <param name="id">Expert ID.</param>
+    /// <param name="file">Image file (jpg, jpeg, png, gif). Max 5 MB.</param>
+    /// <returns>Updated expert profile with new avatar URL.</returns>
+    [HttpPost("{id:guid}/avatar")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Upload expert avatar",
+        Description = "Uploads a new avatar image for the specified expert. Replaces the existing avatar if one exists.")]
+    [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UploadAvatar([FromRoute] Guid id, IFormFile file)
+    {
+        var result = await _expertService.UploadAvatarAsync(id, file);
+        return Ok(ApiResult<ExpertResponseDto>.Success(result, "200", "Avatar uploaded successfully."));
+    }
+
     // =========================================================================
     // UPDATE PROGRAM  —  PUT /api/experts/{expertId}/programs/{programId}
     // =========================================================================
