@@ -1,4 +1,5 @@
 
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ModuleDTO;
@@ -14,12 +15,19 @@ namespace OboxSteam.Application.Services;
 
 public class ProgramService : IProgramService
 {
+    private static readonly HashSet<string> AllowedThumbnailExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".jpg", ".jpeg", ".png", ".webp" };
+    private const long MaxThumbnailSize = 5 * 1024 * 1024; // 5 MB
+    private const string ThumbnailFolder = "program-thumbnails";
+
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBlobService _blobService;
     private readonly ILogger<ProgramService> _logger;
 
-    public ProgramService(IUnitOfWork unitOfWork, ILogger<ProgramService> logger)
+    public ProgramService(IUnitOfWork unitOfWork, IBlobService blobService, ILogger<ProgramService> logger)
     {
         _unitOfWork = unitOfWork;
+        _blobService = blobService;
         _logger = logger;
     }
 
@@ -404,7 +412,7 @@ public class ProgramService : IProgramService
     // =========================================================================
 
 
-    public async Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request)
+    public async Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request, IFormFile? thumbnailFile = null)
     {
         _logger.LogInformation("[CreateProgramAsync] Start creating program: {Name} (Code: {Code})",
             request.Name, request.Code);
@@ -433,6 +441,16 @@ public class ProgramService : IProgramService
             Status = request.Status,
             Price = request.Price,
         };
+
+        if (thumbnailFile != null)
+        {
+            if (program.Id == Guid.Empty)
+            {
+                program.Id = Guid.NewGuid();
+            }
+
+            program.ThumbnailUrl = await UploadThumbnailFileAsync(program.Id, thumbnailFile);
+        }
 
         await _unitOfWork.Programs.AddAsync(program);
         await _unitOfWork.SaveChangesAsync();
@@ -574,6 +592,90 @@ public class ProgramService : IProgramService
                 UpdatedAt = m.UpdatedAt,
             }).ToList() ?? new(),
         };
+    }
+
+    public async Task<ProgramsResponseDto> UploadProgramThumbnailAsync(Guid id, IFormFile file)
+    {
+        _logger.LogInformation("[UploadProgramThumbnailAsync] Uploading thumbnail for ProgramId: {ProgramId}", id);
+
+        var program = await _unitOfWork.Programs.GetByIdAsync(id, p => p.Modules);
+        if (program == null || program.IsDeleted)
+            throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
+
+        if (!string.IsNullOrWhiteSpace(program.ThumbnailUrl))
+        {
+            _logger.LogInformation("[UploadProgramThumbnailAsync] Deleting old thumbnail for ProgramId: {ProgramId}", id);
+            await _blobService.DeleteFileAsync(program.ThumbnailUrl);
+        }
+
+        var previewUrl = await UploadThumbnailFileAsync(id, file);
+
+        program.ThumbnailUrl = previewUrl;
+        await _unitOfWork.Programs.Update(program);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[UploadProgramThumbnailAsync] Thumbnail updated for ProgramId: {ProgramId}, Url: {ThumbnailUrl}",
+            id,
+            previewUrl);
+
+        return new ProgramsResponseDto
+        {
+            Id = program.Id,
+            Code = program.Code,
+            Name = program.Name,
+            SeriesName = program.SeriesName,
+            Description = program.Description,
+            Level = program.Level,
+            Category = program.Category,
+            EstimatedDuration = program.EstimatedDuration,
+            SkillsGained = program.SkillsGained,
+            Rating = program.Rating,
+            TotalReviews = program.TotalReviews,
+            ThumbnailUrl = program.ThumbnailUrl,
+            Status = program.Status,
+            Price = program.Price,
+            CreatedAt = program.CreatedAt,
+            UpdatedAt = program.UpdatedAt,
+            Modules = program.Modules?.Select(m => new ModulesResponseDto
+            {
+                Id = m.Id,
+                Code = m.Code,
+                ProgramId = m.ProgramId,
+                Name = m.Name,
+                ModuleType = m.ModuleType,
+                ModuleOrder = m.ModuleOrder,
+                PrerequisiteModuleId = m.PrerequisiteModuleId,
+                IsMandatory = m.IsMandatory,
+                Price = m.Price,
+                RetakeFee = m.RetakeFee,
+                CreatedAt = m.CreatedAt,
+                UpdatedAt = m.UpdatedAt,
+            }).ToList() ?? new(),
+        };
+    }
+
+    private async Task<string> UploadThumbnailFileAsync(Guid programId, IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            throw ErrorHelper.BadRequest("Thumbnail file is required.");
+
+        if (string.IsNullOrWhiteSpace(file.FileName))
+            throw ErrorHelper.BadRequest("Thumbnail file name is invalid.");
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!AllowedThumbnailExtensions.Contains(extension))
+            throw ErrorHelper.BadRequest("Only image files (.jpg, .jpeg, .png, .webp) are allowed for program thumbnail.");
+
+        if (file.Length > MaxThumbnailSize)
+            throw ErrorHelper.BadRequest("Thumbnail file size must not exceed 5 MB.");
+
+        var fileName = $"{programId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension.ToLowerInvariant()}";
+        await using var stream = file.OpenReadStream();
+        await _blobService.UploadFileAsync(fileName, stream, ThumbnailFolder);
+
+        var s3Key = $"{ThumbnailFolder}/{fileName}";
+        return await _blobService.GetPreviewUrlAsync(s3Key);
     }
 
     // =========================================================================

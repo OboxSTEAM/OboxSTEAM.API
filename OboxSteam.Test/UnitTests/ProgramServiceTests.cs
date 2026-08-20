@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Exceptions;
+using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -18,9 +21,25 @@ public sealed class ProgramServiceTests
     private readonly Guid _expertId = Guid.Parse("66666666-6666-6666-6666-666666666666");
 
     private readonly InMemoryUnitOfWork _db = new();
+    private readonly Mock<IBlobService> _blobService = new();
 
     private ProgramService CreateSut() =>
-        new(_db, NullLogger<ProgramService>.Instance);
+        new(_db, _blobService.Object, NullLogger<ProgramService>.Instance);
+
+    private static IFormFile CreateThumbnailFile(
+        string fileName = "thumb.jpg",
+        string contentType = "image/jpeg",
+        int size = 1024)
+    {
+        var content = new byte[size];
+        var stream = new MemoryStream(content);
+        var file = new Mock<IFormFile>();
+        file.Setup(f => f.FileName).Returns(fileName);
+        file.Setup(f => f.ContentType).Returns(contentType);
+        file.Setup(f => f.Length).Returns(size);
+        file.Setup(f => f.OpenReadStream()).Returns(stream);
+        return file.Object;
+    }
 
     private Module SeedModule(Guid? programId = null, int moduleOrder = 1)
     {
@@ -277,6 +296,37 @@ public sealed class ProgramServiceTests
     }
 
     [Fact]
+    public async Task Create_WithThumbnailFile_UploadsAndSetsThumbnailUrl()
+    {
+        _blobService
+            .Setup(b => b.UploadFileAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _blobService
+            .Setup(b => b.GetPreviewUrlAsync(It.IsAny<string>()))
+            .ReturnsAsync("https://cdn.example.com/program-thumbnails/new-created.jpg");
+
+        var sut = CreateSut();
+
+        var result = await sut.CreateProgramAsync(
+            new CreateProgramRequestDto
+            {
+                Code = "PRG-WITH-THUMB",
+                Name = "Program With Thumbnail",
+                Category = ProgramCategory.Technology,
+                Level = DifficultyLevel.Intermediate,
+                Price = 150m,
+            },
+            CreateThumbnailFile());
+
+        Assert.Equal("https://cdn.example.com/program-thumbnails/new-created.jpg", result.ThumbnailUrl);
+        Assert.Equal("https://cdn.example.com/program-thumbnails/new-created.jpg", _db.Programs.Items[0].ThumbnailUrl);
+    }
+
+    [Fact]
     public async Task Create_Throws_WhenCodeDuplicate()
     {
         SeedProgram();
@@ -333,6 +383,50 @@ public sealed class ProgramServiceTests
             sut.UpdateProgramAsync(Guid.NewGuid(), new UpdateProgramRequestDto { Name = "X" }));
         await Assert.ThrowsAsync<ConflictException>(() =>
             sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Code = "PRG-002" }));
+    }
+
+    [Fact]
+    public async Task UploadThumbnail_UpdatesProgramThumbnailUrl()
+    {
+        var program = SeedProgram();
+        program.ThumbnailUrl = "https://old.example/old.png";
+        var sequence = new MockSequence();
+
+        _blobService
+            .InSequence(sequence)
+            .Setup(b => b.DeleteFileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _blobService
+            .InSequence(sequence)
+            .Setup(b => b.UploadFileAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _blobService
+            .InSequence(sequence)
+            .Setup(b => b.GetPreviewUrlAsync(It.IsAny<string>()))
+            .ReturnsAsync("https://cdn.example.com/program-thumbnails/new.jpg");
+
+        var sut = CreateSut();
+
+        var result = await sut.UploadProgramThumbnailAsync(_programId, CreateThumbnailFile());
+
+        Assert.Equal("https://cdn.example.com/program-thumbnails/new.jpg", result.ThumbnailUrl);
+        Assert.Equal("https://cdn.example.com/program-thumbnails/new.jpg", _db.Programs.Items[0].ThumbnailUrl);
+    }
+
+    [Fact]
+    public async Task UploadThumbnail_Throws_WhenFileInvalid()
+    {
+        SeedProgram();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UploadProgramThumbnailAsync(_programId, CreateThumbnailFile(fileName: "thumb.txt")));
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UploadProgramThumbnailAsync(_programId, CreateThumbnailFile(size: 0)));
     }
 
     // ── DeleteProgramAsync ────────────────────────────────────────────────────

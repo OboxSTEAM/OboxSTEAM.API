@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ExpertDTO;
 
@@ -14,6 +15,7 @@ public interface IExpertService
         int pageSize,
         string? code = null);
     Task<ExpertResponseDto> AddExpertAsync(ExpertCreateDto expertCreateDto);
+    Task<ExpertResponseDto> UploadAvatarAsync(Guid id, IFormFile file);
     Task<ExpertProgramSummaryDto> AddProgramToExpertAsync(Guid expertId, Guid programId, AddProgramToExpertDto? dto = null);
     Task<ExpertResponseDto> UpdateExpertAsync(Guid id, ExpertUpdateDto expertUpdateDto);
     Task<ExpertProgramSummaryDto> UpdateProgramOfExpertAsync(Guid expertId, Guid programId);

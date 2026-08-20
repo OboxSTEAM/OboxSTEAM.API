@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramDTO;
@@ -151,9 +152,10 @@ public class ProgramController : ControllerBase
 
     [HttpPost]
     [Authorize(Roles = "Admin,Manager")]
+    [Consumes("multipart/form-data")]
     [SwaggerOperation(
         Summary = "Create a new program",
-        Description = "Creates a new program with the provided information. Requires Admin or Manager role.")]
+        Description = "Creates a new program with form-data program information and uploads thumbnail image. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -161,9 +163,10 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
     public async Task<IActionResult> AddProgram(
-        [FromBody, SwaggerParameter("New program data to be created")] CreateProgramRequestDto dto)
+        [FromForm, SwaggerParameter("Program data to be created (multipart field prefix: data.<PropertyName>)")] CreateProgramRequestDto data,
+        IFormFile file)
     {
-        var result = await _programService.CreateProgramAsync(dto);
+        var result = await _programService.CreateProgramAsync(data, file);
 
         return CreatedAtAction(
             nameof(GetProgramById),
@@ -196,6 +199,28 @@ public class ProgramController : ControllerBase
 
         var result = await _programService.UpdateProgramAsync(id, dto);
         return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program updated successfully."));
+    }
+
+    /// <summary>
+    /// Upload thumbnail for a specific program.
+    /// </summary>
+    /// <param name="id">Program ID.</param>
+    /// <param name="file">Image file (jpg, jpeg, png, webp). Max 5 MB.</param>
+    /// <returns>Updated program with new thumbnail URL.</returns>
+    [HttpPost("{id:guid}/thumbnail")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Upload program thumbnail",
+        Description = "Uploads a new thumbnail image for the specified program. Replaces the existing thumbnail if one exists.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UploadProgramThumbnail([FromRoute] Guid id, IFormFile file)
+    {
+        var result = await _programService.UploadProgramThumbnailAsync(id, file);
+        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program thumbnail uploaded successfully."));
     }
 
     // =========================================================================
