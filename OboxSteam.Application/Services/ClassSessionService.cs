@@ -305,17 +305,17 @@ public sealed class ClassSessionService : IClassSessionService
             request.ActivityId,
             request.AssignmentId);
 
-        if (classEntity!.MentorId is null)
+        // Sessions may be scheduled before a mentor is assigned — the schedule is what
+        // mentors review when requesting the class. Overlap is only checkable (and only
+        // matters) once a mentor exists.
+        if (classEntity!.MentorId.HasValue)
         {
-            throw ErrorHelper.BadRequest(
-                "Cannot schedule a session for a class that has no assigned mentor.");
+            await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
+                _unitOfWork,
+                classEntity.MentorId.Value,
+                request.StartTime,
+                request.EndTime);
         }
-
-        await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
-            _unitOfWork,
-            classEntity.MentorId.Value,
-            request.StartTime,
-            request.EndTime);
 
         var entity = new ClassSession
         {
@@ -384,10 +384,16 @@ public sealed class ClassSessionService : IClassSessionService
         ClassValidator.ValidateClassExists(classEntity, classId);
         ClassSessionValidator.ValidateClassSchedulable(classEntity!);
 
-        if (classEntity!.MentorId is null)
+        // Generating while students are already enrolled would silently move sessions
+        // they can see. Draft classes and open-but-empty classes may (re)generate.
+        if (classEntity!.Status is ClassStatus.Open or ClassStatus.InProgress)
         {
-            throw ErrorHelper.BadRequest(
-                "Cannot generate sessions for a class that has no assigned mentor.");
+            var activeEnrollments = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, classId);
+            if (activeEnrollments > 0)
+            {
+                throw ErrorHelper.Conflict(
+                    "Cannot generate sessions while the class has enrolled students.");
+            }
         }
 
         var existingSessions = await _unitOfWork.ClassSessions.GetAllAsync(
@@ -408,31 +414,74 @@ public sealed class ClassSessionService : IClassSessionService
                 "The program curriculum has no LiveOnline/Offline activities or assignments to schedule.");
         }
 
-        var slots = BuildWeeklySlots(classEntity, request, items.Count);
+        var slotStarts = BuildWeeklySlotStarts(classEntity, request, items.Count);
 
-        foreach (var slot in slots)
+        // Each session's end comes from its own length: the activity's DurationMinutes,
+        // or the request's start/end window as the default length for assignment sessions
+        // (assignments have no activity to carry a duration).
+        var assignmentDuration = request.SessionEndTime - request.SessionStartTime;
+        var scheduled = items
+            .Zip(slotStarts, (item, start) =>
+            {
+                var duration = item.DurationMinutes is > 0
+                    ? TimeSpan.FromMinutes(item.DurationMinutes.Value)
+                    : assignmentDuration;
+                return (Item: item, Start: start, End: start.Add(duration));
+            })
+            .ToList();
+
+        // Late-generation guard: slots are chronological, so the first one is the earliest
+        // commitment (lesson or assignment window alike). It must be in the future and leave
+        // the class's join buffer for students to enroll before it happens.
+        var now = DateTime.UtcNow;
+        var firstStart = scheduled[0].Start;
+
+        if (firstStart <= now)
         {
-            await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
-                _unitOfWork,
-                classEntity.MentorId.Value,
-                slot.Start,
-                slot.End);
+            throw ErrorHelper.BadRequest(
+                $"The first session would start at {firstStart:yyyy-MM-dd HH:mm} UTC, which is in the past. " +
+                "Move the class start date forward before generating the schedule.");
         }
 
-        var entities = items
-            .Zip(slots, (item, slot) => new ClassSession
+        var bufferHours = classEntity.MinHoursBeforeAssignmentJoin;
+        if (firstStart < now.AddHours(bufferHours))
+        {
+            throw ErrorHelper.BadRequest(
+                $"The first session starts at {firstStart:yyyy-MM-dd HH:mm} UTC, less than the class's " +
+                $"{bufferHours}-hour enrollment buffer from now. Move the class start date forward " +
+                "so students have time to enroll.");
+        }
+
+        // No mentor yet: overlap is enforced later, when a mentor requests the class
+        // (request-time and approve-time checks).
+        if (classEntity.MentorId.HasValue)
+        {
+            foreach (var slot in scheduled)
+            {
+                await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
+                    _unitOfWork,
+                    classEntity.MentorId.Value,
+                    slot.Start,
+                    slot.End);
+            }
+        }
+
+        var entities = scheduled
+            .Select(slot => new ClassSession
             {
                 ClassId = classId,
-                ModuleId = item.ModuleId,
-                ActivityId = item.ActivityId,
-                AssignmentId = item.AssignmentId,
-                SessionKind = item.Kind,
-                Title = item.Title,
+                ModuleId = slot.Item.ModuleId,
+                ActivityId = slot.Item.ActivityId,
+                AssignmentId = slot.Item.AssignmentId,
+                SessionKind = slot.Item.Kind,
+                Title = slot.Item.Title,
                 StartTime = slot.Start,
                 EndTime = slot.End,
-                Location = item.Location,
-                MeetingUrl = item.MeetingUrl,
-                RequiresAttendance = item.RequiresAttendance,
+                // Venue/join link are set per session by the manager afterwards — the
+                // curriculum template no longer carries them.
+                Location = null,
+                MeetingUrl = null,
+                RequiresAttendance = slot.Item.RequiresAttendance,
                 Status = ClassSessionStatus.Scheduled,
             })
             .ToList();
@@ -459,8 +508,7 @@ public sealed class ClassSessionService : IClassSessionService
         Guid? AssignmentId,
         SessionKind Kind,
         string Title,
-        string? Location,
-        string? MeetingUrl,
+        int? DurationMinutes,
         bool RequiresAttendance);
 
     private async Task<List<CurriculumScheduleItem>> BuildCurriculumScheduleItemsAsync(Guid programId)
@@ -495,15 +543,20 @@ public sealed class ClassSessionService : IClassSessionService
         {
             foreach (var course in courses
                          .Where(c => c.ModuleId == module.Id)
-                         .OrderBy(c => c.CreatedAt)
+                         .OrderBy(c => c.CourseOrder)
                          .ThenBy(c => c.Code))
             {
                 foreach (var activity in activities
                              .Where(a => a.CourseId == course.Id)
                              .OrderBy(a => a.ActivityOrder))
                 {
-                    // Activity templates keep the venue address (Offline) or join link
-                    // (LiveOnline) in Location; split them onto the right session fields.
+                    if (activity.DurationMinutes is null or <= 0)
+                    {
+                        throw ErrorHelper.BadRequest(
+                            $"Activity '{activity.Name}' ({activity.Code}) has no DurationMinutes. " +
+                            "Set a session length on the curriculum activity before generating the schedule.");
+                    }
+
                     var isOffline = activity.ActivityType == ActivityType.Offline;
                     items.Add(new CurriculumScheduleItem(
                         module.Id,
@@ -511,8 +564,7 @@ public sealed class ClassSessionService : IClassSessionService
                         null,
                         isOffline ? SessionKind.FieldTrip : SessionKind.Lesson,
                         activity.Name,
-                        isOffline ? activity.Location : null,
-                        isOffline ? null : activity.Location,
+                        activity.DurationMinutes,
                         RequiresAttendance: true));
                 }
             }
@@ -529,7 +581,6 @@ public sealed class ClassSessionService : IClassSessionService
                     SessionKind.AssignmentWindow,
                     assignment.Title,
                     null,
-                    null,
                     RequiresAttendance: false));
             }
         }
@@ -537,20 +588,20 @@ public sealed class ClassSessionService : IClassSessionService
         return items;
     }
 
-    private static List<(DateTime Start, DateTime End)> BuildWeeklySlots(
+    private static List<DateTime> BuildWeeklySlotStarts(
         Class classEntity,
         GenerateClassSessionsRequestDto request,
         int count)
     {
         var daysOfWeek = request.DaysOfWeek.Distinct().ToHashSet();
-        var slots = new List<(DateTime Start, DateTime End)>(count);
+        var starts = new List<DateTime>(count);
 
-        for (var day = classEntity.StartDate.Date; slots.Count < count; day = day.AddDays(1))
+        for (var day = classEntity.StartDate.Date; starts.Count < count; day = day.AddDays(1))
         {
             if (day > classEntity.EndDate.Date)
             {
                 throw ErrorHelper.BadRequest(
-                    $"The class date range only fits {slots.Count} of {count} sessions with the selected weekly pattern. " +
+                    $"The class date range only fits {starts.Count} of {count} sessions with the selected weekly pattern. " +
                     "Extend the class end date or add more session days per week.");
             }
 
@@ -559,12 +610,10 @@ public sealed class ClassSessionService : IClassSessionService
                 continue;
             }
 
-            slots.Add((
-                day.Add(request.SessionStartTime.ToTimeSpan()),
-                day.Add(request.SessionEndTime.ToTimeSpan())));
+            starts.Add(day.Add(request.SessionStartTime.ToTimeSpan()));
         }
 
-        return slots;
+        return starts;
     }
 
     private static ClassSessionResponseDto MapToResponseDto(ClassSession session) => new()
@@ -631,14 +680,15 @@ public sealed class ClassSessionService : IClassSessionService
             session.AssignmentId = request.AssignmentId;
         }
 
-        ClassSessionValidator.ValidateActivityOrAssignmentRequired(targetActivityId, targetAssignmentId);
+        ClassSessionValidator.ValidateExactlyOneCurriculumItem(targetActivityId, targetAssignmentId);
 
         await ClassSessionValidator.ValidateReferencesAsync(
             _unitOfWork,
             classEntity!,
             targetModuleId,
             targetActivityId,
-            targetAssignmentId);
+            targetAssignmentId,
+            excludeSessionId: session.Id);
 
         if (request.SessionKind.HasValue)
         {
@@ -681,18 +731,15 @@ public sealed class ClassSessionService : IClassSessionService
                 targetStartTime,
                 targetEndTime);
 
-            if (classEntity!.MentorId is null)
+            if (classEntity!.MentorId.HasValue)
             {
-                throw ErrorHelper.BadRequest(
-                    "Cannot reschedule a session for a class that has no assigned mentor.");
+                await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
+                    _unitOfWork,
+                    classEntity.MentorId.Value,
+                    targetStartTime,
+                    targetEndTime,
+                    excludeSessionId: session.Id);
             }
-
-            await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
-                _unitOfWork,
-                classEntity.MentorId.Value,
-                targetStartTime,
-                targetEndTime,
-                excludeSessionId: session.Id);
         }
 
         if (request.Location != null)

@@ -44,15 +44,26 @@ public static class ClassSessionValidator
             throw ErrorHelper.BadRequest("Title is required.");
         }
 
-        ValidateActivityOrAssignmentRequired(request.ActivityId, request.AssignmentId);
+        ValidateExactlyOneCurriculumItem(request.ActivityId, request.AssignmentId);
         ScheduleTimeValidator.ValidateFutureRange(request.StartTime, request.EndTime);
     }
 
-    public static void ValidateActivityOrAssignmentRequired(Guid? activityId, Guid? assignmentId)
+    /// <summary>
+    /// A session maps to exactly one curriculum item (one activity XOR one assignment),
+    /// mirroring what session generation produces. Ad-hoc multi-purpose sessions are not
+    /// allowed — extra teaching content must enter through the curriculum itself.
+    /// </summary>
+    public static void ValidateExactlyOneCurriculumItem(Guid? activityId, Guid? assignmentId)
     {
         if (!activityId.HasValue && !assignmentId.HasValue)
         {
             throw ErrorHelper.BadRequest("At least one of ActivityId or AssignmentId must be provided.");
+        }
+
+        if (activityId.HasValue && assignmentId.HasValue)
+        {
+            throw ErrorHelper.BadRequest(
+                "Provide either ActivityId or AssignmentId, not both — a session maps to exactly one curriculum item.");
         }
     }
 
@@ -151,7 +162,7 @@ public static class ClassSessionValidator
         }
     }
 
-    public static async Task ValidateActivityBelongsToModuleAsync(
+    public static async Task<Activity> ValidateActivityBelongsToModuleAsync(
         IUnitOfWork unitOfWork,
         Guid activityId,
         Guid moduleId)
@@ -169,6 +180,8 @@ public static class ClassSessionValidator
         {
             throw ErrorHelper.BadRequest("Activity does not belong to the specified module.");
         }
+
+        return activity;
     }
 
     public static async Task ValidateAssignmentBelongsToModuleAsync(
@@ -193,7 +206,8 @@ public static class ClassSessionValidator
         Class classEntity,
         Guid moduleId,
         Guid? activityId,
-        Guid? assignmentId)
+        Guid? assignmentId,
+        Guid? excludeSessionId = null)
     {
         var module = await unitOfWork.Modules.GetByIdAsync(moduleId);
         var validatedModule = AssignmentValidator.ValidateModuleExists(module);
@@ -201,12 +215,51 @@ public static class ClassSessionValidator
 
         if (activityId.HasValue)
         {
-            await ValidateActivityBelongsToModuleAsync(unitOfWork, activityId.Value, moduleId);
+            var activity = await ValidateActivityBelongsToModuleAsync(
+                unitOfWork, activityId.Value, moduleId);
+
+            if (activity.ActivityType == ActivityType.SelfPaced)
+            {
+                throw ErrorHelper.BadRequest(
+                    "Self-paced activities are not schedulable — students complete them without a class session.");
+            }
         }
 
         if (assignmentId.HasValue)
         {
             await ValidateAssignmentBelongsToModuleAsync(unitOfWork, assignmentId.Value, moduleId);
+        }
+
+        ValidateNoDuplicateItemSession(
+            unitOfWork, classEntity.Id, activityId, assignmentId, excludeSessionId);
+    }
+
+    /// <summary>
+    /// One curriculum item has at most one active session per class — sessions must stick
+    /// to the curriculum. To add sessions, extend the curriculum first (which is guarded
+    /// by <see cref="CurriculumEditGuard"/>); to redo one, cancel the old session first.
+    /// </summary>
+    private static void ValidateNoDuplicateItemSession(
+        IUnitOfWork unitOfWork,
+        Guid classId,
+        Guid? activityId,
+        Guid? assignmentId,
+        Guid? excludeSessionId)
+    {
+        var duplicateExists = unitOfWork.ClassSessions
+            .GetQueryable()
+            .Any(s => s.ClassId == classId
+                      && !s.IsDeleted
+                      && s.Status != ClassSessionStatus.Cancelled
+                      && (excludeSessionId == null || s.Id != excludeSessionId.Value)
+                      && ((activityId.HasValue && s.ActivityId == activityId)
+                          || (assignmentId.HasValue && s.AssignmentId == assignmentId)));
+
+        if (duplicateExists)
+        {
+            throw ErrorHelper.Conflict(
+                "This curriculum item already has an active session in this class. " +
+                "Cancel the existing session first, or extend the curriculum to add more sessions.");
         }
     }
 }

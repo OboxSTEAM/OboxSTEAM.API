@@ -116,7 +116,7 @@ public static class ProgramCurriculumTreeLoader
             .GroupBy(c => c.ModuleId)
             .ToDictionary(
                 g => g.Key,
-                g => g.OrderBy(c => c.Name).ToList());
+                g => g.OrderBy(c => c.CourseOrder).ThenBy(c => c.Code).ToList());
 
         var milestoneLinksByMilestoneId = milestoneActivityLinks
             .GroupBy(rma => rma.ResearchMilestoneId)

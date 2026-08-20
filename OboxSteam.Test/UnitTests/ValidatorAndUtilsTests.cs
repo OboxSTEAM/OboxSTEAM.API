@@ -138,41 +138,37 @@ public sealed class ValidatorAndUtilsTests
     [Fact]
     public void ActivityValidator_ValidateTypeRules_CoversActivityKinds()
     {
-        var futureStart = FixedNow.AddHours(1);
-        var futureEnd = FixedNow.AddHours(2);
-
         ActivityValidator.ValidateTypeRules(
             ActivityType.SelfPaced,
-            futureStart,
-            futureEnd,
-            location: null,
-            requireQrCheckin: false,
-            utcNow: FixedNow);
+            durationMinutes: null,
+            requireQrCheckin: false);
 
         Assert.Throws<BadRequestException>(() =>
             ActivityValidator.ValidateTypeRules(
-                ActivityType.SelfPaced, null, null, null, requireQrCheckin: true, utcNow: FixedNow));
+                ActivityType.SelfPaced, 60, requireQrCheckin: false));
 
         Assert.Throws<BadRequestException>(() =>
             ActivityValidator.ValidateTypeRules(
-                ActivityType.LiveOnline, null, null, "Zoom", requireQrCheckin: false, utcNow: FixedNow));
+                ActivityType.SelfPaced, null, requireQrCheckin: true));
+
+        Assert.Throws<BadRequestException>(() =>
+            ActivityValidator.ValidateTypeRules(
+                ActivityType.LiveOnline, null, requireQrCheckin: false));
+
+        Assert.Throws<BadRequestException>(() =>
+            ActivityValidator.ValidateTypeRules(
+                ActivityType.Offline, 0, requireQrCheckin: false));
 
         ActivityValidator.ValidateTypeRules(
             ActivityType.Offline,
-            futureStart,
-            futureEnd,
-            "Room 1",
-            requireQrCheckin: true,
-            utcNow: FixedNow);
+            120,
+            requireQrCheckin: true);
 
         Assert.Throws<BadRequestException>(() =>
             ActivityValidator.ValidateTypeRules(
                 ActivityType.LiveOnline,
-                futureStart,
-                futureEnd,
-                "Zoom",
-                requireQrCheckin: true,
-                utcNow: FixedNow));
+                60,
+                requireQrCheckin: true));
     }
 
     // ── PortfolioSubdomainValidator ─────────────────────────────────────────
@@ -391,7 +387,9 @@ public sealed class ValidatorAndUtilsTests
         Assert.Throws<NotFoundException>(() =>
             ClassSessionValidator.ValidateClassSessionExists(null, Guid.NewGuid()));
         Assert.Throws<BadRequestException>(() =>
-            ClassSessionValidator.ValidateActivityOrAssignmentRequired(null, null));
+            ClassSessionValidator.ValidateExactlyOneCurriculumItem(null, null));
+        Assert.Throws<BadRequestException>(() =>
+            ClassSessionValidator.ValidateExactlyOneCurriculumItem(Guid.NewGuid(), Guid.NewGuid()));
     }
 
     // ── Utils ─────────────────────────────────────────────────────────────────
@@ -993,11 +991,20 @@ public sealed class ValidatorAndUtilsTests
                 MaxCapacity = 1
             }));
 
+        // Lead time: StartDate must be at least 14 days out to leave an enrollment window.
+        Assert.Throws<BadRequestException>(() =>
+            ClassValidator.ValidateCreateRequest(new CreateClassRequestDto
+            {
+                Code = "C", Name = "N", ProgramId = Guid.NewGuid(),
+                StartDate = DateTime.UtcNow.AddDays(7), EndDate = DateTime.UtcNow.AddDays(30),
+                MaxCapacity = 1
+            }));
+
         // Valid
         ClassValidator.ValidateCreateRequest(new CreateClassRequestDto
         {
             Code = "C", Name = "N", ProgramId = Guid.NewGuid(),
-            StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(1),
+            StartDate = DateTime.UtcNow.AddDays(21), EndDate = DateTime.UtcNow.AddDays(60),
             MaxCapacity = 1
         });
     }
@@ -1067,7 +1074,7 @@ public sealed class ValidatorAndUtilsTests
         var cls = new Class
         {
             Status = ClassStatus.Draft,
-            StartDate = DateTime.UtcNow,
+            StartDate = DateTime.UtcNow.AddDays(7),
             EndDate = DateTime.UtcNow.AddDays(30),
             MaxCapacity = 10,
             MinHoursBeforeAssignmentJoin = 0,

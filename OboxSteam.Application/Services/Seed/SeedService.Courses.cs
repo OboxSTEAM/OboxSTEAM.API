@@ -46,6 +46,7 @@ public partial class SeedService
                     ModuleId = moduleWebDev1.Id,
                     Name = "HTML & CSS - Evening Class",
                     Description = "Evening cohort for HTML structure, semantic markup, and responsive CSS layouts.",
+                    CourseOrder = 1,
                     CreatedAt = seedTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -65,6 +66,7 @@ public partial class SeedService
                     ModuleId = moduleWebDev2.Id,
                     Name = "JavaScript Basics - Weekend Bootcamp",
                     Description = "Weekend intensive on variables, DOM manipulation, and simple interactive pages.",
+                    CourseOrder = 1,
                     CreatedAt = seedTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -84,6 +86,7 @@ public partial class SeedService
                     ModuleId = moduleSteam1.Id,
                     Name = "STEAM Lab Kickoff - Cohort 1",
                     Description = "Introductory STEAM lab exploring interdisciplinary project-based learning.",
+                    CourseOrder = 1,
                     CreatedAt = seedTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -103,6 +106,7 @@ public partial class SeedService
                     ModuleId = moduleSteam2.Id,
                     Name = "Creative Prototyping - Workshop A",
                     Description = "Hands-on workshop for rapid prototyping with recycled materials and simple circuits.",
+                    CourseOrder = 1,
                     CreatedAt = seedTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -122,6 +126,7 @@ public partial class SeedService
                     ModuleId = moduleIot1.Id,
                     Name = "Sensors 101 - Morning Class",
                     Description = "Introduction to sensors, Arduino basics, and reading environmental data.",
+                    CourseOrder = 1,
                     CreatedAt = seedTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -141,6 +146,7 @@ public partial class SeedService
                     ModuleId = moduleIot2.Id,
                     Name = "Cloud Lab - Cohort Beta",
                     Description = "Connect devices to the cloud using MQTT and visualize live sensor data.",
+                    CourseOrder = 1,
                     CreatedAt = seedTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -160,6 +166,7 @@ public partial class SeedService
                     ModuleId = moduleCertTest.Id,
                     Name = "Certificate Test Course",
                     Description = "Single-course fixture for certificate generation testing.",
+                    CourseOrder = 1,
                     CreatedAt = seedTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false

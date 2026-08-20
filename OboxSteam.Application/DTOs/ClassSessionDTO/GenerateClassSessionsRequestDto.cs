@@ -6,7 +6,9 @@ namespace OboxSteam.Application.DTOs.ClassSessionDTO;
 /// Weekly repeat pattern used to bulk-generate class sessions from the program curriculum.
 /// LiveOnline/Offline activities (ordered by module, course, then ActivityOrder) and assignments
 /// are placed into consecutive weekly slots starting from the class start date.
-/// Times are interpreted as UTC, consistent with the rest of the scheduling API.
+/// Each activity session ends at <see cref="SessionStartTime"/> + the activity's DurationMinutes;
+/// assignment windows use <see cref="SessionEndTime"/> − <see cref="SessionStartTime"/> as their
+/// default length (assignments have no activity to carry a duration). Times are UTC.
 /// </summary>
 public class GenerateClassSessionsRequestDto
 {
@@ -19,7 +21,11 @@ public class GenerateClassSessionsRequestDto
     [Required(ErrorMessage = "SessionStartTime is required.")]
     public TimeOnly SessionStartTime { get; set; }
 
-    /// <summary>Time of day each session ends (UTC). Must be after <see cref="SessionStartTime"/>.</summary>
+    /// <summary>
+    /// Only used to derive the default length of AssignmentWindow sessions
+    /// (<see cref="SessionEndTime"/> − <see cref="SessionStartTime"/>). Activity sessions
+    /// take their length from the activity's DurationMinutes instead.
+    /// </summary>
     [Required(ErrorMessage = "SessionEndTime is required.")]
     public TimeOnly SessionEndTime { get; set; }
 }

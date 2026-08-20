@@ -15,6 +15,12 @@ public class Course : BaseEntity
 
     public string? Description { get; set; }
 
+    /// <summary>
+    /// 1-based position of the course within its module. Drives curriculum ordering
+    /// when generating class sessions (modules by ModuleOrder, then courses by CourseOrder).
+    /// </summary>
+    public int CourseOrder { get; set; }
+
     // Navigation
     public ICollection<Activity> Activities { get; set; } = new List<Activity>();
     public ICollection<Assignment> Assignments { get; set; } = new List<Assignment>();

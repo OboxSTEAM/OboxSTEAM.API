@@ -72,7 +72,7 @@ public class ModuleService : IModuleService
             UpdatedAt = module.UpdatedAt,
             Courses = module.Courses?
                 .Where(c => !c.IsDeleted)
-                .OrderBy(c => c.Name)
+                .OrderBy(c => c.CourseOrder)
                 .Select(c => new CourseResponseDto
                 {
                     Id = c.Id,
@@ -80,6 +80,7 @@ public class ModuleService : IModuleService
                     ModuleId = c.ModuleId,
                     Name = c.Name,
                     Description = c.Description,
+                    CourseOrder = c.CourseOrder,
                     CreatedAt = c.CreatedAt,
                     UpdatedAt = c.UpdatedAt,
                 }).ToList() ?? new(),
@@ -122,7 +123,7 @@ public class ModuleService : IModuleService
             UpdatedAt = module.UpdatedAt,
             Courses = module.Courses?
                 .Where(c => !c.IsDeleted)
-                .OrderBy(c => c.Name)
+                .OrderBy(c => c.CourseOrder)
                 .Select(c => new CourseResponseDto
                 {
                     Id = c.Id,
@@ -130,6 +131,7 @@ public class ModuleService : IModuleService
                     ModuleId = c.ModuleId,
                     Name = c.Name,
                     Description = c.Description,
+                    CourseOrder = c.CourseOrder,
                     CreatedAt = c.CreatedAt,
                     UpdatedAt = c.UpdatedAt,
                 }).ToList() ?? new(),
@@ -200,7 +202,7 @@ public class ModuleService : IModuleService
 
         var coursesByModuleId = courses
             .GroupBy(course => course.ModuleId)
-            .ToDictionary(group => group.Key, group => group.OrderBy(c => c.Name).ToList());
+            .ToDictionary(group => group.Key, group => group.OrderBy(c => c.CourseOrder).ToList());
 
         var dtos = items.Select(module => new ModulesResponseDto
         {
@@ -225,6 +227,7 @@ public class ModuleService : IModuleService
                     ModuleId = c.ModuleId,
                     Name = c.Name,
                     Description = c.Description,
+                    CourseOrder = c.CourseOrder,
                     CreatedAt = c.CreatedAt,
                     UpdatedAt = c.UpdatedAt,
                 }).ToList()
@@ -254,6 +257,8 @@ public class ModuleService : IModuleService
             _logger.LogWarning("[CreateModuleAsync] Program with Id {Id} not found.", request.ProgramId);
             throw ErrorHelper.NotFound($"Program with id '{request.ProgramId}' not found.");
         }
+
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, request.ProgramId);
 
         var existing = await _unitOfWork.Modules.FirstOrDefaultAsync(
             m => m.Code.ToLower() == request.Code.ToLower() && !m.IsDeleted);
@@ -346,6 +351,8 @@ public class ModuleService : IModuleService
             throw ErrorHelper.NotFound($"Module with id '{id}' not found.");
         }
 
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module.ProgramId);
+
         if (!string.IsNullOrWhiteSpace(request.Code) &&
             !module.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase))
         {
@@ -372,6 +379,9 @@ public class ModuleService : IModuleService
                 _logger.LogWarning("[UpdateModuleAsync] Program with Id {Id} not found.", request.ProgramId.Value);
                 throw ErrorHelper.NotFound($"Program with id '{request.ProgramId}' not found.");
             }
+
+            // Moving a module edits the target program's curriculum as well.
+            await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, request.ProgramId.Value);
 
             module.ProgramId = request.ProgramId.Value;
             isUpdated = true;
@@ -465,6 +475,8 @@ public class ModuleService : IModuleService
             _logger.LogWarning("[DeleteModuleAsync] Module with Id {Id} not found.", id);
             throw ErrorHelper.NotFound($"Module with id '{id}' not found.");
         }
+
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module.ProgramId);
 
         await _unitOfWork.Modules.SoftRemove(module);
         await _unitOfWork.SaveChangesAsync();

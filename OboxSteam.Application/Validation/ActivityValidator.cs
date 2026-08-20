@@ -53,26 +53,22 @@ public static class ActivityValidator
         }
     }
 
+    /// <summary>
+    /// Type-specific rules. Activities carry no schedule or venue — those live on the
+    /// generated <see cref="ClassSession"/>; an activity only declares its session length.
+    /// </summary>
     public static void ValidateTypeRules(
         ActivityType activityType,
-        DateTime? startTime,
-        DateTime? endTime,
-        string? location,
-        bool requireQrCheckin,
-        DateTime? utcNow = null)
+        int? durationMinutes,
+        bool requireQrCheckin)
     {
         switch (activityType)
         {
             case ActivityType.SelfPaced:
-                if (startTime.HasValue || endTime.HasValue)
+                if (durationMinutes.HasValue)
                 {
-                    ScheduleTimeValidator.ValidateRequiredIfAnyProvided(startTime, endTime);
-                    ScheduleTimeValidator.ValidateFutureRange(
-                        startTime,
-                        endTime,
-                        startFieldName: "StartTime",
-                        endFieldName: "EndTime",
-                        utcNow: utcNow);
+                    throw ErrorHelper.BadRequest(
+                        "DurationMinutes is not allowed for SelfPaced activities — they are never scheduled.");
                 }
 
                 if (requireQrCheckin)
@@ -84,24 +80,11 @@ public static class ActivityValidator
 
             case ActivityType.LiveOnline:
             case ActivityType.Offline:
-                if (!startTime.HasValue || !endTime.HasValue)
+                if (!durationMinutes.HasValue || durationMinutes.Value <= 0)
                 {
                     throw ErrorHelper.BadRequest(
-                        "StartTime and EndTime are required for LiveOnline and Offline activities.");
+                        "DurationMinutes must be a positive number for LiveOnline and Offline activities.");
                 }
-
-                if (string.IsNullOrWhiteSpace(location))
-                {
-                    throw ErrorHelper.BadRequest(
-                        "Location is required for LiveOnline and Offline activities.");
-                }
-
-                ScheduleTimeValidator.ValidateFutureRange(
-                    startTime,
-                    endTime,
-                    startFieldName: "StartTime",
-                    endFieldName: "EndTime",
-                    utcNow: utcNow);
 
                 if (activityType == ActivityType.LiveOnline && requireQrCheckin)
                 {

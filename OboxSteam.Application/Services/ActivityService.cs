@@ -29,6 +29,23 @@ public class ActivityService : IActivityService
         _syncEventPublisher = syncEventPublisher;
     }
 
+    private async Task EnsureCurriculumEditableForCourseAsync(Guid courseId)
+    {
+        var course = await _unitOfWork.Courses.GetByIdAsync(courseId);
+        if (course is null || course.IsDeleted)
+        {
+            return;
+        }
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(course.ModuleId);
+        if (module is null || module.IsDeleted)
+        {
+            return;
+        }
+
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module.ProgramId);
+    }
+
     private async Task PublishCurriculumStructureChangedForCourseAsync(Guid courseId)
     {
         var course = await _unitOfWork.Courses.GetByIdAsync(courseId);
@@ -95,8 +112,7 @@ public class ActivityService : IActivityService
             "code" => isDescending ? query.OrderByDescending(a => a.Code) : query.OrderBy(a => a.Code),
             "activityorder" => isDescending ? query.OrderByDescending(a => a.ActivityOrder) : query.OrderBy(a => a.ActivityOrder),
             "activitytype" => isDescending ? query.OrderByDescending(a => a.ActivityType) : query.OrderBy(a => a.ActivityType),
-            "starttime" => isDescending ? query.OrderByDescending(a => a.StartTime) : query.OrderBy(a => a.StartTime),
-            "endtime" => isDescending ? query.OrderByDescending(a => a.EndTime) : query.OrderBy(a => a.EndTime),
+            "durationminutes" => isDescending ? query.OrderByDescending(a => a.DurationMinutes) : query.OrderBy(a => a.DurationMinutes),
             "createdat" => isDescending ? query.OrderByDescending(a => a.CreatedAt) : query.OrderBy(a => a.CreatedAt),
             _ => isDescending ? query.OrderByDescending(a => a.CreatedAt) : query.OrderBy(a => a.CreatedAt),
         };
@@ -117,9 +133,7 @@ public class ActivityService : IActivityService
             ActivityType = a.ActivityType,
             Description = a.Description,
             ActivityOrder = a.ActivityOrder,
-            Location = a.Location,
-            StartTime = a.StartTime,
-            EndTime = a.EndTime,
+            DurationMinutes = a.DurationMinutes,
             RequireQrCheckin = a.RequireQrCheckin,
             RequireMediaEvidence = a.RequireMediaEvidence,
             CreatedAt = a.CreatedAt,
@@ -167,9 +181,7 @@ public class ActivityService : IActivityService
             ActivityType = activity.ActivityType,
             Description = activity.Description,
             ActivityOrder = activity.ActivityOrder,
-            Location = activity.Location,
-            StartTime = activity.StartTime,
-            EndTime = activity.EndTime,
+            DurationMinutes = activity.DurationMinutes,
             RequireQrCheckin = activity.RequireQrCheckin,
             RequireMediaEvidence = activity.RequireMediaEvidence,
             CreatedAt = activity.CreatedAt,
@@ -190,6 +202,8 @@ public class ActivityService : IActivityService
 
         var course = await _unitOfWork.Courses.GetByIdAsync(request.CourseId);
         ActivityValidator.ValidateCourseExists(course, request.CourseId);
+
+        await EnsureCurriculumEditableForCourseAsync(request.CourseId);
 
         var existing = await _unitOfWork.Activities.FirstOrDefaultAsync(
             a => a.Code.ToLower() == request.Code.ToLower() && !a.IsDeleted);
@@ -217,9 +231,7 @@ public class ActivityService : IActivityService
 
         ActivityValidator.ValidateTypeRules(
             request.ActivityType,
-            request.StartTime,
-            request.EndTime,
-            request.Location,
+            request.DurationMinutes,
             request.RequireQrCheckin);
 
         // Insert-in-the-middle: shift existing activities at or after the requested slot.
@@ -245,9 +257,7 @@ public class ActivityService : IActivityService
             ActivityType = request.ActivityType,
             Description = request.Description,
             ActivityOrder = request.ActivityOrder,
-            Location = request.Location,
-            StartTime = request.StartTime,
-            EndTime = request.EndTime,
+            DurationMinutes = request.DurationMinutes,
             RequireQrCheckin = request.RequireQrCheckin,
             RequireMediaEvidence = request.RequireMediaEvidence,
         };
@@ -269,9 +279,7 @@ public class ActivityService : IActivityService
             ActivityType = activity.ActivityType,
             Description = activity.Description,
             ActivityOrder = activity.ActivityOrder,
-            Location = activity.Location,
-            StartTime = activity.StartTime,
-            EndTime = activity.EndTime,
+            DurationMinutes = activity.DurationMinutes,
             RequireQrCheckin = activity.RequireQrCheckin,
             RequireMediaEvidence = activity.RequireMediaEvidence,
             CreatedAt = activity.CreatedAt,
@@ -317,21 +325,22 @@ public class ActivityService : IActivityService
         var courseChanged = request.CourseId.HasValue && request.CourseId.Value != oldCourseId;
         var targetCourseId = courseChanged ? request.CourseId!.Value : oldCourseId;
 
+        await EnsureCurriculumEditableForCourseAsync(oldCourseId);
+
         if (courseChanged)
         {
             var targetCourse = await _unitOfWork.Courses.GetByIdAsync(targetCourseId);
             ActivityValidator.ValidateCourseExists(targetCourse, targetCourseId);
+            await EnsureCurriculumEditableForCourseAsync(targetCourseId);
         }
 
-        // When an activity is SelfPaced it has no schedule; clear location/times
-        // (and QR check-in, which the domain only permits for Offline) so a stale schedule is
-        // never persisted or returned after the type switches.
+        // When an activity is SelfPaced it is never scheduled, so it has no session length
+        // (and QR check-in, which the domain only permits for Offline, is cleared as well)
+        // — stale scheduling data is never persisted or returned after the type switches.
         var resolvedActivityType = request.ActivityType ?? activity.ActivityType;
         var isSelfPaced = resolvedActivityType == ActivityType.SelfPaced;
 
-        var resolvedStartTime = isSelfPaced ? null : request.StartTime ?? activity.StartTime;
-        var resolvedEndTime = isSelfPaced ? null : request.EndTime ?? activity.EndTime;
-        var resolvedLocation = isSelfPaced ? null : request.Location ?? activity.Location;
+        var resolvedDurationMinutes = isSelfPaced ? null : request.DurationMinutes ?? activity.DurationMinutes;
         var resolvedRequireQrCheckin = !isSelfPaced && (request.RequireQrCheckin ?? activity.RequireQrCheckin);
 
         await ActivityValidator.ValidateActivityTypeForCourseAsync(
@@ -341,9 +350,7 @@ public class ActivityService : IActivityService
 
         ActivityValidator.ValidateTypeRules(
             resolvedActivityType,
-            resolvedStartTime,
-            resolvedEndTime,
-            resolvedLocation,
+            resolvedDurationMinutes,
             resolvedRequireQrCheckin);
 
         if (courseChanged)
@@ -370,9 +377,7 @@ public class ActivityService : IActivityService
             activity.Description = request.Description;
         }
 
-        activity.Location = resolvedLocation;
-        activity.StartTime = resolvedStartTime;
-        activity.EndTime = resolvedEndTime;
+        activity.DurationMinutes = resolvedDurationMinutes;
         activity.RequireQrCheckin = resolvedRequireQrCheckin;
 
         if (request.RequireMediaEvidence.HasValue)
@@ -401,9 +406,7 @@ public class ActivityService : IActivityService
             ActivityType = activity.ActivityType,
             Description = activity.Description,
             ActivityOrder = activity.ActivityOrder,
-            Location = activity.Location,
-            StartTime = activity.StartTime,
-            EndTime = activity.EndTime,
+            DurationMinutes = activity.DurationMinutes,
             RequireQrCheckin = activity.RequireQrCheckin,
             RequireMediaEvidence = activity.RequireMediaEvidence,
             CreatedAt = activity.CreatedAt,
@@ -522,6 +525,8 @@ public class ActivityService : IActivityService
             _logger.LogWarning("[DeleteActivityAsync] Activity with Id {Id} not found.", activityId);
             return false;
         }
+
+        await EnsureCurriculumEditableForCourseAsync(activity.CourseId);
 
         await _unitOfWork.Activities.SoftRemove(activity);
         await _unitOfWork.SaveChangesAsync();

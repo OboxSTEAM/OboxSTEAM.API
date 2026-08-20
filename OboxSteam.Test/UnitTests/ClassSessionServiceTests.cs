@@ -530,15 +530,19 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
-    public async Task Create_Throws_WhenNoMentorAssigned()
+    public async Task Create_Succeeds_WithoutMentorAssigned()
     {
+        // Sessions may be scheduled before a mentor is assigned — the timetable is what
+        // mentors review before requesting the class. Overlap is only checked once a
+        // mentor exists.
         SeedCurriculum();
         SeedClass(assignMentor: false);
         var sut = CreateSut();
 
-        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.CreateClassSessionAsync(BuildCreateRequest()));
-        Assert.Contains("no assigned mentor", ex.Message);
+        var result = await sut.CreateClassSessionAsync(BuildCreateRequest());
+
+        Assert.NotNull(result);
+        Assert.Single(_db.ClassSessions.Items);
     }
 
     [Fact]
@@ -563,6 +567,7 @@ public sealed class ClassSessionServiceTests
         var start = _now.AddDays(3);
         var end = start.AddHours(2);
         SeedSession(
+            activityId: Guid.Parse("abababab-abab-abab-abab-abababababab"),
             startTime: start.AddMinutes(-30),
             endTime: end.AddMinutes(30),
             classEntity: classEntity);
@@ -570,6 +575,68 @@ public sealed class ClassSessionServiceTests
 
         await Assert.ThrowsAsync<ConflictException>(() =>
             sut.CreateClassSessionAsync(BuildCreateRequest(start: start, end: end)));
+    }
+
+    [Fact]
+    public async Task Create_Throws_WhenBothActivityAndAssignment()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateClassSessionAsync(BuildCreateRequest(assignmentId: _assignmentId)));
+        Assert.Contains("exactly one curriculum item", ex.Message);
+    }
+
+    [Fact]
+    public async Task Create_Throws_WhenActivitySelfPaced()
+    {
+        var selfPacedId = Guid.Parse("acacacac-acac-acac-acac-acacacacacac");
+        SeedCurriculum();
+        _db.Activities.Seed(new Activity
+        {
+            Id = selfPacedId,
+            Code = "ACT-SP",
+            Name = "Self-paced",
+            CourseId = _courseId,
+            ActivityType = ActivityType.SelfPaced,
+            ActivityOrder = 2,
+            IsDeleted = false,
+        });
+        SeedClass();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateClassSessionAsync(BuildCreateRequest(activityId: selfPacedId)));
+        Assert.Contains("Self-paced", ex.Message);
+    }
+
+    [Fact]
+    public async Task Create_ThrowsConflict_WhenItemAlreadyHasActiveSession()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(status: ClassSessionStatus.Scheduled);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.CreateClassSessionAsync(BuildCreateRequest(start: _now.AddDays(4))));
+        Assert.Contains("already has an active session", ex.Message);
+    }
+
+    [Fact]
+    public async Task Create_Succeeds_AfterPriorSessionCancelled()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(status: ClassSessionStatus.Cancelled);
+        var sut = CreateSut();
+
+        var result = await sut.CreateClassSessionAsync(BuildCreateRequest(start: _now.AddDays(4)));
+
+        Assert.Equal(ClassSessionStatus.Scheduled, result.Status);
+        Assert.Equal(2, _db.ClassSessions.Items.Count);
     }
 
     [Fact]
@@ -643,12 +710,11 @@ public sealed class ClassSessionServiceTests
         {
             ModuleId = otherModuleId,
             ActivityId = otherActivityId,
-            AssignmentId = otherAssignmentId,
         });
 
         Assert.Equal(otherModuleId, result.ModuleId);
         Assert.Equal(otherActivityId, result.ActivityId);
-        Assert.Equal(otherAssignmentId, result.AssignmentId);
+        Assert.Null(result.AssignmentId);
     }
 
     [Fact]
@@ -680,7 +746,7 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
-    public async Task Update_Throws_WhenRescheduleWithoutMentor()
+    public async Task Update_RescheduleSucceeds_WithoutMentorAssigned()
     {
         SeedCurriculum();
         SeedClass(assignMentor: false);
@@ -688,13 +754,14 @@ public sealed class ClassSessionServiceTests
         var sut = CreateSut();
         var newStart = _now.AddDays(5);
 
-        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
-            {
-                StartTime = newStart,
-                EndTime = newStart.AddHours(2),
-            }));
-        Assert.Contains("no assigned mentor", ex.Message);
+        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            StartTime = newStart,
+            EndTime = newStart.AddHours(2),
+        });
+
+        Assert.Equal(newStart, result.StartTime);
+        Assert.Equal(newStart.AddHours(2), result.EndTime);
     }
 
     [Fact]

@@ -20,9 +20,8 @@ public partial class SeedService
             var allCourses = await _unitOfWork.Courses.GetAllAsync();
             var courseByCode = allCourses.ToDictionary(c => c.Code, c => c);
             var seedTime = DateTime.UtcNow;
-            var baseDate = seedTime.Date;
 
-            var activities = CreateSeedActivities(courseByCode, baseDate, seedTime);
+            var activities = CreateSeedActivities(courseByCode, seedTime);
 
             if (activities.Count > 0)
             {

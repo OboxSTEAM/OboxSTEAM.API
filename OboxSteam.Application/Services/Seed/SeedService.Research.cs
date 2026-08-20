@@ -894,6 +894,7 @@ public partial class SeedService
                 ModuleId = moduleWebDev3.Id,
                 Name = "Responsive Design & Deployment - Capstone Cohort",
                 Description = "Research cohort for responsive design and deployment capstone work.",
+                CourseOrder = 1,
                 CreatedAt = seedTime,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
@@ -904,17 +905,11 @@ public partial class SeedService
             var activities = new List<Activity>
             {
                 NewActivity("ACT-WEBDEV-03-01", "Responsive Design Brief", ActivityType.SelfPaced, 1,
-                    "Review responsive design requirements and breakpoints.", null, null, null, false, false),
+                    "Review responsive design requirements and breakpoints.", null, false, false),
                 NewActivity("ACT-WEBDEV-03-02", "Deployment Workshop", ActivityType.LiveOnline, 2,
-                    "Live session on hosting and deployment pipelines.",
-                    "https://meet.google.com/webdev-deploy",
-                    seedTime.AddDays(10).Date.AddHours(10),
-                    seedTime.AddDays(10).Date.AddHours(12), false, false),
+                    "Live session on hosting and deployment pipelines.", 120, false, false),
                 NewActivity("ACT-WEBDEV-03-03", "Capstone Demo Day", ActivityType.LiveOnline, 3,
-                    "Present deployed capstone sites to mentors.",
-                    "https://meet.google.com/webdev-capstone",
-                    seedTime.AddDays(28).Date.AddHours(14),
-                    seedTime.AddDays(28).Date.AddHours(16), false, true)
+                    "Present deployed capstone sites to mentors.", 120, false, true)
             };
 
             foreach (var activity in activities)
