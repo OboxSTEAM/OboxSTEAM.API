@@ -62,6 +62,11 @@ mentor, `MinHoursBeforeAssignmentJoin`, `ScheduleSummary`.
 on `MeetingUrl` (separate from free-text `Location`). `SessionAttendance` records
 attendance status per student.
 
+Mentor rollup: `GET /api/classes/{classId}/curriculum-progress` aggregates
+activity and assignment progress for active class enrollments (assigned mentor
+only). Modules/activities/assignments are always returned with zero counts when
+there is no progress.
+
 Class APIs are exposed through program and enrollment flows; entities exist in
 domain and migrations.
 

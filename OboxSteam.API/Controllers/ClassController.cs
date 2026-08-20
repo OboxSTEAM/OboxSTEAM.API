@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.ClassCurriculumProgressDTO;
 using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.ClassMentorRequestDTO;
 using OboxSteam.Application.Interfaces;
@@ -16,13 +17,16 @@ public class ClassController : ControllerBase
 {
     private readonly IClassService _classService;
     private readonly IClassMentorRequestService _classMentorRequestService;
+    private readonly IClassCurriculumProgressService _classCurriculumProgressService;
 
     public ClassController(
         IClassService classService,
-        IClassMentorRequestService classMentorRequestService)
+        IClassMentorRequestService classMentorRequestService,
+        IClassCurriculumProgressService classCurriculumProgressService)
     {
         _classService = classService;
         _classMentorRequestService = classMentorRequestService;
+        _classCurriculumProgressService = classCurriculumProgressService;
     }
 
     // =========================================================================
@@ -131,6 +135,32 @@ public class ClassController : ControllerBase
         var result = await _classService.GetClassWithSessionsAsync(classId);
 
         return Ok(ApiResult<ClassWithSessionsResponseDto>.Success(result, "200", "Class sessions retrieved successfully."));
+    }
+
+    // =========================================================================
+    // CURRICULUM PROGRESS  —  GET /api/classes/{classId}/curriculum-progress
+    // [Mentor — assigned mentor of the class]
+    // =========================================================================
+
+    [HttpGet("{classId:guid}/curriculum-progress")]
+    [Authorize(Roles = "Mentor")]
+    [SwaggerOperation(
+        Summary = "Get class curriculum progress rollup",
+        Description = "Returns activity Done/InProgress counts and assignment submitted/graded aggregates "
+            + "for active students in the class. Modules/activities/assignments are always included "
+            + "(zeros when no progress). Roster PII is not returned. Requires the assigned mentor of the class.")]
+    [ProducesResponseType(typeof(ApiResult<ClassCurriculumProgressDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetCurriculumProgress([FromRoute] Guid classId)
+    {
+        var result = await _classCurriculumProgressService.GetCurriculumProgressAsync(classId);
+
+        return Ok(ApiResult<ClassCurriculumProgressDto>.Success(
+            result,
+            "200",
+            "Class curriculum progress retrieved successfully."));
     }
 
     // =========================================================================
