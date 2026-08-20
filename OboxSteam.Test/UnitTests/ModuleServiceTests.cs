@@ -20,7 +20,7 @@ public sealed class ModuleServiceTests
     private readonly InMemoryUnitOfWork _db = new();
 
     private ModuleService CreateSut() =>
-        new(_db, NullLogger<ModuleService>.Instance);
+        new(_db, NullLogger<ModuleService>.Instance, new FakeSyncEventPublisher());
 
     private void SeedProgram(Guid? id = null)
     {

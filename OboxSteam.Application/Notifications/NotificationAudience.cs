@@ -7,13 +7,20 @@ public sealed class NotificationAudience
     public Guid? UserId { get; }
     public Guid? StudentId { get; }
     public Guid? ClassId { get; }
+    public Guid? ProgramId { get; }
 
-    private NotificationAudience(NotificationAudienceKind kind, Guid? userId = null, Guid? studentId = null, Guid? classId = null)
+    private NotificationAudience(
+        NotificationAudienceKind kind,
+        Guid? userId = null,
+        Guid? studentId = null,
+        Guid? classId = null,
+        Guid? programId = null)
     {
         Kind = kind;
         UserId = userId;
         StudentId = studentId;
         ClassId = classId;
+        ProgramId = programId;
     }
 
     /// <param name="contextStudentId">
@@ -43,4 +50,11 @@ public sealed class NotificationAudience
 
     public static NotificationAudience ForManagers()
         => new(NotificationAudienceKind.Managers);
+
+    /// <summary>
+    /// Everyone following a program's curriculum: actively enrolled students, their verified
+    /// parents, and mentors of the program's classes. Used by ephemeral sync events.
+    /// </summary>
+    public static NotificationAudience ForProgramParticipants(Guid programId)
+        => new(NotificationAudienceKind.ProgramParticipants, programId: programId);
 }

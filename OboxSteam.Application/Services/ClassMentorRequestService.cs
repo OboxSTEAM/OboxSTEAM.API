@@ -183,6 +183,14 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
 
         await ClassMentorRequestValidator.ValidateUnderConcurrentLimitAsync(_unitOfWork, mentor!);
 
+        // Fail fast at request time: when the class already has sessions, a mentor whose
+        // calendar conflicts with them can never be approved — reject the request now
+        // instead of letting it sit pending until the manager's approve attempt fails.
+        await MentorScopeValidator.ValidateMentorCanTakeClassSessionsAsync(
+            _unitOfWork,
+            mentorId,
+            classEntity!.Id);
+
         var entity = new ClassMentorRequest
         {
             ClassId = request.ClassId,

@@ -43,7 +43,8 @@ public sealed class AssignmentServiceTests
             _claimsService.Object,
             _db,
             NullLogger<AssignmentService>.Instance,
-            _notificationPublisher.Object);
+            _notificationPublisher.Object,
+            new FakeSyncEventPublisher());
     }
 
     private void SeedModule(Guid? moduleId = null)

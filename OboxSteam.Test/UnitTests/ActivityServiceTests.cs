@@ -23,7 +23,7 @@ public sealed class ActivityServiceTests
     private readonly InMemoryUnitOfWork _db = new();
 
     private ActivityService CreateSut() =>
-        new(_db, NullLogger<ActivityService>.Instance);
+        new(_db, NullLogger<ActivityService>.Instance, new FakeSyncEventPublisher());
 
     private static (DateTime Start, DateTime End) FutureSchedule()
     {

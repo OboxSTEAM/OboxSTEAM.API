@@ -1,4 +1,5 @@
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.ClassSessionDTO;
 using OboxSteam.Application.DTOs.SessionAttendanceDTO;
 using OboxSteam.Domain.Enums;
 
@@ -33,4 +34,16 @@ public interface ISessionAttendanceService
         Guid sessionId,
         Guid studentId,
         UpdateSessionAttendanceRequestDto request);
+
+    /// <summary>
+    /// Generates (or rotates) the QR check-in token and 6-digit fallback code for a session.
+    /// Only the assigned mentor (or Manager/Admin) may generate; the pair expires after a short TTL.
+    /// </summary>
+    Task<ClassSessionCheckInTokenResponseDto> GenerateCheckInTokenAsync(Guid classSessionId);
+
+    /// <summary>
+    /// Student self check-in via QR token or 6-digit code; records attendance as Present
+    /// with <c>RecordedBy</c> set to the student themself.
+    /// </summary>
+    Task<SessionAttendanceResponseDto> CheckInAsync(Guid classSessionId, ClassSessionCheckInRequestDto request);
 }

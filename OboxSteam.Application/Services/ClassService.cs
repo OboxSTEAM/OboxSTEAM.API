@@ -198,6 +198,8 @@ public sealed class ClassService : IClassService
                 EndTime = cs.EndTime,
                 Location = cs.Location,
                 MeetingUrl = cs.MeetingUrl,
+                Latitude = cs.Latitude,
+                Longitude = cs.Longitude,
                 RequiresAttendance = cs.RequiresAttendance,
                 RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
                 Status = cs.Status,

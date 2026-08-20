@@ -4,6 +4,8 @@ using OboxSteam.Application.DTOs.ActivityDTO;
 using OboxSteam.Application.DTOs.CourseDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Interfaces;
 
@@ -13,11 +15,34 @@ public sealed class CourseService : ICourseService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<CourseService> _logger;
+    private readonly ISyncEventPublisher _syncEventPublisher;
 
-    public CourseService(IUnitOfWork unitOfWork, ILogger<CourseService> logger)
+    public CourseService(
+        IUnitOfWork unitOfWork,
+        ILogger<CourseService> logger,
+        ISyncEventPublisher syncEventPublisher)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _syncEventPublisher = syncEventPublisher;
+    }
+
+    private Task PublishCurriculumStructureChangedAsync(Guid programId)
+        => _syncEventPublisher.PublishAsync(
+            SyncScopes.CurriculumStructureChanged,
+            NotificationAudience.ForProgramParticipants(programId),
+            entityType: "Program",
+            entityId: programId);
+
+    private async Task PublishCurriculumStructureChangedForModuleAsync(Guid moduleId)
+    {
+        var module = await _unitOfWork.Modules.GetByIdAsync(moduleId);
+        if (module is null || module.IsDeleted)
+        {
+            return;
+        }
+
+        await PublishCurriculumStructureChangedAsync(module.ProgramId);
     }
 
     // =========================================================================
@@ -234,6 +259,8 @@ public sealed class CourseService : ICourseService
         await _unitOfWork.Courses.AddAsync(course);
         await _unitOfWork.SaveChangesAsync();
 
+        await PublishCurriculumStructureChangedAsync(module.ProgramId);
+
         _logger.LogInformation("[CreateCourseAsync] Course '{Code}' created successfully with Id {Id}.",
             course.Code, course.Id);
 
@@ -308,6 +335,8 @@ public sealed class CourseService : ICourseService
         await _unitOfWork.Courses.Update(course);
         await _unitOfWork.SaveChangesAsync();
 
+        await PublishCurriculumStructureChangedForModuleAsync(course.ModuleId);
+
         _logger.LogInformation("[UpdateCourseAsync] Course Id {Id} updated successfully.", courseId);
 
         return new CourseResponseDto
@@ -340,6 +369,8 @@ public sealed class CourseService : ICourseService
 
         await _unitOfWork.Courses.SoftRemove(course);
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishCurriculumStructureChangedForModuleAsync(course.ModuleId);
 
         _logger.LogInformation("[DeleteCourseAsync] Course Id {Id} soft-deleted successfully.", courseId);
 

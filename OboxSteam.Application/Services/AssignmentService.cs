@@ -4,6 +4,7 @@ using OboxSteam.Application.DTOs.AssignmentDTO;
 using OboxSteam.Application.DTOs.AssignmentSubmissionDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -18,17 +19,35 @@ public sealed class AssignmentService : IAssignmentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<AssignmentService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly ISyncEventPublisher _syncEventPublisher;
 
     public AssignmentService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
         ILogger<AssignmentService> logger,
-        INotificationPublisher notificationPublisher)
+        INotificationPublisher notificationPublisher,
+        ISyncEventPublisher syncEventPublisher)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _logger = logger;
         _notificationPublisher = notificationPublisher;
+        _syncEventPublisher = syncEventPublisher;
+    }
+
+    private async Task PublishCurriculumStructureChangedForModuleAsync(Guid moduleId)
+    {
+        var module = await _unitOfWork.Modules.GetByIdAsync(moduleId);
+        if (module is null || module.IsDeleted)
+        {
+            return;
+        }
+
+        await _syncEventPublisher.PublishAsync(
+            SyncScopes.CurriculumStructureChanged,
+            NotificationAudience.ForProgramParticipants(module.ProgramId),
+            entityType: "Program",
+            entityId: module.ProgramId);
     }
 
     public Task<Pagination<AssignmentListItemDto>> GetAllAssignments(
@@ -295,6 +314,7 @@ public sealed class AssignmentService : IAssignmentService
         await _unitOfWork.SaveChangesAsync();
 
         await PublishAssignmentPublishedAsync(assignment, module!);
+        await PublishCurriculumStructureChangedForModuleAsync(assignment.ModuleId);
 
         _logger.LogInformation(
             "CreateAssignment completed. AssignmentId={AssignmentId}",
@@ -381,6 +401,8 @@ public sealed class AssignmentService : IAssignmentService
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(assignmentId);
         if (assignment == null || assignment.IsDeleted)
             return null;
+
+        var originalModuleId = assignment.ModuleId;
 
         var caller = await _unitOfWork.Users.GetByIdAsync(userId);
         if (caller == null || caller.IsDeleted)
@@ -529,6 +551,13 @@ public sealed class AssignmentService : IAssignmentService
                     assignment.Title));
         }
 
+        await PublishCurriculumStructureChangedForModuleAsync(assignment.ModuleId);
+        if (originalModuleId != assignment.ModuleId)
+        {
+            // The tree of the previous module's program changed as well.
+            await PublishCurriculumStructureChangedForModuleAsync(originalModuleId);
+        }
+
         _logger.LogInformation(
             "UpdateAssignment completed. AssignmentId={AssignmentId}",
             assignmentId);
@@ -598,6 +627,8 @@ public sealed class AssignmentService : IAssignmentService
 
         await _unitOfWork.Assignments.SoftRemove(assignment);
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishCurriculumStructureChangedForModuleAsync(assignment.ModuleId);
 
         _logger.LogInformation(
             "DeleteAssignment completed. AssignmentId={AssignmentId}",

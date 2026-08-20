@@ -56,6 +56,45 @@ public static class ClassSessionValidator
         }
     }
 
+    /// <summary>
+    /// Geo coordinates are optional but must come as a pair within valid ranges.
+    /// </summary>
+    public static void ValidateCoordinates(double? latitude, double? longitude)
+    {
+        if (latitude.HasValue != longitude.HasValue)
+        {
+            throw ErrorHelper.BadRequest("Latitude and Longitude must be provided together.");
+        }
+
+        if (latitude is < -90 or > 90)
+        {
+            throw ErrorHelper.BadRequest("Latitude must be between -90 and 90.");
+        }
+
+        if (longitude is < -180 or > 180)
+        {
+            throw ErrorHelper.BadRequest("Longitude must be between -180 and 180.");
+        }
+    }
+
+    public static void ValidateGenerateRequest(GenerateClassSessionsRequestDto request)
+    {
+        if (request.DaysOfWeek == null || request.DaysOfWeek.Count == 0)
+        {
+            throw ErrorHelper.BadRequest("At least one day of week is required.");
+        }
+
+        if (request.DaysOfWeek.Any(d => !Enum.IsDefined(d)))
+        {
+            throw ErrorHelper.BadRequest("DaysOfWeek contains an invalid day.");
+        }
+
+        if (request.SessionEndTime <= request.SessionStartTime)
+        {
+            throw ErrorHelper.BadRequest("SessionEndTime must be after SessionStartTime.");
+        }
+    }
+
     public static void ValidateModuleBelongsToClass(Module module, Class classEntity)
     {
         if (module.ProgramId != classEntity.ProgramId)

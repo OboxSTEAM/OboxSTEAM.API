@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.ClassSessionDTO;
 using OboxSteam.Application.DTOs.SessionAttendanceDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
@@ -8,6 +9,7 @@ using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
+using System.Security.Cryptography;
 
 namespace OboxSteam.Application.Services;
 
@@ -221,6 +223,138 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             studentId,
             attendance.Status,
             currentUser.Id);
+
+        return new SessionAttendanceResponseDto
+        {
+            Id = attendance.Id,
+            ClassSessionId = attendance.ClassSessionId,
+            StudentId = attendance.StudentId,
+            ModuleEnrollmentId = attendance.ModuleEnrollmentId,
+            Status = attendance.Status,
+            CheckedInAt = attendance.CheckedInAt,
+            RecordedBy = attendance.RecordedBy,
+            CreatedAt = attendance.CreatedAt,
+            UpdatedAt = attendance.UpdatedAt,
+        };
+    }
+
+    public async Task<ClassSessionCheckInTokenResponseDto> GenerateCheckInTokenAsync(Guid classSessionId)
+    {
+        _logger.LogInformation(
+            "[GenerateCheckInTokenAsync] Start — classSessionId: {ClassSessionId}",
+            classSessionId);
+
+        var classSession = await _unitOfWork.ClassSessions.GetByIdAsync(classSessionId);
+        ClassSessionValidator.ValidateClassSessionExists(classSession, classSessionId);
+
+        await SessionAttendanceValidator.EnsureCanUpdateSessionAttendanceAsync(
+            _unitOfWork,
+            _claimsService,
+            classSession!);
+
+        ClassSessionCheckInValidator.ValidateSessionOpenForCheckIn(classSession!);
+
+        var now = _currentTime.GetCurrentTime();
+        var expiresAt = now.AddSeconds(ClassSessionCheckInValidator.TokenTtlSeconds);
+
+        classSession!.CheckInToken = Guid.NewGuid();
+        classSession.CheckInCode = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        classSession.CheckInTokenExpiresAt = expiresAt;
+
+        await _unitOfWork.ClassSessions.Update(classSession);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[GenerateCheckInTokenAsync] Check-in token rotated for session {ClassSessionId}, expires at {ExpiresAt}.",
+            classSessionId,
+            expiresAt);
+
+        return new ClassSessionCheckInTokenResponseDto
+        {
+            ClassSessionId = classSession.Id,
+            Token = classSession.CheckInToken.Value,
+            Code = classSession.CheckInCode,
+            ExpiresAt = expiresAt,
+        };
+    }
+
+    public async Task<SessionAttendanceResponseDto> CheckInAsync(
+        Guid classSessionId,
+        ClassSessionCheckInRequestDto request)
+    {
+        _logger.LogInformation("[CheckInAsync] Start — classSessionId: {ClassSessionId}", classSessionId);
+
+        var currentUser = await SessionAttendanceValidator.GetCurrentUserAsync(_unitOfWork, _claimsService);
+        if (currentUser.Role != RoleType.Student)
+        {
+            throw ErrorHelper.Forbidden("Only students can check in to a class session.");
+        }
+
+        var classSession = await _unitOfWork.ClassSessions.GetByIdAsync(classSessionId);
+        ClassSessionValidator.ValidateClassSessionExists(classSession, classSessionId);
+
+        var now = _currentTime.GetCurrentTime();
+        ClassSessionCheckInValidator.ValidateSessionOpenForCheckIn(classSession!);
+        ClassSessionCheckInValidator.ValidateTokenOrCode(classSession!, request.Token, request.Code, now);
+
+        var classEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ClassId == classSession!.ClassId
+                  && ce.StudentId == currentUser.Id
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+
+        if (classEnrollment == null)
+        {
+            throw ErrorHelper.BadRequest("You are not enrolled in this class.");
+        }
+
+        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+            me => me.StudentId == currentUser.Id
+                  && me.ModuleId == classSession!.ModuleId
+                  && me.ProgramEnrollmentId == classEnrollment.ProgramEnrollmentId
+                  && me.Status == EnrollmentStatus.Active
+                  && !me.IsDeleted);
+
+        if (moduleEnrollment == null)
+        {
+            throw ErrorHelper.BadRequest("You do not have an active module enrollment for this session.");
+        }
+
+        var attendance = await _unitOfWork.SessionAttendances.FirstOrDefaultAsync(
+            sa => sa.ClassSessionId == classSessionId
+                  && sa.StudentId == currentUser.Id
+                  && !sa.IsDeleted);
+
+        var isNewAttendance = attendance == null;
+        if (isNewAttendance)
+        {
+            attendance = new SessionAttendance
+            {
+                ClassSessionId = classSessionId,
+                StudentId = currentUser.Id,
+            };
+        }
+
+        attendance!.ModuleEnrollmentId = moduleEnrollment.Id;
+        attendance.Status = AttendanceStatus.Present;
+        attendance.CheckedInAt = now;
+        attendance.RecordedBy = currentUser.Id;
+
+        if (isNewAttendance)
+        {
+            await _unitOfWork.SessionAttendances.AddAsync(attendance);
+        }
+        else
+        {
+            await _unitOfWork.SessionAttendances.Update(attendance);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[CheckInAsync] Student {StudentId} checked in to session {ClassSessionId}.",
+            currentUser.Id,
+            classSessionId);
 
         return new SessionAttendanceResponseDto
         {
