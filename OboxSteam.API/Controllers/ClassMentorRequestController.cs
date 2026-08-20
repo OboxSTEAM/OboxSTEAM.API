@@ -24,7 +24,7 @@ public class ClassMentorRequestController : ControllerBase
     [Authorize(Roles = "Mentor")]
     [SwaggerOperation(
         Summary = "Mentor board of available classes",
-        Description = "Lists Draft/Open classes with no assigned mentor that mentors can request.")]
+        Description = "Lists ReadyForMentor classes with no assigned mentor that mentors can request.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ClassMentorBoardItemDto>>), 200)]
     public async Task<IActionResult> GetMentorBoard(
         [FromQuery] string? search = null,

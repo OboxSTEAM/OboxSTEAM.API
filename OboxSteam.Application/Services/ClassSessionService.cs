@@ -343,6 +343,8 @@ public sealed class ClassSessionService : IClassSessionService
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.ClassSessionScheduled(entity.ClassId, entity.Id, classEntity!.ProgramId));
 
+        await SyncReadyForMentorStatusAsync(classEntity);
+
         _logger.LogInformation(
             "[CreateClassSessionAsync] Class session '{Title}' created with Id {Id}.",
             entity.Title,
@@ -493,6 +495,8 @@ public sealed class ClassSessionService : IClassSessionService
             .Select(e => NotificationCatalog.ClassSessionScheduled(classId, e.Id, classEntity.ProgramId))
             .ToList();
         await _notificationPublisher.PublishManyAsync(notifications);
+
+        await SyncReadyForMentorStatusAsync(classEntity);
 
         _logger.LogInformation(
             "[GenerateClassSessionsAsync] Generated {Count} sessions for class {ClassId}.",
@@ -817,6 +821,8 @@ public sealed class ClassSessionService : IClassSessionService
             await _notificationPublisher.PublishManyAsync(sessionNotifications);
         }
 
+        await SyncReadyForMentorStatusAsync(classEntity!);
+
         _logger.LogInformation("[UpdateClassSessionAsync] Class session Id {Id} updated successfully.", id);
 
         return new ClassSessionResponseDto
@@ -865,8 +871,58 @@ public sealed class ClassSessionService : IClassSessionService
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.ClassSessionCancelled(classId, sessionId, classEntity?.ProgramId));
 
+        if (classEntity != null)
+        {
+            await SyncReadyForMentorStatusAsync(classEntity);
+        }
+
         _logger.LogInformation("[DeleteClassSessionAsync] Class session Id {Id} soft-deleted successfully.", id);
 
         return true;
+    }
+
+    /// <summary>
+    /// Draft becomes ReadyForMentor when the timetable covers the curriculum.
+    /// ReadyForMentor falls back to Draft when coverage is lost.
+    /// </summary>
+    private async Task SyncReadyForMentorStatusAsync(Class classEntity)
+    {
+        if (classEntity.IsDeleted
+            || classEntity.Status is not (ClassStatus.Draft or ClassStatus.ReadyForMentor))
+        {
+            return;
+        }
+
+        var activeSessions = ClassScheduleCoverage.CountActiveSessions(_unitOfWork, classEntity.Id);
+        var schedulableItems = await ClassScheduleCoverage.CountSchedulableItemsAsync(
+            _unitOfWork,
+            classEntity.ProgramId);
+        var covers = ClassScheduleCoverage.CoversCurriculum(activeSessions, schedulableItems);
+
+        if (classEntity.Status == ClassStatus.Draft && covers)
+        {
+            if (classEntity.StartDate <= DateTime.UtcNow)
+            {
+                return;
+            }
+
+            classEntity.Status = ClassStatus.ReadyForMentor;
+            await _unitOfWork.Classes.Update(classEntity);
+            await _unitOfWork.SaveChangesAsync();
+            _logger.LogInformation(
+                "[SyncReadyForMentorStatusAsync] class {Id} promoted to ReadyForMentor.",
+                classEntity.Id);
+            return;
+        }
+
+        if (classEntity.Status == ClassStatus.ReadyForMentor && !covers)
+        {
+            classEntity.Status = ClassStatus.Draft;
+            await _unitOfWork.Classes.Update(classEntity);
+            await _unitOfWork.SaveChangesAsync();
+            _logger.LogInformation(
+                "[SyncReadyForMentorStatusAsync] class {Id} returned to Draft — schedule no longer covers the curriculum.",
+                classEntity.Id);
+        }
     }
 }

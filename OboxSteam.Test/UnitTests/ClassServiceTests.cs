@@ -693,10 +693,37 @@ public sealed class ClassServiceTests
     // ── Status transitions ────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Open_TransitionsDraftToOpen()
+    public async Task MarkReadyForMentor_TransitionsDraftWhenScheduleCoversCurriculum()
     {
         SeedProgram();
-        SeedClass(status: ClassStatus.Draft, mentorId: _mentorId);
+        SeedClass(status: ClassStatus.Draft, mentorId: null);
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
+        var sut = CreateSut();
+
+        var result = await sut.MarkReadyForMentorAsync(_classId);
+
+        Assert.Equal(ClassStatus.ReadyForMentor, result.Status);
+    }
+
+    [Fact]
+    public async Task MarkReadyForMentor_Throws_WhenNoScheduleGenerated()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft);
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.MarkReadyForMentorAsync(_classId));
+        Assert.Contains("schedule", ex.Message);
+    }
+
+    [Fact]
+    public async Task Open_TransitionsReadyForMentorToOpen()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.ReadyForMentor, mentorId: _mentorId);
         SeedSchedulableCurriculum(liveActivityCount: 1);
         SeedCoveringSessions(1);
         var sut = CreateSut();
@@ -707,6 +734,20 @@ public sealed class ClassServiceTests
         _notificationPublisher.Verify(
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Open_Throws_WhenStillDraft()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft, mentorId: _mentorId);
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.OpenClassAsync(_classId));
+        Assert.Contains("Draft", ex.Message);
     }
 
     [Fact]
@@ -724,7 +765,7 @@ public sealed class ClassServiceTests
     public async Task Open_Throws_WhenNoMentorAssigned()
     {
         SeedProgram();
-        SeedClass(status: ClassStatus.Draft);
+        SeedClass(status: ClassStatus.ReadyForMentor);
         SeedSchedulableCurriculum(liveActivityCount: 1);
         SeedCoveringSessions(1);
         var sut = CreateSut();
@@ -738,7 +779,7 @@ public sealed class ClassServiceTests
     public async Task Open_Throws_WhenNoScheduleGenerated()
     {
         SeedProgram();
-        SeedClass(status: ClassStatus.Draft, mentorId: _mentorId);
+        SeedClass(status: ClassStatus.ReadyForMentor, mentorId: _mentorId);
         SeedSchedulableCurriculum(liveActivityCount: 1);
         var sut = CreateSut();
 
@@ -750,10 +791,8 @@ public sealed class ClassServiceTests
     [Fact]
     public async Task Open_Throws_WhenScheduleDoesNotCoverCurriculum()
     {
-        // Curriculum gained an activity after the schedule was generated — the draft
-        // class cannot open until the manager regenerates (or adds the missing session).
         SeedProgram();
-        SeedClass(status: ClassStatus.Draft, mentorId: _mentorId);
+        SeedClass(status: ClassStatus.ReadyForMentor, mentorId: _mentorId);
         SeedSchedulableCurriculum(liveActivityCount: 2);
         SeedCoveringSessions(1);
         var sut = CreateSut();
@@ -893,7 +932,7 @@ public sealed class ClassServiceTests
     public async Task Open_Throws_WhenStartDateAlreadyPassed()
     {
         SeedProgram();
-        SeedClass(status: ClassStatus.Draft, mentorId: _mentorId, startDate: _now.AddDays(-2));
+        SeedClass(status: ClassStatus.ReadyForMentor, mentorId: _mentorId, startDate: _now.AddDays(-2));
         var sut = CreateSut();
 
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.OpenClassAsync(_classId));

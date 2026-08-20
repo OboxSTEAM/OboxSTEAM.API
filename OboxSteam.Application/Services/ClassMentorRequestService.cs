@@ -49,9 +49,7 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
             .Select(ms => ms.SkillId)
             .ToHashSet();
 
-        // Mentors browse draft classes whose schedule is already generated — the
-        // timetable is what they review before requesting. (Open classes always have
-        // a mentor, so they never appear here.)
+        // Board lists unassigned ReadyForMentor classes that already have a timetable.
         var scheduledClassIds = _unitOfWork.ClassSessions
             .GetQueryable()
             .Where(s => !s.IsDeleted && s.Status != ClassSessionStatus.Cancelled)
@@ -62,7 +60,7 @@ public sealed class ClassMentorRequestService : IClassMentorRequestService
             .GetQueryable()
             .Where(c => !c.IsDeleted
                         && c.MentorId == null
-                        && c.Status == ClassStatus.Draft
+                        && c.Status == ClassStatus.ReadyForMentor
                         && scheduledClassIds.Contains(c.Id));
 
         if (!string.IsNullOrWhiteSpace(search))

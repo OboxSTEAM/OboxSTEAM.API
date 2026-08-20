@@ -70,7 +70,7 @@ public sealed class ClassSessionGenerateTests
         SessionEndTime = new TimeOnly(11, 0),
     };
 
-    private Class SeedClass(Guid? mentorId = null, DateTime? endDate = null, DateTime? startDate = null)
+    private Class SeedClass(Guid? mentorId = null, DateTime? endDate = null, DateTime? startDate = null, ClassStatus status = ClassStatus.Open)
     {
         var entity = new Class
         {
@@ -79,7 +79,7 @@ public sealed class ClassSessionGenerateTests
             Name = "Cohort A",
             ProgramId = _programId,
             MentorId = mentorId,
-            Status = ClassStatus.Open,
+            Status = status,
             MaxCapacity = 20,
             StartDate = startDate ?? _classStart,
             EndDate = endDate ?? _classEnd,
@@ -230,9 +230,8 @@ public sealed class ClassSessionGenerateTests
     [Fact]
     public async Task Generate_WithoutMentor_GeneratesWithoutOverlapCheck()
     {
-        // Schedules are generated while the class is still a draft without a mentor —
-        // mentors review the timetable before requesting. Overlap is enforced at
-        // request/approve time instead.
+        // Schedules may be generated before a mentor is assigned — overlap is
+        // enforced when a mentor requests or is approved.
         SeedClass(mentorId: null);
         SeedCurriculum();
         var sut = CreateSut();
@@ -240,6 +239,20 @@ public sealed class ClassSessionGenerateTests
         var result = await sut.GenerateClassSessionsAsync(_classId, SaturdayPattern());
 
         Assert.Equal(3, result.Count);
+    }
+
+    [Fact]
+    public async Task Generate_PromotesDraftToReadyForMentor()
+    {
+        SeedClass(mentorId: null, status: ClassStatus.Draft);
+        SeedCurriculum();
+        var sut = CreateSut();
+
+        await sut.GenerateClassSessionsAsync(_classId, SaturdayPattern());
+
+        Assert.Equal(
+            ClassStatus.ReadyForMentor,
+            _db.Classes.Items.Single(c => c.Id == _classId).Status);
     }
 
     [Fact]

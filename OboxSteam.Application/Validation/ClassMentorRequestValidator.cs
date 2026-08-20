@@ -34,12 +34,10 @@ public static class ClassMentorRequestValidator
                 $"Class '{classEntity.Code}' already has an assigned mentor.");
         }
 
-        // Mentors join while the class is still a draft: a class only opens for
-        // enrollment once it has a mentor, so an open class never accepts requests.
-        if (classEntity.Status != ClassStatus.Draft)
+        if (classEntity.Status != ClassStatus.ReadyForMentor)
         {
             throw ErrorHelper.BadRequest(
-                $"Only Draft classes accept mentor requests (status: {classEntity.Status}).");
+                $"Only ReadyForMentor classes without a mentor accept assignment requests (status: {classEntity.Status}).");
         }
     }
 

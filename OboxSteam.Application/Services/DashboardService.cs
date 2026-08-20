@@ -528,7 +528,9 @@ public sealed class DashboardService : IDashboardService
                 .ToDictionary(x => x.Status, x => x.Count));
 
         var capacityRows = classes
-            .Where(c => c.Status != ClassStatus.Draft && c.MaxCapacity > 0)
+            .Where(c => c.Status != ClassStatus.Draft
+                        && c.Status != ClassStatus.ReadyForMentor
+                        && c.MaxCapacity > 0)
             .Select(c => new
             {
                 c.MaxCapacity,

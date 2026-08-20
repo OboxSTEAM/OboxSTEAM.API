@@ -159,12 +159,12 @@ public static class ClassValidator
     {
         ValidateDateRange(entity.StartDate, entity.EndDate);
 
-        // A Draft class can sit long enough for its StartDate to lapse — enrollment into
-        // an already-started window is meaningless, so re-check at the Open gate.
+        // A Draft class can sit long enough for its StartDate to lapse — ReadyForMentor
+        // and Open both require a still-future window.
         if (entity.StartDate <= DateTime.UtcNow)
         {
             throw ErrorHelper.BadRequest(
-                "StartDate has already passed — move the class start date to the future before opening enrollment.");
+                "StartDate has already passed — move the class start date to the future before continuing.");
         }
 
         ValidateMaxCapacity(entity.MaxCapacity);
@@ -172,24 +172,15 @@ public static class ClassValidator
     }
 
     /// <summary>
-    /// A class only opens for enrollment once students can see the full picture: an assigned
-    /// mentor and a generated schedule that still covers the whole curriculum (every
-    /// LiveOnline/Offline activity plus every assignment). When the curriculum changed after
-    /// the schedule was generated the counts diverge and the manager must regenerate.
+    /// ReadyForMentor requires a complete timetable. Mentor assignment happens on this
+    /// status; students still cannot enroll.
     /// </summary>
-    public static void ValidateOpenRequirements(Class entity, int activeSessionCount, int schedulableItemCount)
+    public static void ValidateReadyForMentorRequirements(int activeSessionCount, int schedulableItemCount)
     {
-        if (entity.MentorId is null)
-        {
-            throw ErrorHelper.BadRequest(
-                "Assign a mentor to the class before opening enrollment.");
-        }
-
         if (activeSessionCount == 0)
         {
             throw ErrorHelper.BadRequest(
-                "Generate the class schedule before opening enrollment — " +
-                "students must see the full timetable and mentor up front.");
+                "Generate the class schedule before marking it ready for mentor assignment.");
         }
 
         if (activeSessionCount != schedulableItemCount)
@@ -202,11 +193,28 @@ public static class ClassValidator
         }
     }
 
+    /// <summary>
+    /// A class only opens for student enrollment once students can see the full picture:
+    /// an assigned mentor and a generated schedule that still covers the whole curriculum
+    /// (every LiveOnline/Offline activity plus every assignment).
+    /// </summary>
+    public static void ValidateOpenRequirements(Class entity, int activeSessionCount, int schedulableItemCount)
+    {
+        if (entity.MentorId is null)
+        {
+            throw ErrorHelper.BadRequest(
+                "Assign a mentor to the class before opening enrollment.");
+        }
+
+        ValidateReadyForMentorRequirements(activeSessionCount, schedulableItemCount);
+    }
+
     public static void ValidateStatusTransition(ClassStatus currentStatus, ClassStatus targetStatus)
     {
         var isValid = (currentStatus, targetStatus) switch
         {
-            (ClassStatus.Draft, ClassStatus.Open) => true,
+            (ClassStatus.Draft, ClassStatus.ReadyForMentor) => true,
+            (ClassStatus.ReadyForMentor, ClassStatus.Open) => true,
             (ClassStatus.Open, ClassStatus.InProgress) => true,
             (ClassStatus.InProgress, ClassStatus.Completed) => true,
             _ => false,
@@ -224,7 +232,7 @@ public static class ClassValidator
         ValidateClassExists(entity, id);
         ValidateStatusTransition(entity!.Status, targetStatus);
 
-        if (targetStatus == ClassStatus.Open)
+        if (targetStatus is ClassStatus.Open or ClassStatus.ReadyForMentor)
         {
             ValidateReadyToOpen(entity);
         }
@@ -235,7 +243,7 @@ public static class ClassValidator
         if (requestedStatus.HasValue)
         {
             throw ErrorHelper.BadRequest(
-                "Class status cannot be changed via update. Use Open, Start, or Complete endpoints.");
+                "Class status cannot be changed via update. Use ReadyForMentor, Open, Start, or Complete endpoints.");
         }
     }
 
@@ -253,10 +261,10 @@ public static class ClassValidator
 
     public static void ValidateDeletableStatus(Class classEntity)
     {
-        if (classEntity.Status is not (ClassStatus.Draft or ClassStatus.Open))
+        if (classEntity.Status is not (ClassStatus.Draft or ClassStatus.ReadyForMentor or ClassStatus.Open))
         {
             throw ErrorHelper.BadRequest(
-                $"Only Draft or Open classes can be deleted (status: {classEntity.Status}).");
+                $"Only Draft, ReadyForMentor, or Open classes can be deleted (status: {classEntity.Status}).");
         }
     }
 

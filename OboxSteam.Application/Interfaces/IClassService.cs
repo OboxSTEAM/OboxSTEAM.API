@@ -26,6 +26,8 @@ public interface IClassService
 
     Task<ClassResponseDto> UpdateClassAsync(Guid id, UpdateClassRequestDto request);
 
+    Task<ClassResponseDto> MarkReadyForMentorAsync(Guid id);
+
     Task<ClassResponseDto> OpenClassAsync(Guid id);
 
     Task<ClassResponseDto> StartClassAsync(Guid id);

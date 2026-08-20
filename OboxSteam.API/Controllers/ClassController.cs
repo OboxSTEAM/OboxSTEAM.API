@@ -37,7 +37,7 @@ public class ClassController : ControllerBase
     [Authorize(Roles = "Mentor")]
     [SwaggerOperation(
         Summary = "Mentor board of available classes",
-        Description = "Lists Draft/Open classes with no assigned mentor. Prefer GET /api/class-mentor-requests/board.")]
+        Description = "Lists ReadyForMentor classes with no assigned mentor. Prefer GET /api/class-mentor-requests/board.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ClassMentorBoardItemDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -214,7 +214,7 @@ public class ClassController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update class information",
-        Description = "Updates class cohort details. Status changes must use Open, Start, or Complete endpoints. Requires Admin or Manager role.")]
+        Description = "Updates class cohort details. Status changes must use ReadyForMentor, Open, Start, or Complete endpoints. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -236,6 +236,27 @@ public class ClassController : ControllerBase
     }
 
     // =========================================================================
+    // READY FOR MENTOR  —  POST /api/classes/{id}/ready-for-mentor   [Admin/Manager]
+    // =========================================================================
+
+    [HttpPost("{id:guid}/ready-for-mentor")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Mark a class ready for mentor assignment",
+        Description = "Transitions a class from Draft to ReadyForMentor once the timetable covers the curriculum. Mentors may then request the class. Students cannot enroll until Open. Requires Admin or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> MarkReadyForMentor([FromRoute] Guid id)
+    {
+        var result = await _classService.MarkReadyForMentorAsync(id);
+
+        return Ok(ApiResult<ClassResponseDto>.Success(result, "200", "Class is ready for mentor assignment."));
+    }
+
+    // =========================================================================
     // OPEN  —  POST /api/classes/{id}/open   [Admin only]
     // =========================================================================
 
@@ -243,7 +264,7 @@ public class ClassController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Open a class for enrollment",
-        Description = "Transitions a class from Draft to Open. Requires Admin or Manager role.")]
+        Description = "Transitions a class from ReadyForMentor to Open. Requires an assigned mentor and a complete timetable. Students may enroll after this step. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -306,7 +327,7 @@ public class ClassController : ControllerBase
     [Authorize(Roles = "Manager")]
     [SwaggerOperation(
         Summary = "Delete a class",
-        Description = "Soft-deletes a Draft or Open class cohort and its sessions. Open classes may only be deleted when they have no active students. Requires Manager role.")]
+        Description = "Soft-deletes a Draft, ReadyForMentor, or Open class cohort and its sessions. Open classes may only be deleted when they have no active students. Requires Manager role.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

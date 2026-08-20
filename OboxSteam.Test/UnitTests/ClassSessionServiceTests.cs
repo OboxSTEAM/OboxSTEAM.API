@@ -958,4 +958,30 @@ public sealed class ClassSessionServiceTests
         Assert.False(await sut.DeleteClassSessionAsync(_sessionId));
         Assert.False(await sut.DeleteClassSessionAsync(Guid.NewGuid()));
     }
+
+    [Fact]
+    public async Task Delete_DemotesReadyForMentorToDraft_WhenCoverageBreaks()
+    {
+        SeedCurriculum();
+        SeedClass(status: ClassStatus.ReadyForMentor, assignMentor: false);
+        SeedSession();
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.Parse("56565656-5656-5656-5656-565656565656"),
+            ClassId = _classId,
+            ModuleId = _moduleId,
+            AssignmentId = _assignmentId,
+            Title = "Assignment window",
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = _now.AddDays(2),
+            EndTime = _now.AddDays(2).AddHours(2),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.DeleteClassSessionAsync(_sessionId);
+
+        Assert.Equal(ClassStatus.Draft, _db.Classes.Items.Single(c => c.Id == _classId).Status);
+    }
 }

@@ -58,6 +58,18 @@ API: `/api/activities`.
 `Class` is a running cohort (đợt học) for a program: date range, capacity,
 mentor, `MinHoursBeforeAssignmentJoin`, `ScheduleSummary`.
 
+Lifecycle (`ClassStatus`): **Draft → ReadyForMentor → Open → InProgress → Completed**.
+`Cancelled` is stored but has no public cancel endpoint.
+
+1. `POST /api/classes` always creates **Draft**. `StartDate` must be at least 14 days out. Mentor is optional.
+2. Generate the timetable (`POST /api/class-sessions/generate`, or add sessions manually). Coverage is one active session per LiveOnline/Offline activity plus each assignment.
+3. When coverage is complete, the class becomes **ReadyForMentor** (automatically after generate/create, or `POST /api/classes/{id}/ready-for-mentor`). Mentors request assignment from the board (`GET /api/class-mentor-requests/board`). Students cannot enroll.
+4. After a mentor is assigned, `POST /api/classes/{id}/open` moves **ReadyForMentor → Open**. Students may enroll.
+5. `POST /api/classes/{id}/start` (or auto-start when full and `StartDate` has arrived) moves **Open → InProgress**.
+6. `POST /api/classes/{id}/complete` moves **InProgress → Completed**.
+
+If sessions are deleted or cancelled so coverage no longer matches the curriculum, **ReadyForMentor** returns to **Draft**.
+
 `ClassSession` schedules concrete session instances. LiveOnline join links live
 on `MeetingUrl` (separate from free-text `Location`). `SessionAttendance` records
 attendance status per student.

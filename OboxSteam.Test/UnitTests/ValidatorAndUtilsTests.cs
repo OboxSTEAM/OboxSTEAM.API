@@ -798,6 +798,9 @@ public sealed class ValidatorAndUtilsTests
         Assert.Throws<BadRequestException>(() =>
             ClassEnrollmentValidator.ValidateClassOpenForEnrollment(
                 new Class { Status = ClassStatus.Draft }));
+        Assert.Throws<BadRequestException>(() =>
+            ClassEnrollmentValidator.ValidateClassOpenForEnrollment(
+                new Class { Status = ClassStatus.ReadyForMentor }));
     }
 
     // ── QuizAttemptValidator ──────────────────────────────────────────────────
@@ -929,10 +932,13 @@ public sealed class ValidatorAndUtilsTests
     [Fact]
     public void ClassValidator_StatusTransition_CoversAllBranches()
     {
-        ClassValidator.ValidateStatusTransition(ClassStatus.Draft, ClassStatus.Open);
+        ClassValidator.ValidateStatusTransition(ClassStatus.Draft, ClassStatus.ReadyForMentor);
+        ClassValidator.ValidateStatusTransition(ClassStatus.ReadyForMentor, ClassStatus.Open);
         ClassValidator.ValidateStatusTransition(ClassStatus.Open, ClassStatus.InProgress);
         ClassValidator.ValidateStatusTransition(ClassStatus.InProgress, ClassStatus.Completed);
 
+        Assert.Throws<BadRequestException>(() =>
+            ClassValidator.ValidateStatusTransition(ClassStatus.Draft, ClassStatus.Open));
         Assert.Throws<BadRequestException>(() =>
             ClassValidator.ValidateStatusTransition(ClassStatus.Draft, ClassStatus.Completed));
         Assert.Throws<BadRequestException>(() =>
@@ -1013,6 +1019,7 @@ public sealed class ValidatorAndUtilsTests
     public void ClassValidator_ValidateDeletableStatus_CoversAllBranches()
     {
         ClassValidator.ValidateDeletableStatus(new Class { Status = ClassStatus.Draft });
+        ClassValidator.ValidateDeletableStatus(new Class { Status = ClassStatus.ReadyForMentor });
         ClassValidator.ValidateDeletableStatus(new Class { Status = ClassStatus.Open });
         Assert.Throws<BadRequestException>(() =>
             ClassValidator.ValidateDeletableStatus(new Class { Status = ClassStatus.InProgress }));
@@ -1069,7 +1076,7 @@ public sealed class ValidatorAndUtilsTests
     }
 
     [Fact]
-    public void ClassValidator_ValidateTransitionToStatus_Open()
+    public void ClassValidator_ValidateTransitionToStatus_ReadyForMentorAndOpen()
     {
         var cls = new Class
         {
@@ -1079,6 +1086,9 @@ public sealed class ValidatorAndUtilsTests
             MaxCapacity = 10,
             MinHoursBeforeAssignmentJoin = 0,
         };
+        ClassValidator.ValidateTransitionToStatus(cls, Guid.NewGuid(), ClassStatus.ReadyForMentor);
+
+        cls.Status = ClassStatus.ReadyForMentor;
         ClassValidator.ValidateTransitionToStatus(cls, Guid.NewGuid(), ClassStatus.Open);
     }
 }

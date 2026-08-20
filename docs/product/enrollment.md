@@ -17,10 +17,11 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 2. Enroll at program level (`POST /api/program-enrollments`) — Student role.
 3. Enroll in modules (`POST /api/module-enrollments`) when module access is
    required separately.
-4. Join a class cohort when class-based delivery applies. Enroll and transfer
-   are blocked when any non-cancelled `ClassSession` of the target class overlaps
-   another active class (`start1 < end2 && start2 < end1`). Students can read
-   occupied intervals at `GET /api/me/schedule`.
+4. Join a class cohort when class-based delivery applies. Students may enroll
+   only when the class is `Open` or `InProgress` — not `Draft` or `ReadyForMentor`.
+   Enroll and transfer are blocked when any non-cancelled `ClassSession` of the
+   target class overlaps another active class (`start1 < end2 && start2 < end1`).
+   Students can read occupied intervals at `GET /api/me/schedule`.
 
 Parents and managers can view enrollment state on shared read endpoints
 (Student, Parent, Admin, Manager).
