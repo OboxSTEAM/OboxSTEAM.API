@@ -31,8 +31,58 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
             NotificationAudienceKind.ClassRosterAndParentsAndMentor =>
                 await ResolveClassRosterAndParentsAndMentorAsync(audience),
             NotificationAudienceKind.Managers => await ResolveManagersAsync(),
+            NotificationAudienceKind.ProgramParticipants => await ResolveProgramParticipantsAsync(audience),
             _ => Array.Empty<NotificationRecipient>()
         };
+    }
+
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveProgramParticipantsAsync(
+        NotificationAudience audience)
+    {
+        if (audience.ProgramId is null || audience.ProgramId == Guid.Empty)
+        {
+            return Array.Empty<NotificationRecipient>();
+        }
+
+        var programId = audience.ProgramId.Value;
+
+        var enrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => pe.ProgramId == programId
+                  && pe.Status == EnrollmentStatus.Active
+                  && !pe.IsDeleted);
+
+        var studentIds = enrollments
+            .Select(pe => pe.StudentId)
+            .Distinct()
+            .ToList();
+
+        var recipients = studentIds
+            .Select(studentId => new NotificationRecipient(studentId, RoleType.Student, studentId))
+            .ToList();
+
+        if (studentIds.Count > 0)
+        {
+            var parentLinks = await _unitOfWork.ParentStudents.GetAllAsync(
+                ps => studentIds.Contains(ps.StudentId) && ps.IsVerified);
+
+            foreach (var link in parentLinks)
+            {
+                recipients.Add(new NotificationRecipient(link.ParentId, RoleType.Parent, link.StudentId));
+            }
+        }
+
+        var classes = await _unitOfWork.Classes.GetAllAsync(
+            c => c.ProgramId == programId && c.MentorId != null && !c.IsDeleted);
+
+        foreach (var mentorId in classes
+                     .Select(c => c.MentorId!.Value)
+                     .Where(id => id != Guid.Empty)
+                     .Distinct())
+        {
+            recipients.Add(new NotificationRecipient(mentorId, RoleType.Mentor));
+        }
+
+        return recipients;
     }
 
     private async Task<IReadOnlyList<NotificationRecipient>> ResolveUserAsync(NotificationAudience audience)

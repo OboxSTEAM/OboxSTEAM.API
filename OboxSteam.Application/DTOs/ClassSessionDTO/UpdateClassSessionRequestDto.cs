@@ -14,6 +14,8 @@ public class UpdateClassSessionRequestDto
     public DateTime? EndTime { get; set; }
     public string? Location { get; set; }
     public string? MeetingUrl { get; set; }
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
     public bool? RequiresAttendance { get; set; }
     public bool? RequiresMentorCheckIn { get; set; }
     public ClassSessionStatus? Status { get; set; }

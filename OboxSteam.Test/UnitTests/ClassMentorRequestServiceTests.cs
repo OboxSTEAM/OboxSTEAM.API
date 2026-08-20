@@ -354,6 +354,84 @@ public sealed class ClassMentorRequestServiceTests
             sut.CreateRequestAsync(new CreateClassMentorRequestDto { ClassId = _classId }));
     }
 
+    [Fact]
+    public async Task CreateRequest_Throws_WhenMentorScheduleOverlapsClassSessions()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
+        SeedProgram();
+        var busyClass = SeedClass(
+            id: _otherClassId,
+            code: "CLS-BUSY",
+            status: ClassStatus.InProgress,
+            mentorId: _mentorId);
+        var targetClass = SeedClass(status: ClassStatus.Open, mentorId: null);
+        var start = _now.AddDays(2);
+        _db.ClassSessions.Seed(
+            new ClassSession
+            {
+                Id = Guid.Parse("55555555-5555-5555-5555-555555555555"),
+                ClassId = _otherClassId,
+                ModuleId = _moduleId,
+                Title = "Busy Session",
+                SessionKind = SessionKind.Lesson,
+                StartTime = start,
+                EndTime = start.AddHours(2),
+                Status = ClassSessionStatus.Scheduled,
+                Class = busyClass,
+                IsDeleted = false,
+            },
+            new ClassSession
+            {
+                Id = Guid.Parse("66666666-6666-6666-6666-666666666666"),
+                ClassId = _classId,
+                ModuleId = _moduleId,
+                Title = "Target Session",
+                SessionKind = SessionKind.Lesson,
+                StartTime = start.AddHours(1),
+                EndTime = start.AddHours(3),
+                Status = ClassSessionStatus.Scheduled,
+                Class = targetClass,
+                IsDeleted = false,
+            });
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.CreateRequestAsync(new CreateClassMentorRequestDto { ClassId = _classId }));
+
+        // Fail fast: no request is persisted when the mentor cannot cover the schedule.
+        Assert.Empty(_db.ClassMentorRequests.Items);
+    }
+
+    [Fact]
+    public async Task CreateRequest_Persists_WhenClassSessionsDoNotOverlapMentorSchedule()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001", "Mentor One");
+        SeedProgram();
+        var targetClass = SeedClass(status: ClassStatus.Open, mentorId: null);
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.Parse("66666666-6666-6666-6666-666666666666"),
+            ClassId = _classId,
+            ModuleId = _moduleId,
+            Title = "Target Session",
+            SessionKind = SessionKind.Lesson,
+            StartTime = _now.AddDays(2),
+            EndTime = _now.AddDays(2).AddHours(2),
+            Status = ClassSessionStatus.Scheduled,
+            Class = targetClass,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.CreateRequestAsync(new CreateClassMentorRequestDto
+        {
+            ClassId = _classId,
+        });
+
+        Assert.Equal(ClassMentorRequestStatus.Pending, result.Status);
+        Assert.Single(_db.ClassMentorRequests.Items);
+    }
+
     // ── WithdrawRequestAsync ──────────────────────────────────────────────────
 
     [Fact]

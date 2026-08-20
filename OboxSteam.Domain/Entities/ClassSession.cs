@@ -38,6 +38,22 @@ public class ClassSession : BaseEntity
     [MaxLength(2048)]
     public string? MeetingUrl { get; set; }
 
+    /// <summary>Geo coordinate of the Offline venue; when set, <see cref="Longitude"/> must also be set.</summary>
+    public double? Latitude { get; set; }
+
+    /// <summary>Geo coordinate of the Offline venue; when set, <see cref="Latitude"/> must also be set.</summary>
+    public double? Longitude { get; set; }
+
+    /// <summary>Rotating QR check-in token (embedded in the QR the mentor projects). Null until first generated.</summary>
+    public Guid? CheckInToken { get; set; }
+
+    /// <summary>6-digit fallback code shown next to the QR; rotates together with <see cref="CheckInToken"/>.</summary>
+    [MaxLength(6)]
+    public string? CheckInCode { get; set; }
+
+    /// <summary>Expiry of the current token/code pair (short TTL to defeat shared QR screenshots).</summary>
+    public DateTime? CheckInTokenExpiresAt { get; set; }
+
     public bool RequiresAttendance { get; set; } = true;
 
     /// <summary>Whether the assigned mentor must check in for this specific session instance.</summary>

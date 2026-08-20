@@ -16,6 +16,9 @@ public static class MentorCompleteValidator
     public const string SessionActivityMismatchMessage =
         "Class session is not linked to the requested activity.";
 
+    public const string QrCheckinRequiredMessage =
+        "Student has not checked in via QR code for this session.";
+
     public static void ValidateRequest(MentorCompleteBulkRequestDto request)
     {
         if (request.ClassSessionId == Guid.Empty)
@@ -55,5 +58,24 @@ public static class MentorCompleteValidator
         }
 
         return AttendanceRequiredMessage;
+    }
+
+    /// <summary>
+    /// When the activity requires QR check-in, only students who checked in themselves
+    /// (self-recorded attendance with a check-in timestamp) may be completed —
+    /// a mentor marking the roster by hand does not count.
+    /// Returns null when the requirement is satisfied or not applicable; otherwise a skip reason.
+    /// </summary>
+    public static string? GetQrCheckinSkipReason(Activity activity, SessionAttendance? attendance)
+    {
+        if (!activity.RequireQrCheckin)
+        {
+            return null;
+        }
+
+        var hasSelfCheckIn = attendance is { IsDeleted: false, CheckedInAt: not null }
+            && attendance.RecordedBy == attendance.StudentId;
+
+        return hasSelfCheckIn ? null : QrCheckinRequiredMessage;
     }
 }

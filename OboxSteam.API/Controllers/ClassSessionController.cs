@@ -155,6 +155,41 @@ public class ClassSessionController : ControllerBase
     }
 
     // =========================================================================
+    // GENERATE  —  POST /api/classes/{classId}/sessions/generate   [Admin, Manager]
+    // =========================================================================
+
+    [HttpPost("generate")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Generate sessions from a weekly pattern",
+        Description = "Bulk-creates sessions for the class from the program curriculum: LiveOnline/Offline "
+            + "activities (ordered by module, course, then ActivityOrder) and assignments fill consecutive "
+            + "weekly slots starting from the class start date. Fails fast on mentor schedule overlap; "
+            + "nothing is saved unless every slot is valid.")]
+    [ProducesResponseType(typeof(ApiResult<List<ClassSessionResponseDto>>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> GenerateClassSessions(
+        [FromRoute] Guid classId,
+        [FromBody, SwaggerParameter("Weekly repeat pattern")] GenerateClassSessionsRequestDto dto)
+    {
+        if (dto == null)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Session generation data is required."));
+        }
+
+        var result = await _classSessionService.GenerateClassSessionsAsync(classId, dto);
+
+        return StatusCode(201, ApiResult<List<ClassSessionResponseDto>>.Success(
+            result,
+            "201",
+            $"Generated {result.Count} class sessions successfully."));
+    }
+
+    // =========================================================================
     // UPDATE  —  PUT /api/classes/{classId}/sessions/{id}      [Admin only]
     // =========================================================================
 

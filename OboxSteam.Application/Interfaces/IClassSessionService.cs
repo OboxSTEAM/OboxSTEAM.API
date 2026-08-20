@@ -24,6 +24,16 @@ public interface IClassSessionService
 
     Task<ClassSessionResponseDto> CreateClassSessionAsync(CreateClassSessionRequestDto request);
 
+    /// <summary>
+    /// Bulk-generates sessions from the program curriculum using a weekly repeat pattern.
+    /// LiveOnline/Offline activities (module order → course → ActivityOrder) and assignments
+    /// fill consecutive weekly slots from the class start date. All-or-nothing: any mentor
+    /// overlap or out-of-range slot fails the whole generation before anything is saved.
+    /// </summary>
+    Task<List<ClassSessionResponseDto>> GenerateClassSessionsAsync(
+        Guid classId,
+        GenerateClassSessionsRequestDto request);
+
     Task<ClassSessionResponseDto> UpdateClassSessionAsync(Guid id, UpdateClassSessionRequestDto request);
 
     Task<bool> DeleteClassSessionAsync(Guid id);

@@ -39,6 +39,14 @@ public class CreateClassSessionRequestDto
     [MaxLength(2048)]
     public string? MeetingUrl { get; set; }
 
+    /// <summary>Offline venue latitude. Must be provided together with <see cref="Longitude"/>.</summary>
+    [Range(-90, 90, ErrorMessage = "Latitude must be between -90 and 90.")]
+    public double? Latitude { get; set; }
+
+    /// <summary>Offline venue longitude. Must be provided together with <see cref="Latitude"/>.</summary>
+    [Range(-180, 180, ErrorMessage = "Longitude must be between -180 and 180.")]
+    public double? Longitude { get; set; }
+
     public bool RequiresAttendance { get; set; } = true;
 
     public bool RequiresMentorCheckIn { get; set; }

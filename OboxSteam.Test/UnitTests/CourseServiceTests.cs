@@ -20,7 +20,7 @@ public sealed class CourseServiceTests
     private readonly InMemoryUnitOfWork _db = new();
 
     private CourseService CreateSut() =>
-        new(_db, NullLogger<CourseService>.Instance);
+        new(_db, NullLogger<CourseService>.Instance, new FakeSyncEventPublisher());
 
     private Module SeedModule(Guid? id = null, string name = "Intro Module")
     {

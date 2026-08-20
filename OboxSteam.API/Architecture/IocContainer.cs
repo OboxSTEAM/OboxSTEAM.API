@@ -219,6 +219,8 @@ public static class IocContainer
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<INotificationRecipientResolver, NotificationRecipientResolver>();
         services.AddSingleton<INotificationDispatcher, SignalRNotificationDispatcher>();
+        services.AddSingleton<ISignalRSyncDispatcher, SignalRSyncDispatcher>();
+        services.AddScoped<ISyncEventPublisher, SyncEventPublisher>();
         return services;
     }
 

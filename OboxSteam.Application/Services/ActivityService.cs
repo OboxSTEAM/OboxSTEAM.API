@@ -3,6 +3,8 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ActivityDTO;
 using OboxSteam.Application.DTOs.MaterialDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -15,11 +17,37 @@ public class ActivityService : IActivityService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ActivityService> _logger;
+    private readonly ISyncEventPublisher _syncEventPublisher;
 
-    public ActivityService(IUnitOfWork unitOfWork, ILogger<ActivityService> logger)
+    public ActivityService(
+        IUnitOfWork unitOfWork,
+        ILogger<ActivityService> logger,
+        ISyncEventPublisher syncEventPublisher)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _syncEventPublisher = syncEventPublisher;
+    }
+
+    private async Task PublishCurriculumStructureChangedForCourseAsync(Guid courseId)
+    {
+        var course = await _unitOfWork.Courses.GetByIdAsync(courseId);
+        if (course is null || course.IsDeleted)
+        {
+            return;
+        }
+
+        var module = await _unitOfWork.Modules.GetByIdAsync(course.ModuleId);
+        if (module is null || module.IsDeleted)
+        {
+            return;
+        }
+
+        await _syncEventPublisher.PublishAsync(
+            SyncScopes.CurriculumStructureChanged,
+            NotificationAudience.ForProgramParticipants(module.ProgramId),
+            entityType: "Program",
+            entityId: module.ProgramId);
     }
 
     // =========================================================================
@@ -227,6 +255,8 @@ public class ActivityService : IActivityService
         await _unitOfWork.Activities.AddAsync(activity);
         await _unitOfWork.SaveChangesAsync();
 
+        await PublishCurriculumStructureChangedForCourseAsync(activity.CourseId);
+
         _logger.LogInformation("[CreateActivityAsync] Activity '{Code}' created successfully with Id {Id}.",
             activity.Code, activity.Id);
 
@@ -352,6 +382,13 @@ public class ActivityService : IActivityService
 
         await _unitOfWork.Activities.Update(activity);
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishCurriculumStructureChangedForCourseAsync(activity.CourseId);
+        if (courseChanged)
+        {
+            // The tree of the previous course's program changed as well.
+            await PublishCurriculumStructureChangedForCourseAsync(oldCourseId);
+        }
 
         _logger.LogInformation("[UpdateActivityAsync] Activity Id {Id} updated successfully.", activityId);
 
@@ -488,6 +525,8 @@ public class ActivityService : IActivityService
 
         await _unitOfWork.Activities.SoftRemove(activity);
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishCurriculumStructureChangedForCourseAsync(activity.CourseId);
 
         _logger.LogInformation("[DeleteActivityAsync] Activity Id {Id} soft-deleted successfully.", activityId);
 

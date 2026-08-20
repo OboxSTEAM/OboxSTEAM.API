@@ -674,6 +674,12 @@ public sealed class ActivityProgressService : IActivityProgressService
                 return Skipped(studentId, attendanceSkipReason);
             }
 
+            var qrCheckinSkipReason = MentorCompleteValidator.GetQrCheckinSkipReason(activity, attendance);
+            if (qrCheckinSkipReason != null)
+            {
+                return Skipped(studentId, qrCheckinSkipReason);
+            }
+
             var moduleEnrollment = await ResolveActiveModuleEnrollmentForSessionAsync(
                 studentId,
                 classSession.ModuleId,

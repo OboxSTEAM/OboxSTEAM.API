@@ -3,6 +3,8 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.CourseDTO;
 using OboxSteam.Application.DTOs.ModuleDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -15,12 +17,24 @@ public class ModuleService : IModuleService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ModuleService> _logger;
+    private readonly ISyncEventPublisher _syncEventPublisher;
 
-    public ModuleService(IUnitOfWork unitOfWork, ILogger<ModuleService> logger)
+    public ModuleService(
+        IUnitOfWork unitOfWork,
+        ILogger<ModuleService> logger,
+        ISyncEventPublisher syncEventPublisher)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _syncEventPublisher = syncEventPublisher;
     }
+
+    private Task PublishCurriculumStructureChangedAsync(Guid programId)
+        => _syncEventPublisher.PublishAsync(
+            SyncScopes.CurriculumStructureChanged,
+            NotificationAudience.ForProgramParticipants(programId),
+            entityType: "Program",
+            entityId: programId);
 
 
 
@@ -293,6 +307,8 @@ public class ModuleService : IModuleService
         await _unitOfWork.Modules.AddAsync(module);
         await _unitOfWork.SaveChangesAsync();
 
+        await PublishCurriculumStructureChangedAsync(module.ProgramId);
+
         _logger.LogInformation("[CreateModuleAsync] Module '{Code}' added successfully with Id {Id}.",
             module.Code, module.Id);
 
@@ -412,6 +428,8 @@ public class ModuleService : IModuleService
         await _unitOfWork.Modules.Update(module);
         await _unitOfWork.SaveChangesAsync();
 
+        await PublishCurriculumStructureChangedAsync(module.ProgramId);
+
         _logger.LogInformation("[UpdateModuleAsync] Module Id {Id} updated successfully.", id);
 
         return new ModulesResponseDto
@@ -450,6 +468,8 @@ public class ModuleService : IModuleService
 
         await _unitOfWork.Modules.SoftRemove(module);
         await _unitOfWork.SaveChangesAsync();
+
+        await PublishCurriculumStructureChangedAsync(module.ProgramId);
 
         _logger.LogInformation("[DeleteModuleAsync] Module Id {Id} soft-deleted successfully.", id);
 

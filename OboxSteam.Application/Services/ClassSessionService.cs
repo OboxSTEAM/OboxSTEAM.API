@@ -114,6 +114,8 @@ public sealed class ClassSessionService : IClassSessionService
             EndTime = cs.EndTime,
             Location = cs.Location,
             MeetingUrl = cs.MeetingUrl,
+            Latitude = cs.Latitude,
+            Longitude = cs.Longitude,
             RequiresAttendance = cs.RequiresAttendance,
             RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
             Status = cs.Status,
@@ -153,6 +155,8 @@ public sealed class ClassSessionService : IClassSessionService
             EndTime = entity.EndTime,
             Location = entity.Location,
             MeetingUrl = entity.MeetingUrl,
+            Latitude = entity.Latitude,
+            Longitude = entity.Longitude,
             RequiresAttendance = entity.RequiresAttendance,
             RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
             Status = entity.Status,
@@ -265,6 +269,8 @@ public sealed class ClassSessionService : IClassSessionService
             EndTime = session.EndTime,
             Location = session.Location,
             MeetingUrl = session.MeetingUrl,
+            Latitude = session.Latitude,
+            Longitude = session.Longitude,
             RequiresAttendance = session.RequiresAttendance,
             RequiresMentorCheckIn = session.RequiresMentorCheckIn,
             Status = session.Status,
@@ -282,6 +288,7 @@ public sealed class ClassSessionService : IClassSessionService
             request.ClassId);
 
         ClassSessionValidator.ValidateCreateRequest(request);
+        ClassSessionValidator.ValidateCoordinates(request.Latitude, request.Longitude);
 
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
         ClassValidator.ValidateClassExists(classEntity, request.ClassId);
@@ -323,6 +330,8 @@ public sealed class ClassSessionService : IClassSessionService
             EndTime = request.EndTime,
             Location = request.Location?.Trim(),
             MeetingUrl = string.IsNullOrWhiteSpace(request.MeetingUrl) ? null : request.MeetingUrl.Trim(),
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
             RequiresAttendance = request.RequiresAttendance,
             RequiresMentorCheckIn = request.RequiresMentorCheckIn,
             Status = ClassSessionStatus.Scheduled,
@@ -353,6 +362,8 @@ public sealed class ClassSessionService : IClassSessionService
             EndTime = entity.EndTime,
             Location = entity.Location,
             MeetingUrl = entity.MeetingUrl,
+            Latitude = entity.Latitude,
+            Longitude = entity.Longitude,
             RequiresAttendance = entity.RequiresAttendance,
             RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
             Status = entity.Status,
@@ -360,6 +371,224 @@ public sealed class ClassSessionService : IClassSessionService
             UpdatedAt = entity.UpdatedAt,
         };
     }
+
+    public async Task<List<ClassSessionResponseDto>> GenerateClassSessionsAsync(
+        Guid classId,
+        GenerateClassSessionsRequestDto request)
+    {
+        _logger.LogInformation("[GenerateClassSessionsAsync] Start — classId: {ClassId}", classId);
+
+        ClassSessionValidator.ValidateGenerateRequest(request);
+
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
+        ClassValidator.ValidateClassExists(classEntity, classId);
+        ClassSessionValidator.ValidateClassSchedulable(classEntity!);
+
+        if (classEntity!.MentorId is null)
+        {
+            throw ErrorHelper.BadRequest(
+                "Cannot generate sessions for a class that has no assigned mentor.");
+        }
+
+        var existingSessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classId
+                  && cs.Status != ClassSessionStatus.Cancelled
+                  && !cs.IsDeleted);
+
+        if (existingSessions.Count > 0)
+        {
+            throw ErrorHelper.Conflict(
+                "Class already has scheduled sessions. Cancel or delete them before generating a new schedule.");
+        }
+
+        var items = await BuildCurriculumScheduleItemsAsync(classEntity.ProgramId);
+        if (items.Count == 0)
+        {
+            throw ErrorHelper.BadRequest(
+                "The program curriculum has no LiveOnline/Offline activities or assignments to schedule.");
+        }
+
+        var slots = BuildWeeklySlots(classEntity, request, items.Count);
+
+        foreach (var slot in slots)
+        {
+            await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
+                _unitOfWork,
+                classEntity.MentorId.Value,
+                slot.Start,
+                slot.End);
+        }
+
+        var entities = items
+            .Zip(slots, (item, slot) => new ClassSession
+            {
+                ClassId = classId,
+                ModuleId = item.ModuleId,
+                ActivityId = item.ActivityId,
+                AssignmentId = item.AssignmentId,
+                SessionKind = item.Kind,
+                Title = item.Title,
+                StartTime = slot.Start,
+                EndTime = slot.End,
+                Location = item.Location,
+                MeetingUrl = item.MeetingUrl,
+                RequiresAttendance = item.RequiresAttendance,
+                Status = ClassSessionStatus.Scheduled,
+            })
+            .ToList();
+
+        await _unitOfWork.ClassSessions.AddRangeAsync(entities);
+        await _unitOfWork.SaveChangesAsync();
+
+        var notifications = entities
+            .Select(e => NotificationCatalog.ClassSessionScheduled(classId, e.Id, classEntity.ProgramId))
+            .ToList();
+        await _notificationPublisher.PublishManyAsync(notifications);
+
+        _logger.LogInformation(
+            "[GenerateClassSessionsAsync] Generated {Count} sessions for class {ClassId}.",
+            entities.Count,
+            classId);
+
+        return entities.Select(MapToResponseDto).ToList();
+    }
+
+    private sealed record CurriculumScheduleItem(
+        Guid ModuleId,
+        Guid? ActivityId,
+        Guid? AssignmentId,
+        SessionKind Kind,
+        string Title,
+        string? Location,
+        string? MeetingUrl,
+        bool RequiresAttendance);
+
+    private async Task<List<CurriculumScheduleItem>> BuildCurriculumScheduleItemsAsync(Guid programId)
+    {
+        var modules = (await _unitOfWork.Modules.GetAllAsync(
+                m => m.ProgramId == programId && !m.IsDeleted))
+            .OrderBy(m => m.ModuleOrder)
+            .ToList();
+
+        if (modules.Count == 0)
+        {
+            return new List<CurriculumScheduleItem>();
+        }
+
+        var moduleIds = modules.Select(m => m.Id).ToList();
+
+        var courses = await _unitOfWork.Courses.GetAllAsync(
+            c => moduleIds.Contains(c.ModuleId) && !c.IsDeleted);
+        var courseIds = courses.Select(c => c.Id).ToList();
+
+        var activities = await _unitOfWork.Activities.GetAllAsync(
+            a => courseIds.Contains(a.CourseId)
+                 && !a.IsDeleted
+                 && (a.ActivityType == ActivityType.LiveOnline || a.ActivityType == ActivityType.Offline));
+
+        var assignments = await _unitOfWork.Assignments.GetAllAsync(
+            a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted);
+
+        var items = new List<CurriculumScheduleItem>();
+
+        foreach (var module in modules)
+        {
+            foreach (var course in courses
+                         .Where(c => c.ModuleId == module.Id)
+                         .OrderBy(c => c.CreatedAt)
+                         .ThenBy(c => c.Code))
+            {
+                foreach (var activity in activities
+                             .Where(a => a.CourseId == course.Id)
+                             .OrderBy(a => a.ActivityOrder))
+                {
+                    // Activity templates keep the venue address (Offline) or join link
+                    // (LiveOnline) in Location; split them onto the right session fields.
+                    var isOffline = activity.ActivityType == ActivityType.Offline;
+                    items.Add(new CurriculumScheduleItem(
+                        module.Id,
+                        activity.Id,
+                        null,
+                        isOffline ? SessionKind.FieldTrip : SessionKind.Lesson,
+                        activity.Name,
+                        isOffline ? activity.Location : null,
+                        isOffline ? null : activity.Location,
+                        RequiresAttendance: true));
+                }
+            }
+
+            foreach (var assignment in assignments
+                         .Where(a => a.ModuleId == module.Id)
+                         .OrderBy(a => a.CreatedAt)
+                         .ThenBy(a => a.Code))
+            {
+                items.Add(new CurriculumScheduleItem(
+                    module.Id,
+                    null,
+                    assignment.Id,
+                    SessionKind.AssignmentWindow,
+                    assignment.Title,
+                    null,
+                    null,
+                    RequiresAttendance: false));
+            }
+        }
+
+        return items;
+    }
+
+    private static List<(DateTime Start, DateTime End)> BuildWeeklySlots(
+        Class classEntity,
+        GenerateClassSessionsRequestDto request,
+        int count)
+    {
+        var daysOfWeek = request.DaysOfWeek.Distinct().ToHashSet();
+        var slots = new List<(DateTime Start, DateTime End)>(count);
+
+        for (var day = classEntity.StartDate.Date; slots.Count < count; day = day.AddDays(1))
+        {
+            if (day > classEntity.EndDate.Date)
+            {
+                throw ErrorHelper.BadRequest(
+                    $"The class date range only fits {slots.Count} of {count} sessions with the selected weekly pattern. " +
+                    "Extend the class end date or add more session days per week.");
+            }
+
+            if (!daysOfWeek.Contains(day.DayOfWeek))
+            {
+                continue;
+            }
+
+            slots.Add((
+                day.Add(request.SessionStartTime.ToTimeSpan()),
+                day.Add(request.SessionEndTime.ToTimeSpan())));
+        }
+
+        return slots;
+    }
+
+    private static ClassSessionResponseDto MapToResponseDto(ClassSession session) => new()
+    {
+        Id = session.Id,
+        ClassId = session.ClassId,
+        ModuleId = session.ModuleId,
+        ActivityId = session.ActivityId,
+        AssignmentId = session.AssignmentId,
+        SessionKind = session.SessionKind,
+        Title = session.Title,
+        Description = session.Description,
+        StartTime = session.StartTime,
+        EndTime = session.EndTime,
+        Location = session.Location,
+        MeetingUrl = session.MeetingUrl,
+        Latitude = session.Latitude,
+        Longitude = session.Longitude,
+        RequiresAttendance = session.RequiresAttendance,
+        RequiresMentorCheckIn = session.RequiresMentorCheckIn,
+        Status = session.Status,
+        CreatedAt = session.CreatedAt,
+        UpdatedAt = session.UpdatedAt,
+    };
 
     public async Task<ClassSessionResponseDto> UpdateClassSessionAsync(
         Guid id,
@@ -480,6 +709,13 @@ public sealed class ClassSessionService : IClassSessionService
                 : request.MeetingUrl.Trim();
         }
 
+        if (request.Latitude.HasValue || request.Longitude.HasValue)
+        {
+            ClassSessionValidator.ValidateCoordinates(request.Latitude, request.Longitude);
+            session.Latitude = request.Latitude;
+            session.Longitude = request.Longitude;
+        }
+
         if (request.RequiresAttendance.HasValue)
         {
             session.RequiresAttendance = request.RequiresAttendance.Value;
@@ -550,6 +786,8 @@ public sealed class ClassSessionService : IClassSessionService
             EndTime = session.EndTime,
             Location = session.Location,
             MeetingUrl = session.MeetingUrl,
+            Latitude = session.Latitude,
+            Longitude = session.Longitude,
             RequiresAttendance = session.RequiresAttendance,
             RequiresMentorCheckIn = session.RequiresMentorCheckIn,
             Status = session.Status,
