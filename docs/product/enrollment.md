@@ -20,7 +20,9 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 4. Join a class cohort when class-based delivery applies. Enroll and transfer
    are blocked when any non-cancelled `ClassSession` of the target class overlaps
    another active class (`start1 < end2 && start2 < end1`). Students can read
-   occupied intervals at `GET /api/me/schedule`.
+   occupied intervals at `GET /api/me/schedule`. The Monday–Sunday timetable is
+   `GET /api/schedules/weekly` (`weekStart` optional; `studentId` required for
+   parents of a verified linked child; Asia/Ho_Chi_Minh; cancelled sessions omitted).
 
 Parents and managers can view enrollment state on shared read endpoints
 (Student, Parent, Admin, Manager).

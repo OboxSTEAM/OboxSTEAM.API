@@ -67,6 +67,7 @@ public partial class SeedService : ISeedService
         await SeedMaterialsAsync();
         // After all curriculum seeds so the schedulable-item set is final.
         await EnsureClassSessionCoverageAsync();
+        await SeedWeeklyScheduleFixtureAsync();
         await ResetIntroductionToRoboticsFeTestProgressAsync();
         // After robotics FE reset so STD-001 research enrollment / submissions are not wiped.
         await SeedPortfolioDataAsync();

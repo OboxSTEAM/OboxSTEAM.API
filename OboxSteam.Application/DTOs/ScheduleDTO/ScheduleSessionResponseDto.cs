@@ -2,11 +2,13 @@ using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ScheduleDTO;
 
-/// <summary>One class session cell on the student's weekly timetable.</summary>
-public sealed class StudentScheduleSessionDto
+/// <summary>One class session cell on the weekly timetable.</summary>
+public sealed class ScheduleSessionResponseDto
 {
     public Guid Id { get; set; }
     public Guid ClassId { get; set; }
+    public string ClassCode { get; set; } = null!;
+    public string ClassName { get; set; } = null!;
     public Guid ProgramId { get; set; }
     public Guid? MentorId { get; set; }
     public Guid ModuleId { get; set; }
@@ -32,8 +34,5 @@ public sealed class StudentScheduleSessionDto
     /// </summary>
     public AttendanceStatus? AttendanceStatus { get; set; }
 
-    /// <summary>
-    /// True when the student checked in (<see cref="AttendanceStatus.Present"/> or <see cref="AttendanceStatus.Late"/>).
-    /// </summary>
-    public bool HasCheckedIn { get; set; }
+    public Guid? MaterialId { get; set; }
 }
