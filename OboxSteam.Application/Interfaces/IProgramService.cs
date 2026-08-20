@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Domain.Enums;
@@ -35,10 +36,12 @@ public interface IProgramService
         string? status = null,
         ProgramCategory? category = null);
 
-    Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request);
+    Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request, IFormFile? thumbnailFile = null);
 
 
     Task<ProgramsResponseDto> UpdateProgramAsync(Guid id, UpdateProgramRequestDto request);
+
+    Task<ProgramsResponseDto> UploadProgramThumbnailAsync(Guid id, IFormFile file);
 
     Task<bool> DeleteProgramAsync(Guid id);
 }
