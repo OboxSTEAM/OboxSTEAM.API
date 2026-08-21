@@ -2,6 +2,12 @@ using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ClassSessionDTO;
 
+/// <summary>
+/// Partial update for a class session.
+/// Activity-backed sessions: change <see cref="StartTime"/> to reschedule — <see cref="EndTime"/>
+/// is always recomputed from the activity's DurationMinutes and cannot be set directly.
+/// Assignment sessions: <see cref="StartTime"/> / <see cref="EndTime"/> may both be changed.
+/// </summary>
 public class UpdateClassSessionRequestDto
 {
     public Guid? ModuleId { get; set; }

@@ -100,6 +100,7 @@ public sealed class ClassSessionServiceTests
             CourseId = _courseId,
             ActivityType = ActivityType.Offline,
             ActivityOrder = 1,
+            DurationMinutes = 120,
             IsDeleted = false,
         });
         _db.Assignments.Seed(new Assignment
@@ -213,14 +214,15 @@ public sealed class ClassSessionServiceTests
         DateTime? end = null,
         Guid? activityId = null,
         Guid? assignmentId = null,
-        string title = "New Session")
+        string title = "New Session",
+        bool clearActivity = false)
     {
         var startTime = start ?? _now.AddDays(3);
         return new CreateClassSessionRequestDto
         {
             ClassId = _classId,
             ModuleId = _moduleId,
-            ActivityId = activityId ?? _activityId,
+            ActivityId = clearActivity ? null : (activityId ?? _activityId),
             AssignmentId = assignmentId,
             SessionKind = SessionKind.Lesson,
             Title = title,
@@ -484,12 +486,65 @@ public sealed class ClassSessionServiceTests
         Assert.Equal("New Session", result.Title);
         Assert.Equal(ClassSessionStatus.Scheduled, result.Status);
         Assert.Equal(_classId, result.ClassId);
+        // Client EndTime is ignored for activity sessions — end = Start + DurationMinutes (120).
+        Assert.Equal(request.StartTime.AddMinutes(120), result.EndTime);
         Assert.Equal("https://meet.example.com/room-a", result.MeetingUrl);
         Assert.Single(_db.ClassSessions.Items);
         Assert.Equal(1, _db.SaveChangesCallCount);
         _notificationPublisher.Verify(
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_Activity_IgnoresClientEndTime_UsesDurationMinutes()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var sut = CreateSut();
+        var start = _now.AddDays(3);
+        var request = BuildCreateRequest(start: start, end: start.AddHours(5));
+
+        var result = await sut.CreateClassSessionAsync(request);
+
+        Assert.Equal(start, result.StartTime);
+        Assert.Equal(start.AddMinutes(120), result.EndTime);
+    }
+
+    [Fact]
+    public async Task Create_Assignment_RequiresEndTime()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var sut = CreateSut();
+        var request = BuildCreateRequest(clearActivity: true, assignmentId: _assignmentId);
+        request.EndTime = null;
+        request.SessionKind = SessionKind.AssignmentWindow;
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateClassSessionAsync(request));
+        Assert.Contains("EndTime is required for assignment", ex.Message);
+    }
+
+    [Fact]
+    public async Task Create_Assignment_UsesClientEndTime()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var sut = CreateSut();
+        var start = _now.AddDays(3);
+        var end = start.AddHours(3);
+        var request = BuildCreateRequest(
+            start: start,
+            end: end,
+            clearActivity: true,
+            assignmentId: _assignmentId);
+        request.SessionKind = SessionKind.AssignmentWindow;
+
+        var result = await sut.CreateClassSessionAsync(request);
+
+        Assert.Equal(start, result.StartTime);
+        Assert.Equal(end, result.EndTime);
     }
 
     [Fact]
@@ -689,6 +744,7 @@ public sealed class ClassSessionServiceTests
             CourseId = otherCourseId,
             ActivityType = ActivityType.Offline,
             ActivityOrder = 1,
+            DurationMinutes = 90,
             IsDeleted = false,
         });
         _db.Assignments.Seed(new Assignment
@@ -757,11 +813,46 @@ public sealed class ClassSessionServiceTests
         var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
         {
             StartTime = newStart,
-            EndTime = newStart.AddHours(2),
         });
 
         Assert.Equal(newStart, result.StartTime);
-        Assert.Equal(newStart.AddHours(2), result.EndTime);
+        Assert.Equal(newStart.AddMinutes(120), result.EndTime);
+    }
+
+    [Fact]
+    public async Task Update_Activity_Throws_WhenClientSetsEndTime()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(status: ClassSessionStatus.Scheduled);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+            {
+                EndTime = _now.AddDays(5).AddHours(4),
+            }));
+        Assert.Contains("Cannot set EndTime on an activity session", ex.Message);
+    }
+
+    [Fact]
+    public async Task Update_Assignment_AllowsEndTimeChange()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var session = SeedSession(status: ClassSessionStatus.Scheduled, activityId: null);
+        session.ActivityId = null;
+        session.AssignmentId = _assignmentId;
+        session.SessionKind = SessionKind.AssignmentWindow;
+        var sut = CreateSut();
+        var newEnd = session.StartTime.AddHours(4);
+
+        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            EndTime = newEnd,
+        });
+
+        Assert.Equal(newEnd, result.EndTime);
     }
 
     [Fact]
@@ -861,16 +952,14 @@ public sealed class ClassSessionServiceTests
         SeedSession(status: ClassSessionStatus.Scheduled, classEntity: classEntity);
         var sut = CreateSut();
         var newStart = _now.AddDays(5);
-        var newEnd = newStart.AddHours(2);
 
         var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
         {
             StartTime = newStart,
-            EndTime = newEnd,
         });
 
         Assert.Equal(newStart, result.StartTime);
-        Assert.Equal(newEnd, result.EndTime);
+        Assert.Equal(newStart.AddMinutes(120), result.EndTime);
         _notificationPublisher.Verify(
             n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()),
             Times.Once);
@@ -904,11 +993,14 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
-    public async Task Update_Throws_WhenEndTimeNotAfterStart()
+    public async Task Update_Throws_WhenAssignmentEndTimeNotAfterStart()
     {
         SeedCurriculum();
         SeedClass();
-        SeedSession(status: ClassSessionStatus.Scheduled);
+        var session = SeedSession(status: ClassSessionStatus.Scheduled);
+        session.ActivityId = null;
+        session.AssignmentId = _assignmentId;
+        session.SessionKind = SessionKind.AssignmentWindow;
         var sut = CreateSut();
         var start = _now.AddDays(4);
 

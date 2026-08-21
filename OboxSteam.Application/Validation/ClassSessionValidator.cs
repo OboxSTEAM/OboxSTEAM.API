@@ -45,7 +45,49 @@ public static class ClassSessionValidator
         }
 
         ValidateExactlyOneCurriculumItem(request.ActivityId, request.AssignmentId);
-        ScheduleTimeValidator.ValidateFutureRange(request.StartTime, request.EndTime);
+
+        var now = DateTime.UtcNow;
+        if (request.StartTime <= now)
+        {
+            throw ErrorHelper.BadRequest("StartTime cannot be in the past.");
+        }
+
+        // Assignment windows need an explicit end; activity ends are derived later from DurationMinutes.
+        if (request.AssignmentId.HasValue)
+        {
+            if (!request.EndTime.HasValue)
+            {
+                throw ErrorHelper.BadRequest(
+                    "EndTime is required for assignment sessions (assignments have no DurationMinutes).");
+            }
+
+            ScheduleTimeValidator.ValidateFutureRange(request.StartTime, request.EndTime.Value);
+        }
+    }
+
+    /// <summary>
+    /// Activity session length always comes from the curriculum template.
+    /// </summary>
+    public static DateTime ResolveActivitySessionEnd(DateTime startTime, Activity activity)
+    {
+        if (activity.DurationMinutes is null or <= 0)
+        {
+            throw ErrorHelper.BadRequest(
+                $"Activity '{activity.Name}' ({activity.Code}) has no DurationMinutes. " +
+                "Set a positive duration on the activity before scheduling it.");
+        }
+
+        return startTime.AddMinutes(activity.DurationMinutes.Value);
+    }
+
+    public static void ValidateActivitySessionEndNotOverridden(DateTime? requestedEndTime)
+    {
+        if (requestedEndTime.HasValue)
+        {
+            throw ErrorHelper.BadRequest(
+                "Cannot set EndTime on an activity session — end is derived from the activity's " +
+                "DurationMinutes. Change StartTime to reschedule.");
+        }
     }
 
     /// <summary>

@@ -293,10 +293,6 @@ public sealed class ClassSessionService : IClassSessionService
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
         ClassValidator.ValidateClassExists(classEntity, request.ClassId);
         ClassSessionValidator.ValidateClassSchedulable(classEntity!);
-        ClassSessionValidator.ValidateSessionWithinClassDateRange(
-            classEntity!,
-            request.StartTime,
-            request.EndTime);
 
         await ClassSessionValidator.ValidateReferencesAsync(
             _unitOfWork,
@@ -304,6 +300,24 @@ public sealed class ClassSessionService : IClassSessionService
             request.ModuleId,
             request.ActivityId,
             request.AssignmentId);
+
+        // Activity: EndTime = StartTime + DurationMinutes (client EndTime ignored).
+        // Assignment: client must supply EndTime (no curriculum duration).
+        DateTime endTime;
+        if (request.ActivityId.HasValue)
+        {
+            var activity = await _unitOfWork.Activities.GetByIdAsync(request.ActivityId.Value);
+            endTime = ClassSessionValidator.ResolveActivitySessionEnd(request.StartTime, activity!);
+        }
+        else
+        {
+            endTime = request.EndTime!.Value;
+        }
+
+        ClassSessionValidator.ValidateSessionWithinClassDateRange(
+            classEntity!,
+            request.StartTime,
+            endTime);
 
         // Sessions may be scheduled before a mentor is assigned — the schedule is what
         // mentors review when requesting the class. Overlap is only checkable (and only
@@ -314,7 +328,7 @@ public sealed class ClassSessionService : IClassSessionService
                 _unitOfWork,
                 classEntity.MentorId.Value,
                 request.StartTime,
-                request.EndTime);
+                endTime);
         }
 
         var entity = new ClassSession
@@ -327,7 +341,7 @@ public sealed class ClassSessionService : IClassSessionService
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
             StartTime = request.StartTime,
-            EndTime = request.EndTime,
+            EndTime = endTime,
             Location = request.Location?.Trim(),
             MeetingUrl = string.IsNullOrWhiteSpace(request.MeetingUrl) ? null : request.MeetingUrl.Trim(),
             Latitude = request.Latitude,
@@ -658,13 +672,14 @@ public sealed class ClassSessionService : IClassSessionService
         ClassValidator.ValidateClassExists(classEntity, session.ClassId);
 
         var originalStatus = session.Status;
-        var timeChanged = request.StartTime.HasValue || request.EndTime.HasValue;
+        var originalActivityId = session.ActivityId;
 
         var targetModuleId = session.ModuleId;
         var targetActivityId = session.ActivityId;
         var targetAssignmentId = session.AssignmentId;
         var targetStartTime = session.StartTime;
         var targetEndTime = session.EndTime;
+        var timeChanged = false;
 
         if (request.ModuleId.HasValue)
         {
@@ -676,12 +691,23 @@ public sealed class ClassSessionService : IClassSessionService
         {
             targetActivityId = request.ActivityId;
             session.ActivityId = request.ActivityId;
+            // Relinking to an activity clears any prior assignment link so XOR holds.
+            if (session.AssignmentId.HasValue)
+            {
+                session.AssignmentId = null;
+                targetAssignmentId = null;
+            }
         }
 
         if (request.AssignmentId.HasValue)
         {
             targetAssignmentId = request.AssignmentId;
             session.AssignmentId = request.AssignmentId;
+            if (session.ActivityId.HasValue)
+            {
+                session.ActivityId = null;
+                targetActivityId = null;
+            }
         }
 
         ClassSessionValidator.ValidateExactlyOneCurriculumItem(targetActivityId, targetAssignmentId);
@@ -711,25 +737,54 @@ public sealed class ClassSessionService : IClassSessionService
                 : request.Description.Trim();
         }
 
-        if (request.StartTime.HasValue)
+        if (targetActivityId.HasValue)
         {
-            targetStartTime = request.StartTime.Value;
-            session.StartTime = request.StartTime.Value;
-        }
+            // Activity sessions: EndTime is never client-controlled. Moving StartTime (or
+            // relinking the activity) recomputes End from DurationMinutes.
+            ClassSessionValidator.ValidateActivitySessionEndNotOverridden(request.EndTime);
 
-        if (request.EndTime.HasValue)
-        {
-            targetEndTime = request.EndTime.Value;
-            session.EndTime = request.EndTime.Value;
-        }
+            var activityRelinked = request.ActivityId.HasValue
+                                  && request.ActivityId != originalActivityId;
+            if (request.StartTime.HasValue || activityRelinked)
+            {
+                if (request.StartTime.HasValue)
+                {
+                    targetStartTime = request.StartTime.Value;
+                    session.StartTime = request.StartTime.Value;
+                }
 
-        if (request.StartTime.HasValue || request.EndTime.HasValue)
+                var activity = await _unitOfWork.Activities.GetByIdAsync(targetActivityId.Value);
+                targetEndTime = ClassSessionValidator.ResolveActivitySessionEnd(
+                    targetStartTime, activity!);
+                session.EndTime = targetEndTime;
+                timeChanged = true;
+            }
+        }
+        else
         {
-            if (targetEndTime <= targetStartTime)
+            // Assignment windows: Start/End remain client-editable.
+            if (request.StartTime.HasValue)
+            {
+                targetStartTime = request.StartTime.Value;
+                session.StartTime = request.StartTime.Value;
+                timeChanged = true;
+            }
+
+            if (request.EndTime.HasValue)
+            {
+                targetEndTime = request.EndTime.Value;
+                session.EndTime = request.EndTime.Value;
+                timeChanged = true;
+            }
+
+            if (timeChanged && targetEndTime <= targetStartTime)
             {
                 throw ErrorHelper.BadRequest("EndTime must be after StartTime.");
             }
+        }
 
+        if (timeChanged)
+        {
             ClassSessionValidator.ValidateSessionWithinClassDateRange(
                 classEntity!,
                 targetStartTime,

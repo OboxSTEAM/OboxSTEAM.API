@@ -5,7 +5,9 @@ namespace OboxSteam.Application.DTOs.ClassSessionDTO;
 
 /// <summary>
 /// Request to schedule a cohort session.
-/// At least one of <c>ActivityId</c> or <c>AssignmentId</c> must be set (enforced in the service layer).
+/// Exactly one of <c>ActivityId</c> or <c>AssignmentId</c> must be set (enforced in the service layer).
+/// For activity sessions, <see cref="EndTime"/> is ignored — the server derives it from
+/// <c>StartTime + Activity.DurationMinutes</c>. Assignment sessions require both times.
 /// </summary>
 public class CreateClassSessionRequestDto
 {
@@ -30,8 +32,11 @@ public class CreateClassSessionRequestDto
     [Required(ErrorMessage = "StartTime is required.")]
     public DateTime StartTime { get; set; }
 
-    [Required(ErrorMessage = "EndTime is required.")]
-    public DateTime EndTime { get; set; }
+    /// <summary>
+    /// Required for assignment sessions only. Ignored when <see cref="ActivityId"/> is set —
+    /// end is derived from the activity's DurationMinutes.
+    /// </summary>
+    public DateTime? EndTime { get; set; }
 
     [MaxLength(500)]
     public string? Location { get; set; }
