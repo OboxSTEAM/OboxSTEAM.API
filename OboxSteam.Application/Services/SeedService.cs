@@ -64,8 +64,6 @@ public partial class SeedService : ISeedService
         await SeedMaterialsAsync();
         await EnsureClassSessionCoverageAsync();
         await SeedWeeklyScheduleFixtureAsync();
-        await ResetIntroductionToRoboticsFeTestProgressAsync();
-        // After robotics FE reset so STD-001 research enrollment / submissions are not wiped.
         await SeedPortfolioDataAsync();
         await ClearDemoProgramSubmissionsAsync();
         await SeedGradedCapstoneSubmissionForUiAsync();
