@@ -111,12 +111,20 @@ public partial class SeedService
             }
 
             var sessionKind = ClassSessionValidator.ResolveSessionKind(activity, forAssignment: false);
+            var (fallbackLocation, fallbackMeet) = SeedTimeline.ResolveSeedVenue(
+                sessionKind,
+                classEntity.Code,
+                i);
             session.StartTime = startUtc;
             session.EndTime = endUtc;
             session.Location = slot.Location;
             session.MeetingUrl = sessionKind == SessionKind.Lesson
                 ? $"https://meet.oboxsteam.com/{classEntity.Code.ToLowerInvariant()}-{slot.MeetingUrlSuffix}"
-                : null;
+                : fallbackMeet;
+            if (string.IsNullOrWhiteSpace(session.Location))
+            {
+                session.Location = fallbackLocation;
+            }
             session.SessionKind = sessionKind;
             session.RequiresAttendance = true;
             session.Status = SeedTimeline.ResolveSessionStatus(startUtc, endUtc, nowUtc);

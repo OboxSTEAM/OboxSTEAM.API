@@ -109,7 +109,8 @@ public partial class SeedService
                 template.Title,
                 template.Description,
                 slot.Value.StartTime,
-                assignmentWindowMinutes));
+                assignmentWindowMinutes,
+                sessionIndex - 1));
         }
 
         return sessions;
@@ -173,7 +174,8 @@ public partial class SeedService
                         activity.Name,
                         activity.Description,
                         slot.Value.StartTime,
-                        assignmentWindowMinutes));
+                        assignmentWindowMinutes,
+                        sessionIndex - 1));
                 }
             }
 
@@ -201,7 +203,8 @@ public partial class SeedService
                     assignment.Title,
                     "Assignment working window and deadline checkpoint.",
                     slot.Value.StartTime,
-                    assignmentWindowMinutes));
+                    assignmentWindowMinutes,
+                    sessionIndex - 1));
             }
         }
 
@@ -216,7 +219,8 @@ public partial class SeedService
         string title,
         string? description,
         DateTime startTime,
-        int assignmentWindowMinutes)
+        int assignmentWindowMinutes,
+        int venueOrdinal)
     {
         var forAssignment = assignment != null;
         var sessionKind = ClassSessionValidator.ResolveSessionKind(activity, forAssignment);
@@ -226,6 +230,10 @@ public partial class SeedService
                 ? activity.DurationMinutes.Value
                 : assignmentWindowMinutes;
         var endTime = startTime.AddMinutes(durationMinutes);
+        var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+            sessionKind,
+            classEntity.Code,
+            venueOrdinal);
 
         return new ClassSession
         {
@@ -239,7 +247,8 @@ public partial class SeedService
             Description = description,
             StartTime = startTime,
             EndTime = endTime,
-            Location = null,
+            Location = location,
+            MeetingUrl = meetingUrl,
             RequiresAttendance = !forAssignment,
             Status = SeedTimeline.ResolveSessionStatus(startTime, endTime, _seedNow),
             CreatedAt = classEntity.CreatedAt,
@@ -318,5 +327,76 @@ public partial class SeedService
         _loggerService.LogInformation(
             "Finished seed session attendance — {Count} row(s).",
             attendances.Count);
+    }
+
+    /// <summary>
+    /// Backfill fake Location / MeetingUrl on existing Lesson and FieldTrip sessions so
+    /// reseed without a full clear still populates schedule UI fields.
+    /// </summary>
+    private async Task EnsureSeedSessionVenuesAsync()
+    {
+        _loggerService.LogInformation("Ensuring seed session venues (Location / MeetingUrl)");
+
+        var classCodes = (await _unitOfWork.Classes.GetAllAsync(c => !c.IsDeleted))
+            .ToDictionary(c => c.Id, c => c.Code);
+        var sessions = (await _unitOfWork.ClassSessions.GetAllAsync(
+                cs => !cs.IsDeleted
+                      && cs.SessionKind != SessionKind.AssignmentWindow))
+            .OrderBy(cs => cs.ClassId)
+            .ThenBy(cs => cs.StartTime)
+            .ToList();
+
+        var ordinalByClass = new Dictionary<Guid, int>();
+        var updated = 0;
+
+        foreach (var session in sessions)
+        {
+            if (!classCodes.TryGetValue(session.ClassId, out var classCode))
+            {
+                continue;
+            }
+
+            var ordinal = ordinalByClass.GetValueOrDefault(session.ClassId);
+            ordinalByClass[session.ClassId] = ordinal + 1;
+
+            var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+                session.SessionKind,
+                classCode,
+                ordinal);
+
+            var changed = false;
+            if (string.IsNullOrWhiteSpace(session.Location) && !string.IsNullOrWhiteSpace(location))
+            {
+                session.Location = location;
+                changed = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(session.MeetingUrl) && !string.IsNullOrWhiteSpace(meetingUrl))
+            {
+                session.MeetingUrl = meetingUrl;
+                changed = true;
+            }
+
+            if (!changed)
+            {
+                continue;
+            }
+
+            session.UpdatedAt = DateTime.UtcNow;
+            session.UpdatedBy = Guid.Empty;
+            await _unitOfWork.ClassSessions.Update(session);
+            updated++;
+        }
+
+        if (updated == 0)
+        {
+            _loggerService.LogInformation("All Lesson/FieldTrip sessions already have venues.");
+            return;
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Backfilled Location/MeetingUrl on {Count} session(s).",
+            updated);
     }
 }

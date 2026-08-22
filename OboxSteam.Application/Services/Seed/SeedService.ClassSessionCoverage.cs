@@ -125,6 +125,11 @@ public partial class SeedService
                     continue;
                 }
 
+                var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+                    sessionKind,
+                    classEntity.Code,
+                    nextIndex - 1);
+
                 sessionsToAdd.Add(new ClassSession
                 {
                     Id = Guid.NewGuid(),
@@ -139,7 +144,8 @@ public partial class SeedService
                         : activity!.Description,
                     StartTime = startTime,
                     EndTime = endTime,
-                    Location = null,
+                    Location = location,
+                    MeetingUrl = meetingUrl,
                     RequiresAttendance = !forAssignment,
                     Status = SeedTimeline.ResolveSessionStatus(startTime, endTime, _seedNow),
                     CreatedAt = classEntity.CreatedAt,

@@ -1179,13 +1179,18 @@ public partial class SeedService
             var startTime = slot.Value.StartTime;
             var endTime = startTime.AddMinutes(definition.Activity.DurationMinutes ?? 120);
             var status = SeedTimeline.ResolveSessionStatus(startTime, endTime, seedTime);
+            var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+                definition.Kind,
+                classEntity.Code,
+                sessionIndex - 1);
 
             if (existing != null)
             {
                 existing.Status = status;
                 existing.StartTime = startTime;
                 existing.EndTime = endTime;
-                existing.Location = null;
+                existing.Location = location;
+                existing.MeetingUrl = meetingUrl;
                 existing.UpdatedAt = seedTime;
                 existing.UpdatedBy = Guid.Empty;
                 await _unitOfWork.ClassSessions.Update(existing);
@@ -1203,7 +1208,8 @@ public partial class SeedService
                 Description = definition.Activity.Description,
                 StartTime = startTime,
                 EndTime = endTime,
-                Location = null,
+                Location = location,
+                MeetingUrl = meetingUrl,
                 RequiresAttendance = true,
                 RequiresMentorCheckIn = definition.Activity.ActivityType == ActivityType.Offline,
                 Status = status,

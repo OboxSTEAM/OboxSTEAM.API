@@ -114,4 +114,40 @@ public sealed class SeedTimelineTests
         Assert.Equal(now.AddDays(-42), clock.AtDays(-42));
         Assert.Equal(now.AddMonths(-8), clock.AtMonths(-8));
     }
+
+    [Fact]
+    public void ResolveSeedVenue_Lesson_HasRoomAndFakeMeetUrl()
+    {
+        var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+            SessionKind.Lesson,
+            "CLS-ROBOTICS-CURRENT",
+            3);
+
+        Assert.Equal("NVH 603", location);
+        Assert.Equal("https://meet.oboxsteam.com/cls-robotics-current/s03", meetingUrl);
+    }
+
+    [Fact]
+    public void ResolveSeedVenue_FieldTrip_HasLabOnly()
+    {
+        var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+            SessionKind.FieldTrip,
+            "CLS-IOT-CURRENT",
+            1);
+
+        Assert.Equal("Campus Lab 2", location);
+        Assert.Null(meetingUrl);
+    }
+
+    [Fact]
+    public void ResolveSeedVenue_AssignmentWindow_HasNeither()
+    {
+        var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+            SessionKind.AssignmentWindow,
+            "CLS-ANY",
+            0);
+
+        Assert.Null(location);
+        Assert.Null(meetingUrl);
+    }
 }

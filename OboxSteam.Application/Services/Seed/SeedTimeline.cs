@@ -104,4 +104,28 @@ public sealed class SeedTimeline
             _ => AttendanceStatus.Present,
         };
     }
+
+    /// <summary>
+    /// Fake venue for seed/FE: Lesson gets campus room + meet URL; FieldTrip gets lab location only.
+    /// </summary>
+    public static (string? Location, string? MeetingUrl) ResolveSeedVenue(
+        SessionKind kind,
+        string classCode,
+        int ordinal)
+    {
+        var safeCode = string.IsNullOrWhiteSpace(classCode)
+            ? "class"
+            : classCode.Trim().ToLowerInvariant();
+        var index = Math.Abs(ordinal);
+        var room = $"NVH {600 + (index % 20):D3}";
+        var lab = $"Campus Lab {(index % 5) + 1}";
+        var meetUrl = $"https://meet.oboxsteam.com/{safeCode}/s{index:D2}";
+
+        return kind switch
+        {
+            SessionKind.Lesson => (room, meetUrl),
+            SessionKind.FieldTrip => (lab, null),
+            _ => (null, null),
+        };
+    }
 }
