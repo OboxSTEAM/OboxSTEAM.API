@@ -399,4 +399,125 @@ public partial class SeedService
             "Backfilled Location/MeetingUrl on {Count} session(s).",
             updated);
     }
+
+    /// <summary>
+    /// Re-applies WeeklySlots with Asia/Ho_Chi_Minh → UTC so existing DBs (seeded before
+    /// the timezone fix) stop showing duplicate morning/afternoon cells on the weekly grid.
+    /// </summary>
+    private async Task RealignSeedSessionWallClocksAsync()
+    {
+        _loggerService.LogInformation("Realigning seed session wall-clocks to Asia/Ho_Chi_Minh UTC");
+
+        var classByCode = (await _unitOfWork.Classes.GetAllAsync(c => !c.IsDeleted))
+            .ToDictionary(c => c.Code, c => c, StringComparer.OrdinalIgnoreCase);
+        var updated = 0;
+
+        foreach (var definition in GetAcademicYearClassDefinitions())
+        {
+            if (!classByCode.TryGetValue(definition.Code, out var classEntity))
+            {
+                continue;
+            }
+
+            updated += await RealignClassSessionWallClocksAsync(classEntity, definition.WeeklySlots);
+        }
+
+        foreach (var demo in GetDemoProgramDefinitions())
+        {
+            if (!classByCode.TryGetValue(demo.ClassCode, out var classEntity))
+            {
+                continue;
+            }
+
+            updated += await RealignClassSessionWallClocksAsync(classEntity, DemoSatSunMorning);
+        }
+
+        if (updated == 0)
+        {
+            _loggerService.LogInformation("No session wall-clocks needed realignment.");
+            return;
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation("Realigned wall-clocks on {Count} session(s).", updated);
+    }
+
+    private async Task<int> RealignClassSessionWallClocksAsync(
+        Class classEntity,
+        SeedTimeline.WeekdaySlot[] weeklySlots)
+    {
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classEntity.Id
+                  && !cs.IsDeleted
+                  && cs.Status != ClassSessionStatus.Cancelled
+                  && !cs.Title.StartsWith(ScheduleFixtureTitlePrefix));
+
+        if (sessions.Count == 0)
+        {
+            return 0;
+        }
+
+        var ordered = sessions
+            .OrderBy(s => s.StartTime)
+            .ThenBy(s => s.Title)
+            .ToList();
+
+        var activityIds = ordered
+            .Where(s => s.ActivityId.HasValue)
+            .Select(s => s.ActivityId!.Value)
+            .Distinct()
+            .ToList();
+        var activitiesById = activityIds.Count == 0
+            ? new Dictionary<Guid, Activity>()
+            : (await _unitOfWork.Activities.GetAllAsync(
+                    a => activityIds.Contains(a.Id) && !a.IsDeleted))
+                .ToDictionary(a => a.Id);
+
+        var defaultDuration = weeklySlots.Length > 0 ? weeklySlots[0].DurationMinutes : 120;
+        var updated = 0;
+        var seedTime = DateTime.UtcNow;
+
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var slot = SeedTimeline.TryResolveSlotSequence(
+                classEntity.StartDate,
+                classEntity.EndDate,
+                weeklySlots,
+                i);
+            if (slot == null)
+            {
+                break;
+            }
+
+            var session = ordered[i];
+            var durationMinutes = defaultDuration;
+            if (session.ActivityId.HasValue
+                && activitiesById.TryGetValue(session.ActivityId.Value, out var activity)
+                && activity.DurationMinutes is > 0)
+            {
+                durationMinutes = activity.DurationMinutes.Value;
+            }
+            else if (session.AssignmentId.HasValue)
+            {
+                durationMinutes = defaultDuration;
+            }
+
+            var startUtc = slot.Value.StartTime;
+            var endUtc = startUtc.AddMinutes(durationMinutes);
+            if (session.StartTime == startUtc && session.EndTime == endUtc)
+            {
+                continue;
+            }
+
+            session.StartTime = startUtc;
+            session.EndTime = endUtc;
+            session.Status = SeedTimeline.ResolveSessionStatus(startUtc, endUtc, seedTime);
+            session.UpdatedAt = seedTime;
+            session.UpdatedBy = Guid.Empty;
+            await _unitOfWork.ClassSessions.Update(session);
+            updated++;
+        }
+
+        return updated;
+    }
 }

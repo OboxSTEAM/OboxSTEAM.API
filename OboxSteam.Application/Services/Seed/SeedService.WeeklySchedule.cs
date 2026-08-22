@@ -12,10 +12,8 @@ public partial class SeedService
     private const string ScheduleFixtureTitlePrefix = "[SCH-WK]";
 
     /// <summary>
-    /// Time/location templates for the current Asia/Ho_Chi_Minh week. Does not introduce
-    /// new curriculum links — existing LiveOnline/Offline sessions on the student's class
-    /// are moved into these slots so <c>GET /api/schedules/weekly</c> is populated without
-    /// violating 1:1 activity sessions or SelfPaced rules.
+    /// Venue templates for the two weekly slots (2 buổi/tuần). Aligns sessions already
+    /// belonging to the current VN week; never stacks extra curriculum sessions into the week.
     /// </summary>
     private sealed record WeeklyScheduleSlot(
         int DaysFromMonday,
@@ -48,11 +46,12 @@ public partial class SeedService
             return;
         }
 
-        // Remove legacy fixture rows that linked SelfPaced activities or duplicated curriculum items.
         await SoftDeleteLegacyWeeklyScheduleFixturesAsync(classEntity.Id);
 
-        var vietnam = ResolveVietnamTimeZone();
+        var vietnam = SeedTimeline.ResolveVietnamTimeZone();
         var monday = ResolveCurrentMonday(vietnam);
+        var weekStartUtc = SeedTimeline.ToUtc(monday, TimeOnly.MinValue, vietnam);
+        var weekEndExclusiveUtc = SeedTimeline.ToUtc(monday.AddDays(7), TimeOnly.MinValue, vietnam);
         var seedTime = DateTime.UtcNow;
         var nowUtc = DateTime.SpecifyKind(seedTime, DateTimeKind.Utc);
 
@@ -66,41 +65,57 @@ public partial class SeedService
             return;
         }
 
-        var activityIds = movableSessions
+        var inWeek = movableSessions
+            .Where(s => s.StartTime >= weekStartUtc && s.StartTime < weekEndExclusiveUtc)
+            .OrderBy(s => s.StartTime)
+            .ThenBy(s => s.Title)
+            .ToList();
+        var outside = movableSessions
+            .Where(s => s.StartTime < weekStartUtc || s.StartTime >= weekEndExclusiveUtc)
+            .OrderBy(s => s.StartTime)
+            .ThenBy(s => s.Title)
+            .ToList();
+
+        // Prefer sessions already on this week (after wall-clock realign = exactly 2).
+        // Only pull from outside when the week is sparse — never keep more than slots.Count.
+        var chosen = inWeek.Take(slots.Count).ToList();
+        if (chosen.Count < slots.Count)
+        {
+            chosen.AddRange(outside.Take(slots.Count - chosen.Count));
+        }
+
+        var activityIds = chosen
             .Where(s => s.ActivityId.HasValue)
             .Select(s => s.ActivityId!.Value)
             .Distinct()
             .ToList();
-        var activitiesById = (await _unitOfWork.Activities.GetAllAsync(
-                a => activityIds.Contains(a.Id) && !a.IsDeleted))
-            .ToDictionary(a => a.Id);
+        var activitiesById = activityIds.Count == 0
+            ? new Dictionary<Guid, Activity>()
+            : (await _unitOfWork.Activities.GetAllAsync(
+                    a => activityIds.Contains(a.Id) && !a.IsDeleted))
+                .ToDictionary(a => a.Id);
 
-        var count = Math.Min(slots.Count, movableSessions.Count);
-        var fixtureSessions = new List<ClassSession>(count);
+        var fixtureSessions = new List<ClassSession>(chosen.Count);
+        var chosenIds = new HashSet<Guid>();
 
-        for (var i = 0; i < count; i++)
+        for (var i = 0; i < chosen.Count && i < slots.Count; i++)
         {
             var slot = slots[i];
-            var session = movableSessions[i];
+            var session = chosen[i];
             if (!session.ActivityId.HasValue
-                || !activitiesById.TryGetValue(session.ActivityId.Value, out var activity))
-            {
-                continue;
-            }
-
-            if (activity.ActivityType == ActivityType.SelfPaced)
+                || !activitiesById.TryGetValue(session.ActivityId.Value, out var activity)
+                || activity.ActivityType == ActivityType.SelfPaced)
             {
                 continue;
             }
 
             var date = monday.AddDays(slot.DaysFromMonday);
-            var startUtc = ToUtc(date, slot.Start, vietnam);
+            var startUtc = SeedTimeline.ToUtc(date, slot.Start, vietnam);
             var durationMinutes = activity.DurationMinutes is > 0
                 ? activity.DurationMinutes.Value
                 : 120;
             var endUtc = startUtc.AddMinutes(durationMinutes);
 
-            // Keep sessions inside the class window so date-range rules stay valid.
             if (startUtc < classEntity.StartDate || endUtc > classEntity.EndDate)
             {
                 _loggerService.LogWarning(
@@ -125,6 +140,7 @@ public partial class SeedService
             {
                 session.Location = fallbackLocation;
             }
+
             session.SessionKind = sessionKind;
             session.RequiresAttendance = true;
             session.Status = SeedTimeline.ResolveSessionStatus(startUtc, endUtc, nowUtc);
@@ -133,9 +149,29 @@ public partial class SeedService
 
             await _unitOfWork.ClassSessions.Update(session);
             fixtureSessions.Add(session);
+            chosenIds.Add(session.Id);
         }
 
-        if (fixtureSessions.Count > 0)
+        // Evict leftovers so the VN week never shows > 2 buổi for this class.
+        var evicted = 0;
+        foreach (var extra in movableSessions.Where(s =>
+                     !chosenIds.Contains(s.Id)
+                     && s.StartTime >= weekStartUtc
+                     && s.StartTime < weekEndExclusiveUtc))
+        {
+            if (TryEvictSessionFromWeek(
+                    extra,
+                    weekStartUtc,
+                    weekEndExclusiveUtc,
+                    classEntity,
+                    seedTime))
+            {
+                await _unitOfWork.ClassSessions.Update(extra);
+                evicted++;
+            }
+        }
+
+        if (fixtureSessions.Count > 0 || evicted > 0)
         {
             await _unitOfWork.SaveChangesAsync();
         }
@@ -143,10 +179,74 @@ public partial class SeedService
         await SeedWeeklyScheduleAttendanceAsync(student.Id, fixtureSessions, nowUtc, seedTime);
 
         _loggerService.LogInformation(
-            "Weekly schedule fixture ready — class {ClassCode}, week {WeekStart}, moved {Count} curriculum session(s). Login STD-001 then GET /api/schedules/weekly.",
+            "Weekly schedule fixture ready — class {ClassCode}, week {WeekStart}, aligned {Count} session(s), evicted {Evicted}. Login STD-001 then GET /api/schedules/weekly.",
             classEntity.Code,
             monday,
-            fixtureSessions.Count);
+            fixtureSessions.Count,
+            evicted);
+    }
+
+    /// <summary>
+    /// Moves a session out of the current VN week (+7d preferred, else −7d) while staying
+    /// inside the class date window.
+    /// </summary>
+    private static bool TryEvictSessionFromWeek(
+        ClassSession session,
+        DateTime weekStartUtc,
+        DateTime weekEndExclusiveUtc,
+        Class classEntity,
+        DateTime seedTime)
+    {
+        var duration = session.EndTime - session.StartTime;
+        if (duration <= TimeSpan.Zero)
+        {
+            duration = TimeSpan.FromMinutes(120);
+        }
+
+        var classStart = SeedTimeline.AsUtc(classEntity.StartDate);
+        var classEnd = SeedTimeline.AsUtc(classEntity.EndDate);
+
+        for (var weekOffset = 1; weekOffset <= 12; weekOffset++)
+        {
+            var candidateStart = session.StartTime.AddDays(7 * weekOffset);
+            var candidateEnd = candidateStart + duration;
+            if (candidateStart >= weekEndExclusiveUtc
+                && candidateStart >= classStart
+                && candidateEnd <= classEnd.AddDays(1))
+            {
+                session.StartTime = candidateStart;
+                session.EndTime = candidateEnd;
+                session.Status = SeedTimeline.ResolveSessionStatus(
+                    candidateStart,
+                    candidateEnd,
+                    seedTime);
+                session.UpdatedAt = seedTime;
+                session.UpdatedBy = Guid.Empty;
+                return true;
+            }
+        }
+
+        for (var weekOffset = 1; weekOffset <= 12; weekOffset++)
+        {
+            var candidateStart = session.StartTime.AddDays(-7 * weekOffset);
+            var candidateEnd = candidateStart + duration;
+            if (candidateEnd <= weekStartUtc
+                && candidateStart >= classStart
+                && candidateEnd <= classEnd.AddDays(1))
+            {
+                session.StartTime = candidateStart;
+                session.EndTime = candidateEnd;
+                session.Status = SeedTimeline.ResolveSessionStatus(
+                    candidateStart,
+                    candidateEnd,
+                    seedTime);
+                session.UpdatedAt = seedTime;
+                session.UpdatedBy = Guid.Empty;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task SoftDeleteLegacyWeeklyScheduleFixturesAsync(Guid classId)
@@ -327,27 +427,5 @@ public partial class SeedService
         var today = DateOnly.FromDateTime(nowVietnam);
         var daysFromMonday = ((int)today.DayOfWeek + 6) % 7;
         return today.AddDays(-daysFromMonday);
-    }
-
-    private static TimeZoneInfo ResolveVietnamTimeZone()
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(ScheduleValidator.TimezoneId);
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(ScheduleValidator.WindowsTimezoneId);
-        }
-        catch (InvalidTimeZoneException)
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(ScheduleValidator.WindowsTimezoneId);
-        }
-    }
-
-    private static DateTime ToUtc(DateOnly date, TimeOnly time, TimeZoneInfo vietnam)
-    {
-        var unspecified = DateTime.SpecifyKind(date.ToDateTime(time), DateTimeKind.Unspecified);
-        return TimeZoneInfo.ConvertTimeToUtc(unspecified, vietnam);
     }
 }

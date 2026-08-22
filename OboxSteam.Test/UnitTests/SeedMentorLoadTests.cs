@@ -1,5 +1,6 @@
 using OboxSteam.Application.Services;
 using OboxSteam.Application.Validation;
+using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Test.UnitTests;
 
@@ -45,6 +46,8 @@ public sealed class SeedMentorLoadTests
         // Hero students already on Robotics must not also hold demo programs.
         Assert.Equal(1, usage.GetValueOrDefault("STD-001"));
         Assert.Equal(1, usage.GetValueOrDefault("STD-002"));
+        // Robotics Active + CERT-TEST Active.
+        Assert.Equal(2, usage.GetValueOrDefault("STD-025"));
     }
 
     [Fact]
@@ -75,5 +78,20 @@ public sealed class SeedMentorLoadTests
                 $"{pendingCode} has PendingPayment stacked beyond the in-progress cap.");
             Assert.Equal(1, usage.GetValueOrDefault(pendingCode));
         }
+    }
+
+    [Fact]
+    public void ResolveSessionKind_MapsOfflineToFieldTrip_AndLiveOnlineToLesson()
+    {
+        Assert.Equal(
+            SessionKind.FieldTrip,
+            ClassSessionValidator.ResolveSessionKind(
+                new OboxSteam.Domain.Entities.Activity { ActivityType = ActivityType.Offline },
+                forAssignment: false));
+        Assert.Equal(
+            SessionKind.Lesson,
+            ClassSessionValidator.ResolveSessionKind(
+                new OboxSteam.Domain.Entities.Activity { ActivityType = ActivityType.LiveOnline },
+                forAssignment: false));
     }
 }

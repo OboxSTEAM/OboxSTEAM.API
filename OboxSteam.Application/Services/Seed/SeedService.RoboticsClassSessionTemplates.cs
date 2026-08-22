@@ -7,6 +7,8 @@ public partial class SeedService
     /// <summary>
     /// All non-SelfPaced Introduction to Robotics (PRG-ROBOTICS) activities as cohort sessions.
     /// SelfPaced items are completed individually and do not need a <see cref="Domain.Entities.ClassSession"/>.
+    /// SessionKind here must match <see cref="OboxSteam.Application.Validation.ClassSessionValidator.ResolveSessionKind"/>
+    /// (Offline → FieldTrip, otherwise Lesson); CreateSeedSessionFromCurriculum derives from ActivityType.
     /// </summary>
     private static readonly (string ModuleCode, string ActivityCode, SessionKind SessionKind, string Title, string Description)[]
         IntroductionToRoboticsClassSessionTemplates =
@@ -50,19 +52,19 @@ public partial class SeedService
             ("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-02", SessionKind.Lesson,
                 "Prototype Build Preparation",
                 "Live mentor session on team roles and build-day logistics."),
-            ("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-03", SessionKind.Lesson,
+            ("MOD-ROBOTICS-03", "ACT-ROBOTICS-07-03", SessionKind.FieldTrip,
                 "Team Prototype Build",
                 "Full-day team build session for the capstone prototype."),
             ("MOD-ROBOTICS-03", "ACT-ROBOTICS-08-02", SessionKind.Lesson,
                 "Iteration Planning Session",
                 "Live planning session before the prototype iteration lab."),
-            ("MOD-ROBOTICS-03", "ACT-ROBOTICS-08-03", SessionKind.Lesson,
+            ("MOD-ROBOTICS-03", "ACT-ROBOTICS-08-03", SessionKind.FieldTrip,
                 "Prototype Iteration Lab",
                 "On-site lab to refine and improve the team prototype."),
             ("MOD-ROBOTICS-03", "ACT-ROBOTICS-09-02", SessionKind.Lesson,
                 "Final Testing Preparation",
                 "Live mentor session before the capstone showcase."),
-            ("MOD-ROBOTICS-03", "ACT-ROBOTICS-09-03", SessionKind.Lesson,
+            ("MOD-ROBOTICS-03", "ACT-ROBOTICS-09-03", SessionKind.FieldTrip,
                 "Final Testing & Showcase",
                 "On-site final testing and capstone showcase."),
         ];

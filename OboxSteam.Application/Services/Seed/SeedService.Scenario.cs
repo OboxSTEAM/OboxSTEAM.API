@@ -336,6 +336,9 @@ public partial class SeedService
             Add(code);
         }
 
+        // CERT-TEST Active for STD-025 (paired with Robotics Active → exactly 2).
+        Add("STD-025");
+
         foreach (var pair in GetDemoStudentCodesByProgram())
         {
             foreach (var code in pair.Value)

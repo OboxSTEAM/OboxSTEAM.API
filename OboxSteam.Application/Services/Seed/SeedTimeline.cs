@@ -1,9 +1,12 @@
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.Services;
 
 /// <summary>
 /// Pure date helpers for academic-year seed data.
+/// Session wall-clock times are Asia/Ho_Chi_Minh; stored values are UTC
+/// (same contract as <c>GET /api/schedules/weekly</c>).
 /// </summary>
 public sealed class SeedTimeline
 {
@@ -45,8 +48,9 @@ public sealed class SeedTimeline
         => start1 < end2 && start2 < end1;
 
     /// <summary>
-    /// Walks the class calendar and returns the sessionIndex-th occurrence of the weekly slots.
-    /// Returns null when the window does not contain that many slots.
+    /// Walks the class calendar in Asia/Ho_Chi_Minh and returns the sessionIndex-th
+    /// occurrence of the weekly slots as UTC. Hour/Minute on <see cref="WeekdaySlot"/>
+    /// are local Vietnam wall-clock times.
     /// </summary>
     public static (DateTime StartTime, DateTime EndTime)? TryResolveSlotSequence(
         DateTime classStart,
@@ -64,8 +68,15 @@ public sealed class SeedTimeline
             throw new ArgumentOutOfRangeException(nameof(sessionIndex));
         }
 
+        var vietnam = ResolveVietnamTimeZone();
+        var startLocal = TimeZoneInfo.ConvertTimeFromUtc(AsUtc(classStart), vietnam);
+        var endLocal = TimeZoneInfo.ConvertTimeFromUtc(AsUtc(classEnd), vietnam);
+        var startDate = DateOnly.FromDateTime(startLocal);
+        var endDate = DateOnly.FromDateTime(endLocal);
+        var classEndUtc = AsUtc(classEnd);
+
         var matched = 0;
-        for (var date = classStart.Date; date <= classEnd.Date; date = date.AddDays(1))
+        for (var date = startDate; date <= endDate; date = date.AddDays(1))
         {
             foreach (var slot in weeklySlots)
             {
@@ -76,14 +87,14 @@ public sealed class SeedTimeline
 
                 if (matched == sessionIndex)
                 {
-                    var start = date.AddHours(slot.Hour).AddMinutes(slot.Minute);
-                    var end = start.AddMinutes(slot.DurationMinutes);
-                    if (end > classEnd.AddDays(1))
+                    var startUtc = ToUtc(date, new TimeOnly(slot.Hour, slot.Minute), vietnam);
+                    var endUtc = startUtc.AddMinutes(slot.DurationMinutes);
+                    if (endUtc > classEndUtc.AddDays(1))
                     {
                         return null;
                     }
 
-                    return (start, end);
+                    return (startUtc, endUtc);
                 }
 
                 matched++;
@@ -128,4 +139,34 @@ public sealed class SeedTimeline
             _ => (null, null),
         };
     }
+
+    public static TimeZoneInfo ResolveVietnamTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(ScheduleValidator.TimezoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(ScheduleValidator.WindowsTimezoneId);
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(ScheduleValidator.WindowsTimezoneId);
+        }
+    }
+
+    public static DateTime ToUtc(DateOnly date, TimeOnly time, TimeZoneInfo vietnam)
+    {
+        var unspecified = DateTime.SpecifyKind(date.ToDateTime(time), DateTimeKind.Unspecified);
+        return TimeZoneInfo.ConvertTimeToUtc(unspecified, vietnam);
+    }
+
+    public static DateTime AsUtc(DateTime value)
+        => value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+        };
 }

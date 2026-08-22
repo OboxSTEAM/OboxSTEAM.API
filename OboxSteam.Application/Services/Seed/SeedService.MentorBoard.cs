@@ -197,7 +197,154 @@ public partial class SeedService
             _loggerService.LogInformation("Mentor board classes already seeded, skipping class create");
         }
 
+        await EnsureMentorBoardPlaceholderSchedulesAsync(seedTime);
         await SeedMentorBoardRequestsAsync(seedTime);
+    }
+
+    /// <summary>
+    /// ReadyForMentor board classes must have a timetable before mentors can request / managers
+    /// can approve (<see cref="OboxSteam.Application.Validation.ClassMentorRequestValidator.ValidateClassHasSchedule"/>).
+    /// Seeds two LiveOnline placeholder sessions (2 buổi/tuần) when the class has none.
+    /// </summary>
+    private async Task EnsureMentorBoardPlaceholderSchedulesAsync(DateTime seedTime)
+    {
+        _loggerService.LogInformation("Ensuring mentor-board placeholder schedules");
+
+        var weeklySlots = WebDevTueThuEvening;
+        var sessionsToAdd = new List<ClassSession>();
+        var summariesUpdated = 0;
+
+        foreach (var definition in MentorBoardClassDefinitions)
+        {
+            var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
+                c => c.Code == definition.Code && !c.IsDeleted);
+            if (classEntity == null)
+            {
+                continue;
+            }
+
+            var hasSessions = await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
+                cs => cs.ClassId == classEntity.Id
+                      && !cs.IsDeleted
+                      && cs.Status != ClassSessionStatus.Cancelled);
+            if (hasSessions != null)
+            {
+                continue;
+            }
+
+            var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
+                p => p.Id == classEntity.ProgramId && !p.IsDeleted);
+            if (program == null)
+            {
+                continue;
+            }
+
+            var modules = await _unitOfWork.Modules.GetAllAsync(
+                m => m.ProgramId == program.Id && !m.IsDeleted);
+            var moduleIds = modules.Select(m => m.Id).ToList();
+            if (moduleIds.Count == 0)
+            {
+                _loggerService.LogWarning(
+                    "No modules for board class {ClassCode}. Skipping schedule.",
+                    definition.Code);
+                continue;
+            }
+
+            var courses = await _unitOfWork.Courses.GetAllAsync(
+                c => moduleIds.Contains(c.ModuleId) && !c.IsDeleted);
+            var courseIds = courses.Select(c => c.Id).ToList();
+            var liveActivities = (await _unitOfWork.Activities.GetAllAsync(
+                    a => courseIds.Contains(a.CourseId)
+                         && !a.IsDeleted
+                         && a.ActivityType == ActivityType.LiveOnline))
+                .OrderBy(a => a.ActivityOrder)
+                .ThenBy(a => a.Code)
+                .Take(2)
+                .ToList();
+
+            if (liveActivities.Count == 0)
+            {
+                _loggerService.LogWarning(
+                    "No LiveOnline activities for board class {ClassCode}. Skipping schedule.",
+                    definition.Code);
+                continue;
+            }
+
+            var moduleByCourseId = courses.ToDictionary(c => c.Id, c => c.ModuleId);
+            for (var i = 0; i < liveActivities.Count && i < weeklySlots.Length; i++)
+            {
+                var activity = liveActivities[i];
+                if (!moduleByCourseId.TryGetValue(activity.CourseId, out var moduleId))
+                {
+                    continue;
+                }
+
+                var slot = SeedTimeline.TryResolveSlotSequence(
+                    classEntity.StartDate,
+                    classEntity.EndDate,
+                    weeklySlots,
+                    i);
+                if (slot == null)
+                {
+                    continue;
+                }
+
+                var duration = activity.DurationMinutes is > 0
+                    ? activity.DurationMinutes.Value
+                    : weeklySlots[i].DurationMinutes;
+                var startUtc = slot.Value.StartTime;
+                var endUtc = startUtc.AddMinutes(duration);
+                var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+                    SessionKind.Lesson,
+                    classEntity.Code,
+                    i);
+
+                sessionsToAdd.Add(new ClassSession
+                {
+                    Id = Guid.NewGuid(),
+                    ClassId = classEntity.Id,
+                    ModuleId = moduleId,
+                    ActivityId = activity.Id,
+                    SessionKind = SessionKind.Lesson,
+                    Title = $"[Board] {activity.Name}",
+                    Description = "Placeholder timetable for mentor-board request/approve flows.",
+                    StartTime = startUtc,
+                    EndTime = endUtc,
+                    Location = location,
+                    MeetingUrl = meetingUrl,
+                    RequiresAttendance = true,
+                    Status = SeedTimeline.ResolveSessionStatus(startUtc, endUtc, seedTime),
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
+            }
+
+            const string summary = "Tuesday & Thursday 18:00-20:30";
+            if (!string.Equals(classEntity.ScheduleSummary, summary, StringComparison.Ordinal))
+            {
+                classEntity.ScheduleSummary = summary;
+                classEntity.UpdatedAt = seedTime;
+                classEntity.UpdatedBy = Guid.Empty;
+                await _unitOfWork.Classes.Update(classEntity);
+                summariesUpdated++;
+            }
+        }
+
+        if (sessionsToAdd.Count > 0)
+        {
+            await _unitOfWork.ClassSessions.AddRangeAsync(sessionsToAdd);
+        }
+
+        if (sessionsToAdd.Count > 0 || summariesUpdated > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        _loggerService.LogInformation(
+            "Mentor-board schedules — {SessionCount} session(s), {SummaryCount} summary update(s).",
+            sessionsToAdd.Count,
+            summariesUpdated);
     }
 
     private async Task SeedMentorBoardRequestsAsync(DateTime seedTime)

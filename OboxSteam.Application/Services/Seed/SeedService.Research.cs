@@ -540,7 +540,7 @@ public partial class SeedService
         _loggerService.LogInformation("Starting seed enrollment activity progress");
 
         await TrySeedModuleActivityProgressAsync(
-            "STD-002",
+            "STD-001",
             "MOD-WEBDEV-01",
             "PRG-WEBDEV",
             [
@@ -548,7 +548,8 @@ public partial class SeedService
                 ("ACT-WEBDEV-01-02", ActivityStatus.InProgress, null),
             ]);
 
-        // STD-025 completed the only cert-test activity; STD-024 remains with no progress.
+        // STD-025: Robotics Active + CERT Active (still within max 2 in-progress programs).
+        await EnsureCertTestEnrollmentForProgressAsync();
         await TrySeedModuleActivityProgressAsync(
             "STD-025",
             "MOD-CERT-TEST-01",
@@ -558,6 +559,80 @@ public partial class SeedService
             ]);
 
         _loggerService.LogInformation("Finished seed enrollment activity progress");
+    }
+
+    /// <summary>
+    /// Ensures STD-025 has Active PRG-CERT-TEST + module enrollment so certificate progress
+    /// seed is not a no-op. Keeps total in-progress programs at 2 (Robotics + CERT).
+    /// </summary>
+    private async Task EnsureCertTestEnrollmentForProgressAsync()
+    {
+        var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-025" && !u.IsDeleted);
+        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-CERT-TEST" && !p.IsDeleted);
+        var module = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-CERT-TEST-01" && !m.IsDeleted);
+        if (student == null || program == null || module == null)
+        {
+            _loggerService.LogWarning("CERT-TEST seed prerequisites missing. Skipping enrollment ensure.");
+            return;
+        }
+
+        var seedTime = _seedNow;
+        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+            pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted);
+
+        if (programEnrollment == null)
+        {
+            programEnrollment = new ProgramEnrollment
+            {
+                Id = Guid.NewGuid(),
+                StudentId = student.Id,
+                ProgramId = program.Id,
+                Status = EnrollmentStatus.Active,
+                ProgressPercent = 10m,
+                EnrolledAt = seedTime.AddDays(-5),
+                StartedAt = seedTime.AddDays(-4),
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            };
+            await _unitOfWork.ProgramEnrollments.AddAsync(programEnrollment);
+            await _unitOfWork.SaveChangesAsync();
+        }
+        else if (programEnrollment.Status is not (EnrollmentStatus.Active or EnrollmentStatus.Completed))
+        {
+            programEnrollment.Status = EnrollmentStatus.Active;
+            programEnrollment.UpdatedAt = seedTime;
+            await _unitOfWork.ProgramEnrollments.Update(programEnrollment);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+            me => me.StudentId == student.Id && me.ModuleId == module.Id && !me.IsDeleted);
+        if (moduleEnrollment == null)
+        {
+            await _unitOfWork.ModuleEnrollments.AddAsync(new ModuleEnrollment
+            {
+                Id = Guid.NewGuid(),
+                StudentId = student.Id,
+                ModuleId = module.Id,
+                ProgramEnrollmentId = programEnrollment.Id,
+                Status = EnrollmentStatus.Active,
+                ProgressPercent = 0m,
+                EnrolledAt = seedTime.AddDays(-4),
+                StartedAt = seedTime.AddDays(-3),
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+            await _unitOfWork.SaveChangesAsync();
+        }
+        else if (moduleEnrollment.ProgramEnrollmentId != programEnrollment.Id)
+        {
+            moduleEnrollment.ProgramEnrollmentId = programEnrollment.Id;
+            moduleEnrollment.UpdatedAt = seedTime;
+            await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+            await _unitOfWork.SaveChangesAsync();
+        }
     }
 
     private async Task TrySeedModuleActivityProgressAsync(
@@ -588,13 +663,14 @@ public partial class SeedService
         var moduleEnrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
             me => me.StudentId == student.Id
                   && me.ModuleId == module.Id
-                  && me.Status == EnrollmentStatus.Active
+                  && (me.Status == EnrollmentStatus.Active
+                      || me.Status == EnrollmentStatus.Completed)
                   && !me.IsDeleted);
 
         if (moduleEnrollment == null)
         {
             _loggerService.LogWarning(
-                "Active module enrollment not found for {StudentCode} / {ModuleCode}. Skipping activity progress seeding.",
+                "Active/Completed module enrollment not found for {StudentCode} / {ModuleCode}. Skipping activity progress seeding.",
                 studentCode,
                 moduleCode);
             return;
@@ -1032,38 +1108,56 @@ public partial class SeedService
     {
         _loggerService.LogInformation("Starting seed webdev research enrollments");
         var moduleWebDev3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-03");
-        var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
+        // STD-001 has Completed PRG-WEBDEV — valid research subject without orphan module enrollments.
+        // STD-002 already holds Active Robotics and must not get a second Active WebDev track.
+        var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001" && !u.IsDeleted);
         var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
 
-        if (moduleWebDev3 == null || student2 == null || programWebDev == null)
+        if (moduleWebDev3 == null || student == null || programWebDev == null)
         {
             _loggerService.LogWarning("WebDev research enrollment prerequisites not found. Skipping.");
             return;
         }
 
+        await PruneOrphanWebDevResearchEnrollmentAsync(moduleWebDev3.Id, programWebDev.Id);
+
+        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+            pe => pe.StudentId == student.Id
+                  && pe.ProgramId == programWebDev.Id
+                  && !pe.IsDeleted);
+        if (programEnrollment == null)
+        {
+            _loggerService.LogWarning(
+                "STD-001 has no PRG-WEBDEV enrollment. Skipping webdev research enrollment.");
+            return;
+        }
+
         var existing = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-            me => me.StudentId == student2.Id
+            me => me.StudentId == student.Id
                   && me.ModuleId == moduleWebDev3.Id
                   && !me.IsDeleted);
 
         if (existing != null)
         {
-            _loggerService.LogInformation("WebDev research module enrollment already exists, skipping");
+            if (existing.ProgramEnrollmentId != programEnrollment.Id)
+            {
+                existing.ProgramEnrollmentId = programEnrollment.Id;
+                existing.UpdatedAt = _seedNow;
+                await _unitOfWork.ModuleEnrollments.Update(existing);
+                await _unitOfWork.SaveChangesAsync();
+            }
+
+            _loggerService.LogInformation("WebDev research module enrollment already exists for STD-001, skipping create");
             return;
         }
-
-        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-            pe => pe.StudentId == student2.Id
-                  && pe.ProgramId == programWebDev.Id
-                  && !pe.IsDeleted);
 
         var seedTime = _seedNow;
         var moduleEnrollment = new ModuleEnrollment
         {
             Id = Guid.NewGuid(),
-            StudentId = student2.Id,
+            StudentId = student.Id,
             ModuleId = moduleWebDev3.Id,
-            ProgramEnrollmentId = programEnrollment?.Id,
+            ProgramEnrollmentId = programEnrollment.Id,
             Status = EnrollmentStatus.Active,
             ProgressPercent = 5m,
             EnrolledAt = seedTime.AddDays(-3),
@@ -1081,7 +1175,7 @@ public partial class SeedService
             await _unitOfWork.ActivityProgresses.AddAsync(new ActivityProgress
             {
                 Id = Guid.NewGuid(),
-                StudentId = student2.Id,
+                StudentId = student.Id,
                 ActivityId = wireframeActivity.Id,
                 ModuleEnrollmentId = moduleEnrollment.Id,
                 ActivityStatus = ActivityStatus.Done,
@@ -1108,7 +1202,54 @@ public partial class SeedService
             await _unitOfWork.SaveChangesAsync();
         }
 
-        _loggerService.LogInformation("Finished seed webdev research enrollment for STD-002.");
+        _loggerService.LogInformation("Finished seed webdev research enrollment for STD-001.");
+    }
+
+    /// <summary>
+    /// Soft-deletes legacy STD-002 MOD-WEBDEV-03 enrollments that lacked a matching program enrollment.
+    /// </summary>
+    private async Task PruneOrphanWebDevResearchEnrollmentAsync(Guid moduleWebDev3Id, Guid programWebDevId)
+    {
+        var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002" && !u.IsDeleted);
+        if (student2 == null)
+        {
+            return;
+        }
+
+        var hasWebDevProgram = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+            pe => pe.StudentId == student2.Id
+                  && pe.ProgramId == programWebDevId
+                  && !pe.IsDeleted);
+        if (hasWebDevProgram != null)
+        {
+            return;
+        }
+
+        var orphans = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.StudentId == student2.Id
+                  && me.ModuleId == moduleWebDev3Id
+                  && !me.IsDeleted);
+        if (orphans.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var orphan in orphans)
+        {
+            var progresses = await _unitOfWork.ActivityProgresses.GetAllAsync(
+                ap => ap.ModuleEnrollmentId == orphan.Id && !ap.IsDeleted);
+            foreach (var progress in progresses)
+            {
+                await _unitOfWork.ActivityProgresses.SoftRemove(progress);
+            }
+
+            await _unitOfWork.ModuleEnrollments.SoftRemove(orphan);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Pruned {Count} orphan WebDev research module enrollment(s) for STD-002.",
+            orphans.Count);
     }
 
     private async Task SeedExtendedResearchSubmissionsAsync()
@@ -1211,15 +1352,15 @@ public partial class SeedService
         var moduleWebDev3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-WEBDEV-03");
         var milestoneWebDev1 = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
             rm => rm.Code == "RML-WEBDEV-03-01" && !rm.IsDeleted);
-        var enrollmentStudent2WebDev = moduleWebDev3 == null
+        var enrollmentStudent1WebDev = moduleWebDev3 == null
             ? null
             : await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                me => me.StudentId == student2.Id
+                me => me.StudentId == student1.Id
                       && me.ModuleId == moduleWebDev3.Id
                       && !me.IsDeleted);
 
         if (milestoneWebDev1 != null
-            && enrollmentStudent2WebDev != null
+            && enrollmentStudent1WebDev != null
             && !await SubmissionCodeExistsAsync("SUB-WDV0301B"))
         {
             var assignmentWebDev = await _unitOfWork.Assignments.GetByIdAsync(milestoneWebDev1.AssignmentId);
@@ -1230,13 +1371,13 @@ public partial class SeedService
                     Id = Guid.NewGuid(),
                     Code = "SUB-WDV0301B",
                     AssignmentId = assignmentWebDev.Id,
-                    StudentId = student2.Id,
-                    ModuleEnrollmentId = enrollmentStudent2WebDev.Id,
+                    StudentId = student1.Id,
+                    ModuleEnrollmentId = enrollmentStudent1WebDev.Id,
                     ResearchMilestoneId = milestoneWebDev1.Id,
                     AttemptNumber = 1,
                     Status = SubmissionStatus.TurnedIn,
                     ContentText = "Wireframes for landing page across mobile and desktop breakpoints.",
-                    FileUrl = "https://storage.oboxsteam.com/submissions/webdev-wireframes-std002.pdf",
+                    FileUrl = "https://storage.oboxsteam.com/submissions/webdev-wireframes-std001.pdf",
                     SubmittedAt = seedTime.AddDays(-2),
                     CreatedAt = seedTime.AddDays(-4),
                     CreatedBy = mentor.Id,

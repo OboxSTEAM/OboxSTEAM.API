@@ -54,14 +54,17 @@ public sealed class SeedTimelineTests
 
         var first = SeedTimeline.TryResolveSlotSequence(classStart, classEnd, slots, 0);
         var second = SeedTimeline.TryResolveSlotSequence(classStart, classEnd, slots, 1);
+        var vietnam = SeedTimeline.ResolveVietnamTimeZone();
 
         Assert.NotNull(first);
-        Assert.Equal(DayOfWeek.Tuesday, first.Value.StartTime.DayOfWeek);
-        Assert.Equal(9, first.Value.StartTime.Hour);
+        var firstLocal = TimeZoneInfo.ConvertTimeFromUtc(first.Value.StartTime, vietnam);
+        Assert.Equal(DayOfWeek.Tuesday, firstLocal.DayOfWeek);
+        Assert.Equal(9, firstLocal.Hour);
         Assert.Equal(150, (first.Value.EndTime - first.Value.StartTime).TotalMinutes);
 
         Assert.NotNull(second);
-        Assert.Equal(DayOfWeek.Thursday, second.Value.StartTime.DayOfWeek);
+        var secondLocal = TimeZoneInfo.ConvertTimeFromUtc(second.Value.StartTime, vietnam);
+        Assert.Equal(DayOfWeek.Thursday, secondLocal.DayOfWeek);
         Assert.False(SeedTimeline.RangesOverlap(
             first.Value.StartTime,
             first.Value.EndTime,
@@ -149,5 +152,23 @@ public sealed class SeedTimelineTests
 
         Assert.Null(location);
         Assert.Null(meetingUrl);
+    }
+
+    [Fact]
+    public void TryResolveSlotSequence_StoresVietnamNineAmAsUtc()
+    {
+        var classStart = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+        var classEnd = classStart.AddDays(14);
+        var slots = new SeedTimeline.WeekdaySlot[]
+        {
+            new(DayOfWeek.Tuesday, 9, 0, 120),
+        };
+
+        var first = SeedTimeline.TryResolveSlotSequence(classStart, classEnd, slots, 0);
+
+        Assert.NotNull(first);
+        // 09:00 Asia/Ho_Chi_Minh == 02:00 UTC
+        Assert.Equal(2, first.Value.StartTime.Hour);
+        Assert.Equal(DateTimeKind.Utc, first.Value.StartTime.Kind);
     }
 }

@@ -53,6 +53,8 @@ public partial class SeedService : ISeedService
         await AlignUnassignedClassesToReadyForMentorAsync();
         await SeedClassEnrollmentsAsync();
         await SeedAcademicYearSessionsAsync();
+        // Re-run after activities/sessions exist so board classes created on older DBs get timetables.
+        await EnsureMentorBoardPlaceholderSchedulesAsync(_seedNow);
         await SeedResearchMilestoneDataAsync();
         await SeedResearchModuleEnrollmentsAsync();
         await SeedResearchActivityProgressAsync();
@@ -63,6 +65,7 @@ public partial class SeedService : ISeedService
         await SeedDemoShowcaseProgramsAsync();
         await SeedMaterialsAsync();
         await EnsureClassSessionCoverageAsync();
+        await RealignSeedSessionWallClocksAsync();
         await SeedWeeklyScheduleFixtureAsync();
         await EnsureSeedSessionVenuesAsync();
         await SeedPortfolioDataAsync();
