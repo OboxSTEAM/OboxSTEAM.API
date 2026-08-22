@@ -61,44 +61,53 @@ public partial class SeedService
         new(DayOfWeek.Thursday, 9, 0, 150),
     ];
 
-    private static readonly SeedTimeline.WeekdaySlot[] RoboticsMondayAfternoon =
+    /// <summary>Two weekly slots — mirrors typical Generate DaysOfWeek count (2 buổi/tuần).</summary>
+    private static readonly SeedTimeline.WeekdaySlot[] RoboticsMonWedAfternoon =
     [
         new(DayOfWeek.Monday, 14, 0, 150),
+        new(DayOfWeek.Wednesday, 14, 0, 150),
     ];
 
-    private static readonly SeedTimeline.WeekdaySlot[] IotWednesdayEvening =
+    private static readonly SeedTimeline.WeekdaySlot[] IotWedFriEvening =
     [
         new(DayOfWeek.Wednesday, 18, 0, 150),
+        new(DayOfWeek.Friday, 18, 0, 150),
     ];
 
-    private static readonly SeedTimeline.WeekdaySlot[] WebDevSaturdayMorning =
+    private static readonly SeedTimeline.WeekdaySlot[] WebDevSatSunMorning =
     [
         new(DayOfWeek.Saturday, 9, 0, 150),
+        new(DayOfWeek.Sunday, 9, 0, 150),
     ];
 
-    private static readonly SeedTimeline.WeekdaySlot[] GameDevFridayAfternoon =
+    private static readonly SeedTimeline.WeekdaySlot[] GameDevFriSatAfternoon =
     [
         new(DayOfWeek.Friday, 15, 0, 180),
+        new(DayOfWeek.Saturday, 15, 0, 180),
     ];
 
-    private static readonly SeedTimeline.WeekdaySlot[] WebDevThursdayEvening =
+    private static readonly SeedTimeline.WeekdaySlot[] WebDevTueThuEvening =
     [
+        new(DayOfWeek.Tuesday, 18, 0, 150),
         new(DayOfWeek.Thursday, 18, 0, 150),
     ];
 
-    private static readonly SeedTimeline.WeekdaySlot[] IotMondayEvening =
+    private static readonly SeedTimeline.WeekdaySlot[] IotMonWedEvening =
     [
         new(DayOfWeek.Monday, 18, 0, 150),
+        new(DayOfWeek.Wednesday, 18, 0, 150),
     ];
 
-    private static readonly SeedTimeline.WeekdaySlot[] PythonTuesdayEvening =
+    private static readonly SeedTimeline.WeekdaySlot[] PythonTueThuEvening =
     [
         new(DayOfWeek.Tuesday, 18, 0, 150),
+        new(DayOfWeek.Thursday, 18, 0, 150),
     ];
 
-    private static readonly SeedTimeline.WeekdaySlot[] DemoSaturdayMorning =
+    private static readonly SeedTimeline.WeekdaySlot[] DemoSatSunMorning =
     [
         new(DayOfWeek.Saturday, 9, 0, 120),
+        new(DayOfWeek.Sunday, 9, 0, 120),
     ];
 
     private sealed record AcademicYearClassDefinition(
@@ -149,8 +158,8 @@ public partial class SeedService
             14,
             98,
             10,
-            "Every Monday 14:00-16:30",
-            RoboticsMondayAfternoon,
+            "Monday & Wednesday 14:00-16:30",
+            RoboticsMonWedAfternoon,
             ["SKL-TECH-ROBOTICS-IOT", "SKL-ENG-PROTOTYPE"]),
         new(
             IotCurrentClassCode,
@@ -161,8 +170,8 @@ public partial class SeedService
             -28,
             56,
             8,
-            "Every Wednesday 18:00-20:30",
-            IotWednesdayEvening,
+            "Wednesday & Friday 18:00-20:30",
+            IotWedFriEvening,
             ["SKL-TECH-ROBOTICS-IOT", "SKL-ENG-SYSTEMS"]),
         new(
             WebDevPastClassCode,
@@ -173,8 +182,8 @@ public partial class SeedService
             -150,
             -30,
             8,
-            "Every Saturday 09:00-11:30",
-            WebDevSaturdayMorning,
+            "Saturday & Sunday 09:00-11:30",
+            WebDevSatSunMorning,
             ["SKL-TECH-PROG-JS", "SKL-ART-UXUI"]),
         new(
             GameDevOpenClassCode,
@@ -185,8 +194,8 @@ public partial class SeedService
             21,
             105,
             16,
-            "Every Friday 15:00-18:00",
-            GameDevFridayAfternoon,
+            "Friday & Saturday 15:00-18:00",
+            GameDevFriSatAfternoon,
             ["SKL-TECH-SOFTWARE", "SKL-ART-VISUAL"]),
         new(
             WebDevUnassignedClassCode,
@@ -197,8 +206,8 @@ public partial class SeedService
             21,
             105,
             12,
-            "Every Thursday 18:00-20:30",
-            WebDevThursdayEvening,
+            "Tuesday & Thursday 18:00-20:30",
+            WebDevTueThuEvening,
             ["SKL-TECH-PROG-JS", "SKL-ART-UXUI"]),
         new(
             IotUnassignedClassCode,
@@ -209,8 +218,8 @@ public partial class SeedService
             21,
             105,
             10,
-            "Every Monday 18:00-20:30",
-            IotMondayEvening,
+            "Monday & Wednesday 18:00-20:30",
+            IotMonWedEvening,
             ["SKL-TECH-ROBOTICS-IOT", "SKL-ENG-SYSTEMS"]),
         new(
             PythonUnassignedClassCode,
@@ -221,8 +230,8 @@ public partial class SeedService
             28,
             112,
             12,
-            "Every Tuesday 18:00-20:30",
-            PythonTuesdayEvening,
+            "Tuesday & Thursday 18:00-20:30",
+            PythonTueThuEvening,
             ["SKL-TECH-PROG-PYTHON", "SKL-TECH-COMP-THINK"]),
     ];
 

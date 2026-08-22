@@ -1158,7 +1158,7 @@ public partial class SeedService
             var slot = SeedTimeline.TryResolveSlotSequence(
                 classEntity.StartDate,
                 classEntity.EndDate,
-                DemoSaturdayMorning,
+                DemoSatSunMorning,
                 sessionIndex);
             sessionIndex++;
             if (slot == null)

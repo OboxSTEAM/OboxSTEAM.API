@@ -8,25 +8,21 @@ namespace OboxSteam.Application.Services;
 public partial class SeedService
 {
     private const string ScheduleFixtureStudentCode = "STD-001";
-    private const string ScheduleFixtureClassCode = "CLS-OPEN-001";
+    private const string ScheduleFixtureClassCode = "CLS-ROBOTICS-CURRENT";
     private const string ScheduleFixtureTitlePrefix = "[SCH-WK]";
 
+    /// <summary>
+    /// Time/location templates for the current Asia/Ho_Chi_Minh week. Does not introduce
+    /// new curriculum links — existing LiveOnline/Offline sessions on the student's class
+    /// are moved into these slots so <c>GET /api/schedules/weekly</c> is populated without
+    /// violating 1:1 activity sessions or SelfPaced rules.
+    /// </summary>
     private sealed record WeeklyScheduleSlot(
         int DaysFromMonday,
         TimeOnly Start,
-        TimeOnly End,
         string Location,
-        string ModuleCode,
-        string ActivityCode,
-        string Title,
-        SessionKind SessionKind,
-        bool AttachSelfPacedMaterial);
+        string MeetingUrlSuffix);
 
-    /// <summary>
-    /// Places a current Asia/Ho_Chi_Minh week of sessions on STD-001's open robotics class
-    /// so <c>GET /api/schedules/weekly</c> has a populated timetable. Idempotent: titles
-    /// with <see cref="ScheduleFixtureTitlePrefix"/> are moved to the current week on re-seed.
-    /// </summary>
     private async Task SeedWeeklyScheduleFixtureAsync()
     {
         _loggerService.LogInformation(
@@ -52,115 +48,86 @@ public partial class SeedService
             return;
         }
 
+        // Remove legacy fixture rows that linked SelfPaced activities or duplicated curriculum items.
+        await SoftDeleteLegacyWeeklyScheduleFixturesAsync(classEntity.Id);
+
         var vietnam = ResolveVietnamTimeZone();
         var monday = ResolveCurrentMonday(vietnam);
         var seedTime = DateTime.UtcNow;
         var nowUtc = DateTime.SpecifyKind(seedTime, DateTimeKind.Utc);
 
-        var modulesByCode = (await _unitOfWork.Modules.GetAllAsync(m => !m.IsDeleted))
-            .ToDictionary(m => m.Code, m => m, StringComparer.OrdinalIgnoreCase);
-        var activitiesByCode = (await _unitOfWork.Activities.GetAllAsync(a => !a.IsDeleted))
-            .ToDictionary(a => a.Code, a => a, StringComparer.OrdinalIgnoreCase);
-        var selfPacedMaterialActivity = await ResolveSelfPacedMaterialActivityAsync(activitiesByCode);
-
-        var existing = (await _unitOfWork.ClassSessions.GetAllAsync(
-                cs => cs.ClassId == classEntity.Id
-                      && cs.Title.StartsWith(ScheduleFixtureTitlePrefix)
-                      && !cs.IsDeleted))
-            .ToDictionary(cs => cs.Title, cs => cs, StringComparer.OrdinalIgnoreCase);
-
-        var sessionsToAdd = new List<ClassSession>();
-        var sessionsToUpdate = new List<ClassSession>();
-        var fixtureSessions = new List<ClassSession>();
-
-        foreach (var slot in GetWeeklyScheduleSlots())
+        var slots = GetWeeklyScheduleSlots();
+        var movableSessions = await LoadMovableCurriculumSessionsAsync(classEntity.Id);
+        if (movableSessions.Count == 0)
         {
-            if (!modulesByCode.TryGetValue(slot.ModuleCode, out var module))
+            _loggerService.LogWarning(
+                "Class {ClassCode} has no LiveOnline/Offline sessions to place on the weekly grid.",
+                classEntity.Code);
+            return;
+        }
+
+        var activityIds = movableSessions
+            .Where(s => s.ActivityId.HasValue)
+            .Select(s => s.ActivityId!.Value)
+            .Distinct()
+            .ToList();
+        var activitiesById = (await _unitOfWork.Activities.GetAllAsync(
+                a => activityIds.Contains(a.Id) && !a.IsDeleted))
+            .ToDictionary(a => a.Id);
+
+        var count = Math.Min(slots.Count, movableSessions.Count);
+        var fixtureSessions = new List<ClassSession>(count);
+
+        for (var i = 0; i < count; i++)
+        {
+            var slot = slots[i];
+            var session = movableSessions[i];
+            if (!session.ActivityId.HasValue
+                || !activitiesById.TryGetValue(session.ActivityId.Value, out var activity))
             {
-                _loggerService.LogWarning(
-                    "Module {ModuleCode} not found for weekly schedule slot {Title}. Skipping.",
-                    slot.ModuleCode,
-                    slot.Title);
                 continue;
             }
 
-            var activityCode = slot.AttachSelfPacedMaterial && selfPacedMaterialActivity != null
-                ? selfPacedMaterialActivity.Code
-                : slot.ActivityCode;
-            if (!activitiesByCode.TryGetValue(activityCode, out var activity))
+            if (activity.ActivityType == ActivityType.SelfPaced)
             {
-                _loggerService.LogWarning(
-                    "Activity {ActivityCode} not found for weekly schedule slot {Title}. Skipping.",
-                    activityCode,
-                    slot.Title);
                 continue;
             }
 
             var date = monday.AddDays(slot.DaysFromMonday);
             var startUtc = ToUtc(date, slot.Start, vietnam);
-            var endUtc = ToUtc(date, slot.End, vietnam);
-            var title = $"{ScheduleFixtureTitlePrefix} {slot.Title}";
-            var status = endUtc <= nowUtc
-                ? ClassSessionStatus.Completed
-                : startUtc <= nowUtc
-                    ? ClassSessionStatus.InProgress
-                    : ClassSessionStatus.Scheduled;
+            var durationMinutes = activity.DurationMinutes is > 0
+                ? activity.DurationMinutes.Value
+                : 120;
+            var endUtc = startUtc.AddMinutes(durationMinutes);
 
-            if (!existing.TryGetValue(title, out var session))
+            // Keep sessions inside the class window so date-range rules stay valid.
+            if (startUtc < classEntity.StartDate || endUtc > classEntity.EndDate)
             {
-                session = new ClassSession
-                {
-                    Id = Guid.NewGuid(),
-                    ClassId = classEntity.Id,
-                    ModuleId = module.Id,
-                    ActivityId = activity.Id,
-                    SessionKind = slot.SessionKind,
-                    Title = title,
-                    Description = "Weekly timetable fixture for STD-001.",
-                    StartTime = startUtc,
-                    EndTime = endUtc,
-                    Location = slot.Location,
-                    MeetingUrl = slot.SessionKind == SessionKind.Lesson
-                        ? "https://meet.oboxsteam.com/cls-open-001-weekly"
-                        : null,
-                    RequiresAttendance = true,
-                    Status = status,
-                    CreatedAt = seedTime,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false,
-                };
-                sessionsToAdd.Add(session);
-            }
-            else
-            {
-                session.ModuleId = module.Id;
-                session.ActivityId = activity.Id;
-                session.SessionKind = slot.SessionKind;
-                session.StartTime = startUtc;
-                session.EndTime = endUtc;
-                session.Location = slot.Location;
-                session.MeetingUrl = slot.SessionKind == SessionKind.Lesson
-                    ? "https://meet.oboxsteam.com/cls-open-001-weekly"
-                    : null;
-                session.Status = status;
-                session.UpdatedAt = seedTime;
-                sessionsToUpdate.Add(session);
+                _loggerService.LogWarning(
+                    "Skipping weekly slot {Index} for class {ClassCode} — outside class date range.",
+                    i,
+                    classEntity.Code);
+                continue;
             }
 
+            var sessionKind = ClassSessionValidator.ResolveSessionKind(activity, forAssignment: false);
+            session.StartTime = startUtc;
+            session.EndTime = endUtc;
+            session.Location = slot.Location;
+            session.MeetingUrl = sessionKind == SessionKind.Lesson
+                ? $"https://meet.oboxsteam.com/{classEntity.Code.ToLowerInvariant()}-{slot.MeetingUrlSuffix}"
+                : null;
+            session.SessionKind = sessionKind;
+            session.RequiresAttendance = true;
+            session.Status = SeedTimeline.ResolveSessionStatus(startUtc, endUtc, nowUtc);
+            session.UpdatedAt = seedTime;
+            session.UpdatedBy = Guid.Empty;
+
+            await _unitOfWork.ClassSessions.Update(session);
             fixtureSessions.Add(session);
         }
 
-        if (sessionsToAdd.Count > 0)
-        {
-            await _unitOfWork.ClassSessions.AddRangeAsync(sessionsToAdd);
-        }
-
-        foreach (var session in sessionsToUpdate)
-        {
-            await _unitOfWork.ClassSessions.Update(session);
-        }
-
-        if (sessionsToAdd.Count > 0 || sessionsToUpdate.Count > 0)
+        if (fixtureSessions.Count > 0)
         {
             await _unitOfWork.SaveChangesAsync();
         }
@@ -168,11 +135,69 @@ public partial class SeedService
         await SeedWeeklyScheduleAttendanceAsync(student.Id, fixtureSessions, nowUtc, seedTime);
 
         _loggerService.LogInformation(
-            "Weekly schedule fixture ready — class {ClassCode}, week {WeekStart}, added {Added}, updated {Updated}. Login STD-001 then GET /api/schedules/weekly.",
+            "Weekly schedule fixture ready — class {ClassCode}, week {WeekStart}, moved {Count} curriculum session(s). Login STD-001 then GET /api/schedules/weekly.",
             classEntity.Code,
             monday,
-            sessionsToAdd.Count,
-            sessionsToUpdate.Count);
+            fixtureSessions.Count);
+    }
+
+    private async Task SoftDeleteLegacyWeeklyScheduleFixturesAsync(Guid classId)
+    {
+        var legacy = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classId
+                  && cs.Title.StartsWith(ScheduleFixtureTitlePrefix)
+                  && !cs.IsDeleted);
+
+        if (legacy.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var session in legacy)
+        {
+            session.IsDeleted = true;
+            session.UpdatedAt = DateTime.UtcNow;
+            session.UpdatedBy = Guid.Empty;
+            await _unitOfWork.ClassSessions.Update(session);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Soft-deleted {Count} legacy [SCH-WK] fixture session(s) on class {ClassId}.",
+            legacy.Count,
+            classId);
+    }
+
+    private async Task<List<ClassSession>> LoadMovableCurriculumSessionsAsync(Guid classId)
+    {
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classId
+                  && !cs.IsDeleted
+                  && cs.Status != ClassSessionStatus.Cancelled
+                  && cs.ActivityId != null
+                  && !cs.Title.StartsWith(ScheduleFixtureTitlePrefix));
+
+        if (sessions.Count == 0)
+        {
+            return [];
+        }
+
+        var activityIds = sessions.Select(s => s.ActivityId!.Value).Distinct().ToList();
+        var schedulableActivityIds = (await _unitOfWork.Activities.GetAllAsync(
+                a => activityIds.Contains(a.Id)
+                     && !a.IsDeleted
+                     && (a.ActivityType == ActivityType.LiveOnline
+                         || a.ActivityType == ActivityType.Offline)))
+            .Select(a => a.Id)
+            .ToHashSet();
+
+        return sessions
+            .Where(s => schedulableActivityIds.Contains(s.ActivityId!.Value))
+            .GroupBy(s => s.ActivityId!.Value)
+            .Select(g => g.OrderBy(s => s.StartTime).First())
+            .OrderBy(s => s.StartTime)
+            .ThenBy(s => s.Title)
+            .ToList();
     }
 
     private async Task<Class?> ResolveScheduleFixtureClassAsync(Guid studentId)
@@ -192,20 +217,8 @@ public partial class SeedService
             c => classIds.Contains(c.Id) && !c.IsDeleted);
 
         return classes.FirstOrDefault(c => c.Code == ScheduleFixtureClassCode)
+               ?? classes.FirstOrDefault(c => c.Status == ClassStatus.InProgress)
                ?? classes.FirstOrDefault();
-    }
-
-    private async Task<Activity?> ResolveSelfPacedMaterialActivityAsync(
-        IReadOnlyDictionary<string, Activity> activitiesByCode)
-    {
-        if (!activitiesByCode.TryGetValue("ACT-ROBOTICS-01-01", out var activity))
-        {
-            return null;
-        }
-
-        var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
-            m => m.ActivityId == activity.Id && !m.IsDeleted);
-        return material == null ? null : activity;
     }
 
     private async Task SeedWeeklyScheduleAttendanceAsync(
@@ -290,29 +303,19 @@ public partial class SeedService
         }
     }
 
+    /// <summary>
+    /// Two slots on some weekdays (max 2/day visually spread) — still one curriculum session
+    /// per slot via moving existing sessions, never creating SelfPaced or duplicate items.
+    /// </summary>
     private static IReadOnlyList<WeeklyScheduleSlot> GetWeeklyScheduleSlots() =>
     [
-        new(0, new TimeOnly(7, 30), new TimeOnly(9, 45), "NVH 602",
-            "MOD-ROBOTICS-01", "ACT-ROBOTICS-01-02", "Introduction to Robotics",
-            SessionKind.Lesson, AttachSelfPacedMaterial: true),
-        new(0, new TimeOnly(15, 0), new TimeOnly(17, 15), "P.012",
-            "MOD-ROBOTICS-01", "ACT-ROBOTICS-02-02", "Actuator Design Lecture",
-            SessionKind.Lesson, AttachSelfPacedMaterial: false),
-        new(1, new TimeOnly(12, 30), new TimeOnly(14, 40), "NVH 307",
-            "MOD-ROBOTICS-02", "ACT-ROBOTICS-04-02", "Field Trip Preparation Briefing",
-            SessionKind.Lesson, AttachSelfPacedMaterial: true),
-        new(2, new TimeOnly(7, 30), new TimeOnly(9, 45), "NVH 602",
-            "MOD-ROBOTICS-01", "ACT-ROBOTICS-01-03", "Components Overview Workshop",
-            SessionKind.Lesson, AttachSelfPacedMaterial: false),
-        new(3, new TimeOnly(15, 0), new TimeOnly(17, 15), "P.012",
-            "MOD-ROBOTICS-01", "ACT-ROBOTICS-03-02", "Lab Safety Briefing",
-            SessionKind.Lesson, AttachSelfPacedMaterial: false),
-        new(4, new TimeOnly(12, 30), new TimeOnly(14, 40), "NVH 306",
-            "MOD-ROBOTICS-02", "ACT-ROBOTICS-05-02", "Movement Trip Preparation",
-            SessionKind.Lesson, AttachSelfPacedMaterial: false),
-        new(6, new TimeOnly(17, 45), new TimeOnly(20, 0), "P.134",
-            "MOD-ROBOTICS-02", "ACT-ROBOTICS-04-03", "Sensor Exploration Field Trip",
-            SessionKind.FieldTrip, AttachSelfPacedMaterial: false),
+        new(0, new TimeOnly(7, 30), "NVH 602", "mon-am"),
+        new(0, new TimeOnly(15, 0), "P.012", "mon-pm"),
+        new(1, new TimeOnly(12, 30), "NVH 307", "tue-noon"),
+        new(2, new TimeOnly(7, 30), "NVH 602", "wed-am"),
+        new(3, new TimeOnly(15, 0), "P.012", "thu-pm"),
+        new(4, new TimeOnly(12, 30), "NVH 306", "fri-noon"),
+        new(6, new TimeOnly(17, 45), "P.134", "sun-eve"),
     ];
 
     private static DateOnly ResolveCurrentMonday(TimeZoneInfo vietnam)

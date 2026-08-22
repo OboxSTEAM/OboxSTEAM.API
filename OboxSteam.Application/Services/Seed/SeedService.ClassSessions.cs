@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
@@ -78,6 +79,7 @@ public partial class SeedService
     {
         var sessions = new List<ClassSession>();
         var sessionIndex = 0;
+        var assignmentWindowMinutes = weeklySlots[0].DurationMinutes;
 
         foreach (var template in IntroductionToRoboticsClassSessionTemplates)
         {
@@ -99,22 +101,25 @@ public partial class SeedService
                 continue;
             }
 
-            sessions.Add(CreateSeedSession(
+            sessions.Add(CreateSeedSessionFromCurriculum(
                 classEntity,
                 module.Id,
-                activity.Id,
+                activity,
                 null,
-                template.SessionKind,
                 template.Title,
                 template.Description,
                 slot.Value.StartTime,
-                slot.Value.EndTime,
-                activity.ActivityType != ActivityType.SelfPaced));
+                assignmentWindowMinutes));
         }
 
         return sessions;
     }
 
+    /// <summary>
+    /// Mirrors generate: ModuleOrder → CourseOrder → ActivityOrder, then assignments;
+    /// SessionKind from ActivityType; activity End = Start + DurationMinutes.
+    /// Weekly pattern = <paramref name="weeklySlots"/> (seed uses 2 days/week like typical Generate).
+    /// </summary>
     private List<ClassSession> BuildCurriculumSessions(
         Class classEntity,
         SeedTimeline.WeekdaySlot[] weeklySlots,
@@ -128,47 +133,54 @@ public partial class SeedService
             .Where(m => m.ProgramId == classEntity.ProgramId)
             .OrderBy(m => m.ModuleOrder)
             .ToList();
+        var assignmentWindowMinutes = weeklySlots[0].DurationMinutes;
 
         var sessionIndex = 0;
         foreach (var module in modules)
         {
-            var moduleCourseIds = courses
+            var moduleCourses = courses
                 .Where(c => c.ModuleId == module.Id)
-                .Select(c => c.Id)
-                .ToHashSet();
-            var liveActivities = activities
-                .Where(a => moduleCourseIds.Contains(a.CourseId)
-                            && a.ActivityType != ActivityType.SelfPaced)
-                .OrderBy(a => a.ActivityOrder)
+                .OrderBy(c => c.CourseOrder)
+                .ThenBy(c => c.Code)
                 .ToList();
 
-            foreach (var activity in liveActivities)
+            foreach (var course in moduleCourses)
             {
-                var slot = SeedTimeline.TryResolveSlotSequence(
-                    classEntity.StartDate,
-                    classEntity.EndDate,
-                    weeklySlots,
-                    sessionIndex);
-                sessionIndex++;
-                if (slot == null)
-                {
-                    continue;
-                }
+                var liveActivities = activities
+                    .Where(a => a.CourseId == course.Id
+                                && a.ActivityType is ActivityType.LiveOnline or ActivityType.Offline)
+                    .OrderBy(a => a.ActivityOrder)
+                    .ToList();
 
-                sessions.Add(CreateSeedSession(
-                    classEntity,
-                    module.Id,
-                    activity.Id,
-                    null,
-                    SessionKind.Lesson,
-                    activity.Name,
-                    activity.Description,
-                    slot.Value.StartTime,
-                    slot.Value.EndTime,
-                    true));
+                foreach (var activity in liveActivities)
+                {
+                    var slot = SeedTimeline.TryResolveSlotSequence(
+                        classEntity.StartDate,
+                        classEntity.EndDate,
+                        weeklySlots,
+                        sessionIndex);
+                    sessionIndex++;
+                    if (slot == null)
+                    {
+                        continue;
+                    }
+
+                    sessions.Add(CreateSeedSessionFromCurriculum(
+                        classEntity,
+                        module.Id,
+                        activity,
+                        null,
+                        activity.Name,
+                        activity.Description,
+                        slot.Value.StartTime,
+                        assignmentWindowMinutes));
+                }
             }
 
-            foreach (var assignment in assignments.Where(a => a.ModuleId == module.Id))
+            foreach (var assignment in assignments
+                         .Where(a => a.ModuleId == module.Id)
+                         .OrderBy(a => a.CreatedAt)
+                         .ThenBy(a => a.Code))
             {
                 var slot = SeedTimeline.TryResolveSlotSequence(
                     classEntity.StartDate,
@@ -181,49 +193,54 @@ public partial class SeedService
                     continue;
                 }
 
-                sessions.Add(CreateSeedSession(
+                sessions.Add(CreateSeedSessionFromCurriculum(
                     classEntity,
                     module.Id,
                     null,
-                    assignment.Id,
-                    SessionKind.AssignmentWindow,
+                    assignment,
                     assignment.Title,
                     "Assignment working window and deadline checkpoint.",
                     slot.Value.StartTime,
-                    slot.Value.EndTime,
-                    false));
+                    assignmentWindowMinutes));
             }
         }
 
         return sessions;
     }
 
-    private ClassSession CreateSeedSession(
+    private ClassSession CreateSeedSessionFromCurriculum(
         Class classEntity,
         Guid moduleId,
-        Guid? activityId,
-        Guid? assignmentId,
-        SessionKind kind,
+        Activity? activity,
+        Assignment? assignment,
         string title,
         string? description,
         DateTime startTime,
-        DateTime endTime,
-        bool requiresAttendance)
+        int assignmentWindowMinutes)
     {
+        var forAssignment = assignment != null;
+        var sessionKind = ClassSessionValidator.ResolveSessionKind(activity, forAssignment);
+        var durationMinutes = forAssignment
+            ? assignmentWindowMinutes
+            : activity!.DurationMinutes is > 0
+                ? activity.DurationMinutes.Value
+                : assignmentWindowMinutes;
+        var endTime = startTime.AddMinutes(durationMinutes);
+
         return new ClassSession
         {
             Id = Guid.NewGuid(),
             ClassId = classEntity.Id,
             ModuleId = moduleId,
-            ActivityId = activityId,
-            AssignmentId = assignmentId,
-            SessionKind = kind,
+            ActivityId = activity?.Id,
+            AssignmentId = assignment?.Id,
+            SessionKind = sessionKind,
             Title = title,
             Description = description,
             StartTime = startTime,
             EndTime = endTime,
             Location = null,
-            RequiresAttendance = requiresAttendance,
+            RequiresAttendance = !forAssignment,
             Status = SeedTimeline.ResolveSessionStatus(startTime, endTime, _seedNow),
             CreatedAt = classEntity.CreatedAt,
             CreatedBy = Guid.Empty,

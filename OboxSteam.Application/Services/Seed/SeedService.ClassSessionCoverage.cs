@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
@@ -8,8 +9,8 @@ public partial class SeedService
 {
     /// <summary>
     /// Top-up pass for ReadyForMentor/Open/InProgress classes: one session per missing
-    /// LiveOnline/Offline activity and assignment, placed inside the existing class window
-    /// (never extends EndDate). Draft, Completed, and Cancelled classes are left untouched.
+    /// LiveOnline/Offline activity and assignment, placed on the class weekly pattern
+    /// (default 2 days/week). Follows generate rules for SessionKind and DurationMinutes.
     /// </summary>
     private async Task EnsureClassSessionCoverageAsync()
     {
@@ -36,7 +37,9 @@ public partial class SeedService
                 ??
                 [
                     new SeedTimeline.WeekdaySlot(DayOfWeek.Saturday, 9, 0, 90),
+                    new SeedTimeline.WeekdaySlot(DayOfWeek.Sunday, 9, 0, 90),
                 ];
+            var assignmentWindowMinutes = weeklySlots[0].DurationMinutes;
 
             var modules = (await _unitOfWork.Modules.GetAllAsync(
                     m => m.ProgramId == classEntity.ProgramId && !m.IsDeleted))
@@ -56,7 +59,8 @@ public partial class SeedService
             var activities = await _unitOfWork.Activities.GetAllAsync(
                 a => courseIds.Contains(a.CourseId)
                      && !a.IsDeleted
-                     && a.ActivityType != ActivityType.SelfPaced);
+                     && (a.ActivityType == ActivityType.LiveOnline
+                         || a.ActivityType == ActivityType.Offline));
             var assignments = await _unitOfWork.Assignments.GetAllAsync(
                 a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted);
             var existingSessions = await _unitOfWork.ClassSessions.GetAllAsync(
@@ -88,6 +92,8 @@ public partial class SeedService
 
                 missingItems.AddRange(assignments
                     .Where(a => a.ModuleId == module.Id && !coveredAssignmentIds.Contains(a.Id))
+                    .OrderBy(a => a.CreatedAt)
+                    .ThenBy(a => a.Code)
                     .Select(a => (module.Id, (Activity?)null, (Assignment?)a)));
             }
 
@@ -105,7 +111,13 @@ public partial class SeedService
                     continue;
                 }
 
-                var durationMinutes = activity?.DurationMinutes ?? 60;
+                var forAssignment = assignment != null;
+                var sessionKind = ClassSessionValidator.ResolveSessionKind(activity, forAssignment);
+                var durationMinutes = forAssignment
+                    ? assignmentWindowMinutes
+                    : activity!.DurationMinutes is > 0
+                        ? activity.DurationMinutes.Value
+                        : assignmentWindowMinutes;
                 var startTime = slot.Value.StartTime;
                 var endTime = startTime.AddMinutes(durationMinutes);
                 if (endTime.Date > classEntity.EndDate.Date)
@@ -120,7 +132,7 @@ public partial class SeedService
                     ModuleId = moduleId,
                     ActivityId = activity?.Id,
                     AssignmentId = assignment?.Id,
-                    SessionKind = assignment != null ? SessionKind.AssignmentWindow : SessionKind.Lesson,
+                    SessionKind = sessionKind,
                     Title = activity?.Name ?? assignment!.Title,
                     Description = assignment != null
                         ? "Assignment working window and deadline checkpoint."
@@ -128,7 +140,7 @@ public partial class SeedService
                     StartTime = startTime,
                     EndTime = endTime,
                     Location = null,
-                    RequiresAttendance = activity != null,
+                    RequiresAttendance = !forAssignment,
                     Status = SeedTimeline.ResolveSessionStatus(startTime, endTime, _seedNow),
                     CreatedAt = classEntity.CreatedAt,
                     CreatedBy = Guid.Empty,
