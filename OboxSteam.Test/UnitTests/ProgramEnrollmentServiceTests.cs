@@ -169,6 +169,25 @@ public sealed class ProgramEnrollmentServiceTests
     }
 
     [Fact]
+    public async Task GetOrCreatePending_ThrowsConflict_WhenInProgressProgramCapReached()
+    {
+        SeedProgram();
+        SeedProgram(_programId2, name: "IoT");
+        var program3Id = Guid.Parse("24242424-2424-2424-2424-242424242424");
+        SeedProgram(program3Id, name: "Web");
+        SeedEnrollment(status: EnrollmentStatus.Active);
+        SeedEnrollment(
+            id: Guid.Parse("34343434-3434-3434-3434-343434343434"),
+            programId: _programId2,
+            status: EnrollmentStatus.PendingPayment);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.GetOrCreatePendingEnrollmentAsync(_studentId, program3Id));
+        Assert.Contains("maximum of 2", ex.Message);
+    }
+
+    [Fact]
     public async Task GetOrCreatePending_ThrowsNotFound_WhenProgramMissing()
     {
         var sut = CreateSut();

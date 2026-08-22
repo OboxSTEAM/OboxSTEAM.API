@@ -377,6 +377,8 @@ public class ActivityService : IActivityService
             activity.Description = request.Description;
         }
 
+        var previousDurationMinutes = activity.DurationMinutes;
+
         activity.DurationMinutes = resolvedDurationMinutes;
         activity.RequireQrCheckin = resolvedRequireQrCheckin;
 
@@ -386,6 +388,14 @@ public class ActivityService : IActivityService
         }
 
         await _unitOfWork.Activities.Update(activity);
+
+        if (!isSelfPaced
+            && resolvedDurationMinutes is > 0
+            && previousDurationMinutes != resolvedDurationMinutes)
+        {
+            await SyncLinkedSessionEndTimesAsync(activity.Id, resolvedDurationMinutes.Value);
+        }
+
         await _unitOfWork.SaveChangesAsync();
 
         await PublishCurriculumStructureChangedForCourseAsync(activity.CourseId);
@@ -538,4 +548,37 @@ public class ActivityService : IActivityService
         return true;
     }
 
+    /// <summary>
+    /// Keeps ClassSession.EndTime = StartTime + DurationMinutes when curriculum duration changes.
+    /// </summary>
+    private async Task SyncLinkedSessionEndTimesAsync(Guid activityId, int durationMinutes)
+    {
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ActivityId == activityId
+                  && !cs.IsDeleted
+                  && cs.Status != ClassSessionStatus.Cancelled);
+
+        if (sessions.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var session in sessions)
+        {
+            var newEnd = session.StartTime.AddMinutes(durationMinutes);
+            if (session.EndTime == newEnd)
+            {
+                continue;
+            }
+
+            session.EndTime = newEnd;
+            await _unitOfWork.ClassSessions.Update(session);
+        }
+
+        _logger.LogInformation(
+            "[SyncLinkedSessionEndTimesAsync] Updated EndTime on {Count} session(s) for activity {ActivityId} (duration {Duration}m).",
+            sessions.Count,
+            activityId,
+            durationMinutes);
+    }
 }

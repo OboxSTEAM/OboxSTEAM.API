@@ -575,7 +575,7 @@ public sealed class ClassServiceTests
             Code = "CLS-UPD",
             Name = "  Updated  ",
             ProgramId = _otherProgramId,
-            StartDate = _now.AddDays(5),
+            StartDate = _now.AddDays(21),
             EndDate = _now.AddDays(50),
             MaxCapacity = 10,
             MinHoursBeforeAssignmentJoin = 12,
@@ -925,6 +925,22 @@ public sealed class ClassServiceTests
         request.EndDate = _now.AddDays(40);
 
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.CreateClassAsync(request));
+        Assert.Contains("14 days", ex.Message);
+    }
+
+    [Fact]
+    public async Task Update_Throws_WhenStartDateWithinLeadTime_ForDraft()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft, startDate: _now.AddDays(30));
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateClassAsync(_classId, new UpdateClassRequestDto
+            {
+                StartDate = _now.AddDays(3),
+                EndDate = _now.AddDays(40),
+            }));
         Assert.Contains("14 days", ex.Message);
     }
 

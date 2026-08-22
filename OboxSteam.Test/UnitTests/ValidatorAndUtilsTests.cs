@@ -801,6 +801,11 @@ public sealed class ValidatorAndUtilsTests
         Assert.Throws<BadRequestException>(() =>
             ClassEnrollmentValidator.ValidateClassOpenForEnrollment(
                 new Class { Status = ClassStatus.ReadyForMentor }));
+        Assert.Throws<BadRequestException>(() =>
+            ClassEnrollmentValidator.ValidateClassOpenForEnrollment(
+                new Class { Status = ClassStatus.InProgress }));
+        ClassEnrollmentValidator.ValidateClassOpenForEnrollment(
+            new Class { Status = ClassStatus.Open });
     }
 
     // ── QuizAttemptValidator ──────────────────────────────────────────────────

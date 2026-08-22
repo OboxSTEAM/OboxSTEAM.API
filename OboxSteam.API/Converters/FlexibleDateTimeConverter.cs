@@ -1,18 +1,14 @@
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OboxSteam.Application.Utils;
 
 namespace OboxSteam.API.Converters;
 
+/// <summary>
+/// JSON DateTime converter. See <see cref="AppDateTime"/> for the product timezone contract.
+/// </summary>
 public sealed class FlexibleDateTimeConverter : JsonConverter<DateTime>
 {
-    private static readonly string[] SimpleFormats =
-    [
-        "dd/MM/yyyy HH:mm:ss",
-        "dd/MM/yyyy HH:mm",
-        "dd/MM/yyyy"
-    ];
-
     public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null)
@@ -26,7 +22,7 @@ public sealed class FlexibleDateTimeConverter : JsonConverter<DateTime>
             throw new JsonException("DateTime value cannot be empty.");
         }
 
-        if (TryParseFlexible(value, out var parsed))
+        if (AppDateTime.TryParseFlexible(value, out var parsed))
         {
             return parsed;
         }
@@ -38,28 +34,6 @@ public sealed class FlexibleDateTimeConverter : JsonConverter<DateTime>
     public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
     {
         writer.WriteStringValue(value);
-    }
-
-    internal static bool TryParseFlexible(string value, out DateTime result)
-    {
-        if (DateTime.TryParseExact(
-                value,
-                SimpleFormats,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out result))
-        {
-            result = DateTime.SpecifyKind(result, DateTimeKind.Utc);
-            return true;
-        }
-
-        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out result))
-        {
-            return true;
-        }
-
-        result = default;
-        return false;
     }
 }
 
@@ -78,7 +52,7 @@ public sealed class FlexibleDateTimeNullableConverter : JsonConverter<DateTime?>
             throw new JsonException("DateTime value cannot be empty.");
         }
 
-        if (FlexibleDateTimeConverter.TryParseFlexible(value, out var parsed))
+        if (AppDateTime.TryParseFlexible(value, out var parsed))
         {
             return parsed;
         }

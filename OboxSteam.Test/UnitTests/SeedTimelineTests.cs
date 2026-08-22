@@ -121,37 +121,45 @@ public sealed class SeedTimelineTests
     [Fact]
     public void ResolveSeedVenue_Lesson_HasRoomAndFakeMeetUrl()
     {
-        var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+        var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
             SessionKind.Lesson,
             "CLS-ROBOTICS-CURRENT",
             3);
 
         Assert.Equal("NVH 603", location);
         Assert.Equal("https://meet.oboxsteam.com/cls-robotics-current/s03", meetingUrl);
+        Assert.Null(latitude);
+        Assert.Null(longitude);
     }
 
     [Fact]
-    public void ResolveSeedVenue_FieldTrip_HasLabOnly()
+    public void ResolveSeedVenue_FieldTrip_HasLabAndCoordinates()
     {
-        var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+        var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
             SessionKind.FieldTrip,
             "CLS-IOT-CURRENT",
             1);
 
         Assert.Equal("Campus Lab 2", location);
         Assert.Null(meetingUrl);
+        Assert.NotNull(latitude);
+        Assert.NotNull(longitude);
+        Assert.InRange(latitude!.Value, -90, 90);
+        Assert.InRange(longitude!.Value, -180, 180);
     }
 
     [Fact]
     public void ResolveSeedVenue_AssignmentWindow_HasNeither()
     {
-        var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+        var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
             SessionKind.AssignmentWindow,
             "CLS-ANY",
             0);
 
         Assert.Null(location);
         Assert.Null(meetingUrl);
+        Assert.Null(latitude);
+        Assert.Null(longitude);
     }
 
     [Fact]

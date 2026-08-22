@@ -117,9 +117,10 @@ public sealed class SeedTimeline
     }
 
     /// <summary>
-    /// Fake venue for seed/FE: Lesson gets campus room + meet URL; FieldTrip gets lab location only.
+    /// Fake venue for seed/FE: Lesson gets campus room + meet URL;
+    /// FieldTrip gets lab location + paired Lat/Lng near Ho Chi Minh City campus.
     /// </summary>
-    public static (string? Location, string? MeetingUrl) ResolveSeedVenue(
+    public static (string? Location, string? MeetingUrl, double? Latitude, double? Longitude) ResolveSeedVenue(
         SessionKind kind,
         string classCode,
         int ordinal)
@@ -131,12 +132,15 @@ public sealed class SeedTimeline
         var room = $"NVH {600 + (index % 20):D3}";
         var lab = $"Campus Lab {(index % 5) + 1}";
         var meetUrl = $"https://meet.oboxsteam.com/{safeCode}/s{index:D2}";
+        // Slight offsets so each Offline slot has a distinct pin (Thu Duc / NVH area).
+        var latitude = 10.870000 + (index % 5) * 0.0015;
+        var longitude = 106.803000 + (index % 5) * 0.0012;
 
         return kind switch
         {
-            SessionKind.Lesson => (room, meetUrl),
-            SessionKind.FieldTrip => (lab, null),
-            _ => (null, null),
+            SessionKind.Lesson => (room, meetUrl, null, null),
+            SessionKind.FieldTrip => (lab, null, latitude, longitude),
+            _ => (null, null, null, null),
         };
     }
 

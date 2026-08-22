@@ -230,7 +230,7 @@ public partial class SeedService
                 ? activity.DurationMinutes.Value
                 : assignmentWindowMinutes;
         var endTime = startTime.AddMinutes(durationMinutes);
-        var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+        var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
             sessionKind,
             classEntity.Code,
             venueOrdinal);
@@ -249,6 +249,8 @@ public partial class SeedService
             EndTime = endTime,
             Location = location,
             MeetingUrl = meetingUrl,
+            Latitude = latitude,
+            Longitude = longitude,
             RequiresAttendance = !forAssignment,
             Status = SeedTimeline.ResolveSessionStatus(startTime, endTime, _seedNow),
             CreatedAt = classEntity.CreatedAt,
@@ -335,7 +337,7 @@ public partial class SeedService
     /// </summary>
     private async Task EnsureSeedSessionVenuesAsync()
     {
-        _loggerService.LogInformation("Ensuring seed session venues (Location / MeetingUrl)");
+        _loggerService.LogInformation("Ensuring seed session venues (Location / MeetingUrl / LatLng)");
 
         var classCodes = (await _unitOfWork.Classes.GetAllAsync(c => !c.IsDeleted))
             .ToDictionary(c => c.Id, c => c.Code);
@@ -359,7 +361,7 @@ public partial class SeedService
             var ordinal = ordinalByClass.GetValueOrDefault(session.ClassId);
             ordinalByClass[session.ClassId] = ordinal + 1;
 
-            var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+            var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
                 session.SessionKind,
                 classCode,
                 ordinal);
@@ -374,6 +376,18 @@ public partial class SeedService
             if (string.IsNullOrWhiteSpace(session.MeetingUrl) && !string.IsNullOrWhiteSpace(meetingUrl))
             {
                 session.MeetingUrl = meetingUrl;
+                changed = true;
+            }
+
+            if (!session.Latitude.HasValue && latitude.HasValue)
+            {
+                session.Latitude = latitude;
+                changed = true;
+            }
+
+            if (!session.Longitude.HasValue && longitude.HasValue)
+            {
+                session.Longitude = longitude;
                 changed = true;
             }
 
@@ -396,7 +410,7 @@ public partial class SeedService
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Backfilled Location/MeetingUrl on {Count} session(s).",
+            "Backfilled Location/MeetingUrl/LatLng on {Count} session(s).",
             updated);
     }
 

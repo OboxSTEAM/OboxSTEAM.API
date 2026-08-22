@@ -125,7 +125,7 @@ public partial class SeedService
                     continue;
                 }
 
-                var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+                var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
                     sessionKind,
                     classEntity.Code,
                     nextIndex - 1);
@@ -146,6 +146,8 @@ public partial class SeedService
                     EndTime = endTime,
                     Location = location,
                     MeetingUrl = meetingUrl,
+                    Latitude = latitude,
+                    Longitude = longitude,
                     RequiresAttendance = !forAssignment,
                     Status = SeedTimeline.ResolveSessionStatus(startTime, endTime, _seedNow),
                     CreatedAt = classEntity.CreatedAt,

@@ -404,6 +404,37 @@ public sealed class ActivityServiceTests
     }
 
     [Fact]
+    public async Task Update_DurationMinutes_SyncsLinkedSessionEndTimes()
+    {
+        SeedActivity(activityType: ActivityType.LiveOnline);
+        var classId = Guid.Parse("77777777-7777-7777-7777-777777777777");
+        var moduleId = _moduleId;
+        var start = new DateTime(2026, 8, 20, 2, 0, 0, DateTimeKind.Utc);
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.Parse("88888888-8888-8888-8888-888888888888"),
+            ClassId = classId,
+            ModuleId = moduleId,
+            ActivityId = _activityId,
+            SessionKind = SessionKind.Lesson,
+            Title = "Live",
+            StartTime = start,
+            EndTime = start.AddMinutes(60),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.UpdateActivityAsync(_activityId, new UpdateActivitiesRequestDto
+        {
+            DurationMinutes = 90,
+        });
+
+        var session = _db.ClassSessions.Items.Single();
+        Assert.Equal(start.AddMinutes(90), session.EndTime);
+    }
+
+    [Fact]
     public async Task Update_ReturnsNull_WhenMissing()
     {
         var sut = CreateSut();

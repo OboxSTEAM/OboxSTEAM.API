@@ -126,7 +126,7 @@ public partial class SeedService
             }
 
             var sessionKind = ClassSessionValidator.ResolveSessionKind(activity, forAssignment: false);
-            var (fallbackLocation, fallbackMeet) = SeedTimeline.ResolveSeedVenue(
+            var (fallbackLocation, fallbackMeet, fallbackLat, fallbackLng) = SeedTimeline.ResolveSeedVenue(
                 sessionKind,
                 classEntity.Code,
                 i);
@@ -139,6 +139,17 @@ public partial class SeedService
             if (string.IsNullOrWhiteSpace(session.Location))
             {
                 session.Location = fallbackLocation;
+            }
+
+            if (sessionKind == SessionKind.FieldTrip)
+            {
+                session.Latitude = fallbackLat;
+                session.Longitude = fallbackLng;
+            }
+            else
+            {
+                session.Latitude = null;
+                session.Longitude = null;
             }
 
             session.SessionKind = sessionKind;

@@ -367,6 +367,15 @@ public sealed class ClassService : IClassService
         {
             ClassValidator.ValidateDateRange(startDate, endDate);
 
+            // Lead time applies while the class is still pre-start (enrollment window).
+            if (request.StartDate.HasValue
+                && classEntity.Status is ClassStatus.Draft
+                    or ClassStatus.ReadyForMentor
+                    or ClassStatus.Open)
+            {
+                ClassValidator.ValidateStartDateLeadTime(startDate, DateTime.UtcNow);
+            }
+
             var activeSessions = await _unitOfWork.ClassSessions.GetAllAsync(
                 s => s.ClassId == id
                      && !s.IsDeleted

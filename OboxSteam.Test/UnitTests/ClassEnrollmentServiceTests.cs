@@ -209,6 +209,39 @@ public sealed class ClassEnrollmentServiceTests
     }
 
     [Fact]
+    public async Task Enroll_ThrowsConflict_WhenActiveClassCapReached()
+    {
+        SeedStudent();
+        var pe1 = Guid.Parse("33333333-3333-3333-3333-333333333301");
+        var pe2 = Guid.Parse("33333333-3333-3333-3333-333333333302");
+        var pe3 = Guid.Parse("33333333-3333-3333-3333-333333333303");
+        var program2 = Guid.Parse("22222222-2222-2222-2222-222222222201");
+        var program3 = Guid.Parse("22222222-2222-2222-2222-222222222202");
+        var class2 = Guid.Parse("44444444-4444-4444-4444-444444444401");
+        var class3 = Guid.Parse("44444444-4444-4444-4444-444444444402");
+
+        SeedProgramEnrollment(id: pe1, programId: _programId);
+        SeedProgramEnrollment(id: pe2, programId: program2);
+        SeedProgramEnrollment(id: pe3, programId: program3);
+        SeedClass(id: _classId, programId: _programId);
+        SeedClass(id: class2, code: "CLS-002", programId: program2);
+        SeedClass(id: class3, code: "CLS-003", programId: program3);
+        SeedClassEnrollment(classId: _classId);
+        SeedClassEnrollment(
+            id: Guid.Parse("55555555-5555-5555-5555-555555555501"),
+            classId: class2);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.EnrollClassAsync(new CreateClassEnrollmentRequestDto
+            {
+                ProgramEnrollmentId = pe3,
+                ClassId = class3,
+            }));
+        Assert.Contains("maximum of 2", ex.Message);
+    }
+
+    [Fact]
     public async Task Enroll_MapsMentor_WhenAssigned()
     {
         SeedStudent();
@@ -333,6 +366,23 @@ public sealed class ClassEnrollmentServiceTests
                 ProgramEnrollmentId = _programEnrollmentId,
                 ClassId = _classId
             }));
+    }
+
+    [Fact]
+    public async Task Enroll_ThrowsBadRequest_WhenClassInProgress()
+    {
+        SeedStudent();
+        SeedProgramEnrollment();
+        SeedClass(status: ClassStatus.InProgress);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.EnrollClassAsync(new CreateClassEnrollmentRequestDto
+            {
+                ProgramEnrollmentId = _programEnrollmentId,
+                ClassId = _classId
+            }));
+        Assert.Contains("not open for enrollment", ex.Message);
     }
 
     [Fact]

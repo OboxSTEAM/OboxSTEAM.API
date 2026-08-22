@@ -17,7 +17,7 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 2. Enroll at program level (`POST /api/program-enrollments`) — Student role.
 3. Enroll in modules (`POST /api/module-enrollments`) when module access is
    required separately.
-4. Join a class cohort when class-based delivery applies. Students may enroll only when the class is Open or InProgress — not Draft or ReadyForMentor. Enroll and transfer are blocked when any non-cancelled ClassSession of the target class overlaps another active class (start1 < end2 && start2 < end1). Students can read occupied intervals at GET /api/me/schedule. The Monday–Sunday timetable is GET /api/schedules/weekly (weekStart optional; studentId required for parents of a verified linked child; Asia/Ho_Chi_Minh; cancelled sessions omitted).
+4. Join a class cohort when class-based delivery applies. Students may enroll (and self-transfer) only when the class is **Open** — not Draft, ReadyForMentor, or InProgress. Manager transfer targets must also be Open. Enroll and transfer are blocked when any non-cancelled ClassSession of the target class overlaps another active class (start1 < end2 && start2 < end1). Students can read occupied intervals at GET /api/me/schedule. The Monday–Sunday timetable is GET /api/schedules/weekly (weekStart optional; studentId required for parents of a verified linked child; Asia/Ho_Chi_Minh; cancelled sessions omitted).
 
 Parents and managers can view enrollment state on shared read endpoints
 (Student, Parent, Admin, Manager).

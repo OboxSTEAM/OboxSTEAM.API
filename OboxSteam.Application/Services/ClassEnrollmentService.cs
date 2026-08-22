@@ -63,6 +63,10 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                   && !ce.IsDeleted);
         ClassEnrollmentValidator.ValidateNoActiveClassEnrollmentForProgram(activeEnrollment);
 
+        await ClassEnrollmentValidator.ValidateUnderActiveClassLimitAsync(
+            _unitOfWork,
+            student.Id);
+
         var existingInClass = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
             ce => ce.ClassId == request.ClassId
                   && ce.StudentId == student.Id
@@ -254,6 +258,11 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                   && ce.Status == ClassEnrollmentStatus.Active
                   && !ce.IsDeleted);
         ClassEnrollmentValidator.ValidateNotAlreadyEnrolledInClass(existingInTargetClass, enrollment.Id);
+
+        await ClassEnrollmentValidator.ValidateUnderActiveClassLimitAsync(
+            _unitOfWork,
+            student.Id,
+            excludeEnrollmentId: enrollment.Id);
 
         await ClassEnrollmentValidator.ValidateClassHasCapacityAsync(
             _unitOfWork,

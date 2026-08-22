@@ -1,3 +1,4 @@
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.Services;
@@ -299,10 +300,12 @@ public partial class SeedService
     /// Completed/Dropped do not count. PendingPayment is forbidden once the student already
     /// holds two in-progress programs.
     /// </summary>
-    internal const int MaxInProgressProgramsPerStudent = 2;
+    internal const int MaxInProgressProgramsPerStudent =
+        ProgramEnrollmentValidator.MaxInProgressProgramsPerStudent;
 
     /// <summary>Soft cap for seed + product: Active class enrollments per student.</summary>
-    internal const int MaxActiveClassesPerStudent = 2;
+    internal const int MaxActiveClassesPerStudent =
+        ClassEnrollmentValidator.MaxActiveClassesPerStudent;
 
     /// <summary>
     /// Counts planned Active + PendingPayment program enrollments (academic + demo).

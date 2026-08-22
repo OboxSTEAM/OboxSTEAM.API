@@ -33,6 +33,19 @@ and `message`. HTTP status codes align with the error (400, 401, 403, 404,
 - Enums: serialized as strings (`JsonStringEnumConverter`).
 - Reference cycles: ignored (`ReferenceHandler.IgnoreCycles`).
 
+## Date and Time Contract
+
+One product timezone for user wall-clock; storage is always UTC.
+
+| Layer | Rule |
+| ----- | ---- |
+| Database / server | UTC (`DateTimeKind.Utc`) |
+| User wall-clock (UI, schedules, seed) | `Asia/Ho_Chi_Minh` (Windows: `SE Asia Standard Time`) |
+| Preferred request wire format | ISO 8601 with offset or `Z` (e.g. `2026-08-22T09:00:00+07:00`) |
+| Legacy request format | `dd/MM/yyyy`, `dd/MM/yyyy HH:mm`, `dd/MM/yyyy HH:mm:ss` — interpreted as Vietnam local time, then converted to UTC |
+
+`FlexibleDateTimeConverter` / `AppDateTime.TryParseFlexible` enforce this on inbound JSON. Do not treat naive legacy strings as UTC. Clients should send ISO with timezone; do not compensate by subtracting hours on the client while still sending naive strings.
+
 ## Authentication
 
 - JWT Bearer tokens on protected endpoints.

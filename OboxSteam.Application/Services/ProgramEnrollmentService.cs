@@ -66,6 +66,10 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
             return existingEnrollment;
         }
 
+        await ProgramEnrollmentValidator.ValidateUnderInProgressProgramLimitAsync(
+            _unitOfWork,
+            studentId);
+
         var now = DateTime.UtcNow;
         var enrollment = new ProgramEnrollment
         {

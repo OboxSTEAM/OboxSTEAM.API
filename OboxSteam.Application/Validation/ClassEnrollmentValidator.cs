@@ -15,6 +15,9 @@ public static class ClassEnrollmentValidator
     public const string ViewListForbiddenMessage = "You do not have permission to view class enrollments.";
     public const string ViewEnrollmentForbiddenMessage = "You do not have permission to view this enrollment.";
 
+    /// <summary>Soft product cap: Active class enrollments per student across all programs.</summary>
+    public const int MaxActiveClassesPerStudent = 2;
+
     public static void ValidateProgramEnrollmentIdRequired(Guid programEnrollmentId)
     {
         if (programEnrollmentId == Guid.Empty)
@@ -75,9 +78,13 @@ public static class ClassEnrollmentValidator
         }
     }
 
+    /// <summary>
+    /// Self-enroll and student transfer only while the cohort is Open (recruiting).
+    /// InProgress means teaching has started — no new joins via student flows.
+    /// </summary>
     public static void ValidateClassOpenForEnrollment(Class classEntity)
     {
-        if (classEntity.Status is not (ClassStatus.Open or ClassStatus.InProgress))
+        if (classEntity.Status != ClassStatus.Open)
         {
             throw ErrorHelper.BadRequest(
                 $"Class '{classEntity.Code}' is not open for enrollment (status: {classEntity.Status}).");
@@ -219,6 +226,29 @@ public static class ClassEnrollmentValidator
         {
             throw ErrorHelper.BadRequest(
                 $"Cannot join within {classEntity.MinHoursBeforeAssignmentJoin} hours of the next assignment window.");
+        }
+    }
+
+    /// <summary>
+    /// Ensures the student is under the active class enrollment cap.
+    /// Pass <paramref name="excludeEnrollmentId"/> when transferring so the current seat is not double-counted.
+    /// </summary>
+    public static async Task ValidateUnderActiveClassLimitAsync(
+        IUnitOfWork unitOfWork,
+        Guid studentId,
+        Guid? excludeEnrollmentId = null)
+    {
+        var active = await unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.StudentId == studentId
+                  && !ce.IsDeleted
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && (!excludeEnrollmentId.HasValue || ce.Id != excludeEnrollmentId.Value));
+
+        if (active.Count >= MaxActiveClassesPerStudent)
+        {
+            throw ErrorHelper.Conflict(
+                $"Student has reached the maximum of {MaxActiveClassesPerStudent} active classes. " +
+                "Leave or complete a class before joining another.");
         }
     }
 }

@@ -294,7 +294,7 @@ public partial class SeedService
                     : weeklySlots[i].DurationMinutes;
                 var startUtc = slot.Value.StartTime;
                 var endUtc = startUtc.AddMinutes(duration);
-                var (location, meetingUrl) = SeedTimeline.ResolveSeedVenue(
+                var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
                     SessionKind.Lesson,
                     classEntity.Code,
                     i);
@@ -312,6 +312,8 @@ public partial class SeedService
                     EndTime = endUtc,
                     Location = location,
                     MeetingUrl = meetingUrl,
+                    Latitude = latitude,
+                    Longitude = longitude,
                     RequiresAttendance = true,
                     Status = SeedTimeline.ResolveSessionStatus(startUtc, endUtc, seedTime),
                     CreatedAt = seedTime,

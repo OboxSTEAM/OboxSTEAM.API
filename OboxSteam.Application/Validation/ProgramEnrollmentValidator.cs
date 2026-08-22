@@ -1,6 +1,7 @@
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
+using OboxSteam.Domain.Interfaces;
 
 namespace OboxSteam.Application.Validation;
 
@@ -12,6 +13,12 @@ public static class ProgramEnrollmentValidator
     public const string EnrollForbiddenMessage = "Only students can enroll in a program.";
     public const string ViewListForbiddenMessage = "You do not have permission to view program enrollments.";
     public const string ViewEnrollmentForbiddenMessage = "You do not have permission to view this enrollment.";
+
+    /// <summary>
+    /// Soft product cap: Active + PendingPayment program enrollments per student.
+    /// Completed/Dropped do not count. Creating PendingPayment is blocked when already at the cap.
+    /// </summary>
+    public const int MaxInProgressProgramsPerStudent = 2;
 
     public static void ValidateProgramIdRequired(Guid programId)
     {
@@ -70,6 +77,30 @@ public static class ProgramEnrollmentValidator
         if (role is not (RoleType.Student or RoleType.Parent or RoleType.Admin or RoleType.Manager))
         {
             throw ErrorHelper.Forbidden(ViewListForbiddenMessage);
+        }
+    }
+
+    /// <summary>
+    /// Ensures the student is under the in-progress program cap (Active + PendingPayment).
+    /// </summary>
+    public static async Task ValidateUnderInProgressProgramLimitAsync(
+        IUnitOfWork unitOfWork,
+        Guid studentId,
+        Guid? excludeEnrollmentId = null)
+    {
+        var inProgress = await unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => pe.StudentId == studentId
+                  && !pe.IsDeleted
+                  && (pe.Status == EnrollmentStatus.Active
+                      || pe.Status == EnrollmentStatus.PendingPayment)
+                  && (!excludeEnrollmentId.HasValue || pe.Id != excludeEnrollmentId.Value));
+
+        if (inProgress.Count >= MaxInProgressProgramsPerStudent)
+        {
+            throw ErrorHelper.Conflict(
+                $"Student has reached the maximum of {MaxInProgressProgramsPerStudent} " +
+                "in-progress programs (Active or PendingPayment). " +
+                "Complete or drop a program before starting another.");
         }
     }
 }
