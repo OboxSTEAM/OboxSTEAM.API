@@ -60,20 +60,7 @@ public sealed class NotificationService : INotificationService
             .Take(pageSize)
             .ToList();
 
-        var dtos = items.Select(n => new NotificationDto
-        {
-            Id = n.Id,
-            RecipientUserId = n.RecipientUserId,
-            Type = n.Type,
-            Title = n.Title,
-            Body = n.Body,
-            PayloadJson = n.PayloadJson,
-            ReadAt = n.ReadAt,
-            ActorUserId = n.ActorUserId,
-            EntityType = n.EntityType,
-            EntityId = n.EntityId,
-            CreatedAt = n.CreatedAt
-        }).ToList();
+        var dtos = items.Select(NotificationDtoMapper.ToDto).ToList();
 
         return new Pagination<NotificationDto>(dtos, totalCount, page, pageSize);
     }

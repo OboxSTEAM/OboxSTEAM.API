@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.NotificationDTO;
 using OboxSteam.Application.Interfaces;
@@ -11,12 +9,6 @@ namespace OboxSteam.Application.Services;
 
 public sealed class NotificationPublisher : INotificationPublisher
 {
-    private static readonly JsonSerializerOptions PayloadJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationRecipientResolver _recipientResolver;
     private readonly INotificationDispatcher _dispatcher;
@@ -74,9 +66,7 @@ public sealed class NotificationPublisher : INotificationPublisher
                     tokens);
 
                 var payload = ClonePayloadForRecipient(command.Payload, recipient.ContextStudentId);
-                var payloadJson = payload is null
-                    ? null
-                    : JsonSerializer.Serialize(payload, PayloadJsonOptions);
+                var payloadJson = NotificationDtoMapper.SerializePayload(payload);
 
                 entities.Add(new Notification
                 {
@@ -192,18 +182,5 @@ public sealed class NotificationPublisher : INotificationPublisher
         return clone;
     }
 
-    private static NotificationDto MapToDto(Notification entity) => new()
-    {
-        Id = entity.Id,
-        RecipientUserId = entity.RecipientUserId,
-        Type = entity.Type,
-        Title = entity.Title,
-        Body = entity.Body,
-        PayloadJson = entity.PayloadJson,
-        ReadAt = entity.ReadAt,
-        ActorUserId = entity.ActorUserId,
-        EntityType = entity.EntityType,
-        EntityId = entity.EntityId,
-        CreatedAt = entity.CreatedAt
-    };
+    private static NotificationDto MapToDto(Notification entity) => NotificationDtoMapper.ToDto(entity);
 }

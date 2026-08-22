@@ -230,6 +230,37 @@ public sealed class NotificationTemplateEngineTests
     }
 
     [Fact]
+    public void DtoMapper_DeserializesTypedPayload_FromPayloadJson()
+    {
+        var enrollmentId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var nextActivityId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var payloadJson = NotificationDtoMapper.SerializePayload(
+            new NotificationPayload
+            {
+                ProgramId = _programId,
+                NextActivityId = nextActivityId,
+                StudentId = _studentAId
+            }.SetEnrollment(enrollmentId));
+
+        var dto = NotificationDtoMapper.ToDto(new Notification
+        {
+            Id = Guid.NewGuid(),
+            RecipientUserId = _studentAId,
+            Type = NotificationType.ActivityCompleted,
+            Title = "Activity completed",
+            PayloadJson = payloadJson,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        Assert.NotNull(dto.Payload);
+        Assert.Equal(_programId, dto.Payload!.ProgramId);
+        Assert.Equal(enrollmentId, dto.Payload.EnrollmentId);
+        Assert.Equal(enrollmentId, dto.Payload.ProgramEnrollmentId);
+        Assert.Equal(nextActivityId, dto.Payload.NextActivityId);
+        Assert.Equal(payloadJson, dto.PayloadJson);
+    }
+
+    [Fact]
     public async Task Publisher_RendersParentCopyWithChildName_AndKeepsStudentYouCopy()
     {
         var db = new InMemoryUnitOfWork();
@@ -266,6 +297,10 @@ public sealed class NotificationTemplateEngineTests
         Assert.Equal("You completed \"Robotics 1\".", studentRow.Body);
         Assert.Equal("An Nguyen completed \"Robotics 1\".", parentRow.Body);
         Assert.Contains(_studentAId.ToString(), parentRow.PayloadJson, StringComparison.OrdinalIgnoreCase);
+
+        var parentDto = NotificationDtoMapper.ToDto(parentRow);
+        Assert.NotNull(parentDto.Payload);
+        Assert.Equal(_studentAId, parentDto.Payload!.StudentId);
     }
 
     [Fact]

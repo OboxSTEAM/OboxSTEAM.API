@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
+using OboxSteam.API.Attributes;
 using OboxSteam.API.Hubs;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
@@ -371,6 +372,7 @@ public static class IocContainer
 
             // Add file upload operation filter
             c.OperationFilter<FileUploadOperationFilter>();
+            c.SchemaFilter<NotificationPayloadSchemaFilter>();
         });
 
         return services;
