@@ -59,7 +59,6 @@ public sealed class ScheduleService : IScheduleService
 
         var classesById = await LoadClassesByIdAsync(classIds);
         var attendanceBySessionId = await LoadAttendanceBySessionIdAsync(student.Id, sessions);
-        var materialsByActivityId = await LoadMaterialsByActivityIdAsync(sessions);
 
         var sessionsByDate = new Dictionary<DateOnly, List<ScheduleSessionResponseDto>>();
         foreach (var session in sessions.OrderBy(s => s.StartTime))
@@ -69,11 +68,6 @@ public sealed class ScheduleService : IScheduleService
 
             classesById.TryGetValue(session.ClassId, out var classEntity);
             attendanceBySessionId.TryGetValue(session.Id, out var attendance);
-            Material? material = null;
-            if (session.ActivityId.HasValue)
-            {
-                materialsByActivityId.TryGetValue(session.ActivityId.Value, out material);
-            }
 
             var attendanceStatus = attendance?.Status;
             if (!sessionsByDate.TryGetValue(localDate, out var daySessions))
@@ -100,7 +94,6 @@ public sealed class ScheduleService : IScheduleService
                 Status = session.Status,
                 IsCompleted = session.Status == ClassSessionStatus.Completed,
                 AttendanceStatus = attendanceStatus,
-                MaterialId = material?.Id,
             });
         }
 
@@ -162,27 +155,6 @@ public sealed class ScheduleService : IScheduleService
 
         return rows
             .GroupBy(sa => sa.ClassSessionId)
-            .ToDictionary(g => g.Key, g => g.First());
-    }
-
-    private async Task<Dictionary<Guid, Material>> LoadMaterialsByActivityIdAsync(List<ClassSession> sessions)
-    {
-        var activityIds = sessions
-            .Where(s => s.ActivityId.HasValue)
-            .Select(s => s.ActivityId!.Value)
-            .Distinct()
-            .ToList();
-
-        if (activityIds.Count == 0)
-        {
-            return [];
-        }
-
-        var materials = await _unitOfWork.Materials.GetAllAsync(
-            m => activityIds.Contains(m.ActivityId) && !m.IsDeleted);
-
-        return materials
-            .GroupBy(m => m.ActivityId)
             .ToDictionary(g => g.Key, g => g.First());
     }
 

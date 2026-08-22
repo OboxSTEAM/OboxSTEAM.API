@@ -21,7 +21,6 @@ public sealed class ScheduleServiceTests
     private readonly Guid _otherClassId = Guid.Parse("45454545-4545-4545-4545-454545454545");
     private readonly Guid _moduleId = Guid.Parse("66666666-6666-6666-6666-666666666666");
     private readonly Guid _activityId = Guid.Parse("77777777-7777-7777-7777-777777777777");
-    private readonly Guid _materialId = Guid.Parse("88888888-8888-8888-8888-888888888888");
     private readonly Guid _programEnrollmentId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private readonly Guid _moduleEnrollmentId = Guid.Parse("99999999-9999-9999-9999-999999999999");
 
@@ -178,18 +177,6 @@ public sealed class ScheduleServiceTests
         });
     }
 
-    private void SeedMaterial(Guid activityId)
-    {
-        _db.Materials.Seed(new Material
-        {
-            Id = _materialId,
-            ActivityId = activityId,
-            Title = "Slide deck",
-            MaterialType = MaterialType.PDF,
-            IsDeleted = false,
-        });
-    }
-
     [Fact]
     public async Task GetWeeklySchedule_DefaultsToCurrentVietnamMonday_AndAlwaysHasSevenDays()
     {
@@ -340,7 +327,7 @@ public sealed class ScheduleServiceTests
     }
 
     [Fact]
-    public async Task GetWeeklySchedule_MapsAttendanceAndMaterial()
+    public async Task GetWeeklySchedule_MapsAttendance()
     {
         SeedStudent();
         SeedClass();
@@ -359,7 +346,6 @@ public sealed class ScheduleServiceTests
         SeedAttendance(present.Id, AttendanceStatus.Present);
         SeedAttendance(late.Id, AttendanceStatus.Late);
         SeedAttendance(expected.Id, AttendanceStatus.Expected);
-        SeedMaterial(_activityId);
 
         var sut = CreateSut();
 
@@ -367,11 +353,9 @@ public sealed class ScheduleServiceTests
         var byId = result.Days.SelectMany(d => d.Sessions).ToDictionary(s => s.Id);
 
         Assert.Equal(AttendanceStatus.Present, byId[present.Id].AttendanceStatus);
-        Assert.Equal(_materialId, byId[present.Id].MaterialId);
         Assert.Equal("CLS-001", byId[present.Id].ClassCode);
 
         Assert.Equal(AttendanceStatus.Late, byId[late.Id].AttendanceStatus);
-        Assert.Null(byId[late.Id].MaterialId);
 
         Assert.Equal(AttendanceStatus.Expected, byId[expected.Id].AttendanceStatus);
 

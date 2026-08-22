@@ -33,6 +33,4 @@ public sealed class ScheduleSessionResponseDto
     /// Student roster status for this session. Null when no attendance row exists.
     /// </summary>
     public AttendanceStatus? AttendanceStatus { get; set; }
-
-    public Guid? MaterialId { get; set; }
 }
