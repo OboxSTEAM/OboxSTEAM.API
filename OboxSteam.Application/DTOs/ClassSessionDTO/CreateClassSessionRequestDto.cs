@@ -21,7 +21,12 @@ public class CreateClassSessionRequestDto
 
     public Guid? AssignmentId { get; set; }
 
-    public SessionKind SessionKind { get; set; }
+    /// <summary>
+    /// Ignored — derived by the server from ActivityType / Assignment
+    /// (LiveOnline → Lesson, Offline → FieldTrip, Assignment → AssignmentWindow).
+    /// Sending a value returns 400.
+    /// </summary>
+    public SessionKind? SessionKind { get; set; }
 
     [Required(ErrorMessage = "Title is required.")]
     [MaxLength(255)]

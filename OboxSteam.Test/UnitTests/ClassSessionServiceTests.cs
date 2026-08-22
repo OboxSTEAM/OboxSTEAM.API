@@ -224,7 +224,6 @@ public sealed class ClassSessionServiceTests
             ModuleId = _moduleId,
             ActivityId = clearActivity ? null : (activityId ?? _activityId),
             AssignmentId = assignmentId,
-            SessionKind = SessionKind.Lesson,
             Title = title,
             Description = "Desc",
             StartTime = startTime,
@@ -486,6 +485,8 @@ public sealed class ClassSessionServiceTests
         Assert.Equal("New Session", result.Title);
         Assert.Equal(ClassSessionStatus.Scheduled, result.Status);
         Assert.Equal(_classId, result.ClassId);
+        // Offline activity → FieldTrip (derived; client SessionKind ignored).
+        Assert.Equal(SessionKind.FieldTrip, result.SessionKind);
         // Client EndTime is ignored for activity sessions — end = Start + DurationMinutes (120).
         Assert.Equal(request.StartTime.AddMinutes(120), result.EndTime);
         Assert.Equal("https://meet.example.com/room-a", result.MeetingUrl);
@@ -519,7 +520,6 @@ public sealed class ClassSessionServiceTests
         var sut = CreateSut();
         var request = BuildCreateRequest(clearActivity: true, assignmentId: _assignmentId);
         request.EndTime = null;
-        request.SessionKind = SessionKind.AssignmentWindow;
 
         var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.CreateClassSessionAsync(request));
@@ -539,12 +539,50 @@ public sealed class ClassSessionServiceTests
             end: end,
             clearActivity: true,
             assignmentId: _assignmentId);
-        request.SessionKind = SessionKind.AssignmentWindow;
 
         var result = await sut.CreateClassSessionAsync(request);
 
         Assert.Equal(start, result.StartTime);
         Assert.Equal(end, result.EndTime);
+        Assert.Equal(SessionKind.AssignmentWindow, result.SessionKind);
+    }
+
+    [Fact]
+    public async Task Create_LiveOnline_DerivesLessonSessionKind()
+    {
+        SeedCurriculum();
+        var liveId = Guid.Parse("a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1");
+        _db.Activities.Seed(new Activity
+        {
+            Id = liveId,
+            Code = "ACT-LIVE",
+            Name = "Live call",
+            CourseId = _courseId,
+            ActivityType = ActivityType.LiveOnline,
+            ActivityOrder = 2,
+            DurationMinutes = 60,
+            IsDeleted = false,
+        });
+        SeedClass();
+        var sut = CreateSut();
+
+        var result = await sut.CreateClassSessionAsync(BuildCreateRequest(activityId: liveId));
+
+        Assert.Equal(SessionKind.Lesson, result.SessionKind);
+    }
+
+    [Fact]
+    public async Task Create_Throws_WhenClientSetsSessionKind()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var sut = CreateSut();
+        var request = BuildCreateRequest();
+        request.SessionKind = SessionKind.Lesson;
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateClassSessionAsync(request));
+        Assert.Contains("SessionKind is derived", ex.Message);
     }
 
     [Fact]
@@ -789,7 +827,6 @@ public sealed class ClassSessionServiceTests
             MeetingUrl = "  https://meet.example.com/lab-2  ",
             RequiresAttendance = false,
             RequiresMentorCheckIn = true,
-            SessionKind = SessionKind.FieldTrip,
         });
 
         Assert.Equal("Updated Title", result.Title);
@@ -798,7 +835,53 @@ public sealed class ClassSessionServiceTests
         Assert.Equal("https://meet.example.com/lab-2", result.MeetingUrl);
         Assert.False(result.RequiresAttendance);
         Assert.True(result.RequiresMentorCheckIn);
+        // Offline activity → FieldTrip (derived on update).
         Assert.Equal(SessionKind.FieldTrip, result.SessionKind);
+    }
+
+    [Fact]
+    public async Task Update_Throws_WhenClientSetsSessionKind()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(status: ClassSessionStatus.Scheduled);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+            {
+                SessionKind = SessionKind.Lesson,
+            }));
+        Assert.Contains("SessionKind is derived", ex.Message);
+    }
+
+    [Fact]
+    public async Task Update_RelinkToLiveOnline_DerivesLesson()
+    {
+        SeedCurriculum();
+        var liveId = Guid.Parse("b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2");
+        _db.Activities.Seed(new Activity
+        {
+            Id = liveId,
+            Code = "ACT-LIVE-2",
+            Name = "Live lecture",
+            CourseId = _courseId,
+            ActivityType = ActivityType.LiveOnline,
+            ActivityOrder = 3,
+            DurationMinutes = 90,
+            IsDeleted = false,
+        });
+        SeedClass();
+        SeedSession(status: ClassSessionStatus.Scheduled);
+        var sut = CreateSut();
+
+        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            ActivityId = liveId,
+        });
+
+        Assert.Equal(SessionKind.Lesson, result.SessionKind);
+        Assert.Equal(liveId, result.ActivityId);
     }
 
     [Fact]

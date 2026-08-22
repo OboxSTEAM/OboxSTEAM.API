@@ -66,6 +66,38 @@ public static class ClassSessionValidator
     }
 
     /// <summary>
+    /// Session kind is derived from the curriculum item — same mapping as generate:
+    /// LiveOnline → Lesson, Offline → FieldTrip, Assignment → AssignmentWindow.
+    /// </summary>
+    public static SessionKind ResolveSessionKind(Activity? activity, bool forAssignment)
+    {
+        if (forAssignment)
+        {
+            return SessionKind.AssignmentWindow;
+        }
+
+        if (activity == null)
+        {
+            throw ErrorHelper.BadRequest("Activity is required to resolve SessionKind.");
+        }
+
+        return activity.ActivityType == ActivityType.Offline
+            ? SessionKind.FieldTrip
+            : SessionKind.Lesson;
+    }
+
+    public static void ValidateSessionKindNotOverridden(SessionKind? requestedSessionKind)
+    {
+        if (requestedSessionKind.HasValue)
+        {
+            throw ErrorHelper.BadRequest(
+                "SessionKind is derived from the curriculum item " +
+                "(LiveOnline → Lesson, Offline → FieldTrip, Assignment → AssignmentWindow) " +
+                "and cannot be set manually.");
+        }
+    }
+
+    /// <summary>
     /// Activity session length always comes from the curriculum template.
     /// </summary>
     public static DateTime ResolveActivitySessionEnd(DateTime startTime, Activity activity)

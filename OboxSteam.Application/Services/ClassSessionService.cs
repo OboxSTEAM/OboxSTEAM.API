@@ -289,6 +289,7 @@ public sealed class ClassSessionService : IClassSessionService
 
         ClassSessionValidator.ValidateCreateRequest(request);
         ClassSessionValidator.ValidateCoordinates(request.Latitude, request.Longitude);
+        ClassSessionValidator.ValidateSessionKindNotOverridden(request.SessionKind);
 
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
         ClassValidator.ValidateClassExists(classEntity, request.ClassId);
@@ -303,15 +304,19 @@ public sealed class ClassSessionService : IClassSessionService
 
         // Activity: EndTime = StartTime + DurationMinutes (client EndTime ignored).
         // Assignment: client must supply EndTime (no curriculum duration).
+        // SessionKind is always derived (same mapping as generate).
         DateTime endTime;
+        SessionKind sessionKind;
         if (request.ActivityId.HasValue)
         {
             var activity = await _unitOfWork.Activities.GetByIdAsync(request.ActivityId.Value);
             endTime = ClassSessionValidator.ResolveActivitySessionEnd(request.StartTime, activity!);
+            sessionKind = ClassSessionValidator.ResolveSessionKind(activity, forAssignment: false);
         }
         else
         {
             endTime = request.EndTime!.Value;
+            sessionKind = ClassSessionValidator.ResolveSessionKind(null, forAssignment: true);
         }
 
         ClassSessionValidator.ValidateSessionWithinClassDateRange(
@@ -337,7 +342,7 @@ public sealed class ClassSessionService : IClassSessionService
             ModuleId = request.ModuleId,
             ActivityId = request.ActivityId,
             AssignmentId = request.AssignmentId,
-            SessionKind = request.SessionKind,
+            SessionKind = sessionKind,
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
             StartTime = request.StartTime,
@@ -720,9 +725,18 @@ public sealed class ClassSessionService : IClassSessionService
             targetAssignmentId,
             excludeSessionId: session.Id);
 
-        if (request.SessionKind.HasValue)
+        ClassSessionValidator.ValidateSessionKindNotOverridden(request.SessionKind);
+
+        // Keep SessionKind in sync with the curriculum item (same mapping as generate).
+        if (targetAssignmentId.HasValue)
         {
-            session.SessionKind = request.SessionKind.Value;
+            session.SessionKind = ClassSessionValidator.ResolveSessionKind(null, forAssignment: true);
+        }
+        else
+        {
+            var activityForKind = await _unitOfWork.Activities.GetByIdAsync(targetActivityId!.Value);
+            session.SessionKind = ClassSessionValidator.ResolveSessionKind(
+                activityForKind, forAssignment: false);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Title))

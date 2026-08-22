@@ -7,12 +7,17 @@ namespace OboxSteam.Application.DTOs.ClassSessionDTO;
 /// Activity-backed sessions: change <see cref="StartTime"/> to reschedule — <see cref="EndTime"/>
 /// is always recomputed from the activity's DurationMinutes and cannot be set directly.
 /// Assignment sessions: <see cref="StartTime"/> / <see cref="EndTime"/> may both be changed.
+/// <see cref="SessionKind"/> is derived from the curriculum item and cannot be set manually.
 /// </summary>
 public class UpdateClassSessionRequestDto
 {
     public Guid? ModuleId { get; set; }
     public Guid? ActivityId { get; set; }
     public Guid? AssignmentId { get; set; }
+
+    /// <summary>
+    /// Ignored — derived by the server. Sending a value returns 400.
+    /// </summary>
     public SessionKind? SessionKind { get; set; }
     public string? Title { get; set; }
     public string? Description { get; set; }
