@@ -293,4 +293,93 @@ public partial class SeedService
             .Where(definition => string.IsNullOrWhiteSpace(definition.MentorCode))
             .Select(definition => definition.Code)
             .ToList();
+
+    /// <summary>
+    /// Soft cap for seed + product: Active + PendingPayment program enrollments per student.
+    /// Completed/Dropped do not count. PendingPayment is forbidden once the student already
+    /// holds two in-progress programs.
+    /// </summary>
+    internal const int MaxInProgressProgramsPerStudent = 2;
+
+    /// <summary>Soft cap for seed + product: Active class enrollments per student.</summary>
+    internal const int MaxActiveClassesPerStudent = 2;
+
+    /// <summary>
+    /// Counts planned Active + PendingPayment program enrollments (academic + demo).
+    /// </summary>
+    internal static Dictionary<string, int> CountSeedInProgressProgramEnrollments()
+    {
+        var usage = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(string studentCode)
+        {
+            usage[studentCode] = usage.GetValueOrDefault(studentCode) + 1;
+        }
+
+        foreach (var code in RoboticsCurrentStudentCodes.Concat(RoboticsOpenStudentCodes))
+        {
+            Add(code);
+        }
+
+        foreach (var code in IotCurrentStudentCodes)
+        {
+            Add(code);
+        }
+
+        foreach (var code in GameDevPendingStudentCodes)
+        {
+            Add(code);
+        }
+
+        foreach (var code in GameDevJustEnrolledStudentCodes)
+        {
+            Add(code);
+        }
+
+        foreach (var pair in GetDemoStudentCodesByProgram())
+        {
+            foreach (var code in pair.Value)
+            {
+                Add(code);
+            }
+        }
+
+        return usage;
+    }
+
+    /// <summary>
+    /// Counts planned Active class enrollments (academic + demo InProgress cohorts).
+    /// </summary>
+    internal static Dictionary<string, int> CountSeedActiveClassEnrollments()
+    {
+        var usage = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(string studentCode)
+        {
+            usage[studentCode] = usage.GetValueOrDefault(studentCode) + 1;
+        }
+
+        foreach (var plan in AcademicYearClassEnrollmentPlan)
+        {
+            if (plan.Status != ClassEnrollmentStatus.Active)
+            {
+                continue;
+            }
+
+            foreach (var code in plan.StudentCodes)
+            {
+                Add(code);
+            }
+        }
+
+        foreach (var pair in GetDemoStudentCodesByProgram())
+        {
+            foreach (var code in pair.Value)
+            {
+                Add(code);
+            }
+        }
+
+        return usage;
+    }
 }

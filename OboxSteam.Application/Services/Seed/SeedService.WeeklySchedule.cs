@@ -304,18 +304,13 @@ public partial class SeedService
     }
 
     /// <summary>
-    /// Two slots on some weekdays (max 2/day visually spread) — still one curriculum session
-    /// per slot via moving existing sessions, never creating SelfPaced or duplicate items.
+    /// Exactly two weekly slots — mirrors Robotics Current (Tue/Thu morning) and the
+    /// product rule of 2 buổi/tuần per program.
     /// </summary>
     private static IReadOnlyList<WeeklyScheduleSlot> GetWeeklyScheduleSlots() =>
     [
-        new(0, new TimeOnly(7, 30), "NVH 602", "mon-am"),
-        new(0, new TimeOnly(15, 0), "P.012", "mon-pm"),
-        new(1, new TimeOnly(12, 30), "NVH 307", "tue-noon"),
-        new(2, new TimeOnly(7, 30), "NVH 602", "wed-am"),
-        new(3, new TimeOnly(15, 0), "P.012", "thu-pm"),
-        new(4, new TimeOnly(12, 30), "NVH 306", "fri-noon"),
-        new(6, new TimeOnly(17, 45), "P.134", "sun-eve"),
+        new(1, new TimeOnly(9, 0), "NVH 602", "tue-am"),
+        new(3, new TimeOnly(9, 0), "P.012", "thu-am"),
     ];
 
     private static DateOnly ResolveCurrentMonday(TimeZoneInfo vietnam)

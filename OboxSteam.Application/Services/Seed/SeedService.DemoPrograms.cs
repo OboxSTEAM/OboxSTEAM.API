@@ -11,12 +11,21 @@ namespace OboxSteam.Application.Services;
 /// </summary>
 public partial class SeedService
 {
-    private static readonly string[] DemoStudentCodes =
-    [
-        "STD-001",
-        "STD-002",
-        "STD-003",
-    ];
+    /// <summary>
+    /// One Active demo program (+ matching class) per student. Students chosen from
+    /// Completed/Dropped-only roster so academic Active/Pending slots stay ≤ 2.
+    /// STD-001/002 already hold Robotics Active and must not receive demo enrollments.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> DemoStudentCodesByProgram =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PRG-DEMO-SCRATCH"] = ["STD-003", "STD-016"],
+            ["PRG-DEMO-CLIMATE"] = ["STD-007", "STD-017"],
+            ["PRG-DEMO-MAKER"] = ["STD-009", "STD-010"],
+        };
+
+    internal static IReadOnlyDictionary<string, string[]> GetDemoStudentCodesByProgram()
+        => DemoStudentCodesByProgram;
 
     private async Task SeedDemoShowcaseProgramsAsync()
     {
@@ -169,7 +178,7 @@ public partial class SeedService
                 "https://images.unsplash.com/photo-1587620962725-abab7fe55159?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
             ClassCode: "CLS-DEMO-SCRATCH-2026A",
             ClassName: "Scratch Demo Cohort A",
-            ScheduleSummary: "Every Saturday 09:00-11:00",
+            ScheduleSummary: "Saturday & Sunday 09:00-11:00",
             InProgressMentorCode: "MNT-001",
             OpenMentorCode: "MNT-003",
             TheoryModuleName: "Scratch Basics",
@@ -203,7 +212,7 @@ public partial class SeedService
                 "https://images.unsplash.com/photo-1569163139394-de460e9b8570?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
             ClassCode: "CLS-DEMO-CLIMATE-2026A",
             ClassName: "Climate Detectives Cohort A",
-            ScheduleSummary: "Every Sunday 10:00-12:00",
+            ScheduleSummary: "Saturday & Sunday 09:00-11:00",
             InProgressMentorCode: "MNT-002",
             OpenMentorCode: "MNT-005",
             TheoryModuleName: "Climate Foundations",
@@ -237,7 +246,7 @@ public partial class SeedService
                 "https://images.unsplash.com/photo-1581092160562-40aa08e78837?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
             ClassCode: "CLS-DEMO-MAKER-2026A",
             ClassName: "Maker Lab Cohort A",
-            ScheduleSummary: "Every Friday 14:00-16:00",
+            ScheduleSummary: "Saturday & Sunday 09:00-11:00",
             InProgressMentorCode: "MNT-004",
             OpenMentorCode: "MNT-006",
             TheoryModuleName: "Maker Mindset",
@@ -549,6 +558,7 @@ public partial class SeedService
             startDate: seedTime.AddDays(14),
             endDate: seedTime.AddDays(90));
 
+        await PruneDemoStudentEnrollmentsAsync(program, classEntity);
         await EnsureDemoStudentEnrollmentsAsync(
             program,
             theoryModule,
@@ -1211,6 +1221,58 @@ public partial class SeedService
         await _unitOfWork.SaveChangesAsync();
     }
 
+    private async Task PruneDemoStudentEnrollmentsAsync(
+        Program program,
+        Class classEntity)
+    {
+        if (!DemoStudentCodesByProgram.TryGetValue(program.Code, out var allowedCodes)
+            || allowedCodes.Length == 0)
+        {
+            return;
+        }
+
+        var allowed = allowedCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var enrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => pe.ProgramId == program.Id && !pe.IsDeleted,
+            pe => pe.Student);
+
+        foreach (var enrollment in enrollments)
+        {
+            var code = enrollment.Student?.Code;
+            if (!string.IsNullOrWhiteSpace(code) && allowed.Contains(code))
+            {
+                continue;
+            }
+
+            var classEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
+                ce => ce.StudentId == enrollment.StudentId
+                      && ce.ClassId == classEntity.Id
+                      && !ce.IsDeleted);
+            foreach (var classEnrollment in classEnrollments)
+            {
+                await _unitOfWork.ClassEnrollments.SoftRemove(classEnrollment);
+            }
+
+            var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+                me => me.StudentId == enrollment.StudentId
+                      && me.ProgramEnrollmentId == enrollment.Id
+                      && !me.IsDeleted);
+            foreach (var moduleEnrollment in moduleEnrollments)
+            {
+                await _unitOfWork.ModuleEnrollments.SoftRemove(moduleEnrollment);
+            }
+
+            await _unitOfWork.ProgramEnrollments.SoftRemove(enrollment);
+
+            _loggerService.LogInformation(
+                "Pruned demo enrollment for student {StudentId} on {ProgramCode} (over student load limit).",
+                enrollment.StudentId,
+                program.Code);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+    }
+
     private async Task EnsureDemoStudentEnrollmentsAsync(
         Program program,
         Module theoryModule,
@@ -1222,10 +1284,19 @@ public partial class SeedService
         Class classEntity,
         DateTime seedTime)
     {
+        if (!DemoStudentCodesByProgram.TryGetValue(program.Code, out var studentCodes)
+            || studentCodes.Length == 0)
+        {
+            _loggerService.LogWarning(
+                "No demo student roster for {ProgramCode}. Skipping enrollments.",
+                program.Code);
+            return;
+        }
+
         var modules = new[] { theoryModule, experientialModule, researchModule };
         var courses = new[] { theoryCourse, experientialCourse, researchCourse };
 
-        foreach (var studentCode in DemoStudentCodes)
+        foreach (var studentCode in studentCodes)
         {
             var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode && !u.IsDeleted);
             if (student == null)

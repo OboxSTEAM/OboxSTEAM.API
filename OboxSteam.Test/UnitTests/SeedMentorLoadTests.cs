@@ -29,4 +29,51 @@ public sealed class SeedMentorLoadTests
         Assert.Contains("CLS-PYBASIC-OPEN", unassignedCodes);
         Assert.Equal(3, unassignedCodes.Count);
     }
+
+    [Fact]
+    public void SeedRoster_StudentInProgressPrograms_StayWithinCap()
+    {
+        var usage = SeedService.CountSeedInProgressProgramEnrollments();
+
+        Assert.NotEmpty(usage);
+        Assert.All(
+            usage,
+            pair => Assert.True(
+                pair.Value <= SeedService.MaxInProgressProgramsPerStudent,
+                $"{pair.Key} in-progress programs {pair.Value} exceeds cap of {SeedService.MaxInProgressProgramsPerStudent}."));
+
+        // Hero students already on Robotics must not also hold demo programs.
+        Assert.Equal(1, usage.GetValueOrDefault("STD-001"));
+        Assert.Equal(1, usage.GetValueOrDefault("STD-002"));
+    }
+
+    [Fact]
+    public void SeedRoster_StudentActiveClasses_StayWithinCap()
+    {
+        var usage = SeedService.CountSeedActiveClassEnrollments();
+
+        Assert.NotEmpty(usage);
+        Assert.All(
+            usage,
+            pair => Assert.True(
+                pair.Value <= SeedService.MaxActiveClassesPerStudent,
+                $"{pair.Key} active classes {pair.Value} exceeds cap of {SeedService.MaxActiveClassesPerStudent}."));
+
+        Assert.Equal(1, usage.GetValueOrDefault("STD-001"));
+        Assert.Equal(1, usage.GetValueOrDefault("STD-002"));
+    }
+
+    [Fact]
+    public void SeedRoster_PendingPayment_NotStackedOnTwoInProgressPrograms()
+    {
+        var usage = SeedService.CountSeedInProgressProgramEnrollments();
+
+        foreach (var pendingCode in new[] { "STD-006", "STD-018" })
+        {
+            Assert.True(
+                usage.GetValueOrDefault(pendingCode) <= SeedService.MaxInProgressProgramsPerStudent,
+                $"{pendingCode} has PendingPayment stacked beyond the in-progress cap.");
+            Assert.Equal(1, usage.GetValueOrDefault(pendingCode));
+        }
+    }
 }
