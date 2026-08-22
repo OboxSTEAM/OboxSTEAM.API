@@ -1,6 +1,5 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.DTOs.NotificationDTO;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -9,11 +8,8 @@ namespace OboxSteam.Application.Services;
 
 public partial class SeedService
 {
-    private static readonly JsonSerializerOptions SeedNotificationPayloadJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
+    private const string SeedRoboticsQuizAssignmentCode = "ASG-ROBOTICS-Q01";
+    private const string SeedRoboticsResearchAssignmentCode = "ASG-ROBOTICS-03-01";
 
     private async Task SeedNotificationsAsync()
     {
@@ -38,29 +34,91 @@ public partial class SeedService
             return;
         }
 
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
-        var module = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-01")
-                     ?? await _unitOfWork.Modules.FirstOrDefaultAsync(m => !m.IsDeleted);
-        var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(c => c.Code == RoboticsCurrentClassCode);
-        var classEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
-            ce => ce.StudentId == student.Id && !ce.IsDeleted);
+        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
+            p => p.Code == "PRG-ROBOTICS" && !p.IsDeleted);
+        if (program is null)
+        {
+            _loggerService.LogWarning("PRG-ROBOTICS not found. Skipping notification seeding.");
+            return;
+        }
+
+        var module = await _unitOfWork.Modules.FirstOrDefaultAsync(
+            m => m.Code == "MOD-ROBOTICS-01" && m.ProgramId == program.Id && !m.IsDeleted);
+        var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
+            c => c.Code == RoboticsCurrentClassCode && c.ProgramId == program.Id && !c.IsDeleted);
         var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-            pe => pe.StudentId == student.Id
-                  && program != null
-                  && pe.ProgramId == program.Id
-                  && !pe.IsDeleted);
-        var payment = await _unitOfWork.Payments.FirstOrDefaultAsync(
-            p => p.StudentId == student.Id && !p.IsDeleted);
-        var paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(pr => !pr.IsDeleted);
-        var assignment = await _unitOfWork.Assignments.FirstOrDefaultAsync(a => !a.IsDeleted);
+            pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted);
+        var classEnrollment = classEntity is null || programEnrollment is null
+            ? null
+            : await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+                ce => ce.StudentId == student.Id
+                      && ce.ClassId == classEntity.Id
+                      && ce.ProgramEnrollmentId == programEnrollment.Id
+                      && !ce.IsDeleted);
+        var payment = programEnrollment is null
+            ? null
+            : await _unitOfWork.Payments.FirstOrDefaultAsync(
+                p => p.StudentId == student.Id
+                     && p.ProgramEnrollmentId == programEnrollment.Id
+                     && !p.IsDeleted);
+        var paymentRequest = programEnrollment is null
+            ? null
+            : await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == student.Id
+                      && (pr.ProgramId == program.Id || pr.ProgramEnrollmentId == programEnrollment.Id)
+                      && !pr.IsDeleted);
+
+        // Prefer robotics quiz for student/manager assignment deep-links (not an arbitrary assignment).
+        Assignment? quizAssignment = null;
+        if (module is not null)
+        {
+            quizAssignment = await _unitOfWork.Assignments.FirstOrDefaultAsync(
+                a => a.Code == SeedRoboticsQuizAssignmentCode
+                     && a.ModuleId == module.Id
+                     && !a.IsDeleted)
+                ?? await _unitOfWork.Assignments.FirstOrDefaultAsync(
+                    a => a.ModuleId == module.Id && a.AssignmentType == AssignmentType.Quiz && !a.IsDeleted);
+        }
+
+        var researchAssignment = await _unitOfWork.Assignments.FirstOrDefaultAsync(
+            a => a.Code == SeedRoboticsResearchAssignmentCode && !a.IsDeleted);
+
         var classSession = classEntity is null
             ? null
             : await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
-                cs => cs.ClassId == classEntity.Id && !cs.IsDeleted);
+                cs => cs.ClassId == classEntity.Id
+                      && cs.ActivityId != null
+                      && !cs.IsDeleted)
+              ?? await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
+                  cs => cs.ClassId == classEntity.Id && !cs.IsDeleted);
+
         var mentorRequest = await _unitOfWork.ClassMentorRequests.FirstOrDefaultAsync(
-            r => r.MentorId == mentor.Id && !r.IsDeleted);
-        var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
-            s => !s.IsDeleted);
+            r => r.MentorId == mentor.Id
+                 && classEntity != null
+                 && r.ClassId == classEntity.Id
+                 && !r.IsDeleted);
+
+        var quizSubmission = quizAssignment is null
+            ? null
+            : await _unitOfWork.Submissions.FirstOrDefaultAsync(
+                s => s.StudentId == student.Id
+                     && s.AssignmentId == quizAssignment.Id
+                     && !s.IsDeleted);
+
+        var researchSubmission = researchAssignment is null
+            ? null
+            : await _unitOfWork.Submissions.FirstOrDefaultAsync(
+                s => s.StudentId == student.Id
+                     && s.AssignmentId == researchAssignment.Id
+                     && !s.IsDeleted);
+
+        var moduleEnrollment = module is null || programEnrollment is null
+            ? null
+            : await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                me => me.StudentId == student.Id
+                      && me.ModuleId == module.Id
+                      && me.ProgramEnrollmentId == programEnrollment.Id
+                      && !me.IsDeleted);
 
         if (program is null
             || module is null
@@ -68,11 +126,12 @@ public partial class SeedService
             || classEnrollment is null
             || programEnrollment is null
             || payment is null
-            || assignment is null
+            || quizAssignment is null
             || classSession is null)
         {
             _loggerService.LogWarning(
-                "Linked entities missing for notification seed (program/class/session/payment). Skipping.");
+                "Linked robotics entities missing for notification seed "
+                + "(program/module/class/session/payment/quiz). Skipping.");
             return;
         }
 
@@ -83,24 +142,41 @@ public partial class SeedService
         var programEnrollmentId = programEnrollment.Id;
         var classEnrollmentId = classEnrollment.Id;
         var paymentId = payment.Id;
-        var assignmentId = assignment.Id;
-        var assignmentTitle = assignment.Title;
+        var quizAssignmentId = quizAssignment.Id;
+        var quizAssignmentTitle = quizAssignment.Title;
         var classSessionId = classSession.Id;
-        var submissionId = submission?.Id;
+        var sessionActivityId = classSession.ActivityId;
         var mentorRequestId = mentorRequest?.Id;
         var paymentRequestId = paymentRequest?.Id;
+        var studentName = !string.IsNullOrWhiteSpace(student.FullName) ? student.FullName! : student.Email;
+
+        var nextActivityId = await NotificationDeeplinkResolver.ResolveCurrentActivityIdAsync(
+            _unitOfWork,
+            programId,
+            programEnrollmentId);
+        if (!nextActivityId.HasValue && sessionActivityId.HasValue)
+        {
+            nextActivityId = sessionActivityId;
+        }
+
+        var firstModuleActivityId = await NotificationDeeplinkResolver.ResolveFirstActivityInModuleAsync(
+            _unitOfWork,
+            programId,
+            moduleId);
 
         var now = _seedNow;
-        var samples = new List<(NotificationCommand Command, Guid RecipientId, DateTime? ReadAt)>();
+        var samples = new List<(NotificationCommand Command, Guid RecipientId, RoleType Role, DateTime? ReadAt)>();
 
         // Manager — ForManagers types
         samples.Add((
             NotificationCatalog.ClassCreated(classId, programId, className),
             manager.Id,
+            RoleType.Manager,
             null));
         samples.Add((
             NotificationCatalog.ClassOpenForEnrollment(classId, programId, className),
             manager.Id,
+            RoleType.Manager,
             null));
         if (mentorRequestId.HasValue)
         {
@@ -108,17 +184,27 @@ public partial class SeedService
                 NotificationCatalog.ClassMentorRequestSubmitted(
                     mentorRequestId.Value, classId, programId, mentor.Id, className),
                 manager.Id,
+                RoleType.Manager,
                 now.AddHours(-6)));
         }
+
         samples.Add((
             NotificationCatalog.AssignmentEditedByMentor(
-                assignmentId, mentor.Id, programId, assignmentTitle),
+                quizAssignmentId, mentor.Id, programId, quizAssignmentTitle, moduleId),
             manager.Id,
+            RoleType.Manager,
             null));
         samples.Add((
             NotificationCatalog.ClassQuizSetEditedByMentor(
-                assignmentId, classId, mentor.Id, programId, "updated questions", "Added two new MCQ items."),
+                quizAssignmentId,
+                classId,
+                mentor.Id,
+                programId,
+                "updated questions",
+                "Added two new MCQ items.",
+                moduleId),
             manager.Id,
+            RoleType.Manager,
             now.AddDays(-1)));
 
         // Mentor — assignment / session / research inbox
@@ -128,37 +214,52 @@ public partial class SeedService
                 NotificationCatalog.ClassMentorRequestApproved(
                     mentorRequestId.Value, classId, programId, mentor.Id, className),
                 mentor.Id,
+                RoleType.Mentor,
                 null));
         }
+
         samples.Add((
             NotificationCatalog.ClassSessionScheduled(classId, classSessionId, programId),
             mentor.Id,
+            RoleType.Mentor,
             null));
         samples.Add((
             NotificationCatalog.ClassSessionStarted(classId, classSessionId, programId),
             mentor.Id,
+            RoleType.Mentor,
             now.AddHours(-3)));
-        if (submissionId.HasValue)
+
+        if (researchSubmission is not null && researchAssignment is not null)
         {
             samples.Add((
                 NotificationCatalog.ResearchWorkSubmitted(
-                    student.Id, submissionId.Value, assignmentId, classId, programId, assignmentTitle),
+                    student.Id,
+                    researchSubmission.Id,
+                    researchAssignment.Id,
+                    classId,
+                    programId,
+                    researchAssignment.Title),
                 mentor.Id,
+                RoleType.Mentor,
                 null));
         }
+
         samples.Add((
             NotificationCatalog.ClassUpdated(classId, programId, className),
             mentor.Id,
+            RoleType.Mentor,
             now.AddDays(-2)));
         samples.Add((
             NotificationCatalog.ClassSessionCompleted(classId, classSessionId, programId),
             mentor.Id,
+            RoleType.Mentor,
             null));
 
         // Parent — link / payment / student-support events
         samples.Add((
             NotificationCatalog.ParentLinkVerified(parent.Id, student.Id),
             parent.Id,
+            RoleType.Parent,
             now.AddDays(-3)));
         if (paymentRequestId.HasValue)
         {
@@ -166,79 +267,129 @@ public partial class SeedService
                 NotificationCatalog.ParentPaymentRequested(
                     parent.Id, student.Id, paymentRequestId.Value, programId, programEnrollmentId),
                 parent.Id,
+                RoleType.Parent,
                 null));
         }
+
         samples.Add((
             NotificationCatalog.ProgramActivated(
-                student.Id, programId, programEnrollmentId, program?.Name),
+                student.Id, programId, programEnrollmentId, program.Name, nextActivityId),
             parent.Id,
+            RoleType.Parent,
             null));
         samples.Add((
             NotificationCatalog.ClassSessionScheduled(classId, classSessionId, programId),
             parent.Id,
+            RoleType.Parent,
             now.AddHours(-12)));
         samples.Add((
             NotificationCatalog.AttendanceMarked(
-                AttendanceStatus.Absent, student.Id, classSessionId, classId, mentor.Id),
+                AttendanceStatus.Absent,
+                student.Id,
+                classSessionId,
+                classId,
+                mentor.Id,
+                programId,
+                programEnrollmentId,
+                sessionActivityId),
             parent.Id,
+            RoleType.Parent,
             null));
         samples.Add((
             NotificationCatalog.PaymentSucceeded(
-                student.Id, paymentId, programId, programEnrollmentId),
+                student.Id, paymentId, programId, programEnrollmentId, nextActivityId),
             parent.Id,
+            RoleType.Parent,
             now.AddDays(-1)));
         samples.Add((
             NotificationCatalog.AssignmentPublished(
-                classId, assignmentId, programId, assignmentTitle),
+                classId, quizAssignmentId, programId, quizAssignmentTitle, moduleId),
             parent.Id,
+            RoleType.Parent,
             null));
 
         // Student — enrollment / progress / class / grading
         samples.Add((
             NotificationCatalog.ProgramActivated(
-                student.Id, programId, programEnrollmentId, program?.Name),
+                student.Id, programId, programEnrollmentId, program.Name, nextActivityId),
             student.Id,
+            RoleType.Student,
             now.AddDays(-4)));
         samples.Add((
             NotificationCatalog.PaymentSucceeded(
-                student.Id, paymentId, programId, programEnrollmentId),
+                student.Id, paymentId, programId, programEnrollmentId, nextActivityId),
             student.Id,
+            RoleType.Student,
             null));
         samples.Add((
             NotificationCatalog.ModuleCompleted(
-                student.Id, moduleId, null, programId, module?.Name),
+                student.Id,
+                moduleId,
+                moduleEnrollment?.Id,
+                programId,
+                module.Name,
+                programEnrollmentId,
+                nextActivityId ?? firstModuleActivityId),
             student.Id,
+            RoleType.Student,
             null));
         samples.Add((
             NotificationCatalog.ClassEnrolled(
-                student.Id, classId, classEnrollmentId, programId, className),
+                student.Id,
+                classId,
+                classEnrollmentId,
+                programId,
+                className,
+                programEnrollmentId,
+                nextActivityId),
             student.Id,
+            RoleType.Student,
             now.AddDays(-2)));
-        if (submissionId.HasValue)
+
+        if (quizSubmission is not null)
         {
             samples.Add((
                 NotificationCatalog.QuizGraded(
-                    student.Id, submissionId.Value, assignmentId, passed: true, programId, assignmentTitle),
+                    student.Id,
+                    quizSubmission.Id,
+                    quizAssignmentId,
+                    passed: true,
+                    programId,
+                    quizAssignmentTitle,
+                    programEnrollmentId),
                 student.Id,
+                RoleType.Student,
                 null));
         }
+
         samples.Add((
             NotificationCatalog.AttendanceMarked(
-                AttendanceStatus.Present, student.Id, classSessionId, classId, mentor.Id),
+                AttendanceStatus.Present,
+                student.Id,
+                classSessionId,
+                classId,
+                mentor.Id,
+                programId,
+                programEnrollmentId,
+                sessionActivityId),
             student.Id,
+            RoleType.Student,
             now.AddHours(-8)));
         samples.Add((
             NotificationCatalog.ParentLinkApproved(student.Id, parent.Id, parent.Id),
             student.Id,
+            RoleType.Student,
             now.AddDays(-5)));
 
         var notifications = new List<Notification>(samples.Count);
         for (var i = 0; i < samples.Count; i++)
         {
-            var (command, recipientId, readAt) = samples[i];
+            var (command, recipientId, role, readAt) = samples[i];
             notifications.Add(ToSeedNotification(
                 command,
                 recipientId,
+                role,
+                studentName,
                 readAt,
                 now.AddMinutes(-(samples.Count - i) * 17)));
         }
@@ -260,20 +411,29 @@ public partial class SeedService
     private static Notification ToSeedNotification(
         NotificationCommand command,
         Guid recipientUserId,
+        RoleType recipientRole,
+        string studentName,
         DateTime? readAt,
         DateTime createdAt)
     {
-        var payloadJson = command.Payload is null
-            ? null
-            : JsonSerializer.Serialize(command.Payload, SeedNotificationPayloadJsonOptions);
+        var tokens = new Dictionary<string, string>(command.Tokens, StringComparer.Ordinal)
+        {
+            [NotificationTokenKeys.StudentName] = studentName
+        };
+
+        var copy = NotificationTemplateRenderer.Interpolate(
+            command.Templates.Resolve(recipientRole),
+            tokens);
+
+        var payloadJson = NotificationDtoMapper.SerializePayload(command.Payload?.Clone());
 
         return new Notification
         {
             Id = Guid.NewGuid(),
             RecipientUserId = recipientUserId,
             Type = command.Type,
-            Title = command.Title,
-            Body = command.Body,
+            Title = copy.Title,
+            Body = copy.Body,
             PayloadJson = payloadJson,
             ReadAt = readAt,
             ActorUserId = command.ActorUserId,
