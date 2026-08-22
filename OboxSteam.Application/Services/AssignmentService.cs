@@ -572,7 +572,8 @@ public sealed class AssignmentService : IAssignmentService
                     assignment.Id,
                     userId,
                     module?.ProgramId ?? Guid.Empty,
-                    assignment.Title));
+                    assignment.Title,
+                    assignment.ModuleId));
         }
 
         await PublishCurriculumStructureChangedForModuleAsync(assignment.ModuleId);
@@ -683,7 +684,8 @@ public sealed class AssignmentService : IAssignmentService
                 c.Id,
                 assignment.Id,
                 module.ProgramId,
-                assignment.Title))
+                assignment.Title,
+                module.Id))
             .ToList();
 
         await _notificationPublisher.PublishManyAsync(commands);

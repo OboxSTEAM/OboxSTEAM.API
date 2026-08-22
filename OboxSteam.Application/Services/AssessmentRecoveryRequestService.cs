@@ -228,7 +228,8 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
                 entity.StudentId,
                 entity.AssignmentId,
                 entity.ExtraAttemptsGranted,
-                assignment?.Title));
+                assignment?.Title,
+                module?.ProgramId));
 
         return Map(entity);
     }
@@ -254,11 +255,17 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
         await _unitOfWork.AssessmentRecoveryRequests.Update(entity);
         await _unitOfWork.SaveChangesAsync();
 
+        var assignment = await _unitOfWork.Assignments.GetByIdAsync(entity.AssignmentId);
+        var module = assignment != null
+            ? await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId)
+            : null;
+
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.AssessmentRecoveryRejected(
                 entity.Id,
                 entity.StudentId,
-                entity.AssignmentId));
+                entity.AssignmentId,
+                module?.ProgramId));
 
         return Map(entity);
     }

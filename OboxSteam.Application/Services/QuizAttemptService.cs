@@ -395,13 +395,22 @@ public sealed class QuizAttemptService : IQuizAttemptService
         await RecalculateEnrollmentProgressAsync(submission);
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment!.ModuleId);
+        Guid? programEnrollmentId = null;
+        if (submission.ModuleEnrollmentId.HasValue)
+        {
+            var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(
+                submission.ModuleEnrollmentId.Value);
+            programEnrollmentId = moduleEnrollment?.ProgramEnrollmentId;
+        }
+
         await _notificationPublisher.PublishAsync(NotificationCatalog.QuizGraded(
             student.Id,
             submission.Id,
             assignment.Id,
             grade.Passed,
             module?.ProgramId,
-            assignment.Title));
+            assignment.Title,
+            programEnrollmentId));
 
         _logger.LogInformation(
             "SubmitQuiz graded submission. SubmissionId={SubmissionId}, Grade={Grade}, Passed={Passed}",

@@ -294,7 +294,9 @@ public class PaymentService : IPaymentService
                 parentId,
                 studentId,
                 paymentRequest.Id,
-                module.Id));
+                module.Id,
+                module.ProgramId,
+                moduleEnrollment.ProgramEnrollmentId));
 
         // Build payment link for parent
         var frontendBaseUrl = (_configuration["APP_FRONTEND_URL"] ?? _configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
@@ -497,7 +499,11 @@ public class PaymentService : IPaymentService
 
         var cancelledProgramId = await ResolveProgramIdForPaymentAsync(payment);
         await _notificationPublisher.PublishAsync(
-            NotificationCatalog.PaymentCancelled(payment.StudentId, payment.Id, cancelledProgramId));
+            NotificationCatalog.PaymentCancelled(
+                payment.StudentId,
+                payment.Id,
+                cancelledProgramId,
+                payment.ProgramEnrollmentId));
 
         _logger.LogInformation("[CancelPayment] Payment {Id} marked Cancelled.", payment.Id);
     }
@@ -575,7 +581,11 @@ public class PaymentService : IPaymentService
 
         var failedProgramId = await ResolveProgramIdForPaymentAsync(payment);
         await _notificationPublisher.PublishAsync(
-            NotificationCatalog.PaymentFailed(payment.StudentId, payment.Id, failedProgramId));
+            NotificationCatalog.PaymentFailed(
+                payment.StudentId,
+                payment.Id,
+                failedProgramId,
+                payment.ProgramEnrollmentId));
 
         _logger.LogWarning("[HandlePaymentFailed] Payment {Id} marked Failed.", payment.Id);
     }
@@ -684,13 +694,23 @@ public class PaymentService : IPaymentService
         // 6. Save all changes atomically
         await _unitOfWork.SaveChangesAsync();
 
+        Guid? nextActivityId = null;
+        if (enrollment != null)
+        {
+            nextActivityId = await NotificationDeeplinkResolver.ResolveCurrentActivityIdAsync(
+                _unitOfWork,
+                enrollment.ProgramId,
+                enrollment.Id);
+        }
+
         var successNotifications = new List<NotificationCommand>
         {
             NotificationCatalog.PaymentSucceeded(
                 payment.StudentId,
                 payment.Id,
                 enrollment?.ProgramId,
-                payment.ProgramEnrollmentId)
+                payment.ProgramEnrollmentId,
+                nextActivityId)
         };
 
         if (enrollment != null)
@@ -700,7 +720,8 @@ public class PaymentService : IPaymentService
                     payment.StudentId,
                     enrollment.ProgramId,
                     enrollment.Id,
-                    programName));
+                    programName,
+                    nextActivityId));
         }
 
         await _notificationPublisher.PublishManyAsync(successNotifications);

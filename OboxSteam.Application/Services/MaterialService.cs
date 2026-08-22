@@ -377,7 +377,8 @@ public class MaterialService : IMaterialService
                 material.Id,
                 activity.Id,
                 module.ProgramId,
-                material.Title))
+                material.Title,
+                activity.CourseId))
             .ToList();
 
         await _notificationPublisher.PublishManyAsync(commands);

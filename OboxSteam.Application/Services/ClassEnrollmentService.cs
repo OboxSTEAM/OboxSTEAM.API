@@ -99,13 +99,20 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
         await _unitOfWork.ClassEnrollments.AddAsync(enrollment);
         await _unitOfWork.SaveChangesAsync();
 
+        var nextActivityId = await NotificationDeeplinkResolver.ResolveCurrentActivityIdAsync(
+            _unitOfWork,
+            programEnrollment.ProgramId,
+            programEnrollment.Id);
+
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.ClassEnrolled(
                 student.Id,
                 request.ClassId,
                 enrollment.Id,
                 programEnrollment.ProgramId,
-                classToJoin.Name));
+                classToJoin.Name,
+                programEnrollment.Id,
+                nextActivityId));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
 
@@ -188,7 +195,8 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                 request.ClassId,
                 enrollment.Id,
                 programEnrollment.ProgramId,
-                targetClass.Name));
+                targetClass.Name,
+                programEnrollment.Id));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
 
@@ -295,7 +303,8 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                 request.ClassId,
                 newEnrollment.Id,
                 programEnrollment.ProgramId,
-                targetClass.Name));
+                targetClass.Name,
+                programEnrollment.Id));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
 

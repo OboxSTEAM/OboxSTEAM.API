@@ -135,12 +135,16 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
                 student.Id,
                 request.ModuleId,
                 newEnrollment.Id,
-                module.Name),
+                module.Name,
+                module.ProgramId,
+                request.ProgramEnrollmentId),
             NotificationCatalog.ModuleRetakeInitiated(
                 student.Id,
                 request.ModuleId,
                 newEnrollment.Id,
-                module.Name)
+                module.Name,
+                module.ProgramId,
+                request.ProgramEnrollmentId)
         });
 
         _logger.LogInformation(

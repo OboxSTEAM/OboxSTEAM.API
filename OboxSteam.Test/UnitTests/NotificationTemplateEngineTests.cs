@@ -122,6 +122,114 @@ public sealed class NotificationTemplateEngineTests
     }
 
     [Fact]
+    public void Catalog_ActivityCompleted_IncludesDeeplinkFields()
+    {
+        var activityId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var nextActivityId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var enrollmentId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var courseId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var moduleId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+
+        var command = NotificationCatalog.ActivityCompleted(
+            _studentAId,
+            activityId,
+            moduleId,
+            _programId,
+            "Lesson 1",
+            enrollmentId,
+            nextActivityId,
+            courseId);
+
+        Assert.NotNull(command.Payload);
+        Assert.Equal(activityId, command.Payload!.ActivityId);
+        Assert.Equal(nextActivityId, command.Payload.NextActivityId);
+        Assert.Equal(enrollmentId, command.Payload.EnrollmentId);
+        Assert.Equal(enrollmentId, command.Payload.ProgramEnrollmentId);
+        Assert.Equal(courseId, command.Payload.CourseId);
+        Assert.Equal(_programId, command.Payload.ProgramId);
+        Assert.Equal(_studentAId, command.Payload.StudentId);
+    }
+
+    [Fact]
+    public void Catalog_ProgramActivated_SerializesEnrollmentIdAndNextActivityId()
+    {
+        var enrollmentId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var nextActivityId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+        var command = NotificationCatalog.ProgramActivated(
+            _studentAId,
+            _programId,
+            enrollmentId,
+            "STEAM 1",
+            nextActivityId);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            command.Payload,
+            new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            });
+
+        Assert.Contains("\"enrollmentId\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"nextActivityId\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"programEnrollmentId\"", json, StringComparison.Ordinal);
+        Assert.Contains(enrollmentId.ToString(), json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(nextActivityId.ToString(), json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Catalog_AssignmentEditedByMentor_IncludesModuleId()
+    {
+        var assignmentId = Guid.NewGuid();
+        var moduleId = Guid.NewGuid();
+
+        var command = NotificationCatalog.AssignmentEditedByMentor(
+            assignmentId,
+            _mentorId,
+            _programId,
+            "Quiz 1",
+            moduleId);
+
+        Assert.Equal(moduleId, command.Payload!.ModuleId);
+        Assert.Equal(assignmentId, command.Payload.AssignmentId);
+        Assert.Equal(_programId, command.Payload.ProgramId);
+    }
+
+    [Fact]
+    public void Catalog_MediaVideoReady_IncludesClassId()
+    {
+        var mediaId = Guid.NewGuid();
+        var command = NotificationCatalog.MediaVideoReady(_mentorId, mediaId, _classId);
+
+        Assert.Equal(mediaId, command.Payload!.MediaAssetId);
+        Assert.Equal(_classId, command.Payload.ClassId);
+    }
+
+    [Fact]
+    public void Catalog_AttendanceMarked_IncludesProgramAndEnrollment()
+    {
+        var sessionId = Guid.NewGuid();
+        var enrollmentId = Guid.NewGuid();
+        var activityId = Guid.NewGuid();
+
+        var command = NotificationCatalog.AttendanceMarked(
+            AttendanceStatus.Present,
+            _studentAId,
+            sessionId,
+            _classId,
+            _mentorId,
+            _programId,
+            enrollmentId,
+            activityId);
+
+        Assert.Equal(_programId, command.Payload!.ProgramId);
+        Assert.Equal(enrollmentId, command.Payload.EnrollmentId);
+        Assert.Equal(activityId, command.Payload.ActivityId);
+        Assert.Equal(_classId, command.Payload.ClassId);
+    }
+
+    [Fact]
     public async Task Publisher_RendersParentCopyWithChildName_AndKeepsStudentYouCopy()
     {
         var db = new InMemoryUnitOfWork();

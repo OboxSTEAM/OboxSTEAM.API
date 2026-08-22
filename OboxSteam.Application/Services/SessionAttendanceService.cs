@@ -204,13 +204,17 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
 
         await _unitOfWork.SaveChangesAsync();
 
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.AttendanceMarked(
                 attendance.Status,
                 studentId,
                 sessionId,
                 classId,
-                currentUser.Id));
+                currentUser.Id,
+                classEntity?.ProgramId,
+                classEnrollment.ProgramEnrollmentId,
+                classSession.ActivityId));
 
         if (request.Status == AttendanceStatus.Absent)
         {
@@ -399,7 +403,8 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
                 moduleEnrollment.ModuleId,
                 moduleEnrollment.Id,
                 module?.ProgramId,
-                module?.Name));
+                module?.Name,
+                moduleEnrollment.ProgramEnrollmentId));
 
         _logger.LogWarning(
             "[TryFailModuleForExcessAbsencesAsync] Module enrollment {EnrollmentId} failed — student {StudentId} missed {Missed}/{Total} session activities (>= {Threshold}%).",

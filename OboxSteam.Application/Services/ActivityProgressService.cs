@@ -847,13 +847,28 @@ public sealed class ActivityProgressService : IActivityProgressService
         Guid studentId)
     {
         var module = await _unitOfWork.Modules.GetByIdAsync(moduleEnrollment.ModuleId);
+        var programId = module?.ProgramId;
+        var programEnrollmentId = moduleEnrollment.ProgramEnrollmentId;
+
+        Guid? nextActivityId = null;
+        if (programId.HasValue && programEnrollmentId.HasValue)
+        {
+            nextActivityId = await NotificationDeeplinkResolver.ResolveNextActivityIdAsync(
+                _unitOfWork,
+                programId.Value,
+                programEnrollmentId.Value,
+                activity.Id);
+        }
 
         await _notificationPublisher.PublishAsync(NotificationCatalog.ActivityCompleted(
             studentId,
             activity.Id,
             moduleEnrollment.ModuleId,
-            module?.ProgramId,
-            activity.Name));
+            programId,
+            activity.Name,
+            programEnrollmentId,
+            nextActivityId,
+            activity.CourseId));
 
         var justCompletedModule = moduleEnrollment.Status == EnrollmentStatus.Completed
             && previousModuleStatus != EnrollmentStatus.Completed;
@@ -867,10 +882,12 @@ public sealed class ActivityProgressService : IActivityProgressService
             studentId,
             moduleEnrollment.ModuleId,
             moduleEnrollment.Id,
-            module?.ProgramId,
-            module?.Name));
+            programId,
+            module?.Name,
+            programEnrollmentId,
+            nextActivityId));
 
-        if (module == null)
+        if (module == null || !programId.HasValue)
         {
             return;
         }
@@ -880,11 +897,18 @@ public sealed class ActivityProgressService : IActivityProgressService
 
         foreach (var unlockedModule in unlockedModules)
         {
+            var firstActivityId = await NotificationDeeplinkResolver.ResolveFirstActivityInModuleAsync(
+                _unitOfWork,
+                unlockedModule.ProgramId,
+                unlockedModule.Id);
+
             await _notificationPublisher.PublishAsync(NotificationCatalog.ModuleUnlocked(
                 studentId,
                 unlockedModule.Id,
                 unlockedModule.ProgramId,
-                unlockedModule.Name));
+                unlockedModule.Name,
+                programEnrollmentId,
+                firstActivityId ?? nextActivityId));
         }
     }
 }

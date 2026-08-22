@@ -651,7 +651,7 @@ public class MediaService : IMediaService
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
             await _notificationPublisher.PublishAsync(
-                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id));
+                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id, media.ClassId));
             throw;
         }
     }
@@ -700,7 +700,7 @@ public class MediaService : IMediaService
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
             await _notificationPublisher.PublishAsync(
-                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id));
+                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id, media.ClassId));
             throw new InvalidOperationException(
                 $"MediaConvert job {mcJobId} failed for MediaId={mediaId}.");
         }
@@ -725,7 +725,7 @@ public class MediaService : IMediaService
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
             await _notificationPublisher.PublishAsync(
-                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id));
+                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id, media.ClassId));
             throw;
         }
 
@@ -744,7 +744,7 @@ public class MediaService : IMediaService
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
             await _notificationPublisher.PublishAsync(
-                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id));
+                NotificationCatalog.MediaProcessingFailed(media.UploaderId, media.Id, media.ClassId));
             throw;
         }
 
@@ -1513,7 +1513,7 @@ public class MediaService : IMediaService
             "VideoStatus=TaggingComplete for MediaId={MediaId}.", media.Id);
 
         await _notificationPublisher.PublishAsync(
-            NotificationCatalog.MediaVideoReady(media.UploaderId, media.Id));
+            NotificationCatalog.MediaVideoReady(media.UploaderId, media.Id, media.ClassId));
     }
 
     /// <summary>
@@ -1536,7 +1536,7 @@ public class MediaService : IMediaService
             media.VideoStatus = VideoProcessingStatus.Failed;
             await _unitOfWork.SaveChangesAsync();
             await _notificationPublisher.PublishAsync(
-                NotificationCatalog.MediaAiTaggingFailed(media.UploaderId, media.Id));
+                NotificationCatalog.MediaAiTaggingFailed(media.UploaderId, media.Id, media.ClassId));
             throw ErrorHelper.Internal("Video face recognition job failed.");
         }
 
@@ -1632,7 +1632,7 @@ public class MediaService : IMediaService
         await _unitOfWork.SaveChangesAsync();
 
         await _notificationPublisher.PublishAsync(
-            NotificationCatalog.MediaTagsProcessed(media.UploaderId, media.Id));
+            NotificationCatalog.MediaTagsProcessed(media.UploaderId, media.Id, media.ClassId));
 
         await TryAdvanceToProcessingCompleteAsync(media);
 

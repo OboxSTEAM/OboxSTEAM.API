@@ -360,6 +360,14 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         await RecalculateEnrollmentProgressAsync(submission);
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+        Guid? programEnrollmentId = null;
+        if (submission.ModuleEnrollmentId.HasValue)
+        {
+            var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(
+                submission.ModuleEnrollmentId.Value);
+            programEnrollmentId = moduleEnrollment?.ProgramEnrollmentId;
+        }
+
         if (submission.Status == SubmissionStatus.ReturnedForRevision)
         {
             await _notificationPublisher.PublishAsync(NotificationCatalog.ResearchReturnedForRevision(
@@ -368,7 +376,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
                 assignment.Id,
                 module?.ProgramId,
                 assignment.Title,
-                grader.Id));
+                grader.Id,
+                programEnrollmentId));
         }
         else
         {
@@ -378,7 +387,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
                 assignment.Id,
                 submission.AssignedGrade!.Value >= assignment.PassScore,
                 module?.ProgramId,
-                assignment.Title));
+                assignment.Title,
+                programEnrollmentId));
         }
 
         _logger.LogInformation(

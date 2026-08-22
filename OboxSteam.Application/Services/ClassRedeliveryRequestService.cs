@@ -242,8 +242,15 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
         await _unitOfWork.ClassRedeliveryRequests.Update(entity);
         await _unitOfWork.SaveChangesAsync();
 
+        var module = await _unitOfWork.Modules.GetByIdAsync(entity.ModuleId);
+        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(entity.ModuleEnrollmentId);
         await _notificationPublisher.PublishAsync(
-            NotificationCatalog.ClassRedeliveryRejected(entity.Id, entity.StudentId, entity.ModuleId));
+            NotificationCatalog.ClassRedeliveryRejected(
+                entity.Id,
+                entity.StudentId,
+                entity.ModuleId,
+                module?.ProgramId,
+                moduleEnrollment?.ProgramEnrollmentId));
 
         return Map(entity);
     }
@@ -343,14 +350,17 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
                 entity.TargetClassId.Value,
                 newEnrollment.Id,
                 targetClass.ProgramId,
-                targetClass.Name));
+                targetClass.Name,
+                newEnrollment.ProgramEnrollmentId));
 
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.ClassRedeliveryCompleted(
                 entity.Id,
                 entity.StudentId,
                 entity.ModuleId,
-                entity.TargetClassId.Value));
+                entity.TargetClassId.Value,
+                targetClass.ProgramId,
+                newEnrollment.ProgramEnrollmentId));
 
         _logger.LogInformation(
             "[CompleteAfterPaymentAsync] Re-delivery {RequestId} completed; student {StudentId} → class {ClassId}.",
@@ -409,7 +419,9 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
                 targetClass.Id,
                 retakeEnrollment.Id,
                 module.Name,
-                targetClass.Name));
+                targetClass.Name,
+                module.ProgramId,
+                sourceEnrollment.ProgramEnrollmentId));
     }
 
     private async Task<Class?> TryAutoMatchAsync(

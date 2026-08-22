@@ -93,9 +93,8 @@ public static class NotificationCatalog
             payload: new NotificationPayload
             {
                 ProgramId = programId,
-                ProgramEnrollmentId = programEnrollmentId,
                 StudentId = studentId
-            },
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ProgramEnrollment",
             entityId: programEnrollmentId,
             tokens: NotificationTokenKeys.Create(programName: programName));
@@ -104,7 +103,8 @@ public static class NotificationCatalog
         Guid studentId,
         Guid programId,
         Guid programEnrollmentId,
-        string? programName = null)
+        string? programName = null,
+        Guid? nextActivityId = null)
         => StudentAndParent(
             NotificationType.ProgramActivated,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -118,9 +118,10 @@ public static class NotificationCatalog
             payload: new NotificationPayload
             {
                 ProgramId = programId,
-                ProgramEnrollmentId = programEnrollmentId,
-                StudentId = studentId
-            },
+                StudentId = studentId,
+                NextActivityId = nextActivityId,
+                ActivityId = nextActivityId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ProgramEnrollment",
             entityId: programEnrollmentId,
             tokens: NotificationTokenKeys.Create(programName: programName));
@@ -130,7 +131,9 @@ public static class NotificationCatalog
         Guid moduleId,
         Guid? moduleEnrollmentId = null,
         Guid? programId = null,
-        string? moduleName = null)
+        string? moduleName = null,
+        Guid? programEnrollmentId = null,
+        Guid? nextActivityId = null)
         => StudentAndParent(
             NotificationType.ModuleCompleted,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -146,8 +149,10 @@ public static class NotificationCatalog
                 ModuleId = moduleId,
                 ModuleEnrollmentId = moduleEnrollmentId,
                 ProgramId = programId,
-                StudentId = studentId
-            },
+                StudentId = studentId,
+                NextActivityId = nextActivityId,
+                ActivityId = nextActivityId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "Module",
             entityId: moduleId,
             tokens: NotificationTokenKeys.Create(moduleName: moduleName));
@@ -157,7 +162,9 @@ public static class NotificationCatalog
         Guid moduleId,
         Guid? moduleEnrollmentId = null,
         Guid? programId = null,
-        string? moduleName = null)
+        string? moduleName = null,
+        Guid? programEnrollmentId = null,
+        Guid? assignmentId = null)
         => StudentAndParent(
             NotificationType.ModuleFailed,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -173,8 +180,9 @@ public static class NotificationCatalog
                 ModuleId = moduleId,
                 ModuleEnrollmentId = moduleEnrollmentId,
                 ProgramId = programId,
-                StudentId = studentId
-            },
+                StudentId = studentId,
+                AssignmentId = assignmentId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "Module",
             entityId: moduleId,
             tokens: NotificationTokenKeys.Create(moduleName: moduleName));
@@ -183,7 +191,9 @@ public static class NotificationCatalog
         Guid studentId,
         Guid moduleId,
         Guid? programId = null,
-        string? moduleName = null)
+        string? moduleName = null,
+        Guid? programEnrollmentId = null,
+        Guid? nextActivityId = null)
         => StudentAndParent(
             NotificationType.ModuleUnlocked,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -198,8 +208,10 @@ public static class NotificationCatalog
             {
                 ModuleId = moduleId,
                 ProgramId = programId,
-                StudentId = studentId
-            },
+                StudentId = studentId,
+                NextActivityId = nextActivityId,
+                ActivityId = nextActivityId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "Module",
             entityId: moduleId,
             tokens: NotificationTokenKeys.Create(moduleName: moduleName));
@@ -208,7 +220,9 @@ public static class NotificationCatalog
         Guid studentId,
         Guid moduleId,
         Guid? moduleEnrollmentId = null,
-        string? moduleName = null)
+        string? moduleName = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             NotificationType.ModuleRetakePendingPayment,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -223,8 +237,9 @@ public static class NotificationCatalog
             {
                 ModuleId = moduleId,
                 ModuleEnrollmentId = moduleEnrollmentId,
+                ProgramId = programId,
                 StudentId = studentId
-            },
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ModuleEnrollment",
             entityId: moduleEnrollmentId ?? moduleId,
             tokens: NotificationTokenKeys.Create(moduleName: moduleName));
@@ -233,7 +248,11 @@ public static class NotificationCatalog
         Guid studentId,
         Guid moduleId,
         Guid? moduleEnrollmentId = null,
-        string? moduleName = null)
+        string? moduleName = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null,
+        Guid? nextActivityId = null,
+        Guid? assignmentId = null)
         => StudentAndParent(
             NotificationType.ModuleRetakeInitiated,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -248,8 +267,12 @@ public static class NotificationCatalog
             {
                 ModuleId = moduleId,
                 ModuleEnrollmentId = moduleEnrollmentId,
-                StudentId = studentId
-            },
+                ProgramId = programId,
+                StudentId = studentId,
+                NextActivityId = nextActivityId,
+                ActivityId = nextActivityId,
+                AssignmentId = assignmentId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ModuleEnrollment",
             entityId: moduleEnrollmentId ?? moduleId,
             tokens: NotificationTokenKeys.Create(moduleName: moduleName));
@@ -266,10 +289,9 @@ public static class NotificationCatalog
             "{studentName}'s pending program enrollment expired because payment was not completed in time.",
             payload: new NotificationPayload
             {
-                ProgramEnrollmentId = programEnrollmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            },
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ProgramEnrollment",
             entityId: programEnrollmentId);
 
@@ -278,7 +300,10 @@ public static class NotificationCatalog
         Guid activityId,
         Guid? moduleId = null,
         Guid? programId = null,
-        string? activityName = null)
+        string? activityName = null,
+        Guid? programEnrollmentId = null,
+        Guid? nextActivityId = null,
+        Guid? courseId = null)
         => StudentAndParent(
             NotificationType.ActivityCompleted,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -294,8 +319,10 @@ public static class NotificationCatalog
                 ActivityId = activityId,
                 ModuleId = moduleId,
                 ProgramId = programId,
-                StudentId = studentId
-            },
+                StudentId = studentId,
+                NextActivityId = nextActivityId,
+                CourseId = courseId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "Activity",
             entityId: activityId,
             tokens: NotificationTokenKeys.Create(activityName: activityName));
@@ -306,7 +333,8 @@ public static class NotificationCatalog
         Guid studentId,
         Guid paymentId,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        Guid? nextActivityId = null)
         => StudentAndParent(
             NotificationType.PaymentSucceeded,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -317,16 +345,18 @@ public static class NotificationCatalog
             {
                 PaymentId = paymentId,
                 ProgramId = programId,
-                ProgramEnrollmentId = programEnrollmentId,
-                StudentId = studentId
-            },
+                StudentId = studentId,
+                NextActivityId = nextActivityId,
+                ActivityId = nextActivityId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "Payment",
             entityId: paymentId);
 
     public static NotificationCommand PaymentFailed(
         Guid studentId,
         Guid paymentId,
-        Guid? programId = null)
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             NotificationType.PaymentFailed,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -338,14 +368,15 @@ public static class NotificationCatalog
                 PaymentId = paymentId,
                 ProgramId = programId,
                 StudentId = studentId
-            },
+            }.SetEnrollment(programEnrollmentId),
             entityType: "Payment",
             entityId: paymentId);
 
     public static NotificationCommand PaymentCancelled(
         Guid studentId,
         Guid paymentId,
-        Guid? programId = null)
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             NotificationType.PaymentCancelled,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -357,7 +388,7 @@ public static class NotificationCatalog
                 PaymentId = paymentId,
                 ProgramId = programId,
                 StudentId = studentId
-            },
+            }.SetEnrollment(programEnrollmentId),
             entityType: "Payment",
             entityId: paymentId);
 
@@ -377,9 +408,8 @@ public static class NotificationCatalog
             {
                 PaymentRequestId = paymentRequestId,
                 StudentId = studentId,
-                ProgramId = programId,
-                ProgramEnrollmentId = programEnrollmentId
-            },
+                ProgramId = programId
+            }.SetEnrollment(programEnrollmentId),
             actorUserId: studentId,
             entityType: "PaymentRequest",
             entityId: paymentRequestId);
@@ -388,7 +418,9 @@ public static class NotificationCatalog
         Guid parentId,
         Guid studentId,
         Guid paymentRequestId,
-        Guid? moduleId = null)
+        Guid? moduleId = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
         => new(
             NotificationType.ParentModuleRetakeRequested,
             NotificationAudience.ForUser(parentId, studentId),
@@ -399,8 +431,9 @@ public static class NotificationCatalog
             {
                 PaymentRequestId = paymentRequestId,
                 StudentId = studentId,
-                ModuleId = moduleId
-            },
+                ModuleId = moduleId,
+                ProgramId = programId
+            }.SetEnrollment(programEnrollmentId),
             actorUserId: studentId,
             entityType: "PaymentRequest",
             entityId: paymentRequestId);
@@ -623,7 +656,9 @@ public static class NotificationCatalog
         Guid studentId,
         Guid assignmentId,
         int extraAttempts,
-        string? assignmentTitle = null)
+        string? assignmentTitle = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             NotificationType.AssessmentRecoveryApproved,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -638,7 +673,9 @@ public static class NotificationCatalog
             {
                 AssessmentRecoveryRequestId = requestId,
                 AssignmentId = assignmentId,
-            },
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "AssessmentRecoveryRequest",
             entityId: requestId,
             tokens: NotificationTokenKeys.Create(
@@ -648,7 +685,9 @@ public static class NotificationCatalog
     public static NotificationCommand AssessmentRecoveryRejected(
         Guid requestId,
         Guid studentId,
-        Guid assignmentId)
+        Guid assignmentId,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             NotificationType.AssessmentRecoveryRejected,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -659,7 +698,9 @@ public static class NotificationCatalog
             {
                 AssessmentRecoveryRequestId = requestId,
                 AssignmentId = assignmentId,
-            },
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "AssessmentRecoveryRequest",
             entityId: requestId);
 
@@ -697,7 +738,9 @@ public static class NotificationCatalog
         Guid targetClassId,
         Guid retakeModuleEnrollmentId,
         string? moduleName = null,
-        string? className = null)
+        string? className = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryMatchedPendingPayment,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -715,7 +758,8 @@ public static class NotificationCatalog
                 ModuleId = moduleId,
                 ClassId = targetClassId,
                 ModuleEnrollmentId = retakeModuleEnrollmentId,
-            },
+                ProgramId = programId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId,
             tokens: NotificationTokenKeys.Create(moduleName: moduleName, className: className));
@@ -723,7 +767,9 @@ public static class NotificationCatalog
     public static NotificationCommand ClassRedeliveryRejected(
         Guid requestId,
         Guid studentId,
-        Guid moduleId)
+        Guid moduleId,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryRejected,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -734,7 +780,9 @@ public static class NotificationCatalog
             {
                 ClassRedeliveryRequestId = requestId,
                 ModuleId = moduleId,
-            },
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId);
 
@@ -742,7 +790,10 @@ public static class NotificationCatalog
         Guid requestId,
         Guid studentId,
         Guid moduleId,
-        Guid targetClassId)
+        Guid targetClassId,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null,
+        Guid? nextActivityId = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryCompleted,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -754,7 +805,11 @@ public static class NotificationCatalog
                 ClassRedeliveryRequestId = requestId,
                 ModuleId = moduleId,
                 ClassId = targetClassId,
-            },
+                ProgramId = programId,
+                StudentId = studentId,
+                NextActivityId = nextActivityId,
+                ActivityId = nextActivityId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId);
 
@@ -765,7 +820,9 @@ public static class NotificationCatalog
         Guid classId,
         Guid classEnrollmentId,
         Guid? programId = null,
-        string? className = null)
+        string? className = null,
+        Guid? programEnrollmentId = null,
+        Guid? nextActivityId = null)
         => StudentAndParent(
             NotificationType.ClassEnrolled,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -781,8 +838,10 @@ public static class NotificationCatalog
                 ClassId = classId,
                 ClassEnrollmentId = classEnrollmentId,
                 ProgramId = programId,
-                StudentId = studentId
-            },
+                StudentId = studentId,
+                NextActivityId = nextActivityId,
+                ActivityId = nextActivityId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ClassEnrollment",
             entityId: classEnrollmentId,
             tokens: NotificationTokenKeys.Create(className: className));
@@ -792,7 +851,9 @@ public static class NotificationCatalog
         Guid classId,
         Guid classEnrollmentId,
         Guid? programId = null,
-        string? className = null)
+        string? className = null,
+        Guid? programEnrollmentId = null,
+        Guid? nextActivityId = null)
         => StudentAndParent(
             NotificationType.ClassTransferred,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -808,8 +869,10 @@ public static class NotificationCatalog
                 ClassId = classId,
                 ClassEnrollmentId = classEnrollmentId,
                 ProgramId = programId,
-                StudentId = studentId
-            },
+                StudentId = studentId,
+                NextActivityId = nextActivityId,
+                ActivityId = nextActivityId
+            }.SetEnrollment(programEnrollmentId),
             entityType: "ClassEnrollment",
             entityId: classEnrollmentId,
             tokens: NotificationTokenKeys.Create(className: className));
@@ -919,7 +982,10 @@ public static class NotificationCatalog
         Guid studentId,
         Guid classSessionId,
         Guid? classId = null,
-        Guid? actorUserId = null)
+        Guid? actorUserId = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null,
+        Guid? activityId = null)
     {
         var (type, title, studentBody, parentBody) = status switch
         {
@@ -960,8 +1026,10 @@ public static class NotificationCatalog
             {
                 ClassSessionId = classSessionId,
                 ClassId = classId,
-                StudentId = studentId
-            },
+                StudentId = studentId,
+                ProgramId = programId,
+                ActivityId = activityId
+            }.SetEnrollment(programEnrollmentId),
             actorUserId: actorUserId,
             entityType: "ClassSession",
             entityId: classSessionId);
@@ -975,7 +1043,8 @@ public static class NotificationCatalog
         Guid assignmentId,
         bool passed,
         Guid? programId = null,
-        string? assignmentTitle = null)
+        string? assignmentTitle = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             passed ? NotificationType.QuizPassed : NotificationType.QuizFailed,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -996,7 +1065,7 @@ public static class NotificationCatalog
                 AssignmentId = assignmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            },
+            }.SetEnrollment(programEnrollmentId),
             entityType: "Submission",
             entityId: submissionId,
             tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
@@ -1007,7 +1076,8 @@ public static class NotificationCatalog
         Guid assignmentId,
         bool passed,
         Guid? programId = null,
-        string? assignmentTitle = null)
+        string? assignmentTitle = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             passed ? NotificationType.ResearchGradedPassed : NotificationType.ResearchGradedFailed,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -1028,7 +1098,7 @@ public static class NotificationCatalog
                 AssignmentId = assignmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            },
+            }.SetEnrollment(programEnrollmentId),
             entityType: "Submission",
             entityId: submissionId,
             tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
@@ -1039,7 +1109,8 @@ public static class NotificationCatalog
         Guid assignmentId,
         Guid? programId = null,
         string? assignmentTitle = null,
-        Guid? actorUserId = null)
+        Guid? actorUserId = null,
+        Guid? programEnrollmentId = null)
         => StudentAndParent(
             NotificationType.ResearchReturnedForRevision,
             NotificationAudience.ForStudentAndParents(studentId),
@@ -1056,7 +1127,7 @@ public static class NotificationCatalog
                 AssignmentId = assignmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            },
+            }.SetEnrollment(programEnrollmentId),
             actorUserId: actorUserId,
             entityType: "Submission",
             entityId: submissionId,
@@ -1114,43 +1185,55 @@ public static class NotificationCatalog
 
     // ── Media ─────────────────────────────────────────────────────────────────
 
-    public static NotificationCommand MediaVideoReady(Guid uploaderUserId, Guid mediaAssetId)
+    public static NotificationCommand MediaVideoReady(
+        Guid uploaderUserId,
+        Guid mediaAssetId,
+        Guid? classId = null)
         => new(
             NotificationType.MediaVideoReady,
             NotificationAudience.ForUser(uploaderUserId),
             "Video ready",
             "Your video has finished processing and is ready.",
-            payload: new NotificationPayload { MediaAssetId = mediaAssetId },
+            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId },
             entityType: "MediaAsset",
             entityId: mediaAssetId);
 
-    public static NotificationCommand MediaProcessingFailed(Guid uploaderUserId, Guid mediaAssetId)
+    public static NotificationCommand MediaProcessingFailed(
+        Guid uploaderUserId,
+        Guid mediaAssetId,
+        Guid? classId = null)
         => new(
             NotificationType.MediaProcessingFailed,
             NotificationAudience.ForUser(uploaderUserId),
             "Video processing failed",
             "Video processing failed. Please try uploading again.",
-            payload: new NotificationPayload { MediaAssetId = mediaAssetId },
+            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId },
             entityType: "MediaAsset",
             entityId: mediaAssetId);
 
-    public static NotificationCommand MediaAiTaggingFailed(Guid uploaderUserId, Guid mediaAssetId)
+    public static NotificationCommand MediaAiTaggingFailed(
+        Guid uploaderUserId,
+        Guid mediaAssetId,
+        Guid? classId = null)
         => new(
             NotificationType.MediaAiTaggingFailed,
             NotificationAudience.ForUser(uploaderUserId),
             "AI tagging failed",
             "Automatic tagging for your video failed.",
-            payload: new NotificationPayload { MediaAssetId = mediaAssetId },
+            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId },
             entityType: "MediaAsset",
             entityId: mediaAssetId);
 
-    public static NotificationCommand MediaTagsProcessed(Guid uploaderUserId, Guid mediaAssetId)
+    public static NotificationCommand MediaTagsProcessed(
+        Guid uploaderUserId,
+        Guid mediaAssetId,
+        Guid? classId = null)
         => new(
             NotificationType.MediaTagsProcessed,
             NotificationAudience.ForUser(uploaderUserId),
             "Video tags ready",
             "AI tags for your video are ready.",
-            payload: new NotificationPayload { MediaAssetId = mediaAssetId },
+            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId },
             entityType: "MediaAsset",
             entityId: mediaAssetId);
 
@@ -1205,7 +1288,8 @@ public static class NotificationCatalog
         Guid classId,
         Guid assignmentId,
         Guid? programId = null,
-        string? assignmentTitle = null)
+        string? assignmentTitle = null,
+        Guid? moduleId = null)
         => StudentAndParent(
             NotificationType.AssignmentPublished,
             NotificationAudience.ForClassRosterAndParents(classId),
@@ -1220,7 +1304,8 @@ public static class NotificationCatalog
             {
                 AssignmentId = assignmentId,
                 ClassId = classId,
-                ProgramId = programId
+                ProgramId = programId,
+                ModuleId = moduleId
             },
             entityType: "Assignment",
             entityId: assignmentId,
@@ -1231,7 +1316,8 @@ public static class NotificationCatalog
         Guid materialId,
         Guid? activityId = null,
         Guid? programId = null,
-        string? materialTitle = null)
+        string? materialTitle = null,
+        Guid? courseId = null)
         => new(
             NotificationType.MaterialUpdated,
             NotificationAudience.ForClassRoster(classId),
@@ -1244,7 +1330,8 @@ public static class NotificationCatalog
                 MaterialId = materialId,
                 ActivityId = activityId,
                 ClassId = classId,
-                ProgramId = programId
+                ProgramId = programId,
+                CourseId = courseId
             },
             entityType: "Material",
             entityId: materialId);
@@ -1255,7 +1342,8 @@ public static class NotificationCatalog
         Guid assignmentId,
         Guid mentorId,
         Guid programId,
-        string assignmentTitle)
+        string assignmentTitle,
+        Guid? moduleId = null)
         => new(
             NotificationType.AssignmentEditedByMentor,
             NotificationAudience.ForManagers(),
@@ -1267,7 +1355,8 @@ public static class NotificationCatalog
             payload: new NotificationPayload
             {
                 AssignmentId = assignmentId,
-                ProgramId = programId
+                ProgramId = programId,
+                ModuleId = moduleId
             },
             actorUserId: mentorId,
             entityType: "Assignment",
@@ -1280,7 +1369,8 @@ public static class NotificationCatalog
         Guid mentorId,
         Guid programId,
         string action,
-        string? detail = null)
+        string? detail = null,
+        Guid? moduleId = null)
         => new(
             NotificationType.ClassQuizSetEditedByMentor,
             NotificationAudience.ForManagers(),
@@ -1293,6 +1383,7 @@ public static class NotificationCatalog
                 AssignmentId = assignmentId,
                 ClassId = classId,
                 ProgramId = programId,
+                ModuleId = moduleId,
                 Extra = action
             },
             actorUserId: mentorId,
