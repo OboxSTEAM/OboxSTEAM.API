@@ -210,7 +210,7 @@ public sealed class EnrollmentCurriculumServiceTests
             Name = "STEAM Program",
             Category = ProgramCategory.Technology,
             Level = DifficultyLevel.Beginner,
-            Status = "Published",
+            Status = ProgramStatus.Active,
             Price = 1000m,
             IsDeleted = false,
             Modules = [theoryModule, researchModule],

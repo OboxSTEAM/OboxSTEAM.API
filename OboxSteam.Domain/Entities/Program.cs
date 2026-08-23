@@ -31,8 +31,8 @@ public class Program : BaseEntity
 
     public string? ThumbnailUrl { get; set; }
 
-    [MaxLength(50)]
-    public string? Status { get; set; }
+    /// <summary>Catalog lifecycle: Draft, Active, or Inactive.</summary>
+    public ProgramStatus Status { get; set; } = ProgramStatus.Draft;
 
     /// <summary>Bundle price for the entire program (usually discounted vs sum of modules).</summary>
     public decimal? Price { get; set; }

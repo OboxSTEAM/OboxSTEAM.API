@@ -146,7 +146,7 @@ public sealed class ClassSessionServiceTests
         DateTime? startTime = null,
         DateTime? endTime = null,
         ClassSessionStatus status = ClassSessionStatus.Scheduled,
-        SessionKind kind = SessionKind.Lesson,
+        SessionKind kind = SessionKind.LiveOnline,
         Guid? moduleId = null,
         Guid? activityId = null,
         bool isDeleted = false,
@@ -261,14 +261,14 @@ public sealed class ClassSessionServiceTests
         SeedClass();
         SeedSession(
             title: "Lesson A",
-            kind: SessionKind.Lesson,
+            kind: SessionKind.LiveOnline,
             status: ClassSessionStatus.Scheduled,
             startTime: _now.AddDays(1),
             endTime: _now.AddDays(1).AddHours(2));
         SeedSession(
             id: Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             title: "Trip B",
-            kind: SessionKind.FieldTrip,
+            kind: SessionKind.Offline,
             status: ClassSessionStatus.InProgress,
             startTime: _now.AddDays(5),
             endTime: _now.AddDays(5).AddHours(3));
@@ -277,7 +277,7 @@ public sealed class ClassSessionServiceTests
         var result = await sut.GetClassSessionsByClassIdAsync(
             _classId, null, false, 1, 10,
             moduleId: _moduleId,
-            sessionKind: SessionKind.Lesson,
+            sessionKind: SessionKind.LiveOnline,
             status: ClassSessionStatus.Scheduled,
             from: _now,
             to: _now.AddDays(3));
@@ -485,8 +485,8 @@ public sealed class ClassSessionServiceTests
         Assert.Equal("New Session", result.Title);
         Assert.Equal(ClassSessionStatus.Scheduled, result.Status);
         Assert.Equal(_classId, result.ClassId);
-        // Offline activity → FieldTrip (derived; client SessionKind ignored).
-        Assert.Equal(SessionKind.FieldTrip, result.SessionKind);
+        // Offline activity → Offline (derived; client SessionKind ignored).
+        Assert.Equal(SessionKind.Offline, result.SessionKind);
         // Client EndTime is ignored for activity sessions — end = Start + DurationMinutes (120).
         Assert.Equal(request.StartTime.AddMinutes(120), result.EndTime);
         Assert.Equal("https://meet.example.com/room-a", result.MeetingUrl);
@@ -548,7 +548,7 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
-    public async Task Create_LiveOnline_DerivesLessonSessionKind()
+    public async Task Create_LiveOnline_DerivesLiveOnlineSessionKind()
     {
         SeedCurriculum();
         var liveId = Guid.Parse("a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1");
@@ -568,7 +568,7 @@ public sealed class ClassSessionServiceTests
 
         var result = await sut.CreateClassSessionAsync(BuildCreateRequest(activityId: liveId));
 
-        Assert.Equal(SessionKind.Lesson, result.SessionKind);
+        Assert.Equal(SessionKind.LiveOnline, result.SessionKind);
     }
 
     [Fact]
@@ -578,7 +578,7 @@ public sealed class ClassSessionServiceTests
         SeedClass();
         var sut = CreateSut();
         var request = BuildCreateRequest();
-        request.SessionKind = SessionKind.Lesson;
+        request.SessionKind = SessionKind.LiveOnline;
 
         var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.CreateClassSessionAsync(request));
@@ -835,8 +835,8 @@ public sealed class ClassSessionServiceTests
         Assert.Equal("https://meet.example.com/lab-2", result.MeetingUrl);
         Assert.False(result.RequiresAttendance);
         Assert.True(result.RequiresMentorCheckIn);
-        // Offline activity → FieldTrip (derived on update).
-        Assert.Equal(SessionKind.FieldTrip, result.SessionKind);
+        // Offline activity → Offline (derived on update).
+        Assert.Equal(SessionKind.Offline, result.SessionKind);
     }
 
     [Fact]
@@ -850,13 +850,13 @@ public sealed class ClassSessionServiceTests
         var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
             {
-                SessionKind = SessionKind.Lesson,
+                SessionKind = SessionKind.LiveOnline,
             }));
         Assert.Contains("SessionKind is derived", ex.Message);
     }
 
     [Fact]
-    public async Task Update_RelinkToLiveOnline_DerivesLesson()
+    public async Task Update_RelinkToLiveOnline_DerivesLiveOnline()
     {
         SeedCurriculum();
         var liveId = Guid.Parse("b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2");
@@ -880,7 +880,7 @@ public sealed class ClassSessionServiceTests
             ActivityId = liveId,
         });
 
-        Assert.Equal(SessionKind.Lesson, result.SessionKind);
+        Assert.Equal(SessionKind.LiveOnline, result.SessionKind);
         Assert.Equal(liveId, result.ActivityId);
     }
 

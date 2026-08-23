@@ -86,7 +86,7 @@ public sealed class SessionCheckInServiceTests
             ClassId = _classId,
             ModuleId = _moduleId,
             Title = "Field trip",
-            SessionKind = SessionKind.FieldTrip,
+            SessionKind = SessionKind.Offline,
             StartTime = _now.AddHours(-1),
             EndTime = _now.AddHours(1),
             Status = status,

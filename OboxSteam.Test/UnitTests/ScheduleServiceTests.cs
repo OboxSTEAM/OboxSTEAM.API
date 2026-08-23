@@ -155,7 +155,7 @@ public sealed class ScheduleServiceTests
             EndTime = endUtc,
             Location = location,
             MeetingUrl = null,
-            SessionKind = SessionKind.Lesson,
+            SessionKind = SessionKind.LiveOnline,
             Status = status,
             IsDeleted = false,
         };

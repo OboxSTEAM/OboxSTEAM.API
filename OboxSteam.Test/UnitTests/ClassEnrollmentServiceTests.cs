@@ -174,7 +174,7 @@ public sealed class ClassEnrollmentServiceTests
             Title = title,
             StartTime = start,
             EndTime = end,
-            SessionKind = SessionKind.Lesson,
+            SessionKind = SessionKind.LiveOnline,
             Status = status,
             IsDeleted = false,
         });

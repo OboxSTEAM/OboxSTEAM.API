@@ -81,6 +81,21 @@ public static class ProgramEnrollmentValidator
     }
 
     /// <summary>
+    /// Only Active programs accept new registration / checkout.
+    /// Draft and Inactive are blocked (FE: Bản nháp / Ngừng hoạt động).
+    /// </summary>
+    public static void EnsureProgramPurchasable(Program program)
+    {
+        if (program.Status == ProgramStatus.Active)
+            return;
+
+        throw ErrorHelper.BadRequest(
+            program.Status == ProgramStatus.Draft
+                ? $"Program '{program.Code}' is a draft and cannot be purchased."
+                : $"Program '{program.Code}' is inactive and is not accepting registrations.");
+    }
+
+    /// <summary>
     /// Ensures the student is under the in-progress program cap (Active + PendingPayment).
     /// </summary>
     public static async Task ValidateUnderInProgressProgramLimitAsync(

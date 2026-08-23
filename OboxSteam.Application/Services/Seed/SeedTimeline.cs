@@ -117,8 +117,8 @@ public sealed class SeedTimeline
     }
 
     /// <summary>
-    /// Fake venue for seed/FE: Lesson gets campus room + meet URL;
-    /// FieldTrip gets lab location + paired Lat/Lng near Ho Chi Minh City campus.
+    /// Fake venue for seed/FE: LiveOnline gets campus room + meet URL;
+    /// Offline gets lab location + paired Lat/Lng near Ho Chi Minh City campus.
     /// </summary>
     public static (string? Location, string? MeetingUrl, double? Latitude, double? Longitude) ResolveSeedVenue(
         SessionKind kind,
@@ -138,8 +138,8 @@ public sealed class SeedTimeline
 
         return kind switch
         {
-            SessionKind.Lesson => (room, meetUrl, null, null),
-            SessionKind.FieldTrip => (lab, null, latitude, longitude),
+            SessionKind.LiveOnline => (room, meetUrl, null, null),
+            SessionKind.Offline => (lab, null, latitude, longitude),
             _ => (null, null, null, null),
         };
     }

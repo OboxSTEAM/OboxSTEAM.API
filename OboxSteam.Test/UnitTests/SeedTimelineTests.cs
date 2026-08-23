@@ -119,10 +119,10 @@ public sealed class SeedTimelineTests
     }
 
     [Fact]
-    public void ResolveSeedVenue_Lesson_HasRoomAndFakeMeetUrl()
+    public void ResolveSeedVenue_LiveOnline_HasRoomAndFakeMeetUrl()
     {
         var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
-            SessionKind.Lesson,
+            SessionKind.LiveOnline,
             "CLS-ROBOTICS-CURRENT",
             3);
 
@@ -133,10 +133,10 @@ public sealed class SeedTimelineTests
     }
 
     [Fact]
-    public void ResolveSeedVenue_FieldTrip_HasLabAndCoordinates()
+    public void ResolveSeedVenue_Offline_HasLabAndCoordinates()
     {
         var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
-            SessionKind.FieldTrip,
+            SessionKind.Offline,
             "CLS-IOT-CURRENT",
             1);
 

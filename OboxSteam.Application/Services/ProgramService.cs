@@ -7,6 +7,7 @@ using OboxSteam.Application.DTOs.ProgramDTO;
 
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
@@ -181,7 +182,7 @@ public class ProgramService : IProgramService
         DifficultyLevel? level = null,
         decimal? rating = null,
         string? skillsGained = null,
-        string? status = null,
+        ProgramStatus? status = null,
         ProgramCategory? category = null)
     {
         _logger.LogInformation(
@@ -237,7 +238,7 @@ public class ProgramService : IProgramService
         DifficultyLevel? level = null,
         decimal? rating = null,
         string? skillsGained = null,
-        string? status = null,
+        ProgramStatus? status = null,
         ProgramCategory? category = null)
     {
         _logger.LogInformation(
@@ -316,7 +317,7 @@ public class ProgramService : IProgramService
         DifficultyLevel? level,
         decimal? rating,
         string? skillsGained,
-        string? status,
+        ProgramStatus? status,
         ProgramCategory? category = null)
     {
         var query = _unitOfWork.Programs
@@ -345,10 +346,8 @@ public class ProgramService : IProgramService
                 p.SkillsGained != null &&
                 p.SkillsGained.ToLower().Contains(skillsGained.ToLower()));
 
-        if (!string.IsNullOrWhiteSpace(status))
-            query = query.Where(p =>
-                p.Status != null &&
-                p.Status.ToLower() == status.ToLower());
+        if (status.HasValue)
+            query = query.Where(p => p.Status == status.Value);
 
         if (category.HasValue)
             query = query.Where(p => p.Category == category.Value);
@@ -438,7 +437,7 @@ public class ProgramService : IProgramService
             EstimatedDuration = request.EstimatedDuration,
             SkillsGained = request.SkillsGained,
             ThumbnailUrl = request.ThumbnailUrl,
-            Status = request.Status,
+            Status = request.Status ?? ProgramStatus.Draft,
             Price = request.Price,
         };
 
@@ -495,6 +494,8 @@ public class ProgramService : IProgramService
             _logger.LogWarning("[UpdateProgramAsync] Program with Id {Id} not found.", id);
             throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
         }
+
+        await CurriculumEditGuard.EnsureProgramEditableAsync(_unitOfWork, id);
 
         // Kiểm tra trùng Code khi đổi Code
         if (!string.IsNullOrWhiteSpace(request.Code) &&
@@ -602,6 +603,8 @@ public class ProgramService : IProgramService
         if (program == null || program.IsDeleted)
             throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
 
+        await CurriculumEditGuard.EnsureProgramEditableAsync(_unitOfWork, id);
+
         if (!string.IsNullOrWhiteSpace(program.ThumbnailUrl))
         {
             _logger.LogInformation("[UploadProgramThumbnailAsync] Deleting old thumbnail for ProgramId: {ProgramId}", id);
@@ -693,6 +696,8 @@ public class ProgramService : IProgramService
             _logger.LogWarning("[DeleteProgramAsync] Program with Id {Id} not found.", id);
             throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
         }
+
+        await CurriculumEditGuard.EnsureProgramEditableAsync(_unitOfWork, id);
 
         await _unitOfWork.Programs.SoftRemove(program);
         await _unitOfWork.SaveChangesAsync();

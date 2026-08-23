@@ -46,7 +46,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, Active, Inactive (optional)")] ProgramStatus? status = null,
         [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)
@@ -80,7 +80,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by program status (optional)")] string? status = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, Active, Inactive (optional)")] ProgramStatus? status = null,
         [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)

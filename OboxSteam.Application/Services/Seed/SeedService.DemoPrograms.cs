@@ -594,7 +594,7 @@ public partial class SeedService
             Rating = 4.8m,
             TotalReviews = 12,
             ThumbnailUrl = definition.ThumbnailUrl,
-            Status = "Active",
+            Status = ProgramStatus.Active,
             Price = definition.Price,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
@@ -1148,11 +1148,11 @@ public partial class SeedService
     {
         var sessionDefs = new (Guid ModuleId, Activity Activity, SessionKind Kind, string Title)[]
         {
-            (theoryModuleId, theoryLive, SessionKind.Lesson, theoryLive.Name),
-            (experientialModuleId, experientialLive, SessionKind.Lesson, experientialLive.Name),
-            (experientialModuleId, experientialOffline, SessionKind.FieldTrip, experientialOffline.Name),
-            (researchModuleId, researchLive, SessionKind.Lesson, researchLive.Name),
-            (researchModuleId, researchOffline, SessionKind.FieldTrip, researchOffline.Name),
+            (theoryModuleId, theoryLive, SessionKind.LiveOnline, theoryLive.Name),
+            (experientialModuleId, experientialLive, SessionKind.LiveOnline, experientialLive.Name),
+            (experientialModuleId, experientialOffline, SessionKind.Offline, experientialOffline.Name),
+            (researchModuleId, researchLive, SessionKind.LiveOnline, researchLive.Name),
+            (researchModuleId, researchOffline, SessionKind.Offline, researchOffline.Name),
         };
 
         var sessionsToAdd = new List<ClassSession>();

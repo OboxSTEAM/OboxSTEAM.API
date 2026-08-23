@@ -585,7 +585,7 @@ public sealed class ClassSessionService : IClassSessionService
                         module.Id,
                         activity.Id,
                         null,
-                        isOffline ? SessionKind.FieldTrip : SessionKind.Lesson,
+                        isOffline ? SessionKind.Offline : SessionKind.LiveOnline,
                         activity.Name,
                         activity.DurationMinutes,
                         RequiresAttendance: true));

@@ -75,7 +75,7 @@ public sealed class ProgramServiceTests
             Level = DifficultyLevel.Beginner,
             SkillsGained = "Robotics, Coding",
             Rating = 4.5m,
-            Status = "published",
+            Status = ProgramStatus.Active,
             Price = 100m,
             Modules = modules ?? [],
             CreatedAt = DateTime.UtcNow.AddDays(-5),
@@ -217,7 +217,7 @@ public sealed class ProgramServiceTests
             "steam", "name", false, 1, 10,
             level: DifficultyLevel.Beginner,
             skillsGained: "coding",
-            status: "published",
+            status: ProgramStatus.Active,
             category: ProgramCategory.Technology);
 
         Assert.Equal(1, result.TotalCount);
@@ -449,5 +449,78 @@ public sealed class ProgramServiceTests
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<NotFoundException>(() => sut.DeleteProgramAsync(_programId));
+    }
+
+    [Fact]
+    public async Task Update_ThrowsConflict_WhenClassInProgress()
+    {
+        SeedProgram();
+        SeedClass(ClassStatus.InProgress);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Blocked" }));
+        Assert.Contains("in progress", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Delete_ThrowsConflict_WhenClassInProgress()
+    {
+        SeedProgram();
+        SeedClass(ClassStatus.InProgress);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.DeleteProgramAsync(_programId));
+        Assert.Contains("in progress", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Update_ThrowsConflict_WhenOpenClassHasActiveEnrollment()
+    {
+        SeedProgram();
+        var classId = SeedClass(ClassStatus.Open);
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.Parse("88888888-8888-8888-8888-888888888888"),
+            ClassId = classId,
+            StudentId = Guid.Parse("99999999-9999-9999-9999-999999999999"),
+            ProgramEnrollmentId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Blocked" }));
+        Assert.Contains("enrolled students", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Update_Allows_WhenOpenClassHasNoEnrollments()
+    {
+        SeedProgram();
+        SeedClass(ClassStatus.Open);
+        var sut = CreateSut();
+
+        var result = await sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Allowed" });
+        Assert.Equal("Allowed", result.Name);
+    }
+
+    private Guid SeedClass(ClassStatus status)
+    {
+        var classId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-LOCK",
+            Name = "Lock Cohort",
+            ProgramId = _programId,
+            Status = status,
+            MaxCapacity = 20,
+            StartDate = DateTime.UtcNow.AddDays(-7),
+            EndDate = DateTime.UtcNow.AddDays(60),
+            IsDeleted = false,
+        });
+        return classId;
     }
 }

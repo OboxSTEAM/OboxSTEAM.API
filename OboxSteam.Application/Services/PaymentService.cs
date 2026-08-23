@@ -5,6 +5,7 @@ using OboxSteam.Application.DTOs.PaymentDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
@@ -63,6 +64,8 @@ public class PaymentService : IPaymentService
 
         if (program.Price == null || program.Price <= 0)
             throw ErrorHelper.BadRequest("This program cannot be purchased because it has no valid price.");
+
+        ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
 
         var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
 
@@ -186,6 +189,8 @@ public class PaymentService : IPaymentService
 
         if (program.Price == null || program.Price <= 0)
             throw ErrorHelper.BadRequest("This program cannot be purchased because it has no valid price.");
+
+        ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
 
         var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
 
@@ -340,6 +345,7 @@ public class PaymentService : IPaymentService
         {
             var program = await _unitOfWork.Programs.GetByIdAsync(paymentRequest.ProgramId!.Value)
                 ?? throw ErrorHelper.NotFound("Program not found.");
+            ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
             itemName = program.Name;
             itemDescription = BuildRichCheckoutDescription(program);
             thumbnailUrl = program.ThumbnailUrl;

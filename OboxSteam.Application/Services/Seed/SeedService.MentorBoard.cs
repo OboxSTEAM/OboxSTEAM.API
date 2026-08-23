@@ -295,7 +295,7 @@ public partial class SeedService
                 var startUtc = slot.Value.StartTime;
                 var endUtc = startUtc.AddMinutes(duration);
                 var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
-                    SessionKind.Lesson,
+                    SessionKind.LiveOnline,
                     classEntity.Code,
                     i);
 
@@ -305,7 +305,7 @@ public partial class SeedService
                     ClassId = classEntity.Id,
                     ModuleId = moduleId,
                     ActivityId = activity.Id,
-                    SessionKind = SessionKind.Lesson,
+                    SessionKind = SessionKind.LiveOnline,
                     Title = $"[Board] {activity.Name}",
                     Description = "Placeholder timetable for mentor-board request/approve flows.",
                     StartTime = startUtc,

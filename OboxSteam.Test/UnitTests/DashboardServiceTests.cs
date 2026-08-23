@@ -386,7 +386,7 @@ public sealed class DashboardServiceTests
             Class = classEntity,
             ModuleId = module.Id,
             Module = module,
-            SessionKind = SessionKind.Lesson,
+            SessionKind = SessionKind.LiveOnline,
             Title = "Session 1",
             StartTime = _now.AddDays(-1),
             EndTime = _now.AddDays(-1).AddHours(2),

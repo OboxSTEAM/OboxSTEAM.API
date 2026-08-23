@@ -81,15 +81,15 @@ public sealed class SeedMentorLoadTests
     }
 
     [Fact]
-    public void ResolveSessionKind_MapsOfflineToFieldTrip_AndLiveOnlineToLesson()
+    public void ResolveSessionKind_MapsActivityTypeToMatchingSessionKind()
     {
         Assert.Equal(
-            SessionKind.FieldTrip,
+            SessionKind.Offline,
             ClassSessionValidator.ResolveSessionKind(
                 new OboxSteam.Domain.Entities.Activity { ActivityType = ActivityType.Offline },
                 forAssignment: false));
         Assert.Equal(
-            SessionKind.Lesson,
+            SessionKind.LiveOnline,
             ClassSessionValidator.ResolveSessionKind(
                 new OboxSteam.Domain.Entities.Activity { ActivityType = ActivityType.LiveOnline },
                 forAssignment: false));

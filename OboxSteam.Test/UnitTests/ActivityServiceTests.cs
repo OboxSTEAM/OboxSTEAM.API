@@ -416,7 +416,7 @@ public sealed class ActivityServiceTests
             ClassId = classId,
             ModuleId = moduleId,
             ActivityId = _activityId,
-            SessionKind = SessionKind.Lesson,
+            SessionKind = SessionKind.LiveOnline,
             Title = "Live",
             StartTime = start,
             EndTime = start.AddMinutes(60),

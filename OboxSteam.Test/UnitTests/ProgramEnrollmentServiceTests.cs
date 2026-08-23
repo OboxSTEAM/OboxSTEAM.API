@@ -85,7 +85,7 @@ public sealed class ProgramEnrollmentServiceTests
             Name = name,
             Category = ProgramCategory.Technology,
             Level = DifficultyLevel.Beginner,
-            Status = "Published",
+            Status = ProgramStatus.Active,
             Price = 1000m,
             IsDeleted = isDeleted
         };
@@ -205,6 +205,21 @@ public sealed class ProgramEnrollmentServiceTests
             sut.GetOrCreatePendingEnrollmentAsync(Guid.Empty, _programId));
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.GetOrCreatePendingEnrollmentAsync(_studentId, Guid.Empty));
+    }
+
+    [Theory]
+    [InlineData(ProgramStatus.Draft)]
+    [InlineData(ProgramStatus.Inactive)]
+    public async Task GetOrCreatePending_ThrowsBadRequest_WhenProgramNotActive(ProgramStatus status)
+    {
+        var program = SeedProgram();
+        program.Status = status;
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.GetOrCreatePendingEnrollmentAsync(_studentId, _programId));
+
+        Assert.Empty(_db.ProgramEnrollments.Items);
     }
 
     // ── GetProgramEnrollmentByIdAsync ─────────────────────────────────────────

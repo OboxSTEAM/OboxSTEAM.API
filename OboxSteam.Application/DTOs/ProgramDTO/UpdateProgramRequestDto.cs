@@ -13,6 +13,6 @@ public class UpdateProgramRequestDto
     public string? EstimatedDuration { get; set; }
     public string? SkillsGained { get; set; }
     public string? ThumbnailUrl { get; set; }
-    public string? Status { get; set; }
+    public ProgramStatus? Status { get; set; }
     public decimal? Price { get; set; }
 }

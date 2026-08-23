@@ -23,7 +23,7 @@ public class CreateClassSessionRequestDto
 
     /// <summary>
     /// Ignored — derived by the server from ActivityType / Assignment
-    /// (LiveOnline → Lesson, Offline → FieldTrip, Assignment → AssignmentWindow).
+    /// (LiveOnline → LiveOnline, Offline → Offline, Assignment → AssignmentWindow).
     /// Sending a value returns 400.
     /// </summary>
     public SessionKind? SessionKind { get; set; }

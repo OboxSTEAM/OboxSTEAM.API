@@ -332,7 +332,7 @@ public partial class SeedService
     }
 
     /// <summary>
-    /// Backfill fake Location / MeetingUrl on existing Lesson and FieldTrip sessions so
+    /// Backfill fake Location / MeetingUrl on existing LiveOnline and Offline sessions so
     /// reseed without a full clear still populates schedule UI fields.
     /// </summary>
     private async Task EnsureSeedSessionVenuesAsync()
@@ -404,7 +404,7 @@ public partial class SeedService
 
         if (updated == 0)
         {
-            _loggerService.LogInformation("All Lesson/FieldTrip sessions already have venues.");
+            _loggerService.LogInformation("All LiveOnline/Offline sessions already have venues.");
             return;
         }
 

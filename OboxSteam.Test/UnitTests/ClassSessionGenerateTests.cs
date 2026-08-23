@@ -166,7 +166,7 @@ public sealed class ClassSessionGenerateTests
 
         var live = result[0];
         Assert.Equal(_liveActivityId, live.ActivityId);
-        Assert.Equal(SessionKind.Lesson, live.SessionKind);
+        Assert.Equal(SessionKind.LiveOnline, live.SessionKind);
         Assert.Equal(FirstSaturday.AddHours(9), live.StartTime);
         // EndTime comes from the activity's DurationMinutes (120), not the request window.
         Assert.Equal(FirstSaturday.AddHours(11), live.EndTime);
@@ -177,7 +177,7 @@ public sealed class ClassSessionGenerateTests
 
         var offline = result[1];
         Assert.Equal(_offlineActivityId, offline.ActivityId);
-        Assert.Equal(SessionKind.FieldTrip, offline.SessionKind);
+        Assert.Equal(SessionKind.Offline, offline.SessionKind);
         Assert.Equal(FirstSaturday.AddDays(7).AddHours(9), offline.StartTime);
         // 90-minute activity.
         Assert.Equal(FirstSaturday.AddDays(7).AddHours(10).AddMinutes(30), offline.EndTime);

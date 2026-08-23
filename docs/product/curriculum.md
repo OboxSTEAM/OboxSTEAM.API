@@ -18,6 +18,10 @@ Program
 Represents a sellable STEAM track (e.g. robotics, coding). Key fields: `Code`,
 `Name`, `Category`, `Level`, `Price`, `SkillsGained`, `Rating`, `Status`.
 
+`ProgramStatus`: **Draft** (not open for registration), **Active** (catalog +
+purchase/enroll allowed), **Inactive** (stopped; no new payment or pending
+enrollment). Create defaults to Draft when status is omitted.
+
 API: `/api/programs` — list/detail public; mutations require Admin or
 Manager.
 
@@ -70,9 +74,10 @@ Lifecycle (`ClassStatus`): **Draft → ReadyForMentor → Open → InProgress �
 
 If sessions are deleted or cancelled so coverage no longer matches the curriculum, **ReadyForMentor** returns to **Draft**.
 
-`ClassSession` schedules concrete session instances. LiveOnline join links live
-on `MeetingUrl` (separate from free-text `Location`). `SessionAttendance` records
-attendance status per student.
+`ClassSession` schedules concrete session instances. `SessionKind` mirrors the
+curriculum item: **LiveOnline**, **Offline**, or **AssignmentWindow**. LiveOnline
+join links live on `MeetingUrl` (separate from free-text `Location`).
+`SessionAttendance` records attendance status per student.
 
 Mentor rollup: `GET /api/classes/{classId}/curriculum-progress` aggregates
 activity and assignment progress for active class enrollments (assigned mentor

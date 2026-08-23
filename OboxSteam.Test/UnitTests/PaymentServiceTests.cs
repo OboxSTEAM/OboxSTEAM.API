@@ -144,6 +144,7 @@ public sealed class PaymentServiceTests
             Level = DifficultyLevel.Beginner,
             Price = price,
             Description = "<p>Learn robotics</p>",
+            Status = ProgramStatus.Active,
             IsDeleted = false,
         };
         _db.Programs.Seed(program);
@@ -240,6 +241,22 @@ public sealed class PaymentServiceTests
         SeedProgram(id: Guid.Parse("23232323-2323-2323-2323-232323232323"), price: 100_000m);
         await Assert.ThrowsAsync<NotFoundException>(() =>
             CreateSut().CreateDirectCheckout(Guid.Parse("99999999-9999-9999-9999-999999999999"), PaymentGateway.Stripe));
+    }
+
+    [Theory]
+    [InlineData(ProgramStatus.Draft)]
+    [InlineData(ProgramStatus.Inactive)]
+    public async Task CreateDirectCheckout_Throws_WhenProgramNotActive(ProgramStatus status)
+    {
+        SeedStudent();
+        var program = SeedProgram();
+        program.Status = status;
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateDirectCheckout(_programId, PaymentGateway.Stripe));
+
+        Assert.Empty(_db.Payments.Items);
     }
 
     // ── CreateModuleRetakeCheckout ──────────────────────────────────────────────

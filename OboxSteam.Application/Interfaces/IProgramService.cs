@@ -20,7 +20,7 @@ public interface IProgramService
         DifficultyLevel? level = null,
         decimal? rating = null,
         string? skillsGained = null,
-        string? status = null,
+        ProgramStatus? status = null,
         ProgramCategory? category = null);
 
     Task<Pagination<ProgramsResponseDto>> GetAllProgramsWithModulesAsync(
@@ -33,7 +33,7 @@ public interface IProgramService
         DifficultyLevel? level = null,
         decimal? rating = null,
         string? skillsGained = null,
-        string? status = null,
+        ProgramStatus? status = null,
         ProgramCategory? category = null);
 
     Task<ProgramsResponseDto> CreateProgramAsync(CreateProgramRequestDto request, IFormFile? thumbnailFile = null);

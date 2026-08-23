@@ -17,7 +17,7 @@ public class ProgramsResponseDto
     public decimal? Rating { get; set; }
     public int TotalReviews { get; set; }
     public string? ThumbnailUrl { get; set; }
-    public string? Status { get; set; }
+    public ProgramStatus Status { get; set; }
     public decimal? Price { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

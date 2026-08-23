@@ -28,6 +28,6 @@ public class ProgramEnrollmentResponseDto
     public decimal? Rating { get; set; }
     public int TotalReviews { get; set; }
     public string? ThumbnailUrl { get; set; }
-    public string? ProgramStatus { get; set; }
+    public ProgramStatus ProgramStatus { get; set; }
     public decimal? Price { get; set; }
 }

@@ -42,6 +42,8 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
             throw ErrorHelper.NotFound($"Program with id '{programId}' not found.");
         }
 
+        ProgramEnrollmentValidator.EnsureProgramPurchasable(programEntity);
+
         var existingEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
             pe => pe.StudentId == studentId && pe.ProgramId == programId && !pe.IsDeleted);
 

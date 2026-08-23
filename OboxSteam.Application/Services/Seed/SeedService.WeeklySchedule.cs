@@ -133,7 +133,7 @@ public partial class SeedService
             session.StartTime = startUtc;
             session.EndTime = endUtc;
             session.Location = slot.Location;
-            session.MeetingUrl = sessionKind == SessionKind.Lesson
+            session.MeetingUrl = sessionKind == SessionKind.LiveOnline
                 ? $"https://meet.oboxsteam.com/{classEntity.Code.ToLowerInvariant()}-{slot.MeetingUrlSuffix}"
                 : fallbackMeet;
             if (string.IsNullOrWhiteSpace(session.Location))
@@ -141,7 +141,7 @@ public partial class SeedService
                 session.Location = fallbackLocation;
             }
 
-            if (sessionKind == SessionKind.FieldTrip)
+            if (sessionKind == SessionKind.Offline)
             {
                 session.Latitude = fallbackLat;
                 session.Longitude = fallbackLng;

@@ -106,7 +106,7 @@ public sealed class ParentProgressionServiceTests
             Name = "STEAM Program",
             Category = ProgramCategory.Technology,
             Level = DifficultyLevel.Beginner,
-            Status = "Published",
+            Status = ProgramStatus.Active,
             ThumbnailUrl = "https://cdn.example/thumb.png",
             Price = 1000m,
             IsDeleted = false,

@@ -67,7 +67,7 @@ public static class ClassSessionValidator
 
     /// <summary>
     /// Session kind is derived from the curriculum item — same mapping as generate:
-    /// LiveOnline → Lesson, Offline → FieldTrip, Assignment → AssignmentWindow.
+    /// LiveOnline activity → LiveOnline, Offline activity → Offline, Assignment → AssignmentWindow.
     /// </summary>
     public static SessionKind ResolveSessionKind(Activity? activity, bool forAssignment)
     {
@@ -82,8 +82,8 @@ public static class ClassSessionValidator
         }
 
         return activity.ActivityType == ActivityType.Offline
-            ? SessionKind.FieldTrip
-            : SessionKind.Lesson;
+            ? SessionKind.Offline
+            : SessionKind.LiveOnline;
     }
 
     public static void ValidateSessionKindNotOverridden(SessionKind? requestedSessionKind)
@@ -92,7 +92,7 @@ public static class ClassSessionValidator
         {
             throw ErrorHelper.BadRequest(
                 "SessionKind is derived from the curriculum item " +
-                "(LiveOnline → Lesson, Offline → FieldTrip, Assignment → AssignmentWindow) " +
+                "(LiveOnline → LiveOnline, Offline → Offline, Assignment → AssignmentWindow) " +
                 "and cannot be set manually.");
         }
     }
