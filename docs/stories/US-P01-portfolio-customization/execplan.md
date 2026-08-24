@@ -50,8 +50,7 @@ Hard gates:
    stage 3: media + sections; stage 4: publication snapshot; stage 5:
    backfill + seed + verification.
 5. Verification — `dotnet build`, `dotnet test` (no test project yet).
-6. Harness update — record trace when the Harness CLI binary is available
-   (the documented `scripts/bin/harness-cli.exe` is absent on this checkout).
+6. Update `docs/TEST_MATRIX.md` / story Evidence if proof level changes.
 
 ## Stop Conditions
 

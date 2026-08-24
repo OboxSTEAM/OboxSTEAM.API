@@ -1,17 +1,8 @@
 # Test Matrix
 
-Behavior-to-proof map for OboxSTEAM.API. Current proof status is also
-queryable from the durable layer:
-
-```bash
-scripts/bin/harness-cli query matrix
-```
-
-On Windows:
-
-```powershell
-.\scripts\bin\harness-cli.exe query matrix
-```
+Markdown snapshot of epic-level contracts and proof. Update this table when an
+epic’s proof level changes. Day-to-day proof is `dotnet test` / `dotnet build`,
+not a Harness SQLite matrix.
 
 ## Status Values
 
@@ -19,7 +10,7 @@ On Windows:
 | --- | --- |
 | planned | Accepted as intended behavior, not implemented |
 | in_progress | Actively being built |
-| implemented | Implemented and proof exists |
+| implemented | Implemented; see Evidence |
 | changed | Contract changed after earlier implementation |
 | retired | No longer part of the product contract |
 
@@ -27,31 +18,22 @@ On Windows:
 
 | Story | Contract | Unit | Integration | E2E | Platform | Status | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| US-E01 | Auth: register, login, JWT, OTP, refresh | no | no | no | no | implemented | `dotnet build` only |
-| US-E02 | Curriculum CRUD: program → activity | no | no | no | no | implemented | `dotnet build` only |
-| US-E03 | Enrollment: program, module, class | no | no | no | no | implemented | `dotnet build` only |
-| US-E04 | Quiz: start, draft, submit, grade | no | no | no | no | implemented | `dotnet build` only |
-| US-E05 | AWS: S3, webhooks, MediaConvert, Rekognition | no | no | no | no | implemented | `dotnet build` only |
-| US-E06 | Parent link, experts, reviews, highlights | no | no | no | no | implemented | `dotnet build` only |
-| US-E07 | Automated test suite | no | no | no | no | planned | none |
+| US-E01 | Auth: register, login, JWT, OTP, refresh | partial | no | no | no | implemented | unit coverage growing; build |
+| US-E02 | Curriculum CRUD: program → activity | partial | no | no | no | implemented | `OboxSteam.Test` service tests |
+| US-E03 | Enrollment: program, module, class, schedule | partial | no | no | no | implemented | unit tests; retake ladder in progress |
+| US-E04 | Quiz: start, draft, submit, grade | partial | no | no | no | implemented | unit tests |
+| US-E05 | AWS: S3, webhooks, MediaConvert, Rekognition | no | no | no | no | implemented | build / manual |
+| US-E06 | Parent link, experts, reviews, highlights | partial | no | no | no | implemented | unit tests |
+| US-E07 | Automated test suite | yes | no | no | no | implemented | `OboxSteam.Test` (~1230 unit tests) |
+| US-E08 | Student skills | partial | no | no | no | implemented | schema + APIs |
+| US-E09 | Mentor skills | yes | no | no | no | implemented | unit + build |
 
 ## Evidence Rules
 
-- Unit proof covers pure domain and application rules (validators, quiz grading).
-- Integration proof covers EF persistence, auth enforcement, enrollment gates,
-  webhook signature handling.
-- E2E proof covers multi-step student flows through the HTTP API.
-- Platform proof covers migration startup, AWS smoke checks, deployment health.
-- A story may be `implemented` with partial proof if the story packet documents
-  gaps; current epic rows are build-only until tests land.
+- **Unit**: validators, application services, pure domain rules in `OboxSteam.Test`.
+- **Integration**: EF persistence, auth enforcement, webhooks (mostly still open).
+- **E2E**: multi-step HTTP flows (open).
+- **Platform**: migration-on-startup, AWS smoke, deploy health (open).
 
-## Verification Command
-
-Configured on epic stories in the durable layer:
-
-```bash
-dotnet build OboxSteam.API/OboxSteam.API.csproj
-```
-
-Do not claim unit, integration, E2E, or platform proof until corresponding
-tests exist and pass.
+Do not claim a proof column without a command that failed for the right reason
+when broken and passed when fixed.

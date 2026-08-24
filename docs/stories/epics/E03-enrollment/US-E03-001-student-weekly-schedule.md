@@ -51,9 +51,6 @@ class enrollments are omitted. Occupied-interval conflict data stays on
 
 ## Validation
 
-When updating durable proof status, use numeric booleans:
-`scripts/bin/harness-cli story update --id US-E03-001 --unit 1 --integration 0 --e2e 0 --platform 0`.
-
 | Layer | Expected proof |
 | --- | --- |
 | Unit | `ScheduleServiceTests` |

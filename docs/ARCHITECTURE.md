@@ -154,7 +154,7 @@ PostgreSQL entities; distinguish them from operational application logs.
 | Command | Status |
 | --- | --- |
 | `dotnet build OboxSteam.API/OboxSteam.API.csproj` | Available |
-| `dotnet test` | No test project yet |
+| `dotnet test OboxSteam.Test/OboxSteam.Test.csproj` | Available (unit) |
 | Integration / E2E / platform scripts | Not defined |
 
-Proof status is tracked in `scripts/bin/harness-cli query matrix`.
+Epic-level proof snapshot: `docs/TEST_MATRIX.md`.

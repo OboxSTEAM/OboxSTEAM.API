@@ -47,9 +47,10 @@ Existing classes and enrollments default to `Standard` / `Primary`. Re-delivery 
 | E2E | 0 |
 | Platform | `dotnet build` |
 
-## Harness Delta
+## Notes
 
-`harness-cli.exe` is not present in this Orca worktree; intake/story CLI rows were not recorded.
+Protocol-v1 Harness CLI intake/story rows were never used for this packet;
+proof is the Evidence section and `docs/TEST_MATRIX.md`.
 
 ## Evidence
 

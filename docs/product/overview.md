@@ -60,10 +60,9 @@ shared schedule.
 
 - Frontend application code.
 - Infrastructure-as-code and deployment manifests (not present in repo).
-- Automated test projects (not present yet; see `docs/TEST_MATRIX.md`).
 
 ## Living Contract
 
-Product truth lives in `docs/product/*` plus executable proof recorded in the
-Harness durable layer (`scripts/bin/harness-cli query matrix`). When behavior
-changes, update the affected product doc and story proof status together.
+Product truth lives in `docs/product/*` plus executable proof (`dotnet test` /
+`dotnet build`; see `docs/TEST_MATRIX.md`). When behavior changes, update the
+affected product doc and keep any active plan or story packet current.

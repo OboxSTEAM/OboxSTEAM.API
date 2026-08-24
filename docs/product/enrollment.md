@@ -5,7 +5,7 @@
 | Entity | Scope | Purpose |
 | --- | --- | --- |
 | ProgramEnrollment | Program | Student enrolled in a full track |
-| ModuleEnrollment | Module | Access to a module (may be à la carte) |
+| ModuleEnrollment | Module | Progress attempt within a program enrollment |
 | CourseEnrollment | Course | Mentor-led course instance access |
 | ClassEnrollment | Class | Cohort membership with shared schedule |
 
@@ -15,8 +15,8 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 
 1. Browse programs (public catalog).
 2. Enroll at program level (`POST /api/program-enrollments`) — Student role.
-3. Enroll in modules (`POST /api/module-enrollments`) when module access is
-   required separately.
+3. Module enrollments are created as part of program progression (not sold as
+   separate retail products).
 4. Join a class cohort when class-based delivery applies. Students may enroll (and self-transfer) only when the class is **Open** — not Draft, ReadyForMentor, or InProgress. Manager transfer targets must also be Open. Enroll and transfer are blocked when any non-cancelled ClassSession of the target class overlaps another active class (start1 < end2 && start2 < end1). Students can read occupied intervals at GET /api/me/schedule. The Monday–Sunday timetable is GET /api/schedules/weekly (weekStart optional; studentId required for parents of a verified linked child; Asia/Ho_Chi_Minh; cancelled sessions omitted).
 
 Parents and managers can view enrollment state on shared read endpoints
