@@ -67,8 +67,11 @@ per-activity or per-session booking.
   hands-on again (or recovery request cap is hit). System auto-matches another
   `Open`/`InProgress` class in the same program that has not reached that module
   yet (no `InProgress`/`Completed` `ClassSession` for the module). On match,
-  student pays `RetakeFee` then transfers. If no eligible class, request goes to
-  the manager queue.
+  student pays `Program.Price` (full program tuition, progression kept) then
+  transfers. If no eligible class, request goes to the manager queue.
+  Schema also stores `Class.Kind` / `Class.RemedialModuleId`,
+  `ClassEnrollment.Kind`, and request `IntensivePaceAcceptedAt` /
+  `ResolutionType` for the two-tier retake ladder (endpoints in later stories).
 - Module retake invoices appear in `GET /api/invoices/me` alongside program tuition.
 
 API: `/api/class-redelivery-requests`.
@@ -76,8 +79,9 @@ API: `/api/class-redelivery-requests`.
 ## Payments
 
 `Payment` entity and `PaymentStatus` / `PaymentGateway` enums exist in the
-domain model. Program tuition and module `RetakeFee` (class re-delivery) both
-create `Invoice` rows visible via invoice endpoints.
+domain model. Program tuition and class re-delivery (amount = `Program.Price`)
+both create `Invoice` rows visible via invoice endpoints. Module-level retail
+price and retake fee columns have been dropped.
 
 ## Parent Visibility
 

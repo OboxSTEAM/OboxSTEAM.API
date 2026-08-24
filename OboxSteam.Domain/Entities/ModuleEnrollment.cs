@@ -24,9 +24,6 @@ public class ModuleEnrollment : BaseEntity
     /// <summary>Which attempt this enrollment represents; incremented on retake after fail.</summary>
     public int AttemptNumber { get; set; } = 1;
 
-    /// <summary>Number of failed assignment attempts within the current module attempt.</summary>
-    public int AssignmentFailureCount { get; set; }
-
     public DateTime? EnrolledAt { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }

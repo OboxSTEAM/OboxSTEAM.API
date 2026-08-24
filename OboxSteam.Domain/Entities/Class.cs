@@ -30,6 +30,15 @@ public class Class : BaseEntity
 
     public int MaxCapacity { get; set; }
 
+    public ClassKind Kind { get; set; } = ClassKind.Standard;
+
+    /// <summary>
+    /// When <see cref="Kind"/> is Remedial, the single module this class re-delivers.
+    /// Null for Standard classes.
+    /// </summary>
+    public Guid? RemedialModuleId { get; set; }
+    public Module? RemedialModule { get; set; }
+
     public ClassStatus Status { get; set; } = ClassStatus.Draft;
 
     /// <summary>

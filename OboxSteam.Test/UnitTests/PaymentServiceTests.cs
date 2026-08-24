@@ -151,7 +151,7 @@ public sealed class PaymentServiceTests
         return program;
     }
 
-    private Module SeedModule(decimal retakeFee = 100_000m)
+    private Module SeedModule()
     {
         var module = new Module
         {
@@ -160,7 +160,6 @@ public sealed class PaymentServiceTests
             Name = "Module A",
             ProgramId = _programId,
             ModuleType = ModuleType.Theory,
-            RetakeFee = retakeFee,
             IsDeleted = false,
         };
         _db.Modules.Seed(module);
@@ -280,8 +279,8 @@ public sealed class PaymentServiceTests
     public async Task CreateModuleRetakeCheckout_Throws_WhenNotEligible()
     {
         SeedStudent();
-        SeedProgram();
-        var module = SeedModule(retakeFee: 0);
+        SeedProgram(price: 0);
+        var module = SeedModule();
         SeedModuleEnrollment(module);
         var sut = CreateSut();
 
@@ -592,7 +591,7 @@ public sealed class PaymentServiceTests
             ParentId = _parentId,
             ModuleId = _moduleId,
             ModuleEnrollmentId = _moduleEnrollmentId,
-            Amount = module.RetakeFee,
+            Amount = 500_000m,
             Currency = "VND",
             Token = RequestToken,
             ExpiresAt = DateTime.UtcNow.AddHours(1),
@@ -659,7 +658,7 @@ public sealed class PaymentServiceTests
             ParentId = _parentId,
             ModuleId = _moduleId,
             ModuleEnrollmentId = _moduleEnrollmentId,
-            Amount = module.RetakeFee,
+            Amount = 500_000m,
             Token = RequestToken,
             Status = PaymentRequestStatus.Accepted,
             IsDeleted = false,
@@ -730,7 +729,7 @@ public sealed class PaymentServiceTests
             ParentId = _parentId,
             ModuleId = _moduleId,
             ModuleEnrollmentId = _moduleEnrollmentId,
-            Amount = module.RetakeFee,
+            Amount = 500_000m,
             Token = RequestToken,
             Status = PaymentRequestStatus.Accepted,
             ExpiresAt = DateTime.UtcNow.AddHours(1),
@@ -770,7 +769,7 @@ public sealed class PaymentServiceTests
             ParentId = _parentId,
             ModuleId = _moduleId,
             ModuleEnrollmentId = _moduleEnrollmentId,
-            Amount = module.RetakeFee,
+            Amount = 500_000m,
             Token = RequestToken,
             Status = PaymentRequestStatus.Accepted,
             ExpiresAt = DateTime.UtcNow.AddHours(1),

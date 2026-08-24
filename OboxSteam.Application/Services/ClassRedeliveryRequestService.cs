@@ -375,9 +375,12 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
         Module module,
         Class targetClass)
     {
-        if (module.RetakeFee <= 0)
+        var program = await _unitOfWork.Programs.GetByIdAsync(module.ProgramId)
+            ?? throw ErrorHelper.NotFound($"Program '{module.ProgramId}' not found.");
+
+        if (program.Price == null || program.Price <= 0)
         {
-            throw ErrorHelper.BadRequest("This module does not have a retake fee configured for re-delivery.");
+            throw ErrorHelper.BadRequest("This program does not have a valid price for re-delivery.");
         }
 
         var nextAttempt = sourceEnrollment.AttemptNumber + 1;
@@ -390,7 +393,6 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
             Status = EnrollmentStatus.PendingPayment,
             ProgressPercent = 0m,
             AttemptNumber = nextAttempt,
-            AssignmentFailureCount = 0,
             EnrolledAt = DateTime.UtcNow,
         };
 

@@ -16,6 +16,8 @@ public class ClassEnrollment : BaseEntity
     public Guid ProgramEnrollmentId { get; set; }
     public ProgramEnrollment ProgramEnrollment { get; set; } = null!;
 
+    public ClassEnrollmentKind Kind { get; set; } = ClassEnrollmentKind.Primary;
+
     public ClassEnrollmentStatus Status { get; set; } = ClassEnrollmentStatus.Active;
 
     public DateTime? EnrolledAt { get; set; }

@@ -80,8 +80,6 @@ public sealed class ParentProgressionServiceTests
             ProgramId = _programId,
             ModuleType = ModuleType.Theory,
             ModuleOrder = 1,
-            Price = 100m,
-            RetakeFee = 50m,
             IsMandatory = true,
             IsDeleted = false,
         };
@@ -94,8 +92,6 @@ public sealed class ParentProgressionServiceTests
             ModuleType = ModuleType.Research,
             ModuleOrder = 2,
             PrerequisiteModuleId = _theoryModuleId,
-            Price = 200m,
-            RetakeFee = 75m,
             IsMandatory = true,
             IsDeleted = false,
         };

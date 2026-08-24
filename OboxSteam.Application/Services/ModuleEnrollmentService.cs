@@ -84,7 +84,6 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
                 ProgressPercent = pendingEnrollment.ProgressPercent,
                 FinalGrade = pendingEnrollment.FinalGrade,
                 AttemptNumber = pendingEnrollment.AttemptNumber,
-                AssignmentFailureCount = pendingEnrollment.AssignmentFailureCount,
                 EnrolledAt = pendingEnrollment.EnrolledAt,
                 StartedAt = pendingEnrollment.StartedAt,
                 CompletedAt = pendingEnrollment.CompletedAt,
@@ -97,8 +96,8 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
                 ModuleOrder = module.ModuleOrder,
                 PrerequisiteModuleId = module.PrerequisiteModuleId,
                 IsMandatory = module.IsMandatory,
-                Price = module.Price,
-                RetakeFee = module.RetakeFee,
+                Price = 0m,
+                RetakeFee = 0m,
             };
         }
 
@@ -122,7 +121,6 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
             Status = EnrollmentStatus.PendingPayment,
             ProgressPercent = 0m,
             AttemptNumber = nextAttemptNumber,
-            AssignmentFailureCount = 0,
             EnrolledAt = now,
         };
 
@@ -166,7 +164,6 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
             ProgressPercent = newEnrollment.ProgressPercent,
             FinalGrade = newEnrollment.FinalGrade,
             AttemptNumber = newEnrollment.AttemptNumber,
-            AssignmentFailureCount = newEnrollment.AssignmentFailureCount,
             EnrolledAt = newEnrollment.EnrolledAt,
             StartedAt = newEnrollment.StartedAt,
             CompletedAt = newEnrollment.CompletedAt,
@@ -179,8 +176,8 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = module.Price,
-            RetakeFee = module.RetakeFee,
+            Price = 0m,
+            RetakeFee = 0m,
         };
     }
 
@@ -265,7 +262,6 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
             ProgressPercent = enrollment.ProgressPercent,
             FinalGrade = enrollment.FinalGrade,
             AttemptNumber = enrollment.AttemptNumber,
-            AssignmentFailureCount = enrollment.AssignmentFailureCount,
             EnrolledAt = enrollment.EnrolledAt,
             StartedAt = enrollment.StartedAt,
             CompletedAt = enrollment.CompletedAt,
@@ -278,8 +274,8 @@ public sealed class ModuleEnrollmentService : IModuleEnrollmentService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = module.Price,
-            RetakeFee = module.RetakeFee,
+            Price = 0m,
+            RetakeFee = 0m,
         };
     }
 }

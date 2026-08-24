@@ -95,8 +95,6 @@ public sealed class ModuleEnrollmentServiceTests
             ProgramId = programId ?? _programId,
             ModuleType = ModuleType.Experiential,
             ModuleOrder = order,
-            Price = 100m,
-            RetakeFee = 50m,
             IsMandatory = true,
             IsDeleted = isDeleted
         };
@@ -122,7 +120,6 @@ public sealed class ModuleEnrollmentServiceTests
             ProgramEnrollmentId = _programEnrollmentId,
             Status = status,
             AttemptNumber = attemptNumber,
-            AssignmentFailureCount = failureCount,
             ProgressPercent = 40m,
             EnrolledAt = DateTime.UtcNow.AddDays(-10),
             IsDeleted = isDeleted
@@ -153,7 +150,6 @@ public sealed class ModuleEnrollmentServiceTests
 
         Assert.Equal(EnrollmentStatus.PendingPayment, result.Status);
         Assert.Equal(2, result.AttemptNumber);
-        Assert.Equal(0, result.AssignmentFailureCount);
         Assert.Equal(_moduleId, result.ModuleId);
         Assert.Equal("Module 1", result.Name);
         Assert.Equal(2, _db.ModuleEnrollments.Items.Count);

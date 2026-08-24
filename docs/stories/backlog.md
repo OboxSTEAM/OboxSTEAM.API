@@ -29,7 +29,7 @@ Durable status: `scripts/bin/harness-cli query matrix`.
 | US-002 | Quiz grading integration tests | normal | Covers US-E04 contract |
 | US-003 | Auth and role enforcement tests | high-risk | Touches auth hard gate |
 | US-004 | Class session and attendance API docs + tests | normal | Domain exists; API surface needs audit |
-| US-005 | Payment flow contract | high-risk | Entities exist; public API unclear |
+| US-DOT3-BE-B1 | Retake ladder schema (Đợt 3-BE b1) | high-risk | Done (migration + compile slice) |
 
 ## Story Paths
 
