@@ -15,5 +15,7 @@ Add a decision when:
 - Auth, authorization, data ownership, security, or API behavior changes.
 - The agent operating protocol or source-of-truth hierarchy changes.
 
-Related: `0009-adopt-harness-repository-protocol.md` (current Harness core).
-Historical: `0004` / `0005` describe the retired SQLite `harness-cli` layer.
+Current Harness protocol: `0009-adopt-harness-repository-protocol.md`.
+
+Do not use `0001`–`0005` for day-to-day work — they are superseded history
+(intake / SQLite / `harness-cli`). Product decisions `0006`–`0008` remain active.

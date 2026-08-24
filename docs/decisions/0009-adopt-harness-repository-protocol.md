@@ -21,8 +21,8 @@ confused agents.
 2. Maintain the core with `scripts/bin/harness.exe` (`status`, `doctor`,
    `update`). Do not bootstrap or depend on `harness.db` for new work.
 3. Remove obsolete protocol-v1 operating docs from the active doc tree rather
-   than archiving them in-repo. Historical decisions `0004` and `0005` remain
-   as history.
+   than archiving them in-repo. Historical decisions `0001`–`0005` remain as
+   superseded history; do not treat them as current protocol.
 4. Optional story packets stay markdown under `docs/stories/`; they are not
    mirrored into a Harness CLI database.
 

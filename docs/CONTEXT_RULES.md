@@ -3,6 +3,16 @@
 Put the smallest useful context in the model. Prefer `docs/WORKFLOW.md` over
 re-reading historical process docs.
 
+## Do Not Read (normal work)
+
+Skip these unless the user explicitly asks about Harness install/update internals
+or the history of an old decision:
+
+- `.harness-core/` — frozen upstream BASE for `harness.exe update` only; not
+  product or workflow authority
+- `docs/decisions/0001`–`0005` — superseded protocol history; current protocol is
+  `0009-adopt-harness-repository-protocol.md`
+
 ## By Task Shape
 
 ### Read-only (explain, review, diagnose)

@@ -4,7 +4,8 @@ Date: 2026-05-05
 
 ## Status
 
-Accepted
+Superseded by `0009-adopt-harness-repository-protocol.md` for day-to-day
+agent protocol. Kept as history of the original Harness-first intent.
 
 ## Context
 
