@@ -74,6 +74,39 @@ public static class ScheduleConflictValidator
                   && !cs.IsDeleted);
     }
 
+    /// <summary>
+    /// Returns the first busy session that overlaps any candidate of the given module, or null.
+    /// Used for redelivery select-class (only module sessions of the target class matter).
+    /// </summary>
+    public static async Task ValidateStudentCanJoinModuleOnClassAsync(
+        IUnitOfWork unitOfWork,
+        Guid studentId,
+        Guid targetClassId,
+        Guid moduleId,
+        Guid? excludeClassId = null)
+    {
+        var busySessions = await GetStudentBusySessionsAsync(unitOfWork, studentId, excludeClassId);
+        var candidateSessions = await unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == targetClassId
+                  && cs.ModuleId == moduleId
+                  && cs.Status != ClassSessionStatus.Cancelled
+                  && !cs.IsDeleted);
+
+        var overlapping = FindFirstOverlap(busySessions, candidateSessions);
+        if (overlapping == null)
+        {
+            return;
+        }
+
+        var classEntity = await unitOfWork.Classes.GetByIdAsync(overlapping.ClassId);
+        var classCode = classEntity?.Code ?? overlapping.ClassId.ToString();
+
+        throw ErrorHelper.Conflict(
+            $"Your schedule overlaps with session '{overlapping.Title}' " +
+            $"in class '{classCode}' " +
+            $"({overlapping.StartTime:yyyy-MM-dd HH:mm} – {overlapping.EndTime:yyyy-MM-dd HH:mm} UTC).");
+    }
+
     public static async Task ValidateStudentCanJoinClassAsync(
         IUnitOfWork unitOfWork,
         Guid studentId,

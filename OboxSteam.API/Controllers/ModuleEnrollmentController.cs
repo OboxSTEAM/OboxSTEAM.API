@@ -20,32 +20,6 @@ public class ModuleEnrollmentController : ControllerBase
     }
 
     // =========================================================================
-    // RETAKE  —  POST /api/module-enrollments/retake   [Student only]
-    // =========================================================================
-
-    [HttpPost("retake")]
-    [Authorize(Roles = "Student")]
-    [SwaggerOperation(
-        Summary = "Retake a module",
-        Description = "Creates a new module enrollment attempt after failing the module (two failed assignments). Requires Student role.")]
-    [ProducesResponseType(typeof(ApiResult<ModuleEnrollmentResponseDto>), 201)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> RetakeModule(
-        [FromBody, SwaggerParameter("Module retake request")] UpdateModuleEnrollmentRequestDto dto)
-    {
-        var result = await _moduleEnrollmentService.RetakeModuleAsync(dto);
-
-        return CreatedAtAction(
-            nameof(GetModuleEnrollmentById),
-            new { id = result.Id },
-            ApiResult<ModuleEnrollmentResponseDto>.Success(result, "201", "Module retake enrollment created successfully."));
-    }
-
-    // =========================================================================
     // GET BY ID  —  GET /api/module-enrollments/{id}
     // =========================================================================
 

@@ -77,8 +77,6 @@ public sealed class ModuleServiceTests
             ModuleType = ModuleType.Theory,
             ModuleOrder = moduleOrder,
             PrerequisiteModuleId = prerequisiteModuleId,
-            Price = 10m,
-            RetakeFee = 5m,
         };
 
     // ── GetModuleByIdAsync ────────────────────────────────────────────────────

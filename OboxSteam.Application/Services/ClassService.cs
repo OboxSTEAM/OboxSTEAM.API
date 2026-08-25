@@ -20,17 +20,20 @@ public sealed class ClassService : IClassService
     private readonly IClaimsService _claimsService;
     private readonly ILogger<ClassService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly IClassRedeliveryRequestService _classRedeliveryRequestService;
 
     public ClassService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         ILogger<ClassService> logger,
-        INotificationPublisher notificationPublisher)
+        INotificationPublisher notificationPublisher,
+        IClassRedeliveryRequestService classRedeliveryRequestService)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _logger = logger;
         _notificationPublisher = notificationPublisher;
+        _classRedeliveryRequestService = classRedeliveryRequestService;
     }
 
     public async Task<Pagination<ClassResponseDto>> GetAllClassesAsync(
@@ -496,6 +499,11 @@ public sealed class ClassService : IClassService
 
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.ClassOpenForEnrollment(classEntity.Id, classEntity.ProgramId, classEntity.Name));
+
+        if (classEntity.Kind == ClassKind.Standard)
+        {
+            await _classRedeliveryRequestService.NotifyPendingManagerForNewClassAsync(classEntity.Id);
+        }
 
         _logger.LogInformation("[OpenClassAsync] class {Id} is now Open.", id);
 

@@ -813,6 +813,125 @@ public static class NotificationCatalog
             entityType: "ClassRedeliveryRequest",
             entityId: requestId);
 
+    public static NotificationCommand ClassRedeliveryWithdrawn(
+        Guid requestId,
+        Guid studentId,
+        Guid moduleId,
+        string? moduleName = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
+        => StudentAndParent(
+            NotificationType.ClassRedeliveryWithdrawn,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Class re-delivery withdrawn",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? "Your class re-delivery request was withdrawn. Your progress is kept and you can request again later."
+                : "Your re-delivery request for \"{moduleName}\" was withdrawn. Your progress is kept and you can request again later.",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? "{studentName}'s class re-delivery request was withdrawn. Progress is kept and a new request can be made later."
+                : "{studentName}'s re-delivery request for \"{moduleName}\" was withdrawn. Progress is kept and a new request can be made later.",
+            payload: new NotificationPayload
+            {
+                ClassRedeliveryRequestId = requestId,
+                ModuleId = moduleId,
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId),
+            entityType: "ClassRedeliveryRequest",
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+
+    public static NotificationCommand ClassRedeliveryAwaitingSelection(
+        Guid requestId,
+        Guid studentId,
+        Guid moduleId,
+        int candidateCount,
+        string? moduleName = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
+        => StudentAndParent(
+            NotificationType.ClassRedeliveryAwaitingSelection,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Pick a class to re-take this module",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? $"{candidateCount} eligible class(es) are available for re-delivery. Pick the one that fits your schedule."
+                : $"{candidateCount} eligible class(es) are available to re-take \"{{moduleName}}\". Pick the one that fits your schedule.",
+            string.IsNullOrWhiteSpace(moduleName)
+                ? $"{candidateCount} eligible class(es) are available for {{studentName}}'s re-delivery."
+                : $"{candidateCount} eligible class(es) are available for {{studentName}} to re-take \"{{moduleName}}\".",
+            payload: new NotificationPayload
+            {
+                ClassRedeliveryRequestId = requestId,
+                ModuleId = moduleId,
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId),
+            entityType: "ClassRedeliveryRequest",
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+
+    public static NotificationCommand ClassRedeliveryIntensiveOffered(
+        Guid requestId,
+        Guid studentId,
+        Guid moduleId,
+        Guid remedialClassId,
+        string? moduleName = null,
+        string? className = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
+        => StudentAndParent(
+            NotificationType.ClassRedeliveryIntensiveOffered,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Remedial class offered — confirm the intensive pace",
+            string.IsNullOrWhiteSpace(className)
+                ? "A remedial class was opened for your module. Confirm you can follow the intensive schedule, or decline."
+                : "Remedial class \"{className}\" was opened to re-take \"{moduleName}\". Confirm you can follow the intensive schedule, or decline.",
+            string.IsNullOrWhiteSpace(className)
+                ? "A remedial class was opened for {studentName}'s module. The intensive schedule needs confirmation."
+                : "Remedial class \"{className}\" was opened for {studentName} to re-take \"{moduleName}\". The intensive schedule needs confirmation.",
+            payload: new NotificationPayload
+            {
+                ClassRedeliveryRequestId = requestId,
+                ModuleId = moduleId,
+                ClassId = remedialClassId,
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId),
+            entityType: "ClassRedeliveryRequest",
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName, className: className));
+
+    public static NotificationCommand ClassRedeliveryCandidatesAvailable(
+        Guid requestId,
+        Guid studentId,
+        Guid moduleId,
+        Guid classId,
+        string? moduleName = null,
+        string? className = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null)
+        => StudentAndParent(
+            NotificationType.ClassRedeliveryCandidatesAvailable,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "A new class matches your re-delivery request",
+            string.IsNullOrWhiteSpace(className)
+                ? "A new class now fits your re-delivery request. Open the request to pick it."
+                : "New class \"{className}\" now fits your request to re-take \"{moduleName}\". Open the request to pick it.",
+            string.IsNullOrWhiteSpace(className)
+                ? "A new class now fits {studentName}'s re-delivery request."
+                : "New class \"{className}\" now fits {studentName}'s request to re-take \"{moduleName}\".",
+            payload: new NotificationPayload
+            {
+                ClassRedeliveryRequestId = requestId,
+                ModuleId = moduleId,
+                ClassId = classId,
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId),
+            entityType: "ClassRedeliveryRequest",
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(moduleName: moduleName, className: className));
+
     // ── Class enrollment ──────────────────────────────────────────────────────
 
     public static NotificationCommand ClassEnrolled(

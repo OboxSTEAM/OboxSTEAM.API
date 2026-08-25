@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.CourseDTO;
 using OboxSteam.Application.DTOs.ModuleDTO;
@@ -65,8 +65,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = 0m,
-            RetakeFee = 0m,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
@@ -116,8 +114,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = 0m,
-            RetakeFee = 0m,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
@@ -152,7 +148,7 @@ public class ModuleService : IModuleService
         ModuleType? moduleType)
     {
         _logger.LogInformation(
-            "[GetAllModulesAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
+            "[GetAllModulesAsync] Start � page: {Page}, pageSize: {PageSize}, search: '{Search}'",
             page, pageSize, search);
 
         var query = _unitOfWork.Modules
@@ -213,8 +209,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = 0m,
-            RetakeFee = 0m,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
@@ -324,8 +318,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = 0m,
-            RetakeFee = 0m,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
@@ -424,8 +416,6 @@ public class ModuleService : IModuleService
                 ModuleOrder = module.ModuleOrder,
                 PrerequisiteModuleId = module.PrerequisiteModuleId,
                 IsMandatory = module.IsMandatory,
-                Price = 0m,
-                RetakeFee = 0m,
                 LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
                 CreatedAt = module.CreatedAt,
                 UpdatedAt = module.UpdatedAt,
@@ -449,8 +439,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = 0m,
-            RetakeFee = 0m,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,

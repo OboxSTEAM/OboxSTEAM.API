@@ -57,6 +57,10 @@ public enum NotificationType
     ClassRedeliveryMatchedPendingPayment,
     ClassRedeliveryRejected,
     ClassRedeliveryCompleted,
+    ClassRedeliveryWithdrawn,
+    ClassRedeliveryAwaitingSelection,
+    ClassRedeliveryIntensiveOffered,
+    ClassRedeliveryCandidatesAvailable,
 
     // Class enrollment
     ClassEnrolled,

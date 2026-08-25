@@ -30,6 +30,7 @@ public sealed class ClassServiceTests
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly Mock<IClassRedeliveryRequestService> _classRedeliveryRequestService = new();
 
     private ClassService CreateSut(Guid? currentUserId = null)
     {
@@ -40,12 +41,16 @@ public sealed class ClassServiceTests
         _notificationPublisher
             .Setup(n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+        _classRedeliveryRequestService
+            .Setup(s => s.NotifyPendingManagerForNewClassAsync(It.IsAny<Guid>()))
+            .Returns(Task.CompletedTask);
 
         return new ClassService(
             _db,
             _claimsService.Object,
             NullLogger<ClassService>.Instance,
-            _notificationPublisher.Object);
+            _notificationPublisher.Object,
+            _classRedeliveryRequestService.Object);
     }
 
     private void SeedUser(Guid id, RoleType role, string code, string? fullName = null, int? maxConcurrent = null)

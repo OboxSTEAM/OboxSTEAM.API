@@ -14,6 +14,8 @@ public class ClassRedeliveryRequestResponseDto
     public Guid? TargetClassId { get; set; }
     public Guid? PaymentId { get; set; }
     public Guid? RetakeModuleEnrollmentId { get; set; }
+    public DateTime? IntensivePaceAcceptedAt { get; set; }
+    public RedeliveryResolutionType? ResolutionType { get; set; }
     public string? RequestMessage { get; set; }
     public string? DecisionNote { get; set; }
     public DateTime? DecidedAt { get; set; }

@@ -186,6 +186,14 @@ public static class ClassSessionValidator
         {
             throw ErrorHelper.BadRequest("Module does not belong to the class program.");
         }
+
+        if (classEntity.Kind == ClassKind.Remedial
+            && classEntity.RemedialModuleId.HasValue
+            && module.Id != classEntity.RemedialModuleId.Value)
+        {
+            throw ErrorHelper.BadRequest(
+                "Remedial classes can only schedule sessions for their remedial module.");
+        }
     }
 
     public static void ValidateSessionWithinClassDateRange(Class classEntity, DateTime startTime, DateTime endTime)
