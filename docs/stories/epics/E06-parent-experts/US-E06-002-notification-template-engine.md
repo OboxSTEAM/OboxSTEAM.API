@@ -45,9 +45,6 @@ that child's name.
 
 ## Validation
 
-When updating durable proof status, use numeric booleans:
-`scripts/bin/harness-cli story update --id <id> --unit 1 --integration 1 --e2e 0 --platform 0`.
-
 | Layer | Expected proof |
 | --- | --- |
 | Unit | `NotificationTemplateEngineTests` — renderer, resolver parent-per-child, publisher role copy |
@@ -65,4 +62,4 @@ per-child parent rows.
 
 - `dotnet test OboxSteam.Test/OboxSteam.Test.csproj --filter FullyQualifiedName~NotificationTemplateEngineTests` passed (9 tests).
 - Full `OboxSteam.Test` suite passed: 1056 tests, 0 failures.
-- Harness CLI is not present in this checkout (`scripts/bin/harness-cli.exe` missing), so durable intake/story rows were not recorded.
+- Proof lives in this Evidence section and `docs/TEST_MATRIX.md` (no Harness CLI DB).

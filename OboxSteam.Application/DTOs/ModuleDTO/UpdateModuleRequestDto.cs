@@ -11,7 +11,5 @@ public class UpdateModuleRequestDto
     public int? ModuleOrder { get; set; }
     public Guid? PrerequisiteModuleId { get; set; }
     public bool? IsMandatory { get; set; }
-    public decimal? Price { get; set; }
-    public decimal? RetakeFee { get; set; }
     public string[]? LearningOutcomes { get; set; }
 }

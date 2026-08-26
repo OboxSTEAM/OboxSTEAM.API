@@ -1,16 +1,13 @@
 # Stories
 
-Story packets turn product intent into bounded implementation and validation
-work.
+Optional markdown packets for large features. Prefer `docs/plans/active/` for
+multi-session execution memory (`docs/templates/exec-plan.md`).
 
-Epic-level contracts are tracked in the Harness durable layer (`US-E01` through
-`US-E07`). See `backlog.md` for the full epic list and suggested next stories.
+Epic overview: `backlog.md`. Proof snapshot: `docs/TEST_MATRIX.md`.
 
 ## Normal Story
 
-Use `docs/templates/story.md` for normal feature work.
-
-Suggested path:
+Use `docs/templates/story.md` when a dedicated feature packet helps reviewers.
 
 ```text
 docs/stories/epics/E04-assessment/US-002-quiz-grading-tests.md
@@ -18,18 +15,8 @@ docs/stories/epics/E04-assessment/US-002-quiz-grading-tests.md
 
 ## High-Risk Story
 
-Use `docs/templates/high-risk-story/` when feature intake classifies work as
-high-risk (auth, payments, data migration, external providers).
-
-Suggested path:
-
-```text
-docs/stories/epics/E01-auth-accounts/US-003-auth-role-tests/
-  execplan.md
-  overview.md
-  design.md
-  validation.md
-```
+Use `docs/templates/high-risk-story/` for auth, payments, migrations, or
+external providers when you want a multi-file packet.
 
 ## Status Flow
 
@@ -43,8 +30,5 @@ planned -> in_progress -> implemented
                retired
 ```
 
-Query current status:
-
-```bash
-scripts/bin/harness-cli query matrix
-```
+Update status in the story file and in `docs/TEST_MATRIX.md` when epic proof
+changes. Run `dotnet test` / `dotnet build` for executable evidence.

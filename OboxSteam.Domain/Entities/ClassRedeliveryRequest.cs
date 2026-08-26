@@ -32,9 +32,15 @@ public class ClassRedeliveryRequest : BaseEntity
     public Guid? PaymentId { get; set; }
     public Payment? Payment { get; set; }
 
-    /// <summary>PendingPayment module enrollment created for retake fee checkout.</summary>
+    /// <summary>PendingPayment module enrollment created for retake checkout (amount = program price).</summary>
     public Guid? RetakeModuleEnrollmentId { get; set; }
     public ModuleEnrollment? RetakeModuleEnrollment { get; set; }
+
+    /// <summary>When the student accepted intensive pace on a remedial-class offer.</summary>
+    public DateTime? IntensivePaceAcceptedAt { get; set; }
+
+    /// <summary>How the request was resolved; null until select-class or accept-intensive.</summary>
+    public RedeliveryResolutionType? ResolutionType { get; set; }
 
     [MaxLength(1000)]
     public string? RequestMessage { get; set; }

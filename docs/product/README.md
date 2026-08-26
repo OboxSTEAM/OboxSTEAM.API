@@ -1,7 +1,6 @@
 # Product Docs
 
-Current product contract for the OboxSTEAM backend API, derived from the
-implemented codebase and domain model.
+Current product contract for the OboxSTEAM backend API.
 
 ## Files
 
@@ -11,11 +10,11 @@ implemented codebase and domain model.
 | `api-conventions.md` | Response envelope, auth, CORS, errors |
 | `permissions.md` | Role-based access patterns |
 | `curriculum.md` | Program → module → course → activity model |
-| `enrollment.md` | Enrollments, progress, gating |
+| `enrollment.md` | Enrollments, progress, gating, re-delivery |
 | `assessment.md` | Assignments, quizzes, question banks |
-| `notifications.md` | Notification audiences, publishers, parent coverage |
-| `student-skills.md` | Student skill catalog snapshots and evidence |
-| `mentor-skills.md` | Mentor self-managed skill profiles and evidence |
+| `notifications.md` | Notification audiences and publishers |
+| `student-skills.md` | Student skill snapshots and evidence |
+| `mentor-skills.md` | Mentor skill profiles and evidence |
 | `integrations.md` | PostgreSQL, AWS, email, webhooks |
 
 ## Update Rule
@@ -23,22 +22,17 @@ implemented codebase and domain model.
 When behavior changes:
 
 1. Update the affected product doc.
-2. Update or create the story packet under `docs/stories/`.
-3. Update durable proof status with `scripts/bin/harness-cli story add` or
-   `scripts/bin/harness-cli story update`.
-4. Record a decision if the change affects architecture, scope, risk, or a
-   previously settled product rule.
+2. For multi-session work, keep `docs/plans/active/` current (or a story under
+   `docs/stories/` when useful).
+3. Record a decision in `docs/decisions/` when architecture or a locked product
+   rule changes.
+4. Prove with `dotnet test` / `dotnet build` (or document the proof gap).
 
-## Proof Status
-
-Query the behavior-to-proof matrix:
-
-```bash
-scripts/bin/harness-cli query matrix
-```
-
-On Windows:
+## Proof
 
 ```powershell
-.\scripts\bin\harness-cli.exe query matrix
+dotnet test OboxSteam.Test/OboxSteam.Test.csproj
+dotnet build OboxSteam.API/OboxSteam.API.csproj
 ```
+
+See also `docs/TEST_MATRIX.md` for epic-level snapshot status.

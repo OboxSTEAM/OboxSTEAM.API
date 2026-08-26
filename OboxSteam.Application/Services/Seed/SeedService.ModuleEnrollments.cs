@@ -95,7 +95,6 @@ public partial class SeedService
                     ProgressPercent = isCompleted ? 100m : 0m,
                     FinalGrade = isCompleted ? 85m + (module.ModuleOrder % 10) : null,
                     AttemptNumber = 1,
-                    AssignmentFailureCount = 0,
                     EnrolledAt = rowCreatedAt,
                     StartedAt = startedAt.AddDays(moduleIndex),
                     CompletedAt = completedAt,

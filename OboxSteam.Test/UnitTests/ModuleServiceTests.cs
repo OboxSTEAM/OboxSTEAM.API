@@ -77,8 +77,6 @@ public sealed class ModuleServiceTests
             ModuleType = ModuleType.Theory,
             ModuleOrder = moduleOrder,
             PrerequisiteModuleId = prerequisiteModuleId,
-            Price = 10m,
-            RetakeFee = 5m,
         };
 
     // ── GetModuleByIdAsync ────────────────────────────────────────────────────
@@ -168,23 +166,21 @@ public sealed class ModuleServiceTests
     {
         var older = SeedModule(name: "Alpha", code: "MOD-A", moduleOrder: 1);
         older.CreatedAt = DateTime.UtcNow.AddDays(-10);
-        older.Price = 10m;
         var newer = SeedModule(
             id: _otherModuleId,
             name: "Beta",
             code: "MOD-B",
             moduleOrder: 2);
         newer.CreatedAt = DateTime.UtcNow.AddDays(-1);
-        newer.Price = 50m;
         var sut = CreateSut();
 
         var byOrder = await sut.GetAllModulesAsync(null, "moduleorder", true, 1, 10, null, null);
         var byType = await sut.GetAllModulesAsync(null, "moduletype", false, 1, 10, null, null);
-        var byPrice = await sut.GetAllModulesAsync(null, "price", true, 1, 10, null, null);
+        var byCode = await sut.GetAllModulesAsync(null, "code", true, 1, 10, null, null);
 
         Assert.Equal("Beta", byOrder.Items[0].Name);
         Assert.Equal("Alpha", byType.Items[0].Name);
-        Assert.Equal("Beta", byPrice.Items[0].Name);
+        Assert.Equal("Beta", byCode.Items[0].Name);
     }
 
     [Theory]
@@ -270,11 +266,10 @@ public sealed class ModuleServiceTests
         var result = await sut.UpdateModuleAsync(_moduleId, new UpdateModuleRequestDto
         {
             Name = "Updated Module",
-            Price = 99m,
         });
 
         Assert.Equal("Updated Module", result.Name);
-        Assert.Equal(99m, _db.Modules.Items[0].Price);
+        Assert.Equal("Updated Module", _db.Modules.Items[0].Name);
     }
 
     [Fact]

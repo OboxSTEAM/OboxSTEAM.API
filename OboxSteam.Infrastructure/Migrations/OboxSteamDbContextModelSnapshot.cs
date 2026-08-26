@@ -550,6 +550,12 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("Standard");
+
                     b.Property<int>("MaxCapacity")
                         .HasColumnType("integer");
 
@@ -565,6 +571,9 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasColumnType("character varying(255)");
 
                     b.Property<Guid>("ProgramId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("RemedialModuleId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("ScheduleSummary")
@@ -592,6 +601,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("MentorId");
 
                     b.HasIndex("ProgramId");
+
+                    b.HasIndex("RemedialModuleId")
+                        .HasFilter("\"IsDeleted\" = false AND \"RemedialModuleId\" IS NOT NULL");
 
                     b.HasIndex("Status", "StartDate")
                         .HasFilter("\"IsDeleted\" = false");
@@ -625,6 +637,12 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValueSql("'Primary'");
 
                     b.Property<Guid>("ProgramEnrollmentId")
                         .HasColumnType("uuid");
@@ -903,6 +921,9 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("IntensivePaceAcceptedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -921,6 +942,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<Guid>("RequestedByUserId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("ResolutionType")
+                        .HasColumnType("text");
 
                     b.Property<Guid?>("RetakeModuleEnrollmentId")
                         .HasColumnType("uuid");
@@ -2072,14 +2096,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid?>("PrerequisiteModuleId")
                         .HasColumnType("uuid");
 
-                    b.Property<decimal>("Price")
-                        .HasColumnType("numeric");
-
                     b.Property<Guid>("ProgramId")
                         .HasColumnType("uuid");
-
-                    b.Property<decimal>("RetakeFee")
-                        .HasColumnType("numeric");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2104,9 +2122,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
-
-                    b.Property<int>("AssignmentFailureCount")
-                        .HasColumnType("integer");
 
                     b.Property<int>("AttemptNumber")
                         .HasColumnType("integer");
@@ -4313,9 +4328,16 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("OboxSteam.Domain.Entities.Module", "RemedialModule")
+                        .WithMany()
+                        .HasForeignKey("RemedialModuleId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Mentor");
 
                     b.Navigation("Program");
+
+                    b.Navigation("RemedialModule");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ClassEnrollment", b =>

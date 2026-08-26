@@ -230,25 +230,15 @@ public static class ClassEnrollmentValidator
     }
 
     /// <summary>
-    /// Ensures the student is under the active class enrollment cap.
+    /// Ensures the student is under the active primary class enrollment cap.
     /// Pass <paramref name="excludeEnrollmentId"/> when transferring so the current seat is not double-counted.
     /// </summary>
-    public static async Task ValidateUnderActiveClassLimitAsync(
+    public static Task ValidateUnderActiveClassLimitAsync(
         IUnitOfWork unitOfWork,
         Guid studentId,
         Guid? excludeEnrollmentId = null)
-    {
-        var active = await unitOfWork.ClassEnrollments.GetAllAsync(
-            ce => ce.StudentId == studentId
-                  && !ce.IsDeleted
-                  && ce.Status == ClassEnrollmentStatus.Active
-                  && (!excludeEnrollmentId.HasValue || ce.Id != excludeEnrollmentId.Value));
-
-        if (active.Count >= MaxActiveClassesPerStudent)
-        {
-            throw ErrorHelper.Conflict(
-                $"Student has reached the maximum of {MaxActiveClassesPerStudent} active classes. " +
-                "Leave or complete a class before joining another.");
-        }
-    }
+        => StudentLoadValidator.ValidateUnderPrimaryClassLoadAsync(
+            unitOfWork,
+            studentId,
+            excludeEnrollmentId);
 }

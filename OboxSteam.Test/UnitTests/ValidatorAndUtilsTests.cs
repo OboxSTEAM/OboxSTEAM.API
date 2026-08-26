@@ -82,11 +82,11 @@ public sealed class ValidatorAndUtilsTests
             ModuleEnrollmentValidator.ValidateRetakeEligibility(null, ModuleType.Experiential));
         Assert.Throws<BadRequestException>(() =>
             ModuleEnrollmentValidator.ValidateRetakeEligibility(
-                new ModuleEnrollment { AssignmentFailureCount = 1 },
+                new ModuleEnrollment(),
                 ModuleType.Theory));
         Assert.NotNull(
             ModuleEnrollmentValidator.ValidateRetakeEligibility(
-                new ModuleEnrollment { AssignmentFailureCount = 0 },
+                new ModuleEnrollment(),
                 ModuleType.Experiential));
         Assert.Throws<BadRequestException>(() =>
             ModuleEnrollmentValidator.ValidateProgramEnrollmentLink(null));

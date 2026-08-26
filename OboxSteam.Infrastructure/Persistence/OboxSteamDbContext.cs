@@ -984,6 +984,8 @@ public class OboxSteamDbContext : DbContext
         {
             entity.HasIndex(c => c.Code).IsUnique();
 
+            entity.Property(c => c.Kind).HasDefaultValue(ClassKind.Standard);
+
             entity.HasIndex(c => new { c.Status, c.StartDate })
                 .HasFilter("\"IsDeleted\" = false");
 
@@ -997,6 +999,15 @@ public class OboxSteamDbContext : DbContext
                 .HasForeignKey(c => c.MentorId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .IsRequired(false);
+
+            entity.HasOne(c => c.RemedialModule)
+                .WithMany()
+                .HasForeignKey(c => c.RemedialModuleId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+
+            entity.HasIndex(c => c.RemedialModuleId)
+                .HasFilter("\"IsDeleted\" = false AND \"RemedialModuleId\" IS NOT NULL");
         });
 
         // =============================================
@@ -1185,6 +1196,8 @@ public class OboxSteamDbContext : DbContext
         // =============================================
         modelBuilder.Entity<ClassEnrollment>(entity =>
         {
+            entity.Property(ce => ce.Kind).HasDefaultValueSql("'Primary'");
+
             entity.HasOne(ce => ce.Class)
                 .WithMany(c => c.ClassEnrollments)
                 .HasForeignKey(ce => ce.ClassId)

@@ -4,7 +4,9 @@ Date: 2026-05-23
 
 ## Status
 
-Accepted, amended 2026-05-31, amended 2026-06-09
+Superseded by `0009-adopt-harness-repository-protocol.md`.
+`harness-cli` is end of life; maintenance CLI is `scripts/bin/harness.exe`.
+Kept as history.
 
 ## Context
 

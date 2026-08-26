@@ -24,12 +24,6 @@ public class Module : BaseEntity
 
     public bool IsMandatory { get; set; } = true;
 
-    /// <summary>Retail price for purchasing this module individually.</summary>
-    public decimal Price { get; set; }
-
-    /// <summary>Retake fee if the student fails.</summary>
-    public decimal RetakeFee { get; set; }
-
     /// <summary>What students will learn in this module.</summary>
     public string[] LearningOutcomes { get; set; } = Array.Empty<string>();
 

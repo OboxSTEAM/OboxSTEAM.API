@@ -40,6 +40,52 @@ public class ClassRedeliveryRequestController : ControllerBase
             result, "200", "Re-delivery requests retrieved."));
     }
 
+    [HttpGet("{id:guid}/candidates")]
+    [Authorize(Roles = "Student,Mentor,Manager,Admin")]
+    [SwaggerOperation(Summary = "Eligible classes the student can pick for re-delivery (tier 1)")]
+    [ProducesResponseType(typeof(ApiResult<List<ClassRedeliveryCandidateDto>>), 200)]
+    public async Task<IActionResult> GetCandidates([FromRoute] Guid id)
+    {
+        var result = await _service.GetCandidatesAsync(id);
+        return Ok(ApiResult<List<ClassRedeliveryCandidateDto>>.Success(
+            result, "200", "Candidate classes retrieved."));
+    }
+
+    [HttpPost("{id:guid}/select-class")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(Summary = "Student picks a class for re-delivery (then pays the program price)")]
+    [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
+    public async Task<IActionResult> SelectClass(
+        [FromRoute] Guid id,
+        [FromBody] SelectClassRedeliveryRequestDto dto)
+    {
+        var result = await _service.SelectClassAsync(id, dto.ClassId);
+        return Ok(ApiResult<ClassRedeliveryRequestResponseDto>.Success(
+            result, "200", "Class selected; payment pending."));
+    }
+
+    [HttpPost("{id:guid}/accept-intensive")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(Summary = "Student accepts the intensive remedial-class schedule (tier 2)")]
+    [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
+    public async Task<IActionResult> AcceptIntensive([FromRoute] Guid id)
+    {
+        var result = await _service.AcceptIntensiveAsync(id);
+        return Ok(ApiResult<ClassRedeliveryRequestResponseDto>.Success(
+            result, "200", "Intensive schedule accepted; payment pending."));
+    }
+
+    [HttpPost("{id:guid}/decline-intensive")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(Summary = "Student declines the remedial-class offer (progress is kept)")]
+    [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
+    public async Task<IActionResult> DeclineIntensive([FromRoute] Guid id)
+    {
+        var result = await _service.DeclineIntensiveAsync(id);
+        return Ok(ApiResult<ClassRedeliveryRequestResponseDto>.Success(
+            result, "200", "Remedial class offer declined."));
+    }
+
     [HttpGet("pending-manager")]
     [Authorize(Roles = "Manager,Admin")]
     [SwaggerOperation(Summary = "Manager queue when no eligible class was auto-matched")]
@@ -64,7 +110,7 @@ public class ClassRedeliveryRequestController : ControllerBase
 
     [HttpPost("{id:guid}/assign-target")]
     [Authorize(Roles = "Manager,Admin")]
-    [SwaggerOperation(Summary = "Manager assigns a target class (then student pays RetakeFee)")]
+    [SwaggerOperation(Summary = "Manager assigns a target class (then student pays program price for re-delivery)")]
     [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
     public async Task<IActionResult> AssignTarget(
         [FromRoute] Guid id,

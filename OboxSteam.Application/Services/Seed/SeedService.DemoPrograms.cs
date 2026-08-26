@@ -617,6 +617,7 @@ public partial class SeedService
         DateTime seedTime,
         Guid? prerequisiteModuleId = null)
     {
+        _ = price;
         var existing = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == code && !m.IsDeleted);
         if (existing != null)
         {
@@ -633,8 +634,6 @@ public partial class SeedService
             ModuleOrder = moduleOrder,
             PrerequisiteModuleId = prerequisiteModuleId,
             IsMandatory = true,
-            Price = price,
-            RetakeFee = 80_000m,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,

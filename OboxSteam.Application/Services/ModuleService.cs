@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.CourseDTO;
 using OboxSteam.Application.DTOs.ModuleDTO;
@@ -65,8 +65,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = module.Price,
-            RetakeFee = module.RetakeFee,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
@@ -116,8 +114,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = module.Price,
-            RetakeFee = module.RetakeFee,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
@@ -152,7 +148,7 @@ public class ModuleService : IModuleService
         ModuleType? moduleType)
     {
         _logger.LogInformation(
-            "[GetAllModulesAsync] Start — page: {Page}, pageSize: {PageSize}, search: '{Search}'",
+            "[GetAllModulesAsync] Start � page: {Page}, pageSize: {PageSize}, search: '{Search}'",
             page, pageSize, search);
 
         var query = _unitOfWork.Modules
@@ -183,7 +179,6 @@ public class ModuleService : IModuleService
             "code" => isDescending ? query.OrderByDescending(m => m.Code) : query.OrderBy(m => m.Code),
             "moduleorder" => isDescending ? query.OrderByDescending(m => m.ModuleOrder) : query.OrderBy(m => m.ModuleOrder),
             "moduletype" => isDescending ? query.OrderByDescending(m => m.ModuleType) : query.OrderBy(m => m.ModuleType),
-            "price" => isDescending ? query.OrderByDescending(m => m.Price) : query.OrderBy(m => m.Price),
             "createdat" => isDescending ? query.OrderByDescending(m => m.CreatedAt) : query.OrderBy(m => m.CreatedAt),
             _ => isDescending ? query.OrderByDescending(m => m.CreatedAt) : query.OrderBy(m => m.CreatedAt),
         };
@@ -214,8 +209,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = module.Price,
-            RetakeFee = module.RetakeFee,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
@@ -304,8 +297,6 @@ public class ModuleService : IModuleService
             ModuleOrder = request.ModuleOrder,
             PrerequisiteModuleId = request.PrerequisiteModuleId,
             IsMandatory = request.IsMandatory,
-            Price = request.Price,
-            RetakeFee = request.RetakeFee,
             LearningOutcomes = request.LearningOutcomes ?? Array.Empty<string>(),
         };
 
@@ -327,8 +318,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = module.Price,
-            RetakeFee = module.RetakeFee,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,
@@ -427,8 +416,6 @@ public class ModuleService : IModuleService
                 ModuleOrder = module.ModuleOrder,
                 PrerequisiteModuleId = module.PrerequisiteModuleId,
                 IsMandatory = module.IsMandatory,
-                Price = module.Price,
-                RetakeFee = module.RetakeFee,
                 LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
                 CreatedAt = module.CreatedAt,
                 UpdatedAt = module.UpdatedAt,
@@ -452,8 +439,6 @@ public class ModuleService : IModuleService
             ModuleOrder = module.ModuleOrder,
             PrerequisiteModuleId = module.PrerequisiteModuleId,
             IsMandatory = module.IsMandatory,
-            Price = module.Price,
-            RetakeFee = module.RetakeFee,
             LearningOutcomes = module.LearningOutcomes ?? Array.Empty<string>(),
             CreatedAt = module.CreatedAt,
             UpdatedAt = module.UpdatedAt,

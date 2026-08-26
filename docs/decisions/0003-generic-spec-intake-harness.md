@@ -4,7 +4,8 @@ Date: 2026-05-05
 
 ## Status
 
-Accepted
+Superseded by `0009-adopt-harness-repository-protocol.md` (no SQLite intake
+loop). Kept as history.
 
 ## Context
 

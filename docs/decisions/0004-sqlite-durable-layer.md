@@ -4,7 +4,8 @@ Date: 2026-05-22
 
 ## Status
 
-Accepted
+Superseded by `0009-adopt-harness-repository-protocol.md`. SQLite
+`harness.db` / protocol v1 is retired. Kept as history.
 
 ## Context
 

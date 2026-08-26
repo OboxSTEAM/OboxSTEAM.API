@@ -4,7 +4,8 @@ Date: 2026-05-05
 
 ## Status
 
-Superseded by `0003-generic-spec-intake-harness.md`
+Superseded by `0003-generic-spec-intake-harness.md`. Protocol layer later
+superseded by `0009-adopt-harness-repository-protocol.md`.
 
 ## Context
 

@@ -40,5 +40,4 @@ dotnet build OboxSteam.API/OboxSteam.API.csproj
 
 - API / DTO / service changes (plan step 3).
 - Seeds and unit tests (plan step 4).
-- Harness CLI intake/trace (`scripts/bin/harness-cli.exe` not present in this checkout).
 

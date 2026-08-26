@@ -128,8 +128,7 @@ public class PaymentService : IPaymentService
         if (module == null || module.IsDeleted)
             throw ErrorHelper.NotFound("Module not found.");
 
-        if (module.RetakeFee <= 0)
-            throw ErrorHelper.BadRequest("This module does not have a retake fee.");
+        var amount = await RequireProgramPriceForModuleAsync(module);
 
         // Create Payment record
         var payment = new Payment
@@ -138,7 +137,7 @@ public class PaymentService : IPaymentService
             StudentId = studentId,
             PaidById = studentId,
             ModuleEnrollmentId = moduleEnrollment.Id,
-            Amount = module.RetakeFee,
+            Amount = amount,
             Currency = "VND",
             Gateway = gateway,
             Status = PaymentStatus.Pending
@@ -274,8 +273,7 @@ public class PaymentService : IPaymentService
         if (module == null || module.IsDeleted)
             throw ErrorHelper.NotFound("Module not found.");
 
-        if (module.RetakeFee <= 0)
-            throw ErrorHelper.BadRequest("This module does not have a retake fee.");
+        var amount = await RequireProgramPriceForModuleAsync(module);
 
         // Create PaymentRequest record
         var token = Guid.NewGuid().ToString("N");
@@ -285,7 +283,7 @@ public class PaymentService : IPaymentService
             ParentId = parentId,
             ModuleId = module.Id,
             ModuleEnrollmentId = moduleEnrollment.Id,
-            Amount = module.RetakeFee,
+            Amount = amount,
             Currency = "VND",
             Token = token,
             ExpiresAt = DateTime.UtcNow.AddHours(24),
@@ -314,7 +312,7 @@ public class PaymentService : IPaymentService
             ParentName = parent.FullName ?? "Parent",
             StudentName = student.FullName ?? "Student",
             ProgramName = $"Module Retake: {module.Name}",
-            Amount = module.RetakeFee,
+            Amount = amount,
             Currency = "VND",
             PaymentLink = paymentLink
         });
@@ -842,5 +840,16 @@ public class PaymentService : IPaymentService
             plainDesc = plainDesc[..500] + "...";
 
         return plainDesc;
+    }
+
+    private async Task<decimal> RequireProgramPriceForModuleAsync(Module module)
+    {
+        var program = await _unitOfWork.Programs.GetByIdAsync(module.ProgramId)
+            ?? throw ErrorHelper.NotFound($"Program '{module.ProgramId}' not found.");
+
+        if (program.Price == null || program.Price <= 0)
+            throw ErrorHelper.BadRequest("This program cannot be purchased because it has no valid price.");
+
+        return program.Price.Value;
     }
 }

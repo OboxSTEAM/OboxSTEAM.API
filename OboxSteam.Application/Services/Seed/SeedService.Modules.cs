@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -46,8 +46,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 450_000m,
-                        RetakeFee = 100_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -61,8 +59,6 @@ public partial class SeedService
                         ModuleOrder = 2,
                         PrerequisiteModuleId = null,
                         IsMandatory = true,
-                        Price = 500_000m,
-                        RetakeFee = 120_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -75,8 +71,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = true,
-                        Price = 550_000m,
-                        RetakeFee = 150_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -100,8 +94,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 700_000m,
-                        RetakeFee = 150_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -114,8 +106,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 800_000m,
-                        RetakeFee = 180_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -128,8 +118,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 700_000m,
-                        RetakeFee = 150_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -153,8 +141,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 650_000m,
-                        RetakeFee = 130_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -167,8 +153,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 700_000m,
-                        RetakeFee = 150_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -181,8 +165,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 600_000m,
-                        RetakeFee = 120_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -193,7 +175,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-IOT not found. Skipping IoT module seeding.");
             }
 
-            // ── PRG-PYBASIC ──────────────────────────────────────────────────
+            // â”€â”€ PRG-PYBASIC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (programPyBasic != null)
             {
                 modules.AddRange(new List<Module>
@@ -207,8 +189,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 480_000m,
-                        RetakeFee = 100_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -221,8 +201,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 500_000m,
-                        RetakeFee = 110_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -235,8 +213,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 470_000m,
-                        RetakeFee = 100_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -247,7 +223,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-PYBASIC not found. Skipping Python module seeding.");
             }
 
-            // ── PRG-MATHFUN ──────────────────────────────────────────────────
+            // â”€â”€ PRG-MATHFUN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (programMathFun != null)
             {
                 modules.AddRange(new List<Module>
@@ -261,8 +237,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 380_000m,
-                        RetakeFee = 80_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -275,8 +249,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 380_000m,
-                        RetakeFee = 80_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -289,8 +261,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 340_000m,
-                        RetakeFee = 70_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -301,7 +271,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-MATHFUN not found. Skipping Math module seeding.");
             }
 
-            // ── PRG-DIGART ──────────────────────────────────────────────────
+            // â”€â”€ PRG-DIGART â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (programDigArt != null)
             {
                 modules.AddRange(new List<Module>
@@ -315,8 +285,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 600_000m,
-                        RetakeFee = 130_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -329,8 +297,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 650_000m,
-                        RetakeFee = 140_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -343,8 +309,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 550_000m,
-                        RetakeFee = 110_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -355,7 +319,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-DIGART not found. Skipping Digital Art module seeding.");
             }
 
-            // ── PRG-BIOTECH ──────────────────────────────────────────────────
+            // â”€â”€ PRG-BIOTECH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (programBiotech != null)
             {
                 modules.AddRange(new List<Module>
@@ -369,8 +333,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 700_000m,
-                        RetakeFee = 150_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -383,8 +345,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 750_000m,
-                        RetakeFee = 160_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -397,8 +357,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 600_000m,
-                        RetakeFee = 120_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -409,7 +367,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-BIOTECH not found. Skipping Biotech module seeding.");
             }
 
-            // ── PRG-3DDESIGN ─────────────────────────────────────────────────
+            // â”€â”€ PRG-3DDESIGN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (program3DDesign != null)
             {
                 modules.AddRange(new List<Module>
@@ -423,8 +381,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 800_000m,
-                        RetakeFee = 170_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -437,8 +393,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 850_000m,
-                        RetakeFee = 180_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -451,8 +405,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 650_000m,
-                        RetakeFee = 130_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -463,7 +415,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-3DDESIGN not found. Skipping 3D Design module seeding.");
             }
 
-            // ── PRG-AIBASIC ──────────────────────────────────────────────────
+            // â”€â”€ PRG-AIBASIC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (programAiBasic != null)
             {
                 modules.AddRange(new List<Module>
@@ -477,8 +429,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 800_000m,
-                        RetakeFee = 170_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -491,8 +441,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 850_000m,
-                        RetakeFee = 180_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -505,8 +453,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 800_000m,
-                        RetakeFee = 160_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -517,7 +463,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-AIBASIC not found. Skipping AI module seeding.");
             }
 
-            // ── PRG-ENVSCI ───────────────────────────────────────────────────
+            // â”€â”€ PRG-ENVSCI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (programEnvSci != null)
             {
                 modules.AddRange(new List<Module>
@@ -531,8 +477,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 450_000m,
-                        RetakeFee = 90_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -545,8 +489,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 500_000m,
-                        RetakeFee = 100_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -559,8 +501,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 400_000m,
-                        RetakeFee = 80_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -571,7 +511,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-ENVSCI not found. Skipping Environmental Science module seeding.");
             }
 
-            // ── PRG-GAMEDEV ──────────────────────────────────────────────────
+            // â”€â”€ PRG-GAMEDEV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (programGameDev != null)
             {
                 modules.AddRange(new List<Module>
@@ -585,8 +525,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 900_000m,
-                        RetakeFee = 190_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -599,8 +537,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 950_000m,
-                        RetakeFee = 200_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -613,8 +549,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 3,
                         IsMandatory = true,
-                        Price = 950_000m,
-                        RetakeFee = 200_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -627,8 +561,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 4,
                         IsMandatory = false,
-                        Price = 900_000m,
-                        RetakeFee = 180_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -639,7 +571,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-GAMEDEV not found. Skipping Game Dev module seeding.");
             }
 
-            // ── PRG-MUSICTECH ────────────────────────────────────────────────
+            // â”€â”€ PRG-MUSICTECH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (programMusicTech != null)
             {
                 modules.AddRange(new List<Module>
@@ -653,8 +585,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 550_000m,
-                        RetakeFee = 110_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -667,8 +597,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 600_000m,
-                        RetakeFee = 120_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -681,8 +609,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 450_000m,
-                        RetakeFee = 90_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -693,7 +619,7 @@ public partial class SeedService
                 _loggerService.LogWarning("Program PRG-MUSICTECH not found. Skipping Music Tech module seeding.");
             }
 
-            // ── PRG-DATAMATH ─────────────────────────────────────────────────
+            // â”€â”€ PRG-DATAMATH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (programDataMath != null)
             {
                 modules.AddRange(new List<Module>
@@ -707,8 +633,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Theory,
                         ModuleOrder = 1,
                         IsMandatory = true,
-                        Price = 650_000m,
-                        RetakeFee = 130_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -721,8 +645,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Experiential,
                         ModuleOrder = 2,
                         IsMandatory = true,
-                        Price = 700_000m,
-                        RetakeFee = 140_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     },
@@ -735,8 +657,6 @@ public partial class SeedService
                         ModuleType = ModuleType.Research,
                         ModuleOrder = 3,
                         IsMandatory = false,
-                        Price = 600_000m,
-                        RetakeFee = 120_000m,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty
                     }
@@ -758,8 +678,6 @@ public partial class SeedService
                     ModuleType = ModuleType.Theory,
                     ModuleOrder = 1,
                     IsMandatory = true,
-                    Price = 50_000m,
-                    RetakeFee = 10_000m,
                     CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty
                 });
@@ -831,7 +749,7 @@ public partial class SeedService
                         "MOD-IOT-02" => new[]
                         {
                             "Send device data to the cloud",
-                            "Understand connectivity basics (Wi‑Fi/API)",
+                            "Understand connectivity basics (Wiâ€‘Fi/API)",
                             "Monitor and troubleshoot IoT data flow"
                         },
                         "MOD-IOT-03" => new[]
@@ -911,7 +829,7 @@ public partial class SeedService
 
                 await _unitOfWork.Modules.AddRangeAsync(modules);
                 await _unitOfWork.SaveChangesAsync();
-                _loggerService.LogInformation("Finished seed modules — {Count} module(s) created.", modules.Count);
+                _loggerService.LogInformation("Finished seed modules â€” {Count} module(s) created.", modules.Count);
             }
             else
             {
@@ -976,7 +894,7 @@ public partial class SeedService
                         "MOD-IOT-02" => new[]
                         {
                             "Send device data to the cloud",
-                            "Understand connectivity basics (Wi‑Fi/API)",
+                            "Understand connectivity basics (Wiâ€‘Fi/API)",
                             "Monitor and troubleshoot IoT data flow"
                         },
                         "MOD-IOT-03" => new[]

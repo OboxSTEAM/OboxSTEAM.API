@@ -9,7 +9,7 @@ Use CodeGraph MCP for **code structure** questions when it is available in the s
 When CodeGraph is not set up on a machine, fall back to normal `Grep`, `Read`, and
 `SemanticSearch` — do not block work or insist teammates install CodeGraph.
 
-Harness intake, product docs, and trace obligations still apply. See
+Product docs, plans, and validation proof still apply. See
 `docs/CONTEXT_RULES.md` (CodeGraph Integration) for lane-by-lane detail.
 
 ## Detect Availability (once per task)
@@ -59,8 +59,8 @@ Use standard tools with no CodeGraph requirement:
 - `SemanticSearch` for broad "where is this handled?" discovery
 - `Read` for file contents before editing
 
-Note in harness traces (`actions_taken`) when navigation used fallback because
-CodeGraph was inactive.
+Note in the active plan or completion report when navigation used fallback
+because CodeGraph was inactive.
 
 ## Setup (optional, per developer)
 
@@ -68,7 +68,7 @@ Contributors who want CodeGraph locally:
 
 ```bash
 codegraph init
-scripts/bin/harness-cli tool check
+.\scripts\bin\harness.exe doctor
 ```
 
 `.cursor/mcp.json` runs `codegraph serve --mcp`. Restart Cursor after changing

@@ -31,7 +31,8 @@ A stage within a program. Types: `Theory`, `Experiential`, `Research`.
 
 - Ordered via `ModuleOrder`.
 - Optional `PrerequisiteModuleId` gates access.
-- `IsMandatory`, `Price`, `RetakeFee` support modular purchasing.
+- `IsMandatory` and `LearningOutcomes` describe the stage. There is no
+  module-level retail `Price` or `RetakeFee`; catalog tuition is `Program.Price`.
 
 API: `/api/modules`.
 

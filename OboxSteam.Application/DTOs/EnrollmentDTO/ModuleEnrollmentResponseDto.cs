@@ -15,7 +15,6 @@ public class ModuleEnrollmentResponseDto
     public decimal ProgressPercent { get; set; }
     public decimal? FinalGrade { get; set; }
     public int AttemptNumber { get; set; }
-    public int AssignmentFailureCount { get; set; }
     public DateTime? EnrolledAt { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
@@ -29,6 +28,4 @@ public class ModuleEnrollmentResponseDto
     public int ModuleOrder { get; set; }
     public Guid? PrerequisiteModuleId { get; set; }
     public bool IsMandatory { get; set; }
-    public decimal Price { get; set; }
-    public decimal RetakeFee { get; set; }
 }
