@@ -112,7 +112,7 @@ operations own validation and side effects; queries return DTOs.
 | --- | --- | --- |
 | AuthController | `/api/auth` | Registration, login, OTP, tokens |
 | AccountController | `/api/account` | Profile and account settings |
-| ProgramController | `/api/programs` | Program catalog and admin |
+| ProgramController | `/api/programs` | Program catalog, admin, open-classes preview |
 | ModuleController | `/api/modules` | Module CRUD |
 | CourseController | `/api/courses` | Course CRUD |
 | ActivityController | `/api/activities` | Activity CRUD |

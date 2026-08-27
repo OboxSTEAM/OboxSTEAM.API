@@ -409,7 +409,7 @@ public sealed class ClassSessionService : IClassSessionService
         // they can see. Draft classes and open-but-empty classes may (re)generate.
         if (classEntity!.Status is ClassStatus.Open or ClassStatus.InProgress)
         {
-            var activeEnrollments = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, classId);
+            var activeEnrollments = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, classId);
             if (activeEnrollments > 0)
             {
                 throw ErrorHelper.Conflict(

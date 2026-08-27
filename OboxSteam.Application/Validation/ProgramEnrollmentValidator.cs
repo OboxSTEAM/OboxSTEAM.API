@@ -118,4 +118,34 @@ public static class ProgramEnrollmentValidator
                 "Complete or drop a program before starting another.");
         }
     }
+
+    /// <summary>
+    /// Program tuition checkout requires at least one Standard class that is Open
+    /// and has remaining seats. Soft preference / preview does not hold seats.
+    /// </summary>
+    public static async Task EnsureProgramHasOpenClassWithCapacityAsync(
+        IUnitOfWork unitOfWork,
+        Guid programId)
+    {
+        var openClasses = await unitOfWork.Classes.GetAllAsync(
+            c => c.ProgramId == programId
+                 && c.Status == ClassStatus.Open
+                 && c.Kind == ClassKind.Standard
+                 && !c.IsDeleted);
+
+        foreach (var openClass in openClasses)
+        {
+            var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(
+                unitOfWork,
+                openClass.Id);
+            if (seatsTaken < openClass.MaxCapacity)
+            {
+                return;
+            }
+        }
+
+        throw ErrorHelper.BadRequest(
+            "This program has no open classes with available seats. " +
+            "Checkout is blocked until a recruiting class has capacity.");
+    }
 }

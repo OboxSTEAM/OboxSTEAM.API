@@ -22,6 +22,14 @@ public interface IClassService
 
     Task<ClassWithSessionsResponseDto> GetClassWithSessionsAsync(Guid classId);
 
+    /// <summary>
+    /// Open Standard classes for a program that still have seats, with schedule.
+    /// Optional preferredClassId soft-sorts that class first (no seat hold).
+    /// </summary>
+    Task<IReadOnlyList<OpenEnrollmentClassDto>> GetOpenEnrollmentClassesAsync(
+        Guid programId,
+        Guid? preferredClassId = null);
+
     Task<ClassResponseDto> CreateClassAsync(CreateClassRequestDto request);
 
     Task<ClassResponseDto> UpdateClassAsync(Guid id, UpdateClassRequestDto request);

@@ -67,6 +67,10 @@ public class PaymentService : IPaymentService
 
         ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
 
+        await ProgramEnrollmentValidator.EnsureProgramHasOpenClassWithCapacityAsync(
+            _unitOfWork,
+            programId);
+
         var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
 
         // Create Payment record
@@ -190,6 +194,10 @@ public class PaymentService : IPaymentService
             throw ErrorHelper.BadRequest("This program cannot be purchased because it has no valid price.");
 
         ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
+
+        await ProgramEnrollmentValidator.EnsureProgramHasOpenClassWithCapacityAsync(
+            _unitOfWork,
+            programId);
 
         var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
 
@@ -344,6 +352,9 @@ public class PaymentService : IPaymentService
             var program = await _unitOfWork.Programs.GetByIdAsync(paymentRequest.ProgramId!.Value)
                 ?? throw ErrorHelper.NotFound("Program not found.");
             ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
+            await ProgramEnrollmentValidator.EnsureProgramHasOpenClassWithCapacityAsync(
+                _unitOfWork,
+                program.Id);
             itemName = program.Name;
             itemDescription = BuildRichCheckoutDescription(program);
             thumbnailUrl = program.ThumbnailUrl;

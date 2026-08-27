@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -16,13 +17,16 @@ public class ProgramController : ControllerBase
 {
     private readonly IProgramService _programService;
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
+    private readonly IClassService _classService;
 
     public ProgramController(
         IProgramService programService,
-        IEnrollmentCurriculumService enrollmentCurriculumService)
+        IEnrollmentCurriculumService enrollmentCurriculumService,
+        IClassService classService)
     {
         _programService = programService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
+        _classService = classService;
     }
 
     // =========================================================================
@@ -126,6 +130,33 @@ public class ProgramController : ControllerBase
     {
         var result = await _programService.GetProgramByIdAsync(id);
         return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program retrieved successfully."));
+    }
+
+    // =========================================================================
+    // OPEN CLASSES FOR ENROLLMENT  —  GET /api/programs/{id}/open-classes
+    // =========================================================================
+
+    [HttpGet("{id:guid}/open-classes")]
+    [SwaggerOperation(
+        Summary = "List open classes available for enrollment",
+        Description = "Public preview of Standard classes that are Open and still have seats, "
+            + "including schedule sessions and seat counts. Use before checkout to show recruiting "
+            + "cohorts. After payment, pass preferredClassId to soft-prioritize a class the learner "
+            + "viewed (no seat hold). Checkout is blocked when this list is empty.")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<OpenEnrollmentClassDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetOpenEnrollmentClasses(
+        [FromRoute] Guid id,
+        [FromQuery, SwaggerParameter(
+            Description = "Optional class the learner viewed before pay — soft-sorted first when still enrollable")]
+        Guid? preferredClassId = null)
+    {
+        var result = await _classService.GetOpenEnrollmentClassesAsync(id, preferredClassId);
+        return Ok(ApiResult<IReadOnlyList<OpenEnrollmentClassDto>>.Success(
+            result,
+            "200",
+            "Open enrollment classes retrieved successfully."));
     }
 
     // =========================================================================

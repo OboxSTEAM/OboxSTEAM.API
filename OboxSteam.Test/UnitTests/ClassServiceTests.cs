@@ -1177,4 +1177,166 @@ public sealed class ClassServiceTests
         await Assert.ThrowsAsync<ConflictException>(() =>
             sut.DeleteClassAsync(_classId));
     }
+
+    // ── GetOpenEnrollmentClassesAsync ─────────────────────────────────────────
+
+    [Fact]
+    public async Task GetOpenEnrollmentClasses_ReturnsOpenStandardWithSeatsAndSessions()
+    {
+        SeedProgram();
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001", "Mentor A");
+        SeedClass(status: ClassStatus.Open, mentorId: _mentorId, maxCapacity: 5);
+        var moduleId = Guid.NewGuid();
+        _db.Modules.Seed(new Module
+        {
+            Id = moduleId,
+            Code = "MOD-1",
+            ProgramId = _programId,
+            Name = "Mod",
+            ModuleType = ModuleType.Theory,
+            IsDeleted = false,
+        });
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = _sessionId,
+            ClassId = _classId,
+            ModuleId = moduleId,
+            Title = "Kickoff",
+            StartTime = _now.AddDays(2),
+            EndTime = _now.AddDays(2).AddHours(2),
+            SessionKind = SessionKind.LiveOnline,
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetOpenEnrollmentClassesAsync(_programId);
+
+        var item = Assert.Single(result);
+        Assert.Equal(_classId, item.ClassId);
+        Assert.Equal(5, item.MaxCapacity);
+        Assert.Equal(0, item.SeatsTaken);
+        Assert.Equal(5, item.SeatsRemaining);
+        Assert.Equal("Mentor A", item.MentorName);
+        Assert.Equal("Sat 9-12", item.ScheduleSummary);
+        Assert.False(item.IsPreferred);
+        Assert.Single(item.Sessions);
+        Assert.Equal("Kickoff", item.Sessions[0].Title);
+    }
+
+    [Fact]
+    public async Task GetOpenEnrollmentClasses_ExcludesFullRemedialDraftAndCancelledSessions()
+    {
+        SeedProgram();
+        SeedClass(status: ClassStatus.Open, maxCapacity: 1);
+        SeedEnrollment(_studentId);
+
+        var remedialId = Guid.Parse("47474747-4747-4747-4747-474747474747");
+        var remedial = SeedClass(
+            id: remedialId,
+            code: "CLS-REM",
+            name: "Remedial",
+            status: ClassStatus.Open,
+            maxCapacity: 10);
+        remedial.Kind = ClassKind.Remedial;
+
+        SeedClass(
+            id: Guid.Parse("48484848-4848-4848-4848-484848484848"),
+            code: "CLS-DFT",
+            name: "Draft",
+            status: ClassStatus.Draft,
+            maxCapacity: 10);
+
+        var openOtherId = Guid.Parse("49494949-4949-4949-4949-494949494949");
+        SeedClass(
+            id: openOtherId,
+            code: "CLS-002",
+            name: "Cohort B",
+            status: ClassStatus.Open,
+            maxCapacity: 3);
+
+        var moduleId = Guid.NewGuid();
+        _db.Modules.Seed(new Module
+        {
+            Id = moduleId,
+            Code = "MOD-1",
+            ProgramId = _programId,
+            Name = "Mod",
+            ModuleType = ModuleType.Theory,
+            IsDeleted = false,
+        });
+        _db.ClassSessions.Seed(
+            new ClassSession
+            {
+                Id = Guid.NewGuid(),
+                ClassId = openOtherId,
+                ModuleId = moduleId,
+                Title = "Kept",
+                StartTime = _now.AddDays(3),
+                EndTime = _now.AddDays(3).AddHours(1),
+                SessionKind = SessionKind.LiveOnline,
+                Status = ClassSessionStatus.Scheduled,
+                IsDeleted = false,
+            },
+            new ClassSession
+            {
+                Id = Guid.NewGuid(),
+                ClassId = openOtherId,
+                ModuleId = moduleId,
+                Title = "Cancelled",
+                StartTime = _now.AddDays(4),
+                EndTime = _now.AddDays(4).AddHours(1),
+                SessionKind = SessionKind.LiveOnline,
+                Status = ClassSessionStatus.Cancelled,
+                IsDeleted = false,
+            });
+
+        var sut = CreateSut();
+        var result = await sut.GetOpenEnrollmentClassesAsync(_programId);
+
+        var item = Assert.Single(result);
+        Assert.Equal(openOtherId, item.ClassId);
+        Assert.Single(item.Sessions);
+        Assert.Equal("Kept", item.Sessions[0].Title);
+    }
+
+    [Fact]
+    public async Task GetOpenEnrollmentClasses_PreferredClassSoftSortedFirst()
+    {
+        SeedProgram();
+        var preferredId = Guid.Parse("4a4a4a4a-4a4a-4a4a-4a4a-4a4a4a4a4a4a");
+        var otherId = Guid.Parse("4b4b4b4b-4b4b-4b4b-4b4b-4b4b4b4b4b4b");
+        SeedClass(
+            id: preferredId,
+            code: "CLS-PREF",
+            name: "Preferred",
+            status: ClassStatus.Open,
+            startDate: _now.AddDays(10),
+            maxCapacity: 5);
+        SeedClass(
+            id: otherId,
+            code: "CLS-EARLY",
+            name: "Earlier",
+            status: ClassStatus.Open,
+            startDate: _now.AddDays(2),
+            maxCapacity: 5);
+        var sut = CreateSut();
+
+        var result = await sut.GetOpenEnrollmentClassesAsync(_programId, preferredId);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(preferredId, result[0].ClassId);
+        Assert.True(result[0].IsPreferred);
+        Assert.Equal(otherId, result[1].ClassId);
+        Assert.False(result[1].IsPreferred);
+    }
+
+    [Fact]
+    public async Task GetOpenEnrollmentClasses_Throws_WhenProgramMissing()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.GetOpenEnrollmentClassesAsync(Guid.Parse("99999999-9999-9999-9999-999999999999")));
+    }
 }

@@ -189,12 +189,16 @@ public static class ClassEnrollmentValidator
         return activeEnrollments.Count;
     }
 
+    /// <summary>Alias for <see cref="GetActiveSeatsTakenAsync"/> — Active seats only (no soft hold).</summary>
+    public static Task<int> GetSeatsTakenAsync(IUnitOfWork unitOfWork, Guid classId)
+        => GetActiveSeatsTakenAsync(unitOfWork, classId);
+
     public static async Task ValidateClassHasCapacityAsync(
         IUnitOfWork unitOfWork,
         Guid classId,
         int maxCapacity)
     {
-        var activeEnrollmentCount = await GetActiveSeatsTakenAsync(unitOfWork, classId);
+        var activeEnrollmentCount = await GetSeatsTakenAsync(unitOfWork, classId);
 
         if (activeEnrollmentCount >= maxCapacity)
         {

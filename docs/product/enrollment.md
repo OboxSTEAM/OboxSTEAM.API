@@ -14,10 +14,26 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 ## Student Flow
 
 1. Browse programs (public catalog).
-2. Enroll at program level (`POST /api/program-enrollments`) — Student role.
-3. Module enrollments are created as part of program progression (not sold as
+2. Preview recruiting cohorts via `GET /api/programs/{programId}/open-classes`
+   (Standard + **Open** + seats remaining > 0, with schedule sessions and seat
+   counts). Soft preference: optional `preferredClassId` sorts that class first
+   after payment — **no seat hold** before or after pay.
+3. Pay program tuition (`POST /api/payments/checkout` or parent-pay flow).
+   Checkout and parent payment requests are **blocked** when the open-classes
+   list would be empty (no Open Standard class with capacity).
+4. After payment activates the program enrollment, join a class cohort from the
+   same open-classes list (pass `preferredClassId` if the learner viewed one
+   before pay). Students may enroll (and self-transfer) only when the class is
+   **Open** — not Draft, ReadyForMentor, or InProgress. Manager transfer targets
+   must also be Open. Enroll and transfer are blocked when any non-cancelled
+   ClassSession of the target class overlaps another active class
+   (start1 < end2 && start2 < end1). Students can read occupied intervals at
+   `GET /api/me/schedule`. The Monday–Sunday timetable is
+   `GET /api/schedules/weekly` (weekStart optional; studentId required for
+   parents of a verified linked child; Asia/Ho_Chi_Minh; cancelled sessions
+   omitted).
+5. Module enrollments are created as part of program progression (not sold as
    separate retail products).
-4. Join a class cohort when class-based delivery applies. Students may enroll (and self-transfer) only when the class is **Open** — not Draft, ReadyForMentor, or InProgress. Manager transfer targets must also be Open. Enroll and transfer are blocked when any non-cancelled ClassSession of the target class overlaps another active class (start1 < end2 && start2 < end1). Students can read occupied intervals at GET /api/me/schedule. The Monday–Sunday timetable is GET /api/schedules/weekly (weekStart optional; studentId required for parents of a verified linked child; Asia/Ho_Chi_Minh; cancelled sessions omitted).
 
 Parents and managers can view enrollment state on shared read endpoints
 (Student, Parent, Admin, Manager).
@@ -29,6 +45,9 @@ progress.
 
 ## Gating Rules
 
+- Program checkout requires ≥1 Open Standard class with remaining seats
+  (server-enforced on direct checkout, parent payment request, and parent
+  checkout for program tuition).
 - Module prerequisites: `PrerequisiteModuleId` must be satisfied before access.
 - Class late-join: `Class.MinHoursBeforeAssignmentJoin` blocks self-enrollment
   near assignment windows; managers may bypass in service logic.
@@ -57,7 +76,8 @@ passing grade shows `completed`.
 
 `ActivityProgress` tracks completion per student per activity.
 Capacity is a class-level seat count (`Class.MaxCapacity`); there is no
-per-activity or per-session booking.
+per-activity or per-session booking. Seat counts for open-class preview use
+**Active** `ClassEnrollment` rows only.
 
 ## Assessment recovery vs class re-delivery
 
@@ -82,6 +102,9 @@ API: `/api/class-redelivery-requests`.
 domain model. Program tuition and class re-delivery (amount = `Program.Price`)
 both create `Invoice` rows visible via invoice endpoints. Module-level retail
 price and retake fee columns have been dropped.
+
+Program tuition checkout is gated on open-class capacity (see Student Flow).
+Module retake checkout is **not** subject to that gate.
 
 ## Parent Visibility
 

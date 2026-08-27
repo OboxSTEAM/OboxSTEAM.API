@@ -114,7 +114,7 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[GetClassByIdAsync] Class with Id {Id} retrieved successfully.", id);
 
-        var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+        var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, id);
 
         return await MapToResponseDtoAsync(entity!, seatsTaken);
     }
@@ -179,7 +179,7 @@ public sealed class ClassService : IClassService
         var entity = await _unitOfWork.Classes.GetByIdAsync(classId);
         ClassValidator.ValidateClassExists(entity, classId);
 
-        var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, classId);
+        var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, classId);
 
         var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
             cs => cs.ClassId == classId && !cs.IsDeleted);
@@ -232,6 +232,119 @@ public sealed class ClassService : IClassService
             UpdatedAt = entity.UpdatedAt,
             Sessions = sessionDtos,
         };
+    }
+
+    public async Task<IReadOnlyList<OpenEnrollmentClassDto>> GetOpenEnrollmentClassesAsync(
+        Guid programId,
+        Guid? preferredClassId = null)
+    {
+        _logger.LogInformation(
+            "[GetOpenEnrollmentClassesAsync] programId={ProgramId}, preferredClassId={PreferredClassId}",
+            programId,
+            preferredClassId);
+
+        ProgramEnrollmentValidator.ValidateProgramIdRequired(programId);
+
+        var program = await _unitOfWork.Programs.GetByIdAsync(programId);
+        ProgramEnrollmentValidator.ValidateProgramExists(program, programId);
+
+        var openClasses = await _unitOfWork.Classes.GetAllAsync(
+            c => c.ProgramId == programId
+                 && c.Status == ClassStatus.Open
+                 && c.Kind == ClassKind.Standard
+                 && !c.IsDeleted);
+
+        if (openClasses.Count == 0)
+        {
+            return Array.Empty<OpenEnrollmentClassDto>();
+        }
+
+        var classIds = openClasses.Select(c => c.Id).ToList();
+        var mentorIds = openClasses
+            .Where(c => c.MentorId.HasValue)
+            .Select(c => c.MentorId!.Value)
+            .Distinct()
+            .ToList();
+
+        var mentors = mentorIds.Count == 0
+            ? []
+            : await _unitOfWork.Users.GetAllAsync(u => mentorIds.Contains(u.Id) && !u.IsDeleted);
+        var mentorById = mentors.ToDictionary(u => u.Id);
+
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => classIds.Contains(cs.ClassId)
+                  && cs.Status != ClassSessionStatus.Cancelled
+                  && !cs.IsDeleted);
+        var sessionsByClassId = sessions
+            .GroupBy(cs => cs.ClassId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.StartTime).ToList());
+
+        var result = new List<OpenEnrollmentClassDto>();
+
+        foreach (var openClass in openClasses.OrderBy(c => c.StartDate).ThenBy(c => c.Code))
+        {
+            var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(
+                _unitOfWork,
+                openClass.Id);
+            var seatsRemaining = openClass.MaxCapacity - seatsTaken;
+            if (seatsRemaining <= 0)
+            {
+                continue;
+            }
+
+            sessionsByClassId.TryGetValue(openClass.Id, out var classSessions);
+            classSessions ??= [];
+
+            string? mentorName = null;
+            if (openClass.MentorId.HasValue
+                && mentorById.TryGetValue(openClass.MentorId.Value, out var mentor))
+            {
+                mentorName = mentor.FullName;
+            }
+
+            result.Add(new OpenEnrollmentClassDto
+            {
+                ClassId = openClass.Id,
+                Code = openClass.Code,
+                Name = openClass.Name,
+                StartDate = openClass.StartDate,
+                EndDate = openClass.EndDate,
+                MentorId = openClass.MentorId,
+                MentorName = mentorName,
+                MaxCapacity = openClass.MaxCapacity,
+                SeatsTaken = seatsTaken,
+                SeatsRemaining = seatsRemaining,
+                ScheduleSummary = openClass.ScheduleSummary,
+                IsPreferred = preferredClassId.HasValue && openClass.Id == preferredClassId.Value,
+                Sessions = classSessions
+                    .Select(cs => new OpenEnrollmentClassSessionDto
+                    {
+                        SessionId = cs.Id,
+                        Title = cs.Title,
+                        StartTime = cs.StartTime,
+                        EndTime = cs.EndTime,
+                        SessionKind = cs.SessionKind,
+                        Location = cs.Location,
+                    })
+                    .ToList(),
+            });
+        }
+
+        if (preferredClassId.HasValue)
+        {
+            result = result
+                .OrderByDescending(c => c.IsPreferred)
+                .ThenBy(c => c.StartDate)
+                .ThenBy(c => c.Code)
+                .ToList();
+        }
+
+        _logger.LogInformation(
+            "[GetOpenEnrollmentClassesAsync] Returning {Count} open class(es) for program {ProgramId}.",
+            result.Count,
+            programId);
+
+        return result;
     }
 
     public async Task<ClassResponseDto> CreateClassAsync(CreateClassRequestDto request)
@@ -394,7 +507,7 @@ public sealed class ClassService : IClassService
         {
             ClassValidator.ValidateMaxCapacity(request.MaxCapacity.Value);
 
-            var enrolledCount = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+            var enrolledCount = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, id);
 
             ClassValidator.ValidateCapacityNotBelowEnrollment(request.MaxCapacity.Value, enrolledCount);
             classEntity.MaxCapacity = request.MaxCapacity.Value;
@@ -427,7 +540,7 @@ public sealed class ClassService : IClassService
         {
             _logger.LogInformation("[UpdateClassAsync] No changes detected for class {Id}.", id);
 
-            var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+            var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, id);
             return await MapToResponseDtoAsync(classEntity, seatsTaken);
         }
 
@@ -444,7 +557,7 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[UpdateClassAsync] Class {Id} updated successfully.", id);
 
-        var updatedSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+        var updatedSeatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, id);
 
         return await MapToResponseDtoAsync(classEntity, updatedSeatsTaken);
     }
@@ -473,7 +586,7 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[MarkReadyForMentorAsync] class {Id} is now ReadyForMentor.", id);
 
-        var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+        var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, id);
 
         return await MapToResponseDtoAsync(classEntity, seatsTaken);
     }
@@ -507,7 +620,7 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[OpenClassAsync] class {Id} is now Open.", id);
 
-        var openSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+        var openSeatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, id);
 
         return await MapToResponseDtoAsync(classEntity, openSeatsTaken);
     }
@@ -538,7 +651,7 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[StartClassAsync] class {Id} is now InProgress.", id);
 
-        var startSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+        var startSeatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, id);
 
         return await MapToResponseDtoAsync(classEntity, startSeatsTaken);
     }
@@ -810,7 +923,7 @@ public sealed class ClassService : IClassService
 
         _logger.LogInformation("[CompleteClassAsync] class {Id} is now Completed.", id);
 
-        var completeSeatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+        var completeSeatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, id);
 
         return await MapToResponseDtoAsync(classEntity, completeSeatsTaken);
     }
@@ -832,7 +945,7 @@ public sealed class ClassService : IClassService
 
         if (classEntity.Status == ClassStatus.Open)
         {
-            var activeEnrollmentCount = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, id);
+            var activeEnrollmentCount = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, id);
             ClassValidator.ValidateOpenClassHasNoActiveStudents(classEntity, activeEnrollmentCount);
         }
 

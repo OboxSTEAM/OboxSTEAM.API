@@ -653,7 +653,7 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
         }
 
         var modulesById = modules.ToDictionary(m => m.Id);
-        var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, newClass.Id);
+        var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, newClass.Id);
         if (seatsTaken >= newClass.MaxCapacity)
         {
             return;
@@ -977,7 +977,7 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
                 continue;
             }
 
-            var seatsTaken = await ClassEnrollmentValidator.GetActiveSeatsTakenAsync(_unitOfWork, candidate.Id);
+            var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, candidate.Id);
             if (seatsTaken >= candidate.MaxCapacity)
             {
                 continue;
