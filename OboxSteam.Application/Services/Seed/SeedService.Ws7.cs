@@ -54,6 +54,7 @@ public partial class SeedService
         var curriculum = await SeedWs7CurriculumAsync();
         var classes = await SeedWs7ClassesAsync(staff.MentorId, curriculum);
         await SeedWs7SharedEnrollmentsAsync(staff, curriculum, classes);
+        await _unitOfWork.SaveChangesAsync();
         await SeedWs7ScenarioStatesAsync(staff, curriculum, classes);
 
         await _unitOfWork.SaveChangesAsync();
@@ -81,14 +82,19 @@ public partial class SeedService
             RoleType.Parent,
             "Parent@123");
 
+        User? studentA = null;
         foreach (var code in Ws7ScenarioStudentCodes)
         {
-            await EnsureWs7UserAsync(
+            var student = await EnsureWs7UserAsync(
                 code,
                 $"{code.ToLowerInvariant()}@oboxsteam.com",
                 $"WS7 Student {code[^1]}",
                 RoleType.Student,
                 "Student@123");
+            if (code == "STD-WS7-A")
+            {
+                studentA = student;
+            }
         }
 
         foreach (var code in Ws7SeatFillerCodes)
@@ -101,8 +107,10 @@ public partial class SeedService
                 "Student@123");
         }
 
-        var studentA = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-WS7-A" && !u.IsDeleted)
-            ?? throw ErrorHelper.Internal("WS7 student A missing after seed.");
+        if (studentA == null)
+        {
+            throw ErrorHelper.Internal("WS7 student A missing after seed.");
+        }
 
         if (await _unitOfWork.ParentStudents.FirstOrDefaultAsync(
                 ps => ps.ParentId == parent.Id && ps.StudentId == studentA.Id && !ps.IsDeleted) == null)
@@ -118,6 +126,8 @@ public partial class SeedService
                 IsDeleted = false,
             });
         }
+
+        await _unitOfWork.SaveChangesAsync();
 
         return (mentor.Id, manager.Id, parent.Id);
     }
