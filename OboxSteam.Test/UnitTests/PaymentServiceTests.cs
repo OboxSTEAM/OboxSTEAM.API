@@ -295,6 +295,48 @@ public sealed class PaymentServiceTests
     }
 
     [Fact]
+    public async Task CreateDirectCheckout_Succeeds_WhenHoldExpiryReadAsUnspecifiedUtc()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        await SelectClassAsync(openClass.Id);
+
+        var hold = _db.ClassEnrollments.Items.Single();
+        hold.HoldExpiresAt = DateTime.SpecifyKind(hold.HoldExpiresAt!.Value, DateTimeKind.Unspecified);
+
+        var sut = CreateSut();
+        var result = await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);
+
+        Assert.Equal("https://checkout.stripe.com/test", result.CheckoutUrl);
+        Assert.True(result.HoldExpiresAt > DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
+    public async Task SelectClass_ReusesWithdrawnEnrollment_ForSameClass()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = openClass.Id,
+            StudentId = _studentId,
+            ProgramEnrollmentId = _enrollmentId,
+            Status = ClassEnrollmentStatus.Withdrawn,
+            Kind = ClassEnrollmentKind.Primary,
+            IsDeleted = false,
+        });
+
+        await SelectClassAsync(openClass.Id);
+
+        Assert.Single(_db.ClassEnrollments.Items);
+        Assert.Equal(ClassEnrollmentStatus.Pending, _db.ClassEnrollments.Items.Single().Status);
+        Assert.True(_db.ClassEnrollments.Items.Single().HoldExpiresAt > DateTime.UtcNow);
+    }
+
+    [Fact]
     public async Task CreateDirectCheckout_Throws_WhenClassNotSelectedFirst()
     {
         SeedStudent();

@@ -86,7 +86,7 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
         {
             ProgramEnrollmentId = enrollment.Id,
             ClassId = hold.ClassId,
-            HoldExpiresAt = new DateTimeOffset(hold.HoldExpiresAt!.Value, TimeSpan.Zero),
+            HoldExpiresAt = AppDateTime.ToUtcOffset(hold.HoldExpiresAt!.Value),
         };
     }
 
@@ -175,6 +175,37 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
             _unitOfWork,
             studentId,
             classId);
+
+        var reusableEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ClassId == classId
+                  && ce.StudentId == studentId
+                  && !ce.IsDeleted);
+
+        if (reusableEnrollment != null)
+        {
+            if (reusableEnrollment.Status == ClassEnrollmentStatus.Active)
+            {
+                throw ErrorHelper.Conflict("Student is already enrolled in this class.");
+            }
+
+            reusableEnrollment.ProgramEnrollmentId = programEnrollment.Id;
+            reusableEnrollment.Kind = ClassEnrollmentKind.Primary;
+            reusableEnrollment.Status = ClassEnrollmentStatus.Pending;
+            reusableEnrollment.HoldExpiresAt = expiresAt;
+            reusableEnrollment.EnrolledAt = null;
+
+            await _unitOfWork.ClassEnrollments.Update(reusableEnrollment);
+            await _unitOfWork.SaveChangesAsync();
+            affectedClassIds.Add(classId);
+
+            _logger.LogInformation(
+                "[CreateOrRefreshHoldAsync] Student {StudentId} re-held class {ClassId} until {ExpiresAt}.",
+                studentId,
+                classId,
+                expiresAt);
+
+            return (reusableEnrollment, affectedClassIds);
+        }
 
         var hold = new ClassEnrollment
         {

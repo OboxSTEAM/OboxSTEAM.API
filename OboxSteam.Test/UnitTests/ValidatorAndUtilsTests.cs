@@ -808,6 +808,26 @@ public sealed class ValidatorAndUtilsTests
             new Class { Status = ClassStatus.Open });
     }
 
+    [Fact]
+    public void ClassEnrollmentValidator_OccupiesSeat_TreatsUnspecifiedHoldExpiryAsUtc()
+    {
+        var now = new DateTime(2026, 8, 28, 10, 0, 0, DateTimeKind.Utc);
+        var hold = new ClassEnrollment
+        {
+            Status = ClassEnrollmentStatus.Pending,
+            HoldExpiresAt = DateTime.SpecifyKind(now.AddMinutes(5), DateTimeKind.Unspecified),
+        };
+
+        Assert.True(ClassEnrollmentValidator.OccupiesSeat(hold, now));
+        Assert.False(ClassEnrollmentValidator.OccupiesSeat(
+            new ClassEnrollment
+            {
+                Status = ClassEnrollmentStatus.Pending,
+                HoldExpiresAt = DateTime.SpecifyKind(now.AddMinutes(-1), DateTimeKind.Unspecified),
+            },
+            now));
+    }
+
     // ── QuizAttemptValidator ──────────────────────────────────────────────────
 
     [Fact]

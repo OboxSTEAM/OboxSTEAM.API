@@ -1,3 +1,4 @@
+using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
@@ -11,11 +12,14 @@ public static class ClassSeatHoldHelper
         CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
-        var expiredHolds = await unitOfWork.ClassEnrollments.GetAllAsync(
+        var pendingHolds = await unitOfWork.ClassEnrollments.GetAllAsync(
             ce => ce.Status == ClassEnrollmentStatus.Pending
                   && ce.HoldExpiresAt.HasValue
-                  && ce.HoldExpiresAt.Value <= now
                   && !ce.IsDeleted);
+
+        var expiredHolds = pendingHolds
+            .Where(ce => AppDateTime.AsUtc(ce.HoldExpiresAt!.Value) <= now)
+            .ToList();
 
         if (expiredHolds.Count == 0)
         {

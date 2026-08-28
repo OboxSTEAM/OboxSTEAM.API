@@ -89,6 +89,21 @@ public static class AppDateTime
         return false;
     }
 
+    /// <summary>
+    /// Normalizes persisted UTC instants for comparisons. Database reads may return
+    /// <see cref="DateTimeKind.Unspecified"/> even for <c>timestamptz</c> columns.
+    /// </summary>
+    public static DateTime AsUtc(DateTime value)
+        => value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+        };
+
+    public static DateTimeOffset ToUtcOffset(DateTime value)
+        => new(AsUtc(value), TimeSpan.Zero);
+
     private static bool HasExplicitOffset(string value)
     {
         if (value.EndsWith("Z", StringComparison.OrdinalIgnoreCase))

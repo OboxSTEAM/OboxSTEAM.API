@@ -107,7 +107,7 @@ public class PaymentService : IPaymentService
             PaymentId = payment.Id,
             EnrollmentId = enrollment.Id,
             ClassId = hold.ClassId,
-            HoldExpiresAt = new DateTimeOffset(hold.HoldExpiresAt!.Value, TimeSpan.Zero),
+            HoldExpiresAt = AppDateTime.ToUtcOffset(hold.HoldExpiresAt!.Value),
             CheckoutUrl = checkoutUrl
         };
     }
@@ -430,7 +430,7 @@ public class PaymentService : IPaymentService
             EnrollmentId = programEnrollmentId ?? moduleEnrollmentId ?? Guid.Empty,
             ClassId = classId ?? Guid.Empty,
             HoldExpiresAt = holdExpiresAt.HasValue
-                ? new DateTimeOffset(holdExpiresAt.Value, TimeSpan.Zero)
+                ? AppDateTime.ToUtcOffset(holdExpiresAt.Value)
                 : default,
             CheckoutUrl = checkoutUrl,
             AccessToken = parentAccessToken

@@ -201,7 +201,7 @@ public static class ClassEnrollmentValidator
 
         return enrollment.Status == ClassEnrollmentStatus.Pending
                && enrollment.HoldExpiresAt.HasValue
-               && enrollment.HoldExpiresAt.Value > now;
+               && AppDateTime.AsUtc(enrollment.HoldExpiresAt.Value) > now;
     }
 
     public static async Task<ClassEnrollment?> GetValidSeatHoldAsync(
