@@ -16,6 +16,8 @@ public class ClassResponseDto
     public DateTime EndDate { get; set; }
     public int MaxCapacity { get; set; }
     public int SeatsTaken { get; set; }
+    public ClassKind Kind { get; set; }
+    public Guid? RemedialModuleId { get; set; }
     public ClassStatus Status { get; set; }
     public int MinHoursBeforeAssignmentJoin { get; set; }
     public string? ScheduleSummary { get; set; }

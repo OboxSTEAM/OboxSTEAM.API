@@ -11,6 +11,7 @@ public class ClassEnrollmentResponseDto
     public Guid Id { get; set; }
     public Guid StudentId { get; set; }
     public Guid ProgramEnrollmentId { get; set; }
+    public ClassEnrollmentKind Kind { get; set; }
     public ClassEnrollmentStatus Status { get; set; }
     public DateTime? EnrolledAt { get; set; }
     public DateTime CreatedAt { get; set; }

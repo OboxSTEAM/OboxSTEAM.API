@@ -197,9 +197,11 @@ public sealed class ClassEnrollmentServiceTests
         });
 
         Assert.Equal(ClassEnrollmentStatus.Active, result.Status);
+        Assert.Equal(ClassEnrollmentKind.Primary, result.Kind);
         Assert.Equal(_studentId, result.StudentId);
         Assert.Equal(_classId, result.Class.Id);
         Assert.Equal("CLS-001", result.Class.Code);
+        Assert.Equal(ClassKind.Standard, result.Class.Kind);
         Assert.Single(_db.ClassEnrollments.Items);
         Assert.Equal(1, _db.SaveChangesCallCount);
         _notificationPublisher.Verify(

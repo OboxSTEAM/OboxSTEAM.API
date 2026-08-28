@@ -130,6 +130,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             Id = enrollment.Id,
             StudentId = enrollment.StudentId,
             ProgramEnrollmentId = enrollment.ProgramEnrollmentId,
+            Kind = enrollment.Kind,
             Status = enrollment.Status,
             EnrolledAt = enrollment.EnrolledAt,
             CreatedAt = enrollment.CreatedAt,
@@ -214,6 +215,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             Id = enrollment.Id,
             StudentId = enrollment.StudentId,
             ProgramEnrollmentId = enrollment.ProgramEnrollmentId,
+            Kind = enrollment.Kind,
             Status = enrollment.Status,
             EnrolledAt = enrollment.EnrolledAt,
             CreatedAt = enrollment.CreatedAt,
@@ -323,6 +325,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             Id = newEnrollment.Id,
             StudentId = newEnrollment.StudentId,
             ProgramEnrollmentId = newEnrollment.ProgramEnrollmentId,
+            Kind = newEnrollment.Kind,
             Status = newEnrollment.Status,
             EnrolledAt = newEnrollment.EnrolledAt,
             CreatedAt = newEnrollment.CreatedAt,
@@ -354,6 +357,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             Id = enrollment.Id,
             StudentId = enrollment.StudentId,
             ProgramEnrollmentId = enrollment.ProgramEnrollmentId,
+            Kind = enrollment.Kind,
             Status = enrollment.Status,
             EnrolledAt = enrollment.EnrolledAt,
             CreatedAt = enrollment.CreatedAt,
@@ -436,6 +440,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                 Id = enrollment.Id,
                 StudentId = enrollment.StudentId,
                 ProgramEnrollmentId = enrollment.ProgramEnrollmentId,
+                Kind = enrollment.Kind,
                 Status = enrollment.Status,
                 EnrolledAt = enrollment.EnrolledAt,
                 CreatedAt = enrollment.CreatedAt,
@@ -502,6 +507,8 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             }
         }
 
+        var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, classEntity.Id);
+
         return new ClassResponseDto
         {
             Id = classEntity.Id,
@@ -513,6 +520,9 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             StartDate = classEntity.StartDate,
             EndDate = classEntity.EndDate,
             MaxCapacity = classEntity.MaxCapacity,
+            SeatsTaken = seatsTaken,
+            Kind = classEntity.Kind,
+            RemedialModuleId = classEntity.RemedialModuleId,
             Status = classEntity.Status,
             MinHoursBeforeAssignmentJoin = classEntity.MinHoursBeforeAssignmentJoin,
             ScheduleSummary = classEntity.ScheduleSummary,
