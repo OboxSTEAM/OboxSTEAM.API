@@ -50,7 +50,7 @@ public sealed class NotificationTemplateEngineTests
             Guid.NewGuid(),
             moduleName: "Robotics 1");
 
-        Assert.Equal("You completed \"Robotics 1\".", command.Body);
+        Assert.Equal("Bạn đã hoàn thành \"Robotics 1\".", command.Body);
         Assert.Contains("{studentName}", command.Templates.Parent!.Body);
         Assert.Equal("Robotics 1", command.Tokens[NotificationTokenKeys.ModuleName]);
     }
@@ -294,8 +294,8 @@ public sealed class NotificationTemplateEngineTests
         var studentRow = db.Notifications.Items.Single(n => n.RecipientUserId == _studentAId);
         var parentRow = db.Notifications.Items.Single(n => n.RecipientUserId == _parentId);
 
-        Assert.Equal("You completed \"Robotics 1\".", studentRow.Body);
-        Assert.Equal("An Nguyen completed \"Robotics 1\".", parentRow.Body);
+        Assert.Equal("Bạn đã hoàn thành \"Robotics 1\".", studentRow.Body);
+        Assert.Equal("Con bạn An Nguyen đã hoàn thành \"Robotics 1\".", parentRow.Body);
         Assert.Contains(_studentAId.ToString(), parentRow.PayloadJson, StringComparison.OrdinalIgnoreCase);
 
         var parentDto = NotificationDtoMapper.ToDto(parentRow);
@@ -329,8 +329,8 @@ public sealed class NotificationTemplateEngineTests
             .ToList();
 
         Assert.Equal(2, parentRows.Count);
-        Assert.Contains(parentRows, n => n.Body == "Assignment \"Build a robot\" is now available for An Nguyen.");
-        Assert.Contains(parentRows, n => n.Body == "Assignment \"Build a robot\" is now available for Binh Tran.");
+        Assert.Contains(parentRows, n => n.Body == "Bài tập \"Build a robot\" hiện đã sẵn sàng cho con bạn An Nguyen.");
+        Assert.Contains(parentRows, n => n.Body == "Bài tập \"Build a robot\" hiện đã sẵn sàng cho con bạn Binh Tran.");
         Assert.Equal(2, db.Notifications.Items.Count(n => n.RecipientUserId == _studentAId || n.RecipientUserId == _studentBId));
     }
 

@@ -50,9 +50,9 @@ include `{token}` placeholders interpolated at publish time:
 | `{assignmentTitle}` | Catalog token |
 | `{extraAttempts}` | Catalog token |
 
-Student copy uses second-person ("You completed…"). Parent copy names the child
-("{studentName} completed…"). Vietnamese localization of these templates is a
-separate follow-up.
+Student copy addresses the learner as "bạn" ("Bạn đã hoàn thành…"). Parent copy
+names the child as "con bạn {studentName}" ("Con bạn {studentName} đã hoàn
+thành…"). Catalog titles and bodies are Vietnamese.
 
 ## Strict Type-to-Audience-to-Publisher Matrix
 
