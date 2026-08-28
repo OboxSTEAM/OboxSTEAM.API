@@ -68,6 +68,7 @@ public static class IocContainer
 
         // Background Services
         services.AddHostedService<PendingEnrollmentCleanupService>();
+        services.AddHostedService<ClassSeatHoldCleanupService>();
         services.AddHostedService<OpenClassAutoStartService>();
         services.AddHostedService<PersonalVideoGenerationWorker>();
 
@@ -216,6 +217,7 @@ public static class IocContainer
         services.AddScoped<IRetrospectiveAttemptService, RetrospectiveAttemptService>();
         services.AddScoped<IStripePaymentService, StripePaymentService>();
         services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<IClassSeatHoldService, ClassSeatHoldService>();
         services.AddScoped<IInvoiceService, InvoiceService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<INotificationPublisher, NotificationPublisher>();

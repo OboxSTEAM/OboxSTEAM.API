@@ -248,6 +248,8 @@ public sealed class ClassService : IClassService
         var program = await _unitOfWork.Programs.GetByIdAsync(programId);
         ProgramEnrollmentValidator.ValidateProgramExists(program, programId);
 
+        await ClassSeatHoldHelper.ReleaseExpiredHoldsAsync(_unitOfWork);
+
         var openClasses = await _unitOfWork.Classes.GetAllAsync(
             c => c.ProgramId == programId
                  && c.Status == ClassStatus.Open

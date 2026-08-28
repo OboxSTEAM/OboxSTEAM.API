@@ -6,5 +6,6 @@ namespace OboxSteam.Application.DTOs.PaymentDTO;
 public class CheckoutRequestDto
 {
     public Guid ProgramId { get; set; }
+    public Guid ClassId { get; set; }
     public PaymentGateway Gateway { get; set; }
 }

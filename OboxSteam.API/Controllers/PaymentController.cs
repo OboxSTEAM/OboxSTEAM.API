@@ -29,7 +29,7 @@ public class PaymentController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Initiate direct checkout (student pays)",
-        Description = "Student initiates checkout for a paid program. Returns a hosted payment URL (Stripe or MoMo).")]
+        Description = "Student initiates checkout for a paid program. Requires classId; starts a 5-minute seat hold and returns a hosted payment URL (Stripe or MoMo).")]
     [ProducesResponseType(typeof(ApiResult<CheckoutResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -38,7 +38,7 @@ public class PaymentController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> CreateDirectCheckout([FromBody] CheckoutRequestDto dto)
     {
-        var result = await _paymentService.CreateDirectCheckout(dto.ProgramId, dto.Gateway);
+        var result = await _paymentService.CreateDirectCheckout(dto.ProgramId, dto.ClassId, dto.Gateway);
         return Ok(ApiResult<CheckoutResponseDto>.Success(result, "200", "Checkout session created. Redirect to checkoutUrl to complete payment."));
     }
 
@@ -70,7 +70,7 @@ public class PaymentController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Request parent to pay for enrollment",
-        Description = "Student sends a payment request email to a linked, verified parent. The parent receives a 24h payment link.")]
+        Description = "Student sends a payment request email to a linked, verified parent. Requires classId; starts a 5-minute seat hold and parent token.")]
     [ProducesResponseType(typeof(ApiResult<object>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -78,7 +78,7 @@ public class PaymentController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> RequestParentPayment([FromBody] ParentPaymentRequestDto dto)
     {
-        await _paymentService.RequestParentPayment(dto.ProgramId, dto.ParentId);
+        await _paymentService.RequestParentPayment(dto.ProgramId, dto.ClassId, dto.ParentId);
         return Ok(ApiResult<object>.Success(null, "200", "Payment request sent to parent's email."));
     }
 

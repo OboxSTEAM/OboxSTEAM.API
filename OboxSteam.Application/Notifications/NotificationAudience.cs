@@ -57,4 +57,7 @@ public sealed class NotificationAudience
     /// </summary>
     public static NotificationAudience ForProgramParticipants(Guid programId)
         => new(NotificationAudienceKind.ProgramParticipants, programId: programId);
+
+    public static NotificationAudience ForProgramBrowsers(Guid programId)
+        => new(NotificationAudienceKind.ProgramBrowsers, programId: programId);
 }

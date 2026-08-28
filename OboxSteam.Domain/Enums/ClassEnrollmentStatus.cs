@@ -5,5 +5,8 @@ public enum ClassEnrollmentStatus
     Active,
     Transferred,
     Withdrawn,
-    Completed
+    Completed,
+
+    /// <summary>Soft seat hold while program tuition payment is pending.</summary>
+    Pending
 }

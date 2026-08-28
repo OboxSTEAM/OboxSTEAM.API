@@ -20,19 +20,22 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
     private readonly IClassService _classService;
     private readonly ILogger<ClassEnrollmentService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly IClassSeatHoldService _classSeatHoldService;
 
     public ClassEnrollmentService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         IClassService classService,
         ILogger<ClassEnrollmentService> logger,
-        INotificationPublisher notificationPublisher)
+        INotificationPublisher notificationPublisher,
+        IClassSeatHoldService classSeatHoldService)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _classService = classService;
         _logger = logger;
         _notificationPublisher = notificationPublisher;
+        _classSeatHoldService = classSeatHoldService;
     }
 
     public async Task<ClassEnrollmentResponseDto> EnrollClassAsync(CreateClassEnrollmentRequestDto request)
@@ -116,6 +119,10 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
 
+        await _classSeatHoldService.PublishSeatsChangedAsync(
+            programEnrollment.ProgramId,
+            request.ClassId);
+
         var classEntityAfterStart = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
         classToJoin = ClassEnrollmentValidator.ValidateClassExists(classEntityAfterStart, request.ClassId);
 
@@ -184,6 +191,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             request.ClassId,
             excludeClassId: enrollment.ClassId);
 
+        var sourceClassId = enrollment.ClassId;
         enrollment.ClassId = request.ClassId;
         enrollment.EnrolledAt = DateTime.UtcNow;
 
@@ -200,6 +208,9 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                 programEnrollment.Id));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
+
+        await _classSeatHoldService.PublishSeatsChangedAsync(programEnrollment.ProgramId, sourceClassId);
+        await _classSeatHoldService.PublishSeatsChangedAsync(programEnrollment.ProgramId, request.ClassId);
 
         var targetClassAfterStart = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
         targetClass = ClassEnrollmentValidator.ValidateClassExists(targetClassAfterStart, request.ClassId);
@@ -284,6 +295,7 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             request.ClassId,
             excludeClassId: enrollment.ClassId);
 
+        var sourceClassId = enrollment.ClassId;
         enrollment.Status = ClassEnrollmentStatus.Transferred;
 
         var newEnrollment = new ClassEnrollment
@@ -309,6 +321,9 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                 programEnrollment.Id));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
+
+        await _classSeatHoldService.PublishSeatsChangedAsync(programEnrollment.ProgramId, sourceClassId);
+        await _classSeatHoldService.PublishSeatsChangedAsync(programEnrollment.ProgramId, request.ClassId);
 
         var targetClassAfterStart = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
         targetClass = ClassEnrollmentValidator.ValidateClassExists(targetClassAfterStart, request.ClassId);

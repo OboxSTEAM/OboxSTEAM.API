@@ -32,6 +32,15 @@ public sealed class PaymentServiceTests
     private readonly Mock<IStripePaymentService> _stripe = new();
     private readonly Mock<IEmailService> _emailService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly Mock<IClassService> _classService = new();
+    private readonly FakeSyncEventPublisher _syncEventPublisher = new();
+
+    private ClassSeatHoldService CreateSeatHoldService()
+        => new(
+            _db,
+            _syncEventPublisher,
+            _classService.Object,
+            NullLogger<ClassSeatHoldService>.Instance);
 
     private static IConfiguration CreateConfiguration() =>
         new ConfigurationBuilder()
@@ -75,6 +84,9 @@ public sealed class PaymentServiceTests
         _notificationPublisher
             .Setup(n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+        _classService
+            .Setup(c => c.TryAutoStartClassIfReadyAsync(It.IsAny<Guid>()))
+            .Returns(Task.CompletedTask);
         _programEnrollmentService
             .Setup(s => s.GetOrCreatePendingEnrollmentAsync(_studentId, _programId))
             .ReturnsAsync(new ProgramEnrollment
@@ -99,7 +111,8 @@ public sealed class PaymentServiceTests
                 _db,
                 _claimsService.Object,
                 _notificationPublisher.Object,
-                NullLogger<ClassRedeliveryRequestService>.Instance));
+                NullLogger<ClassRedeliveryRequestService>.Instance),
+            CreateSeatHoldService());
     }
 
     private User SeedStudent(Guid? id = null)
@@ -176,6 +189,21 @@ public sealed class PaymentServiceTests
         return entity;
     }
 
+    private void SeedSeatHold(Guid classId, Guid? programEnrollmentId = null)
+    {
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = programEnrollmentId ?? _enrollmentId,
+            Status = ClassEnrollmentStatus.Pending,
+            HoldExpiresAt = DateTime.UtcNow.AddMinutes(5),
+            Kind = ClassEnrollmentKind.Primary,
+            IsDeleted = false,
+        });
+    }
+
     private Module SeedModule()
     {
         var module = new Module
@@ -238,15 +266,30 @@ public sealed class PaymentServiceTests
     {
         SeedStudent();
         SeedProgram();
-        SeedOpenEnrollmentClass();
+        var openClass = SeedOpenEnrollmentClass();
         var sut = CreateSut();
 
-        var result = await sut.CreateDirectCheckout(_programId, PaymentGateway.Stripe);
+        var result = await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);
 
         Assert.Single(_db.Payments.Items);
         Assert.Equal(_enrollmentId, result.EnrollmentId);
+        Assert.Equal(openClass.Id, result.ClassId);
+        Assert.True(result.HoldExpiresAt > DateTimeOffset.UtcNow);
         Assert.Equal("https://checkout.stripe.com/test", result.CheckoutUrl);
-        Assert.Single(_db.Payments.Items);
+        Assert.Single(_db.ClassEnrollments.Items, ce => ce.Status == ClassEnrollmentStatus.Pending);
+    }
+
+    [Fact]
+    public async Task CreateDirectCheckout_Throws_WhenClassIdMissing()
+    {
+        SeedStudent();
+        SeedProgram();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateDirectCheckout(_programId, Guid.Empty, PaymentGateway.Stripe));
+
+        Assert.Empty(_db.Payments.Items);
     }
 
     [Fact]
@@ -256,8 +299,8 @@ public sealed class PaymentServiceTests
         SeedProgram();
         var sut = CreateSut();
 
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.CreateDirectCheckout(_programId, PaymentGateway.Stripe));
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.CreateDirectCheckout(_programId, Guid.NewGuid(), PaymentGateway.Stripe));
 
         Assert.Empty(_db.Payments.Items);
     }
@@ -279,8 +322,8 @@ public sealed class PaymentServiceTests
         });
         var sut = CreateSut();
 
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.CreateDirectCheckout(_programId, PaymentGateway.Stripe));
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe));
 
         Assert.Empty(_db.Payments.Items);
     }
@@ -288,20 +331,21 @@ public sealed class PaymentServiceTests
     [Fact]
     public async Task CreateDirectCheckout_Throws_WhenNotStudentOrInvalidProgram()
     {
+        var openClass = SeedOpenEnrollmentClass();
         SeedStudent();
         SeedProgram(price: null);
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.CreateDirectCheckout(_programId, PaymentGateway.Stripe));
+            sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe));
 
         SeedParent();
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            CreateSut(_parentId).CreateDirectCheckout(_programId, PaymentGateway.Stripe));
+            CreateSut(_parentId).CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe));
 
         SeedProgram(id: Guid.Parse("23232323-2323-2323-2323-232323232323"), price: 100_000m);
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            CreateSut().CreateDirectCheckout(Guid.Parse("99999999-9999-9999-9999-999999999999"), PaymentGateway.Stripe));
+            CreateSut().CreateDirectCheckout(Guid.Parse("99999999-9999-9999-9999-999999999999"), openClass.Id, PaymentGateway.Stripe));
     }
 
     [Theory]
@@ -309,13 +353,14 @@ public sealed class PaymentServiceTests
     [InlineData(ProgramStatus.Inactive)]
     public async Task CreateDirectCheckout_Throws_WhenProgramNotActive(ProgramStatus status)
     {
+        var openClass = SeedOpenEnrollmentClass();
         SeedStudent();
         var program = SeedProgram();
         program.Status = status;
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.CreateDirectCheckout(_programId, PaymentGateway.Stripe));
+            sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe));
 
         Assert.Empty(_db.Payments.Items);
     }
@@ -371,9 +416,10 @@ public sealed class PaymentServiceTests
             IsVerified = true,
             IsDeleted = false,
         });
+        var openClass = _db.Classes.Items.Single();
         var sut = CreateSut();
 
-        await sut.RequestParentPayment(_programId, _parentId);
+        await sut.RequestParentPayment(_programId, openClass.Id, _parentId);
 
         Assert.Single(_db.PaymentRequests.Items);
         _emailService.Verify(e => e.SendPaymentRequestToParentEmailAsync(It.IsAny<PaymentRequestEmailDto>()), Times.Once);
@@ -388,10 +434,11 @@ public sealed class PaymentServiceTests
         SeedStudent();
         SeedParent();
         SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.RequestParentPayment(_programId, _parentId));
+            sut.RequestParentPayment(_programId, openClass.Id, _parentId));
     }
 
     // ── CreateParentCheckout ──────────────────────────────────────────────────
@@ -402,7 +449,8 @@ public sealed class PaymentServiceTests
         SeedStudent();
         SeedParent();
         SeedProgram();
-        SeedOpenEnrollmentClass();
+        var openClass = SeedOpenEnrollmentClass();
+        SeedSeatHold(openClass.Id);
         _db.PaymentRequests.Seed(new PaymentRequest
         {
             Id = _paymentRequestId,
@@ -442,6 +490,7 @@ public sealed class PaymentServiceTests
         SeedStudent();
         SeedParent();
         SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
         _db.ProgramEnrollments.Seed(new ProgramEnrollment
         {
             Id = _enrollmentId,
@@ -450,6 +499,7 @@ public sealed class PaymentServiceTests
             Status = EnrollmentStatus.PendingPayment,
             IsDeleted = false,
         });
+        SeedSeatHold(openClass.Id);
         SeedPendingPayment(programEnrollmentId: _enrollmentId, paidById: _parentId);
         var sut = CreateSut();
 
@@ -458,6 +508,7 @@ public sealed class PaymentServiceTests
         var payment = _db.Payments.Items.Single();
         Assert.Equal(PaymentStatus.Success, payment.Status);
         Assert.Equal(EnrollmentStatus.Active, _db.ProgramEnrollments.Items.Single().Status);
+        Assert.Equal(ClassEnrollmentStatus.Active, _db.ClassEnrollments.Items.Single().Status);
         Assert.Single(_db.Invoices.Items);
         _emailService.Verify(e => e.SendPaymentInvoiceEmailAsync(It.IsAny<InvoiceEmailDto>()), Times.Once);
     }
@@ -852,11 +903,11 @@ public sealed class PaymentServiceTests
     {
         SeedStudent();
         var program = SeedProgram();
-        SeedOpenEnrollmentClass();
+        var openClass = SeedOpenEnrollmentClass();
         program.Description = "<p>Robotics <b>101</b></p>";
         var sut = CreateSut();
 
-        await sut.CreateDirectCheckout(_programId, PaymentGateway.Stripe);
+        await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);
 
         _stripe.Verify(s => s.CreateCheckoutSession(
             It.IsAny<Payment>(),

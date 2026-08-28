@@ -21,4 +21,9 @@ public interface ISignalRSyncDispatcher
         string role,
         SyncEvent syncEvent,
         CancellationToken cancellationToken = default);
+
+    Task DispatchToProgramGroupAsync(
+        Guid programId,
+        SyncEvent syncEvent,
+        CancellationToken cancellationToken = default);
 }

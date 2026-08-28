@@ -141,8 +141,8 @@ public class ProgramController : ControllerBase
         Summary = "List open classes available for enrollment",
         Description = "Public preview of Standard classes that are Open and still have seats, "
             + "including schedule sessions and seat counts. Use before checkout to show recruiting "
-            + "cohorts. After payment, pass preferredClassId to soft-prioritize a class the learner "
-            + "viewed (no seat hold). Checkout is blocked when this list is empty.")]
+            + "cohorts. Pass classId when starting checkout to soft-hold a seat for 5 minutes. "
+            + "Checkout is blocked when the selected class has no capacity.")]
     [ProducesResponseType(typeof(ApiResult<IReadOnlyList<OpenEnrollmentClassDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]

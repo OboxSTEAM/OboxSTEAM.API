@@ -181,17 +181,46 @@ public static class ClassEnrollmentValidator
 
     public static async Task<int> GetActiveSeatsTakenAsync(IUnitOfWork unitOfWork, Guid classId)
     {
-        var activeEnrollments = await unitOfWork.ClassEnrollments.GetAllAsync(
-            ce => ce.ClassId == classId
-                  && ce.Status == ClassEnrollmentStatus.Active
-                  && !ce.IsDeleted);
+        var now = DateTime.UtcNow;
+        var enrollments = await unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ClassId == classId && !ce.IsDeleted);
 
-        return activeEnrollments.Count;
+        return enrollments.Count(ce => OccupiesSeat(ce, now));
     }
 
-    /// <summary>Alias for <see cref="GetActiveSeatsTakenAsync"/> — Active seats only (no soft hold).</summary>
+    /// <summary>Active seats plus non-expired Pending holds.</summary>
     public static Task<int> GetSeatsTakenAsync(IUnitOfWork unitOfWork, Guid classId)
         => GetActiveSeatsTakenAsync(unitOfWork, classId);
+
+    public static bool OccupiesSeat(ClassEnrollment enrollment, DateTime now)
+    {
+        if (enrollment.Status == ClassEnrollmentStatus.Active)
+        {
+            return true;
+        }
+
+        return enrollment.Status == ClassEnrollmentStatus.Pending
+               && enrollment.HoldExpiresAt.HasValue
+               && enrollment.HoldExpiresAt.Value > now;
+    }
+
+    public static async Task<ClassEnrollment?> GetValidSeatHoldAsync(
+        IUnitOfWork unitOfWork,
+        Guid programEnrollmentId)
+    {
+        var now = DateTime.UtcNow;
+        var hold = await unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ProgramEnrollmentId == programEnrollmentId
+                  && ce.Status == ClassEnrollmentStatus.Pending
+                  && !ce.IsDeleted);
+
+        if (hold == null || !OccupiesSeat(hold, now))
+        {
+            return null;
+        }
+
+        return hold;
+    }
 
     public static async Task ValidateClassHasCapacityAsync(
         IUnitOfWork unitOfWork,

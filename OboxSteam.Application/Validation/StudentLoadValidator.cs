@@ -35,14 +35,16 @@ public static class StudentLoadValidator
         Guid studentId,
         Guid? excludeEnrollmentId = null)
     {
-        var active = await unitOfWork.ClassEnrollments.GetAllAsync(
+        var enrollments = await unitOfWork.ClassEnrollments.GetAllAsync(
             ce => ce.StudentId == studentId
                   && !ce.IsDeleted
-                  && ce.Status == ClassEnrollmentStatus.Active
                   && ce.Kind == ClassEnrollmentKind.Primary
                   && (!excludeEnrollmentId.HasValue || ce.Id != excludeEnrollmentId.Value));
 
-        if (active.Count >= MaxPrimaryActiveClassesPerStudent)
+        var now = DateTime.UtcNow;
+        var occupyingCount = enrollments.Count(ce => ClassEnrollmentValidator.OccupiesSeat(ce, now));
+
+        if (occupyingCount >= MaxPrimaryActiveClassesPerStudent)
         {
             throw ErrorHelper.Conflict(
                 $"Student has reached the maximum of {MaxPrimaryActiveClassesPerStudent} active primary classes. " +

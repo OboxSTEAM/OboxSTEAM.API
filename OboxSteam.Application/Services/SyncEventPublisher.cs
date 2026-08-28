@@ -60,6 +60,23 @@ public sealed class SyncEventPublisher : ISyncEventPublisher
                 return;
             }
 
+            if (audience.Kind == NotificationAudienceKind.ProgramBrowsers)
+            {
+                if (!audience.ProgramId.HasValue)
+                {
+                    _logger.LogDebug(
+                        "Sync event {Scope} for ProgramBrowsers missing ProgramId; skipping.",
+                        scope);
+                    return;
+                }
+
+                await _dispatcher.DispatchToProgramGroupAsync(
+                    audience.ProgramId.Value,
+                    syncEvent,
+                    cancellationToken);
+                return;
+            }
+
             var recipients = await _recipientResolver.ResolveAsync(audience, cancellationToken);
             var userIds = recipients
                 .Select(r => r.UserId)

@@ -16,22 +16,12 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 1. Browse programs (public catalog).
 2. Preview recruiting cohorts via `GET /api/programs/{programId}/open-classes`
    (Standard + **Open** + seats remaining > 0, with schedule sessions and seat
-   counts). Soft preference: optional `preferredClassId` sorts that class first
-   after payment — **no seat hold** before or after pay.
-3. Pay program tuition (`POST /api/payments/checkout` or parent-pay flow).
-   Checkout and parent payment requests are **blocked** when the open-classes
-   list would be empty (no Open Standard class with capacity).
-4. After payment activates the program enrollment, join a class cohort from the
-   same open-classes list (pass `preferredClassId` if the learner viewed one
-   before pay). Students may enroll (and self-transfer) only when the class is
-   **Open** — not Draft, ReadyForMentor, or InProgress. Manager transfer targets
-   must also be Open. Enroll and transfer are blocked when any non-cancelled
-   ClassSession of the target class overlaps another active class
-   (start1 < end2 && start2 < end1). Students can read occupied intervals at
-   `GET /api/me/schedule`. The Monday–Sunday timetable is
-   `GET /api/schedules/weekly` (weekStart optional; studentId required for
-   parents of a verified linked child; Asia/Ho_Chi_Minh; cancelled sessions
-   omitted).
+   counts). Seat counts include non-expired **Pending** holds from checkout.
+3. Select a class, then pay program tuition (`POST /api/payments/checkout` with
+   **`classId` required**, or parent-pay with the same `classId`). A **5-minute**
+   soft seat hold and parent payment token start when checkout is initiated.
+4. On successful payment, `ProgramEnrollment` and `ClassEnrollment` become
+   **Active** together — no separate post-pay class join step for new students.
 5. Module enrollments are created as part of program progression (not sold as
    separate retail products).
 
@@ -77,7 +67,10 @@ passing grade shows `completed`.
 `ActivityProgress` tracks completion per student per activity.
 Capacity is a class-level seat count (`Class.MaxCapacity`); there is no
 per-activity or per-session booking. Seat counts for open-class preview use
-**Active** `ClassEnrollment` rows only.
+**Active** `ClassEnrollment` rows plus non-expired **Pending** holds (5-minute
+checkout window). Realtime hints: SignalR `syncEvent` scope `seats.changed` on
+hub `/hubs/notifications` — clients call `JoinProgramSync(programId)` then
+refetch open-classes when notified.
 
 ## Assessment recovery vs class re-delivery
 
@@ -103,8 +96,10 @@ domain model. Program tuition and class re-delivery (amount = `Program.Price`)
 both create `Invoice` rows visible via invoice endpoints. Module-level retail
 price and retake fee columns have been dropped.
 
-Program tuition checkout is gated on open-class capacity (see Student Flow).
-Module retake checkout is **not** subject to that gate.
+Program tuition checkout requires the student to select an Open Standard class
+(`classId` on checkout / parent request). A **5-minute** soft seat hold and parent
+payment token start when checkout is initiated. Module retake checkout is **not**
+subject to class selection or seat holds.
 
 ## Parent Visibility
 

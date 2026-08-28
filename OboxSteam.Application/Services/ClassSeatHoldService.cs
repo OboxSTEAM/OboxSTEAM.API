@@ -1,0 +1,208 @@
+using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
+using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
+using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
+using OboxSteam.Domain.Entities;
+using OboxSteam.Domain.Enums;
+using OboxSteam.Domain.Interfaces;
+
+namespace OboxSteam.Application.Services;
+
+public sealed class ClassSeatHoldService : IClassSeatHoldService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ISyncEventPublisher _syncEventPublisher;
+    private readonly IClassService _classService;
+    private readonly ILogger<ClassSeatHoldService> _logger;
+
+    public ClassSeatHoldService(
+        IUnitOfWork unitOfWork,
+        ISyncEventPublisher syncEventPublisher,
+        IClassService classService,
+        ILogger<ClassSeatHoldService> logger)
+    {
+        _unitOfWork = unitOfWork;
+        _syncEventPublisher = syncEventPublisher;
+        _classService = classService;
+        _logger = logger;
+    }
+
+    public async Task<IReadOnlyList<(Guid ClassId, Guid ProgramId)>> ReleaseExpiredHoldsAsync(
+        CancellationToken cancellationToken = default)
+        => await ClassSeatHoldHelper.ReleaseExpiredHoldsAsync(_unitOfWork, cancellationToken);
+
+    public async Task<(ClassEnrollment Hold, IReadOnlyList<Guid> AffectedClassIds)> CreateOrRefreshHoldAsync(
+        Guid studentId,
+        ProgramEnrollment programEnrollment,
+        Guid classId,
+        CancellationToken cancellationToken = default)
+    {
+        ClassEnrollmentValidator.ValidateClassIdRequired(classId);
+
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
+        var classToHold = ClassEnrollmentValidator.ValidateClassExists(classEntity, classId);
+        ClassEnrollmentValidator.ValidateClassBelongsToProgram(classToHold, programEnrollment.ProgramId);
+        ClassEnrollmentValidator.ValidateClassOpenForEnrollment(classToHold);
+
+        if (classToHold.Kind != ClassKind.Standard)
+        {
+            throw ErrorHelper.BadRequest("Only standard open classes can be selected for program checkout.");
+        }
+
+        var now = DateTime.UtcNow;
+        var expiresAt = now.AddMinutes(ProgramCheckoutPolicy.CheckoutWindowMinutes);
+        var affectedClassIds = new List<Guid>();
+
+        var activeEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ProgramEnrollmentId == programEnrollment.Id
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+        ClassEnrollmentValidator.ValidateNoActiveClassEnrollmentForProgram(activeEnrollment);
+
+        var existingHold = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ProgramEnrollmentId == programEnrollment.Id
+                  && ce.Status == ClassEnrollmentStatus.Pending
+                  && !ce.IsDeleted);
+
+        if (existingHold != null)
+        {
+            if (existingHold.ClassId == classId
+                && ClassEnrollmentValidator.OccupiesSeat(existingHold, now))
+            {
+                existingHold.HoldExpiresAt = expiresAt;
+                await _unitOfWork.ClassEnrollments.Update(existingHold);
+                await _unitOfWork.SaveChangesAsync();
+
+                return (existingHold, affectedClassIds);
+            }
+
+            affectedClassIds.Add(existingHold.ClassId);
+            await WithdrawHoldAsync(existingHold);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        await StudentLoadValidator.ValidateUnderPrimaryClassLoadAsync(_unitOfWork, studentId);
+
+        await ClassEnrollmentValidator.ValidateClassHasCapacityAsync(
+            _unitOfWork,
+            classId,
+            classToHold.MaxCapacity);
+        await ClassEnrollmentValidator.ValidateLateJoinAllowedAsync(_unitOfWork, classToHold);
+        await ScheduleConflictValidator.ValidateStudentCanJoinClassAsync(
+            _unitOfWork,
+            studentId,
+            classId);
+
+        var hold = new ClassEnrollment
+        {
+            ClassId = classId,
+            StudentId = studentId,
+            ProgramEnrollmentId = programEnrollment.Id,
+            Kind = ClassEnrollmentKind.Primary,
+            Status = ClassEnrollmentStatus.Pending,
+            HoldExpiresAt = expiresAt,
+        };
+
+        await _unitOfWork.ClassEnrollments.AddAsync(hold);
+        await _unitOfWork.SaveChangesAsync();
+        affectedClassIds.Add(classId);
+
+        _logger.LogInformation(
+            "[CreateOrRefreshHoldAsync] Student {StudentId} held class {ClassId} until {ExpiresAt}.",
+            studentId,
+            classId,
+            expiresAt);
+
+        return (hold, affectedClassIds);
+    }
+
+    public async Task<(Guid? ClassId, Guid? ProgramId)> WithdrawHoldForProgramEnrollmentAsync(
+        Guid programEnrollmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var hold = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ProgramEnrollmentId == programEnrollmentId
+                  && ce.Status == ClassEnrollmentStatus.Pending
+                  && !ce.IsDeleted);
+
+        if (hold == null)
+        {
+            return (null, null);
+        }
+
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(hold.ClassId);
+        await WithdrawHoldAsync(hold);
+        await _unitOfWork.SaveChangesAsync();
+
+        return classEntity == null || classEntity.IsDeleted
+            ? (hold.ClassId, null)
+            : (hold.ClassId, classEntity.ProgramId);
+    }
+
+    public async Task ActivateHoldAfterPaymentAsync(
+        Guid programEnrollmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var hold = await ClassEnrollmentValidator.GetValidSeatHoldAsync(_unitOfWork, programEnrollmentId)
+            ?? throw ErrorHelper.BadRequest(
+                "The class seat hold has expired. Select a class again before completing payment.");
+
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(hold.ClassId);
+        if (classEntity == null || classEntity.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Class '{hold.ClassId}' not found.");
+        }
+
+        await ClassEnrollmentValidator.ValidateClassHasCapacityAsync(
+            _unitOfWork,
+            hold.ClassId,
+            classEntity.MaxCapacity);
+
+        var now = DateTime.UtcNow;
+        hold.Status = ClassEnrollmentStatus.Active;
+        hold.EnrolledAt = now;
+        hold.HoldExpiresAt = null;
+
+        await _unitOfWork.ClassEnrollments.Update(hold);
+        await _unitOfWork.SaveChangesAsync();
+
+        await _classService.TryAutoStartClassIfReadyAsync(hold.ClassId);
+
+        await PublishSeatsChangedAsync(classEntity.ProgramId, hold.ClassId, cancellationToken);
+
+        _logger.LogInformation(
+            "[ActivateHoldAfterPaymentAsync] Activated class enrollment {EnrollmentId} for program enrollment {ProgramEnrollmentId}.",
+            hold.Id,
+            programEnrollmentId);
+    }
+
+    public async Task PublishSeatsChangedAsync(
+        Guid programId,
+        Guid classId,
+        CancellationToken cancellationToken = default)
+    {
+        await _syncEventPublisher.PublishAsync(
+            SyncScopes.SeatsChanged,
+            NotificationAudience.ForProgramBrowsers(programId),
+            entityType: "Class",
+            entityId: classId,
+            cancellationToken);
+
+        await _syncEventPublisher.PublishAsync(
+            SyncScopes.SeatsChanged,
+            NotificationAudience.ForManagers(),
+            entityType: "Class",
+            entityId: classId,
+            cancellationToken);
+    }
+
+    private async Task WithdrawHoldAsync(ClassEnrollment hold)
+    {
+        hold.Status = ClassEnrollmentStatus.Withdrawn;
+        hold.HoldExpiresAt = null;
+        await _unitOfWork.ClassEnrollments.Update(hold);
+    }
+}

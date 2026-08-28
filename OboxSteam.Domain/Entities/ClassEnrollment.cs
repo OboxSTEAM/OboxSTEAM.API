@@ -21,4 +21,7 @@ public class ClassEnrollment : BaseEntity
     public ClassEnrollmentStatus Status { get; set; } = ClassEnrollmentStatus.Active;
 
     public DateTime? EnrolledAt { get; set; }
+
+    /// <summary>When <see cref="Status"/> is <see cref="ClassEnrollmentStatus.Pending"/>, the hold expires at this time.</summary>
+    public DateTime? HoldExpiresAt { get; set; }
 }

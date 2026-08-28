@@ -25,4 +25,10 @@ public sealed class NotificationHub : Hub
 
         await base.OnConnectedAsync();
     }
+
+    public Task JoinProgramSync(Guid programId)
+        => Groups.AddToGroupAsync(Context.ConnectionId, $"program:{programId}");
+
+    public Task LeaveProgramSync(Guid programId)
+        => Groups.RemoveFromGroupAsync(Context.ConnectionId, $"program:{programId}");
 }

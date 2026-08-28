@@ -4,5 +4,6 @@ namespace OboxSteam.Application.DTOs.PaymentDTO;
 public class ParentPaymentRequestDto
 {
     public Guid ProgramId { get; set; }
+    public Guid ClassId { get; set; }
     public Guid ParentId { get; set; }
 }

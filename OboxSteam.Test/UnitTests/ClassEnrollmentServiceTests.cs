@@ -27,6 +27,7 @@ public sealed class ClassEnrollmentServiceTests
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<IClassService> _classService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly Mock<IClassSeatHoldService> _classSeatHoldService = new();
 
     private ClassEnrollmentService CreateSut(Guid? currentUserId = null)
     {
@@ -37,12 +38,16 @@ public sealed class ClassEnrollmentServiceTests
         _notificationPublisher
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+        _classSeatHoldService
+            .Setup(s => s.PublishSeatsChangedAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
         return new ClassEnrollmentService(
             _db,
             _claimsService.Object,
             _classService.Object,
             NullLogger<ClassEnrollmentService>.Instance,
-            _notificationPublisher.Object);
+            _notificationPublisher.Object,
+            _classSeatHoldService.Object);
     }
 
     private void SeedStudent(Guid? id = null)

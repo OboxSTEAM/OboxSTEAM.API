@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.PaymentDTO;
 using OboxSteam.Application.Interfaces;
@@ -23,6 +24,7 @@ public class PaymentService : IPaymentService
     private readonly ILogger<PaymentService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly IClassRedeliveryRequestService _classRedeliveryRequestService;
+    private readonly IClassSeatHoldService _classSeatHoldService;
 
     public PaymentService(
         IUnitOfWork unitOfWork,
@@ -33,7 +35,8 @@ public class PaymentService : IPaymentService
         IConfiguration configuration,
         ILogger<PaymentService> logger,
         INotificationPublisher notificationPublisher,
-        IClassRedeliveryRequestService classRedeliveryRequestService)
+        IClassRedeliveryRequestService classRedeliveryRequestService,
+        IClassSeatHoldService classSeatHoldService)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
@@ -44,14 +47,17 @@ public class PaymentService : IPaymentService
         _logger = logger;
         _notificationPublisher = notificationPublisher;
         _classRedeliveryRequestService = classRedeliveryRequestService;
+        _classSeatHoldService = classSeatHoldService;
     }
 
     // ══════════════════════════════════════════════════════════════════════
     // FLOW 1: Student pays directly
     // ══════════════════════════════════════════════════════════════════════
 
-    public async Task<CheckoutResponseDto> CreateDirectCheckout(Guid programId, PaymentGateway gateway)
+    public async Task<CheckoutResponseDto> CreateDirectCheckout(Guid programId, Guid classId, PaymentGateway gateway)
     {
+        ClassEnrollmentValidator.ValidateClassIdRequired(classId);
+
         var studentId = _claimsService.GetCurrentUserId;
         var student = await _unitOfWork.Users.GetByIdAsync(studentId)
             ?? throw ErrorHelper.NotFound("Student not found.");
@@ -67,13 +73,17 @@ public class PaymentService : IPaymentService
 
         ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
 
-        await ProgramEnrollmentValidator.EnsureProgramHasOpenClassWithCapacityAsync(
-            _unitOfWork,
-            programId);
+        await _classSeatHoldService.ReleaseExpiredHoldsAsync();
 
         var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
 
-        // Create Payment record
+        var (hold, affectedClassIds) = await _classSeatHoldService.CreateOrRefreshHoldAsync(
+            studentId,
+            enrollment,
+            classId);
+
+        await PublishSeatChangesAsync(programId, affectedClassIds);
+
         var payment = new Payment
         {
             Code = GeneratePaymentCode(),
@@ -89,19 +99,20 @@ public class PaymentService : IPaymentService
         await _unitOfWork.SaveChangesAsync();
 
         var description = BuildRichCheckoutDescription(program);
-        // Create checkout URL
         var (checkoutUrl, sessionId) = await CreateGatewayCheckout(payment, program.Name, description, program.ThumbnailUrl, gateway);
         payment.CheckoutSessionId = sessionId;
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
-            "[CreateDirectCheckout] Student {StudentId} initiated checkout for program {ProgramId}. Payment={PaymentId}",
-            studentId, programId, payment.Id);
+            "[CreateDirectCheckout] Student {StudentId} initiated checkout for program {ProgramId}, class {ClassId}. Payment={PaymentId}",
+            studentId, programId, classId, payment.Id);
 
         return new CheckoutResponseDto
         {
             PaymentId = payment.Id,
             EnrollmentId = enrollment.Id,
+            ClassId = hold.ClassId,
+            HoldExpiresAt = new DateTimeOffset(hold.HoldExpiresAt!.Value, TimeSpan.Zero),
             CheckoutUrl = checkoutUrl
         };
     }
@@ -170,8 +181,10 @@ public class PaymentService : IPaymentService
     // FLOW 2a: Student requests parent to pay
     // ══════════════════════════════════════════════════════════════════════
 
-    public async Task RequestParentPayment(Guid programId, Guid parentId)
+    public async Task RequestParentPayment(Guid programId, Guid classId, Guid parentId)
     {
+        ClassEnrollmentValidator.ValidateClassIdRequired(classId);
+
         var studentId = _claimsService.GetCurrentUserId;
         var student = await _unitOfWork.Users.GetByIdAsync(studentId)
             ?? throw ErrorHelper.NotFound("Student not found.");
@@ -179,7 +192,6 @@ public class PaymentService : IPaymentService
         if (student.Role != RoleType.Student)
             throw ErrorHelper.Forbidden("Only students can send payment requests.");
 
-        // Validate verified ParentStudent link
         var link = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(
             ps => ps.ParentId == parentId && ps.StudentId == studentId && ps.IsVerified && !ps.IsDeleted)
             ?? throw ErrorHelper.BadRequest("No verified parent-student link found with this parent.");
@@ -195,13 +207,18 @@ public class PaymentService : IPaymentService
 
         ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
 
-        await ProgramEnrollmentValidator.EnsureProgramHasOpenClassWithCapacityAsync(
-            _unitOfWork,
-            programId);
+        await _classSeatHoldService.ReleaseExpiredHoldsAsync();
 
         var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
 
-        // Create PaymentRequest record
+        var (hold, affectedClassIds) = await _classSeatHoldService.CreateOrRefreshHoldAsync(
+            studentId,
+            enrollment,
+            classId);
+
+        await PublishSeatChangesAsync(programId, affectedClassIds);
+
+        var expiresAt = DateTime.UtcNow.AddMinutes(ProgramCheckoutPolicy.CheckoutWindowMinutes);
         var token = Guid.NewGuid().ToString("N");
         var paymentRequest = new PaymentRequest
         {
@@ -212,7 +229,7 @@ public class PaymentService : IPaymentService
             Amount = program.Price.Value,
             Currency = "VND",
             Token = token,
-            ExpiresAt = DateTime.UtcNow.AddHours(24),
+            ExpiresAt = expiresAt,
             Status = PaymentRequestStatus.Pending
         };
         await _unitOfWork.PaymentRequests.AddAsync(paymentRequest);
@@ -243,8 +260,8 @@ public class PaymentService : IPaymentService
         });
 
         _logger.LogInformation(
-            "[RequestParentPayment] Student {StudentId} sent payment request to parent {ParentId} for program {ProgramId}.",
-            studentId, parentId, programId);
+            "[RequestParentPayment] Student {StudentId} sent payment request to parent {ParentId} for program {ProgramId}, class {ClassId}.",
+            studentId, parentId, programId, hold.ClassId);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -346,19 +363,27 @@ public class PaymentService : IPaymentService
         string? thumbnailUrl = null;
         Guid? programEnrollmentId = null;
         Guid? moduleEnrollmentId = null;
+        Guid? classId = null;
+        DateTime? holdExpiresAt = null;
 
         if (paymentRequest.ProgramEnrollmentId.HasValue)
         {
             var program = await _unitOfWork.Programs.GetByIdAsync(paymentRequest.ProgramId!.Value)
                 ?? throw ErrorHelper.NotFound("Program not found.");
             ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
-            await ProgramEnrollmentValidator.EnsureProgramHasOpenClassWithCapacityAsync(
+
+            var hold = await ClassEnrollmentValidator.GetValidSeatHoldAsync(
                 _unitOfWork,
-                program.Id);
+                paymentRequest.ProgramEnrollmentId.Value)
+                ?? throw ErrorHelper.BadRequest(
+                    "The class seat hold has expired. Ask the student to select a class again.");
+
             itemName = program.Name;
             itemDescription = BuildRichCheckoutDescription(program);
             thumbnailUrl = program.ThumbnailUrl;
             programEnrollmentId = paymentRequest.ProgramEnrollmentId;
+            classId = hold.ClassId;
+            holdExpiresAt = hold.HoldExpiresAt;
         }
         else if (paymentRequest.ModuleEnrollmentId.HasValue)
         {
@@ -413,6 +438,10 @@ public class PaymentService : IPaymentService
         {
             PaymentId = payment.Id,
             EnrollmentId = programEnrollmentId ?? moduleEnrollmentId ?? Guid.Empty,
+            ClassId = classId ?? Guid.Empty,
+            HoldExpiresAt = holdExpiresAt.HasValue
+                ? new DateTimeOffset(holdExpiresAt.Value, TimeSpan.Zero)
+                : default,
             CheckoutUrl = checkoutUrl,
             AccessToken = parentAccessToken
         };
@@ -509,6 +538,17 @@ public class PaymentService : IPaymentService
                 "[CancelPayment] Rolled back PaymentRequest {RequestId} to Pending.",
                 paymentRequest.Id);
         }
+        else if (payment.ProgramEnrollmentId.HasValue)
+        {
+            var released = await _classSeatHoldService.WithdrawHoldForProgramEnrollmentAsync(
+                payment.ProgramEnrollmentId.Value);
+            if (released.ProgramId.HasValue)
+            {
+                await _classSeatHoldService.PublishSeatsChangedAsync(
+                    released.ProgramId.Value,
+                    released.ClassId!.Value);
+            }
+        }
 
         await _unitOfWork.SaveChangesAsync();
 
@@ -590,6 +630,17 @@ public class PaymentService : IPaymentService
             _logger.LogInformation(
                 "[HandlePaymentFailed] Rolled back PaymentRequest {RequestId} to Pending.",
                 paymentRequest.Id);
+        }
+        else if (payment.ProgramEnrollmentId.HasValue)
+        {
+            var released = await _classSeatHoldService.WithdrawHoldForProgramEnrollmentAsync(
+                payment.ProgramEnrollmentId.Value);
+            if (released.ProgramId.HasValue)
+            {
+                await _classSeatHoldService.PublishSeatsChangedAsync(
+                    released.ProgramId.Value,
+                    released.ClassId!.Value);
+            }
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -709,6 +760,11 @@ public class PaymentService : IPaymentService
         // 6. Save all changes atomically
         await _unitOfWork.SaveChangesAsync();
 
+        if (enrollment != null)
+        {
+            await _classSeatHoldService.ActivateHoldAfterPaymentAsync(enrollment.Id);
+        }
+
         Guid? nextActivityId = null;
         if (enrollment != null)
         {
@@ -775,6 +831,14 @@ public class PaymentService : IPaymentService
             payment.Id, invoice.InvoiceNumber, payment.StudentId);
 
         await _classRedeliveryRequestService.CompleteAfterPaymentAsync(payment.Id);
+    }
+
+    private async Task PublishSeatChangesAsync(Guid programId, IReadOnlyList<Guid> classIds)
+    {
+        foreach (var classId in classIds.Distinct())
+        {
+            await _classSeatHoldService.PublishSeatsChangedAsync(programId, classId);
+        }
     }
 
     private async Task<Guid?> ResolveProgramIdForPaymentAsync(Payment payment)

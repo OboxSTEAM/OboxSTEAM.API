@@ -6,11 +6,11 @@ namespace OboxSteam.Application.Interfaces;
 public interface IPaymentService
 {
     // ── Flow 1: Student pays directly ──────────────────────────────────────
-    Task<CheckoutResponseDto> CreateDirectCheckout(Guid programId, PaymentGateway gateway);
+    Task<CheckoutResponseDto> CreateDirectCheckout(Guid programId, Guid classId, PaymentGateway gateway);
     Task<CheckoutResponseDto> CreateModuleRetakeCheckout(Guid moduleEnrollmentId, PaymentGateway gateway);
 
     // ── Flow 2: Student requests parent ────────────────────────────────────
-    Task RequestParentPayment(Guid programId, Guid parentId);
+    Task RequestParentPayment(Guid programId, Guid classId, Guid parentId);
     Task RequestParentModulePayment(Guid moduleEnrollmentId, Guid parentId);
 
     // ── Flow 2: Parent opens checkout from token ────────────────────────────
