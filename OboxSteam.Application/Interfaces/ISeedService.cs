@@ -4,8 +4,6 @@
     {
         Task SeedAllDataAsync();
 
-        Task SeedWs7FeTestDataAsync();
-
         Task ClearAllDataAsync();
     }
 }

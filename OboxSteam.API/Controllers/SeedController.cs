@@ -37,21 +37,6 @@ public class SeedController : ControllerBase
     }
 
     /// <summary>
-    /// Seeds WS7 FE test fixtures (retake ladder scenarios A–F).
-    /// </summary>
-    [HttpPost("ws7")]
-    [SwaggerOperation(
-        Summary = "Seed WS7 FE test data",
-        Description = "Idempotent WS7 program with six scenario students (STD-WS7-A..F), shared staff, "
-            + "open/full/remedial classes, and pre-built redelivery states. Safe to run after POST /api/seed/all.")]
-    [ProducesResponseType(typeof(ApiResult), 200)]
-    public async Task<IActionResult> SeedWs7FeTestData()
-    {
-        await _seedService.SeedWs7FeTestDataAsync();
-        return Ok(ApiResult.Success("200", "WS7 FE test data seeded successfully."));
-    }
-
-    /// <summary>
     /// Clears all data from the database.
     /// </summary>
     /// <returns>Success message.</returns>
