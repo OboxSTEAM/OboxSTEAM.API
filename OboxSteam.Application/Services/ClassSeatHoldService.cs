@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.PaymentDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Realtime;
@@ -14,17 +15,23 @@ namespace OboxSteam.Application.Services;
 public sealed class ClassSeatHoldService : IClassSeatHoldService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IClaimsService _claimsService;
+    private readonly IProgramEnrollmentService _programEnrollmentService;
     private readonly ISyncEventPublisher _syncEventPublisher;
     private readonly IClassService _classService;
     private readonly ILogger<ClassSeatHoldService> _logger;
 
     public ClassSeatHoldService(
         IUnitOfWork unitOfWork,
+        IClaimsService claimsService,
+        IProgramEnrollmentService programEnrollmentService,
         ISyncEventPublisher syncEventPublisher,
         IClassService classService,
         ILogger<ClassSeatHoldService> logger)
     {
         _unitOfWork = unitOfWork;
+        _claimsService = claimsService;
+        _programEnrollmentService = programEnrollmentService;
         _syncEventPublisher = syncEventPublisher;
         _classService = classService;
         _logger = logger;
@@ -33,6 +40,79 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
     public async Task<IReadOnlyList<(Guid ClassId, Guid ProgramId)>> ReleaseExpiredHoldsAsync(
         CancellationToken cancellationToken = default)
         => await ClassSeatHoldHelper.ReleaseExpiredHoldsAsync(_unitOfWork, cancellationToken);
+
+    public async Task<SelectProgramClassResponseDto> SelectClassForCheckoutAsync(
+        Guid programId,
+        Guid classId,
+        CancellationToken cancellationToken = default)
+    {
+        ClassEnrollmentValidator.ValidateClassIdRequired(classId);
+        ProgramEnrollmentValidator.ValidateProgramIdRequired(programId);
+
+        var studentId = _claimsService.GetCurrentUserId;
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId)
+            ?? throw ErrorHelper.NotFound("Student not found.");
+
+        if (student.Role != RoleType.Student)
+        {
+            throw ErrorHelper.Forbidden("Only students can select a class for checkout.");
+        }
+
+        var program = await _unitOfWork.Programs.GetByIdAsync(programId)
+            ?? throw ErrorHelper.NotFound($"Program '{programId}' not found.");
+
+        if (program.Price == null || program.Price <= 0)
+        {
+            throw ErrorHelper.BadRequest("This program cannot be purchased because it has no valid price.");
+        }
+
+        ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
+
+        await ReleaseExpiredHoldsAsync(cancellationToken);
+
+        var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
+        var (hold, affectedClassIds) = await CreateOrRefreshHoldAsync(
+            studentId,
+            enrollment,
+            classId,
+            cancellationToken);
+
+        foreach (var affectedClassId in affectedClassIds.Distinct())
+        {
+            await PublishSeatsChangedAsync(programId, affectedClassId, cancellationToken);
+        }
+
+        return new SelectProgramClassResponseDto
+        {
+            ProgramEnrollmentId = enrollment.Id,
+            ClassId = hold.ClassId,
+            HoldExpiresAt = new DateTimeOffset(hold.HoldExpiresAt!.Value, TimeSpan.Zero),
+        };
+    }
+
+    public async Task<ClassEnrollment> RequireValidHoldAsync(
+        Guid studentId,
+        ProgramEnrollment programEnrollment,
+        Guid classId,
+        CancellationToken cancellationToken = default)
+    {
+        ClassEnrollmentValidator.ValidateClassIdRequired(classId);
+        await ReleaseExpiredHoldsAsync(cancellationToken);
+
+        var hold = await ClassEnrollmentValidator.GetValidSeatHoldAsync(_unitOfWork, programEnrollment.Id);
+        if (hold == null || hold.ClassId != classId)
+        {
+            throw ErrorHelper.BadRequest(
+                "Select this class before checkout or your seat hold has expired.");
+        }
+
+        if (hold.StudentId != studentId)
+        {
+            throw ErrorHelper.Forbidden("This class seat hold does not belong to you.");
+        }
+
+        return hold;
+    }
 
     public async Task<(ClassEnrollment Hold, IReadOnlyList<Guid> AffectedClassIds)> CreateOrRefreshHoldAsync(
         Guid studentId,

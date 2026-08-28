@@ -16,12 +16,12 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 1. Browse programs (public catalog).
 2. Preview recruiting cohorts via `GET /api/programs/{programId}/open-classes`
    (Standard + **Open** + seats remaining > 0, with schedule sessions and seat
-   counts). Seat counts include non-expired **Pending** holds from checkout.
-3. Select a class, then pay program tuition (`POST /api/payments/checkout` with
-   **`classId` required**, or parent-pay with the same `classId`). A **5-minute**
-   soft seat hold and parent payment token start when checkout is initiated.
-4. On successful payment, `ProgramEnrollment` and `ClassEnrollment` become
-   **Active** together — no separate post-pay class join step for new students.
+   counts). Seat counts include non-expired **Pending** holds from class selection.
+3. **Select class** via `POST /api/programs/{programId}/select-class` (`classId`) — starts
+   the **5-minute** soft seat hold and publishes `seats.changed`.
+4. Pay program tuition (`POST /api/payments/checkout` or parent-pay with the same
+   `classId`). Requires the hold from step 3. On success, `ProgramEnrollment` and
+   `ClassEnrollment` become **Active** together — no separate post-pay class join step.
 5. Module enrollments are created as part of program progression (not sold as
    separate retail products).
 

@@ -77,12 +77,7 @@ public class PaymentService : IPaymentService
 
         var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
 
-        var (hold, affectedClassIds) = await _classSeatHoldService.CreateOrRefreshHoldAsync(
-            studentId,
-            enrollment,
-            classId);
-
-        await PublishSeatChangesAsync(programId, affectedClassIds);
+        var hold = await _classSeatHoldService.RequireValidHoldAsync(studentId, enrollment, classId);
 
         var payment = new Payment
         {
@@ -211,12 +206,7 @@ public class PaymentService : IPaymentService
 
         var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
 
-        var (hold, affectedClassIds) = await _classSeatHoldService.CreateOrRefreshHoldAsync(
-            studentId,
-            enrollment,
-            classId);
-
-        await PublishSeatChangesAsync(programId, affectedClassIds);
+        await _classSeatHoldService.RequireValidHoldAsync(studentId, enrollment, classId);
 
         var expiresAt = DateTime.UtcNow.AddMinutes(ProgramCheckoutPolicy.CheckoutWindowMinutes);
         var token = Guid.NewGuid().ToString("N");
@@ -261,7 +251,7 @@ public class PaymentService : IPaymentService
 
         _logger.LogInformation(
             "[RequestParentPayment] Student {StudentId} sent payment request to parent {ParentId} for program {ProgramId}, class {ClassId}.",
-            studentId, parentId, programId, hold.ClassId);
+            studentId, parentId, programId, classId);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -831,14 +821,6 @@ public class PaymentService : IPaymentService
             payment.Id, invoice.InvoiceNumber, payment.StudentId);
 
         await _classRedeliveryRequestService.CompleteAfterPaymentAsync(payment.Id);
-    }
-
-    private async Task PublishSeatChangesAsync(Guid programId, IReadOnlyList<Guid> classIds)
-    {
-        foreach (var classId in classIds.Distinct())
-        {
-            await _classSeatHoldService.PublishSeatsChangedAsync(programId, classId);
-        }
     }
 
     private async Task<Guid?> ResolveProgramIdForPaymentAsync(Payment payment)

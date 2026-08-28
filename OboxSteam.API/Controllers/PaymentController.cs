@@ -29,7 +29,7 @@ public class PaymentController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Initiate direct checkout (student pays)",
-        Description = "Student initiates checkout for a paid program. Requires classId; starts a 5-minute seat hold and returns a hosted payment URL (Stripe or MoMo).")]
+        Description = "Student initiates checkout for a paid program. Requires a valid seat hold from select-class and matching classId. Returns a hosted payment URL.")]
     [ProducesResponseType(typeof(ApiResult<CheckoutResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -70,7 +70,7 @@ public class PaymentController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Request parent to pay for enrollment",
-        Description = "Student sends a payment request email to a linked, verified parent. Requires classId; starts a 5-minute seat hold and parent token.")]
+        Description = "Student sends a payment request email to a linked, verified parent. Requires a valid seat hold from select-class and matching classId. Parent token expires in 5 minutes.")]
     [ProducesResponseType(typeof(ApiResult<object>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

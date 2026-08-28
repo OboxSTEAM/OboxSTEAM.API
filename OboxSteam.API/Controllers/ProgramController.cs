@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
+using OboxSteam.Application.DTOs.PaymentDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -18,15 +19,18 @@ public class ProgramController : ControllerBase
     private readonly IProgramService _programService;
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
     private readonly IClassService _classService;
+    private readonly IClassSeatHoldService _classSeatHoldService;
 
     public ProgramController(
         IProgramService programService,
         IEnrollmentCurriculumService enrollmentCurriculumService,
-        IClassService classService)
+        IClassService classService,
+        IClassSeatHoldService classSeatHoldService)
     {
         _programService = programService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
         _classService = classService;
+        _classSeatHoldService = classSeatHoldService;
     }
 
     // =========================================================================
@@ -141,15 +145,14 @@ public class ProgramController : ControllerBase
         Summary = "List open classes available for enrollment",
         Description = "Public preview of Standard classes that are Open and still have seats, "
             + "including schedule sessions and seat counts. Use before checkout to show recruiting "
-            + "cohorts. Pass classId when starting checkout to soft-hold a seat for 5 minutes. "
-            + "Checkout is blocked when the selected class has no capacity.")]
+            + "cohorts. Call select-class when the learner picks a class to soft-hold a seat for 5 minutes.")]
     [ProducesResponseType(typeof(ApiResult<IReadOnlyList<OpenEnrollmentClassDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetOpenEnrollmentClasses(
         [FromRoute] Guid id,
         [FromQuery, SwaggerParameter(
-            Description = "Optional class the learner viewed before pay — soft-sorted first when still enrollable")]
+            Description = "Optional class the learner viewed — soft-sorted first when still enrollable")]
         Guid? preferredClassId = null)
     {
         var result = await _classService.GetOpenEnrollmentClassesAsync(id, preferredClassId);
@@ -157,6 +160,33 @@ public class ProgramController : ControllerBase
             result,
             "200",
             "Open enrollment classes retrieved successfully."));
+    }
+
+    // =========================================================================
+    // SELECT CLASS  —  POST /api/programs/{id}/select-class
+    // =========================================================================
+
+    [HttpPost("{id:guid}/select-class")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Select a class and hold a seat",
+        Description = "Starts a 5-minute soft seat hold when the student selects a class. "
+            + "Checkout and parent-pay require this step first. Publishes seats.changed over SignalR.")]
+    [ProducesResponseType(typeof(ApiResult<SelectProgramClassResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> SelectClassForCheckout(
+        [FromRoute] Guid id,
+        [FromBody] SelectProgramClassRequestDto dto)
+    {
+        var result = await _classSeatHoldService.SelectClassForCheckoutAsync(id, dto.ClassId);
+        return Ok(ApiResult<SelectProgramClassResponseDto>.Success(
+            result,
+            "200",
+            "Class selected and seat held for checkout."));
     }
 
     // =========================================================================

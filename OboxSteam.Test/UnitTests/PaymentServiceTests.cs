@@ -35,12 +35,36 @@ public sealed class PaymentServiceTests
     private readonly Mock<IClassService> _classService = new();
     private readonly FakeSyncEventPublisher _syncEventPublisher = new();
 
+    private void SetupStudentContext(Guid? currentUserId = null)
+    {
+        _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _studentId);
+        _programEnrollmentService
+            .Setup(s => s.GetOrCreatePendingEnrollmentAsync(_studentId, _programId))
+            .ReturnsAsync(new ProgramEnrollment
+            {
+                Id = _enrollmentId,
+                StudentId = _studentId,
+                ProgramId = _programId,
+                Status = EnrollmentStatus.PendingPayment,
+                IsDeleted = false,
+            });
+    }
+
     private ClassSeatHoldService CreateSeatHoldService()
         => new(
             _db,
+            _claimsService.Object,
+            _programEnrollmentService.Object,
             _syncEventPublisher,
             _classService.Object,
             NullLogger<ClassSeatHoldService>.Instance);
+
+    private async Task SelectClassAsync(Guid classId)
+    {
+        SetupStudentContext();
+        var seatHoldService = CreateSeatHoldService();
+        await seatHoldService.SelectClassForCheckoutAsync(_programId, classId);
+    }
 
     private static IConfiguration CreateConfiguration() =>
         new ConfigurationBuilder()
@@ -56,7 +80,7 @@ public sealed class PaymentServiceTests
 
     private PaymentService CreateSut(Guid? currentUserId = null)
     {
-        _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _studentId);
+        SetupStudentContext(currentUserId);
         _stripe
             .Setup(s => s.CreateCheckoutSession(
                 It.IsAny<Payment>(),
@@ -87,16 +111,6 @@ public sealed class PaymentServiceTests
         _classService
             .Setup(c => c.TryAutoStartClassIfReadyAsync(It.IsAny<Guid>()))
             .Returns(Task.CompletedTask);
-        _programEnrollmentService
-            .Setup(s => s.GetOrCreatePendingEnrollmentAsync(_studentId, _programId))
-            .ReturnsAsync(new ProgramEnrollment
-            {
-                Id = _enrollmentId,
-                StudentId = _studentId,
-                ProgramId = _programId,
-                Status = EnrollmentStatus.PendingPayment,
-                IsDeleted = false,
-            });
 
         return new PaymentService(
             _db,
@@ -267,6 +281,7 @@ public sealed class PaymentServiceTests
         SeedStudent();
         SeedProgram();
         var openClass = SeedOpenEnrollmentClass();
+        await SelectClassAsync(openClass.Id);
         var sut = CreateSut();
 
         var result = await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);
@@ -277,6 +292,20 @@ public sealed class PaymentServiceTests
         Assert.True(result.HoldExpiresAt > DateTimeOffset.UtcNow);
         Assert.Equal("https://checkout.stripe.com/test", result.CheckoutUrl);
         Assert.Single(_db.ClassEnrollments.Items, ce => ce.Status == ClassEnrollmentStatus.Pending);
+    }
+
+    [Fact]
+    public async Task CreateDirectCheckout_Throws_WhenClassNotSelectedFirst()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe));
+
+        Assert.Empty(_db.Payments.Items);
     }
 
     [Fact]
@@ -299,7 +328,7 @@ public sealed class PaymentServiceTests
         SeedProgram();
         var sut = CreateSut();
 
-        await Assert.ThrowsAsync<NotFoundException>(() =>
+        await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.CreateDirectCheckout(_programId, Guid.NewGuid(), PaymentGateway.Stripe));
 
         Assert.Empty(_db.Payments.Items);
@@ -322,8 +351,7 @@ public sealed class PaymentServiceTests
         });
         var sut = CreateSut();
 
-        await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe));
+        await Assert.ThrowsAsync<ConflictException>(() => SelectClassAsync(openClass.Id));
 
         Assert.Empty(_db.Payments.Items);
     }
@@ -417,6 +445,7 @@ public sealed class PaymentServiceTests
             IsDeleted = false,
         });
         var openClass = _db.Classes.Items.Single();
+        await SelectClassAsync(openClass.Id);
         var sut = CreateSut();
 
         await sut.RequestParentPayment(_programId, openClass.Id, _parentId);
@@ -905,6 +934,7 @@ public sealed class PaymentServiceTests
         var program = SeedProgram();
         var openClass = SeedOpenEnrollmentClass();
         program.Description = "<p>Robotics <b>101</b></p>";
+        await SelectClassAsync(openClass.Id);
         var sut = CreateSut();
 
         await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);

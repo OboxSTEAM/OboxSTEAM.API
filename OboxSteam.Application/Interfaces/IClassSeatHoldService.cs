@@ -1,3 +1,4 @@
+using OboxSteam.Application.DTOs.PaymentDTO;
 using OboxSteam.Domain.Entities;
 
 namespace OboxSteam.Application.Interfaces;
@@ -7,7 +8,18 @@ public interface IClassSeatHoldService
     Task<IReadOnlyList<(Guid ClassId, Guid ProgramId)>> ReleaseExpiredHoldsAsync(
         CancellationToken cancellationToken = default);
 
+    Task<SelectProgramClassResponseDto> SelectClassForCheckoutAsync(
+        Guid programId,
+        Guid classId,
+        CancellationToken cancellationToken = default);
+
     Task<(ClassEnrollment Hold, IReadOnlyList<Guid> AffectedClassIds)> CreateOrRefreshHoldAsync(
+        Guid studentId,
+        ProgramEnrollment programEnrollment,
+        Guid classId,
+        CancellationToken cancellationToken = default);
+
+    Task<ClassEnrollment> RequireValidHoldAsync(
         Guid studentId,
         ProgramEnrollment programEnrollment,
         Guid classId,
