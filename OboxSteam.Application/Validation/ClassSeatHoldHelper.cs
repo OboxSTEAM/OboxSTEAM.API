@@ -27,8 +27,11 @@ public static class ClassSeatHoldHelper
         }
 
         var affected = new List<(Guid ClassId, Guid ProgramId)>();
+        var programEnrollmentIds = new HashSet<Guid>();
+
         foreach (var hold in expiredHolds)
         {
+            programEnrollmentIds.Add(hold.ProgramEnrollmentId);
             hold.Status = ClassEnrollmentStatus.Withdrawn;
             hold.HoldExpiresAt = null;
             await unitOfWork.ClassEnrollments.Update(hold);
@@ -41,6 +44,16 @@ public static class ClassSeatHoldHelper
         }
 
         await unitOfWork.SaveChangesAsync();
+
+        foreach (var programEnrollmentId in programEnrollmentIds)
+        {
+            await PendingProgramCheckoutHelper.AbandonPendingProgramCheckoutAsync(
+                unitOfWork,
+                programEnrollmentId,
+                classHoldAlreadyWithdrawn: true,
+                cancellationToken);
+        }
+
         return affected;
     }
 }

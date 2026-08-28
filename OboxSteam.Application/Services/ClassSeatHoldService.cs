@@ -310,6 +310,53 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
             cancellationToken);
     }
 
+    public async Task ReleaseClassHoldForCheckoutAsync(
+        Guid programId,
+        CancellationToken cancellationToken = default)
+    {
+        ProgramEnrollmentValidator.ValidateProgramIdRequired(programId);
+
+        var studentId = _claimsService.GetCurrentUserId;
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId)
+            ?? throw ErrorHelper.NotFound("Student not found.");
+
+        if (student.Role != RoleType.Student)
+        {
+            throw ErrorHelper.Forbidden("Only students can release a checkout seat hold.");
+        }
+
+        var enrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+            pe => pe.StudentId == studentId
+                  && pe.ProgramId == programId
+                  && pe.Status == EnrollmentStatus.PendingPayment
+                  && !pe.IsDeleted);
+
+        if (enrollment == null)
+        {
+            _logger.LogInformation(
+                "[ReleaseClassHoldForCheckoutAsync] No pending checkout enrollment for student {StudentId} on program {ProgramId}.",
+                studentId,
+                programId);
+            return;
+        }
+
+        var result = await PendingProgramCheckoutHelper.AbandonPendingProgramCheckoutAsync(
+            _unitOfWork,
+            enrollment.Id,
+            cancellationToken: cancellationToken);
+
+        if (result.Abandoned && result.ClassId.HasValue)
+        {
+            await PublishSeatsChangedAsync(programId, result.ClassId.Value, cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "[ReleaseClassHoldForCheckoutAsync] Student {StudentId} released checkout hold for program {ProgramId}. Abandoned={Abandoned}.",
+            studentId,
+            programId,
+            result.Abandoned);
+    }
+
     private async Task WithdrawHoldAsync(ClassEnrollment hold)
     {
         hold.Status = ClassEnrollmentStatus.Withdrawn;

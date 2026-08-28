@@ -19,10 +19,14 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
    counts). Seat counts include non-expired **Pending** holds from class selection.
 3. **Select class** via `POST /api/programs/{programId}/select-class` (`classId`) — starts
    the **5-minute** soft seat hold and publishes `seats.changed`.
-4. Pay program tuition (`POST /api/payments/checkout` or parent-pay with the same
+4. **Leave checkout** via `POST /api/programs/{programId}/release-class-hold` when the
+   learner reloads or navigates away — releases the seat and soft-deletes the
+   `PendingPayment` program enrollment. When the hold expires, the server does the same
+   automatically (cleanup runs about every minute).
+5. Pay program tuition (`POST /api/payments/checkout` or parent-pay with the same
    `classId`). Requires the hold from step 3. On success, `ProgramEnrollment` and
    `ClassEnrollment` become **Active** together — no separate post-pay class join step.
-5. Module enrollments are created as part of program progression (not sold as
+6. Module enrollments are created as part of program progression (not sold as
    separate retail products).
 
 Parents and managers can view enrollment state on shared read endpoints

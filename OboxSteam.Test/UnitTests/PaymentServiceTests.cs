@@ -62,8 +62,25 @@ public sealed class PaymentServiceTests
     private async Task SelectClassAsync(Guid classId)
     {
         SetupStudentContext();
+        SeedPendingProgramEnrollment();
         var seatHoldService = CreateSeatHoldService();
         await seatHoldService.SelectClassForCheckoutAsync(_programId, classId);
+    }
+
+    private ProgramEnrollment SeedPendingProgramEnrollment(Guid? id = null)
+    {
+        var enrollment = new ProgramEnrollment
+        {
+            Id = id ?? _enrollmentId,
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.PendingPayment,
+            ProgressPercent = 0m,
+            EnrolledAt = DateTime.UtcNow,
+            IsDeleted = false,
+        };
+        _db.ProgramEnrollments.Seed(enrollment);
+        return enrollment;
     }
 
     private static IConfiguration CreateConfiguration() =>
@@ -334,6 +351,96 @@ public sealed class PaymentServiceTests
         Assert.Single(_db.ClassEnrollments.Items);
         Assert.Equal(ClassEnrollmentStatus.Pending, _db.ClassEnrollments.Items.Single().Status);
         Assert.True(_db.ClassEnrollments.Items.Single().HoldExpiresAt > DateTime.UtcNow);
+    }
+
+    [Fact]
+    public async Task ReleaseClassHold_AbandonsPendingEnrollment_AndWithdrawsHold()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        await SelectClassAsync(openClass.Id);
+
+        var seatHoldService = CreateSeatHoldService();
+        await seatHoldService.ReleaseClassHoldForCheckoutAsync(_programId);
+
+        Assert.True(_db.ProgramEnrollments.Items.Single().IsDeleted);
+        Assert.Equal(ClassEnrollmentStatus.Withdrawn, _db.ClassEnrollments.Items.Single().Status);
+        Assert.Contains(_syncEventPublisher.Events, e => e.Scope == "seats.changed");
+    }
+
+    [Fact]
+    public async Task ReleaseExpiredHolds_AbandonsPendingEnrollment()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        SeedPendingProgramEnrollment();
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = openClass.Id,
+            StudentId = _studentId,
+            ProgramEnrollmentId = _enrollmentId,
+            Status = ClassEnrollmentStatus.Pending,
+            HoldExpiresAt = DateTime.UtcNow.AddMinutes(-1),
+            Kind = ClassEnrollmentKind.Primary,
+            IsDeleted = false,
+        });
+
+        var seatHoldService = CreateSeatHoldService();
+        await seatHoldService.ReleaseExpiredHoldsAsync();
+
+        Assert.True(_db.ProgramEnrollments.Items.Single().IsDeleted);
+        Assert.Equal(ClassEnrollmentStatus.Withdrawn, _db.ClassEnrollments.Items.Single().Status);
+    }
+
+    [Fact]
+    public async Task AbandonedPendingEnrollment_AllowsSelectingAnotherProgram()
+    {
+        var otherProgramId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var otherEnrollmentId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        SeedStudent();
+        SeedProgram();
+        SeedProgram(price: 600_000m, id: otherProgramId);
+        var openClass = SeedOpenEnrollmentClass();
+        await SelectClassAsync(openClass.Id);
+
+        var seatHoldService = CreateSeatHoldService();
+        await seatHoldService.ReleaseClassHoldForCheckoutAsync(_programId);
+
+        Assert.DoesNotContain(_db.ProgramEnrollments.Items, pe => !pe.IsDeleted);
+
+        _programEnrollmentService
+            .Setup(s => s.GetOrCreatePendingEnrollmentAsync(_studentId, otherProgramId))
+            .ReturnsAsync(new ProgramEnrollment
+            {
+                Id = otherEnrollmentId,
+                StudentId = _studentId,
+                ProgramId = otherProgramId,
+                Status = EnrollmentStatus.PendingPayment,
+                IsDeleted = false,
+            });
+
+        var otherClassId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        _db.Classes.Seed(new Class
+        {
+            Id = otherClassId,
+            Code = "CLS-OTHER",
+            Name = "Other Cohort",
+            ProgramId = otherProgramId,
+            Status = ClassStatus.Open,
+            Kind = ClassKind.Standard,
+            MaxCapacity = 10,
+            StartDate = DateTime.UtcNow.AddDays(7),
+            EndDate = DateTime.UtcNow.AddDays(90),
+            MinHoursBeforeAssignmentJoin = 48,
+            IsDeleted = false,
+        });
+
+        await seatHoldService.SelectClassForCheckoutAsync(otherProgramId, otherClassId);
+
+        Assert.Single(_db.ClassEnrollments.Items, ce => ce.Status == ClassEnrollmentStatus.Pending);
     }
 
     [Fact]

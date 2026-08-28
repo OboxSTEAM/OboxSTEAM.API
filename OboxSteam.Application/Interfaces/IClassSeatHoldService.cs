@@ -34,4 +34,12 @@ public interface IClassSeatHoldService
         CancellationToken cancellationToken = default);
 
     Task PublishSeatsChangedAsync(Guid programId, Guid classId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Releases the current student's checkout hold for a program and abandons the pending enrollment.
+    /// Idempotent when no hold or pending enrollment exists.
+    /// </summary>
+    Task ReleaseClassHoldForCheckoutAsync(
+        Guid programId,
+        CancellationToken cancellationToken = default);
 }

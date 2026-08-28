@@ -190,6 +190,25 @@ public class ProgramController : ControllerBase
     }
 
     // =========================================================================
+    // RELEASE CLASS HOLD  —  POST /api/programs/{id}/release-class-hold
+    // =========================================================================
+
+    [HttpPost("{id:guid}/release-class-hold")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Release checkout seat hold",
+        Description = "Releases the student's soft seat hold and abandons the PendingPayment program enrollment "
+            + "for this program. Call when the learner leaves the checkout page or reloads. Idempotent.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    public async Task<IActionResult> ReleaseClassHoldForCheckout([FromRoute] Guid id)
+    {
+        await _classSeatHoldService.ReleaseClassHoldForCheckoutAsync(id);
+        return Ok(ApiResult<object>.Success(null, "200", "Checkout seat hold released."));
+    }
+
+    // =========================================================================
     // GET BY NAME  —  GET /api/programs/name/{name}
     // =========================================================================
 
