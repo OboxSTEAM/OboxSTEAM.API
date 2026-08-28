@@ -71,7 +71,52 @@ public sealed class NotificationPayload
     [Description("Subject student user id (required for parent child-scoped routing).")]
     public Guid? StudentId { get; set; }
 
+    [Description("Subject student display name (FullName, else email).")]
+    public string? StudentName { get; set; }
+
+    [Description("Actor display name (FullName, else email) for ActorUserId.")]
+    public string? ActorName { get; set; }
+
+    [Description("Class display name for client context.")]
+    public string? ClassName { get; set; }
+
+    [Description("Program display name for client context.")]
+    public string? ProgramName { get; set; }
+
     public string? Extra { get; set; }
+
+    /// <summary>
+    /// Sets display names when the caller already has them. Blank values are ignored
+    /// so later publisher/token copies can still fill gaps.
+    /// </summary>
+    public NotificationPayload WithNames(
+        string? studentName = null,
+        string? actorName = null,
+        string? className = null,
+        string? programName = null)
+    {
+        if (!string.IsNullOrWhiteSpace(studentName))
+        {
+            StudentName = studentName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(actorName))
+        {
+            ActorName = actorName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(className))
+        {
+            ClassName = className;
+        }
+
+        if (!string.IsNullOrWhiteSpace(programName))
+        {
+            ProgramName = programName;
+        }
+
+        return this;
+    }
 
     /// <summary>Sets both <see cref="ProgramEnrollmentId"/> and <see cref="EnrollmentId"/>.</summary>
     public NotificationPayload SetEnrollment(Guid? programEnrollmentId)
@@ -106,6 +151,10 @@ public sealed class NotificationPayload
         HighlightVideoId = HighlightVideoId,
         ParentStudentId = ParentStudentId,
         StudentId = StudentId,
+        StudentName = StudentName,
+        ActorName = ActorName,
+        ClassName = ClassName,
+        ProgramName = ProgramName,
         Extra = Extra
     };
 }

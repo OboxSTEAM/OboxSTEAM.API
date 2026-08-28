@@ -65,7 +65,11 @@ public sealed class NotificationPublisher : INotificationPublisher
                     command.Templates.Resolve(recipient.Role),
                     tokens);
 
-                var payload = ClonePayloadForRecipient(command.Payload, recipient.ContextStudentId);
+                var payload = ClonePayloadForRecipient(
+                    command.Payload,
+                    recipient.ContextStudentId,
+                    command.ActorUserId,
+                    displayNames);
                 var payloadJson = NotificationDtoMapper.SerializePayload(payload);
 
                 entities.Add(new Notification
@@ -166,7 +170,9 @@ public sealed class NotificationPublisher : INotificationPublisher
 
     private static NotificationPayload? ClonePayloadForRecipient(
         NotificationPayload? payload,
-        Guid? contextStudentId)
+        Guid? contextStudentId,
+        Guid? actorUserId,
+        IReadOnlyDictionary<Guid, string> displayNames)
     {
         if (payload is null && contextStudentId is null)
         {
@@ -177,6 +183,19 @@ public sealed class NotificationPublisher : INotificationPublisher
         if (contextStudentId is not null && contextStudentId.Value != Guid.Empty)
         {
             clone.StudentId = contextStudentId.Value;
+            if (displayNames.TryGetValue(contextStudentId.Value, out var studentName)
+                && !string.IsNullOrWhiteSpace(studentName))
+            {
+                clone.StudentName = studentName;
+            }
+        }
+
+        if (actorUserId is not null
+            && actorUserId.Value != Guid.Empty
+            && displayNames.TryGetValue(actorUserId.Value, out var actorName)
+            && !string.IsNullOrWhiteSpace(actorName))
+        {
+            clone.ActorName = actorName;
         }
 
         return clone;

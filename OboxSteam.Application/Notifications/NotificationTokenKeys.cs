@@ -34,6 +34,14 @@ public static class NotificationTokenKeys
         return tokens;
     }
 
+    public static void CopyToPayload(NotificationPayload payload, IReadOnlyDictionary<string, string> tokens)
+    {
+        payload.StudentName ??= Read(tokens, StudentName);
+        payload.ActorName ??= Read(tokens, ActorName);
+        payload.ClassName ??= Read(tokens, ClassName);
+        payload.ProgramName ??= Read(tokens, ProgramName);
+    }
+
     private static void Add(Dictionary<string, string> tokens, string key, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))
@@ -41,4 +49,7 @@ public static class NotificationTokenKeys
             tokens[key] = value;
         }
     }
+
+    private static string? Read(IReadOnlyDictionary<string, string> tokens, string key)
+        => tokens.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
 }

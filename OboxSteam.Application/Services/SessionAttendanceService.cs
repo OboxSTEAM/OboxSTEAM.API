@@ -226,7 +226,9 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
                 currentUser.Id,
                 classEntity?.ProgramId,
                 classEnrollment.ProgramEnrollmentId,
-                classSession.ActivityId));
+                classSession.ActivityId,
+                actorName: currentUser.FullName,
+                className: classEntity?.Name));
 
         if (request.Status == AttendanceStatus.Absent)
         {

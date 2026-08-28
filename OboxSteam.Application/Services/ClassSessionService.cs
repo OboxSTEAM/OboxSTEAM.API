@@ -360,7 +360,7 @@ public sealed class ClassSessionService : IClassSessionService
         await _unitOfWork.SaveChangesAsync();
 
         await _notificationPublisher.PublishAsync(
-            NotificationCatalog.ClassSessionScheduled(entity.ClassId, entity.Id, classEntity!.ProgramId));
+            NotificationCatalog.ClassSessionScheduled(entity.ClassId, entity.Id, classEntity!.ProgramId, classEntity.Name));
 
         await SyncReadyForMentorStatusAsync(classEntity);
 
@@ -511,7 +511,7 @@ public sealed class ClassSessionService : IClassSessionService
         await _unitOfWork.SaveChangesAsync();
 
         var notifications = entities
-            .Select(e => NotificationCatalog.ClassSessionScheduled(classId, e.Id, classEntity.ProgramId))
+            .Select(e => NotificationCatalog.ClassSessionScheduled(classId, e.Id, classEntity.ProgramId, classEntity.Name))
             .ToList();
         await _notificationPublisher.PublishManyAsync(notifications);
 
@@ -863,26 +863,26 @@ public sealed class ClassSessionService : IClassSessionService
             {
                 case ClassSessionStatus.InProgress:
                     sessionNotifications.Add(
-                        NotificationCatalog.ClassSessionStarted(session.ClassId, session.Id, classEntity!.ProgramId));
+                        NotificationCatalog.ClassSessionStarted(session.ClassId, session.Id, classEntity!.ProgramId, classEntity.Name));
                     break;
                 case ClassSessionStatus.Completed:
                     sessionNotifications.Add(
-                        NotificationCatalog.ClassSessionCompleted(session.ClassId, session.Id, classEntity!.ProgramId));
+                        NotificationCatalog.ClassSessionCompleted(session.ClassId, session.Id, classEntity!.ProgramId, classEntity.Name));
                     break;
                 case ClassSessionStatus.Cancelled:
                     sessionNotifications.Add(
-                        NotificationCatalog.ClassSessionCancelled(session.ClassId, session.Id, classEntity!.ProgramId));
+                        NotificationCatalog.ClassSessionCancelled(session.ClassId, session.Id, classEntity!.ProgramId, classEntity.Name));
                     break;
                 default:
                     sessionNotifications.Add(
-                        NotificationCatalog.ClassSessionRescheduled(session.ClassId, session.Id, classEntity!.ProgramId));
+                        NotificationCatalog.ClassSessionRescheduled(session.ClassId, session.Id, classEntity!.ProgramId, classEntity.Name));
                     break;
             }
         }
         else if (timeChanged)
         {
             sessionNotifications.Add(
-                NotificationCatalog.ClassSessionRescheduled(session.ClassId, session.Id, classEntity!.ProgramId));
+                NotificationCatalog.ClassSessionRescheduled(session.ClassId, session.Id, classEntity!.ProgramId, classEntity.Name));
         }
 
         if (sessionNotifications.Count > 0)
@@ -938,7 +938,7 @@ public sealed class ClassSessionService : IClassSessionService
 
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
         await _notificationPublisher.PublishAsync(
-            NotificationCatalog.ClassSessionCancelled(classId, sessionId, classEntity?.ProgramId));
+            NotificationCatalog.ClassSessionCancelled(classId, sessionId, classEntity?.ProgramId, classEntity?.Name));
 
         if (classEntity != null)
         {

@@ -284,7 +284,9 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             assignment.Id,
             classId,
             module?.ProgramId,
-            assignment.Title));
+            assignment.Title,
+            studentName: student.FullName,
+            actorName: student.FullName));
 
         _logger.LogInformation(
             "SubmitResearchWork completed. SubmissionId={SubmissionId}, AttemptNumber={AttemptNumber}, StudentId={StudentId}",
@@ -404,7 +406,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
                 module?.ProgramId,
                 assignment.Title,
                 grader.Id,
-                programEnrollmentId));
+                programEnrollmentId,
+                actorName: grader.FullName));
         }
         else
         {

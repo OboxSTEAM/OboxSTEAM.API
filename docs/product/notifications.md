@@ -54,6 +54,16 @@ Student copy addresses the learner as "bạn" ("Bạn đã hoàn thành…"). Pa
 names the child as "con bạn {studentName}" ("Con bạn {studentName} đã hoàn
 thành…"). Catalog titles and bodies are Vietnamese.
 
+## Payload display names
+
+`NotificationPayload` includes `studentName`, `actorName`, `className`, and
+`programName` in addition to deeplink ids. Catalog factories set class and
+program names from values the publishing service already has. `StudentName`
+and `ActorName` are also filled per recipient at publish time from
+`ContextStudentId` and `ActorUserId` (same lookup as the template tokens).
+Class-roster events do not set a single `studentId` in the catalog; the
+publisher writes the context student id onto each inbox row.
+
 ## Strict Type-to-Audience-to-Publisher Matrix
 
 The matrix is the product contract for who receives each notification and which

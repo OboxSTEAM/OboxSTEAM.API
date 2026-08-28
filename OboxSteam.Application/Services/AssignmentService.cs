@@ -685,7 +685,8 @@ public sealed class AssignmentService : IAssignmentService
                 assignment.Id,
                 module.ProgramId,
                 assignment.Title,
-                module.Id))
+                module.Id,
+                className: c.Name))
             .ToList();
 
         await _notificationPublisher.PublishManyAsync(commands);

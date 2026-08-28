@@ -159,7 +159,8 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
                 assignment.Id,
                 enrollment.ModuleId,
                 classId,
-                assignment.Title));
+                assignment.Title,
+                studentName: student.FullName));
 
         _logger.LogInformation(
             "[CreateAsync] Assessment recovery {RequestId} created by student {StudentId} for assignment {AssignmentId}.",

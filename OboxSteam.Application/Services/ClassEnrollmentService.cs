@@ -115,7 +115,8 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                 programEnrollment.ProgramId,
                 classToJoin.Name,
                 programEnrollment.Id,
-                nextActivityId));
+                nextActivityId,
+                studentName: student.FullName));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
 
@@ -205,7 +206,8 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                 enrollment.Id,
                 programEnrollment.ProgramId,
                 targetClass.Name,
-                programEnrollment.Id));
+                programEnrollment.Id,
+                studentName: student.FullName));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
 
@@ -318,7 +320,8 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                 newEnrollment.Id,
                 programEnrollment.ProgramId,
                 targetClass.Name,
-                programEnrollment.Id));
+                programEnrollment.Id,
+                studentName: student.FullName));
 
         await _classService.TryAutoStartClassIfReadyAsync(request.ClassId);
 

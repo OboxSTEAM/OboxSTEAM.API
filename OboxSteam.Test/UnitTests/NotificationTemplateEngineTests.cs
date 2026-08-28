@@ -151,6 +151,43 @@ public sealed class NotificationTemplateEngineTests
     }
 
     [Fact]
+    public void Catalog_ProgramActivated_CopiesDisplayNamesOntoPayload()
+    {
+        var command = NotificationCatalog.ProgramActivated(
+            _studentAId,
+            _programId,
+            Guid.NewGuid(),
+            "STEAM 1",
+            studentName: "An Nguyen");
+
+        Assert.Equal("An Nguyen", command.Payload!.StudentName);
+        Assert.Equal("STEAM 1", command.Payload.ProgramName);
+    }
+
+    [Fact]
+    public void Catalog_ClassCreated_CopiesClassAndProgramNamesOntoPayload()
+    {
+        var command = NotificationCatalog.ClassCreated(_classId, _programId, "Cohort A", "Robotics");
+
+        Assert.Equal("Cohort A", command.Payload!.ClassName);
+        Assert.Equal("Robotics", command.Payload.ProgramName);
+    }
+
+    [Fact]
+    public void Catalog_ClassSessionScheduled_DoesNotSetStudentId_UntilPublish()
+    {
+        var sessionId = Guid.NewGuid();
+        var command = NotificationCatalog.ClassSessionScheduled(
+            _classId,
+            sessionId,
+            _programId,
+            "Cohort A");
+
+        Assert.Null(command.Payload!.StudentId);
+        Assert.Equal("Cohort A", command.Payload.ClassName);
+    }
+
+    [Fact]
     public void Catalog_ProgramActivated_SerializesEnrollmentIdAndNextActivityId()
     {
         var enrollmentId = Guid.Parse("33333333-3333-3333-3333-333333333333");
@@ -289,7 +326,9 @@ public sealed class NotificationTemplateEngineTests
         await sut.PublishAsync(NotificationCatalog.ModuleCompleted(
             _studentAId,
             Guid.NewGuid(),
-            moduleName: "Robotics 1"));
+            moduleName: "Robotics 1",
+            studentName: "An Nguyen",
+            programName: "Robotics 1"));
 
         var studentRow = db.Notifications.Items.Single(n => n.RecipientUserId == _studentAId);
         var parentRow = db.Notifications.Items.Single(n => n.RecipientUserId == _parentId);
@@ -301,6 +340,8 @@ public sealed class NotificationTemplateEngineTests
         var parentDto = NotificationDtoMapper.ToDto(parentRow);
         Assert.NotNull(parentDto.Payload);
         Assert.Equal(_studentAId, parentDto.Payload!.StudentId);
+        Assert.Equal("An Nguyen", parentDto.Payload.StudentName);
+        Assert.Equal("Robotics 1", parentDto.Payload.ProgramName);
     }
 
     [Fact]
@@ -322,7 +363,8 @@ public sealed class NotificationTemplateEngineTests
             _classId,
             Guid.NewGuid(),
             _programId,
-            "Build a robot"));
+            "Build a robot",
+            className: "Cohort A"));
 
         var parentRows = db.Notifications.Items
             .Where(n => n.RecipientUserId == _parentId)
@@ -332,6 +374,11 @@ public sealed class NotificationTemplateEngineTests
         Assert.Contains(parentRows, n => n.Body == "Bài tập \"Build a robot\" hiện đã sẵn sàng cho con bạn An Nguyen.");
         Assert.Contains(parentRows, n => n.Body == "Bài tập \"Build a robot\" hiện đã sẵn sàng cho con bạn Binh Tran.");
         Assert.Equal(2, db.Notifications.Items.Count(n => n.RecipientUserId == _studentAId || n.RecipientUserId == _studentBId));
+
+        var parentDtos = parentRows.Select(NotificationDtoMapper.ToDto).ToList();
+        Assert.Contains(parentDtos, d => d.Payload!.StudentId == _studentAId && d.Payload.StudentName == "An Nguyen");
+        Assert.Contains(parentDtos, d => d.Payload!.StudentId == _studentBId && d.Payload.StudentName == "Binh Tran");
+        Assert.All(parentDtos, d => Assert.Equal("Cohort A", d.Payload!.ClassName));
     }
 
     private InMemoryUnitOfWork SeedClassWithTwoChildrenSameParent()

@@ -120,7 +120,8 @@ public sealed class ClassQuizQuestionSetService : IClassQuizQuestionSetService
                 classEntity.ProgramId,
                 "đã kéo câu hỏi",
                 $"{questions.Count} câu hỏi cho \"{assignment.Title}\"",
-                assignment.ModuleId));
+                assignment.ModuleId,
+                className: classEntity.Name));
 
         _logger.LogInformation(
             "[PullAsync] Mentor {MentorId} pulled {Count} questions for ClassId={ClassId}, AssignmentId={AssignmentId}",
@@ -285,7 +286,8 @@ public sealed class ClassQuizQuestionSetService : IClassQuizQuestionSetService
                 question.QuestionText.Length > 80
                     ? question.QuestionText[..80] + "…"
                     : question.QuestionText,
-                assignment.ModuleId));
+                assignment.ModuleId,
+                className: classEntity.Name));
 
         _logger.LogInformation(
             "[UpdateQuestionAsync] Mentor {MentorId} updated question {QuestionId} for ClassId={ClassId}, AssignmentId={AssignmentId}",
