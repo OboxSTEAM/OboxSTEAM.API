@@ -978,10 +978,7 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
             }
 
             var seatsTaken = await ClassEnrollmentValidator.GetSeatsTakenAsync(_unitOfWork, candidate.Id);
-            if (seatsTaken >= candidate.MaxCapacity)
-            {
-                continue;
-            }
+            var seatsRemaining = Math.Max(0, candidate.MaxCapacity - seatsTaken);
 
             var moduleSessions = await GetModuleSessionsAsync(candidate.Id, module.Id);
             if (HasStartedModule(moduleSessions))
@@ -1008,7 +1005,7 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
                 MentorName = mentor?.FullName,
                 MaxCapacity = candidate.MaxCapacity,
                 SeatsTaken = seatsTaken,
-                SeatsRemaining = Math.Max(0, candidate.MaxCapacity - seatsTaken),
+                SeatsRemaining = seatsRemaining,
                 ModuleSessions = moduleSessions
                     .OrderBy(cs => cs.StartTime)
                     .Select(cs => new ClassRedeliveryCandidateSessionDto
@@ -1047,7 +1044,8 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
 
     /// <summary>
     /// Non-throwing counterpart of <see cref="StudentLoadValidator.ValidateUnderPrimaryClassLoadAsync"/>,
-    /// used while scanning candidates (a full class is skipped, not an error).
+    /// used while scanning candidates. Full classes are included with
+    /// <c>seatsRemaining = 0</c> so clients can render a disabled pick action.
     /// </summary>
     private async Task<bool> IsUnderPrimaryClassLoadAsync(Guid studentId, Guid? excludeEnrollmentId)
     {

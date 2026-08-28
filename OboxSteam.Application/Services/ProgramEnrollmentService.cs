@@ -396,16 +396,32 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
             enrollment.StudentId,
             ProgramEnrollmentValidator.ViewEnrollmentForbiddenMessage);
 
-        var activeClassEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+        var activeClassEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
             ce => ce.ProgramEnrollmentId == enrollmentId
                   && ce.Status == ClassEnrollmentStatus.Active
                   && !ce.IsDeleted);
 
+        var primaryEnrollment = activeClassEnrollments
+            .FirstOrDefault(ce => ce.Kind == ClassEnrollmentKind.Primary)
+            ?? activeClassEnrollments.FirstOrDefault();
+
+        var retakeSeats = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ProgramEnrollmentId == enrollmentId
+                  && ce.Kind == ClassEnrollmentKind.Retake
+                  && (ce.Status == ClassEnrollmentStatus.Active
+                      || ce.Status == ClassEnrollmentStatus.Completed)
+                  && !ce.IsDeleted);
+
+        var displayKind = retakeSeats.Count > 0
+            ? ClassEnrollmentKind.Retake
+            : primaryEnrollment?.Kind ?? ClassEnrollmentKind.Primary;
+
         var result = new ProgramEnrollmentClassDto
         {
             ProgramEnrollmentId = enrollmentId,
-            ClassId = activeClassEnrollment?.ClassId,
-            ClassEnrollmentId = activeClassEnrollment?.Id,
+            ClassId = primaryEnrollment?.ClassId,
+            ClassEnrollmentId = primaryEnrollment?.Id,
+            Kind = displayKind,
         };
 
         _logger.LogInformation(

@@ -349,6 +349,8 @@ public partial class SeedService
                 AtDays(21), AtDays(21).AddHours(2), ClassSessionStatus.Scheduled),
             BuildWs7Session(openClass.Id, curriculum.ExpModule.Id, "WS7 EXP future session 2",
                 AtDays(28), AtDays(28).AddHours(2), ClassSessionStatus.Scheduled),
+            BuildWs7Session(fullClass.Id, curriculum.ExpModule.Id, "WS7 EXP future on full",
+                AtDays(22), AtDays(22).AddHours(2), ClassSessionStatus.Scheduled),
             BuildWs7Session(remedialClass.Id, curriculum.ExpModule.Id, "WS7 Remedial intensive 1",
                 AtDays(12), AtDays(12).AddHours(3), ClassSessionStatus.Scheduled),
             BuildWs7Session(remedialClass.Id, curriculum.ExpModule.Id, "WS7 Remedial intensive 2",

@@ -559,6 +559,57 @@ public sealed class ProgramEnrollmentServiceTests
         Assert.Equal(_enrollmentId, result.ProgramEnrollmentId);
         Assert.Equal(_classId, result.ClassId);
         Assert.Equal(_classEnrollmentId, result.ClassEnrollmentId);
+        Assert.Equal(ClassEnrollmentKind.Primary, result.Kind);
+    }
+
+    [Fact]
+    public async Task GetClass_ReturnsPrimaryClassId_WithRetakeKind_WhenRetakeSeatExists()
+    {
+        SeedStudent();
+        SeedProgram();
+        SeedEnrollment();
+        var primaryClassId = _classId;
+        var retakeClassId = Guid.Parse("45454545-4545-4545-4545-454545454545");
+        _db.Classes.Seed(new Class
+        {
+            Id = retakeClassId,
+            Code = "CLS-REM",
+            Name = "Remedial",
+            ProgramId = _programId,
+            Status = ClassStatus.Open,
+            Kind = ClassKind.Remedial,
+            MaxCapacity = 8,
+            StartDate = DateTime.UtcNow.AddDays(7),
+            EndDate = DateTime.UtcNow.AddDays(45),
+            IsDeleted = false,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = _classEnrollmentId,
+            ClassId = primaryClassId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = _enrollmentId,
+            Kind = ClassEnrollmentKind.Primary,
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.Parse("56565656-5656-5656-5656-565656565656"),
+            ClassId = retakeClassId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = _enrollmentId,
+            Kind = ClassEnrollmentKind.Retake,
+            Status = ClassEnrollmentStatus.Completed,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetProgramEnrollmentClassAsync(_enrollmentId);
+
+        Assert.Equal(primaryClassId, result.ClassId);
+        Assert.Equal(_classEnrollmentId, result.ClassEnrollmentId);
+        Assert.Equal(ClassEnrollmentKind.Retake, result.Kind);
     }
 
     [Fact]
