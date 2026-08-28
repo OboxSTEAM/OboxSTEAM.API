@@ -44,13 +44,18 @@ public partial class SeedService
         _seedNow = DateTime.UtcNow;
         _loggerService.LogInformation("Starting WS7 FE test seed");
 
+        // Always (re)ensure login accounts — even when program fixtures already exist.
+        await SeedWs7StaffAsync();
+
         if (await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == Ws7ProgramCode && !p.IsDeleted) != null)
         {
-            _loggerService.LogInformation("WS7 seed already applied (program {Code}); skipping.", Ws7ProgramCode);
+            _loggerService.LogInformation(
+                "WS7 seed already applied (program {Code}); accounts refreshed, skipping curriculum/scenarios.",
+                Ws7ProgramCode);
             return;
         }
 
-        var staff = await SeedWs7StaffAsync();
+        var staff = await ResolveWs7StaffIdsAsync();
         var curriculum = await SeedWs7CurriculumAsync();
         var classes = await SeedWs7ClassesAsync(staff.MentorId, curriculum);
         await SeedWs7SharedEnrollmentsAsync(staff, curriculum, classes);
@@ -59,6 +64,16 @@ public partial class SeedService
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation("Finished WS7 FE test seed");
+    }
+
+    private static string Ws7UserEmail(string code) => $"{code.ToLowerInvariant()}@oboxsteam.com";
+
+    private async Task<(Guid MentorId, Guid ManagerId, Guid ParentId)> ResolveWs7StaffIdsAsync()
+    {
+        var mentor = await RequireUserByCodeAsync("MNT-WS7");
+        var manager = await RequireUserByCodeAsync("MNG-WS7");
+        var parent = await RequireUserByCodeAsync("PRT-WS7");
+        return (mentor.Id, manager.Id, parent.Id);
     }
 
     private async Task<(Guid MentorId, Guid ManagerId, Guid ParentId)> SeedWs7StaffAsync()
@@ -87,7 +102,7 @@ public partial class SeedService
         {
             var student = await EnsureWs7UserAsync(
                 code,
-                $"{code.ToLowerInvariant()}@oboxsteam.com",
+                Ws7UserEmail(code),
                 $"WS7 Student {code[^1]}",
                 RoleType.Student,
                 "Student@123");
@@ -101,7 +116,7 @@ public partial class SeedService
         {
             await EnsureWs7UserAsync(
                 code,
-                $"{code.ToLowerInvariant()}@oboxsteam.com",
+                Ws7UserEmail(code),
                 code,
                 RoleType.Student,
                 "Student@123");
@@ -752,9 +767,26 @@ public partial class SeedService
         RoleType role,
         string password)
     {
-        var existing = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == code && !u.IsDeleted);
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var passwordHash = new PasswordHasher().HashPassword(password)!;
+
+        var existingMatches = await _unitOfWork.Users.GetAllIncludingDeletedAsync(
+            u => u.Code == code || u.Email == normalizedEmail);
+        var existing = existingMatches.FirstOrDefault();
+
         if (existing != null)
         {
+            existing.Code = code;
+            existing.Email = normalizedEmail;
+            existing.PasswordHash = passwordHash;
+            existing.FullName = fullName;
+            existing.Role = role;
+            existing.Status = AccountStatus.Active;
+            existing.IsEmailVerified = true;
+            existing.IsDeleted = false;
+            existing.DeletedAt = null;
+            existing.DeletedBy = null;
+            await _unitOfWork.Users.Update(existing);
             return existing;
         }
 
@@ -762,8 +794,8 @@ public partial class SeedService
         {
             Id = Guid.NewGuid(),
             Code = code,
-            Email = email,
-            PasswordHash = new PasswordHasher().HashPassword(password)!,
+            Email = normalizedEmail,
+            PasswordHash = passwordHash,
             FullName = fullName,
             Role = role,
             Status = AccountStatus.Active,
