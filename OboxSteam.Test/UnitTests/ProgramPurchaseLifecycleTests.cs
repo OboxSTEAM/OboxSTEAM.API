@@ -549,6 +549,42 @@ public sealed class ProgramPurchaseLifecycleTests
         });
     }
 
+    /// <summary>Seeds the Active class seat the rebuy student holds on the new class.</summary>
+    private Guid SeedNewClassSeat(Guid programEnrollmentId)
+    {
+        var classId = Guid.NewGuid();
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = programEnrollmentId,
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false,
+        });
+        return classId;
+    }
+
+    private void SeedSessionForActivity(
+        Guid classId,
+        Guid moduleId,
+        ClassSessionStatus status,
+        Guid? activityId = null,
+        Guid? assignmentId = null)
+    {
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            ModuleId = moduleId,
+            ActivityId = activityId,
+            AssignmentId = assignmentId,
+            Title = "Session",
+            Status = status,
+            IsDeleted = false,
+        });
+    }
+
     [Theory]
     [InlineData(ClassSessionStatus.InProgress)]
     [InlineData(ClassSessionStatus.Completed)]
@@ -754,6 +790,8 @@ public sealed class ProgramPurchaseLifecycleTests
         });
         var pending = SeedEnrollment(EnrollmentStatus.Active);
         pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id);
+        SeedSession(newClassId, module.Id, ClassSessionStatus.Completed);
         var sut = CreateSut();
 
         await sut.ApplyRebuyCreditsAsync(pending);
@@ -791,6 +829,9 @@ public sealed class ProgramPurchaseLifecycleTests
         SeedModuleEnrollment(source.Id, moduleB.Id, EnrollmentStatus.Failed);
         var pending = SeedEnrollment(EnrollmentStatus.Active);
         pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id);
+        SeedSession(newClassId, moduleA.Id, ClassSessionStatus.Completed);
+        SeedSession(newClassId, moduleB.Id, ClassSessionStatus.Completed);
         var sut = CreateSut();
 
         await sut.ApplyRebuyCreditsAsync(pending);
@@ -810,6 +851,8 @@ public sealed class ProgramPurchaseLifecycleTests
         var pending = SeedEnrollment(EnrollmentStatus.Active);
         pending.SourceProgramEnrollmentId = source.Id;
         SeedModuleEnrollment(pending.Id, module.Id, EnrollmentStatus.Completed);
+        var newClassId = SeedNewClassSeat(pending.Id);
+        SeedSession(newClassId, module.Id, ClassSessionStatus.Completed);
         var sut = CreateSut();
 
         await sut.ApplyRebuyCreditsAsync(pending);
@@ -817,6 +860,95 @@ public sealed class ProgramPurchaseLifecycleTests
         Assert.Equal(
             2,
             _db.ModuleEnrollments.Items.Count(me => me.ModuleId == module.Id));
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_SkipsModule_WhenNewClassHasNotStartedIt()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var module = SeedModule("MOD-A", 1);
+        SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id);
+        // New class has only a Scheduled session for this module — nothing taught yet.
+        SeedSession(newClassId, module.Id, ClassSessionStatus.Scheduled);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        Assert.DoesNotContain(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == pending.Id);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_PartialModule_CopiesOnlyCompletedActivitiesAndStaysActive()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var module = SeedModule("MOD-A", 1);
+        var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+
+        var courseId = Guid.NewGuid();
+        _db.Courses.Seed(new Course
+        {
+            Id = courseId,
+            Code = "CRS-A",
+            Name = "CRS-A",
+            ModuleId = module.Id,
+            IsDeleted = false,
+        });
+        var doneActivityId = Guid.NewGuid();
+        var pendingActivityId = Guid.NewGuid();
+        _db.Activities.Seed(
+            new Activity { Id = doneActivityId, Code = "ACT-1", Name = "ACT-1", CourseId = courseId, IsDeleted = false },
+            new Activity { Id = pendingActivityId, Code = "ACT-2", Name = "ACT-2", CourseId = courseId, IsDeleted = false });
+
+        _db.ActivityProgresses.Seed(
+            new ActivityProgress
+            {
+                Id = Guid.NewGuid(),
+                StudentId = _studentId,
+                ActivityId = doneActivityId,
+                ModuleEnrollmentId = sourceModuleEnrollment.Id,
+                ActivityStatus = ActivityStatus.Done,
+                IsCompleted = true,
+                IsDeleted = false,
+            },
+            new ActivityProgress
+            {
+                Id = Guid.NewGuid(),
+                StudentId = _studentId,
+                ActivityId = pendingActivityId,
+                ModuleEnrollmentId = sourceModuleEnrollment.Id,
+                ActivityStatus = ActivityStatus.Done,
+                IsCompleted = true,
+                IsDeleted = false,
+            });
+
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id);
+        // New class finished the session for doneActivity but is still running pendingActivity.
+        SeedSessionForActivity(newClassId, module.Id, ClassSessionStatus.Completed, activityId: doneActivityId);
+        SeedSessionForActivity(newClassId, module.Id, ClassSessionStatus.InProgress, activityId: pendingActivityId);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        var copied = Assert.Single(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == pending.Id);
+        Assert.Equal(EnrollmentStatus.Active, copied.Status);
+        Assert.Equal(50m, copied.ProgressPercent);
+        Assert.Null(copied.FinalGrade);
+        Assert.Null(copied.CompletedAt);
+
+        // Only the activity the new class completed a session for is copied.
+        var copiedProgress = Assert.Single(
+            _db.ActivityProgresses.Items,
+            ap => ap.ModuleEnrollmentId == copied.Id);
+        Assert.Equal(doneActivityId, copiedProgress.ActivityId);
     }
 
     [Fact]

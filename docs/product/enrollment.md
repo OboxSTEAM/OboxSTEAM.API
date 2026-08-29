@@ -115,12 +115,18 @@ an **Active** enrollment and return 403 on closed ones.
   session progress (`NotStarted` / `InProgress` / `Completed`) and `isEligible`.
   First-time checkout still uses `GET /api/programs/{programId}/open-classes`
   (Open only).
-- **Credit copy (inside the window only):** on payment success, modules
-  completed on the source are copied onto the new enrollment as `Completed`
-  with their `ActivityProgress` rows and `Graded` submissions (new
-  `Submission.Code` per copy). The failed/in-progress modules are redone from
-  scratch on the next global `AttemptNumber`. Outside the window nothing is
-  copied.
+- **Credit copy (inside the window only):** on payment success, credit is
+  copied scoped to what the **new class** has already taught. A module the new
+  class has not started (no `Completed` session) is not copied — the student
+  relearns it with the new class. A module the new class has fully taught
+  (every non-cancelled session `Completed`) is copied whole as `Completed`/100%
+  with its `ActivityProgress` rows and `Graded` submissions (new
+  `Submission.Code` per copy). A module the new class is part-way through
+  copies only the `ActivityProgress`/`Graded` submissions whose
+  activity/assignment the new class has already completed a session for; the
+  copied enrollment stays `Active` with `ProgressPercent` = copied/total
+  activities, and the student finishes the rest with the new class. Each copy
+  uses the next global `AttemptNumber`. Outside the window nothing is copied.
 - Rebuy does **not** reset assignment `MaxAttempts` or the recovery cap.
 
 **Manager correction.** Attendance stays editable on closed enrollments and
