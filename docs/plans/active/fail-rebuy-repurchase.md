@@ -15,7 +15,10 @@ fail + effective attempts exhausted + recovery cap of 2 reached; or attendance:
 continuing requires paying the program retake fee (`Program.RetakeFee` falling
 back to `Program.Price`) and joining exactly one new `Standard` class that has
 not started the failed module. Passed modules carry over as `Completed` copies
-on the new enrollment; the failed module is redone from scratch.
+on the new enrollment; the failed module is redone from scratch. The retake
+fee and passed-module credit apply only when the rebuy starts within 3
+calendar months of the source enrollment's `EndedAt` (boundary day included);
+later rebuys pay full `Program.Price` and start every module from scratch.
 
 ## Context
 
@@ -40,8 +43,10 @@ In scope:
   `Program.RetakeFee`, relaxed unique index.
 - Close triggers: attendance, academic (4 wire points), withdraw endpoint.
 - Rebuy checkout: pending-after-terminal, `SourceProgramEnrollmentId`, class
-  eligibility, retake-fee pricing.
-- Payment success: progress copy + next-attempt provisioning.
+  eligibility, retake-fee pricing gated by the 3-calendar-month rebuy window
+  from the source enrollment's `EndedAt`.
+- Payment success: progress copy (inside the rebuy window only) +
+  next-attempt provisioning.
 - Read-only curriculum for `Failed`/`Dropped`; E2E test; product docs.
 
 Out of scope:
@@ -82,8 +87,10 @@ only. If a step grows, split it before implementing.
   research grading + recovery reject.
 - [ ] Step 4: `WithdrawAsync` + `POST /api/program-enrollments/{id}/withdraw`.
 - [ ] Step 5: rebuy checkout (pending after terminal, `SourceProgramEnrollmentId`,
-  class has-not-started-failed-module eligibility, `RetakeFee ?? Price`).
-- [ ] Step 6: `ApplyRebuyCreditsAsync` on payment success + next-attempt
+  class has-not-started-failed-module eligibility, `RetakeFee ?? Price` inside
+  the 3-calendar-month window from the source `EndedAt`, full `Price` after).
+- [ ] Step 6: `ApplyRebuyCreditsAsync` on payment success (copies `Completed`
+  modules only when the rebuy is inside the window) + next-attempt
   provisioning in curriculum.
 - [ ] Step 7: read-only curriculum for `Failed`/`Dropped` + `Completed` credit
   without cloned submissions.
@@ -102,6 +109,10 @@ only. If a step grows, split it before implementing.
 - 2026-08-29: `Deferred` is treated like `Active` (blocks rebuy); `Completed`
   does not block rebuy; in-progress (non-failed, non-completed) modules are not
   copied.
+- 2026-08-29: Retake pricing and passed-module credit are time-boxed to a
+  3-calendar-month rebuy window from the source enrollment's `EndedAt`
+  (boundary day included); later rebuys pay full `Program.Price` and copy no
+  progress. The window applies equally to `Failed` and `Dropped` sources.
 
 ## Validation
 

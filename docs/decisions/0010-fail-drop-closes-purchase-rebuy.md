@@ -59,15 +59,23 @@ fee and joining a new class whose progress has not reached the failed module.
    module" check is re-implemented in the new lifecycle service - the legacy
    redelivery service is not reused.
 7. **Retake fee** = `Program.RetakeFee` (new nullable field) falling back to
-   `Program.Price` when null.
-8. **On payment success**: `Completed` module enrollments (and their
-   `ActivityProgress` rows) are copied to the new enrollment with the next
-   global `AttemptNumber` per (student, module); failed and in-progress modules
-   are not copied. The student joins exactly one new `Standard` class. No
-   Remedial class is created.
-9. `Failed`/`Dropped` enrollments keep read-only curriculum access; mutations
-   still require `Active`.
-10. Legacy `ClassRedeliveryRequest` / Remedial / retake checkout stay untouched
+   `Program.Price` when null. Retake pricing applies only inside the rebuy
+   window (item 8); outside the window the rebuy bills full `Program.Price`.
+8. **Rebuy window**: retake pricing and passed-module credit apply only when
+   the rebuy checkout starts within 3 calendar months of the source
+   enrollment's `EndedAt` (the boundary day is included). After the window the
+   rebuy is still allowed but is a fresh start: full `Program.Price`, no
+   progress copy. The window applies equally to `Failed` and `Dropped` source
+   enrollments.
+9. **On payment success**: inside the rebuy window, `Completed` module
+   enrollments (and their `ActivityProgress` rows) are copied to the new
+   enrollment with the next global `AttemptNumber` per (student, module);
+   failed and in-progress modules are not copied. Outside the window nothing
+   is copied and every module starts from scratch. The student joins exactly
+   one new `Standard` class. No Remedial class is created.
+10. `Failed`/`Dropped` enrollments keep read-only curriculum access; mutations
+    still require `Active`.
+11. Legacy `ClassRedeliveryRequest` / Remedial / retake checkout stay untouched
     and are not depended upon; cleanup is deferred to a later slice.
 
 ## Alternatives Considered
@@ -83,6 +91,9 @@ fee and joining a new class whose progress has not reached the failed module.
    re-implemented in the new lifecycle service.
 4. Retake fee = always 100% `Program.Price` - superseded by the separate
    `RetakeFee` field with `Price` fallback.
+5. Unlimited retake window for the discount and passed-module credit -
+   rejected: product wants the retake offer time-boxed to 3 calendar months
+   after the purchase closes.
 
 ## Consequences
 
@@ -91,6 +102,8 @@ Positive:
 - Clear commercial ending; students are never stuck in an unfinishable state.
 - Retake revenue is explicit and configurable per program via `RetakeFee`.
 - Passed-module credit is preserved across the rebuy.
+- The retake discount and credit are time-boxed (3 calendar months from close),
+  encouraging quick re-enrollment while keeping long-dated rebuys full-price.
 
 Tradeoffs:
 
@@ -99,6 +112,8 @@ Tradeoffs:
 - Progress copy across enrollments and global attempt renumbering add
   implementation care around the `(StudentId, ModuleId, AttemptNumber)` unique
   index.
+- Rebuy checkout must resolve the source enrollment's `EndedAt` and apply the
+  3-calendar-month window before pricing and before any progress copy.
 - Read paths must treat two terminal statuses (`Failed`, `Dropped`) as
   read-only instead of forbidden.
 
