@@ -18,6 +18,7 @@ not publish business notifications.
 | --- | --- |
 | `ForUser` | One specified user, with optional context student id |
 | `ForStudentAndParents` | The student and parents with verified links |
+| `ForParentsOfStudent` | Verified parents of one student (student is not a recipient) |
 | `ForClassRoster` | Students with active class enrollments |
 | `ForClassRosterAndParents` | Active class-roster students and their verified parents |
 | `ForClassMentor` | The mentor currently assigned to the class |
@@ -49,6 +50,7 @@ include `{token}` placeholders interpolated at publish time:
 | `{activityName}` | Catalog token |
 | `{assignmentTitle}` | Catalog token |
 | `{extraAttempts}` | Catalog token |
+| `{checkedInAt}` | Catalog token (`HH:mm` Asia/Ho_Chi_Minh) |
 
 Student copy addresses the learner as "bạn" ("Bạn đã hoàn thành…"). Parent copy
 names the child as "con bạn {studentName}" ("Con bạn {studentName} đã hoàn
@@ -110,10 +112,10 @@ service emits it.
 | `ClassTransferred`               | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassSessionScheduled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
 | `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `ClassSessionStarted`            | `ForClassRosterAndMentor`                                    | `ClassSessionService`                       |
-| `ClassSessionCompleted`          | `ForClassRosterAndMentor`                                    | `ClassSessionService`                       |
+| `ClassSessionStarted`            | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `ClassSessionCompleted`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
 | `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `AttendanceMarkedPresent`        | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
+| `AttendanceMarkedPresent`        | `ForStudentAndParents` (staff mark); `ForParentsOfStudent` (first student check-in) | `SessionAttendanceService`                  |
 | `AttendanceMarkedLate`           | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
 | `AttendanceMarkedAbsent`         | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
 | `AttendanceMarkedExcused`        | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
@@ -141,12 +143,13 @@ Verified parents receive planning-relevant events that help them support a
 middle- or senior-school student:
 
 - class details and lifecycle changes;
-- session scheduling, rescheduling, and cancellation;
+- session scheduling, rescheduling, start, completion, and cancellation;
 - assignment publication;
 - enrollment, payment, progress, attendance, and grading events already sent
-  through `ForStudentAndParents`.
-
-Session started/completed events remain operational signals for students and
-mentors. Material updates remain student-only. Scheduled session reminders,
-assignment due-soon reminders, and overdue alerts are not implemented by this
-contract and require a separate scheduling feature.
+  through `ForStudentAndParents`;
+- the student's first QR/code check-in for a session (`AttendanceMarkedPresent`
+  via `ForParentsOfStudent`, copy includes `{checkedInAt}` in Vietnam local
+  time). Staff marking Present after that check-in does not send a second
+  Present notification. Material updates remain student-only. Scheduled session
+  reminders, assignment due-soon reminders, and overdue alerts are not
+  implemented by this contract and require a separate scheduling feature.

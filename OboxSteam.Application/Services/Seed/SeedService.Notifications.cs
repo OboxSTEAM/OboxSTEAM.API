@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.NotificationDTO;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
@@ -290,6 +291,33 @@ public partial class SeedService
             parent.Id,
             RoleType.Parent,
             now.AddHours(-12)));
+        samples.Add((
+            NotificationCatalog.ClassSessionStarted(classId, classSessionId, programId, className),
+            parent.Id,
+            RoleType.Parent,
+            now.AddHours(-3)));
+        samples.Add((
+            NotificationCatalog.ClassSessionCompleted(classId, classSessionId, programId, className),
+            parent.Id,
+            RoleType.Parent,
+            now.AddHours(-1)));
+        samples.Add((
+            NotificationCatalog.AttendanceCheckedIn(
+                student.Id,
+                classSessionId,
+                AppDateTime.FormatVietnamClock(now.AddHours(-8)),
+                classId,
+                student.Id,
+                programId,
+                programEnrollmentId,
+                sessionActivityId,
+                studentName,
+                studentName,
+                className,
+                program.Name),
+            parent.Id,
+            RoleType.Parent,
+            now.AddHours(-8)));
         samples.Add((
             NotificationCatalog.AttendanceMarked(
                 AttendanceStatus.Absent,

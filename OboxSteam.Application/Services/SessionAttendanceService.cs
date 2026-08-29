@@ -191,6 +191,10 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
                   && !sa.IsDeleted);
 
         var isNewAttendance = attendance == null;
+        var skipPresentNotification = request.Status == AttendanceStatus.Present
+            && !isNewAttendance
+            && IsStudentSelfCheckedIn(attendance!, studentId);
+
         if (isNewAttendance)
         {
             attendance = new SessionAttendance
@@ -216,19 +220,22 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
 
         await _unitOfWork.SaveChangesAsync();
 
-        var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
-        await _notificationPublisher.PublishAsync(
-            NotificationCatalog.AttendanceMarked(
-                attendance.Status,
-                studentId,
-                sessionId,
-                classId,
-                currentUser.Id,
-                classEntity?.ProgramId,
-                classEnrollment.ProgramEnrollmentId,
-                classSession.ActivityId,
-                actorName: currentUser.FullName,
-                className: classEntity?.Name));
+        if (!skipPresentNotification)
+        {
+            var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.AttendanceMarked(
+                    attendance.Status,
+                    studentId,
+                    sessionId,
+                    classId,
+                    currentUser.Id,
+                    classEntity?.ProgramId,
+                    classEnrollment.ProgramEnrollmentId,
+                    classSession.ActivityId,
+                    actorName: currentUser.FullName,
+                    className: classEntity?.Name));
+        }
 
         if (request.Status == AttendanceStatus.Absent)
         {
@@ -355,6 +362,9 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
                   && !sa.IsDeleted);
 
         var isNewAttendance = attendance == null;
+        var isFirstStudentCheckIn = isNewAttendance
+            || !IsStudentSelfCheckedIn(attendance!, currentUser.Id);
+
         if (isNewAttendance)
         {
             attendance = new SessionAttendance
@@ -379,6 +389,23 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        if (isFirstStudentCheckIn)
+        {
+            var classEntity = await _unitOfWork.Classes.GetByIdAsync(classSession!.ClassId);
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.AttendanceCheckedIn(
+                    currentUser.Id,
+                    classSessionId,
+                    AppDateTime.FormatVietnamClock(now),
+                    classSession.ClassId,
+                    currentUser.Id,
+                    classEntity?.ProgramId,
+                    classEnrollment.ProgramEnrollmentId,
+                    classSession.ActivityId,
+                    actorName: currentUser.FullName,
+                    className: classEntity?.Name));
+        }
 
         _logger.LogInformation(
             "[CheckInAsync] Student {StudentId} checked in to session {ClassSessionId}.",
@@ -452,4 +479,9 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             total,
             ModuleAbsencePolicy.MaxAbsencePercent);
     }
+
+    private static bool IsStudentSelfCheckedIn(SessionAttendance attendance, Guid studentId)
+        => attendance.RecordedBy == studentId
+           && attendance.Status == AttendanceStatus.Present
+           && attendance.CheckedInAt != null;
 }

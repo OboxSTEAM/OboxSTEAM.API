@@ -11,6 +11,7 @@ public static class NotificationTokenKeys
     public const string ActivityName = "activityName";
     public const string AssignmentTitle = "assignmentTitle";
     public const string ExtraAttempts = "extraAttempts";
+    public const string CheckedInAt = "checkedInAt";
 
     public static Dictionary<string, string> Create(
         string? studentName = null,
@@ -20,7 +21,8 @@ public static class NotificationTokenKeys
         string? moduleName = null,
         string? activityName = null,
         string? assignmentTitle = null,
-        string? extraAttempts = null)
+        string? extraAttempts = null,
+        string? checkedInAt = null)
     {
         var tokens = new Dictionary<string, string>(StringComparer.Ordinal);
         Add(tokens, StudentName, studentName);
@@ -31,6 +33,7 @@ public static class NotificationTokenKeys
         Add(tokens, ActivityName, activityName);
         Add(tokens, AssignmentTitle, assignmentTitle);
         Add(tokens, ExtraAttempts, extraAttempts);
+        Add(tokens, CheckedInAt, checkedInAt);
         return tokens;
     }
 

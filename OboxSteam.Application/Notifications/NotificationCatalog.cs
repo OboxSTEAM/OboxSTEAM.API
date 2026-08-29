@@ -1235,12 +1235,13 @@ public static class NotificationCatalog
         Guid? programId = null,
         string? className = null,
         string? programName = null)
-        => new(
+        => StudentParentMentor(
             NotificationType.ClassSessionStarted,
-            NotificationAudience.ForClassRosterAndMentor(classId),
-            NotificationRoleTemplates.FromDefault(
-                "Buổi học đã bắt đầu",
-                "Một buổi học đã bắt đầu."),
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
+            "Buổi học đã bắt đầu",
+            "Một buổi học đã bắt đầu.",
+            "Một buổi học của con bạn {studentName} đã bắt đầu.",
+            "Một buổi học đã bắt đầu.",
             payload: new NotificationPayload
             {
                 ClassId = classId,
@@ -1257,12 +1258,13 @@ public static class NotificationCatalog
         Guid? programId = null,
         string? className = null,
         string? programName = null)
-        => new(
+        => StudentParentMentor(
             NotificationType.ClassSessionCompleted,
-            NotificationAudience.ForClassRosterAndMentor(classId),
-            NotificationRoleTemplates.FromDefault(
-                "Buổi học đã kết thúc",
-                "Một buổi học đã kết thúc."),
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
+            "Buổi học đã kết thúc",
+            "Một buổi học đã kết thúc.",
+            "Một buổi học của con bạn {studentName} đã kết thúc.",
+            "Một buổi học đã kết thúc.",
             payload: new NotificationPayload
             {
                 ClassId = classId,
@@ -1368,6 +1370,52 @@ public static class NotificationCatalog
                 className: className,
                 programName: programName));
     }
+
+    /// <summary>
+    /// First student QR/code check-in. Reuses <see cref="NotificationType.AttendanceMarkedPresent"/>
+    /// but targets verified parents only, with Vietnam-local check-in time in the copy.
+    /// </summary>
+    public static NotificationCommand AttendanceCheckedIn(
+        Guid studentId,
+        Guid classSessionId,
+        string checkedInAt,
+        Guid? classId = null,
+        Guid? actorUserId = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null,
+        Guid? activityId = null,
+        string? studentName = null,
+        string? actorName = null,
+        string? className = null,
+        string? programName = null)
+        => new(
+            NotificationType.AttendanceMarkedPresent,
+            NotificationAudience.ForParentsOfStudent(studentId),
+            NotificationRoleTemplates.ForParent(
+                "Đã check-in",
+                "Con bạn {studentName} đã check-in lúc {checkedInAt}."),
+            payload: new NotificationPayload
+            {
+                ClassSessionId = classSessionId,
+                ClassId = classId,
+                StudentId = studentId,
+                ProgramId = programId,
+                ActivityId = activityId,
+                Extra = checkedInAt
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                actorName: actorName,
+                className: className,
+                programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSession",
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                checkedInAt: checkedInAt));
 
     // ── Grading / Quiz ────────────────────────────────────────────────────────
 

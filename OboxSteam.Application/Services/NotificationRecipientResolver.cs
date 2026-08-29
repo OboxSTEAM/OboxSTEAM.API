@@ -24,6 +24,7 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
         {
             NotificationAudienceKind.User => await ResolveUserAsync(audience),
             NotificationAudienceKind.StudentAndParents => await ResolveStudentAndParentsAsync(audience),
+            NotificationAudienceKind.ParentsOfStudent => await ResolveParentsOfStudentAsync(audience),
             NotificationAudienceKind.ClassRoster => await ResolveClassRosterAsync(audience),
             NotificationAudienceKind.ClassRosterAndParents => await ResolveClassRosterAndParentsAsync(audience),
             NotificationAudienceKind.ClassMentor => await ResolveClassMentorAsync(audience),
@@ -111,16 +112,25 @@ public sealed class NotificationRecipientResolver : INotificationRecipientResolv
         {
             new(studentId, RoleType.Student, studentId)
         };
+        recipients.AddRange(await ResolveParentsOfStudentAsync(audience));
+        return recipients;
+    }
 
+    private async Task<IReadOnlyList<NotificationRecipient>> ResolveParentsOfStudentAsync(
+        NotificationAudience audience)
+    {
+        if (audience.StudentId is null || audience.StudentId == Guid.Empty)
+        {
+            return Array.Empty<NotificationRecipient>();
+        }
+
+        var studentId = audience.StudentId.Value;
         var parents = await _unitOfWork.ParentStudents.GetAllAsync(
             ps => ps.StudentId == studentId && ps.IsVerified);
 
-        foreach (var link in parents)
-        {
-            recipients.Add(new NotificationRecipient(link.ParentId, RoleType.Parent, studentId));
-        }
-
-        return recipients;
+        return parents
+            .Select(link => new NotificationRecipient(link.ParentId, RoleType.Parent, studentId))
+            .ToList();
     }
 
     private async Task<IReadOnlyList<NotificationRecipient>> ResolveClassRosterAsync(

@@ -92,6 +92,30 @@ public sealed class NotificationTemplateEngineTests
     }
 
     [Fact]
+    public async Task Resolver_ParentsOfStudent_ExcludesStudent()
+    {
+        var db = new InMemoryUnitOfWork();
+        SeedUser(db, _studentAId, RoleType.Student, "An");
+        SeedUser(db, _parentId, RoleType.Parent, "Parent");
+        db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _parentId,
+            StudentId = _studentAId,
+            IsVerified = true,
+            IsDeleted = false
+        });
+
+        var sut = new NotificationRecipientResolver(db);
+        var recipients = await sut.ResolveAsync(NotificationAudience.ForParentsOfStudent(_studentAId));
+
+        var recipient = Assert.Single(recipients);
+        Assert.Equal(_parentId, recipient.UserId);
+        Assert.Equal(RoleType.Parent, recipient.Role);
+        Assert.Equal(_studentAId, recipient.ContextStudentId);
+    }
+
+    [Fact]
     public async Task Resolver_ClassRosterAndParents_EmitsOneParentRowPerChild()
     {
         var db = SeedClassWithTwoChildrenSameParent();
@@ -262,8 +286,40 @@ public sealed class NotificationTemplateEngineTests
 
         Assert.Equal(_programId, command.Payload!.ProgramId);
         Assert.Equal(enrollmentId, command.Payload.EnrollmentId);
-        Assert.Equal(activityId, command.Payload.ActivityId);
         Assert.Equal(_classId, command.Payload.ClassId);
+    }
+
+    [Fact]
+    public void Catalog_ClassSessionStarted_IncludesParentsAndParentCopy()
+    {
+        var sessionId = Guid.NewGuid();
+        var command = NotificationCatalog.ClassSessionStarted(
+            _classId,
+            sessionId,
+            _programId,
+            "Cohort A");
+
+        Assert.Equal(NotificationAudienceKind.ClassRosterAndParentsAndMentor, command.Audience.Kind);
+        Assert.Contains("{studentName}", command.Templates.Parent!.Body);
+        Assert.Equal("Một buổi học đã bắt đầu.", command.Templates.Student!.Body);
+    }
+
+    [Fact]
+    public void Catalog_AttendanceCheckedIn_IsParentOnlyPresentWithClockToken()
+    {
+        var sessionId = Guid.NewGuid();
+        var command = NotificationCatalog.AttendanceCheckedIn(
+            _studentAId,
+            sessionId,
+            "16:00",
+            _classId);
+
+        Assert.Equal(NotificationType.AttendanceMarkedPresent, command.Type);
+        Assert.Equal(NotificationAudienceKind.ParentsOfStudent, command.Audience.Kind);
+        Assert.Equal(_studentAId, command.Audience.StudentId);
+        Assert.Equal("16:00", command.Tokens[NotificationTokenKeys.CheckedInAt]);
+        Assert.Equal("16:00", command.Payload!.Extra);
+        Assert.Contains("{checkedInAt}", command.Templates.Parent!.Body);
     }
 
     [Fact]

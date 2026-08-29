@@ -440,6 +440,58 @@ public sealed class SessionAttendanceServiceTests
     }
 
     [Fact]
+    public async Task Update_Present_SkipsNotification_AfterStudentSelfCheckIn()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedClass();
+        SeedSession();
+        SeedStudentRoster();
+        SeedAttendance(status: AttendanceStatus.Present);
+        _db.SessionAttendances.Items[0].CheckedInAt = _now.AddMinutes(-15);
+        _db.SessionAttendances.Items[0].RecordedBy = _studentId;
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Present });
+
+        Assert.Equal(AttendanceStatus.Present, result.Status);
+        Assert.Equal(_managerId, result.RecordedBy);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Update_Late_StillNotifies_AfterStudentSelfCheckIn()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedClass();
+        SeedSession();
+        SeedStudentRoster();
+        SeedAttendance(status: AttendanceStatus.Present);
+        _db.SessionAttendances.Items[0].CheckedInAt = _now.AddMinutes(-15);
+        _db.SessionAttendances.Items[0].RecordedBy = _studentId;
+        var sut = CreateSut(_managerId);
+
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Late });
+
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.AttendanceMarkedLate),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task Update_UpdatesExistingAttendance()
     {
         SeedUser(_managerId, RoleType.Manager, "MGR-001");
