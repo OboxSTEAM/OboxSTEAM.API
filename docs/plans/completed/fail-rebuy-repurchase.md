@@ -4,7 +4,7 @@ Date: 2026-08-29
 
 ## Status
 
-Active
+Completed
 
 ## Outcome
 
@@ -128,8 +128,10 @@ only. If a step grows, split it before implementing.
   033. Known gap: rebuy does not reset assignment `MaxAttempts` or the
   recovery cap, so academic-fail students like STD-027 cannot start a
   `MaxAttempts=1` quiz again.
-- [ ] Step 9: product docs (`enrollment.md`, `GLOSSARY.md`, `overview.md`) +
-  move this plan to `docs/plans/completed/`.
+- [x] Step 9: product docs (`enrollment.md` purchase close + rebuy section,
+  legacy marking for `ClassRedeliveryRequest`, `Program.RetakeFee` payment
+  wording; `GLOSSARY.md` Failed/Dropped + Rebuy terms; `overview.md`
+  hierarchy wording) + this plan moved to `docs/plans/completed/`.
 
 ## Decisions
 
@@ -185,4 +187,11 @@ only. If a step grows, split it before implementing.
 
 ## Result
 
-Pending.
+Done. Fail/drop closes the purchase with seats withdrawn; rebuy links the
+closed source, charges `RetakeFee ?? Price` inside the 3-calendar-month
+window (full `Price` after), enforces stop-module class eligibility, and
+copies completed-module credit (modules + activity progress + graded
+submissions) on payment success. Closed purchases stay read-only with
+manager correction + auto-reopen. Proof: 1310 unit tests green and step 8
+E2E 29/29 (`obox-rebuy-step8-e2e.ps1`, 2026-08-30). Known gap: rebuy does
+not reset assignment `MaxAttempts` or the recovery cap.

@@ -11,8 +11,9 @@ Sellable STEAM track. Has `Price`, modules, classes, and enrollments.
 ## Module
 
 Stage within a program (`Theory`, `Experiential`, `Research`). Ordered via
-`ModuleOrder`; optional `PrerequisiteModuleId`. Retail module price / retake
-fee columns were removed; tuition is program-level.
+`ModuleOrder`; optional `PrerequisiteModuleId`. Retail module price columns
+were removed; tuition is program-level. The retake price lives on
+`Program.RetakeFee` (nullable, falls back to `Program.Price`).
 
 ## Course
 
@@ -35,10 +36,24 @@ Student seat in a class. `ClassEnrollmentKind`: Primary or Retake.
 
 Graded work (`Quiz`, `FileUpload`, `Retrospective`, …) and student attempts.
 
+## Failed / Dropped enrollment
+
+Terminal `ProgramEnrollment` states. `Failed` = academic fail (attempts +
+recovery cap exhausted) or attendance fail (≥20% missed sessions);
+`Dropped` = student withdraw. Closed purchases keep read-only curriculum;
+continuing requires a rebuy. See `docs/product/enrollment.md`.
+
+## Rebuy
+
+New purchase of the same program after a `Failed`/`Dropped` (or `Completed`)
+enrollment. Within 3 calendar months of the source `EndedAt` (or
+`CompletedAt`), the price is `Program.RetakeFee ?? Program.Price` and
+completed modules carry over; after the window it is full price from scratch.
+
 ## Class re-delivery
 
-`ClassRedeliveryRequest` — transfer or remedial path after failed experiential
-work; payment amount uses `Program.Price`.
+`ClassRedeliveryRequest` — **legacy** transfer or remedial path after failed
+experiential work, superseded by the fail/drop → rebuy lifecycle.
 
 ## Harness (this repo)
 

@@ -39,9 +39,11 @@ Class (cohort / đợt học)
   └── ClassSession (scheduled sessions tied to activities)
 ```
 
-Programs can be sold as bundles. Modules can have prerequisites, individual
-prices, and retake fees. Classes group students moving through a program on a
-shared schedule.
+Programs can be sold as bundles. Modules can have prerequisites; tuition and
+the optional retake fee (`Program.RetakeFee`) are program-level. Classes group
+students moving through a program on a shared schedule. Failed or withdrawn
+purchases close (`Failed`/`Dropped`) and continuing requires a windowed
+retake-fee rebuy into an eligible class — see `docs/product/enrollment.md`.
 
 ## Major Capability Areas
 
