@@ -422,6 +422,12 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             var now = DateTime.UtcNow;
             var created = false;
 
+            var studentWideAttempts = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+                me => me.StudentId == enrollment.StudentId && !me.IsDeleted);
+            var nextAttemptByModuleId = studentWideAttempts
+                .GroupBy(me => me.ModuleId)
+                .ToDictionary(g => g.Key, g => g.Max(me => me.AttemptNumber) + 1);
+
             foreach (var module in snapshot.Modules)
             {
                 if (latestEnrollmentByModuleId.ContainsKey(module.Id))
@@ -441,6 +447,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                     ProgramEnrollmentId = enrollment.Id,
                     Status = EnrollmentStatus.Active,
                     ProgressPercent = 0m,
+                    AttemptNumber = nextAttemptByModuleId.TryGetValue(module.Id, out var nextAttempt) ? nextAttempt : 1,
                     EnrolledAt = now,
                 };
 

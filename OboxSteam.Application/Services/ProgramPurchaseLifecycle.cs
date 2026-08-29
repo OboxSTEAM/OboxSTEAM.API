@@ -313,4 +313,129 @@ public sealed class ProgramPurchaseLifecycle
             .Select(m => (Guid?)m.Id)
             .FirstOrDefault();
     }
+
+    /// <summary>
+    /// On rebuy payment success, copies the source enrollment's Completed module enrollments
+    /// (with their ActivityProgress rows and Graded submissions) into the new enrollment.
+    /// Only applies inside the rebuy window; Completed sources and out-of-window rebuys copy
+    /// nothing. Each copied module enrollment gets the next global AttemptNumber per
+    /// (student, module) so the (StudentId, ModuleId, AttemptNumber) unique index holds.
+    /// Idempotent: modules already present on the new enrollment are skipped.
+    /// </summary>
+    public async Task ApplyRebuyCreditsAsync(ProgramEnrollment enrollment)
+    {
+        if (!enrollment.SourceProgramEnrollmentId.HasValue)
+        {
+            return;
+        }
+
+        var source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollment.SourceProgramEnrollmentId.Value);
+        if (source == null || source.Status == EnrollmentStatus.Completed)
+        {
+            return;
+        }
+
+        if (!IsWithinRebuyWindow(source, _currentTime.GetCurrentTime()))
+        {
+            return;
+        }
+
+        var completedSources = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.ProgramEnrollmentId == source.Id
+                  && !me.IsDeleted
+                  && me.Status == EnrollmentStatus.Completed);
+        if (completedSources.Count == 0)
+        {
+            return;
+        }
+
+        var existingOnNew = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.ProgramEnrollmentId == enrollment.Id && !me.IsDeleted);
+        var alreadyCopiedModuleIds = existingOnNew.Select(me => me.ModuleId).ToHashSet();
+
+        var now = _currentTime.GetCurrentTime();
+
+        foreach (var sourceModuleEnrollment in completedSources)
+        {
+            if (!alreadyCopiedModuleIds.Add(sourceModuleEnrollment.ModuleId))
+            {
+                continue;
+            }
+
+            var allAttempts = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+                me => me.StudentId == enrollment.StudentId
+                      && me.ModuleId == sourceModuleEnrollment.ModuleId
+                      && !me.IsDeleted);
+            var nextAttempt = allAttempts.Count == 0 ? 1 : allAttempts.Max(me => me.AttemptNumber) + 1;
+
+            var copiedEnrollment = new ModuleEnrollment
+            {
+                Id = Guid.NewGuid(),
+                StudentId = enrollment.StudentId,
+                ModuleId = sourceModuleEnrollment.ModuleId,
+                ProgramEnrollmentId = enrollment.Id,
+                Status = EnrollmentStatus.Completed,
+                ProgressPercent = 100m,
+                FinalGrade = sourceModuleEnrollment.FinalGrade,
+                AttemptNumber = nextAttempt,
+                EnrolledAt = now,
+                StartedAt = now,
+                CompletedAt = now,
+            };
+            await _unitOfWork.ModuleEnrollments.AddAsync(copiedEnrollment);
+
+            var progresses = await _unitOfWork.ActivityProgresses.GetAllAsync(
+                ap => ap.ModuleEnrollmentId == sourceModuleEnrollment.Id && !ap.IsDeleted);
+            foreach (var progress in progresses)
+            {
+                await _unitOfWork.ActivityProgresses.AddAsync(new ActivityProgress
+                {
+                    StudentId = enrollment.StudentId,
+                    ActivityId = progress.ActivityId,
+                    ModuleEnrollmentId = copiedEnrollment.Id,
+                    ActivityStatus = progress.ActivityStatus,
+                    IsCompleted = progress.IsCompleted,
+                    CompletedAt = progress.CompletedAt,
+                    CompletionSource = progress.CompletionSource,
+                    ResumeState = progress.ResumeState,
+                    LastAccessedAt = progress.LastAccessedAt,
+                });
+            }
+
+            var gradedSubmissions = await _unitOfWork.Submissions.GetAllAsync(
+                s => s.ModuleEnrollmentId == sourceModuleEnrollment.Id
+                     && !s.IsDeleted
+                     && s.Status == SubmissionStatus.Graded);
+            foreach (var submission in gradedSubmissions)
+            {
+                await _unitOfWork.Submissions.AddAsync(new Submission
+                {
+                    Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
+                    AssignmentId = submission.AssignmentId,
+                    StudentId = enrollment.StudentId,
+                    ModuleEnrollmentId = copiedEnrollment.Id,
+                    AttemptNumber = submission.AttemptNumber,
+                    Status = SubmissionStatus.Graded,
+                    ContentText = submission.ContentText,
+                    FileUrl = submission.FileUrl,
+                    AssignedGrade = submission.AssignedGrade,
+                    MentorFeedback = submission.MentorFeedback,
+                    VerifiedBy = submission.VerifiedBy,
+                    StartedAt = submission.StartedAt,
+                    ExpiresAt = submission.ExpiresAt,
+                    SubmittedAt = submission.SubmittedAt,
+                    ResearchMilestoneId = submission.ResearchMilestoneId,
+                    GradedAt = submission.GradedAt,
+                });
+            }
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[ApplyRebuyCreditsAsync] Copied {Count} completed module(s) from source {SourceId} to enrollment {EnrollmentId}.",
+            completedSources.Count,
+            source.Id,
+            enrollment.Id);
+    }
 }

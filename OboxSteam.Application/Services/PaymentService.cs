@@ -766,6 +766,7 @@ public class PaymentService : IPaymentService
 
         if (enrollment != null)
         {
+            await _programPurchaseLifecycle.ApplyRebuyCreditsAsync(enrollment);
             await _classSeatHoldService.ActivateHoldAfterPaymentAsync(enrollment.Id);
         }
 

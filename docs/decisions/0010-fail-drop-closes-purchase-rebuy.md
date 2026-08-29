@@ -72,13 +72,18 @@ fee and joining a new class whose progress has not reached the failed module.
    progress copy. The window applies equally to `Failed` and `Dropped` source
    enrollments.
 9. **On payment success**: inside the rebuy window, `Completed` module
-   enrollments (and their `ActivityProgress` rows) are copied to the new
-   enrollment with the next global `AttemptNumber` per (student, module);
-   failed and in-progress modules are not copied. Outside the window nothing
-   is copied and every module starts from scratch. A `Completed` source never
-   copies progress (every module is already complete) - its rebuy benefit is
-   retake pricing only. The student joins exactly one new `Standard` class.
-   No Remedial class is created.
+   enrollments are copied to the new enrollment with the next global
+   `AttemptNumber` per (student, module), together with their
+   `ActivityProgress` rows and their `Graded` submissions (new `Submission.Code`
+   per copy; quiz answers, evidence rows, and non-graded submissions are not
+   copied). Failed and in-progress modules are not copied. Outside the window
+   nothing is copied and every module starts from scratch. A `Completed`
+   source never copies progress (every module is already complete) - its
+   rebuy benefit is retake pricing only. The student joins exactly one new
+   `Standard` class. No Remedial class is created. Lazy curriculum
+   provisioning assigns the next global `AttemptNumber` per (student, module)
+   so redone modules never collide with prior attempts on the
+   `(StudentId, ModuleId, AttemptNumber)` unique index.
 10. `Failed`/`Dropped` enrollments keep read-only curriculum access; mutations
     still require `Active`.
 11. Legacy `ClassRedeliveryRequest` / Remedial / retake checkout stay untouched

@@ -645,4 +645,177 @@ public sealed class ProgramPurchaseLifecycleTests
 
         await sut.ValidateRebuyClassEligibilityAsync(pending, classId);
     }
+
+    private ModuleEnrollment SeedCompletedSourceModuleEnrollment(
+        Guid sourceEnrollmentId,
+        Guid moduleId,
+        int attemptNumber = 1,
+        decimal? finalGrade = 8m)
+    {
+        var moduleEnrollment = new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = moduleId,
+            ProgramEnrollmentId = sourceEnrollmentId,
+            Status = EnrollmentStatus.Completed,
+            ProgressPercent = 100m,
+            FinalGrade = finalGrade,
+            AttemptNumber = attemptNumber,
+            IsDeleted = false,
+        };
+        _db.ModuleEnrollments.Seed(moduleEnrollment);
+        return moduleEnrollment;
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_NoSource_CopiesNothing()
+    {
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        Assert.Empty(_db.ModuleEnrollments.Items);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_CompletedSource_CopiesNothing()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Completed, completedAt: _now.AddDays(-1));
+        var module = SeedModule("MOD-A", 1);
+        SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        Assert.Single(_db.ModuleEnrollments.Items);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_OutsideWindow_CopiesNothing()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddMonths(-4));
+        var module = SeedModule("MOD-A", 1);
+        SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        Assert.Single(_db.ModuleEnrollments.Items);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_InsideWindow_CopiesCompletedModuleWithProgressAndGradedSubmissions()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-10));
+        var module = SeedModule("MOD-A", 1);
+        var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var activityId = Guid.NewGuid();
+        _db.ActivityProgresses.Seed(new ActivityProgress
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ActivityId = activityId,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            ActivityStatus = ActivityStatus.Done,
+            IsCompleted = true,
+            CompletedAt = _now.AddDays(-20),
+            IsDeleted = false,
+        });
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-SOURCE01",
+            AssignmentId = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            AttemptNumber = 2,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 9m,
+            SubmittedAt = _now.AddDays(-15),
+            GradedAt = _now.AddDays(-14),
+            IsDeleted = false,
+        });
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-SOURCE02",
+            AssignmentId = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.ReturnedForRevision,
+            IsDeleted = false,
+        });
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        var copied = Assert.Single(_db.ModuleEnrollments.Items, me => me.Id != sourceModuleEnrollment.Id);
+        Assert.Equal(pending.Id, copied.ProgramEnrollmentId);
+        Assert.Equal(EnrollmentStatus.Completed, copied.Status);
+        Assert.Equal(100m, copied.ProgressPercent);
+        Assert.Equal(8m, copied.FinalGrade);
+        Assert.Equal(2, copied.AttemptNumber);
+        Assert.Equal(_now, copied.CompletedAt);
+
+        var copiedProgress = Assert.Single(
+            _db.ActivityProgresses.Items,
+            ap => ap.ModuleEnrollmentId == copied.Id);
+        Assert.Equal(activityId, copiedProgress.ActivityId);
+        Assert.True(copiedProgress.IsCompleted);
+
+        var copiedSubmission = Assert.Single(
+            _db.Submissions.Items,
+            s => s.ModuleEnrollmentId == copied.Id);
+        Assert.Equal(SubmissionStatus.Graded, copiedSubmission.Status);
+        Assert.Equal(9m, copiedSubmission.AssignedGrade);
+        Assert.NotEqual("SUB-SOURCE01", copiedSubmission.Code);
+        Assert.Equal(2, copiedSubmission.AttemptNumber);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_SkipsNonCompletedModules()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var moduleA = SeedModule("MOD-A", 1);
+        var moduleB = SeedModule("MOD-B", 2);
+        SeedCompletedSourceModuleEnrollment(source.Id, moduleA.Id);
+        SeedModuleEnrollment(source.Id, moduleB.Id, EnrollmentStatus.Failed);
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        var copied = Assert.Single(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == pending.Id);
+        Assert.Equal(moduleA.Id, copied.ModuleId);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_Idempotent_WhenModuleAlreadyOnNewEnrollment()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var module = SeedModule("MOD-A", 1);
+        SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        SeedModuleEnrollment(pending.Id, module.Id, EnrollmentStatus.Completed);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        Assert.Equal(
+            2,
+            _db.ModuleEnrollments.Items.Count(me => me.ModuleId == module.Id));
+    }
 }

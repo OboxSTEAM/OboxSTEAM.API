@@ -96,9 +96,11 @@ only. If a step grows, split it before implementing.
   `ValidateRebuyClassEligibilityAsync`), pricing applied in both
   `CreateDirectCheckout` and `RequestParentPayment`, class eligibility enforced
   at seat hold. Build + 1284 tests green.
-- [ ] Step 6: `ApplyRebuyCreditsAsync` on payment success (copies `Completed`
-  modules only when the rebuy is inside the window) + next-attempt
-  provisioning in curriculum.
+- [x] Step 6: `ApplyRebuyCreditsAsync` on payment success (copies `Completed`
+  modules with their `ActivityProgress` rows and `Graded` submissions only
+  when the rebuy is inside the window) + next-attempt provisioning in
+  curriculum (`EnrollmentCurriculumService` assigns the next global
+  `AttemptNumber` per student+module). Build + 1290 tests green.
 - [ ] Step 7: read-only curriculum for `Failed`/`Dropped` + `Completed` credit
   without cloned submissions.
 - [ ] Step 8: E2E test - fail one module -> rebuy a new class -> finish the
@@ -128,6 +130,10 @@ only. If a step grows, split it before implementing.
   stop module is `EndedModuleId`; for `Dropped` sources it is the first
   not-`Completed` module in `ModuleOrder`. `Completed` sources are
   unconstrained.
+- 2026-08-29: Rebuy credit copy includes the `Graded` submissions of copied
+  `Completed` modules (new `Submission.Code` per copy), not just
+  `ActivityProgress`; quiz answers, evidence rows, and non-graded submissions
+  stay behind on the source enrollment.
 
 ## Validation
 
