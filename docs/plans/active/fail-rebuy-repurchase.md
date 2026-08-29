@@ -14,7 +14,8 @@ fail + effective attempts exhausted + recovery cap of 2 reached; or attendance:
 (`Failed`/`Dropped` + `EndReason`), class seats are withdrawn immediately, and
 continuing requires paying the program retake fee (`Program.RetakeFee` falling
 back to `Program.Price`) and joining exactly one new `Standard` class that has
-not started the failed module. Passed modules carry over as `Completed` copies
+not started the module the student stopped at, nor any later module in
+`ModuleOrder`. Passed modules carry over as `Completed` copies
 on the new enrollment; the failed module is redone from scratch. The retake
 fee and passed-module credit apply only when the rebuy starts within 3
 calendar months of the source enrollment's `EndedAt` (boundary day included);
@@ -81,14 +82,20 @@ only. If a step grows, split it before implementing.
   (`20260829111210_ProgramPurchaseRebuy`; build + 1239 tests green).
   Seed aligned: catalog `RetakeFee` (60% of Price), STD-007 Dropped/Withdraw,
   STD-012 Failed/AcademicFail on MATHFUN, payments stay Success (no auto-refund).
-- [ ] Step 2: `ProgramPurchaseLifecycle.CloseAsync` (reason -> status:
+- [x] Step 2: `ProgramPurchaseLifecycle.CloseAsync` (reason -> status:
   fail -> `Failed`, withdraw -> `Dropped`) + attendance trigger.
-- [ ] Step 3: `TryCloseAfterFailedAssignmentAsync` + wire quiz / assignment /
+- [x] Step 3: `TryCloseAfterFailedAssignmentAsync` + wire quiz / assignment /
   research grading + recovery reject.
-- [ ] Step 4: `WithdrawAsync` + `POST /api/program-enrollments/{id}/withdraw`.
-- [ ] Step 5: rebuy checkout (pending after terminal, `SourceProgramEnrollmentId`,
-  class has-not-started-failed-module eligibility, `RetakeFee ?? Price` inside
+- [x] Step 4: `WithdrawAsync` + `POST /api/program-enrollments/{id}/withdraw`.
+- [x] Step 5: rebuy checkout (pending after terminal, `SourceProgramEnrollmentId`,
+  class has-not-started-stop-module-or-later eligibility, `RetakeFee ?? Price` inside
   the 3-calendar-month window from the source `EndedAt`, full `Price` after).
+  Implemented in `GetOrCreatePendingEnrollmentAsync` (detect + link latest
+  closed source, backfill on reused pending), `ProgramPurchaseLifecycle`
+  (`FindRebuySource` / `IsWithinRebuyWindow` / `ResolveCheckoutAmountAsync` /
+  `ValidateRebuyClassEligibilityAsync`), pricing applied in both
+  `CreateDirectCheckout` and `RequestParentPayment`, class eligibility enforced
+  at seat hold. Build + 1284 tests green.
 - [ ] Step 6: `ApplyRebuyCreditsAsync` on payment success (copies `Completed`
   modules only when the rebuy is inside the window) + next-attempt
   provisioning in curriculum.
@@ -113,6 +120,14 @@ only. If a step grows, split it before implementing.
   3-calendar-month rebuy window from the source enrollment's `EndedAt`
   (boundary day included); later rebuys pay full `Program.Price` and copy no
   progress. The window applies equally to `Failed` and `Dropped` sources.
+- 2026-08-29: A `Completed` source anchors the window at `CompletedAt` and
+  receives retake **pricing only** - no progress copy (every module is already
+  complete) and no failed-module class constraint.
+- 2026-08-29: Class eligibility blocks classes that have started the stop
+  module **or any later module** in `ModuleOrder`. For `Failed` sources the
+  stop module is `EndedModuleId`; for `Dropped` sources it is the first
+  not-`Completed` module in `ModuleOrder`. `Completed` sources are
+  unconstrained.
 
 ## Validation
 

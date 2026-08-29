@@ -19,6 +19,7 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
     private readonly IProgramEnrollmentService _programEnrollmentService;
     private readonly ISyncEventPublisher _syncEventPublisher;
     private readonly IClassService _classService;
+    private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
     private readonly ILogger<ClassSeatHoldService> _logger;
 
     public ClassSeatHoldService(
@@ -27,6 +28,7 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
         IProgramEnrollmentService programEnrollmentService,
         ISyncEventPublisher syncEventPublisher,
         IClassService classService,
+        ProgramPurchaseLifecycle programPurchaseLifecycle,
         ILogger<ClassSeatHoldService> logger)
     {
         _unitOfWork = unitOfWork;
@@ -34,6 +36,7 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
         _programEnrollmentService = programEnrollmentService;
         _syncEventPublisher = syncEventPublisher;
         _classService = classService;
+        _programPurchaseLifecycle = programPurchaseLifecycle;
         _logger = logger;
     }
 
@@ -131,6 +134,8 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
         {
             throw ErrorHelper.BadRequest("Only standard open classes can be selected for program checkout.");
         }
+
+        await _programPurchaseLifecycle.ValidateRebuyClassEligibilityAsync(programEnrollment, classId);
 
         var now = DateTime.UtcNow;
         var expiresAt = now.AddMinutes(ProgramCheckoutPolicy.CheckoutWindowMinutes);

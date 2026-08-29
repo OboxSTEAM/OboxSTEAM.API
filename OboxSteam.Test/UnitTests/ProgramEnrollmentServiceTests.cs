@@ -232,6 +232,75 @@ public sealed class ProgramEnrollmentServiceTests
         Assert.Empty(_db.ProgramEnrollments.Items);
     }
 
+    [Theory]
+    [InlineData(EnrollmentStatus.Failed)]
+    [InlineData(EnrollmentStatus.Dropped)]
+    [InlineData(EnrollmentStatus.Completed)]
+    public async Task GetOrCreatePending_RebuyAfterClose_LinksClosedSource(EnrollmentStatus closedStatus)
+    {
+        SeedProgram();
+        var source = SeedEnrollment(status: closedStatus);
+        source.EndedAt = closedStatus == EnrollmentStatus.Completed ? null : DateTime.UtcNow.AddDays(-10);
+        source.CompletedAt = closedStatus == EnrollmentStatus.Completed ? DateTime.UtcNow.AddDays(-10) : null;
+        var sut = CreateSut();
+
+        var result = await sut.GetOrCreatePendingEnrollmentAsync(_studentId, _programId);
+
+        Assert.NotEqual(source.Id, result.Id);
+        Assert.Equal(EnrollmentStatus.PendingPayment, result.Status);
+        Assert.Equal(source.Id, result.SourceProgramEnrollmentId);
+        Assert.Equal(2, _db.ProgramEnrollments.Items.Count);
+    }
+
+    [Fact]
+    public async Task GetOrCreatePending_Rebuy_PicksMostRecentClosedSource()
+    {
+        SeedProgram();
+        var older = SeedEnrollment(status: EnrollmentStatus.Failed);
+        older.EndedAt = DateTime.UtcNow.AddMonths(-5);
+        var newer = SeedEnrollment(
+            id: Guid.Parse("34343434-3434-3434-3434-343434343434"),
+            status: EnrollmentStatus.Dropped);
+        newer.EndedAt = DateTime.UtcNow.AddDays(-3);
+        var sut = CreateSut();
+
+        var result = await sut.GetOrCreatePendingEnrollmentAsync(_studentId, _programId);
+
+        Assert.Equal(newer.Id, result.SourceProgramEnrollmentId);
+    }
+
+    [Fact]
+    public async Task GetOrCreatePending_ThrowsConflict_WhenDeferred()
+    {
+        SeedProgram();
+        SeedEnrollment(status: EnrollmentStatus.Deferred);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.GetOrCreatePendingEnrollmentAsync(_studentId, _programId));
+    }
+
+    [Fact]
+    public async Task GetOrCreatePending_ReusedPending_BackfillsMissingSourceLink()
+    {
+        SeedProgram();
+        var source = SeedEnrollment(status: EnrollmentStatus.Failed);
+        source.EndedAt = DateTime.UtcNow.AddDays(-10);
+        var pending = SeedEnrollment(
+            id: Guid.Parse("34343434-3434-3434-3434-343434343434"),
+            status: EnrollmentStatus.PendingPayment);
+        var sut = CreateSut();
+
+        var result = await sut.GetOrCreatePendingEnrollmentAsync(_studentId, _programId);
+
+        Assert.Equal(pending.Id, result.Id);
+        Assert.Equal(source.Id, result.SourceProgramEnrollmentId);
+        Assert.Equal(2, _db.ProgramEnrollments.Items.Count);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     // ── GetProgramEnrollmentByIdAsync ─────────────────────────────────────────
 
     [Fact]

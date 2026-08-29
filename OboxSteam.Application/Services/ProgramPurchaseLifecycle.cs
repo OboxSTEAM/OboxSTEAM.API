@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -15,6 +16,9 @@ namespace OboxSteam.Application.Services;
 /// </summary>
 public sealed class ProgramPurchaseLifecycle
 {
+    /// <summary>Months after a purchase closes during which a rebuy keeps retake pricing and progress credit.</summary>
+    public const int RebuyWindowMonths = 3;
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentTime _currentTime;
     private readonly INotificationPublisher _notificationPublisher;
@@ -188,5 +192,125 @@ public sealed class ProgramPurchaseLifecycle
             programEnrollment,
             ProgramPurchaseEndReason.AcademicFail,
             assignment.ModuleId);
+    }
+
+    /// <summary>
+    /// Latest closed purchase (Failed/Dropped/Completed) a rebuy links to, or null for a first purchase.
+    /// </summary>
+    public static ProgramEnrollment? FindRebuySource(IEnumerable<ProgramEnrollment> enrollments)
+        => enrollments
+            .Where(pe => pe.Status is EnrollmentStatus.Failed or EnrollmentStatus.Dropped or EnrollmentStatus.Completed)
+            .OrderByDescending(pe => pe.EndedAt ?? pe.CompletedAt ?? pe.EnrolledAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// True when <paramref name="now"/> falls within the rebuy window anchored at the source's close
+    /// date (<see cref="ProgramEnrollment.EndedAt"/> for Failed/Dropped, <see cref="ProgramEnrollment.CompletedAt"/>
+    /// for Completed), inclusive of the boundary.
+    /// </summary>
+    public static bool IsWithinRebuyWindow(ProgramEnrollment source, DateTime now)
+    {
+        var anchor = source.EndedAt ?? source.CompletedAt;
+        return anchor.HasValue && now <= anchor.Value.AddMonths(RebuyWindowMonths);
+    }
+
+    /// <summary>
+    /// Checkout amount for a (possibly rebuy) pending enrollment: <see cref="Program.RetakeFee"/>
+    /// (fallback <see cref="Program.Price"/>) inside the rebuy window, full Price otherwise.
+    /// </summary>
+    public async Task<decimal> ResolveCheckoutAmountAsync(Program program, ProgramEnrollment enrollment)
+    {
+        var price = program.Price ?? 0m;
+        if (!enrollment.SourceProgramEnrollmentId.HasValue || program.Price == null)
+        {
+            return price;
+        }
+
+        var source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollment.SourceProgramEnrollmentId.Value);
+        if (source == null || !IsWithinRebuyWindow(source, _currentTime.GetCurrentTime()))
+        {
+            return price;
+        }
+
+        return program.RetakeFee ?? price;
+    }
+
+    /// <summary>
+    /// For rebuys after a close, the selected class must not have started the module the student
+    /// stopped at, nor any later module. Failed sources use <see cref="ProgramEnrollment.EndedModuleId"/>;
+    /// Withdraw sources use the first not-Completed module in <see cref="Module.ModuleOrder"/>.
+    /// Completed sources are unconstrained (no stop module).
+    /// </summary>
+    public async Task ValidateRebuyClassEligibilityAsync(ProgramEnrollment enrollment, Guid classId)
+    {
+        if (!enrollment.SourceProgramEnrollmentId.HasValue)
+        {
+            return;
+        }
+
+        var source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollment.SourceProgramEnrollmentId.Value);
+        if (source == null || source.Status == EnrollmentStatus.Completed)
+        {
+            return;
+        }
+
+        var stopModuleId = source.EndedModuleId;
+        if (!stopModuleId.HasValue)
+        {
+            stopModuleId = await ResolveWithdrawStopModuleIdAsync(source);
+        }
+
+        if (!stopModuleId.HasValue)
+        {
+            return;
+        }
+
+        var stopModule = await _unitOfWork.Modules.GetByIdAsync(stopModuleId.Value);
+        if (stopModule == null || stopModule.IsDeleted)
+        {
+            return;
+        }
+
+        var blockedSessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classId
+                  && !cs.IsDeleted
+                  && (cs.Status == ClassSessionStatus.InProgress || cs.Status == ClassSessionStatus.Completed));
+
+        var blockedModuleIds = blockedSessions.Select(cs => cs.ModuleId).Distinct().ToList();
+        if (blockedModuleIds.Count == 0)
+        {
+            return;
+        }
+
+        var blockedModules = await _unitOfWork.Modules.GetAllAsync(
+            m => m.ProgramId == source.ProgramId
+                 && blockedModuleIds.Contains(m.Id)
+                 && !m.IsDeleted);
+
+        if (blockedModules.Any(m => m.ModuleOrder >= stopModule.ModuleOrder))
+        {
+            throw ErrorHelper.BadRequest(
+                "This class has already started the module you stopped at or a later module. Choose a class that has not started it yet.");
+        }
+    }
+
+    private async Task<Guid?> ResolveWithdrawStopModuleIdAsync(ProgramEnrollment source)
+    {
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.ProgramEnrollmentId == source.Id && !me.IsDeleted);
+
+        var completedModuleIds = moduleEnrollments
+            .Where(me => me.Status == EnrollmentStatus.Completed)
+            .Select(me => me.ModuleId)
+            .ToHashSet();
+
+        var modules = await _unitOfWork.Modules.GetAllAsync(
+            m => m.ProgramId == source.ProgramId && !m.IsDeleted);
+
+        return modules
+            .Where(m => !completedModuleIds.Contains(m.Id))
+            .OrderBy(m => m.ModuleOrder)
+            .Select(m => (Guid?)m.Id)
+            .FirstOrDefault();
     }
 }

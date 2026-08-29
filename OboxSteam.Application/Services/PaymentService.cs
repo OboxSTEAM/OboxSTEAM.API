@@ -25,6 +25,7 @@ public class PaymentService : IPaymentService
     private readonly INotificationPublisher _notificationPublisher;
     private readonly IClassRedeliveryRequestService _classRedeliveryRequestService;
     private readonly IClassSeatHoldService _classSeatHoldService;
+    private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
     public PaymentService(
         IUnitOfWork unitOfWork,
@@ -36,7 +37,8 @@ public class PaymentService : IPaymentService
         ILogger<PaymentService> logger,
         INotificationPublisher notificationPublisher,
         IClassRedeliveryRequestService classRedeliveryRequestService,
-        IClassSeatHoldService classSeatHoldService)
+        IClassSeatHoldService classSeatHoldService,
+        ProgramPurchaseLifecycle programPurchaseLifecycle)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
@@ -48,6 +50,7 @@ public class PaymentService : IPaymentService
         _notificationPublisher = notificationPublisher;
         _classRedeliveryRequestService = classRedeliveryRequestService;
         _classSeatHoldService = classSeatHoldService;
+        _programPurchaseLifecycle = programPurchaseLifecycle;
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -79,13 +82,15 @@ public class PaymentService : IPaymentService
 
         var hold = await _classSeatHoldService.RequireValidHoldAsync(studentId, enrollment, classId);
 
+        var amount = await _programPurchaseLifecycle.ResolveCheckoutAmountAsync(program, enrollment);
+
         var payment = new Payment
         {
             Code = GeneratePaymentCode(),
             StudentId = studentId,
             PaidById = studentId,
             ProgramEnrollmentId = enrollment.Id,
-            Amount = program.Price.Value,
+            Amount = amount,
             Currency = "VND",
             Gateway = gateway,
             Status = PaymentStatus.Pending
@@ -208,6 +213,8 @@ public class PaymentService : IPaymentService
 
         await _classSeatHoldService.RequireValidHoldAsync(studentId, enrollment, classId);
 
+        var amount = await _programPurchaseLifecycle.ResolveCheckoutAmountAsync(program, enrollment);
+
         var expiresAt = DateTime.UtcNow.AddMinutes(ProgramCheckoutPolicy.CheckoutWindowMinutes);
         var token = Guid.NewGuid().ToString("N");
         var paymentRequest = new PaymentRequest
@@ -216,7 +223,7 @@ public class PaymentService : IPaymentService
             ParentId = parentId,
             ProgramId = programId,
             ProgramEnrollmentId = enrollment.Id,
-            Amount = program.Price.Value,
+            Amount = amount,
             Currency = "VND",
             Token = token,
             ExpiresAt = expiresAt,
@@ -244,7 +251,7 @@ public class PaymentService : IPaymentService
             ParentName = parent.FullName ?? "Parent",
             StudentName = student.FullName ?? "Student",
             ProgramName = program.Name,
-            Amount = program.Price.Value,
+            Amount = amount,
             Currency = "VND",
             PaymentLink = paymentLink
         });

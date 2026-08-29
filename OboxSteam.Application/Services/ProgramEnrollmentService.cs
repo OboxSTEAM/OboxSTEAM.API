@@ -47,33 +47,46 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
 
         ProgramEnrollmentValidator.EnsureProgramPurchasable(programEntity);
 
-        var existingEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+        var enrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
             pe => pe.StudentId == studentId && pe.ProgramId == programId && !pe.IsDeleted);
 
-        if (existingEnrollment != null)
+        var pendingEnrollment = enrollments.FirstOrDefault(pe => pe.Status == EnrollmentStatus.PendingPayment);
+        if (pendingEnrollment != null)
         {
-            if (existingEnrollment.Status != EnrollmentStatus.PendingPayment)
+            if (pendingEnrollment.SourceProgramEnrollmentId == null)
             {
-                _logger.LogWarning(
-                    "[GetOrCreatePendingEnrollmentAsync] Student {StudentId} already enrolled in program {ProgramId} with status {Status}.",
-                    studentId,
-                    programId,
-                    existingEnrollment.Status);
-                throw ErrorHelper.Conflict("Student is already enrolled in this program.");
+                var pendingSource = ProgramPurchaseLifecycle.FindRebuySource(enrollments);
+                if (pendingSource != null)
+                {
+                    pendingEnrollment.SourceProgramEnrollmentId = pendingSource.Id;
+                    await _unitOfWork.ProgramEnrollments.Update(pendingEnrollment);
+                    await _unitOfWork.SaveChangesAsync();
+                }
             }
 
             _logger.LogInformation(
                 "[GetOrCreatePendingEnrollmentAsync] Reusing existing PendingPayment enrollment {EnrollmentId} for student {StudentId} on program {ProgramId}.",
-                existingEnrollment.Id,
+                pendingEnrollment.Id,
                 studentId,
                 programId);
 
-            return existingEnrollment;
+            return pendingEnrollment;
+        }
+
+        if (enrollments.Any(pe => pe.Status is EnrollmentStatus.Active or EnrollmentStatus.Deferred))
+        {
+            _logger.LogWarning(
+                "[GetOrCreatePendingEnrollmentAsync] Student {StudentId} already enrolled in program {ProgramId} with an open enrollment.",
+                studentId,
+                programId);
+            throw ErrorHelper.Conflict("Student is already enrolled in this program.");
         }
 
         await ProgramEnrollmentValidator.ValidateUnderInProgressProgramLimitAsync(
             _unitOfWork,
             studentId);
+
+        var rebuySource = ProgramPurchaseLifecycle.FindRebuySource(enrollments);
 
         var now = DateTime.UtcNow;
         var enrollment = new ProgramEnrollment
@@ -83,6 +96,7 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
             Status = EnrollmentStatus.PendingPayment,
             ProgressPercent = 0m,
             EnrolledAt = now,
+            SourceProgramEnrollmentId = rebuySource?.Id,
         };
 
         await _unitOfWork.ProgramEnrollments.AddAsync(enrollment);

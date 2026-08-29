@@ -53,17 +53,21 @@ fee and joining a new class whose progress has not reached the failed module.
    `SourceProgramEnrollmentId`. The unique index on `(StudentId, ProgramId)`
    is relaxed to block only concurrent `PendingPayment`/`Active` rows. Eligible
    classes are `Standard` classes of the same program that have not started the
-   failed module (no session of that module `InProgress`/`Completed`), with
-   seats available and no schedule conflict; brand-new classes qualify. Rebuy
-   after `Withdraw` has no module-progress constraint. The "class has started
-   module" check is re-implemented in the new lifecycle service - the legacy
-   redelivery service is not reused.
+   module the student stopped at, nor any later module in `ModuleOrder`
+   (no session of those modules `InProgress`/`Completed`), with
+   seats available and no schedule conflict; brand-new classes qualify. For
+   `Failed` sources the stop module is `EndedModuleId`; for `Dropped` sources
+   it is the first not-`Completed` module in `ModuleOrder`. `Completed` does
+   not block rebuy either: it links as the source but carries pricing benefit
+   only (item 9). The "class has started module" check is re-implemented in
+   the new lifecycle service - the legacy redelivery service is not reused.
 7. **Retake fee** = `Program.RetakeFee` (new nullable field) falling back to
    `Program.Price` when null. Retake pricing applies only inside the rebuy
    window (item 8); outside the window the rebuy bills full `Program.Price`.
 8. **Rebuy window**: retake pricing and passed-module credit apply only when
    the rebuy checkout starts within 3 calendar months of the source
-   enrollment's `EndedAt` (the boundary day is included). After the window the
+   enrollment's close date - `EndedAt` for `Failed`/`Dropped`, `CompletedAt`
+   for `Completed` (the boundary day is included). After the window the
    rebuy is still allowed but is a fresh start: full `Program.Price`, no
    progress copy. The window applies equally to `Failed` and `Dropped` source
    enrollments.
@@ -71,8 +75,10 @@ fee and joining a new class whose progress has not reached the failed module.
    enrollments (and their `ActivityProgress` rows) are copied to the new
    enrollment with the next global `AttemptNumber` per (student, module);
    failed and in-progress modules are not copied. Outside the window nothing
-   is copied and every module starts from scratch. The student joins exactly
-   one new `Standard` class. No Remedial class is created.
+   is copied and every module starts from scratch. A `Completed` source never
+   copies progress (every module is already complete) - its rebuy benefit is
+   retake pricing only. The student joins exactly one new `Standard` class.
+   No Remedial class is created.
 10. `Failed`/`Dropped` enrollments keep read-only curriculum access; mutations
     still require `Active`.
 11. Legacy `ClassRedeliveryRequest` / Remedial / retake checkout stay untouched

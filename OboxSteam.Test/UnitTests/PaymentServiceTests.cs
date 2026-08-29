@@ -33,9 +33,10 @@ public sealed class PaymentServiceTests
     private readonly Mock<IEmailService> _emailService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
     private readonly Mock<IClassService> _classService = new();
+    private readonly Mock<ICurrentTime> _currentTime = new();
     private readonly FakeSyncEventPublisher _syncEventPublisher = new();
 
-    private void SetupStudentContext(Guid? currentUserId = null)
+    private void SetupStudentContext(Guid? currentUserId = null, Guid? sourceEnrollmentId = null)
     {
         _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _studentId);
         _programEnrollmentService
@@ -46,8 +47,19 @@ public sealed class PaymentServiceTests
                 StudentId = _studentId,
                 ProgramId = _programId,
                 Status = EnrollmentStatus.PendingPayment,
+                SourceProgramEnrollmentId = sourceEnrollmentId,
                 IsDeleted = false,
             });
+    }
+
+    private ProgramPurchaseLifecycle CreateLifecycle(DateTime? now = null)
+    {
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(now ?? DateTime.UtcNow);
+        return new ProgramPurchaseLifecycle(
+            _db,
+            _currentTime.Object,
+            _notificationPublisher.Object,
+            NullLogger<ProgramPurchaseLifecycle>.Instance);
     }
 
     private ClassSeatHoldService CreateSeatHoldService()
@@ -57,11 +69,12 @@ public sealed class PaymentServiceTests
             _programEnrollmentService.Object,
             _syncEventPublisher,
             _classService.Object,
+            CreateLifecycle(),
             NullLogger<ClassSeatHoldService>.Instance);
 
-    private async Task SelectClassAsync(Guid classId)
+    private async Task SelectClassAsync(Guid classId, Guid? sourceEnrollmentId = null)
     {
-        SetupStudentContext();
+        SetupStudentContext(sourceEnrollmentId: sourceEnrollmentId);
         SeedPendingProgramEnrollment();
         var seatHoldService = CreateSeatHoldService();
         await seatHoldService.SelectClassForCheckoutAsync(_programId, classId);
@@ -143,7 +156,8 @@ public sealed class PaymentServiceTests
                 _claimsService.Object,
                 _notificationPublisher.Object,
                 NullLogger<ClassRedeliveryRequestService>.Instance),
-            CreateSeatHoldService());
+            CreateSeatHoldService(),
+            CreateLifecycle());
     }
 
     private User SeedStudent(Guid? id = null)
@@ -176,7 +190,7 @@ public sealed class PaymentServiceTests
         return user;
     }
 
-    private Program SeedProgram(decimal? price = 500_000m, Guid? id = null)
+    private Program SeedProgram(decimal? price = 500_000m, Guid? id = null, decimal? retakeFee = null)
     {
         var programId = id ?? _programId;
         var program = new Program
@@ -187,12 +201,37 @@ public sealed class PaymentServiceTests
             Category = ProgramCategory.Technology,
             Level = DifficultyLevel.Beginner,
             Price = price,
+            RetakeFee = retakeFee,
             Description = "<p>Learn robotics</p>",
             Status = ProgramStatus.Active,
             IsDeleted = false,
         };
         _db.Programs.Seed(program);
         return program;
+    }
+
+    private ProgramEnrollment SeedClosedSourceEnrollment(
+        EnrollmentStatus status,
+        DateTime? endedAt = null,
+        DateTime? completedAt = null,
+        Guid? endedModuleId = null)
+    {
+        var source = new ProgramEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = status,
+            EndReason = status == EnrollmentStatus.Dropped ? ProgramPurchaseEndReason.Withdraw
+                : status == EnrollmentStatus.Failed ? ProgramPurchaseEndReason.AcademicFail
+                : null,
+            EndedAt = endedAt,
+            CompletedAt = completedAt,
+            EndedModuleId = endedModuleId,
+            IsDeleted = false,
+        };
+        _db.ProgramEnrollments.Seed(source);
+        return source;
     }
 
     private Class SeedOpenEnrollmentClass(
@@ -540,6 +579,110 @@ public sealed class PaymentServiceTests
             sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe));
 
         Assert.Empty(_db.Payments.Items);
+    }
+
+    // ── Rebuy checkout (fail/drop repurchase) ────────────────────────────────
+
+    [Fact]
+    public async Task CreateDirectCheckout_RebuyWithinWindow_ChargesRetakeFee()
+    {
+        SeedStudent();
+        SeedProgram(retakeFee: 200_000m);
+        var openClass = SeedOpenEnrollmentClass();
+        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Failed, endedAt: DateTime.UtcNow.AddMonths(-1));
+        var sut = CreateSut();
+        await SelectClassAsync(openClass.Id, source.Id);
+
+        await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);
+
+        var payment = Assert.Single(_db.Payments.Items);
+        Assert.Equal(200_000m, payment.Amount);
+    }
+
+    [Fact]
+    public async Task CreateDirectCheckout_RebuyOutsideWindow_ChargesFullPrice()
+    {
+        SeedStudent();
+        SeedProgram(retakeFee: 200_000m);
+        var openClass = SeedOpenEnrollmentClass();
+        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Failed, endedAt: DateTime.UtcNow.AddMonths(-4));
+        var sut = CreateSut();
+        await SelectClassAsync(openClass.Id, source.Id);
+
+        await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);
+
+        var payment = Assert.Single(_db.Payments.Items);
+        Assert.Equal(500_000m, payment.Amount);
+    }
+
+    [Fact]
+    public async Task CreateDirectCheckout_RebuyFromCompletedWithinWindow_ChargesRetakeFee()
+    {
+        SeedStudent();
+        SeedProgram(retakeFee: 200_000m);
+        var openClass = SeedOpenEnrollmentClass();
+        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Completed, completedAt: DateTime.UtcNow.AddMonths(-2));
+        var sut = CreateSut();
+        await SelectClassAsync(openClass.Id, source.Id);
+
+        await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);
+
+        var payment = Assert.Single(_db.Payments.Items);
+        Assert.Equal(200_000m, payment.Amount);
+    }
+
+    [Fact]
+    public async Task SelectClass_Throws_WhenClassAlreadyStartedFailedModule()
+    {
+        SeedStudent();
+        SeedProgram(retakeFee: 200_000m);
+        SeedModule();
+        var openClass = SeedOpenEnrollmentClass();
+        var source = SeedClosedSourceEnrollment(
+            EnrollmentStatus.Failed,
+            endedAt: DateTime.UtcNow.AddDays(-5),
+            endedModuleId: _moduleId);
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = openClass.Id,
+            ModuleId = _moduleId,
+            Title = "Lab 1",
+            Status = ClassSessionStatus.InProgress,
+            IsDeleted = false,
+        });
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            SelectClassAsync(openClass.Id, source.Id));
+    }
+
+    [Fact]
+    public async Task RequestParentPayment_RebuyWithinWindow_UsesRetakeFee()
+    {
+        SeedStudent();
+        SeedParent();
+        SeedProgram(retakeFee: 200_000m);
+        var openClass = SeedOpenEnrollmentClass();
+        _db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _parentId,
+            StudentId = _studentId,
+            IsVerified = true,
+            IsDeleted = false,
+        });
+        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Dropped, endedAt: DateTime.UtcNow.AddDays(-10));
+        var sut = CreateSut();
+        await SelectClassAsync(openClass.Id, source.Id);
+
+        await sut.RequestParentPayment(_programId, openClass.Id, _parentId);
+
+        var request = Assert.Single(_db.PaymentRequests.Items);
+        Assert.Equal(200_000m, request.Amount);
+        _emailService.Verify(
+            e => e.SendPaymentRequestToParentEmailAsync(
+                It.Is<PaymentRequestEmailDto>(dto => dto.Amount == 200_000m)),
+            Times.Once);
     }
 
     // ── CreateModuleRetakeCheckout ──────────────────────────────────────────────
