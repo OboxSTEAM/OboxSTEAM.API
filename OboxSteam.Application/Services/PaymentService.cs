@@ -766,8 +766,9 @@ public class PaymentService : IPaymentService
 
         if (enrollment != null)
         {
-            await _programPurchaseLifecycle.ApplyRebuyCreditsAsync(enrollment);
+            // Activate the seat first so credit copy can read the new class's session progress.
             await _classSeatHoldService.ActivateHoldAfterPaymentAsync(enrollment.Id);
+            await _programPurchaseLifecycle.ApplyRebuyCreditsAsync(enrollment);
         }
 
         Guid? nextActivityId = null;

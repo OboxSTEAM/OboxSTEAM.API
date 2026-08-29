@@ -414,11 +414,14 @@ public sealed class ProgramPurchaseLifecycle
             return;
         }
 
-        // The new class the student joined for this rebuy (seat hold becomes Active on payment).
-        var newClassEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+        // Prefer the Active seat; fall back to the Pending hold if copy runs before activation.
+        var seats = await _unitOfWork.ClassEnrollments.GetAllAsync(
             ce => ce.ProgramEnrollmentId == enrollment.Id
                   && !ce.IsDeleted
-                  && ce.Status == ClassEnrollmentStatus.Active);
+                  && (ce.Status == ClassEnrollmentStatus.Active
+                      || ce.Status == ClassEnrollmentStatus.Pending));
+        var newClassEnrollment = seats.FirstOrDefault(ce => ce.Status == ClassEnrollmentStatus.Active)
+            ?? seats.FirstOrDefault();
         if (newClassEnrollment == null)
         {
             return;

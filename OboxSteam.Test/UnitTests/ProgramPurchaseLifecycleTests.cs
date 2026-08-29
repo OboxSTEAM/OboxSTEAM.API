@@ -549,8 +549,10 @@ public sealed class ProgramPurchaseLifecycleTests
         });
     }
 
-    /// <summary>Seeds the Active class seat the rebuy student holds on the new class.</summary>
-    private Guid SeedNewClassSeat(Guid programEnrollmentId)
+    /// <summary>Seeds the class seat the rebuy student holds on the new class.</summary>
+    private Guid SeedNewClassSeat(
+        Guid programEnrollmentId,
+        ClassEnrollmentStatus status = ClassEnrollmentStatus.Active)
     {
         var classId = Guid.NewGuid();
         _db.ClassEnrollments.Seed(new ClassEnrollment
@@ -559,7 +561,7 @@ public sealed class ProgramPurchaseLifecycleTests
             ClassId = classId,
             StudentId = _studentId,
             ProgramEnrollmentId = programEnrollmentId,
-            Status = ClassEnrollmentStatus.Active,
+            Status = status,
             IsDeleted = false,
         });
         return classId;
@@ -860,6 +862,45 @@ public sealed class ProgramPurchaseLifecycleTests
         Assert.Equal(
             2,
             _db.ModuleEnrollments.Items.Count(me => me.ModuleId == module.Id));
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_Copies_WhenSeatHoldIsStillPending()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var module = SeedModule("MOD-A", 1);
+        var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id, ClassEnrollmentStatus.Pending);
+        SeedSession(newClassId, module.Id, ClassSessionStatus.Completed);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        var copied = Assert.Single(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == pending.Id);
+        Assert.Equal(module.Id, copied.ModuleId);
+        Assert.Equal(EnrollmentStatus.Completed, copied.Status);
+        Assert.Equal(sourceModuleEnrollment.ModuleId, copied.ModuleId);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_CopiesNothing_WhenNoClassSeat()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var module = SeedModule("MOD-A", 1);
+        SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        Assert.DoesNotContain(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == pending.Id);
     }
 
     [Fact]
