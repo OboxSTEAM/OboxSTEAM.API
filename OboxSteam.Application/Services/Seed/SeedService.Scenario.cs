@@ -67,13 +67,26 @@ public partial class SeedService
 
     internal const string FailRebuyProgramCode = "PRG-FAILREBUY";
     internal const string FailRebuyClassCode = "CLS-FAILREBUY-CURRENT";
+    internal const string FailRebuyEligibleClassCode = "CLS-FAILREBUY-ELIGIBLE";
+    internal const string FailRebuyBlockedClassCode = "CLS-FAILREBUY-BLOCKED";
+    internal const string FailRebuyFreshClassCode = "CLS-FAILREBUY-FRESH";
     internal const string FailRebuyMentorCode = "MNT-006";
+    internal const string FailRebuyRebuyMentorCode = "MNT-007";
 
-    /// <summary>Already-closed snapshots on PRG-FAILREBUY (do not count as in-progress).</summary>
+    /// <summary>
+    /// Terminal snapshots on PRG-FAILREBUY (Failed/Dropped/Completed). They do not
+    /// consume an in-progress program or active class slot. Used for rebuy, window,
+    /// credit-copy, class-eligibility, and manager-reopen E2E.
+    /// </summary>
     internal static readonly string[] FailRebuyClosedStudentCodes =
     [
         "STD-026",
         "STD-027",
+        "STD-034",
+        "STD-035",
+        "STD-036",
+        "STD-037",
+        "STD-038",
     ];
 
     /// <summary>Active PRG-FAILREBUY purchases used to fire close/withdraw APIs.</summary>
@@ -310,6 +323,9 @@ public partial class SeedService
         }
 
         Add(FailRebuyMentorCode);
+        Add(FailRebuyRebuyMentorCode);
+        Add(FailRebuyRebuyMentorCode);
+        Add(FailRebuyRebuyMentorCode);
 
         foreach (var request in MentorBoardRequestPlan)
         {

@@ -382,10 +382,17 @@ public sealed class QuizAttemptService : IQuizAttemptService
 
         await UpsertAnswersAsync(submission, mergedAnswers, student.Id);
 
-        var answers = await _unitOfWork.QuizAnswers.GetAllAsync(
-            a => a.SubmissionId == submissionId && !a.IsDeleted);
+        // Score the merged request, not a QuizAnswers reload. EF Core GetAllAsync
+        // runs SQL and misses rows that UpsertAnswersAsync has only Added.
+        var answersForGrade = mergedAnswers
+            .SelectMany(item => (item.SelectedOptionIds ?? []).Select(optionId => new QuizAnswer
+            {
+                QuizQuestionId = item.QuestionId,
+                QuizOptionId = optionId
+            }))
+            .ToList();
 
-        var grade = QuizScoreCalculator.Calculate(assignment!, snapshotQuestions, answers);
+        var grade = QuizScoreCalculator.Calculate(assignment!, snapshotQuestions, answersForGrade);
         var submittedAt = DateTime.UtcNow;
 
         submission.Status = SubmissionStatus.Graded;

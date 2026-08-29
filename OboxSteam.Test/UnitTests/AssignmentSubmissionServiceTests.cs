@@ -796,4 +796,185 @@ public sealed class AssignmentSubmissionServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.UploadAssignmentFile(_submissionId, CreateFormFile(length: 0).Object));
     }
+
+    // ── Grade correction / reopen (Step 7) ────────────────────────────────────
+
+    private void SeedClosedAcademicFailState(ProgramPurchaseEndReason endReason)
+    {
+        var programEnrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId);
+        programEnrollment.Status = EnrollmentStatus.Failed;
+        programEnrollment.EndReason = endReason;
+        programEnrollment.EndedModuleId = _moduleId;
+        programEnrollment.EndedAt = DateTime.UtcNow.AddHours(-1);
+
+        _db.ModuleEnrollments.Items.Single(me => me.Id == _enrollmentId).Status = EnrollmentStatus.Failed;
+
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = _classEnrollmentId,
+            ClassId = _classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = _programEnrollmentId,
+            Status = ClassEnrollmentStatus.Withdrawn,
+            IsDeleted = false
+        });
+    }
+
+    private void SeedIncompleteActivity()
+    {
+        // One unfinished activity keeps module progress below 100% so a reopened
+        // module enrollment stays Active instead of flipping straight to Completed.
+        var courseId = Guid.NewGuid();
+        _db.Courses.Seed(new Course
+        {
+            Id = courseId,
+            ModuleId = _moduleId,
+            Code = "CRS-001",
+            Name = "Course 1",
+            CourseOrder = 1,
+            IsDeleted = false
+        });
+        _db.Activities.Seed(new Activity
+        {
+            Id = Guid.NewGuid(),
+            CourseId = courseId,
+            Code = "ACT-001",
+            Name = "Reading 1",
+            ActivityType = ActivityType.SelfPaced,
+            ActivityOrder = 1,
+            IsDeleted = false
+        });
+    }
+
+    [Fact]
+    public async Task GradeAssignment_RegradeToPass_ReopensAcademicFailEnrollment()
+    {
+        SeedStudent();
+        SeedManager();
+        SeedModule();
+        SeedProgramEnrollment();
+        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
+        SeedFileUploadAssignment(maxPoints: 10, passScore: 5m);
+        SeedIncompleteActivity();
+        SeedTurnedInSubmission(status: SubmissionStatus.Graded, assignedGrade: 2m);
+        SeedClosedAcademicFailState(ProgramPurchaseEndReason.AcademicFail);
+        var sut = CreateSut(currentUserId: _managerId);
+
+        var result = await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
+        {
+            AssignedGrade = 8
+        });
+
+        Assert.Equal(SubmissionStatus.Graded, result.Status);
+        Assert.Equal(8m, result.AssignedGrade);
+
+        var programEnrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId);
+        Assert.Equal(EnrollmentStatus.Active, programEnrollment.Status);
+        Assert.Null(programEnrollment.EndReason);
+        Assert.Null(programEnrollment.EndedModuleId);
+        Assert.Null(programEnrollment.EndedAt);
+        Assert.Equal(
+            EnrollmentStatus.Active,
+            _db.ModuleEnrollments.Items.Single(me => me.Id == _enrollmentId).Status);
+        Assert.Equal(
+            ClassEnrollmentStatus.Active,
+            _db.ClassEnrollments.Items.Single(ce => ce.Id == _classEnrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task GradeAssignment_RegradeToPass_KeepsFailed_WhenEndReasonIsAttendance()
+    {
+        SeedStudent();
+        SeedManager();
+        SeedModule();
+        SeedProgramEnrollment();
+        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
+        SeedFileUploadAssignment(maxPoints: 10, passScore: 5m);
+        SeedIncompleteActivity();
+        SeedTurnedInSubmission(status: SubmissionStatus.Graded, assignedGrade: 2m);
+        SeedClosedAcademicFailState(ProgramPurchaseEndReason.Attendance);
+        var sut = CreateSut(currentUserId: _managerId);
+
+        var result = await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
+        {
+            AssignedGrade = 8
+        });
+
+        Assert.Equal(SubmissionStatus.Graded, result.Status);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId).Status);
+        Assert.Equal(
+            ClassEnrollmentStatus.Withdrawn,
+            _db.ClassEnrollments.Items.Single(ce => ce.Id == _classEnrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task GradeAssignment_RegradeToFail_KeepsEnrollmentFailed()
+    {
+        SeedStudent();
+        SeedManager();
+        SeedModule();
+        SeedProgramEnrollment();
+        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
+        SeedFileUploadAssignment(maxPoints: 10, passScore: 5m);
+        SeedIncompleteActivity();
+        SeedTurnedInSubmission(status: SubmissionStatus.Graded, assignedGrade: 2m);
+        SeedClosedAcademicFailState(ProgramPurchaseEndReason.AcademicFail);
+        var sut = CreateSut(currentUserId: _managerId);
+
+        var result = await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
+        {
+            AssignedGrade = 3
+        });
+
+        Assert.Equal(SubmissionStatus.Graded, result.Status);
+        Assert.Equal(3m, result.AssignedGrade);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId).Status);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ModuleEnrollments.Items.Single(me => me.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task GradeAssignment_RegradeAsMentor_OnGradedSubmission_ThrowsConflict()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
+        SeedFileUploadAssignment(maxPoints: 10, passScore: 5m);
+        SeedTurnedInSubmission(status: SubmissionStatus.Graded, assignedGrade: 2m);
+        SeedMentorOwnsStudent();
+        var sut = CreateSut(currentUserId: _mentorId);
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
+            {
+                AssignedGrade = 8
+            }));
+    }
+
+    [Fact]
+    public async Task SubmitAssignment_ThrowsForbidden_WhenProgramEnrollmentClosed()
+    {
+        SeedStudentModuleAndAssignment(programEnrollmentId: _programEnrollmentId);
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = _programEnrollmentId,
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.Failed,
+            IsDeleted = false
+        });
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.SubmitAssignment(new SubmitAssignmentRequestDto
+            {
+                AssignmentId = _assignmentId,
+                ContentText = "late work"
+            }));
+    }
 }

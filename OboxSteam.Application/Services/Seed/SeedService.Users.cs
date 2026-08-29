@@ -892,7 +892,9 @@ public partial class SeedService
     }
 
     /// <summary>
-    /// Dedicated students for fail/drop close + withdraw API checks. Password: Student@123.
+    /// Dedicated students for fail/drop close, rebuy, window, and reopen E2E.
+    /// Password: Student@123. Roster: STD-026..033 (triggers + snapshots),
+    /// STD-034..038 (window / withdraw-snapshot / completed / fail-at-first-module).
     /// </summary>
     private static List<User> CreateFailRebuyFixtureStudents(DateTime seedNow)
     {
@@ -901,14 +903,19 @@ public partial class SeedService
 
         (string Code, string Email, string FullName, string Phone)[] defs =
         [
-            ("STD-026", "student26@oboxsteam.com", "Fail Snapshot Attendance", "0123456726"),
-            ("STD-027", "student27@oboxsteam.com", "Fail Snapshot Academic", "0123456727"),
-            ("STD-028", "student28@oboxsteam.com", "Fail Trigger Withdraw", "0123456728"),
-            ("STD-029", "student29@oboxsteam.com", "Fail Trigger Attendance", "0123456729"),
-            ("STD-030", "student30@oboxsteam.com", "Fail Trigger Quiz", "0123456730"),
-            ("STD-031", "student31@oboxsteam.com", "Fail Trigger Assignment", "0123456731"),
-            ("STD-032", "student32@oboxsteam.com", "Fail Trigger Research", "0123456732"),
-            ("STD-033", "student33@oboxsteam.com", "Fail Trigger Recovery Reject", "0123456733"),
+            ("STD-026", "student26@oboxsteam.com", "Minh Tran", "0123456726"),
+            ("STD-027", "student27@oboxsteam.com", "Lan Nguyen", "0123456727"),
+            ("STD-028", "student28@oboxsteam.com", "Huy Pham", "0123456728"),
+            ("STD-029", "student29@oboxsteam.com", "Mai Le", "0123456729"),
+            ("STD-030", "student30@oboxsteam.com", "Khoa Vo", "0123456730"),
+            ("STD-031", "student31@oboxsteam.com", "An Do", "0123456731"),
+            ("STD-032", "student32@oboxsteam.com", "Thu Bui", "0123456732"),
+            ("STD-033", "student33@oboxsteam.com", "Nam Dang", "0123456733"),
+            ("STD-034", "student34@oboxsteam.com", "Quynh Ho", "0123456734"),
+            ("STD-035", "student35@oboxsteam.com", "Long Cao", "0123456735"),
+            ("STD-036", "student36@oboxsteam.com", "Ha Ngo", "0123456736"),
+            ("STD-037", "student37@oboxsteam.com", "Tien Pham", "0123456737"),
+            ("STD-038", "student38@oboxsteam.com", "Bao Ly", "0123456738"),
         ];
 
         return defs.Select(def => new User

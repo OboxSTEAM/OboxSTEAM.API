@@ -33,6 +33,65 @@ public sealed class ValidatorAndUtilsTests
 
     // ── ProgramEnrollmentValidator ────────────────────────────────────────────
 
+    // ── CurriculumAccessValidator (read vs mutation split) ───────────────────
+
+    [Theory]
+    [InlineData(EnrollmentStatus.Active)]
+    [InlineData(EnrollmentStatus.Failed)]
+    [InlineData(EnrollmentStatus.Dropped)]
+    [InlineData(EnrollmentStatus.Completed)]
+    public void CurriculumAccess_Read_AllowsEverythingExceptPendingPayment(EnrollmentStatus status)
+    {
+        var enrollment = new ProgramEnrollment { Status = status };
+        CurriculumAccessValidator.ValidateProgramEnrollmentForCurriculum(enrollment);
+    }
+
+    [Fact]
+    public void CurriculumAccess_Read_BlocksPendingPayment()
+    {
+        var enrollment = new ProgramEnrollment { Status = EnrollmentStatus.PendingPayment };
+        Assert.Throws<ForbiddenException>(() =>
+            CurriculumAccessValidator.ValidateProgramEnrollmentForCurriculum(enrollment));
+    }
+
+    [Fact]
+    public void CurriculumAccess_Mutation_AllowsActive()
+    {
+        var enrollment = new ProgramEnrollment { Status = EnrollmentStatus.Active };
+        CurriculumAccessValidator.ValidateProgramEnrollmentForCurriculumMutation(enrollment);
+    }
+
+    [Theory]
+    [InlineData(EnrollmentStatus.PendingPayment)]
+    [InlineData(EnrollmentStatus.Failed)]
+    [InlineData(EnrollmentStatus.Dropped)]
+    [InlineData(EnrollmentStatus.Completed)]
+    public void CurriculumAccess_Mutation_BlocksNonActive(EnrollmentStatus status)
+    {
+        var enrollment = new ProgramEnrollment { Status = status };
+        Assert.Throws<ForbiddenException>(() =>
+            CurriculumAccessValidator.ValidateProgramEnrollmentForCurriculumMutation(enrollment));
+    }
+
+    [Fact]
+    public void ResearchSubmissionValidator_Regrade_AllowsManagerButNotMentor()
+    {
+        var graded = new Submission { Status = SubmissionStatus.Graded };
+        ResearchSubmissionValidator.ValidateSubmissionGradeableForRole(graded, RoleType.Manager);
+        ResearchSubmissionValidator.ValidateSubmissionGradeableForRole(graded, RoleType.Admin);
+        Assert.Throws<ConflictException>(() =>
+            ResearchSubmissionValidator.ValidateSubmissionGradeableForRole(graded, RoleType.Mentor));
+
+        var turnedIn = new Submission { Status = SubmissionStatus.TurnedIn };
+        ResearchSubmissionValidator.ValidateSubmissionGradeableForRole(turnedIn, RoleType.Mentor);
+
+        var pending = new Submission { Status = SubmissionStatus.Pending };
+        Assert.Throws<ConflictException>(() =>
+            ResearchSubmissionValidator.ValidateSubmissionGradeableForRole(pending, RoleType.Manager));
+    }
+
+    // ── ProgramEnrollmentValidator ────────────────────────────────────────────
+
     [Fact]
     public void ProgramEnrollmentValidator_ValidatesIdsPaginationAndEntities()
     {

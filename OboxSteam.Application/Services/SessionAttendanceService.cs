@@ -154,22 +154,31 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         var classEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
             ce => ce.ClassId == classId
                   && ce.StudentId == studentId
-                  && ce.Status == ClassEnrollmentStatus.Active
+                  && (ce.Status == ClassEnrollmentStatus.Active || ce.Status == ClassEnrollmentStatus.Withdrawn)
                   && !ce.IsDeleted);
 
-        if (classEnrollments.Count == 0)
+        // Withdrawn seats stay editable so managers can correct attendance after a close (backup path).
+        var classEnrollment = classEnrollments
+            .OrderByDescending(ce => ce.Status == ClassEnrollmentStatus.Active)
+            .FirstOrDefault();
+
+        if (classEnrollment == null)
         {
             throw ErrorHelper.BadRequest("Student is not enrolled in this class.");
         }
 
-        var classEnrollment = classEnrollments.First();
-
-        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
             me => me.StudentId == studentId
                   && me.ModuleId == classSession.ModuleId
                   && me.ProgramEnrollmentId == classEnrollment.ProgramEnrollmentId
-                  && me.Status == EnrollmentStatus.Active
+                  && (me.Status == EnrollmentStatus.Active || me.Status == EnrollmentStatus.Failed)
                   && !me.IsDeleted);
+
+        // Failed module enrollments stay editable for the same manager backup path.
+        var moduleEnrollment = moduleEnrollments
+            .OrderByDescending(me => me.Status == EnrollmentStatus.Active)
+            .ThenByDescending(me => me.AttemptNumber)
+            .FirstOrDefault();
 
         if (moduleEnrollment == null)
         {
@@ -222,6 +231,17 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         if (request.Status == AttendanceStatus.Absent)
         {
             await TryFailModuleForExcessAbsencesAsync(moduleEnrollment);
+        }
+        else
+        {
+            var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                classEnrollment.ProgramEnrollmentId);
+            if (programEnrollment != null && !programEnrollment.IsDeleted)
+            {
+                await _programPurchaseLifecycle.TryReopenAfterAttendanceCorrectionAsync(
+                    programEnrollment,
+                    classSession.ModuleId);
+            }
         }
 
         _logger.LogInformation(

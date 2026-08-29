@@ -85,7 +85,23 @@ fee and joining a new class whose progress has not reached the failed module.
    so redone modules never collide with prior attempts on the
    `(StudentId, ModuleId, AttemptNumber)` unique index.
 10. `Failed`/`Dropped` enrollments keep read-only curriculum access; mutations
-    still require `Active`.
+    still require `Active`. Reads (curriculum tree, mind map, activity detail)
+    block only `PendingPayment`. Student mutations are blocked on terminal
+    enrollments at every entry point: curriculum actions (complete activity,
+    save checkpoint) plus quiz/assignment/research/retrospective submissions
+    and recovery requests (all resolve the module enrollment and now also
+    require the parent program enrollment to be `Active`). Manager/Admin
+    correction paths stay open on closed enrollments as a backup: attendance
+    records remain editable (withdrawn seats and failed module enrollments are
+    resolvable), and already-`Graded` submissions can be re-graded by
+    Admin/Manager only. A correction that removes the closing condition
+    reopens the purchase automatically: attendance corrected below the 20%
+    absence threshold reopens a `Failed`/`Attendance` purchase; a grade
+    corrected to a pass reopens a `Failed`/`AcademicFail` purchase (attempt
+    counts and recovery decisions are untouched - the corrected pass stands).
+    Reopen restores `Active` status, clears `EndReason`/`EndedModuleId`/
+    `EndedAt`, reactivates the failed module enrollment and every withdrawn
+    seat, then recalculates module/program progress.
 11. Legacy `ClassRedeliveryRequest` / Remedial / retake checkout stay untouched
     and are not depended upon; cleanup is deferred to a later slice.
 

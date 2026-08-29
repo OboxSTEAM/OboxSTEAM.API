@@ -17,15 +17,51 @@ public static class CurriculumAccessValidator
     public const string MentorSessionOnlyMessage =
         "Only LiveOnline or Offline session activities can be mentor-completed.";
 
+    /// <summary>
+    /// Read access: any enrollment except <see cref="EnrollmentStatus.PendingPayment"/> (unpaid).
+    /// Failed/Dropped/Completed keep read-only curriculum access.
+    /// </summary>
     public static void ValidateProgramEnrollmentForCurriculum(ProgramEnrollment enrollment)
     {
-        if (enrollment.Status is EnrollmentStatus.PendingPayment or EnrollmentStatus.Dropped)
+        if (enrollment.Status is EnrollmentStatus.PendingPayment)
+        {
+            throw ErrorHelper.Forbidden(EnrollmentNotActiveMessage);
+        }
+    }
+
+    /// <summary>
+    /// Mutation access: only <see cref="EnrollmentStatus.Active"/> enrollments may change
+    /// learning data (complete activities, save checkpoints).
+    /// </summary>
+    public static void ValidateProgramEnrollmentForCurriculumMutation(ProgramEnrollment enrollment)
+    {
+        if (enrollment.Status != EnrollmentStatus.Active)
         {
             throw ErrorHelper.Forbidden(EnrollmentNotActiveMessage);
         }
     }
 
     public static async Task<ProgramEnrollment> GetProgramEnrollmentForStudentActionAsync(
+        IUnitOfWork unitOfWork,
+        Guid programEnrollmentId,
+        Guid studentId)
+    {
+        var enrollment = await GetOwnedEnrollmentAsync(unitOfWork, programEnrollmentId, studentId);
+        ValidateProgramEnrollmentForCurriculum(enrollment);
+        return enrollment;
+    }
+
+    public static async Task<ProgramEnrollment> GetProgramEnrollmentForStudentMutationAsync(
+        IUnitOfWork unitOfWork,
+        Guid programEnrollmentId,
+        Guid studentId)
+    {
+        var enrollment = await GetOwnedEnrollmentAsync(unitOfWork, programEnrollmentId, studentId);
+        ValidateProgramEnrollmentForCurriculumMutation(enrollment);
+        return enrollment;
+    }
+
+    private static async Task<ProgramEnrollment> GetOwnedEnrollmentAsync(
         IUnitOfWork unitOfWork,
         Guid programEnrollmentId,
         Guid studentId)
@@ -41,7 +77,6 @@ public static class CurriculumAccessValidator
             throw ErrorHelper.Forbidden(CurriculumForbiddenMessage);
         }
 
-        ValidateProgramEnrollmentForCurriculum(enrollment);
         return enrollment;
     }
 

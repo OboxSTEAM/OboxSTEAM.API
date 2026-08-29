@@ -185,6 +185,26 @@ public static class ResearchSubmissionValidator
         }
     }
 
+    /// <summary>
+    /// Turned-in submissions can be graded by any authorized grader. Already-graded submissions
+    /// can be re-graded only by Admin/Manager as a correction path (e.g. backup after a wrongful
+    /// fail that closed the program purchase).
+    /// </summary>
+    public static void ValidateSubmissionGradeableForRole(Submission submission, RoleType graderRole)
+    {
+        if (submission.Status == SubmissionStatus.TurnedIn)
+        {
+            return;
+        }
+
+        if (submission.Status == SubmissionStatus.Graded && graderRole is RoleType.Admin or RoleType.Manager)
+        {
+            return;
+        }
+
+        throw ErrorHelper.Conflict("Only turned-in submissions can be graded.");
+    }
+
     public static int GetNextAttemptNumber(Submission submission)
         => submission.AttemptNumber + 1;
 

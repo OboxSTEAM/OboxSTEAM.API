@@ -799,7 +799,7 @@ public sealed class SessionAttendanceServiceTests
     }
 
     [Fact]
-    public async Task Update_Absent_AfterModuleFailed_RejectsFurtherAttendance()
+    public async Task Update_Absent_AfterModuleFailed_ManagerCorrectionStillAllowed()
     {
         SeedUser(_managerId, RoleType.Manager, "MGR-001");
         SeedUser(_studentId, RoleType.Student, "STD-001");
@@ -819,18 +819,105 @@ public sealed class SessionAttendanceServiceTests
             EnrollmentStatus.Failed,
             _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId).Status);
 
+        // Manager backup path: attendance stays editable after the module failed.
         var otherSessionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-000000000002");
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.UpdateSessionAttendanceAsync(
-                _classId,
-                otherSessionId,
-                _studentId,
-                new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent }));
+        var result = await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            otherSessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent });
+
+        Assert.Equal(AttendanceStatus.Absent, result.Status);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId).Status);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId).Status);
 
         _notificationPublisher.Verify(
             n => n.PublishAsync(
                 It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
                 It.IsAny<CancellationToken>()),
             Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task Update_CorrectionBelowThreshold_ReopensEnrollmentAndRestoresSeat()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedModuleEntity();
+        SeedClass();
+        SeedActivityLinkedSessions(count: 5);
+        SeedStudentRoster();
+        var sut = CreateSut(_managerId);
+
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent });
+
+        var programEnrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId);
+        Assert.Equal(EnrollmentStatus.Failed, programEnrollment.Status);
+        Assert.Equal(
+            ClassEnrollmentStatus.Withdrawn,
+            _db.ClassEnrollments.Items.Single(ce => ce.ProgramEnrollmentId == _programEnrollmentId).Status);
+
+        // Manager corrects the wrongful absence -> missed ratio drops below the fail threshold.
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Present });
+
+        Assert.Equal(EnrollmentStatus.Active, programEnrollment.Status);
+        Assert.Null(programEnrollment.EndReason);
+        Assert.Null(programEnrollment.EndedModuleId);
+        Assert.Null(programEnrollment.EndedAt);
+        Assert.Equal(
+            EnrollmentStatus.Active,
+            _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId).Status);
+        Assert.Equal(
+            ClassEnrollmentStatus.Active,
+            _db.ClassEnrollments.Items.Single(ce => ce.ProgramEnrollmentId == _programEnrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task Update_CorrectionStillAboveThreshold_KeepsEnrollmentFailed()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedModuleEntity();
+        SeedClass();
+        SeedActivityLinkedSessions(count: 5);
+        SeedStudentRoster();
+        var sut = CreateSut(_managerId);
+
+        // 1/5 = 20% -> fail. Then a second absence is recorded (2/5 = 40%).
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent });
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-000000000002"),
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent });
+
+        // Correcting only one absence leaves 1/5 = 20% -> still at the threshold, no reopen.
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Present });
+
+        var programEnrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId);
+        Assert.Equal(EnrollmentStatus.Failed, programEnrollment.Status);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId).Status);
     }
 }

@@ -673,6 +673,27 @@ public sealed class ResearchSubmissionServiceTests
             }));
     }
 
+    [Fact]
+    public async Task SubmitResearchWork_Throws_WhenProgramEnrollmentClosed()
+    {
+        SeedResearchCurriculum();
+        SeedAssignment();
+        SeedMilestone();
+        SeedStudentEnrollmentChain();
+        SeedCompletedRequiredActivity();
+        _db.ProgramEnrollments.Items[0].Status = EnrollmentStatus.Failed;
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.SubmitResearchWork(new SubmitResearchWorkRequestDto
+            {
+                ModuleEnrollmentId = _moduleEnrollmentId,
+                ResearchMilestoneId = _milestoneId,
+                ContentText = "x",
+            }));
+        Assert.Contains("enrollment has ended", ex.Message);
+    }
+
     // ── GradeSubmission ───────────────────────────────────────────────────────
 
     [Fact]

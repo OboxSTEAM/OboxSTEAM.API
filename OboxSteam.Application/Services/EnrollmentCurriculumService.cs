@@ -137,7 +137,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             _claimsService,
             ActivityProgressValidator.UpdateForbiddenMessage);
 
-        var enrollment = await CurriculumAccessValidator.GetProgramEnrollmentForStudentActionAsync(
+        var enrollment = await CurriculumAccessValidator.GetProgramEnrollmentForStudentMutationAsync(
             _unitOfWork,
             programEnrollmentId,
             student.Id);
@@ -298,7 +298,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             _claimsService,
             ActivityProgressValidator.UpdateForbiddenMessage);
 
-        var enrollment = await CurriculumAccessValidator.GetProgramEnrollmentForStudentActionAsync(
+        var enrollment = await CurriculumAccessValidator.GetProgramEnrollmentForStudentMutationAsync(
             _unitOfWork,
             programEnrollmentId,
             student.Id);

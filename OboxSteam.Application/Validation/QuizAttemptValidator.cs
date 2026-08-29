@@ -18,6 +18,9 @@ public static class QuizAttemptValidator
     public const string ViewQuizForbiddenMessage =
         "You do not have access to this quiz submission.";
 
+    public const string EnrollmentNotActiveMessage =
+        "Your program enrollment has ended. Repurchase the program to continue learning.";
+
     public static void ValidateAssignmentIdRequired(Guid assignmentId)
     {
         if (assignmentId == Guid.Empty)
@@ -105,6 +108,18 @@ public static class QuizAttemptValidator
         {
             throw ErrorHelper.Forbidden(
                 "You must have an active module enrollment to access this assignment.");
+        }
+
+        if (activeEnrollment.ProgramEnrollmentId.HasValue)
+        {
+            var programEnrollment = await unitOfWork.ProgramEnrollments.GetByIdAsync(
+                activeEnrollment.ProgramEnrollmentId.Value);
+            if (programEnrollment != null
+                && !programEnrollment.IsDeleted
+                && programEnrollment.Status != EnrollmentStatus.Active)
+            {
+                throw ErrorHelper.Forbidden(EnrollmentNotActiveMessage);
+            }
         }
 
         return activeEnrollment;

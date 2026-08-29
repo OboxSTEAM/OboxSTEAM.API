@@ -182,8 +182,6 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
                 "This is a research submission. Use the research submission grading endpoint.");
         }
 
-        ResearchSubmissionValidator.ValidateSubmissionAwaitingGrade(submission);
-
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission.AssignmentId);
         if (assignment == null || assignment.IsDeleted)
         {
@@ -195,6 +193,8 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
             _claimsService,
             assignment.ModuleId,
             submission.StudentId);
+
+        ResearchSubmissionValidator.ValidateSubmissionGradeableForRole(submission, grader.Role);
 
         if (request.AssignedGrade < 0 || request.AssignedGrade > assignment.MaxPoints)
         {
@@ -215,7 +215,20 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         await _unitOfWork.Submissions.Update(submission);
         await _unitOfWork.SaveChangesAsync();
 
-        await RecalculateEnrollmentProgressAsync(submission);
+        var reopened = false;
+        if (submission.Status == SubmissionStatus.Graded
+            && submission.AssignedGrade.HasValue
+            && submission.AssignedGrade.Value >= assignment.PassScore)
+        {
+            reopened = await _programPurchaseLifecycle.TryReopenAfterGradeCorrectionAsync(
+                submission,
+                assignment);
+        }
+
+        if (!reopened)
+        {
+            await RecalculateEnrollmentProgressAsync(submission);
+        }
 
         if (submission.Status == SubmissionStatus.Graded
             && submission.AssignedGrade.HasValue

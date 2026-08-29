@@ -302,7 +302,6 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         var submission = await _unitOfWork.Submissions.GetByIdAsync(submissionId);
         ResearchSubmissionValidator.ValidateSubmissionExists(submission, submissionId);
         ResearchSubmissionValidator.ValidateResearchSubmission(submission!);
-        ResearchSubmissionValidator.ValidateSubmissionAwaitingGrade(submission!);
 
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission!.AssignmentId);
         if (assignment == null || assignment.IsDeleted)
@@ -315,6 +314,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             _claimsService,
             assignment.ModuleId,
             submission!.StudentId);
+
+        ResearchSubmissionValidator.ValidateSubmissionGradeableForRole(submission!, grader.Role);
 
         if (request.AssignedGrade < 0 || request.AssignedGrade > assignment.MaxPoints)
         {
@@ -360,7 +361,20 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         await _unitOfWork.Submissions.Update(submission);
         await _unitOfWork.SaveChangesAsync();
 
-        await RecalculateEnrollmentProgressAsync(submission);
+        var reopened = false;
+        if (submission.Status == SubmissionStatus.Graded
+            && submission.AssignedGrade.HasValue
+            && submission.AssignedGrade.Value >= assignment.PassScore)
+        {
+            reopened = await _programPurchaseLifecycle.TryReopenAfterGradeCorrectionAsync(
+                submission,
+                assignment);
+        }
+
+        if (!reopened)
+        {
+            await RecalculateEnrollmentProgressAsync(submission);
+        }
 
         if (submission.Status == SubmissionStatus.Graded
             && submission.AssignedGrade.HasValue
@@ -441,6 +455,18 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         if (enrollment.Status != EnrollmentStatus.Active)
         {
             throw ErrorHelper.Forbidden("Module enrollment is not active.");
+        }
+
+        if (enrollment.ProgramEnrollmentId.HasValue)
+        {
+            var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                enrollment.ProgramEnrollmentId.Value);
+            if (programEnrollment != null
+                && !programEnrollment.IsDeleted
+                && programEnrollment.Status != EnrollmentStatus.Active)
+            {
+                throw ErrorHelper.Forbidden(QuizAttemptValidator.EnrollmentNotActiveMessage);
+            }
         }
 
         var milestone = await _unitOfWork.ResearchMilestones.GetByIdAsync(researchMilestoneId);

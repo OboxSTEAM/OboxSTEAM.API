@@ -8,29 +8,35 @@ namespace OboxSteam.Application.Services;
 
 public partial class SeedService
 {
+    internal const string FailRebuyTheoryModuleCode = "MOD-FAILREBUY-TH";
+    internal const string FailRebuyExperientialModuleCode = "MOD-FAILREBUY-01";
+    internal const string FailRebuyResearchModuleCode = "MOD-FAILREBUY-02";
+    internal const string FailRebuyTheoryQuizCode = "ASG-FAILREBUY-TH-QUIZ";
     internal const string FailRebuyQuizCode = "ASG-FAILREBUY-QUIZ";
     internal const string FailRebuyUploadCode = "ASG-FAILREBUY-UPLOAD";
     internal const string FailRebuyResearchAssignmentCode = "ASG-FAILREBUY-RS01";
     internal const string FailRebuyResearchMilestoneCode = "RML-FAILREBUY-01";
-    internal const string FailRebuyExperientialModuleCode = "MOD-FAILREBUY-01";
-    internal const string FailRebuyResearchModuleCode = "MOD-FAILREBUY-02";
 
     /// <summary>
-    /// Isolated program + class so attendance (5 session activities) and academic
-    /// close wires can be exercised without touching Robotics/demo showcase data.
+    /// Isolated three-module track (theory → lab → research) plus four classes so
+    /// fail/drop close, rebuy window, credit copy, class eligibility, and manager
+    /// reopen can be exercised without touching Robotics/demo showcase data.
     /// Must run after demo submission clearing and before payment seed.
     /// </summary>
     private async Task SeedFailRebuyFixturesAsync()
     {
         _loggerService.LogInformation("Starting seed fail/rebuy test fixtures");
 
-        var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(
+        var currentMentor = await _unitOfWork.Users.FirstOrDefaultAsync(
             u => u.Code == FailRebuyMentorCode && !u.IsDeleted);
-        if (mentor == null)
+        var rebuyMentor = await _unitOfWork.Users.FirstOrDefaultAsync(
+            u => u.Code == FailRebuyRebuyMentorCode && !u.IsDeleted);
+        if (currentMentor == null || rebuyMentor == null)
         {
             _loggerService.LogWarning(
-                "Mentor {MentorCode} missing. Skipping fail/rebuy fixtures.",
-                FailRebuyMentorCode);
+                "Mentor {Current} or {Rebuy} missing. Skipping fail/rebuy fixtures.",
+                FailRebuyMentorCode,
+                FailRebuyRebuyMentorCode);
             return;
         }
 
@@ -51,62 +57,188 @@ public partial class SeedService
 
         var seedTime = _seedNow;
         var program = await EnsureFailRebuyProgramAsync(seedTime);
-        var experientialModule = await EnsureFailRebuyModuleAsync(
+
+        var theoryModule = await EnsureFailRebuyModuleAsync(
+            program.Id,
+            FailRebuyTheoryModuleCode,
+            "Foundations",
+            ModuleType.Theory,
+            moduleOrder: 1,
+            seedTime,
+            prerequisiteModuleId: null);
+        var labModule = await EnsureFailRebuyModuleAsync(
             program.Id,
             FailRebuyExperientialModuleCode,
-            "Fail Rebuy Lab",
+            "Studio Lab",
             ModuleType.Experiential,
-            moduleOrder: 1,
-            seedTime);
+            moduleOrder: 2,
+            seedTime,
+            theoryModule.Id);
         var researchModule = await EnsureFailRebuyModuleAsync(
             program.Id,
             FailRebuyResearchModuleCode,
-            "Fail Rebuy Research",
+            "Capstone Research",
             ModuleType.Research,
-            moduleOrder: 2,
-            seedTime);
+            moduleOrder: 3,
+            seedTime,
+            labModule.Id);
 
+        var theoryCourse = await EnsureFailRebuyCourseAsync(
+            theoryModule.Id, "CRS-FAILREBUY-TH", "Foundations Studio", 1, seedTime);
         var labCourse = await EnsureFailRebuyCourseAsync(
-            experientialModule.Id,
-            "CRS-FAILREBUY-01",
-            "Lab Sessions",
-            1,
-            seedTime);
+            labModule.Id, "CRS-FAILREBUY-01", "Lab Sessions", 1, seedTime);
         var researchCourse = await EnsureFailRebuyCourseAsync(
-            researchModule.Id,
-            "CRS-FAILREBUY-02",
-            "Research Studio",
-            1,
-            seedTime);
+            researchModule.Id, "CRS-FAILREBUY-02", "Research Studio", 1, seedTime);
 
-        var activities = new List<Activity>(5);
+        var kickoff = await EnsureFailRebuyActivityAsync(
+            theoryCourse.Id,
+            "ACT-FAILREBUY-TH-KICK",
+            "Orientation Live",
+            1,
+            seedTime,
+            ActivityType.LiveOnline);
+        var theoryReadings = new List<Activity>
+        {
+            await EnsureFailRebuyActivityAsync(
+                theoryCourse.Id, "ACT-FAILREBUY-TH-01", "Reading: STEAM Mindset", 2, seedTime),
+            await EnsureFailRebuyActivityAsync(
+                theoryCourse.Id, "ACT-FAILREBUY-TH-02", "Reading: Safety & Tools", 3, seedTime),
+        };
+        var theoryActivities = new List<Activity> { kickoff };
+        theoryActivities.AddRange(theoryReadings);
+
+        var labActivities = new List<Activity>(5);
         for (var i = 1; i <= 5; i++)
         {
-            activities.Add(await EnsureFailRebuyActivityAsync(
+            labActivities.Add(await EnsureFailRebuyActivityAsync(
                 labCourse.Id,
                 $"ACT-FAILREBUY-01-0{i}",
                 $"Lab Session {i}",
                 i,
-                seedTime));
+                seedTime,
+                ActivityType.LiveOnline));
         }
 
-        var bank = await EnsureFailRebuyQuestionBankAsync(labCourse.Id, seedTime);
-        var quiz = await EnsureFailRebuyQuizAsync(experientialModule.Id, labCourse.Id, bank.Id, seedTime);
-        var upload = await EnsureFailRebuyUploadAsync(experientialModule.Id, labCourse.Id, seedTime);
+        var researchReading = await EnsureFailRebuyActivityAsync(
+            researchCourse.Id,
+            "ACT-FAILREBUY-RS-01",
+            "Research Brief",
+            1,
+            seedTime);
+
+        var theoryBank = await EnsureFailRebuyQuestionBankAsync(
+            theoryCourse.Id, "Fail Rebuy Theory Bank", "What is STEAM?", seedTime);
+        var labBank = await EnsureFailRebuyQuestionBankAsync(
+            labCourse.Id, "Fail Rebuy Quiz Bank", "What is 1 + 1?", seedTime);
+
+        var theoryQuiz = await EnsureFailRebuyQuizAsync(
+            FailRebuyTheoryQuizCode,
+            theoryModule.Id,
+            theoryCourse.Id,
+            theoryBank.Id,
+            "Foundations Quiz",
+            "Required quiz to complete the Foundations module.",
+            maxAttempts: 3,
+            seedTime);
+        var labQuiz = await EnsureFailRebuyQuizAsync(
+            FailRebuyQuizCode,
+            labModule.Id,
+            labCourse.Id,
+            labBank.Id,
+            "Studio Lab Quiz",
+            "One attempt. Two decided recoveries are pre-seeded on trigger students.",
+            maxAttempts: 1,
+            seedTime);
+        var upload = await EnsureFailRebuyUploadAsync(labModule.Id, labCourse.Id, seedTime);
         var (researchAssignment, researchMilestone) = await EnsureFailRebuyResearchAsync(
             researchModule.Id,
             seedTime);
 
-        var classEntity = await EnsureFailRebuyClassAsync(program.Id, mentor.Id, seedTime);
-        await EnsureFailRebuySessionsAsync(classEntity, experientialModule.Id, activities, seedTime);
+        var currentClass = await EnsureFailRebuyClassAsync(
+            FailRebuyClassCode,
+            "STEAM Foundations — Current Cohort",
+            program.Id,
+            currentMentor.Id,
+            ClassStatus.InProgress,
+            seedTime.AddDays(-14),
+            seedTime.AddDays(42),
+            "Weekday lab blocks",
+            seedTime);
+        var eligibleClass = await EnsureFailRebuyClassAsync(
+            FailRebuyEligibleClassCode,
+            "STEAM Foundations — Next Cohort",
+            program.Id,
+            rebuyMentor.Id,
+            ClassStatus.Open,
+            seedTime.AddDays(7),
+            seedTime.AddDays(63),
+            "Upcoming weekday lab blocks",
+            seedTime);
+        var blockedClass = await EnsureFailRebuyClassAsync(
+            FailRebuyBlockedClassCode,
+            "STEAM Foundations — Mid-lab Cohort",
+            program.Id,
+            rebuyMentor.Id,
+            ClassStatus.Open,
+            seedTime.AddDays(5),
+            seedTime.AddDays(61),
+            "Cohort already in studio lab",
+            seedTime);
+        var freshClass = await EnsureFailRebuyClassAsync(
+            FailRebuyFreshClassCode,
+            "STEAM Foundations — Upcoming Cohort",
+            program.Id,
+            rebuyMentor.Id,
+            ClassStatus.Open,
+            seedTime.AddDays(21),
+            seedTime.AddDays(77),
+            "Not yet started",
+            seedTime);
+
+        // Eligibility reads session Status (InProgress/Completed), not Class.Status.
+        // Rebuy classes stay Open so select-class is allowed; session status is the gate.
+        await EnsureFailRebuySessionAsync(
+            currentClass.Id, theoryModule.Id, kickoff,
+            seedTime.AddDays(-12).Date.AddHours(9), ClassSessionStatus.Completed, seedTime);
+        for (var i = 0; i < labActivities.Count; i++)
+        {
+            var isLive = i == 0;
+            var start = isLive
+                ? seedTime.AddHours(-1)
+                : seedTime.AddDays(-10 + i).Date.AddHours(9);
+            await EnsureFailRebuySessionAsync(
+                currentClass.Id,
+                labModule.Id,
+                labActivities[i],
+                start,
+                isLive ? ClassSessionStatus.InProgress : ClassSessionStatus.Completed,
+                seedTime);
+        }
+
+        await EnsureFailRebuySessionAsync(
+            eligibleClass.Id, theoryModule.Id, kickoff,
+            seedTime.AddDays(-3).Date.AddHours(9), ClassSessionStatus.Completed, seedTime);
+
+        await EnsureFailRebuySessionAsync(
+            blockedClass.Id, labModule.Id, labActivities[0],
+            seedTime.AddDays(-2).Date.AddHours(9), ClassSessionStatus.Completed, seedTime);
+
+        await EnsureFailRebuySessionAsync(
+            freshClass.Id, theoryModule.Id, kickoff,
+            seedTime.AddDays(21).Date.AddHours(9), ClassSessionStatus.Scheduled, seedTime);
 
         await EnsureFailRebuyEnrollmentsAsync(
             students,
             program,
-            classEntity,
-            experientialModule,
+            currentClass,
+            theoryModule,
+            labModule,
             researchModule,
-            quiz,
+            theoryActivities,
+            labActivities,
+            researchReading,
+            theoryQuiz,
+            labQuiz,
             upload,
             researchAssignment,
             researchMilestone,
@@ -122,6 +254,8 @@ public partial class SeedService
         if (existing != null)
         {
             existing.RetakeFee ??= CatalogRetakeFee(existing.Price);
+            existing.Name = "STEAM Foundations";
+            existing.SeriesName = "Core Track";
             await _unitOfWork.Programs.Update(existing);
             await _unitOfWork.SaveChangesAsync();
             return existing;
@@ -131,13 +265,15 @@ public partial class SeedService
         {
             Id = Guid.NewGuid(),
             Code = FailRebuyProgramCode,
-            Name = "Fail / Rebuy Test Track",
-            SeriesName = "QA Fixtures",
-            Description = "Isolated track for testing program close (attendance, academic fail, withdraw).",
+            Name = "STEAM Foundations",
+            SeriesName = "Core Track",
+            Description =
+                "Three-module foundations track: theory, studio lab, then capstone research. " +
+                "Also the fail/rebuy QA fixture (PRG-FAILREBUY).",
             Level = DifficultyLevel.Beginner,
             Category = ProgramCategory.Technology,
-            EstimatedDuration = "2 weeks",
-            SkillsGained = "QA close-path coverage",
+            EstimatedDuration = "6 weeks",
+            SkillsGained = "STEAM foundations, studio practice, research documentation",
             Status = ProgramStatus.Active,
             Price = 1_000_000m,
             RetakeFee = CatalogRetakeFee(1_000_000m),
@@ -156,11 +292,18 @@ public partial class SeedService
         string name,
         ModuleType moduleType,
         int moduleOrder,
-        DateTime seedTime)
+        DateTime seedTime,
+        Guid? prerequisiteModuleId)
     {
         var existing = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == code && !m.IsDeleted);
         if (existing != null)
         {
+            existing.Name = name;
+            existing.ModuleOrder = moduleOrder;
+            existing.PrerequisiteModuleId = prerequisiteModuleId;
+            existing.ModuleType = moduleType;
+            await _unitOfWork.Modules.Update(existing);
+            await _unitOfWork.SaveChangesAsync();
             return existing;
         }
 
@@ -172,7 +315,13 @@ public partial class SeedService
             Name = name,
             ModuleType = moduleType,
             ModuleOrder = moduleOrder,
+            PrerequisiteModuleId = prerequisiteModuleId,
             IsMandatory = true,
+            LearningOutcomes =
+            [
+                $"Complete {name} before moving on.",
+                "Apply studio safety and documentation habits.",
+            ],
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,
@@ -217,11 +366,16 @@ public partial class SeedService
         string code,
         string name,
         int order,
-        DateTime seedTime)
+        DateTime seedTime,
+        ActivityType activityType = ActivityType.SelfPaced)
     {
         var existing = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == code && !a.IsDeleted);
         if (existing != null)
         {
+            existing.ActivityType = activityType;
+            existing.ActivityOrder = order;
+            await _unitOfWork.Activities.Update(existing);
+            await _unitOfWork.SaveChangesAsync();
             return existing;
         }
 
@@ -232,9 +386,9 @@ public partial class SeedService
             CourseId = courseId,
             Name = name,
             Description = name,
-            ActivityType = ActivityType.LiveOnline,
+            ActivityType = activityType,
             ActivityOrder = order,
-            DurationMinutes = 90,
+            DurationMinutes = activityType == ActivityType.LiveOnline ? 90 : 30,
             RequireQrCheckin = false,
             RequireMediaEvidence = false,
             CreatedAt = seedTime,
@@ -246,10 +400,14 @@ public partial class SeedService
         return activity;
     }
 
-    private async Task<QuestionBank> EnsureFailRebuyQuestionBankAsync(Guid courseId, DateTime seedTime)
+    private async Task<QuestionBank> EnsureFailRebuyQuestionBankAsync(
+        Guid courseId,
+        string name,
+        string questionText,
+        DateTime seedTime)
     {
         var existing = await _unitOfWork.QuestionBanks.FirstOrDefaultAsync(
-            qb => qb.CourseId == courseId && qb.Name == "Fail Rebuy Quiz Bank" && !qb.IsDeleted);
+            qb => qb.CourseId == courseId && qb.Name == name && !qb.IsDeleted);
         if (existing != null)
         {
             return existing;
@@ -259,8 +417,8 @@ public partial class SeedService
         {
             Id = Guid.NewGuid(),
             CourseId = courseId,
-            Name = "Fail Rebuy Quiz Bank",
-            Description = "Single easy question so a wrong answer reliably fails the quiz.",
+            Name = name,
+            Description = "Single easy question so pass/fail is deterministic in QA.",
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,
@@ -272,7 +430,7 @@ public partial class SeedService
         {
             Id = Guid.NewGuid(),
             QuestionBankId = bank.Id,
-            QuestionText = "What is 1 + 1?",
+            QuestionText = questionText,
             QuestionType = QuestionTypeConstants.SingleChoice,
             Points = 100,
             DifficultyLevel = 1,
@@ -284,7 +442,9 @@ public partial class SeedService
         await _unitOfWork.BankQuestions.AddAsync(question);
         await _unitOfWork.SaveChangesAsync();
 
-        var texts = new[] { "2", "3", "4", "5" };
+        var texts = questionText.Contains("1 + 1", StringComparison.Ordinal)
+            ? new[] { "2", "3", "4", "5" }
+            : new[] { "Science, Technology, Engineering, Arts, and Math", "Only coding", "Only painting", "A brand name" };
         var options = texts.Select((text, index) => new BankQuestionOption
         {
             Id = Guid.NewGuid(),
@@ -301,13 +461,17 @@ public partial class SeedService
     }
 
     private async Task<Assignment> EnsureFailRebuyQuizAsync(
+        string code,
         Guid moduleId,
         Guid courseId,
         Guid bankId,
+        string title,
+        string description,
+        int maxAttempts,
         DateTime seedTime)
     {
         var existing = await _unitOfWork.Assignments.FirstOrDefaultAsync(
-            a => a.Code == FailRebuyQuizCode && !a.IsDeleted);
+            a => a.Code == code && !a.IsDeleted);
         if (existing != null)
         {
             return existing;
@@ -316,11 +480,11 @@ public partial class SeedService
         var quiz = new Assignment
         {
             Id = Guid.NewGuid(),
-            Code = FailRebuyQuizCode,
+            Code = code,
             ModuleId = moduleId,
             CourseId = courseId,
-            Title = "Fail Rebuy Quiz",
-            Description = "One attempt. Two decided recoveries are pre-seeded on trigger students.",
+            Title = title,
+            Description = description,
             AssignmentType = AssignmentType.Quiz,
             MaxPoints = 100,
             PassScore = 50,
@@ -336,7 +500,7 @@ public partial class SeedService
             MediumPercent = 0,
             HardPercent = 0,
             TimeLimitMinutes = 15,
-            MaxAttempts = 1,
+            MaxAttempts = maxAttempts,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,
@@ -361,8 +525,8 @@ public partial class SeedService
             Code = FailRebuyUploadCode,
             ModuleId = moduleId,
             CourseId = courseId,
-            Title = "Fail Rebuy File Upload",
-            Description = "Turned-in work waiting for a failing grade.",
+            Title = "Studio Lab File Upload",
+            Description = "Build photo / short note. Used for failing-grade and pass-copy fixtures.",
             AssignmentType = AssignmentType.FileUpload,
             MaxPoints = 100,
             PassScore = 50,
@@ -397,8 +561,8 @@ public partial class SeedService
             Id = Guid.NewGuid(),
             Code = FailRebuyResearchAssignmentCode,
             ModuleId = researchModuleId,
-            Title = "Fail Rebuy Research Upload",
-            Description = "Research deliverable waiting for a failing grade.",
+            Title = "Capstone Research Upload",
+            Description = "Research deliverable. Waiting-grade and completed-copy fixtures share this assignment.",
             AssignmentType = AssignmentType.FileUpload,
             MaxPoints = 100,
             PassScore = 60m,
@@ -416,8 +580,8 @@ public partial class SeedService
             Id = Guid.NewGuid(),
             Code = FailRebuyResearchMilestoneCode,
             ModuleId = researchModuleId,
-            Title = "Fail Rebuy Milestone",
-            Description = "Single research milestone for close-path tests.",
+            Title = "Capstone Milestone",
+            Description = "Single research milestone for close-path and completed-copy tests.",
             MilestoneOrder = 1,
             IsCapstone = true,
             AssignmentId = assignment.Id,
@@ -431,29 +595,46 @@ public partial class SeedService
         return (assignment, milestone);
     }
 
-    private async Task<Class> EnsureFailRebuyClassAsync(Guid programId, Guid mentorId, DateTime seedTime)
+    private async Task<Class> EnsureFailRebuyClassAsync(
+        string code,
+        string name,
+        Guid programId,
+        Guid mentorId,
+        ClassStatus status,
+        DateTime startDate,
+        DateTime endDate,
+        string scheduleSummary,
+        DateTime seedTime)
     {
         var existing = await _unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.Code == FailRebuyClassCode && !c.IsDeleted);
+            c => c.Code == code && !c.IsDeleted);
         if (existing != null)
         {
+            existing.Name = name;
+            existing.Status = status;
+            existing.MentorId = mentorId;
+            existing.StartDate = startDate;
+            existing.EndDate = endDate;
+            existing.ScheduleSummary = scheduleSummary;
+            await _unitOfWork.Classes.Update(existing);
+            await _unitOfWork.SaveChangesAsync();
             return existing;
         }
 
         var classEntity = new Class
         {
             Id = Guid.NewGuid(),
-            Code = FailRebuyClassCode,
-            Name = "Fail / Rebuy Current Cohort",
+            Code = code,
+            Name = name,
             ProgramId = programId,
             MentorId = mentorId,
-            StartDate = seedTime.AddDays(-14),
-            EndDate = seedTime.AddDays(42),
-            MaxCapacity = 16,
+            StartDate = startDate,
+            EndDate = endDate,
+            MaxCapacity = 20,
             Kind = ClassKind.Standard,
-            Status = ClassStatus.InProgress,
+            Status = status,
             MinHoursBeforeAssignmentJoin = 48,
-            ScheduleSummary = "Weekday lab blocks",
+            ScheduleSummary = scheduleSummary,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,
@@ -463,56 +644,61 @@ public partial class SeedService
         return classEntity;
     }
 
-    private async Task EnsureFailRebuySessionsAsync(
-        Class classEntity,
+    private async Task EnsureFailRebuySessionAsync(
+        Guid classId,
         Guid moduleId,
-        IReadOnlyList<Activity> activities,
+        Activity activity,
+        DateTime start,
+        ClassSessionStatus status,
         DateTime seedTime)
     {
-        for (var i = 0; i < activities.Count; i++)
+        var existing = await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
+            cs => cs.ClassId == classId
+                  && cs.ActivityId == activity.Id
+                  && !cs.IsDeleted);
+        if (existing != null)
         {
-            var activity = activities[i];
-            var existing = await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
-                cs => cs.ClassId == classEntity.Id
-                      && cs.ActivityId == activity.Id
-                      && !cs.IsDeleted);
-            if (existing != null)
-            {
-                continue;
-            }
-
-            var isLive = i == 0;
-            var start = isLive ? seedTime.AddHours(-1) : seedTime.AddDays(-10 + i).Date.AddHours(9);
-            var session = new ClassSession
-            {
-                Id = Guid.NewGuid(),
-                ClassId = classEntity.Id,
-                ModuleId = moduleId,
-                ActivityId = activity.Id,
-                SessionKind = SessionKind.LiveOnline,
-                Title = activity.Name,
-                StartTime = start,
-                EndTime = start.AddMinutes(90),
-                MeetingUrl = "https://meet.example.com/fail-rebuy",
-                RequiresAttendance = true,
-                Status = isLive ? ClassSessionStatus.InProgress : ClassSessionStatus.Completed,
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            };
-            await _unitOfWork.ClassSessions.AddAsync(session);
+            existing.StartTime = start;
+            existing.EndTime = start.AddMinutes(90);
+            existing.Status = status;
+            existing.ModuleId = moduleId;
+            await _unitOfWork.ClassSessions.Update(existing);
+            await _unitOfWork.SaveChangesAsync();
+            return;
         }
 
+        await _unitOfWork.ClassSessions.AddAsync(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            ModuleId = moduleId,
+            ActivityId = activity.Id,
+            SessionKind = SessionKind.LiveOnline,
+            Title = activity.Name,
+            StartTime = start,
+            EndTime = start.AddMinutes(90),
+            MeetingUrl = "https://meet.example.com/fail-rebuy",
+            RequiresAttendance = true,
+            Status = status,
+            CreatedAt = seedTime,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        });
         await _unitOfWork.SaveChangesAsync();
     }
 
     private async Task EnsureFailRebuyEnrollmentsAsync(
         Dictionary<string, User> students,
         Program program,
-        Class classEntity,
-        Module experientialModule,
+        Class currentClass,
+        Module theoryModule,
+        Module labModule,
         Module researchModule,
-        Assignment quiz,
+        IReadOnlyList<Activity> theoryActivities,
+        IReadOnlyList<Activity> labActivities,
+        Activity researchReading,
+        Assignment theoryQuiz,
+        Assignment labQuiz,
         Assignment upload,
         Assignment researchAssignment,
         ResearchMilestone researchMilestone,
@@ -523,7 +709,8 @@ public partial class SeedService
             EnrollmentStatus status,
             ProgramPurchaseEndReason? endReason,
             Guid? endedModuleId,
-            DateTime? endedAt)
+            DateTime? endedAt,
+            DateTime? completedAt = null)
         {
             var student = students[studentCode];
             var existing = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
@@ -535,19 +722,21 @@ public partial class SeedService
                 return existing;
             }
 
+            var enrolledAt = seedTime.AddDays(-24);
             var enrollment = new ProgramEnrollment
             {
                 Id = Guid.NewGuid(),
                 StudentId = student.Id,
                 ProgramId = program.Id,
                 Status = status,
-                ProgressPercent = status == EnrollmentStatus.Active ? 20m : 15m,
-                EnrolledAt = seedTime.AddDays(-20),
-                StartedAt = seedTime.AddDays(-18),
+                ProgressPercent = 0m,
+                EnrolledAt = enrolledAt,
+                StartedAt = enrolledAt.AddDays(1),
+                CompletedAt = completedAt,
                 EndReason = endReason,
                 EndedModuleId = endedModuleId,
                 EndedAt = endedAt,
-                CreatedAt = seedTime.AddDays(-20),
+                CreatedAt = enrolledAt,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
             };
@@ -559,7 +748,10 @@ public partial class SeedService
         async Task<ModuleEnrollment> EnsureMe(
             ProgramEnrollment pe,
             Module module,
-            EnrollmentStatus status)
+            EnrollmentStatus status,
+            decimal progressPercent,
+            DateTime? completedAt = null,
+            decimal? finalGrade = null)
         {
             var existing = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
                 me => me.ProgramEnrollmentId == pe.Id
@@ -577,10 +769,12 @@ public partial class SeedService
                 ModuleId = module.Id,
                 ProgramEnrollmentId = pe.Id,
                 Status = status,
-                ProgressPercent = status == EnrollmentStatus.Failed ? 10m : 20m,
+                ProgressPercent = progressPercent,
+                FinalGrade = finalGrade,
                 AttemptNumber = 1,
                 EnrolledAt = pe.EnrolledAt,
                 StartedAt = pe.StartedAt,
+                CompletedAt = completedAt,
                 CreatedAt = pe.EnrolledAt ?? seedTime,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
@@ -594,7 +788,7 @@ public partial class SeedService
         {
             var existing = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
                 ce => ce.ProgramEnrollmentId == pe.Id
-                      && ce.ClassId == classEntity.Id
+                      && ce.ClassId == currentClass.Id
                       && !ce.IsDeleted);
             if (existing != null)
             {
@@ -604,13 +798,90 @@ public partial class SeedService
             await _unitOfWork.ClassEnrollments.AddAsync(new ClassEnrollment
             {
                 Id = Guid.NewGuid(),
-                ClassId = classEntity.Id,
+                ClassId = currentClass.Id,
                 StudentId = pe.StudentId,
                 ProgramEnrollmentId = pe.Id,
                 Kind = ClassEnrollmentKind.Primary,
                 Status = status,
                 EnrolledAt = pe.EnrolledAt,
                 CreatedAt = pe.EnrolledAt ?? seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        async Task EnsureProgressDone(ModuleEnrollment me, IEnumerable<Activity> activities)
+        {
+            foreach (var activity in activities)
+            {
+                var existing = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+                    ap => ap.ModuleEnrollmentId == me.Id
+                          && ap.ActivityId == activity.Id
+                          && !ap.IsDeleted);
+                if (existing != null)
+                {
+                    continue;
+                }
+
+                await _unitOfWork.ActivityProgresses.AddAsync(new ActivityProgress
+                {
+                    Id = Guid.NewGuid(),
+                    StudentId = me.StudentId,
+                    ActivityId = activity.Id,
+                    ModuleEnrollmentId = me.Id,
+                    ActivityStatus = ActivityStatus.Done,
+                    IsCompleted = true,
+                    CompletionSource = CompletionSource.Manual,
+                    CompletedAt = seedTime.AddDays(-10),
+                    LastAccessedAt = seedTime.AddDays(-10),
+                    CreatedAt = seedTime.AddDays(-10),
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        async Task EnsureSubmission(
+            User student,
+            ModuleEnrollment me,
+            Assignment assignment,
+            SubmissionStatus status,
+            decimal? grade,
+            Guid? researchMilestoneId)
+        {
+            var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+                s => s.StudentId == student.Id
+                     && s.AssignmentId == assignment.Id
+                     && s.ModuleEnrollmentId == me.Id
+                     && !s.IsDeleted);
+            if (existing != null)
+            {
+                return;
+            }
+
+            await _unitOfWork.Submissions.AddAsync(new Submission
+            {
+                Id = Guid.NewGuid(),
+                Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
+                AssignmentId = assignment.Id,
+                StudentId = student.Id,
+                ModuleEnrollmentId = me.Id,
+                ResearchMilestoneId = researchMilestoneId,
+                AttemptNumber = 1,
+                Status = status,
+                AssignedGrade = grade,
+                ContentText = status == SubmissionStatus.Graded
+                    ? "Seeded graded work."
+                    : "Seeded work waiting for a grade.",
+                FileUrl = assignment.AssignmentType == AssignmentType.FileUpload
+                    ? "https://cdn.example.com/fail-rebuy/work.pdf"
+                    : null,
+                SubmittedAt = seedTime.AddDays(-4),
+                GradedAt = status == SubmissionStatus.Graded ? seedTime.AddDays(-3) : null,
+                CreatedAt = seedTime.AddDays(-4),
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
             });
@@ -641,14 +912,14 @@ public partial class SeedService
                     StudentId = student.Id,
                     ModuleEnrollmentId = me.Id,
                     AssignmentId = assignment.Id,
-                    ClassId = classEntity.Id,
+                    ClassId = currentClass.Id,
                     Status = status,
                     StudentMessage = "Seeded recovery for fail/rebuy close tests.",
                     ExtraAttemptsGranted = 0,
                     DecidedAt = status == AssessmentRecoveryRequestStatus.Pending
                         ? null
                         : seedTime.AddDays(-2),
-                    DecidedBy = status == AssessmentRecoveryRequestStatus.Pending ? null : classEntity.MentorId,
+                    DecidedBy = status == AssessmentRecoveryRequestStatus.Pending ? null : currentClass.MentorId,
                     CreatedAt = seedTime.AddDays(-3),
                     CreatedBy = Guid.Empty,
                     IsDeleted = false,
@@ -658,64 +929,80 @@ public partial class SeedService
             await _unitOfWork.SaveChangesAsync();
         }
 
-        async Task EnsureGradedFail(User student, ModuleEnrollment me, Assignment assignment, Guid? researchMilestoneId)
+        async Task CompleteTheoryAsync(ProgramEnrollment pe, User student)
         {
-            var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
-                s => s.StudentId == student.Id
-                     && s.AssignmentId == assignment.Id
-                     && s.ModuleEnrollmentId == me.Id
-                     && !s.IsDeleted);
-            if (existing != null)
-            {
-                return;
-            }
-
-            await _unitOfWork.Submissions.AddAsync(new Submission
-            {
-                Id = Guid.NewGuid(),
-                Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-                AssignmentId = assignment.Id,
-                StudentId = student.Id,
-                ModuleEnrollmentId = me.Id,
-                ResearchMilestoneId = researchMilestoneId,
-                AttemptNumber = 1,
-                Status = SubmissionStatus.Graded,
-                AssignedGrade = 10m,
-                ContentText = "Seeded failing attempt.",
-                SubmittedAt = seedTime.AddDays(-4),
-                GradedAt = seedTime.AddDays(-3),
-                CreatedAt = seedTime.AddDays(-4),
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
-            await _unitOfWork.SaveChangesAsync();
+            var me = await EnsureMe(
+                pe, theoryModule, EnrollmentStatus.Completed, 100m, seedTime.AddDays(-12), 90m);
+            await EnsureProgressDone(me, theoryActivities);
+            await EnsureSubmission(student, me, theoryQuiz, SubmissionStatus.Graded, 90m, null);
+            await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, me);
         }
 
-        async Task EnsureTurnedIn(User student, ModuleEnrollment me, Assignment assignment, Guid? researchMilestoneId)
+        async Task CompleteLabAsync(ProgramEnrollment pe, User student)
         {
-            var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
-                s => s.StudentId == student.Id
-                     && s.AssignmentId == assignment.Id
-                     && s.ModuleEnrollmentId == me.Id
-                     && !s.IsDeleted);
-            if (existing != null)
+            var me = await EnsureMe(
+                pe, labModule, EnrollmentStatus.Completed, 100m, seedTime.AddDays(-6), 88m);
+            await EnsureProgressDone(me, labActivities);
+            await EnsureSubmission(student, me, labQuiz, SubmissionStatus.Graded, 90m, null);
+            await EnsureSubmission(student, me, upload, SubmissionStatus.Graded, 85m, null);
+            await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, me);
+        }
+
+        async Task CompleteResearchAsync(ProgramEnrollment pe, User student)
+        {
+            var me = await EnsureMe(
+                pe, researchModule, EnrollmentStatus.Completed, 100m, seedTime.AddDays(-2), 80m);
+            await EnsureProgressDone(me, [researchReading]);
+            await EnsureSubmission(
+                student, me, researchAssignment, SubmissionStatus.Graded, 80m, researchMilestone.Id);
+            await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, me);
+        }
+
+        async Task RecalcProgramAsync(ProgramEnrollment pe)
+        {
+            var anyMe = (await _unitOfWork.ModuleEnrollments.GetAllAsync(
+                    me => me.ProgramEnrollmentId == pe.Id && !me.IsDeleted))
+                .FirstOrDefault();
+            if (anyMe == null)
             {
                 return;
             }
 
-            await _unitOfWork.Submissions.AddAsync(new Submission
+            await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                _unitOfWork, pe.Id, anyMe);
+        }
+
+        async Task SeedLiveAbsenceAsync(ProgramEnrollment pe, ModuleEnrollment labMe)
+        {
+            var liveSession = (await _unitOfWork.ClassSessions.GetAllAsync(
+                    cs => cs.ClassId == currentClass.Id
+                          && cs.ModuleId == labModule.Id
+                          && cs.Status == ClassSessionStatus.InProgress
+                          && !cs.IsDeleted))
+                .FirstOrDefault();
+            if (liveSession == null)
+            {
+                return;
+            }
+
+            var existingAbsent = await _unitOfWork.SessionAttendances.FirstOrDefaultAsync(
+                sa => sa.ClassSessionId == liveSession.Id
+                      && sa.StudentId == pe.StudentId
+                      && !sa.IsDeleted);
+            if (existingAbsent != null)
+            {
+                return;
+            }
+
+            await _unitOfWork.SessionAttendances.AddAsync(new SessionAttendance
             {
                 Id = Guid.NewGuid(),
-                Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-                AssignmentId = assignment.Id,
-                StudentId = student.Id,
-                ModuleEnrollmentId = me.Id,
-                ResearchMilestoneId = researchMilestoneId,
-                AttemptNumber = 1,
-                Status = SubmissionStatus.TurnedIn,
-                ContentText = "Seeded work waiting for a failing grade.",
-                FileUrl = "https://cdn.example.com/fail-rebuy/work.pdf",
-                SubmittedAt = seedTime.AddDays(-1),
+                ClassSessionId = liveSession.Id,
+                StudentId = pe.StudentId,
+                ModuleEnrollmentId = labMe.Id,
+                Status = AttendanceStatus.Absent,
+                RecordedBy = currentClass.MentorId,
+                CheckedInAt = seedTime.AddDays(-1),
                 CreatedAt = seedTime.AddDays(-1),
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
@@ -723,118 +1010,206 @@ public partial class SeedService
             await _unitOfWork.SaveChangesAsync();
         }
 
-        var pe026 = await EnsurePe(
-            "STD-026",
-            EnrollmentStatus.Failed,
-            ProgramPurchaseEndReason.Attendance,
-            experientialModule.Id,
-            seedTime.AddDays(-1));
-        var me026 = await EnsureMe(pe026, experientialModule, EnrollmentStatus.Failed);
-        await EnsureSeat(pe026, ClassEnrollmentStatus.Withdrawn);
-        var liveSession = (await _unitOfWork.ClassSessions.GetAllAsync(
-                cs => cs.ClassId == classEntity.Id && !cs.IsDeleted))
-            .OrderBy(cs => cs.StartTime)
-            .FirstOrDefault();
-        if (liveSession != null)
+        var outsideWindow = seedTime.AddDays(-120);
+        var recentClose = seedTime.AddDays(-1);
+
+        // STD-026 — Failed/Attendance after passing Foundations. 1/5 live absences.
+        // Rebuy: ELIGIBLE class, copy Foundations. Manager: Present on live session → reopen.
         {
-            var existingAbsent = await _unitOfWork.SessionAttendances.FirstOrDefaultAsync(
-                sa => sa.ClassSessionId == liveSession.Id
-                      && sa.StudentId == pe026.StudentId
-                      && !sa.IsDeleted);
-            if (existingAbsent == null)
-            {
-                await _unitOfWork.SessionAttendances.AddAsync(new SessionAttendance
-                {
-                    Id = Guid.NewGuid(),
-                    ClassSessionId = liveSession.Id,
-                    StudentId = pe026.StudentId,
-                    ModuleEnrollmentId = me026.Id,
-                    Status = AttendanceStatus.Absent,
-                    RecordedBy = classEntity.MentorId,
-                    CheckedInAt = seedTime.AddDays(-1),
-                    CreatedAt = seedTime.AddDays(-1),
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false,
-                });
-                await _unitOfWork.SaveChangesAsync();
-            }
+            var pe = await EnsurePe(
+                "STD-026",
+                EnrollmentStatus.Failed,
+                ProgramPurchaseEndReason.Attendance,
+                labModule.Id,
+                recentClose);
+            await CompleteTheoryAsync(pe, students["STD-026"]);
+            var labMe = await EnsureMe(pe, labModule, EnrollmentStatus.Failed, 15m);
+            await EnsureSeat(pe, ClassEnrollmentStatus.Withdrawn);
+            await SeedLiveAbsenceAsync(pe, labMe);
+            await RecalcProgramAsync(pe);
         }
 
-        var pe027 = await EnsurePe(
-            "STD-027",
-            EnrollmentStatus.Failed,
-            ProgramPurchaseEndReason.AcademicFail,
-            experientialModule.Id,
-            seedTime.AddDays(-1));
-        var me027 = await EnsureMe(pe027, experientialModule, EnrollmentStatus.Failed);
-        await EnsureSeat(pe027, ClassEnrollmentStatus.Withdrawn);
-        await EnsureGradedFail(students["STD-027"], me027, quiz, researchMilestoneId: null);
-        await EnsureRecoveries(
-            students["STD-027"],
-            me027,
-            quiz,
-            AssessmentRecoveryRequestStatus.Rejected,
-            AssessmentRecoveryRequestStatus.Rejected);
+        // STD-027 — Failed/AcademicFail on lab quiz after passing Foundations.
+        // Rebuy: ELIGIBLE, copy Foundations. Manager: regrade quiz to pass → reopen.
+        {
+            var pe = await EnsurePe(
+                "STD-027",
+                EnrollmentStatus.Failed,
+                ProgramPurchaseEndReason.AcademicFail,
+                labModule.Id,
+                recentClose);
+            await CompleteTheoryAsync(pe, students["STD-027"]);
+            var labMe = await EnsureMe(pe, labModule, EnrollmentStatus.Failed, 20m);
+            await EnsureSeat(pe, ClassEnrollmentStatus.Withdrawn);
+            await EnsureSubmission(
+                students["STD-027"], labMe, labQuiz, SubmissionStatus.Graded, 10m, null);
+            await EnsureRecoveries(
+                students["STD-027"],
+                labMe,
+                labQuiz,
+                AssessmentRecoveryRequestStatus.Rejected,
+                AssessmentRecoveryRequestStatus.Rejected);
+            await RecalcProgramAsync(pe);
+        }
+
+        // STD-034 — same academic fail as 027, but EndedAt outside the 3-month window.
+        {
+            var pe = await EnsurePe(
+                "STD-034",
+                EnrollmentStatus.Failed,
+                ProgramPurchaseEndReason.AcademicFail,
+                labModule.Id,
+                outsideWindow);
+            await CompleteTheoryAsync(pe, students["STD-034"]);
+            var labMe = await EnsureMe(pe, labModule, EnrollmentStatus.Failed, 20m);
+            await EnsureSeat(pe, ClassEnrollmentStatus.Withdrawn);
+            await EnsureSubmission(
+                students["STD-034"], labMe, labQuiz, SubmissionStatus.Graded, 10m, null);
+            await RecalcProgramAsync(pe);
+        }
+
+        // STD-035 — Dropped/Withdraw after passing Foundations (stop module = lab).
+        {
+            var pe = await EnsurePe(
+                "STD-035",
+                EnrollmentStatus.Dropped,
+                ProgramPurchaseEndReason.Withdraw,
+                endedModuleId: null,
+                recentClose);
+            await CompleteTheoryAsync(pe, students["STD-035"]);
+            await EnsureMe(pe, labModule, EnrollmentStatus.Active, 20m);
+            await EnsureSeat(pe, ClassEnrollmentStatus.Withdrawn);
+            await RecalcProgramAsync(pe);
+        }
+
+        // STD-036 — Completed inside the window (retake price, no progress copy).
+        {
+            var pe = await EnsurePe(
+                "STD-036",
+                EnrollmentStatus.Completed,
+                null,
+                null,
+                endedAt: null,
+                completedAt: recentClose);
+            await CompleteTheoryAsync(pe, students["STD-036"]);
+            await CompleteLabAsync(pe, students["STD-036"]);
+            await CompleteResearchAsync(pe, students["STD-036"]);
+            await EnsureSeat(pe, ClassEnrollmentStatus.Completed);
+            await RecalcProgramAsync(pe);
+            pe.Status = EnrollmentStatus.Completed;
+            pe.CompletedAt = recentClose;
+            pe.EndReason = null;
+            pe.EndedAt = null;
+            pe.EndedModuleId = null;
+            await _unitOfWork.ProgramEnrollments.Update(pe);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        // STD-037 — Completed outside the window (full price, no progress copy).
+        {
+            var pe = await EnsurePe(
+                "STD-037",
+                EnrollmentStatus.Completed,
+                null,
+                null,
+                endedAt: null,
+                completedAt: outsideWindow);
+            await CompleteTheoryAsync(pe, students["STD-037"]);
+            await CompleteLabAsync(pe, students["STD-037"]);
+            await CompleteResearchAsync(pe, students["STD-037"]);
+            await EnsureSeat(pe, ClassEnrollmentStatus.Completed);
+            await RecalcProgramAsync(pe);
+            pe.Status = EnrollmentStatus.Completed;
+            pe.CompletedAt = outsideWindow;
+            pe.EndReason = null;
+            pe.EndedAt = null;
+            pe.EndedModuleId = null;
+            await _unitOfWork.ProgramEnrollments.Update(pe);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        // STD-038 — Failed first module (Foundations). Only FRESH class is eligible. Nothing to copy.
+        {
+            var pe = await EnsurePe(
+                "STD-038",
+                EnrollmentStatus.Failed,
+                ProgramPurchaseEndReason.AcademicFail,
+                theoryModule.Id,
+                recentClose);
+            var theoryMe = await EnsureMe(pe, theoryModule, EnrollmentStatus.Failed, 10m);
+            await EnsureSeat(pe, ClassEnrollmentStatus.Withdrawn);
+            await EnsureSubmission(
+                students["STD-038"], theoryMe, theoryQuiz, SubmissionStatus.Graded, 10m, null);
+            await RecalcProgramAsync(pe);
+        }
 
         foreach (var code in FailRebuyActiveStudentCodes)
         {
             var pe = await EnsurePe(code, EnrollmentStatus.Active, null, null, null);
-            var labMe = await EnsureMe(pe, experientialModule, EnrollmentStatus.Active);
-            await EnsureMe(pe, researchModule, EnrollmentStatus.Active);
+            await CompleteTheoryAsync(pe, students[code]);
             await EnsureSeat(pe, ClassEnrollmentStatus.Active);
 
-            if (code is "STD-030" or "STD-033")
+            if (code == "STD-032")
             {
+                await CompleteLabAsync(pe, students[code]);
+                var researchMe = await EnsureMe(pe, researchModule, EnrollmentStatus.Active, 20m);
+                await EnsureProgressDone(researchMe, [researchReading]);
                 await EnsureRecoveries(
                     students[code],
-                    labMe,
-                    quiz,
-                    code == "STD-033"
-                        ? [AssessmentRecoveryRequestStatus.Rejected, AssessmentRecoveryRequestStatus.Pending]
-                        : [AssessmentRecoveryRequestStatus.Rejected, AssessmentRecoveryRequestStatus.Rejected]);
-            }
-
-            if (code == "STD-031")
-            {
-                await EnsureRecoveries(
-                    students[code],
-                    labMe,
-                    upload,
-                    AssessmentRecoveryRequestStatus.Rejected,
-                    AssessmentRecoveryRequestStatus.Rejected);
-                await EnsureTurnedIn(students[code], labMe, upload, researchMilestoneId: null);
-            }
-
-            if (code == "STD-033")
-            {
-                await EnsureGradedFail(students[code], labMe, quiz, researchMilestoneId: null);
-            }
-        }
-
-        var pe032 = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-            pe => pe.StudentId == students["STD-032"].Id
-                  && pe.ProgramId == program.Id
-                  && !pe.IsDeleted);
-        if (pe032 != null)
-        {
-            var researchMe = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                me => me.ProgramEnrollmentId == pe032.Id
-                      && me.ModuleId == researchModule.Id
-                      && !me.IsDeleted);
-            if (researchMe != null)
-            {
-                await EnsureRecoveries(
-                    students["STD-032"],
                     researchMe,
                     researchAssignment,
                     AssessmentRecoveryRequestStatus.Rejected,
                     AssessmentRecoveryRequestStatus.Rejected);
-                await EnsureTurnedIn(
-                    students["STD-032"],
+                await EnsureSubmission(
+                    students[code],
                     researchMe,
                     researchAssignment,
+                    SubmissionStatus.TurnedIn,
+                    grade: null,
                     researchMilestone.Id);
             }
+            else
+            {
+                var labMe = await EnsureMe(pe, labModule, EnrollmentStatus.Active, 20m);
+
+                if (code is "STD-030" or "STD-033")
+                {
+                    await EnsureRecoveries(
+                        students[code],
+                        labMe,
+                        labQuiz,
+                        code == "STD-033"
+                            ? [AssessmentRecoveryRequestStatus.Rejected, AssessmentRecoveryRequestStatus.Pending]
+                            : [AssessmentRecoveryRequestStatus.Rejected, AssessmentRecoveryRequestStatus.Rejected]);
+                }
+
+                if (code == "STD-031")
+                {
+                    await EnsureRecoveries(
+                        students[code],
+                        labMe,
+                        upload,
+                        AssessmentRecoveryRequestStatus.Rejected,
+                        AssessmentRecoveryRequestStatus.Rejected);
+                    await EnsureSubmission(
+                        students[code], labMe, upload, SubmissionStatus.TurnedIn, null, null);
+                }
+
+                if (code == "STD-033")
+                {
+                    await EnsureSubmission(
+                        students[code], labMe, labQuiz, SubmissionStatus.Graded, 10m, null);
+                }
+            }
+
+            await RecalcProgramAsync(pe);
+            pe.Status = EnrollmentStatus.Active;
+            pe.EndReason = null;
+            pe.EndedAt = null;
+            pe.EndedModuleId = null;
+            pe.CompletedAt = null;
+            await _unitOfWork.ProgramEnrollments.Update(pe);
+            await _unitOfWork.SaveChangesAsync();
         }
     }
 }

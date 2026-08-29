@@ -17,7 +17,10 @@ public sealed class SeedMentorLoadTests
             pair => Assert.True(
                 pair.Value <= MentorRequestConstants.DefaultMaxConcurrentClasses,
                 $"{pair.Key} concurrent load {pair.Value} exceeds the default cap of {MentorRequestConstants.DefaultMaxConcurrentClasses}."));
-        Assert.Equal(0, usage.GetValueOrDefault("MNT-007"));
+        // Maker Open (MNT-006) + current fail/rebuy cohort.
+        Assert.Equal(2, usage.GetValueOrDefault("MNT-006"));
+        // Three Open rebuy classes (eligible / blocked / fresh).
+        Assert.Equal(3, usage.GetValueOrDefault("MNT-007"));
     }
 
     [Fact]
@@ -48,6 +51,16 @@ public sealed class SeedMentorLoadTests
         Assert.Equal(1, usage.GetValueOrDefault("STD-002"));
         // Robotics Active + CERT-TEST Active.
         Assert.Equal(2, usage.GetValueOrDefault("STD-025"));
+
+        foreach (var code in SeedService.FailRebuyActiveStudentCodes)
+        {
+            Assert.Equal(1, usage.GetValueOrDefault(code));
+        }
+
+        foreach (var code in SeedService.FailRebuyClosedStudentCodes)
+        {
+            Assert.Equal(0, usage.GetValueOrDefault(code));
+        }
     }
 
     [Fact]
@@ -64,6 +77,16 @@ public sealed class SeedMentorLoadTests
 
         Assert.Equal(1, usage.GetValueOrDefault("STD-001"));
         Assert.Equal(1, usage.GetValueOrDefault("STD-002"));
+
+        foreach (var code in SeedService.FailRebuyActiveStudentCodes)
+        {
+            Assert.Equal(1, usage.GetValueOrDefault(code));
+        }
+
+        foreach (var code in SeedService.FailRebuyClosedStudentCodes)
+        {
+            Assert.Equal(0, usage.GetValueOrDefault(code));
+        }
     }
 
     [Fact]

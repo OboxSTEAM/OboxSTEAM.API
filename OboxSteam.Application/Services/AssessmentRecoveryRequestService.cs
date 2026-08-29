@@ -57,6 +57,18 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
             throw ErrorHelper.BadRequest("Module enrollment must be active to request recovery.");
         }
 
+        if (enrollment.ProgramEnrollmentId.HasValue)
+        {
+            var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                enrollment.ProgramEnrollmentId.Value);
+            if (programEnrollment != null
+                && !programEnrollment.IsDeleted
+                && programEnrollment.Status != EnrollmentStatus.Active)
+            {
+                throw ErrorHelper.Forbidden(QuizAttemptValidator.EnrollmentNotActiveMessage);
+            }
+        }
+
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(request.AssignmentId)
             ?? throw ErrorHelper.NotFound($"Assignment '{request.AssignmentId}' not found.");
 

@@ -101,10 +101,33 @@ only. If a step grows, split it before implementing.
   when the rebuy is inside the window) + next-attempt provisioning in
   curriculum (`EnrollmentCurriculumService` assigns the next global
   `AttemptNumber` per student+module). Build + 1290 tests green.
-- [ ] Step 7: read-only curriculum for `Failed`/`Dropped` + `Completed` credit
-  without cloned submissions.
-- [ ] Step 8: E2E test - fail one module -> rebuy a new class -> finish the
-  redone module.
+- [x] Step 7: read-only curriculum for `Failed`/`Dropped` (reads block only
+  `PendingPayment`; student mutations - curriculum actions, quiz/assignment/
+  research/retrospective submissions, recovery requests - require an `Active`
+  program enrollment) + manager backup paths: attendance editable on closed
+  enrollments, Admin/Manager re-grade of `Graded` submissions, and automatic
+  reopen when the correction removes the closing condition (attendance below
+  20% for `Attendance` closes; corrected pass for `AcademicFail` closes).
+  Reopen restores PE/ME `Active`, clears close fields, reactivates withdrawn
+  seats, then recalculates progress. The "`Completed` credit without cloned
+  submissions" half of the original step was superseded by Step 6, which
+  copies graded submissions. Build + 1310 tests green.
+- [x] Step 8: E2E fail one module → rebuy a new class → finish the redone
+  module. Script `obox-rebuy-step8-e2e.ps1` (local, gitignored) against
+  Docker `http://localhost:5000`: clear+seed, then 29/29 pass. Happy path
+  is STD-026 (attendance fail) on `CLS-FAILREBUY-ELIGIBLE`: retake fee
+  600000, Foundations copied (3 ActivityProgress + 1 Graded quiz), Lab
+  not copied, lazy Lab `AttemptNumber` 2, quiz 100 / upload 80, Lab
+  `Completed 100`. Contrasts: STD-027/038 class eligibility; STD-034 full
+  price + no copy; STD-036 retake fee + no copy. Quiz submit now grades
+  from merged answers (EF `GetAllAsync` missed unsaved `QuizAnswer` rows,
+  which stored `AssignedGrade` 0). Build + 1310 tests green. Seed map:
+  `CLS-FAILREBUY-CURRENT` (InProgress), `ELIGIBLE` (Open, Foundations
+  started), `BLOCKED` (Open, lab started), `FRESH` (Open, not started);
+  closed STD-026/027/034/035/036/037/038; active close-triggers STD-028–
+  033. Known gap: rebuy does not reset assignment `MaxAttempts` or the
+  recovery cap, so academic-fail students like STD-027 cannot start a
+  `MaxAttempts=1` quiz again.
 - [ ] Step 9: product docs (`enrollment.md`, `GLOSSARY.md`, `overview.md`) +
   move this plan to `docs/plans/completed/`.
 
@@ -134,13 +157,31 @@ only. If a step grows, split it before implementing.
   `Completed` modules (new `Submission.Code` per copy), not just
   `ActivityProgress`; quiz answers, evidence rows, and non-graded submissions
   stay behind on the source enrollment.
+- 2026-08-30: Manager backup on closed purchases: attendance stays editable
+  (withdrawn seat + failed module enrollment resolvable) and Admin/Manager may
+  re-grade `Graded` submissions. A correction that removes the closing
+  condition auto-reopens the purchase (attendance < 20% for `Attendance`
+  closes; corrected pass for `AcademicFail` closes) without resetting attempt
+  counts or recovery decisions; reopen restores PE/ME `Active`, clears close
+  fields, reactivates withdrawn seats, and recalculates progress.
+- 2026-08-30: Fail/rebuy seed rebuilt for Step 8: three-module STEAM
+  Foundations track with prerequisite chain, four classes (current /
+  eligible / blocked / fresh), and closed snapshots STD-034..038 for
+  window, withdraw, completed, and fail-at-first-module cases. Active
+  close-trigger students keep STD-028..033 after a completed Foundations
+  module.
+- 2026-08-30: `SubmitQuiz` grades from the merged request answers. Reloading
+  `QuizAnswers` before `SaveChanges` returned an empty set on EF Core, so
+  live submits stored `AssignedGrade` 0 even when the correct option was
+  saved.
 
 ## Validation
 
 - Focused proof: unit tests per step under `OboxSteam.Test/UnitTests`.
-- Integration or end-to-end proof: step 8 scenario test.
+- Integration or end-to-end proof: `obox-rebuy-step8-e2e.ps1` 29/29 pass
+  (2026-08-30, Docker API + seeded `PRG-FAILREBUY`).
 - Repository-required checks: `dotnet build` + `dotnet test` green after every
-  step.
+  step (1310 tests at step 8).
 
 ## Result
 

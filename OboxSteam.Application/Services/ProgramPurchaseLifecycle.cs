@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
@@ -437,5 +438,123 @@ public sealed class ProgramPurchaseLifecycle
             completedSources.Count,
             source.Id,
             enrollment.Id);
+    }
+
+    /// <summary>
+    /// Manager backup path: reopens a purchase closed by <see cref="ProgramPurchaseEndReason.Attendance"/>
+    /// when an attendance correction brings the missed ratio below the fail threshold.
+    /// Restores the failed module enrollment and every withdrawn class seat of the enrollment.
+    /// </summary>
+    public async Task<bool> TryReopenAfterAttendanceCorrectionAsync(ProgramEnrollment enrollment, Guid moduleId)
+    {
+        if (enrollment.Status != EnrollmentStatus.Failed
+            || enrollment.EndReason != ProgramPurchaseEndReason.Attendance
+            || enrollment.EndedModuleId != moduleId)
+        {
+            return false;
+        }
+
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.ProgramEnrollmentId == enrollment.Id
+                  && me.ModuleId == moduleId
+                  && !me.IsDeleted
+                  && me.Status == EnrollmentStatus.Failed);
+        var failedModuleEnrollment = moduleEnrollments
+            .OrderByDescending(me => me.AttemptNumber)
+            .FirstOrDefault();
+        if (failedModuleEnrollment == null)
+        {
+            return false;
+        }
+
+        var missed = await ModuleAbsencePolicy.CountMissedAsync(_unitOfWork, failedModuleEnrollment.Id);
+        var total = await ModuleAbsencePolicy.CountSessionActivitiesAsync(_unitOfWork, moduleId);
+        if (ModuleAbsencePolicy.ShouldFail(missed, total))
+        {
+            return false;
+        }
+
+        await ReopenAsync(enrollment, failedModuleEnrollment);
+        return true;
+    }
+
+    /// <summary>
+    /// Manager backup path: reopens a purchase closed by <see cref="ProgramPurchaseEndReason.AcademicFail"/>
+    /// when a failing grade is corrected to a passing one. Attempt counts and recovery decisions
+    /// are left untouched - the corrected pass stands. After reopening, module/program progress is
+    /// recalculated so the corrected pass can complete the module (and program) naturally.
+    /// </summary>
+    public async Task<bool> TryReopenAfterGradeCorrectionAsync(Submission submission, Assignment assignment)
+    {
+        if (!submission.ModuleEnrollmentId.HasValue
+            || submission.Status != SubmissionStatus.Graded
+            || !submission.AssignedGrade.HasValue
+            || submission.AssignedGrade.Value < assignment.PassScore)
+        {
+            return false;
+        }
+
+        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(
+            submission.ModuleEnrollmentId.Value);
+        if (moduleEnrollment == null
+            || moduleEnrollment.IsDeleted
+            || !moduleEnrollment.ProgramEnrollmentId.HasValue)
+        {
+            return false;
+        }
+
+        var enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+            moduleEnrollment.ProgramEnrollmentId.Value);
+        if (enrollment == null
+            || enrollment.IsDeleted
+            || enrollment.Status != EnrollmentStatus.Failed
+            || enrollment.EndReason != ProgramPurchaseEndReason.AcademicFail
+            || enrollment.EndedModuleId != moduleEnrollment.ModuleId)
+        {
+            return false;
+        }
+
+        await ReopenAsync(enrollment, moduleEnrollment);
+
+        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, moduleEnrollment);
+        await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+            _unitOfWork,
+            enrollment.Id,
+            moduleEnrollment);
+        await _unitOfWork.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task ReopenAsync(ProgramEnrollment enrollment, ModuleEnrollment failedModuleEnrollment)
+    {
+        enrollment.Status = EnrollmentStatus.Active;
+        enrollment.EndReason = null;
+        enrollment.EndedModuleId = null;
+        enrollment.EndedAt = null;
+        await _unitOfWork.ProgramEnrollments.Update(enrollment);
+
+        if (failedModuleEnrollment.Status == EnrollmentStatus.Failed)
+        {
+            failedModuleEnrollment.Status = EnrollmentStatus.Active;
+            await _unitOfWork.ModuleEnrollments.Update(failedModuleEnrollment);
+        }
+
+        var seats = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ProgramEnrollmentId == enrollment.Id
+                  && !ce.IsDeleted
+                  && ce.Status == ClassEnrollmentStatus.Withdrawn);
+        foreach (var seat in seats)
+        {
+            seat.Status = ClassEnrollmentStatus.Active;
+            await _unitOfWork.ClassEnrollments.Update(seat);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogWarning(
+            "[ReopenAsync] Program enrollment {EnrollmentId} reopened — module enrollment {ModuleEnrollmentId} restored, {SeatCount} seat(s) reactivated.",
+            enrollment.Id,
+            failedModuleEnrollment.Id,
+            seats.Count);
     }
 }

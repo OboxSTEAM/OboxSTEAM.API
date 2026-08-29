@@ -851,6 +851,28 @@ public sealed class QuizAttemptServiceTests
     }
 
     [Fact]
+    public async Task StartQuiz_ThrowsForbidden_WhenProgramEnrollmentClosed()
+    {
+        var programEnrollmentId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        SeedStudentAndEnrollment();
+        _db.ModuleEnrollments.Items[0].ProgramEnrollmentId = programEnrollmentId;
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = programEnrollmentId,
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.Failed,
+            IsDeleted = false
+        });
+        SeedQuizAssignment();
+        SeedBankQuestion();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() => sut.StartQuiz(_assignmentId));
+        Assert.Contains("enrollment has ended", ex.Message);
+    }
+
+    [Fact]
     public async Task StartQuiz_ThrowsBadRequest_WhenQuestionBankEmpty()
     {
         SeedStudentAndEnrollment();
