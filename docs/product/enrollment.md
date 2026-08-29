@@ -116,17 +116,19 @@ an **Active** enrollment and return 403 on closed ones.
   First-time checkout still uses `GET /api/programs/{programId}/open-classes`
   (Open only).
 - **Credit copy (inside the window only):** on payment success, credit is
-  copied scoped to what the **new class** has already taught. A module the new
-  class has not started (no `Completed` session) is not copied — the student
-  relearns it with the new class. A module the new class has fully taught
-  (every non-cancelled session `Completed`) is copied whole as `Completed`/100%
-  with its `ActivityProgress` rows and `Graded` submissions (new
-  `Submission.Code` per copy). A module the new class is part-way through
-  copies only the `ActivityProgress`/`Graded` submissions whose
+  copied scoped to what the **new class** has already taught. A module with
+  no non-cancelled sessions on that class (self-paced or unscheduled) is
+  copied whole. A module the new class has fully taught (every non-cancelled
+  session `Completed`) is copied whole as `Completed` with its
+  `ActivityProgress` rows and `Graded` submissions (new `Submission.Code` per
+  copy). A module whose sessions are only `Scheduled` is not copied — the
+  student relearns it with the new class. A module the new class is part-way
+  through copies only the `ActivityProgress`/`Graded` submissions whose
   activity/assignment the new class has already completed a session for; the
-  copied enrollment stays `Active` with `ProgressPercent` = copied/total
-  activities, and the student finishes the rest with the new class. Each copy
-  uses the next global `AttemptNumber`. Outside the window nothing is copied.
+  copied enrollment stays `Active` and `ProgressPercent` is recalculated with
+  the live formula (done activities + passed required assignments). Each copy
+  uses the next global `AttemptNumber`. Program `ProgressPercent` is
+  recalculated after copy. Outside the window nothing is copied.
 - Rebuy does **not** reset assignment `MaxAttempts` or the recovery cap.
 
 **Manager correction.** Attendance stays editable on closed enrollments and

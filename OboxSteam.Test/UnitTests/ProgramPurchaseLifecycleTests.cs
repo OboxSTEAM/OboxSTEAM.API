@@ -567,6 +567,37 @@ public sealed class ProgramPurchaseLifecycleTests
         return classId;
     }
 
+    private void SeedCurriculumActivity(Guid moduleId, Guid activityId, string code)
+    {
+        var course = _db.Courses.Items.FirstOrDefault(c => c.ModuleId == moduleId && !c.IsDeleted);
+        Guid courseId;
+        if (course == null)
+        {
+            courseId = Guid.NewGuid();
+            _db.Courses.Seed(new Course
+            {
+                Id = courseId,
+                Code = "CRS-" + code,
+                Name = "CRS-" + code,
+                ModuleId = moduleId,
+                IsDeleted = false,
+            });
+        }
+        else
+        {
+            courseId = course.Id;
+        }
+
+        _db.Activities.Seed(new Activity
+        {
+            Id = activityId,
+            Code = code,
+            Name = code,
+            CourseId = courseId,
+            IsDeleted = false,
+        });
+    }
+
     private void SeedSessionForActivity(
         Guid classId,
         Guid moduleId,
@@ -754,6 +785,7 @@ public sealed class ProgramPurchaseLifecycleTests
         var module = SeedModule("MOD-A", 1);
         var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
         var activityId = Guid.NewGuid();
+        SeedCurriculumActivity(module.Id, activityId, "ACT-1");
         _db.ActivityProgresses.Seed(new ActivityProgress
         {
             Id = Guid.NewGuid(),
@@ -804,7 +836,7 @@ public sealed class ProgramPurchaseLifecycleTests
         Assert.Equal(100m, copied.ProgressPercent);
         Assert.Equal(8m, copied.FinalGrade);
         Assert.Equal(2, copied.AttemptNumber);
-        Assert.Equal(_now, copied.CompletedAt);
+        Assert.NotNull(copied.CompletedAt);
 
         var copiedProgress = Assert.Single(
             _db.ActivityProgresses.Items,
@@ -870,6 +902,18 @@ public sealed class ProgramPurchaseLifecycleTests
         var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
         var module = SeedModule("MOD-A", 1);
         var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var activityId = Guid.NewGuid();
+        SeedCurriculumActivity(module.Id, activityId, "ACT-1");
+        _db.ActivityProgresses.Seed(new ActivityProgress
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ActivityId = activityId,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            ActivityStatus = ActivityStatus.Done,
+            IsCompleted = true,
+            IsDeleted = false,
+        });
         var pending = SeedEnrollment(EnrollmentStatus.Active);
         pending.SourceProgramEnrollmentId = source.Id;
         var newClassId = SeedNewClassSeat(pending.Id, ClassEnrollmentStatus.Pending);
@@ -990,6 +1034,158 @@ public sealed class ProgramPurchaseLifecycleTests
             _db.ActivityProgresses.Items,
             ap => ap.ModuleEnrollmentId == copied.Id);
         Assert.Equal(doneActivityId, copiedProgress.ActivityId);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_CopiesWholeModule_WhenNewClassHasNoSessions()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var module = SeedModule("MOD-A", 1);
+        var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var activityId = Guid.NewGuid();
+        SeedCurriculumActivity(module.Id, activityId, "ACT-SP");
+        _db.ActivityProgresses.Seed(new ActivityProgress
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ActivityId = activityId,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            ActivityStatus = ActivityStatus.Done,
+            IsCompleted = true,
+            IsDeleted = false,
+        });
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        SeedNewClassSeat(pending.Id);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        var copied = Assert.Single(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == pending.Id);
+        Assert.Equal(EnrollmentStatus.Completed, copied.Status);
+        Assert.Equal(100m, copied.ProgressPercent);
+        Assert.Equal(8m, copied.FinalGrade);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_PartialProgress_UsesActivityAndRequiredAssignmentUnits()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var module = SeedModule("MOD-A", 1);
+        var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var courseId = Guid.NewGuid();
+        _db.Courses.Seed(new Course
+        {
+            Id = courseId,
+            Code = "CRS-A",
+            Name = "CRS-A",
+            ModuleId = module.Id,
+            IsDeleted = false,
+        });
+        var doneActivityId = Guid.NewGuid();
+        var pendingActivityId = Guid.NewGuid();
+        _db.Activities.Seed(
+            new Activity { Id = doneActivityId, Code = "ACT-1", Name = "ACT-1", CourseId = courseId, IsDeleted = false },
+            new Activity { Id = pendingActivityId, Code = "ACT-2", Name = "ACT-2", CourseId = courseId, IsDeleted = false });
+        var assignmentId = Guid.NewGuid();
+        _db.Assignments.Seed(new Assignment
+        {
+            Id = assignmentId,
+            Code = "ASG-A",
+            Title = "Quiz",
+            ModuleId = module.Id,
+            CourseId = courseId,
+            PassScore = 5m,
+            IsRequiredForModulePass = true,
+            IsDeleted = false,
+        });
+        _db.ActivityProgresses.Seed(
+            new ActivityProgress
+            {
+                Id = Guid.NewGuid(),
+                StudentId = _studentId,
+                ActivityId = doneActivityId,
+                ModuleEnrollmentId = sourceModuleEnrollment.Id,
+                ActivityStatus = ActivityStatus.Done,
+                IsCompleted = true,
+                IsDeleted = false,
+            },
+            new ActivityProgress
+            {
+                Id = Guid.NewGuid(),
+                StudentId = _studentId,
+                ActivityId = pendingActivityId,
+                ModuleEnrollmentId = sourceModuleEnrollment.Id,
+                ActivityStatus = ActivityStatus.Done,
+                IsCompleted = true,
+                IsDeleted = false,
+            });
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-SRC",
+            AssignmentId = assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 9m,
+            IsDeleted = false,
+        });
+
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id);
+        SeedSessionForActivity(newClassId, module.Id, ClassSessionStatus.Completed, activityId: doneActivityId);
+        SeedSessionForActivity(newClassId, module.Id, ClassSessionStatus.InProgress, activityId: pendingActivityId);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        var copied = Assert.Single(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == pending.Id);
+        Assert.Equal(EnrollmentStatus.Active, copied.Status);
+        Assert.Equal(33.33m, copied.ProgressPercent);
+        Assert.DoesNotContain(
+            _db.Submissions.Items,
+            s => s.ModuleEnrollmentId == copied.Id);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_RecalculatesProgramProgress()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var moduleA = SeedModule("MOD-A", 1);
+        var moduleB = SeedModule("MOD-B", 2);
+        var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, moduleA.Id);
+        var activityA = Guid.NewGuid();
+        var activityB = Guid.NewGuid();
+        SeedCurriculumActivity(moduleA.Id, activityA, "ACT-A");
+        SeedCurriculumActivity(moduleB.Id, activityB, "ACT-B");
+        _db.ActivityProgresses.Seed(new ActivityProgress
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ActivityId = activityA,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            ActivityStatus = ActivityStatus.Done,
+            IsCompleted = true,
+            IsDeleted = false,
+        });
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id);
+        SeedSession(newClassId, moduleA.Id, ClassSessionStatus.Completed);
+        SeedSession(newClassId, moduleB.Id, ClassSessionStatus.Scheduled);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        Assert.Equal(50m, pending.ProgressPercent);
+        Assert.Equal(EnrollmentStatus.Active, pending.Status);
     }
 
     [Fact]

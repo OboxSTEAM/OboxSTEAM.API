@@ -77,10 +77,7 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
 
         var now = _currentTime.GetCurrentTime();
         var withinWindow = ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, now);
-        var price = program!.Price ?? 0m;
-        var checkoutAmount = withinWindow
-            ? program.RetakeFee ?? price
-            : price;
+        var checkoutAmount = ProgramPurchaseLifecycle.ResolveCheckoutAmount(program!, source, now);
 
         var modules = (await _unitOfWork.Modules.GetAllAsync(
                 m => m.ProgramId == programId && !m.IsDeleted))

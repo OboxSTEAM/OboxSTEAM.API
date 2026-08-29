@@ -222,21 +222,26 @@ public sealed class ProgramPurchaseLifecycle
     /// Checkout amount for a (possibly rebuy) pending enrollment: <see cref="Program.RetakeFee"/>
     /// (fallback <see cref="Program.Price"/>) inside the rebuy window, full Price otherwise.
     /// </summary>
-    public async Task<decimal> ResolveCheckoutAmountAsync(Program program, ProgramEnrollment enrollment)
+    public static decimal ResolveCheckoutAmount(Program program, ProgramEnrollment? source, DateTime now)
     {
         var price = program.Price ?? 0m;
-        if (!enrollment.SourceProgramEnrollmentId.HasValue || program.Price == null)
-        {
-            return price;
-        }
-
-        var source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollment.SourceProgramEnrollmentId.Value);
-        if (source == null || !IsWithinRebuyWindow(source, _currentTime.GetCurrentTime()))
+        if (source == null || program.Price == null || !IsWithinRebuyWindow(source, now))
         {
             return price;
         }
 
         return program.RetakeFee ?? price;
+    }
+
+    public async Task<decimal> ResolveCheckoutAmountAsync(Program program, ProgramEnrollment enrollment)
+    {
+        ProgramEnrollment? source = null;
+        if (enrollment.SourceProgramEnrollmentId.HasValue)
+        {
+            source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollment.SourceProgramEnrollmentId.Value);
+        }
+
+        return ResolveCheckoutAmount(program, source, _currentTime.GetCurrentTime());
     }
 
     /// <summary>
@@ -377,14 +382,15 @@ public sealed class ProgramPurchaseLifecycle
     /// <summary>
     /// On rebuy payment success, copies the source enrollment's Completed module enrollments
     /// into the new enrollment, scoped to what the new class has already taught.
-    /// A module the new class has not started (no Completed session) is not copied — the student
-    /// relearns it with the new class. A module the new class has fully taught (every non-cancelled
-    /// session Completed) copies everything (Completed/100%). A module the new class is part-way
-    /// through copies only the ActivityProgress rows and Graded submissions whose Activity/Assignment
-    /// the new class has already completed a session for, and the copied enrollment stays Active
-    /// with ProgressPercent = copied/total activities. Only applies inside the rebuy window;
-    /// Completed sources and out-of-window rebuys copy nothing. Each copied module enrollment gets
-    /// the next global AttemptNumber per (student, module) so the unique index holds.
+    /// A module with no non-cancelled sessions on the new class (self-paced / unscheduled) is
+    /// copied whole. A module the class has fully taught (every non-cancelled session Completed)
+    /// is also copied whole. A module with only Scheduled sessions is not copied. A module the
+    /// class is part-way through copies only the ActivityProgress rows and Graded submissions
+    /// whose Activity/Assignment the class has already completed a session for. ProgressPercent
+    /// is then set by <see cref="ActivityProgressCalculationHelper"/> (activity + required
+    /// assignment units). Only applies inside the rebuy window; Completed sources and
+    /// out-of-window rebuys copy nothing. Each copied module enrollment gets the next global
+    /// AttemptNumber per (student, module) so the unique index holds.
     /// Idempotent: modules already present on the new enrollment are skipped.
     /// </summary>
     public async Task ApplyRebuyCreditsAsync(ProgramEnrollment enrollment)
@@ -458,7 +464,7 @@ public sealed class ProgramPurchaseLifecycle
         var alreadyCopiedModuleIds = existingOnNew.Select(me => me.ModuleId).ToHashSet();
 
         var now = _currentTime.GetCurrentTime();
-        var copiedCount = 0;
+        var copiedRows = new List<(ModuleEnrollment Copied, ModuleEnrollment Source, bool FullyTaught)>();
 
         foreach (var sourceModuleEnrollment in completedSources)
         {
@@ -470,9 +476,11 @@ public sealed class ProgramPurchaseLifecycle
             var moduleId = sourceModuleEnrollment.ModuleId;
             var completedActivityIds = completedActivityIdsByModule.GetValueOrDefault(moduleId) ?? [];
             var completedAssignmentIds = completedAssignmentIdsByModule.GetValueOrDefault(moduleId) ?? [];
-            var fullyTaught = moduleFullyTaught.GetValueOrDefault(moduleId);
+            var hasTeachableSessions = newClassSessions.Any(
+                cs => cs.ModuleId == moduleId && cs.Status != ClassSessionStatus.Cancelled);
+            var fullyTaught = moduleFullyTaught.GetValueOrDefault(moduleId) || !hasTeachableSessions;
 
-            // Module the new class has not started: nothing to carry over, relearn from scratch.
+            // Scheduled-only (or InProgress with nothing Completed yet): relearn with the new class.
             if (!fullyTaught && completedActivityIds.Count == 0 && completedAssignmentIds.Count == 0)
             {
                 continue;
@@ -492,26 +500,6 @@ public sealed class ProgramPurchaseLifecycle
                 ? sourceSubmissions
                 : sourceSubmissions.Where(s => completedAssignmentIds.Contains(s.AssignmentId)).ToList();
 
-            var totalActivityCount = 0;
-            if (!fullyTaught)
-            {
-                var moduleCourseIds = (await _unitOfWork.Courses.GetAllAsync(
-                        c => c.ModuleId == moduleId && !c.IsDeleted))
-                    .Select(c => c.Id)
-                    .ToHashSet();
-                totalActivityCount = (await _unitOfWork.Activities.GetAllAsync(
-                        a => moduleCourseIds.Contains(a.CourseId) && !a.IsDeleted))
-                    .Count;
-            }
-            var copiedActivityCount = fullyTaught
-                ? sourceProgresses.Count
-                : progressesToCopy.Select(ap => ap.ActivityId).Distinct().Count();
-            var progressPercent = fullyTaught
-                ? 100m
-                : totalActivityCount == 0
-                    ? 0m
-                    : Math.Round(100m * copiedActivityCount / totalActivityCount, 2);
-
             var allAttempts = await _unitOfWork.ModuleEnrollments.GetAllAsync(
                 me => me.StudentId == enrollment.StudentId
                       && me.ModuleId == moduleId
@@ -524,13 +512,13 @@ public sealed class ProgramPurchaseLifecycle
                 StudentId = enrollment.StudentId,
                 ModuleId = moduleId,
                 ProgramEnrollmentId = enrollment.Id,
-                Status = fullyTaught ? EnrollmentStatus.Completed : EnrollmentStatus.Active,
-                ProgressPercent = progressPercent,
-                FinalGrade = fullyTaught ? sourceModuleEnrollment.FinalGrade : null,
+                Status = EnrollmentStatus.Active,
+                ProgressPercent = 0m,
+                FinalGrade = null,
                 AttemptNumber = nextAttempt,
                 EnrolledAt = now,
                 StartedAt = now,
-                CompletedAt = fullyTaught ? now : null,
+                CompletedAt = null,
             };
             await _unitOfWork.ModuleEnrollments.AddAsync(copiedEnrollment);
 
@@ -573,14 +561,36 @@ public sealed class ProgramPurchaseLifecycle
                 });
             }
 
-            copiedCount++;
+            copiedRows.Add((copiedEnrollment, sourceModuleEnrollment, fullyTaught));
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        foreach (var row in copiedRows)
+        {
+            await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+                _unitOfWork,
+                row.Copied);
+            if (row.FullyTaught && row.Copied.Status == EnrollmentStatus.Completed)
+            {
+                row.Copied.FinalGrade = row.Source.FinalGrade;
+                await _unitOfWork.ModuleEnrollments.Update(row.Copied);
+            }
+        }
+
+        if (copiedRows.Count > 0)
+        {
+            await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+                _unitOfWork,
+                enrollment.Id,
+                copiedRows[0].Copied);
         }
 
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
             "[ApplyRebuyCreditsAsync] Copied {Count} completed module(s) from source {SourceId} to enrollment {EnrollmentId}.",
-            copiedCount,
+            copiedRows.Count,
             source.Id,
             enrollment.Id);
     }
