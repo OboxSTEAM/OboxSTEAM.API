@@ -385,3 +385,4 @@ scripts/bin/harness-cli.exe
 scripts/bin/harness
 scripts/bin/harness.exe
 .harness-backup/
+/obox-rebuy-class-eligibility-test.ps1
