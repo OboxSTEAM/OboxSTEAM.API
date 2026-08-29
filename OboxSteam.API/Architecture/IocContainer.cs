@@ -197,6 +197,7 @@ public static class IocContainer
         services.AddScoped<IClassEnrollmentService, ClassEnrollmentService>();
         services.AddScoped<IScheduleService, ScheduleService>();
         services.AddScoped<IClassService, ClassService>();
+        services.AddScoped<IRebuyClassCatalogService, RebuyClassCatalogService>();
         services.AddScoped<IClassCurriculumProgressService, ClassCurriculumProgressService>();
         services.AddScoped<IClassMentorRequestService, ClassMentorRequestService>();
         services.AddScoped<IAssessmentRecoveryRequestService, AssessmentRecoveryRequestService>();

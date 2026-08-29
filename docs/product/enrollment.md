@@ -40,8 +40,8 @@ progress.
 ## Gating Rules
 
 - Program checkout requires ≥1 Open Standard class with remaining seats
-  (server-enforced on direct checkout, parent payment request, and parent
-  checkout for program tuition).
+  (server-enforced on first-time select-class). A rebuy may instead join an
+  `InProgress` Standard class when stop-module session eligibility holds.
 - Module prerequisites: `PrerequisiteModuleId` must be satisfied before access.
 - Class late-join: `Class.MinHoursBeforeAssignmentJoin` blocks self-enrollment
   near assignment windows; managers may bypass in service logic.
@@ -103,12 +103,18 @@ an **Active** enrollment and return 403 on closed ones.
   included) the student pays `Program.RetakeFee ?? Program.Price`; after the
   window they pay full `Program.Price`. A `Completed` source anchors the
   window at `CompletedAt` and gets retake **pricing only**.
-- **Class eligibility:** the rebuy must join exactly one `Open` Standard class
-  that has not started the module the student stopped at, nor any later
-  module in `ModuleOrder` (no `InProgress`/`Completed` `ClassSession` on
-  those modules). For `Failed` sources the stop module is `EndedModuleId`;
-  for `Dropped` sources it is the first not-`Completed` module. `Completed`
-  sources are unconstrained.
+- **Class eligibility:** the rebuy must join exactly one `Open` or `InProgress`
+  Standard class that has not started the module the student stopped at, nor any
+  later module in `ModuleOrder` (no `InProgress`/`Completed` `ClassSession` on
+  those modules). Class status `InProgress` is allowed; the session rule is the
+  gate. For `Failed` sources the stop module is `EndedModuleId`; for `Dropped`
+  sources it is the first not-`Completed` module. `Completed` sources are
+  unconstrained.
+  `GET /api/programs/{programId}/rebuy-classes` (Student) lists those Open and
+  InProgress Standard classes that still have seats, each with per-module
+  session progress (`NotStarted` / `InProgress` / `Completed`) and `isEligible`.
+  First-time checkout still uses `GET /api/programs/{programId}/open-classes`
+  (Open only).
 - **Credit copy (inside the window only):** on payment success, modules
   completed on the source are copied onto the new enrollment as `Completed`
   with their `ActivityProgress` rows and `Graded` submissions (new

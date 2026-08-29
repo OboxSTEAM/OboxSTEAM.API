@@ -865,6 +865,16 @@ public sealed class ValidatorAndUtilsTests
                 new Class { Status = ClassStatus.InProgress }));
         ClassEnrollmentValidator.ValidateClassOpenForEnrollment(
             new Class { Status = ClassStatus.Open });
+        ClassEnrollmentValidator.ValidateClassJoinableForRebuy(
+            new Class { Status = ClassStatus.Open });
+        ClassEnrollmentValidator.ValidateClassJoinableForRebuy(
+            new Class { Status = ClassStatus.InProgress });
+        Assert.Throws<BadRequestException>(() =>
+            ClassEnrollmentValidator.ValidateClassJoinableForRebuy(
+                new Class { Status = ClassStatus.Draft }));
+        Assert.Throws<BadRequestException>(() =>
+            ClassEnrollmentValidator.ValidateClassJoinableForRebuy(
+                new Class { Status = ClassStatus.Completed }));
     }
 
     [Fact]

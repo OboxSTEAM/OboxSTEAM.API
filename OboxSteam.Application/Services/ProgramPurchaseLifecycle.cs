@@ -20,6 +20,9 @@ public sealed class ProgramPurchaseLifecycle
     /// <summary>Months after a purchase closes during which a rebuy keeps retake pricing and progress credit.</summary>
     public const int RebuyWindowMonths = 3;
 
+    public const string RebuyClassIneligibleMessage =
+        "This class has already started the module you stopped at or a later module. Choose a class that has not started it yet.";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentTime _currentTime;
     private readonly INotificationPublisher _notificationPublisher;
@@ -255,12 +258,7 @@ public sealed class ProgramPurchaseLifecycle
             return;
         }
 
-        var stopModuleId = source.EndedModuleId;
-        if (!stopModuleId.HasValue)
-        {
-            stopModuleId = await ResolveWithdrawStopModuleIdAsync(source);
-        }
-
+        var stopModuleId = await ResolveStopModuleIdAsync(source);
         if (!stopModuleId.HasValue)
         {
             return;
@@ -272,27 +270,88 @@ public sealed class ProgramPurchaseLifecycle
             return;
         }
 
-        var blockedSessions = await _unitOfWork.ClassSessions.GetAllAsync(
-            cs => cs.ClassId == classId
-                  && !cs.IsDeleted
-                  && (cs.Status == ClassSessionStatus.InProgress || cs.Status == ClassSessionStatus.Completed));
+        var classSessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classId && !cs.IsDeleted);
 
-        var blockedModuleIds = blockedSessions.Select(cs => cs.ModuleId).Distinct().ToList();
-        if (blockedModuleIds.Count == 0)
+        var programModules = await _unitOfWork.Modules.GetAllAsync(
+            m => m.ProgramId == source.ProgramId && !m.IsDeleted);
+
+        if (ClassBlocksRebuy(programModules, classSessions, stopModule.ModuleOrder))
         {
-            return;
+            throw ErrorHelper.BadRequest(RebuyClassIneligibleMessage);
+        }
+    }
+
+    /// <summary>
+    /// Stop module for class eligibility: <see cref="ProgramEnrollment.EndedModuleId"/> on fail,
+    /// first not-Completed module on withdraw. Null for <see cref="EnrollmentStatus.Completed"/>
+    /// (unconstrained) or when every module is already completed.
+    /// </summary>
+    public async Task<Guid?> ResolveStopModuleIdAsync(ProgramEnrollment source)
+    {
+        if (source.Status == EnrollmentStatus.Completed)
+        {
+            return null;
         }
 
-        var blockedModules = await _unitOfWork.Modules.GetAllAsync(
-            m => m.ProgramId == source.ProgramId
-                 && blockedModuleIds.Contains(m.Id)
-                 && !m.IsDeleted);
-
-        if (blockedModules.Any(m => m.ModuleOrder >= stopModule.ModuleOrder))
+        if (source.EndedModuleId.HasValue)
         {
-            throw ErrorHelper.BadRequest(
-                "This class has already started the module you stopped at or a later module. Choose a class that has not started it yet.");
+            return source.EndedModuleId;
         }
+
+        return await ResolveWithdrawStopModuleIdAsync(source);
+    }
+
+    public static ClassModuleProgressStatus ResolveModuleProgress(IEnumerable<ClassSession> sessionsForModule)
+    {
+        var furthest = ClassModuleProgressStatus.NotStarted;
+        foreach (var session in sessionsForModule)
+        {
+            if (session.IsDeleted || session.Status == ClassSessionStatus.Cancelled)
+            {
+                continue;
+            }
+
+            var mapped = session.Status switch
+            {
+                ClassSessionStatus.Completed => ClassModuleProgressStatus.Completed,
+                ClassSessionStatus.InProgress => ClassModuleProgressStatus.InProgress,
+                _ => ClassModuleProgressStatus.NotStarted,
+            };
+
+            if (mapped > furthest)
+            {
+                furthest = mapped;
+            }
+        }
+
+        return furthest;
+    }
+
+    public static bool ModuleProgressBlocksRebuy(ClassModuleProgressStatus progress)
+        => progress is ClassModuleProgressStatus.InProgress or ClassModuleProgressStatus.Completed;
+
+    public static bool ClassBlocksRebuy(
+        IReadOnlyCollection<Module> programModules,
+        IReadOnlyCollection<ClassSession> classSessions,
+        int stopModuleOrder)
+    {
+        var sessionsByModule = classSessions.GroupBy(cs => cs.ModuleId);
+        foreach (var group in sessionsByModule)
+        {
+            var module = programModules.FirstOrDefault(m => m.Id == group.Key);
+            if (module == null || module.ModuleOrder < stopModuleOrder)
+            {
+                continue;
+            }
+
+            if (ModuleProgressBlocksRebuy(ResolveModuleProgress(group)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<Guid?> ResolveWithdrawStopModuleIdAsync(ProgramEnrollment source)

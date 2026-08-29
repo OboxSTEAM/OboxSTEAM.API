@@ -92,6 +92,19 @@ public static class ClassEnrollmentValidator
     }
 
     /// <summary>
+    /// Rebuy may join a Standard class that is still running, as long as sessions have not
+    /// started the student's stop module (enforced separately). Draft/Completed/etc. stay blocked.
+    /// </summary>
+    public static void ValidateClassJoinableForRebuy(Class classEntity)
+    {
+        if (classEntity.Status is not (ClassStatus.Open or ClassStatus.InProgress))
+        {
+            throw ErrorHelper.BadRequest(
+                $"Class '{classEntity.Code}' is not joinable for a rebuy (status: {classEntity.Status}).");
+        }
+    }
+
+    /// <summary>
     /// Manager transfer target must be Open (not yet started).
     /// </summary>
     public static void ValidateClassOpenForManagerTransfer(Class classEntity)

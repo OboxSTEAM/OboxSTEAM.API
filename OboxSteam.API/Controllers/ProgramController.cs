@@ -20,17 +20,20 @@ public class ProgramController : ControllerBase
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
     private readonly IClassService _classService;
     private readonly IClassSeatHoldService _classSeatHoldService;
+    private readonly IRebuyClassCatalogService _rebuyClassCatalogService;
 
     public ProgramController(
         IProgramService programService,
         IEnrollmentCurriculumService enrollmentCurriculumService,
         IClassService classService,
-        IClassSeatHoldService classSeatHoldService)
+        IClassSeatHoldService classSeatHoldService,
+        IRebuyClassCatalogService rebuyClassCatalogService)
     {
         _programService = programService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
         _classService = classService;
         _classSeatHoldService = classSeatHoldService;
+        _rebuyClassCatalogService = rebuyClassCatalogService;
     }
 
     // =========================================================================
@@ -160,6 +163,34 @@ public class ProgramController : ControllerBase
             result,
             "200",
             "Open enrollment classes retrieved successfully."));
+    }
+
+    // =========================================================================
+    // REBUY CLASSES  —  GET /api/programs/{id}/rebuy-classes  [Student]
+    // =========================================================================
+
+    [HttpGet("{id:guid}/rebuy-classes")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "List classes eligible for a program rebuy",
+        Description = "For the current student with a Failed/Dropped/Completed purchase on this program, "
+            + "returns Open and InProgress Standard classes that still have seats, each with per-module "
+            + "session progress (NotStarted/InProgress/Completed) and isEligible. Join is allowed when the "
+            + "class has not started the stop module or any later module. First-time checkout still uses "
+            + "open-classes (Open only).")]
+    [ProducesResponseType(typeof(ApiResult<RebuyClassCatalogDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> GetRebuyClasses([FromRoute] Guid id)
+    {
+        var result = await _rebuyClassCatalogService.GetRebuyClassesAsync(id);
+        return Ok(ApiResult<RebuyClassCatalogDto>.Success(
+            result,
+            "200",
+            "Rebuy classes retrieved successfully."));
     }
 
     // =========================================================================

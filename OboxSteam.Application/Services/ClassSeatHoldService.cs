@@ -128,11 +128,18 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
         var classToHold = ClassEnrollmentValidator.ValidateClassExists(classEntity, classId);
         ClassEnrollmentValidator.ValidateClassBelongsToProgram(classToHold, programEnrollment.ProgramId);
-        ClassEnrollmentValidator.ValidateClassOpenForEnrollment(classToHold);
+        if (programEnrollment.SourceProgramEnrollmentId.HasValue)
+        {
+            ClassEnrollmentValidator.ValidateClassJoinableForRebuy(classToHold);
+        }
+        else
+        {
+            ClassEnrollmentValidator.ValidateClassOpenForEnrollment(classToHold);
+        }
 
         if (classToHold.Kind != ClassKind.Standard)
         {
-            throw ErrorHelper.BadRequest("Only standard open classes can be selected for program checkout.");
+            throw ErrorHelper.BadRequest("Only standard classes can be selected for program checkout.");
         }
 
         await _programPurchaseLifecycle.ValidateRebuyClassEligibilityAsync(programEnrollment, classId);

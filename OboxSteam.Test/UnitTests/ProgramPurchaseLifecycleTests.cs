@@ -818,4 +818,47 @@ public sealed class ProgramPurchaseLifecycleTests
             2,
             _db.ModuleEnrollments.Items.Count(me => me.ModuleId == module.Id));
     }
+
+    [Fact]
+    public void ResolveModuleProgress_UsesFurthestNonCancelledSession()
+    {
+        var moduleId = Guid.NewGuid();
+        var sessions = new[]
+        {
+            new ClassSession { ModuleId = moduleId, Status = ClassSessionStatus.Scheduled, IsDeleted = false },
+            new ClassSession { ModuleId = moduleId, Status = ClassSessionStatus.InProgress, IsDeleted = false },
+            new ClassSession { ModuleId = moduleId, Status = ClassSessionStatus.Completed, IsDeleted = true },
+            new ClassSession { ModuleId = moduleId, Status = ClassSessionStatus.Cancelled, IsDeleted = false },
+        };
+
+        Assert.Equal(
+            ClassModuleProgressStatus.InProgress,
+            ProgramPurchaseLifecycle.ResolveModuleProgress(sessions));
+    }
+
+    [Fact]
+    public void ClassBlocksRebuy_True_WhenLaterModuleCompleted()
+    {
+        var stop = new Module { Id = Guid.NewGuid(), ModuleOrder = 2, IsDeleted = false };
+        var later = new Module { Id = Guid.NewGuid(), ModuleOrder = 3, IsDeleted = false };
+        var sessions = new[]
+        {
+            new ClassSession { ModuleId = later.Id, Status = ClassSessionStatus.Completed, IsDeleted = false },
+        };
+
+        Assert.True(ProgramPurchaseLifecycle.ClassBlocksRebuy([stop, later], sessions, stop.ModuleOrder));
+    }
+
+    [Fact]
+    public void ClassBlocksRebuy_False_WhenOnlyEarlierModuleStarted()
+    {
+        var earlier = new Module { Id = Guid.NewGuid(), ModuleOrder = 1, IsDeleted = false };
+        var stop = new Module { Id = Guid.NewGuid(), ModuleOrder = 2, IsDeleted = false };
+        var sessions = new[]
+        {
+            new ClassSession { ModuleId = earlier.Id, Status = ClassSessionStatus.Completed, IsDeleted = false },
+        };
+
+        Assert.False(ProgramPurchaseLifecycle.ClassBlocksRebuy([earlier, stop], sessions, stop.ModuleOrder));
+    }
 }
