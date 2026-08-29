@@ -438,12 +438,24 @@ public class OboxSteamDbContext : DbContext
         // =============================================
         modelBuilder.Entity<ProgramEnrollment>(entity =>
         {
+            // One open purchase per student+program; terminal rows (Failed/Dropped/Completed)
+            // must not block a rebuy.
             entity.HasIndex(pe => new { pe.StudentId, pe.ProgramId })
                 .IsUnique()
-                .HasFilter("\"IsDeleted\" = false");
+                .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('PendingPayment', 'Active')");
 
             entity.HasIndex(pe => new { pe.Status, pe.CreatedAt })
                 .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(pe => pe.SourceProgramEnrollment)
+                .WithMany()
+                .HasForeignKey(pe => pe.SourceProgramEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(pe => pe.EndedModule)
+                .WithMany()
+                .HasForeignKey(pe => pe.EndedModuleId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // =============================================

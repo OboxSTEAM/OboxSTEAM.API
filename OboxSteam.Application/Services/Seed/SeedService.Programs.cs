@@ -304,15 +304,59 @@ public partial class SeedService
             };
 
 
+            foreach (var program in programs)
+            {
+                program.RetakeFee ??= CatalogRetakeFee(program.Price);
+            }
+
             await _unitOfWork.Programs.AddRangeAsync(programs);
             await _unitOfWork.SaveChangesAsync();
             _loggerService.LogInformation("Finished seed programs");
         }
         else
         {
-            _loggerService.LogInformation("Programs already exist, skipping program seeding");
+            await BackfillCatalogRetakeFeesAsync(existingPrograms);
+        }
+    }
+
+    /// <summary>
+    /// Catalog retake fee: 60% of <see cref="Program.Price"/>, rounded to 50,000 VND.
+    /// Null/zero price stays null so checkout keeps the existing Price guard.
+    /// </summary>
+    internal static decimal? CatalogRetakeFee(decimal? price)
+    {
+        if (price is null or <= 0)
+        {
+            return null;
         }
 
+        return Math.Round(price.Value * 0.6m / 50_000m, MidpointRounding.AwayFromZero) * 50_000m;
+    }
+
+    private async Task BackfillCatalogRetakeFeesAsync(List<Program> existingPrograms)
+    {
+        var updated = 0;
+        foreach (var program in existingPrograms.Where(p => !p.IsDeleted && p.RetakeFee == null))
+        {
+            var fee = CatalogRetakeFee(program.Price);
+            if (fee == null)
+            {
+                continue;
+            }
+
+            program.RetakeFee = fee;
+            await _unitOfWork.Programs.Update(program);
+            updated++;
+        }
+
+        if (updated > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        _loggerService.LogInformation(
+            "Programs already exist. Backfilled RetakeFee on {Count} program(s).",
+            updated);
     }
 }
 

@@ -122,5 +122,76 @@ public partial class SeedService
             created,
             linked,
             programEnrollments.Count);
+
+        await SeedFailedProgramModuleEnrollmentsAsync();
+    }
+
+    /// <summary>
+    /// Closed Failed purchases keep a Failed module row on <see cref="ProgramEnrollment.EndedModuleId"/>
+    /// so curriculum history matches the close reason. Other modules are not backfilled.
+    /// </summary>
+    private async Task SeedFailedProgramModuleEnrollmentsAsync()
+    {
+        var failedEnrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => !pe.IsDeleted
+                  && pe.Status == EnrollmentStatus.Failed
+                  && pe.EndedModuleId != null);
+        if (failedEnrollments.Count == 0)
+        {
+            return;
+        }
+
+        var toAdd = new List<ModuleEnrollment>();
+        var updated = 0;
+        foreach (var pe in failedEnrollments)
+        {
+            var existing = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                me => me.ProgramEnrollmentId == pe.Id
+                      && me.ModuleId == pe.EndedModuleId!.Value
+                      && !me.IsDeleted);
+            if (existing != null)
+            {
+                if (existing.Status != EnrollmentStatus.Failed)
+                {
+                    existing.Status = EnrollmentStatus.Failed;
+                    await _unitOfWork.ModuleEnrollments.Update(existing);
+                    updated++;
+                }
+
+                continue;
+            }
+
+            var enrolledAt = pe.EnrolledAt ?? _seedNow.AddDays(-30);
+            toAdd.Add(new ModuleEnrollment
+            {
+                Id = Guid.NewGuid(),
+                StudentId = pe.StudentId,
+                ModuleId = pe.EndedModuleId!.Value,
+                ProgramEnrollmentId = pe.Id,
+                Status = EnrollmentStatus.Failed,
+                ProgressPercent = pe.ProgressPercent,
+                AttemptNumber = 1,
+                EnrolledAt = enrolledAt,
+                StartedAt = pe.StartedAt ?? enrolledAt.AddDays(2),
+                CreatedAt = enrolledAt,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+        }
+
+        if (toAdd.Count > 0 || updated > 0)
+        {
+            if (toAdd.Count > 0)
+            {
+                await _unitOfWork.ModuleEnrollments.AddRangeAsync(toAdd);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        _loggerService.LogInformation(
+            "Finished seed failed-module enrollments — {Added} new, {Updated} updated.",
+            toAdd.Count,
+            updated);
     }
 }

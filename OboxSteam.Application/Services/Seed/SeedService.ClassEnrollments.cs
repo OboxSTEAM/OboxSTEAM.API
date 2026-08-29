@@ -44,10 +44,14 @@ public partial class SeedService
                     continue;
                 }
 
-                var programEnrollment = programEnrollments.FirstOrDefault(
-                    pe => pe.StudentId == student.Id
-                          && pe.ProgramId == classEntity.ProgramId
-                          && !pe.IsDeleted);
+                var programEnrollment = programEnrollments
+                    .Where(pe => pe.StudentId == student.Id
+                                 && pe.ProgramId == classEntity.ProgramId
+                                 && !pe.IsDeleted)
+                    .OrderByDescending(pe =>
+                        pe.Status is EnrollmentStatus.Active or EnrollmentStatus.PendingPayment)
+                    .ThenByDescending(pe => pe.EnrolledAt)
+                    .FirstOrDefault();
                 if (programEnrollment == null)
                 {
                     _loggerService.LogWarning(

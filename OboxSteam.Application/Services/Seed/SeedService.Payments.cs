@@ -48,10 +48,9 @@ public partial class SeedService
                 continue;
             }
 
+            // Failed/Dropped already paid the original purchase; rebuy is a new payment.
             var paidAt = (enrollment.EnrolledAt ?? _seedNow).AddDays(-1);
-            var status = enrollment.Status == EnrollmentStatus.Dropped
-                ? PaymentStatus.Refunded
-                : PaymentStatus.Success;
+            var status = PaymentStatus.Success;
             var payment = new Payment
             {
                 Id = Guid.NewGuid(),
@@ -61,11 +60,9 @@ public partial class SeedService
                 ProgramEnrollmentId = enrollment.Id,
                 Amount = program.Price ?? 0m,
                 Gateway = gateways[paymentIndex % gateways.Length],
-                TransactionId = status == PaymentStatus.Success
-                    ? $"SEED-TXN-{paymentIndex:D4}"
-                    : $"SEED-TXN-REF-{paymentIndex:D4}",
+                TransactionId = $"SEED-TXN-{paymentIndex:D4}",
                 Status = status,
-                PaidAt = status == PaymentStatus.Pending ? null : paidAt,
+                PaidAt = paidAt,
                 CreatedAt = paidAt,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,

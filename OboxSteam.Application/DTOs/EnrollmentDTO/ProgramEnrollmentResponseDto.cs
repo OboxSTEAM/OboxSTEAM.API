@@ -15,6 +15,10 @@ public class ProgramEnrollmentResponseDto
     public DateTime? EnrolledAt { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public ProgramPurchaseEndReason? EndReason { get; set; }
+    public Guid? EndedModuleId { get; set; }
+    public DateTime? EndedAt { get; set; }
+    public Guid? SourceProgramEnrollmentId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 

@@ -56,6 +56,15 @@ public partial class SeedService
         "STD-007",
     ];
 
+    /// <summary>
+    /// Academic fail (PE Failed) on PRG-MATHFUN. STD-012 only holds a completed Robotics
+    /// purchase so this extra terminal row does not consume an in-progress slot.
+    /// </summary>
+    private static readonly string[] MathFailedStudentCodes =
+    [
+        "STD-012",
+    ];
+
     private static readonly SeedTimeline.WeekdaySlot[] RoboticsTueThuMorning =
     [
         new(DayOfWeek.Tuesday, 9, 0, 150),
@@ -297,7 +306,7 @@ public partial class SeedService
 
     /// <summary>
     /// Soft cap for seed + product: Active + PendingPayment program enrollments per student.
-    /// Completed/Dropped do not count. PendingPayment is forbidden once the student already
+    /// Completed/Failed/Dropped do not count. PendingPayment is forbidden once the student already
     /// holds two in-progress programs.
     /// </summary>
     internal const int MaxInProgressProgramsPerStudent =

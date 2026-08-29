@@ -12,7 +12,7 @@ public partial class SeedService
         var existingProgramEnrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync();
         if (existingProgramEnrollments.Any())
         {
-            _loggerService.LogInformation("Program enrollments already exist, skipping seeding");
+            await BackfillClosedProgramEnrollmentMetadataAsync(existingProgramEnrollments);
             return;
         }
 
@@ -40,7 +40,10 @@ public partial class SeedService
             decimal progressPercent,
             DateTime enrolledAt,
             DateTime? startedAt,
-            DateTime? completedAt)
+            DateTime? completedAt,
+            ProgramPurchaseEndReason? endReason = null,
+            Guid? endedModuleId = null,
+            DateTime? endedAt = null)
         {
             if (!students.TryGetValue(studentCode, out var student))
             {
@@ -58,6 +61,9 @@ public partial class SeedService
                 EnrolledAt = enrolledAt,
                 StartedAt = startedAt,
                 CompletedAt = completedAt,
+                EndReason = endReason,
+                EndedModuleId = endedModuleId,
+                EndedAt = endedAt,
                 CreatedAt = enrolledAt,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
@@ -125,7 +131,37 @@ public partial class SeedService
                 15m,
                 AtMonths(-5),
                 AtMonths(-5).AddDays(2),
-                null);
+                null,
+                ProgramPurchaseEndReason.Withdraw,
+                endedModuleId: null,
+                endedAt: AtMonths(-4));
+        }
+
+        if (programs.TryGetValue("PRG-MATHFUN", out var mathFun))
+        {
+            var failedModule = (await _unitOfWork.Modules.GetAllAsync(
+                    m => m.ProgramId == mathFun.Id && !m.IsDeleted))
+                .OrderBy(m => m.ModuleOrder)
+                .FirstOrDefault(m => m.ModuleType != ModuleType.Theory);
+
+            foreach (var studentCode in MathFailedStudentCodes)
+            {
+                Add(
+                    studentCode,
+                    mathFun,
+                    EnrollmentStatus.Failed,
+                    20m,
+                    AtMonths(-4),
+                    AtMonths(-4).AddDays(3),
+                    null,
+                    ProgramPurchaseEndReason.AcademicFail,
+                    failedModule?.Id,
+                    AtDays(-40));
+            }
+        }
+        else
+        {
+            _loggerService.LogWarning("PRG-MATHFUN missing. Skipping academic-fail enrollment seed.");
         }
 
         if (programEnrollments.Count == 0)
@@ -139,5 +175,36 @@ public partial class SeedService
         _loggerService.LogInformation(
             "Finished seed program enrollments — {Count} record(s).",
             programEnrollments.Count);
+    }
+
+    private async Task BackfillClosedProgramEnrollmentMetadataAsync(List<ProgramEnrollment> existing)
+    {
+        var updated = 0;
+        foreach (var enrollment in existing.Where(pe => !pe.IsDeleted && pe.EndReason == null))
+        {
+            if (enrollment.Status == EnrollmentStatus.Dropped)
+            {
+                enrollment.EndReason = ProgramPurchaseEndReason.Withdraw;
+                enrollment.EndedAt ??= enrollment.UpdatedAt ?? enrollment.StartedAt ?? enrollment.EnrolledAt;
+                await _unitOfWork.ProgramEnrollments.Update(enrollment);
+                updated++;
+            }
+            else if (enrollment.Status == EnrollmentStatus.Failed)
+            {
+                enrollment.EndReason = ProgramPurchaseEndReason.AcademicFail;
+                enrollment.EndedAt ??= enrollment.UpdatedAt ?? enrollment.StartedAt ?? enrollment.EnrolledAt;
+                await _unitOfWork.ProgramEnrollments.Update(enrollment);
+                updated++;
+            }
+        }
+
+        if (updated > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        _loggerService.LogInformation(
+            "Program enrollments already exist. Backfilled close metadata on {Count} row(s).",
+            updated);
     }
 }

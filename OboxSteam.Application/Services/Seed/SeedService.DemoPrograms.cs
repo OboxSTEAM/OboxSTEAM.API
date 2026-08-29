@@ -13,7 +13,7 @@ public partial class SeedService
 {
     /// <summary>
     /// One Active demo program (+ matching class) per student. Students chosen from
-    /// Completed/Dropped-only roster so academic Active/Pending slots stay ≤ 2.
+    /// Completed/Failed/Dropped-only roster so academic Active/Pending slots stay ≤ 2.
     /// STD-001/002 already hold Robotics Active and must not receive demo enrollments.
     /// </summary>
     private static readonly Dictionary<string, string[]> DemoStudentCodesByProgram =
@@ -577,6 +577,16 @@ public partial class SeedService
             p => p.Code == definition.ProgramCode && !p.IsDeleted);
         if (existing != null)
         {
+            if (existing.RetakeFee == null)
+            {
+                existing.RetakeFee = CatalogRetakeFee(existing.Price);
+                if (existing.RetakeFee != null)
+                {
+                    await _unitOfWork.Programs.Update(existing);
+                    await _unitOfWork.SaveChangesAsync();
+                }
+            }
+
             return existing;
         }
 
@@ -596,6 +606,7 @@ public partial class SeedService
             ThumbnailUrl = definition.ThumbnailUrl,
             Status = ProgramStatus.Active,
             Price = definition.Price,
+            RetakeFee = CatalogRetakeFee(definition.Price),
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,

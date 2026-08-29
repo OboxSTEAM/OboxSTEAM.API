@@ -37,6 +37,9 @@ public class Program : BaseEntity
     /// <summary>Bundle price for the entire program (usually discounted vs sum of modules).</summary>
     public decimal? Price { get; set; }
 
+    /// <summary>Retake fee when re-enrolling after a Failed/Dropped enrollment. Null = use Price.</summary>
+    public decimal? RetakeFee { get; set; }
+
     // Navigation
     public ICollection<ProgramBoard> ProgramBoards { get; set; } = new List<ProgramBoard>();
     public ICollection<Module> Modules { get; set; } = new List<Module>();

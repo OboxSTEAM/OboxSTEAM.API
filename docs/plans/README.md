@@ -30,4 +30,5 @@ decision into `docs/decisions/`; keep task-local choices in the plan.
 
 ## Active Plans
 
-No active execution plans are currently indexed.
+- `active/fail-rebuy-repurchase.md` — fail/drop closes the program purchase;
+  retake requires rebuy (ADR 0010).

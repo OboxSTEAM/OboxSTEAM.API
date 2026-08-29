@@ -23,6 +23,20 @@ public class ProgramEnrollment : BaseEntity
     /// <summary>Time the student finished all requirements.</summary>
     public DateTime? CompletedAt { get; set; }
 
+    /// <summary>Why this purchase was closed. Null while the enrollment is still open.</summary>
+    public ProgramPurchaseEndReason? EndReason { get; set; }
+
+    /// <summary>Module whose failure closed the purchase. Null for Withdraw.</summary>
+    public Guid? EndedModuleId { get; set; }
+    public Module? EndedModule { get; set; }
+
+    /// <summary>Time the purchase was closed (Failed/Dropped).</summary>
+    public DateTime? EndedAt { get; set; }
+
+    /// <summary>Previous closed purchase this rebuy carries progress from.</summary>
+    public Guid? SourceProgramEnrollmentId { get; set; }
+    public ProgramEnrollment? SourceProgramEnrollment { get; set; }
+
     // Navigation
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();
