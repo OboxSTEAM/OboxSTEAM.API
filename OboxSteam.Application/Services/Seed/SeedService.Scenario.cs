@@ -65,6 +65,28 @@ public partial class SeedService
         "STD-012",
     ];
 
+    internal const string FailRebuyProgramCode = "PRG-FAILREBUY";
+    internal const string FailRebuyClassCode = "CLS-FAILREBUY-CURRENT";
+    internal const string FailRebuyMentorCode = "MNT-006";
+
+    /// <summary>Already-closed snapshots on PRG-FAILREBUY (do not count as in-progress).</summary>
+    internal static readonly string[] FailRebuyClosedStudentCodes =
+    [
+        "STD-026",
+        "STD-027",
+    ];
+
+    /// <summary>Active PRG-FAILREBUY purchases used to fire close/withdraw APIs.</summary>
+    internal static readonly string[] FailRebuyActiveStudentCodes =
+    [
+        "STD-028",
+        "STD-029",
+        "STD-030",
+        "STD-031",
+        "STD-032",
+        "STD-033",
+    ];
+
     private static readonly SeedTimeline.WeekdaySlot[] RoboticsTueThuMorning =
     [
         new(DayOfWeek.Tuesday, 9, 0, 150),
@@ -287,6 +309,8 @@ public partial class SeedService
             Add(definition.OpenMentorCode);
         }
 
+        Add(FailRebuyMentorCode);
+
         foreach (var request in MentorBoardRequestPlan)
         {
             if (request.Status == ClassMentorRequestStatus.Pending)
@@ -359,6 +383,11 @@ public partial class SeedService
             }
         }
 
+        foreach (var code in FailRebuyActiveStudentCodes)
+        {
+            Add(code);
+        }
+
         return usage;
     }
 
@@ -393,6 +422,11 @@ public partial class SeedService
             {
                 Add(code);
             }
+        }
+
+        foreach (var code in FailRebuyActiveStudentCodes)
+        {
+            Add(code);
         }
 
         return usage;

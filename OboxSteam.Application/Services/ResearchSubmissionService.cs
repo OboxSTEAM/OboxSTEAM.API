@@ -23,6 +23,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
     private readonly ICertificateService _certificateService;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<ResearchSubmissionService> _logger;
+    private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
     public ResearchSubmissionService(
         IClaimsService claimsService,
@@ -31,7 +32,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         IMediaService mediaService,
         ICertificateService certificateService,
         INotificationPublisher notificationPublisher,
-        ILogger<ResearchSubmissionService> logger)
+        ILogger<ResearchSubmissionService> logger,
+        ProgramPurchaseLifecycle programPurchaseLifecycle)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
@@ -40,6 +42,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         _certificateService = certificateService;
         _notificationPublisher = notificationPublisher;
         _logger = logger;
+        _programPurchaseLifecycle = programPurchaseLifecycle;
     }
 
     public async Task<ResearchSubmissionResponseDto?> GetSubmission(Guid submissionId)
@@ -358,6 +361,16 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         await _unitOfWork.SaveChangesAsync();
 
         await RecalculateEnrollmentProgressAsync(submission);
+
+        if (submission.Status == SubmissionStatus.Graded
+            && submission.AssignedGrade.HasValue
+            && submission.AssignedGrade.Value < assignment.PassScore)
+        {
+            await _programPurchaseLifecycle.TryCloseAfterFailedAssignmentAsync(
+                submission.StudentId,
+                assignment.Id,
+                submission.ModuleEnrollmentId);
+        }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
         Guid? programEnrollmentId = null;

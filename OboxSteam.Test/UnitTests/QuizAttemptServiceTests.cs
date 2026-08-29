@@ -26,10 +26,12 @@ public sealed class QuizAttemptServiceTests
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<ICertificateService> _certificateService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly Mock<ICurrentTime> _currentTime = new();
 
     private QuizAttemptService CreateSut()
     {
         _claimsService.Setup(c => c.GetCurrentUserId).Returns(_studentId);
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(DateTime.UtcNow);
         _notificationPublisher
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -37,12 +39,19 @@ public sealed class QuizAttemptServiceTests
             .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ReturnsAsync((OboxSteam.Application.DTOs.CertificateDTO.CertificateDetailDto?)null);
 
+        var lifecycle = new ProgramPurchaseLifecycle(
+            _db,
+            _currentTime.Object,
+            _notificationPublisher.Object,
+            NullLogger<ProgramPurchaseLifecycle>.Instance);
+
         return new QuizAttemptService(
             _claimsService.Object,
             _db,
             _certificateService.Object,
             _notificationPublisher.Object,
-            NullLogger<QuizAttemptService>.Instance);
+            NullLogger<QuizAttemptService>.Instance,
+            lifecycle);
     }
 
     private void SeedStudentAndEnrollment(ModuleType moduleType = ModuleType.Theory)

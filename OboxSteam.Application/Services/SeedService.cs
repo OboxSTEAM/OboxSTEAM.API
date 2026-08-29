@@ -70,6 +70,7 @@ public partial class SeedService : ISeedService
         await EnsureSeedSessionVenuesAsync();
         await SeedPortfolioDataAsync();
         await ClearDemoProgramSubmissionsAsync();
+        await SeedFailRebuyFixturesAsync();
         await SeedGradedCapstoneSubmissionForUiAsync();
         await SeedCompletedProgramCertificatesAsync();
         await SeedPaymentsAsync();

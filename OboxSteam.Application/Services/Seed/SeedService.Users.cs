@@ -532,6 +532,8 @@ public partial class SeedService
                 },
             };
 
+            users.AddRange(CreateFailRebuyFixtureStudents(_seedNow));
+
             await _unitOfWork.Users.AddRangeAsync(users);
             await _unitOfWork.SaveChangesAsync();
             _loggerService.LogInformation("Finished seed users");
@@ -865,6 +867,8 @@ public partial class SeedService
             }
         };
 
+        additionalStudents.AddRange(CreateFailRebuyFixtureStudents(_seedNow));
+
         var studentsToAdd = new List<User>();
         foreach (var student in additionalStudents)
         {
@@ -885,6 +889,43 @@ public partial class SeedService
         _loggerService.LogInformation(
             "Backfilled {Count} additional student user(s).",
             studentsToAdd.Count);
+    }
+
+    /// <summary>
+    /// Dedicated students for fail/drop close + withdraw API checks. Password: Student@123.
+    /// </summary>
+    private static List<User> CreateFailRebuyFixtureStudents(DateTime seedNow)
+    {
+        var hasher = new PasswordHasher();
+        var passwordHash = hasher.HashPassword("Student@123")!;
+
+        (string Code, string Email, string FullName, string Phone)[] defs =
+        [
+            ("STD-026", "student26@oboxsteam.com", "Fail Snapshot Attendance", "0123456726"),
+            ("STD-027", "student27@oboxsteam.com", "Fail Snapshot Academic", "0123456727"),
+            ("STD-028", "student28@oboxsteam.com", "Fail Trigger Withdraw", "0123456728"),
+            ("STD-029", "student29@oboxsteam.com", "Fail Trigger Attendance", "0123456729"),
+            ("STD-030", "student30@oboxsteam.com", "Fail Trigger Quiz", "0123456730"),
+            ("STD-031", "student31@oboxsteam.com", "Fail Trigger Assignment", "0123456731"),
+            ("STD-032", "student32@oboxsteam.com", "Fail Trigger Research", "0123456732"),
+            ("STD-033", "student33@oboxsteam.com", "Fail Trigger Recovery Reject", "0123456733"),
+        ];
+
+        return defs.Select(def => new User
+        {
+            Id = Guid.NewGuid(),
+            Code = def.Code,
+            Email = def.Email,
+            PasswordHash = passwordHash,
+            FullName = def.FullName,
+            Phone = def.Phone,
+            Role = RoleType.Student,
+            Status = AccountStatus.Active,
+            IsEmailVerified = true,
+            CreatedAt = seedNow,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        }).ToList();
     }
 }
 

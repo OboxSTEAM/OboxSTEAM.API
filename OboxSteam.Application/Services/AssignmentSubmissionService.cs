@@ -32,19 +32,22 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
     private readonly IBlobService _blobService;
     private readonly ICertificateService _certificateService;
     private readonly ILogger<AssignmentSubmissionService> _logger;
+    private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
     public AssignmentSubmissionService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
         IBlobService blobService,
         ICertificateService certificateService,
-        ILogger<AssignmentSubmissionService> logger)
+        ILogger<AssignmentSubmissionService> logger,
+        ProgramPurchaseLifecycle programPurchaseLifecycle)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _blobService = blobService;
         _certificateService = certificateService;
         _logger = logger;
+        _programPurchaseLifecycle = programPurchaseLifecycle;
     }
 
     public async Task<AssignmentSubmissionResponseDto> SubmitAssignment(SubmitAssignmentRequestDto request)
@@ -213,6 +216,16 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         await _unitOfWork.SaveChangesAsync();
 
         await RecalculateEnrollmentProgressAsync(submission);
+
+        if (submission.Status == SubmissionStatus.Graded
+            && submission.AssignedGrade.HasValue
+            && submission.AssignedGrade.Value < assignment.PassScore)
+        {
+            await _programPurchaseLifecycle.TryCloseAfterFailedAssignmentAsync(
+                submission.StudentId,
+                assignment.Id,
+                submission.ModuleEnrollmentId);
+        }
 
         _logger.LogInformation(
             "GradeAssignment completed. SubmissionId={SubmissionId}, Status={Status}, GradedBy={GradedBy}",

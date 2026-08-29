@@ -16,17 +16,20 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
     private readonly IClaimsService _claimsService;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<AssessmentRecoveryRequestService> _logger;
+    private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
     public AssessmentRecoveryRequestService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         INotificationPublisher notificationPublisher,
-        ILogger<AssessmentRecoveryRequestService> logger)
+        ILogger<AssessmentRecoveryRequestService> logger,
+        ProgramPurchaseLifecycle programPurchaseLifecycle)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _notificationPublisher = notificationPublisher;
         _logger = logger;
+        _programPurchaseLifecycle = programPurchaseLifecycle;
     }
 
     public async Task<AssessmentRecoveryRequestResponseDto> CreateAsync(CreateAssessmentRecoveryRequestDto request)
@@ -259,6 +262,14 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
         var module = assignment != null
             ? await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId)
             : null;
+
+        if (assignment != null)
+        {
+            await _programPurchaseLifecycle.TryCloseAfterFailedAssignmentAsync(
+                entity.StudentId,
+                entity.AssignmentId,
+                entity.ModuleEnrollmentId);
+        }
 
         await _notificationPublisher.PublishAsync(
             NotificationCatalog.AssessmentRecoveryRejected(

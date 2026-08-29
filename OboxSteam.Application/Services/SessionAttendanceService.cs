@@ -20,19 +20,22 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
     private readonly ICurrentTime _currentTime;
     private readonly ILogger<SessionAttendanceService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
     public SessionAttendanceService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         ICurrentTime currentTime,
         ILogger<SessionAttendanceService> logger,
-        INotificationPublisher notificationPublisher)
+        INotificationPublisher notificationPublisher,
+        ProgramPurchaseLifecycle programPurchaseLifecycle)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _currentTime = currentTime;
         _logger = logger;
         _notificationPublisher = notificationPublisher;
+        _programPurchaseLifecycle = programPurchaseLifecycle;
     }
 
     public async Task<Pagination<SessionAttendanceResponseDto>> GetSessionAttendancesByClassSessionIdAsync(
@@ -394,6 +397,19 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         moduleEnrollment.Status = EnrollmentStatus.Failed;
         await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
         await _unitOfWork.SaveChangesAsync();
+
+        if (moduleEnrollment.ProgramEnrollmentId.HasValue)
+        {
+            var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                moduleEnrollment.ProgramEnrollmentId.Value);
+            if (programEnrollment != null && !programEnrollment.IsDeleted)
+            {
+                await _programPurchaseLifecycle.CloseAsync(
+                    programEnrollment,
+                    ProgramPurchaseEndReason.Attendance,
+                    moduleEnrollment.ModuleId);
+            }
+        }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(moduleEnrollment.ModuleId);
 

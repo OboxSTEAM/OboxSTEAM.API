@@ -39,12 +39,19 @@ public sealed class SessionCheckInServiceTests
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        var lifecycle = new ProgramPurchaseLifecycle(
+            _db,
+            _currentTime.Object,
+            _notificationPublisher.Object,
+            NullLogger<ProgramPurchaseLifecycle>.Instance);
+
         return new SessionAttendanceService(
             _db,
             _claimsService.Object,
             _currentTime.Object,
             NullLogger<SessionAttendanceService>.Instance,
-            _notificationPublisher.Object);
+            _notificationPublisher.Object,
+            lifecycle);
     }
 
     private void SeedUser(Guid id, RoleType role, string code)

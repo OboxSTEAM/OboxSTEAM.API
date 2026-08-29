@@ -26,18 +26,28 @@ public sealed class ProgramEnrollmentServiceTests
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly Mock<ICurrentTime> _currentTime = new();
 
     private ProgramEnrollmentService CreateSut(Guid? currentUserId = null)
     {
         _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _studentId);
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(DateTime.UtcNow);
         _notificationPublisher
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+
+        var lifecycle = new ProgramPurchaseLifecycle(
+            _db,
+            _currentTime.Object,
+            _notificationPublisher.Object,
+            NullLogger<ProgramPurchaseLifecycle>.Instance);
+
         return new ProgramEnrollmentService(
             _db,
             _claimsService.Object,
             NullLogger<ProgramEnrollmentService>.Instance,
-            _notificationPublisher.Object);
+            _notificationPublisher.Object,
+            lifecycle);
     }
 
     private void SeedStudent(Guid? id = null)
@@ -634,5 +644,88 @@ public sealed class ProgramEnrollmentServiceTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             sut.GetProgramEnrollmentClassAsync(_enrollmentId));
+    }
+
+    // ── WithdrawAsync ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Withdraw_ActiveEnrollment_ClosesAsDropped_AndWithdrawsSeats()
+    {
+        SeedStudent();
+        SeedProgram();
+        SeedEnrollment(status: EnrollmentStatus.Active);
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = _classEnrollmentId,
+            ClassId = _classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = _enrollmentId,
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.WithdrawAsync(_enrollmentId);
+
+        Assert.Equal(EnrollmentStatus.Dropped, result.Status);
+        Assert.Equal(ProgramPurchaseEndReason.Withdraw, result.EndReason);
+        Assert.Null(result.EndedModuleId);
+        Assert.NotNull(result.EndedAt);
+
+        var seat = _db.ClassEnrollments.Items.Single(ce => ce.Id == _classEnrollmentId);
+        Assert.Equal(ClassEnrollmentStatus.Withdrawn, seat.Status);
+    }
+
+    [Fact]
+    public async Task Withdraw_ThrowsNotFound_WhenEnrollmentMissing()
+    {
+        SeedStudent();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() => sut.WithdrawAsync(_enrollmentId));
+    }
+
+    [Fact]
+    public async Task Withdraw_ThrowsForbidden_WhenNotOwnEnrollment()
+    {
+        SeedStudent();
+        SeedProgram();
+        SeedEnrollment(studentId: _otherStudentId, status: EnrollmentStatus.Active);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => sut.WithdrawAsync(_enrollmentId));
+    }
+
+    [Fact]
+    public async Task Withdraw_ThrowsBadRequest_WhenPendingPayment()
+    {
+        SeedStudent();
+        SeedProgram();
+        SeedEnrollment(status: EnrollmentStatus.PendingPayment);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.WithdrawAsync(_enrollmentId));
+    }
+
+    [Fact]
+    public async Task Withdraw_ThrowsBadRequest_WhenAlreadyDropped()
+    {
+        SeedStudent();
+        SeedProgram();
+        SeedEnrollment(status: EnrollmentStatus.Dropped);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.WithdrawAsync(_enrollmentId));
+    }
+
+    [Fact]
+    public async Task Withdraw_ThrowsForbidden_WhenCallerIsNotStudent()
+    {
+        SeedManager();
+        SeedProgram();
+        SeedEnrollment(status: EnrollmentStatus.Active);
+        var sut = CreateSut(_managerId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => sut.WithdrawAsync(_enrollmentId));
     }
 }

@@ -25,4 +25,6 @@ public interface IProgramEnrollmentService
         int pageSize);
 
     Task<ProgramEnrollmentClassDto> GetProgramEnrollmentClassAsync(Guid enrollmentId);
+
+    Task<ProgramEnrollmentResponseDto> WithdrawAsync(Guid enrollmentId);
 }

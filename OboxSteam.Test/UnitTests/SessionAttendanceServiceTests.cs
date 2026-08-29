@@ -41,12 +41,19 @@ public sealed class SessionAttendanceServiceTests
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        var lifecycle = new ProgramPurchaseLifecycle(
+            _db,
+            _currentTime.Object,
+            _notificationPublisher.Object,
+            NullLogger<ProgramPurchaseLifecycle>.Instance);
+
         return new SessionAttendanceService(
             _db,
             _claimsService.Object,
             _currentTime.Object,
             NullLogger<SessionAttendanceService>.Instance,
-            _notificationPublisher.Object);
+            _notificationPublisher.Object,
+            lifecycle);
     }
 
     private void SeedUser(Guid id, RoleType role, string code)
@@ -747,11 +754,21 @@ public sealed class SessionAttendanceServiceTests
 
         var enrollment = _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId);
         Assert.Equal(EnrollmentStatus.Failed, enrollment.Status);
+
+        var programEnrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId);
+        Assert.Equal(EnrollmentStatus.Failed, programEnrollment.Status);
+        Assert.Equal(ProgramPurchaseEndReason.Attendance, programEnrollment.EndReason);
+        Assert.Equal(_moduleId, programEnrollment.EndedModuleId);
+        Assert.Equal(_now, programEnrollment.EndedAt);
+
+        var seat = _db.ClassEnrollments.Items.Single(ce => ce.ProgramEnrollmentId == _programEnrollmentId);
+        Assert.Equal(ClassEnrollmentStatus.Withdrawn, seat.Status);
+
         _notificationPublisher.Verify(
             n => n.PublishAsync(
                 It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
                 It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Exactly(2));
     }
 
     [Fact]
@@ -814,6 +831,6 @@ public sealed class SessionAttendanceServiceTests
             n => n.PublishAsync(
                 It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
                 It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Exactly(2));
     }
 }

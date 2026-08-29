@@ -39,10 +39,12 @@ public sealed class ResearchSubmissionServiceTests
     private readonly Mock<IMediaService> _mediaService = new();
     private readonly Mock<ICertificateService> _certificateService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly Mock<ICurrentTime> _currentTime = new();
 
     private ResearchSubmissionService CreateSut(Guid? currentUserId = null)
     {
         _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _studentId);
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(DateTime.UtcNow);
         _blobService
             .Setup(b => b.UploadFileAsync(
                 It.IsAny<string>(),
@@ -66,6 +68,12 @@ public sealed class ResearchSubmissionServiceTests
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        var lifecycle = new ProgramPurchaseLifecycle(
+            _db,
+            _currentTime.Object,
+            _notificationPublisher.Object,
+            NullLogger<ProgramPurchaseLifecycle>.Instance);
+
         return new ResearchSubmissionService(
             _claimsService.Object,
             _db,
@@ -73,7 +81,8 @@ public sealed class ResearchSubmissionServiceTests
             _mediaService.Object,
             _certificateService.Object,
             _notificationPublisher.Object,
-            NullLogger<ResearchSubmissionService>.Instance);
+            NullLogger<ResearchSubmissionService>.Instance,
+            lifecycle);
     }
 
     private static Mock<IFormFile> CreateFormFile(string fileName = "work.pdf", long length = 1024)

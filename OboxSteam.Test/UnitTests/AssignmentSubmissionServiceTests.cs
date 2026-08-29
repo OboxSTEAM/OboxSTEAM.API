@@ -31,10 +31,13 @@ public sealed class AssignmentSubmissionServiceTests
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<IBlobService> _blobService = new();
     private readonly Mock<ICertificateService> _certificateService = new();
+    private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly Mock<ICurrentTime> _currentTime = new();
 
     private AssignmentSubmissionService CreateSut(Guid? currentUserId = null)
     {
         _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _studentId);
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(DateTime.UtcNow);
         _blobService
             .Setup(b => b.UploadFileAsync(
                 It.IsAny<string>(),
@@ -48,13 +51,23 @@ public sealed class AssignmentSubmissionServiceTests
         _certificateService
             .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ReturnsAsync((CertificateDetailDto?)null);
+        _notificationPublisher
+            .Setup(n => n.PublishAsync(It.IsAny<OboxSteam.Application.Notifications.NotificationCommand>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var lifecycle = new ProgramPurchaseLifecycle(
+            _db,
+            _currentTime.Object,
+            _notificationPublisher.Object,
+            NullLogger<ProgramPurchaseLifecycle>.Instance);
 
         return new AssignmentSubmissionService(
             _claimsService.Object,
             _db,
             _blobService.Object,
             _certificateService.Object,
-            NullLogger<AssignmentSubmissionService>.Instance);
+            NullLogger<AssignmentSubmissionService>.Instance,
+            lifecycle);
     }
 
     private void SeedStudent()

@@ -50,6 +50,31 @@ public class ProgramEnrollmentController : ControllerBase
     }
 
     // =========================================================================
+    // WITHDRAW  —  POST /api/program-enrollments/{id}/withdraw
+    // =========================================================================
+
+    [HttpPost("{id:guid}/withdraw")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Withdraw from a program",
+        Description = "Closes the student's Active program enrollment as Dropped (EndReason = Withdraw) "
+            + "and withdraws all class seats immediately. Continuing the program later requires a rebuy.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramEnrollmentResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> Withdraw([FromRoute] Guid id)
+    {
+        var result = await _programEnrollmentService.WithdrawAsync(id);
+
+        return Ok(ApiResult<ProgramEnrollmentResponseDto>.Success(
+            result,
+            "200",
+            "Program enrollment withdrawn successfully."));
+    }
+
+    // =========================================================================
     // GET MY / SCOPED LIST  —  GET /api/program-enrollments/me
     // =========================================================================
 

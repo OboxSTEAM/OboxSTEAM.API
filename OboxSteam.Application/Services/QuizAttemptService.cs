@@ -18,19 +18,22 @@ public sealed class QuizAttemptService : IQuizAttemptService
     private readonly ICertificateService _certificateService;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<QuizAttemptService> _logger;
+    private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
     public QuizAttemptService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
         ICertificateService certificateService,
         INotificationPublisher notificationPublisher,
-        ILogger<QuizAttemptService> logger)
+        ILogger<QuizAttemptService> logger,
+        ProgramPurchaseLifecycle programPurchaseLifecycle)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _certificateService = certificateService;
         _notificationPublisher = notificationPublisher;
         _logger = logger;
+        _programPurchaseLifecycle = programPurchaseLifecycle;
     }
 
     public async Task<QuizAttemptResponseDto> StartQuiz(Guid assignmentId)
@@ -393,6 +396,14 @@ public sealed class QuizAttemptService : IQuizAttemptService
         await _unitOfWork.SaveChangesAsync();
 
         await RecalculateEnrollmentProgressAsync(submission);
+
+        if (!grade.Passed)
+        {
+            await _programPurchaseLifecycle.TryCloseAfterFailedAssignmentAsync(
+                student.Id,
+                assignment!.Id,
+                submission.ModuleEnrollmentId);
+        }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment!.ModuleId);
         Guid? programEnrollmentId = null;

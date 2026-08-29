@@ -17,17 +17,20 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
     private readonly IClaimsService _claimsService;
     private readonly ILogger<ProgramEnrollmentService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
     public ProgramEnrollmentService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         ILogger<ProgramEnrollmentService> logger,
-        INotificationPublisher notificationPublisher)
+        INotificationPublisher notificationPublisher,
+        ProgramPurchaseLifecycle programPurchaseLifecycle)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _logger = logger;
         _notificationPublisher = notificationPublisher;
+        _programPurchaseLifecycle = programPurchaseLifecycle;
     }
 
     public async Task<ProgramEnrollment> GetOrCreatePendingEnrollmentAsync(Guid studentId, Guid programId)
@@ -99,6 +102,44 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
             programId);
 
         return enrollment;
+    }
+
+    public async Task<ProgramEnrollmentResponseDto> WithdrawAsync(Guid enrollmentId)
+    {
+        var student = await EnrollmentAccessValidator.GetCurrentStudentForEnrollAsync(
+            _unitOfWork,
+            _claimsService,
+            "Only students can withdraw from a program.");
+
+        var enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollmentId);
+        if (enrollment == null || enrollment.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Program enrollment with id '{enrollmentId}' not found.");
+        }
+
+        if (enrollment.StudentId != student.Id)
+        {
+            throw ErrorHelper.Forbidden("You can only withdraw your own program enrollment.");
+        }
+
+        if (enrollment.Status != EnrollmentStatus.Active)
+        {
+            throw ErrorHelper.BadRequest(
+                "Only an Active enrollment can be withdrawn. " +
+                "Use checkout abandon for PendingPayment enrollments.");
+        }
+
+        await _programPurchaseLifecycle.CloseAsync(
+            enrollment,
+            ProgramPurchaseEndReason.Withdraw,
+            endedModuleId: null);
+
+        _logger.LogInformation(
+            "[WithdrawAsync] Student {StudentId} withdrew from program enrollment {EnrollmentId}.",
+            student.Id,
+            enrollment.Id);
+
+        return await GetProgramEnrollmentByIdAsync(enrollment.Id);
     }
 
     public async Task<ProgramEnrollmentResponseDto> GetProgramEnrollmentByIdAsync(Guid id)

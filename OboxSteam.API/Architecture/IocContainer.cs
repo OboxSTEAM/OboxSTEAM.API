@@ -204,6 +204,7 @@ public static class IocContainer
         services.AddScoped<IMentorService, MentorService>();
         services.AddScoped<IClassSessionService, ClassSessionService>();
         services.AddScoped<ISessionAttendanceService, SessionAttendanceService>();
+        services.AddScoped<ProgramPurchaseLifecycle>();
         services.AddScoped<IQuestionBankService, QuestionBankService>();
         services.AddScoped<IBankQuestionService, BankQuestionService>();
         services.AddScoped<IProgramReviewService, ProgramReviewService>();
