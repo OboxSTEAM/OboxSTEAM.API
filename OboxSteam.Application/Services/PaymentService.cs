@@ -530,14 +530,8 @@ public class PaymentService : IPaymentService
         }
         else if (payment.ProgramEnrollmentId.HasValue)
         {
-            var released = await _classSeatHoldService.WithdrawHoldForProgramEnrollmentAsync(
-                payment.ProgramEnrollmentId.Value);
-            if (released.ProgramId.HasValue)
-            {
-                await _classSeatHoldService.PublishSeatsChangedAsync(
-                    released.ProgramId.Value,
-                    released.ClassId!.Value);
-            }
+            await _unitOfWork.SaveChangesAsync();
+            await AbandonDirectProgramCheckoutAfterPaymentAsync(payment);
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -623,14 +617,8 @@ public class PaymentService : IPaymentService
         }
         else if (payment.ProgramEnrollmentId.HasValue)
         {
-            var released = await _classSeatHoldService.WithdrawHoldForProgramEnrollmentAsync(
-                payment.ProgramEnrollmentId.Value);
-            if (released.ProgramId.HasValue)
-            {
-                await _classSeatHoldService.PublishSeatsChangedAsync(
-                    released.ProgramId.Value,
-                    released.ClassId!.Value);
-            }
+            await _unitOfWork.SaveChangesAsync();
+            await AbandonDirectProgramCheckoutAfterPaymentAsync(payment);
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -644,6 +632,25 @@ public class PaymentService : IPaymentService
                 payment.ProgramEnrollmentId));
 
         _logger.LogWarning("[HandlePaymentFailed] Payment {Id} marked Failed.", payment.Id);
+    }
+
+    private async Task AbandonDirectProgramCheckoutAfterPaymentAsync(Payment payment)
+    {
+        if (!payment.ProgramEnrollmentId.HasValue)
+        {
+            return;
+        }
+
+        var result = await PendingProgramCheckoutHelper.AbandonPendingProgramCheckoutAsync(
+            _unitOfWork,
+            payment.ProgramEnrollmentId.Value);
+
+        if (result.Abandoned && result.ClassId.HasValue)
+        {
+            await _classSeatHoldService.PublishSeatsChangedAsync(
+                result.ProgramId,
+                result.ClassId.Value);
+        }
     }
 
     private async Task HandlePaymentSuccess(Payment payment, string transactionId)

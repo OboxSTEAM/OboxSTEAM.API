@@ -707,6 +707,45 @@ public sealed class PaymentServiceTests
     }
 
     [Fact]
+    public async Task CancelPayment_DirectCheckout_AbandonsPendingEnrollmentAndHold()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        SeedPendingProgramEnrollment();
+        SeedSeatHold(openClass.Id);
+        SeedPendingPayment(programEnrollmentId: _enrollmentId);
+        var sut = CreateSut();
+
+        await sut.CancelPayment(_paymentId);
+
+        Assert.Equal(PaymentStatus.Cancelled, _db.Payments.Items.Single().Status);
+        Assert.True(_db.ProgramEnrollments.Items.Single().IsDeleted);
+        Assert.Equal(ClassEnrollmentStatus.Withdrawn, _db.ClassEnrollments.Items.Single().Status);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_Expired_AbandonsPendingEnrollmentForDirectCheckout()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        SeedPendingProgramEnrollment();
+        SeedSeatHold(openClass.Id);
+        SeedPendingPayment(programEnrollmentId: _enrollmentId);
+        var sut = CreateSut();
+        _stripe
+            .Setup(s => s.ParseWebhookEvent(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(("checkout.session.expired", CheckoutSessionId, null));
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Equal(PaymentStatus.Failed, _db.Payments.Items.Single().Status);
+        Assert.True(_db.ProgramEnrollments.Items.Single().IsDeleted);
+        Assert.Equal(ClassEnrollmentStatus.Withdrawn, _db.ClassEnrollments.Items.Single().Status);
+    }
+
+    [Fact]
     public async Task CancelPayment_MarksCancelled_AndRollsBackAcceptedRequest()
     {
         SeedStudent();
@@ -739,6 +778,7 @@ public sealed class PaymentServiceTests
 
         Assert.Equal(PaymentStatus.Cancelled, _db.Payments.Items.Single().Status);
         Assert.Equal(PaymentRequestStatus.Pending, _db.PaymentRequests.Items.Single().Status);
+        Assert.False(_db.ProgramEnrollments.Items.Single().IsDeleted);
     }
 
     [Fact]
