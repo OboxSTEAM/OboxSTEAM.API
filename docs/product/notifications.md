@@ -9,6 +9,19 @@ token interpolation, persists one inbox record per `(recipient, context student)
 and then attempts real-time delivery through SignalR. Persistence is the source
 of truth if real-time delivery fails.
 
+Priority types also send email in parallel with SignalR, using the already-rendered
+inbox title and body. Email failure is logged and does not roll back the inbox.
+
+| Email | Types |
+| --- | --- |
+| Priority inbox email | `ProgramPendingPayment`, `ModuleRetakePendingPayment`, `PendingPaymentExpired`, `PaymentFailed`, `PaymentCancelled`, `ResearchReturnedForRevision`, `ResearchWorkSubmitted` |
+| Existing `IEmailService` templates (unchanged) | Parent payment request (checkout link), payment invoice, enrollment confirmation |
+| Not emailed | All other catalog types, including `PaymentSucceeded` / `ProgramActivated` / `ParentPaymentRequested` (covered by the templates above) |
+
+Scheduled session reminders, assignment due-soon reminders, and overdue alerts
+are not catalog events yet. When they are added, include them in
+`NotificationEmailPriority`.
+
 `NotificationService` provides inbox queries and read-state operations; it does
 not publish business notifications.
 
@@ -60,11 +73,13 @@ thành…"). Catalog titles and bodies are Vietnamese.
 
 `NotificationPayload` includes `studentName`, `actorName`, `className`, and
 `programName` in addition to deeplink ids. Catalog factories set class and
-program names from values the publishing service already has. `StudentName`
-and `ActorName` are also filled per recipient at publish time from
-`ContextStudentId` and `ActorUserId` (same lookup as the template tokens).
-Class-roster events do not set a single `studentId` in the catalog; the
-publisher writes the context student id onto each inbox row.
+program names from values the publishing service already has. At publish time
+the publisher also fills missing `className` / `programName` from
+`payload.classId` / `payload.programId` (and `class.programId` when only the
+class is present). `StudentName` and `ActorName` are filled per recipient from
+`ContextStudentId` and `ActorUserId`. Copy for events with a distinct actor
+includes `{actorName}`. Class-roster events do not set a single `studentId` in
+the catalog; the publisher writes the context student id onto each inbox row.
 
 ## Strict Type-to-Audience-to-Publisher Matrix
 

@@ -205,6 +205,7 @@ public partial class SeedService
                 "đã cập nhật câu hỏi",
                 "Đã thêm hai câu hỏi trắc nghiệm.",
                 moduleId,
+                actorName: mentor.FullName,
                 className: className,
                 programName: program.Name),
             manager.Id,
@@ -426,7 +427,8 @@ public partial class SeedService
             RoleType.Student,
             now.AddHours(-8)));
         samples.Add((
-            NotificationCatalog.ParentLinkApproved(student.Id, parent.Id, parent.Id),
+            NotificationCatalog.ParentLinkApproved(
+                student.Id, parent.Id, parent.Id, actorName: parent.FullName),
             student.Id,
             RoleType.Student,
             now.AddDays(-5)));
@@ -470,6 +472,21 @@ public partial class SeedService
         {
             [NotificationTokenKeys.StudentName] = studentName
         };
+        if (!string.IsNullOrWhiteSpace(command.Payload?.ActorName)
+            && !tokens.ContainsKey(NotificationTokenKeys.ActorName))
+        {
+            tokens[NotificationTokenKeys.ActorName] = command.Payload.ActorName!;
+        }
+        if (!string.IsNullOrWhiteSpace(command.Payload?.ClassName)
+            && !tokens.ContainsKey(NotificationTokenKeys.ClassName))
+        {
+            tokens[NotificationTokenKeys.ClassName] = command.Payload.ClassName!;
+        }
+        if (!string.IsNullOrWhiteSpace(command.Payload?.ProgramName)
+            && !tokens.ContainsKey(NotificationTokenKeys.ProgramName))
+        {
+            tokens[NotificationTokenKeys.ProgramName] = command.Payload.ProgramName;
+        }
 
         var copy = NotificationTemplateRenderer.Interpolate(
             command.Templates.Resolve(recipientRole),

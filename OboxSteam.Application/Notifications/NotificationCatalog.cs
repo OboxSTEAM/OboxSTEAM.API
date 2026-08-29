@@ -80,13 +80,15 @@ public static class NotificationCatalog
         => new(
             NotificationType.ParentLinkApproved,
             NotificationAudience.ForUser(studentId),
-            "Đã duyệt liên kết phụ huynh",
-            "Một phụ huynh đã được liên kết với tài khoản của bạn.",
+            NotificationRoleTemplates.FromDefault(
+                "Đã duyệt liên kết phụ huynh",
+                "{actorName} đã được liên kết với tài khoản của bạn."),
             payload: new NotificationPayload { StudentId = studentId }
                 .WithNames(studentName: studentName, actorName: actorName),
             actorUserId: actorUserId,
             entityType: "ParentStudent",
-            entityId: parentId);
+            entityId: parentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, actorName: actorName));
 
     // ── Enrollment ────────────────────────────────────────────────────────────
 
@@ -655,8 +657,8 @@ public static class NotificationCatalog
             NotificationRoleTemplates.FromDefault(
                 "Mentor gửi yêu cầu nhận lớp",
                 string.IsNullOrWhiteSpace(className)
-                    ? "Một mentor đã yêu cầu được phân công lớp."
-                    : "Một mentor đã yêu cầu được phân công lớp \"{className}\"."),
+                    ? "{actorName} đã yêu cầu được phân công lớp."
+                    : "{actorName} đã yêu cầu được phân công lớp \"{className}\"."),
             payload: new NotificationPayload
             {
                 ClassMentorRequestId = requestId,
@@ -1319,28 +1321,28 @@ public static class NotificationCatalog
             AttendanceStatus.Present => (
                 NotificationType.AttendanceMarkedPresent,
                 "Được điểm danh có mặt",
-                "Bạn được điểm danh có mặt cho một buổi học.",
-                "Con bạn {studentName} được điểm danh có mặt cho một buổi học."),
+                "Bạn được {actorName} điểm danh có mặt cho một buổi học.",
+                "Con bạn {studentName} được {actorName} điểm danh có mặt cho một buổi học."),
             AttendanceStatus.Late => (
                 NotificationType.AttendanceMarkedLate,
                 "Được điểm danh đi muộn",
-                "Bạn được điểm danh đi muộn cho một buổi học.",
-                "Con bạn {studentName} được điểm danh đi muộn cho một buổi học."),
+                "Bạn được {actorName} điểm danh đi muộn cho một buổi học.",
+                "Con bạn {studentName} được {actorName} điểm danh đi muộn cho một buổi học."),
             AttendanceStatus.Absent => (
                 NotificationType.AttendanceMarkedAbsent,
                 "Được điểm danh vắng",
-                "Bạn được điểm danh vắng cho một buổi học.",
-                "Con bạn {studentName} được điểm danh vắng cho một buổi học."),
+                "Bạn được {actorName} điểm danh vắng cho một buổi học.",
+                "Con bạn {studentName} được {actorName} điểm danh vắng cho một buổi học."),
             AttendanceStatus.Excused => (
                 NotificationType.AttendanceMarkedExcused,
                 "Được điểm danh vắng có phép",
-                "Bạn được điểm danh vắng có phép cho một buổi học.",
-                "Con bạn {studentName} được điểm danh vắng có phép cho một buổi học."),
+                "Bạn được {actorName} điểm danh vắng có phép cho một buổi học.",
+                "Con bạn {studentName} được {actorName} điểm danh vắng có phép cho một buổi học."),
             _ => (
                 NotificationType.AttendanceMarkedPresent,
                 "Đã cập nhật điểm danh",
-                "Điểm danh của bạn đã được cập nhật cho một buổi học.",
-                "Điểm danh của con bạn {studentName} đã được cập nhật cho một buổi học.")
+                "Điểm danh của bạn đã được {actorName} cập nhật cho một buổi học.",
+                "Điểm danh của con bạn {studentName} đã được {actorName} cập nhật cho một buổi học.")
         };
 
         return StudentAndParent(
@@ -1513,11 +1515,11 @@ public static class NotificationCatalog
             NotificationAudience.ForStudentAndParents(studentId),
             "Bài nộp được trả lại để chỉnh sửa",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "Bài nghiên cứu của bạn đã được trả lại để chỉnh sửa."
-                : "Bài nộp \"{assignmentTitle}\" của bạn đã được trả lại để chỉnh sửa.",
+                ? "{actorName} đã trả bài nghiên cứu của bạn để chỉnh sửa."
+                : "{actorName} đã trả bài nộp \"{assignmentTitle}\" của bạn để chỉnh sửa.",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "Bài nghiên cứu của con bạn {studentName} đã được trả lại để chỉnh sửa."
-                : "Bài nộp \"{assignmentTitle}\" của con bạn {studentName} đã được trả lại để chỉnh sửa.",
+                ? "{actorName} đã trả bài nghiên cứu của con bạn {studentName} để chỉnh sửa."
+                : "{actorName} đã trả bài nộp \"{assignmentTitle}\" của con bạn {studentName} để chỉnh sửa.",
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
@@ -1577,7 +1579,7 @@ public static class NotificationCatalog
                 "Đã nộp bài nghiên cứu",
                 string.IsNullOrWhiteSpace(assignmentTitle)
                     ? "{actorName} đã nộp bài nghiên cứu để chấm."
-                    : "Bài nghiên cứu cho \"{assignmentTitle}\" đã được nộp."),
+                    : "{actorName} đã nộp bài nghiên cứu cho \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
@@ -1798,8 +1800,8 @@ public static class NotificationCatalog
             NotificationRoleTemplates.FromDefault(
                 "Mentor đã chỉnh sửa bài tập",
                 string.IsNullOrWhiteSpace(assignmentTitle)
-                    ? "Một mentor đã cập nhật thông tin bài tập."
-                    : "Mentor đã cập nhật bài tập \"{assignmentTitle}\"."),
+                    ? "{actorName} đã cập nhật thông tin bài tập."
+                    : "{actorName} đã cập nhật bài tập \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 AssignmentId = assignmentId,
@@ -1828,10 +1830,11 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassQuizSetEditedByMentor,
             NotificationAudience.ForManagers(),
-            "Mentor đã chỉnh sửa bộ câu hỏi lớp",
-            string.IsNullOrWhiteSpace(detail)
-                ? $"Mentor {action} cho bài kiểm tra của lớp."
-                : $"Mentor {action}: {detail}",
+            NotificationRoleTemplates.FromDefault(
+                "Mentor đã chỉnh sửa bộ câu hỏi lớp",
+                string.IsNullOrWhiteSpace(detail)
+                    ? "{actorName} " + action + " cho bài kiểm tra của lớp."
+                    : "{actorName} " + action + ": " + detail),
             payload: new NotificationPayload
             {
                 AssignmentId = assignmentId,
@@ -1842,7 +1845,11 @@ public static class NotificationCatalog
             }.WithNames(actorName: actorName, className: className, programName: programName),
             actorUserId: mentorId,
             entityType: "ClassQuizQuestionSet",
-            entityId: assignmentId);
+            entityId: assignmentId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName));
 
     private static NotificationCommand StudentAndParent(
         NotificationType type,
