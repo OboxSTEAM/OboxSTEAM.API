@@ -21,6 +21,8 @@ public partial class SeedService
     /// Isolated three-module track (theory → lab → research) plus four classes so
     /// fail/drop close, rebuy window, credit copy, class eligibility, and manager
     /// reopen can be exercised without touching Robotics/demo showcase data.
+    /// Each class has a chronological ClassSession timetable: past slots are
+    /// Completed, the live slot is InProgress, upcoming slots are Scheduled.
     /// Must run after demo submission clearing and before payment seed.
     /// </summary>
     private async Task SeedFailRebuyFixturesAsync()
@@ -154,6 +156,9 @@ public partial class SeedService
             researchModule.Id,
             seedTime);
 
+        // Class dates follow the first/last live session. ELIGIBLE / BLOCKED / FRESH
+        // stay Open so first-purchase and Completed pickers still list them
+        // (open-classes is Open-only). Rebuy eligibility uses ClassSession.Status.
         var currentClass = await EnsureFailRebuyClassAsync(
             FailRebuyClassCode,
             "STEAM Foundations — Current Cohort",
@@ -162,7 +167,7 @@ public partial class SeedService
             ClassStatus.InProgress,
             seedTime.AddDays(-14),
             seedTime.AddDays(42),
-            "Weekday lab blocks",
+            "Foundations done; lab 5 of 5 in progress",
             seedTime);
         var eligibleClass = await EnsureFailRebuyClassAsync(
             FailRebuyEligibleClassCode,
@@ -170,9 +175,9 @@ public partial class SeedService
             program.Id,
             rebuyMentor.Id,
             ClassStatus.Open,
-            seedTime.AddDays(7),
+            seedTime.AddDays(-7),
             seedTime.AddDays(63),
-            "Upcoming weekday lab blocks",
+            "Foundations complete; lab starts next week",
             seedTime);
         var blockedClass = await EnsureFailRebuyClassAsync(
             FailRebuyBlockedClassCode,
@@ -180,9 +185,9 @@ public partial class SeedService
             program.Id,
             rebuyMentor.Id,
             ClassStatus.Open,
-            seedTime.AddDays(5),
+            seedTime.AddDays(-16),
             seedTime.AddDays(61),
-            "Cohort already in studio lab",
+            "Foundations done; lab 1 of 5 complete, rest upcoming",
             seedTime);
         var freshClass = await EnsureFailRebuyClassAsync(
             FailRebuyFreshClassCode,
@@ -192,40 +197,21 @@ public partial class SeedService
             ClassStatus.Open,
             seedTime.AddDays(21),
             seedTime.AddDays(77),
-            "Not yet started",
+            "Not yet started; first session in three weeks",
             seedTime);
 
-        // Eligibility reads session Status (InProgress/Completed), not Class.Status.
-        // Rebuy classes stay Open so select-class is allowed; session status is the gate.
-        await EnsureFailRebuySessionAsync(
-            currentClass.Id, theoryModule.Id, kickoff,
-            seedTime.AddDays(-12).Date.AddHours(9), ClassSessionStatus.Completed, seedTime);
-        for (var i = 0; i < labActivities.Count; i++)
-        {
-            var isLive = i == 0;
-            var start = isLive
-                ? seedTime.AddHours(-1)
-                : seedTime.AddDays(-10 + i).Date.AddHours(9);
-            await EnsureFailRebuySessionAsync(
-                currentClass.Id,
-                labModule.Id,
-                labActivities[i],
-                start,
-                isLive ? ClassSessionStatus.InProgress : ClassSessionStatus.Completed,
-                seedTime);
-        }
-
-        await EnsureFailRebuySessionAsync(
-            eligibleClass.Id, theoryModule.Id, kickoff,
-            seedTime.AddDays(-3).Date.AddHours(9), ClassSessionStatus.Completed, seedTime);
-
-        await EnsureFailRebuySessionAsync(
-            blockedClass.Id, labModule.Id, labActivities[0],
-            seedTime.AddDays(-2).Date.AddHours(9), ClassSessionStatus.Completed, seedTime);
-
-        await EnsureFailRebuySessionAsync(
-            freshClass.Id, theoryModule.Id, kickoff,
-            seedTime.AddDays(21).Date.AddHours(9), ClassSessionStatus.Scheduled, seedTime);
+        await SeedFailRebuyCohortTimetableAsync(
+            currentClass.Id,
+            eligibleClass.Id,
+            blockedClass.Id,
+            freshClass.Id,
+            theoryModule.Id,
+            labModule.Id,
+            researchModule.Id,
+            kickoff,
+            labActivities,
+            researchReading,
+            seedTime);
 
         await EnsureFailRebuyEnrollmentsAsync(
             students,
@@ -687,6 +673,96 @@ public partial class SeedService
         await _unitOfWork.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Builds one live timetable per fail/rebuy cohort. Status matches wall-clock
+    /// so catalog progress and credit copy agree on the happy path.
+    /// </summary>
+    private async Task SeedFailRebuyCohortTimetableAsync(
+        Guid currentClassId,
+        Guid eligibleClassId,
+        Guid blockedClassId,
+        Guid freshClassId,
+        Guid theoryModuleId,
+        Guid labModuleId,
+        Guid researchModuleId,
+        Activity kickoff,
+        IReadOnlyList<Activity> labActivities,
+        Activity researchReading,
+        DateTime seedTime)
+    {
+        DateTime AtNine(int daysFromSeed) => seedTime.AddDays(daysFromSeed).Date.AddHours(9);
+
+        // CURRENT: Foundations done, labs 1-4 held, lab 5 live, research later.
+        await EnsureFailRebuySessionAsync(
+            currentClassId, theoryModuleId, kickoff, AtNine(-12), ClassSessionStatus.Completed, seedTime);
+        for (var i = 0; i < labActivities.Count; i++)
+        {
+            var isLive = i == labActivities.Count - 1;
+            await EnsureFailRebuySessionAsync(
+                currentClassId,
+                labModuleId,
+                labActivities[i],
+                isLive ? seedTime.AddHours(-1) : AtNine(-10 + (i * 2)),
+                isLive ? ClassSessionStatus.InProgress : ClassSessionStatus.Completed,
+                seedTime);
+        }
+
+        await EnsureFailRebuySessionAsync(
+            currentClassId, researchModuleId, researchReading, AtNine(21), ClassSessionStatus.Scheduled, seedTime);
+
+        // ELIGIBLE: Foundations done last week; every Lab/Research slot is upcoming.
+        await EnsureFailRebuySessionAsync(
+            eligibleClassId, theoryModuleId, kickoff, AtNine(-5), ClassSessionStatus.Completed, seedTime);
+        for (var i = 0; i < labActivities.Count; i++)
+        {
+            await EnsureFailRebuySessionAsync(
+                eligibleClassId,
+                labModuleId,
+                labActivities[i],
+                AtNine(7 + (i * 2)),
+                ClassSessionStatus.Scheduled,
+                seedTime);
+        }
+
+        await EnsureFailRebuySessionAsync(
+            eligibleClassId, researchModuleId, researchReading, AtNine(42), ClassSessionStatus.Scheduled, seedTime);
+
+        // BLOCKED: Foundations done, lab 1 held, labs 2-5 and research still ahead.
+        await EnsureFailRebuySessionAsync(
+            blockedClassId, theoryModuleId, kickoff, AtNine(-14), ClassSessionStatus.Completed, seedTime);
+        for (var i = 0; i < labActivities.Count; i++)
+        {
+            var labHeld = i == 0;
+            await EnsureFailRebuySessionAsync(
+                blockedClassId,
+                labModuleId,
+                labActivities[i],
+                labHeld ? AtNine(-2) : AtNine(3 + ((i - 1) * 2)),
+                labHeld ? ClassSessionStatus.Completed : ClassSessionStatus.Scheduled,
+                seedTime);
+        }
+
+        await EnsureFailRebuySessionAsync(
+            blockedClassId, researchModuleId, researchReading, AtNine(28), ClassSessionStatus.Scheduled, seedTime);
+
+        // FRESH: nothing taught; first session in three weeks.
+        await EnsureFailRebuySessionAsync(
+            freshClassId, theoryModuleId, kickoff, AtNine(21), ClassSessionStatus.Scheduled, seedTime);
+        for (var i = 0; i < labActivities.Count; i++)
+        {
+            await EnsureFailRebuySessionAsync(
+                freshClassId,
+                labModuleId,
+                labActivities[i],
+                AtNine(28 + (i * 2)),
+                ClassSessionStatus.Scheduled,
+                seedTime);
+        }
+
+        await EnsureFailRebuySessionAsync(
+            freshClassId, researchModuleId, researchReading, AtNine(56), ClassSessionStatus.Scheduled, seedTime);
+    }
+
     private async Task EnsureFailRebuyEnrollmentsAsync(
         Dictionary<string, User> students,
         Program program,
@@ -1013,8 +1089,8 @@ public partial class SeedService
         var outsideWindow = seedTime.AddDays(-120);
         var recentClose = seedTime.AddDays(-1);
 
-        // STD-026 — Failed/Attendance after passing Foundations. 1/5 live absences.
-        // Rebuy: ELIGIBLE class, copy Foundations. Manager: Present on live session → reopen.
+        // STD-026 — Failed/Attendance after passing Foundations. 1/5 session absences.
+        // Rebuy: ELIGIBLE copies Foundations (taught); Lab stays ahead on that class.
         {
             var pe = await EnsurePe(
                 "STD-026",
@@ -1030,7 +1106,7 @@ public partial class SeedService
         }
 
         // STD-027 — Failed/AcademicFail on lab quiz after passing Foundations.
-        // Rebuy: ELIGIBLE, copy Foundations. Manager: regrade quiz to pass → reopen.
+        // Rebuy: ELIGIBLE copies Foundations. FRESH has not taught anything yet.
         {
             var pe = await EnsurePe(
                 "STD-027",
@@ -1069,6 +1145,8 @@ public partial class SeedService
         }
 
         // STD-035 — Dropped/Withdraw after passing Foundations (stop module = lab).
+        // Lab ME is Dropped (open modules close with the purchase).
+        // After Lab is marked Completed, BLOCKED copies Foundations + lab 1 only.
         {
             var pe = await EnsurePe(
                 "STD-035",
@@ -1077,7 +1155,7 @@ public partial class SeedService
                 endedModuleId: null,
                 recentClose);
             await CompleteTheoryAsync(pe, students["STD-035"]);
-            await EnsureMe(pe, labModule, EnrollmentStatus.Active, 20m);
+            await EnsureMe(pe, labModule, EnrollmentStatus.Dropped, 20m);
             await EnsureSeat(pe, ClassEnrollmentStatus.Withdrawn);
             await RecalcProgramAsync(pe);
         }

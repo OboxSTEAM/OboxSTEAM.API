@@ -187,6 +187,7 @@ public sealed class RebuyClassCatalogServiceTests
 
         Assert.Equal(_sourcePeId, result.SourceProgramEnrollmentId);
         Assert.Equal(EnrollmentStatus.Failed, result.SourceStatus);
+        Assert.True(result.IsRebuy);
         Assert.Equal(_labId, result.StopModuleId);
         Assert.Equal("MOD-LAB", result.StopModuleCode);
         Assert.True(result.WithinRebuyWindow);
@@ -214,6 +215,33 @@ public sealed class RebuyClassCatalogServiceTests
         var fresh = Assert.Single(result.Classes, c => c.ClassId == _freshId);
         Assert.True(fresh.IsEligible);
         Assert.Equal(ClassModuleProgressStatus.NotStarted, fresh.Modules.Single(m => m.ModuleId == _theoryId).Progress);
+    }
+
+    [Fact]
+    public async Task GetRebuyClasses_MarksSourceClassIneligible()
+    {
+        SeedStudentAndProgram();
+        SeedFailedSource();
+        SeedOpenClass(_eligibleId, "CLS-ELIGIBLE", "Next Cohort");
+        SeedOpenClass(_currentId, "CLS-OLD", "Previous Class");
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _currentId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = _sourcePeId,
+            Status = ClassEnrollmentStatus.Withdrawn,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().GetRebuyClassesAsync(_programId);
+
+        var oldClass = Assert.Single(result.Classes, c => c.ClassId == _currentId);
+        Assert.False(oldClass.IsEligible);
+        Assert.Equal(ProgramPurchaseLifecycle.RebuySameClassMessage, oldClass.IneligibleReason);
+
+        var next = Assert.Single(result.Classes, c => c.ClassId == _eligibleId);
+        Assert.True(next.IsEligible);
     }
 
     [Fact]
@@ -255,17 +283,28 @@ public sealed class RebuyClassCatalogServiceTests
     }
 
     [Fact]
-    public async Task GetRebuyClasses_ThrowsBadRequest_WhenNoClosedSource()
+    public async Task GetRebuyClasses_NoEnrollment_ReturnsOpenClassesOnly()
     {
         SeedStudentAndProgram();
+        SeedOpenClass(_freshId, "CLS-FRESH", "Upcoming Cohort");
+        var running = SeedOpenClass(_currentId, "CLS-RUNNING", "Running");
+        running.Status = ClassStatus.InProgress;
 
-        var ex = await Assert.ThrowsAsync<BadRequestException>(
-            () => CreateSut().GetRebuyClassesAsync(_programId));
-        Assert.Contains("No closed program enrollment", ex.Message, StringComparison.OrdinalIgnoreCase);
+        var result = await CreateSut().GetRebuyClassesAsync(_programId);
+
+        Assert.False(result.IsRebuy);
+        Assert.Null(result.SourceProgramEnrollmentId);
+        Assert.Null(result.SourceStatus);
+        Assert.Null(result.StopModuleId);
+        Assert.False(result.WithinRebuyWindow);
+        Assert.Equal(1_000_000m, result.CheckoutAmount);
+        var item = Assert.Single(result.Classes);
+        Assert.Equal(_freshId, item.ClassId);
+        Assert.True(item.IsEligible);
     }
 
     [Fact]
-    public async Task GetRebuyClasses_CompletedSource_AllOpenClassesEligible_RetakePrice()
+    public async Task GetRebuyClasses_CompletedSource_OpenClassesOnly_RetakePrice()
     {
         SeedStudentAndProgram();
         _db.ProgramEnrollments.Seed(new ProgramEnrollment
@@ -279,13 +318,19 @@ public sealed class RebuyClassCatalogServiceTests
         });
         SeedOpenClass(_blockedId, "CLS-BLOCKED", "Mid-lab");
         SeedSession(_blockedId, _labId, ClassSessionStatus.Completed);
+        var running = SeedOpenClass(_currentId, "CLS-RUNNING", "Running");
+        running.Status = ClassStatus.InProgress;
 
         var result = await CreateSut().GetRebuyClassesAsync(_programId);
 
+        Assert.False(result.IsRebuy);
+        Assert.Equal(_sourcePeId, result.SourceProgramEnrollmentId);
+        Assert.Equal(EnrollmentStatus.Completed, result.SourceStatus);
         Assert.Null(result.StopModuleId);
         Assert.True(result.WithinRebuyWindow);
         Assert.Equal(600_000m, result.CheckoutAmount);
         var item = Assert.Single(result.Classes);
+        Assert.Equal(_blockedId, item.ClassId);
         Assert.True(item.IsEligible);
         Assert.DoesNotContain(item.Modules, m => m.BlocksRebuy);
     }

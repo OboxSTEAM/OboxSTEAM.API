@@ -3,16 +3,23 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Application.DTOs.ClassDTO;
 
 /// <summary>
-/// Rebuy class picker for a student with a closed purchase on this program.
-/// Lists Open and InProgress Standard classes that still have seats, with class-level module progress.
+/// Student class picker for checkout. First purchase and Completed retakes list Open
+/// Standard classes. Failed/Dropped rebuys list Open and InProgress classes with
+/// stop-module eligibility.
 /// </summary>
 public sealed class RebuyClassCatalogDto
 {
     public Guid ProgramId { get; set; }
 
-    public Guid SourceProgramEnrollmentId { get; set; }
+    /// <summary>
+    /// True when the latest closed purchase is Failed or Dropped (InProgress classes
+    /// and stop-module rules apply). False for first purchase and Completed retakes (Open only).
+    /// </summary>
+    public bool IsRebuy { get; set; }
 
-    public EnrollmentStatus SourceStatus { get; set; }
+    public Guid? SourceProgramEnrollmentId { get; set; }
+
+    public EnrollmentStatus? SourceStatus { get; set; }
 
     public ProgramPurchaseEndReason? SourceEndReason { get; set; }
 

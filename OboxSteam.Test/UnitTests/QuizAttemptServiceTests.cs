@@ -331,6 +331,85 @@ public sealed class QuizAttemptServiceTests
     }
 
     [Fact]
+    public async Task StartQuiz_IgnoresPendingFromOtherModuleEnrollment()
+    {
+        SeedStudentAndEnrollment(ModuleType.Experiential);
+        SeedQuizAssignment();
+        SeedBankQuestion();
+
+        var oldEnrollmentId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = oldEnrollmentId,
+            StudentId = _studentId,
+            ModuleId = _moduleId,
+            Status = EnrollmentStatus.Dropped,
+            AttemptNumber = 1,
+            IsDeleted = false,
+        });
+        _db.ModuleEnrollments.Items.Single(me => me.Id == _enrollmentId).AttemptNumber = 2;
+
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-OLD-PEND",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = oldEnrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Pending,
+            StartedAt = DateTime.UtcNow.AddMinutes(-10),
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        var result = await sut.StartQuiz(_assignmentId);
+
+        Assert.NotEqual("SUB-OLD-PEND", _db.Submissions.Items.Single(s => s.Id == result.SubmissionId).Code);
+        Assert.Equal(_enrollmentId, _db.Submissions.Items.Single(s => s.Id == result.SubmissionId).ModuleEnrollmentId);
+        Assert.Equal(2, _db.Submissions.Items.Count);
+    }
+
+    [Fact]
+    public async Task StartQuiz_AllowsNewAttempt_WhenPriorGradedAttemptIsOnOtherEnrollment()
+    {
+        SeedStudentAndEnrollment(ModuleType.Experiential);
+        SeedQuizAssignment(maxAttempts: 1);
+        SeedBankQuestion();
+
+        var oldEnrollmentId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = oldEnrollmentId,
+            StudentId = _studentId,
+            ModuleId = _moduleId,
+            Status = EnrollmentStatus.Failed,
+            AttemptNumber = 1,
+            IsDeleted = false,
+        });
+        _db.ModuleEnrollments.Items.Single(me => me.Id == _enrollmentId).AttemptNumber = 2;
+
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-OLD-FAIL",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = oldEnrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 10,
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        var result = await sut.StartQuiz(_assignmentId);
+
+        Assert.Equal(1, result.AttemptNumber);
+        Assert.Equal(_enrollmentId, _db.Submissions.Items.Single(s => s.Id == result.SubmissionId).ModuleEnrollmentId);
+    }
+
+    [Fact]
     public async Task StartQuiz_ThrowsForbidden_WhenCallerIsNotStudent()
     {
         _db.Users.Seed(new User

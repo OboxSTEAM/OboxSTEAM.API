@@ -128,7 +128,15 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
         var classToHold = ClassEnrollmentValidator.ValidateClassExists(classEntity, classId);
         ClassEnrollmentValidator.ValidateClassBelongsToProgram(classToHold, programEnrollment.ProgramId);
+
+        ProgramEnrollment? source = null;
         if (programEnrollment.SourceProgramEnrollmentId.HasValue)
+        {
+            source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                programEnrollment.SourceProgramEnrollmentId.Value);
+        }
+
+        if (ProgramPurchaseLifecycle.AllowsInProgressClassJoin(source))
         {
             ClassEnrollmentValidator.ValidateClassJoinableForRebuy(classToHold);
         }
@@ -265,13 +273,61 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
             : (hold.ClassId, classEntity.ProgramId);
     }
 
+    public async Task<ClassEnrollment> PinHoldForOpenCheckoutAsync(
+        Guid programEnrollmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var hold = await ClassEnrollmentValidator.GetPendingSeatHoldAsync(_unitOfWork, programEnrollmentId)
+            ?? throw ErrorHelper.BadRequest(
+                "The class seat hold has expired. Select a class again before completing payment.");
+
+        hold.HoldExpiresAt = DateTime.UtcNow.AddMinutes(ProgramCheckoutPolicy.StripeCheckoutHoldMinutes);
+        await _unitOfWork.ClassEnrollments.Update(hold);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[PinHoldForOpenCheckoutAsync] Pinned class enrollment {EnrollmentId} until {ExpiresAt} for program enrollment {ProgramEnrollmentId}.",
+            hold.Id,
+            hold.HoldExpiresAt,
+            programEnrollmentId);
+
+        return hold;
+    }
+
     public async Task ActivateHoldAfterPaymentAsync(
         Guid programEnrollmentId,
         CancellationToken cancellationToken = default)
     {
-        var hold = await ClassEnrollmentValidator.GetValidSeatHoldAsync(_unitOfWork, programEnrollmentId)
-            ?? throw ErrorHelper.BadRequest(
-                "The class seat hold has expired. Select a class again before completing payment.");
+        var existingActive = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ProgramEnrollmentId == programEnrollmentId
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+        if (existingActive != null)
+        {
+            _logger.LogInformation(
+                "[ActivateHoldAfterPaymentAsync] Class enrollment {EnrollmentId} already Active for program enrollment {ProgramEnrollmentId}.",
+                existingActive.Id,
+                programEnrollmentId);
+            return;
+        }
+
+        var hold = await ClassEnrollmentValidator.GetPendingSeatHoldAsync(_unitOfWork, programEnrollmentId);
+        if (hold == null)
+        {
+            var withdrawn = await _unitOfWork.ClassEnrollments.GetAllAsync(
+                ce => ce.ProgramEnrollmentId == programEnrollmentId
+                      && ce.Status == ClassEnrollmentStatus.Withdrawn
+                      && !ce.IsDeleted);
+            hold = withdrawn
+                .OrderByDescending(ce => ce.UpdatedAt ?? ce.CreatedAt)
+                .FirstOrDefault();
+        }
+
+        if (hold == null)
+        {
+            throw ErrorHelper.BadRequest(
+                "No class seat hold was found for this paid enrollment.");
+        }
 
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(hold.ClassId);
         if (classEntity == null || classEntity.IsDeleted)
@@ -282,7 +338,8 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
         await ClassEnrollmentValidator.ValidateClassHasCapacityAsync(
             _unitOfWork,
             hold.ClassId,
-            classEntity.MaxCapacity);
+            classEntity.MaxCapacity,
+            excludeEnrollmentId: hold.Id);
 
         var now = DateTime.UtcNow;
         hold.Status = ClassEnrollmentStatus.Active;

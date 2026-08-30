@@ -427,17 +427,6 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             }
         }
 
-        var module = await _unitOfWork.Modules.GetByIdAsync(moduleEnrollment.ModuleId);
-
-        await _notificationPublisher.PublishAsync(
-            NotificationCatalog.ModuleFailed(
-                moduleEnrollment.StudentId,
-                moduleEnrollment.ModuleId,
-                moduleEnrollment.Id,
-                module?.ProgramId,
-                module?.Name,
-                moduleEnrollment.ProgramEnrollmentId));
-
         _logger.LogWarning(
             "[TryFailModuleForExcessAbsencesAsync] Module enrollment {EnrollmentId} failed — student {StudentId} missed {Missed}/{Total} session activities (>= {Threshold}%).",
             moduleEnrollment.Id,

@@ -33,6 +33,13 @@ public interface IClassSeatHoldService
         Guid programEnrollmentId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Extends the current Pending seat hold to cover an open Stripe Checkout session.
+    /// </summary>
+    Task<ClassEnrollment> PinHoldForOpenCheckoutAsync(
+        Guid programEnrollmentId,
+        CancellationToken cancellationToken = default);
+
     Task PublishSeatsChangedAsync(Guid programId, Guid classId, CancellationToken cancellationToken = default);
 
     /// <summary>

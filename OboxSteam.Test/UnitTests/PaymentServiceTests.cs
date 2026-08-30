@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
@@ -345,9 +346,12 @@ public sealed class PaymentServiceTests
         Assert.Single(_db.Payments.Items);
         Assert.Equal(_enrollmentId, result.EnrollmentId);
         Assert.Equal(openClass.Id, result.ClassId);
-        Assert.True(result.HoldExpiresAt > DateTimeOffset.UtcNow);
+        Assert.True(result.HoldExpiresAt > DateTimeOffset.UtcNow.AddHours(23));
         Assert.Equal("https://checkout.stripe.com/test", result.CheckoutUrl);
         Assert.Single(_db.ClassEnrollments.Items, ce => ce.Status == ClassEnrollmentStatus.Pending);
+        Assert.True(
+            _db.ClassEnrollments.Items.Single().HoldExpiresAt
+            > DateTime.UtcNow.AddMinutes(ProgramCheckoutPolicy.StripeCheckoutHoldMinutes - 1));
     }
 
     [Fact]
@@ -432,6 +436,43 @@ public sealed class PaymentServiceTests
 
         Assert.True(_db.ProgramEnrollments.Items.Single().IsDeleted);
         Assert.Equal(ClassEnrollmentStatus.Withdrawn, _db.ClassEnrollments.Items.Single().Status);
+    }
+
+    [Fact]
+    public async Task ReleaseExpiredHolds_KeepsHold_WhenPendingStripePaymentExists()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        SeedPendingProgramEnrollment();
+        SeedSeatHold(openClass.Id);
+        _db.ClassEnrollments.Items.Single().HoldExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+        SeedPendingPayment(programEnrollmentId: _enrollmentId);
+
+        var seatHoldService = CreateSeatHoldService();
+        await seatHoldService.ReleaseExpiredHoldsAsync();
+
+        Assert.False(_db.ProgramEnrollments.Items.Single().IsDeleted);
+        Assert.Equal(ClassEnrollmentStatus.Pending, _db.ClassEnrollments.Items.Single().Status);
+        Assert.Equal(PaymentStatus.Pending, _db.Payments.Items.Single().Status);
+    }
+
+    [Fact]
+    public async Task ReleaseExpiredHolds_KeepsHold_WhenProgramEnrollmentAlreadyActive()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        var enrollment = SeedPendingProgramEnrollment();
+        enrollment.Status = EnrollmentStatus.Active;
+        SeedSeatHold(openClass.Id);
+        _db.ClassEnrollments.Items.Single().HoldExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+
+        var seatHoldService = CreateSeatHoldService();
+        await seatHoldService.ReleaseExpiredHoldsAsync();
+
+        Assert.False(_db.ProgramEnrollments.Items.Single().IsDeleted);
+        Assert.Equal(ClassEnrollmentStatus.Pending, _db.ClassEnrollments.Items.Single().Status);
     }
 
     [Fact]
@@ -632,6 +673,19 @@ public sealed class PaymentServiceTests
     }
 
     [Fact]
+    public async Task SelectClass_CompletedSource_RejectsInProgressClass()
+    {
+        SeedStudent();
+        SeedProgram(retakeFee: 200_000m);
+        var running = SeedOpenEnrollmentClass(status: ClassStatus.InProgress);
+        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Completed, completedAt: DateTime.UtcNow.AddMonths(-1));
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            SelectClassAsync(running.Id, source.Id));
+        Assert.Contains("not open for enrollment", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SelectClass_Throws_WhenClassAlreadyStartedFailedModule()
     {
         SeedStudent();
@@ -793,6 +847,7 @@ public sealed class PaymentServiceTests
         Assert.Single(_db.Payments.Items);
         Assert.False(string.IsNullOrWhiteSpace(result.AccessToken));
         Assert.Equal(PaymentRequestStatus.Accepted, _db.PaymentRequests.Items[0].Status);
+        Assert.True(result.HoldExpiresAt > DateTimeOffset.UtcNow.AddHours(23));
     }
 
     [Fact]
@@ -1159,6 +1214,148 @@ public sealed class PaymentServiceTests
         await sut.HandleStripeWebhook("{}", "sig");
 
         Assert.Equal(PaymentStatus.Success, _db.Payments.Items.Single().Status);
+        Assert.Empty(_db.Invoices.Items);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_Completed_ActivatesExpiredPendingHold()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        SeedPendingProgramEnrollment();
+        SeedSeatHold(openClass.Id);
+        _db.ClassEnrollments.Items.Single().HoldExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+        SeedPendingPayment(programEnrollmentId: _enrollmentId);
+        var sut = CreateSut();
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Equal(ClassEnrollmentStatus.Active, _db.ClassEnrollments.Items.Single().Status);
+        Assert.Equal(EnrollmentStatus.Active, _db.ProgramEnrollments.Items.Single().Status);
+        Assert.Single(_db.Invoices.Items);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_Completed_FulfillsSeatOnRetry_WithoutSecondInvoice()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        SeedPendingProgramEnrollment();
+        SeedSeatHold(openClass.Id);
+        var payment = SeedPendingPayment(programEnrollmentId: _enrollmentId);
+        var sut = CreateSut();
+
+        await sut.HandleStripeWebhook("{}", "sig");
+        _db.ClassEnrollments.Items.Single().Status = ClassEnrollmentStatus.Pending;
+        _db.ClassEnrollments.Items.Single().HoldExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+        _db.ClassEnrollments.Items.Single().EnrolledAt = null;
+        payment.Status = PaymentStatus.Success;
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Equal(ClassEnrollmentStatus.Active, _db.ClassEnrollments.Items.Single().Status);
+        Assert.Single(_db.Invoices.Items);
+        _emailService.Verify(e => e.SendPaymentInvoiceEmailAsync(It.IsAny<InvoiceEmailDto>()), Times.Once);
+        _notificationPublisher.Verify(
+            n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_Completed_ReactivatesWithdrawnHold_WhenAlreadySuccess()
+    {
+        SeedStudent();
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass();
+        var enrollment = SeedPendingProgramEnrollment();
+        enrollment.Status = EnrollmentStatus.Active;
+        SeedSeatHold(openClass.Id);
+        var hold = _db.ClassEnrollments.Items.Single();
+        hold.Status = ClassEnrollmentStatus.Withdrawn;
+        hold.HoldExpiresAt = null;
+        var payment = SeedPendingPayment(programEnrollmentId: _enrollmentId);
+        payment.Status = PaymentStatus.Success;
+        var sut = CreateSut();
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Equal(ClassEnrollmentStatus.Active, _db.ClassEnrollments.Items.Single().Status);
+        Assert.Empty(_db.Invoices.Items);
+        _emailService.Verify(e => e.SendPaymentInvoiceEmailAsync(It.IsAny<InvoiceEmailDto>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_Completed_Conflict_WhenExpiredHoldAndClassIsFull()
+    {
+        var otherStudentId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+        SeedStudent();
+        _db.Users.Seed(new User
+        {
+            Id = otherStudentId,
+            Code = "STD-999",
+            Email = "other@test.com",
+            Role = RoleType.Student,
+            IsDeleted = false,
+        });
+        SeedProgram();
+        var openClass = SeedOpenEnrollmentClass(maxCapacity: 1);
+        SeedPendingProgramEnrollment();
+        SeedSeatHold(openClass.Id);
+        _db.ClassEnrollments.Items.Single().HoldExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = openClass.Id,
+            StudentId = otherStudentId,
+            ProgramEnrollmentId = Guid.NewGuid(),
+            Status = ClassEnrollmentStatus.Active,
+            Kind = ClassEnrollmentKind.Primary,
+            IsDeleted = false,
+        });
+        SeedPendingPayment(programEnrollmentId: _enrollmentId);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() => sut.HandleStripeWebhook("{}", "sig"));
+
+        Assert.Equal(PaymentStatus.Success, _db.Payments.Items.Single().Status);
+        Assert.Equal(ClassEnrollmentStatus.Pending, _db.ClassEnrollments.Items.Single(ce => ce.StudentId == _studentId).Status);
+    }
+
+    [Fact]
+    public async Task HandleStripeWebhook_Completed_CopiesRebuyCredits_OnRetryAfterSuccess()
+    {
+        SeedStudent();
+        SeedProgram();
+        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Failed, endedAt: DateTime.UtcNow.AddDays(-5));
+        var module = SeedModule();
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = module.Id,
+            ProgramEnrollmentId = source.Id,
+            Status = EnrollmentStatus.Completed,
+            AttemptNumber = 1,
+            IsDeleted = false,
+        });
+        var enrollment = SeedPendingProgramEnrollment();
+        enrollment.Status = EnrollmentStatus.Active;
+        enrollment.SourceProgramEnrollmentId = source.Id;
+        var openClass = SeedOpenEnrollmentClass();
+        SeedSeatHold(openClass.Id);
+        _db.ClassEnrollments.Items.Single().HoldExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+        var payment = SeedPendingPayment(programEnrollmentId: _enrollmentId);
+        payment.Status = PaymentStatus.Success;
+        var sut = CreateSut();
+
+        await sut.HandleStripeWebhook("{}", "sig");
+
+        Assert.Equal(ClassEnrollmentStatus.Active, _db.ClassEnrollments.Items.Single().Status);
+        Assert.Contains(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == enrollment.Id && me.ModuleId == module.Id);
         Assert.Empty(_db.Invoices.Items);
     }
 

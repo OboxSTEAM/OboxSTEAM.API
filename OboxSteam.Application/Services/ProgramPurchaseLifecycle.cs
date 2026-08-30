@@ -23,6 +23,9 @@ public sealed class ProgramPurchaseLifecycle
     public const string RebuyClassIneligibleMessage =
         "This class has already started the module you stopped at or a later module. Choose a class that has not started it yet.";
 
+    public const string RebuySameClassMessage =
+        "You cannot rejoin the class you previously enrolled in. Choose a different class.";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentTime _currentTime;
     private readonly INotificationPublisher _notificationPublisher;
@@ -41,8 +44,9 @@ public sealed class ProgramPurchaseLifecycle
     }
 
     /// <summary>
-    /// Closes the purchase and withdraws every Active/Pending class seat. No-op when the
-    /// enrollment is already terminal (Failed/Dropped/Completed).
+    /// Closes the purchase, terminals every open module enrollment, and withdraws every
+    /// Active/Pending class seat. No-op when the enrollment is already terminal
+    /// (Failed/Dropped/Completed).
     /// </summary>
     public async Task CloseAsync(
         ProgramEnrollment enrollment,
@@ -67,6 +71,11 @@ public sealed class ProgramPurchaseLifecycle
 
         await _unitOfWork.ProgramEnrollments.Update(enrollment);
 
+        var endedModuleEnrollmentId = await CloseOpenModuleEnrollmentsAsync(
+            enrollment.Id,
+            reason,
+            endedModuleId);
+
         var seats = await _unitOfWork.ClassEnrollments.GetAllAsync(
             ce => ce.ProgramEnrollmentId == enrollment.Id
                   && !ce.IsDeleted
@@ -81,6 +90,90 @@ public sealed class ProgramPurchaseLifecycle
 
         await _unitOfWork.SaveChangesAsync();
 
+        await PublishCloseNotificationAsync(
+            enrollment,
+            reason,
+            endedModuleId,
+            endedModuleEnrollmentId);
+
+        _logger.LogWarning(
+            "[CloseAsync] Program enrollment {EnrollmentId} closed — reason {Reason}, ended module {ModuleId}.",
+            enrollment.Id,
+            reason,
+            endedModuleId);
+    }
+
+    /// <summary>
+    /// Terminalizes open module enrollments on this purchase. Completed rows stay Completed.
+    /// AcademicFail/Attendance: the ended module becomes Failed; other Active/Deferred rows
+    /// become Dropped. Withdraw: every Active/Deferred row becomes Dropped (none are Failed).
+    /// </summary>
+    private async Task<Guid?> CloseOpenModuleEnrollmentsAsync(
+        Guid programEnrollmentId,
+        ProgramPurchaseEndReason reason,
+        Guid? endedModuleId)
+    {
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.ProgramEnrollmentId == programEnrollmentId && !me.IsDeleted);
+
+        Guid? endedModuleEnrollmentId = null;
+        foreach (var moduleEnrollment in moduleEnrollments)
+        {
+            if (moduleEnrollment.Status is EnrollmentStatus.Completed)
+            {
+                continue;
+            }
+
+            if (reason == ProgramPurchaseEndReason.Withdraw)
+            {
+                if (moduleEnrollment.Status is EnrollmentStatus.Active or EnrollmentStatus.Deferred)
+                {
+                    moduleEnrollment.Status = EnrollmentStatus.Dropped;
+                    await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+                }
+
+                continue;
+            }
+
+            if (endedModuleId.HasValue && moduleEnrollment.ModuleId == endedModuleId.Value)
+            {
+                moduleEnrollment.Status = EnrollmentStatus.Failed;
+                endedModuleEnrollmentId = moduleEnrollment.Id;
+                await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+                continue;
+            }
+
+            if (moduleEnrollment.Status is EnrollmentStatus.Active or EnrollmentStatus.Deferred)
+            {
+                moduleEnrollment.Status = EnrollmentStatus.Dropped;
+                await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+            }
+        }
+
+        return endedModuleEnrollmentId;
+    }
+
+    private async Task PublishCloseNotificationAsync(
+        ProgramEnrollment enrollment,
+        ProgramPurchaseEndReason reason,
+        Guid? endedModuleId,
+        Guid? endedModuleEnrollmentId)
+    {
+        var program = await _unitOfWork.Programs.GetByIdAsync(enrollment.ProgramId);
+        var student = await _unitOfWork.Users.GetByIdAsync(enrollment.StudentId);
+
+        if (reason == ProgramPurchaseEndReason.Withdraw)
+        {
+            await _notificationPublisher.PublishAsync(
+                NotificationCatalog.ProgramWithdrawn(
+                    enrollment.StudentId,
+                    enrollment.ProgramId,
+                    enrollment.Id,
+                    program?.Name,
+                    student?.FullName));
+            return;
+        }
+
         var module = endedModuleId.HasValue
             ? await _unitOfWork.Modules.GetByIdAsync(endedModuleId.Value)
             : null;
@@ -89,16 +182,13 @@ public sealed class ProgramPurchaseLifecycle
             NotificationCatalog.ModuleFailed(
                 enrollment.StudentId,
                 endedModuleId ?? Guid.Empty,
-                moduleEnrollmentId: null,
-                programId: enrollment.ProgramId,
-                moduleName: module?.Name,
-                programEnrollmentId: enrollment.Id));
-
-        _logger.LogWarning(
-            "[CloseAsync] Program enrollment {EnrollmentId} closed — reason {Reason}, ended module {ModuleId}.",
-            enrollment.Id,
-            reason,
-            endedModuleId);
+                endedModuleEnrollmentId,
+                enrollment.ProgramId,
+                module?.Name,
+                enrollment.Id,
+                studentName: student?.FullName,
+                programName: program?.Name,
+                reason: reason));
     }
 
     /// <summary>
@@ -208,6 +298,13 @@ public sealed class ProgramPurchaseLifecycle
             .FirstOrDefault();
 
     /// <summary>
+    /// Fail/drop rebuys may join Open or InProgress classes (stop-module gated).
+    /// First purchase and Completed retakes only join Open classes.
+    /// </summary>
+    public static bool AllowsInProgressClassJoin(ProgramEnrollment? source)
+        => source is { Status: EnrollmentStatus.Failed or EnrollmentStatus.Dropped };
+
+    /// <summary>
     /// True when <paramref name="now"/> falls within the rebuy window anchored at the source's close
     /// date (<see cref="ProgramEnrollment.EndedAt"/> for Failed/Dropped, <see cref="ProgramEnrollment.CompletedAt"/>
     /// for Completed), inclusive of the boundary.
@@ -245,10 +342,11 @@ public sealed class ProgramPurchaseLifecycle
     }
 
     /// <summary>
-    /// For rebuys after a close, the selected class must not have started the module the student
-    /// stopped at, nor any later module. Failed sources use <see cref="ProgramEnrollment.EndedModuleId"/>;
+    /// For rebuys after a close, the selected class must not be the class the student
+    /// left, and must not have started the module the student stopped at, nor any later
+    /// module. Failed sources use <see cref="ProgramEnrollment.EndedModuleId"/>;
     /// Withdraw sources use the first not-Completed module in <see cref="Module.ModuleOrder"/>.
-    /// Completed sources are unconstrained (no stop module).
+    /// Completed sources skip the stop-module rule but still cannot rejoin the old class.
     /// </summary>
     public async Task ValidateRebuyClassEligibilityAsync(ProgramEnrollment enrollment, Guid classId)
     {
@@ -258,7 +356,18 @@ public sealed class ProgramPurchaseLifecycle
         }
 
         var source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollment.SourceProgramEnrollmentId.Value);
-        if (source == null || source.Status == EnrollmentStatus.Completed)
+        if (source == null)
+        {
+            return;
+        }
+
+        var sourceClassIds = await GetSourceOccupiedClassIdsAsync(source.Id);
+        if (sourceClassIds.Contains(classId))
+        {
+            throw ErrorHelper.BadRequest(RebuySameClassMessage);
+        }
+
+        if (source.Status == EnrollmentStatus.Completed)
         {
             return;
         }
@@ -359,6 +468,38 @@ public sealed class ProgramPurchaseLifecycle
         return false;
     }
 
+    /// <summary>
+    /// Classes the student already sat in (or held) on the source purchase. Rebuy must pick a different class.
+    /// </summary>
+    public async Task<HashSet<Guid>> GetSourceOccupiedClassIdsAsync(Guid sourceProgramEnrollmentId)
+    {
+        var seats = await _unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ProgramEnrollmentId == sourceProgramEnrollmentId && !ce.IsDeleted);
+
+        return seats.Select(ce => ce.ClassId).ToHashSet();
+    }
+
+    /// <summary>
+    /// True when the new class has already gone past this session: status Completed, or the
+    /// session end time is at or before <paramref name="now"/> (calendar already moved on,
+    /// even if the mentor left the row Scheduled). Cancelled sessions never count.
+    /// In-progress sessions whose end is still in the future are not taught yet.
+    /// </summary>
+    public static bool SessionAlreadyTaught(ClassSession session, DateTime now)
+    {
+        if (session.IsDeleted || session.Status == ClassSessionStatus.Cancelled)
+        {
+            return false;
+        }
+
+        if (session.Status == ClassSessionStatus.Completed)
+        {
+            return true;
+        }
+
+        return session.EndTime <= now;
+    }
+
     private async Task<Guid?> ResolveWithdrawStopModuleIdAsync(ProgramEnrollment source)
     {
         var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
@@ -381,17 +522,17 @@ public sealed class ProgramPurchaseLifecycle
 
     /// <summary>
     /// On rebuy payment success, copies the source enrollment's Completed module enrollments
-    /// into the new enrollment, scoped to what the new class has already taught.
-    /// A module with no non-cancelled sessions on the new class (self-paced / unscheduled) is
-    /// copied whole. A module the class has fully taught (every non-cancelled session Completed)
-    /// is also copied whole. A module with only Scheduled sessions is not copied. A module the
-    /// class is part-way through copies only the ActivityProgress rows and Graded submissions
-    /// whose Activity/Assignment the class has already completed a session for. ProgressPercent
-    /// is then set by <see cref="ActivityProgressCalculationHelper"/> (activity + required
-    /// assignment units). Only applies inside the rebuy window; Completed sources and
-    /// out-of-window rebuys copy nothing. Each copied module enrollment gets the next global
-    /// AttemptNumber per (student, module) so the unique index holds.
-    /// Idempotent: modules already present on the new enrollment are skipped.
+    /// into the new enrollment, scoped to what the new class has already taught by wall-clock
+    /// and session status. A module with no non-cancelled sessions (self-paced / unscheduled)
+    /// is copied whole. A module whose every non-cancelled session is already taught
+    /// (<see cref="SessionAlreadyTaught"/>: Completed, or EndTime &lt;= now) is copied whole.
+    /// Sessions still in the future are not copied — the student relearns those with the new
+    /// class. A part-taught module copies only ActivityProgress and Graded submissions whose
+    /// Activity/Assignment the class has already taught. ProgressPercent is then set by
+    /// <see cref="ActivityProgressCalculationHelper"/>. Only applies inside the rebuy window;
+    /// Completed sources and out-of-window rebuys copy nothing. Each copied module enrollment
+    /// gets the next global AttemptNumber per (student, module). Idempotent: modules already
+    /// present on the new enrollment are skipped.
     /// </summary>
     public async Task ApplyRebuyCreditsAsync(ProgramEnrollment enrollment)
     {
@@ -436,34 +577,32 @@ public sealed class ProgramPurchaseLifecycle
         var newClassSessions = await _unitOfWork.ClassSessions.GetAllAsync(
             cs => cs.ClassId == newClassEnrollment.ClassId && !cs.IsDeleted);
 
-        // Activities/assignments the new class has already finished a session for, per module.
-        var completedActivityIdsByModule = new Dictionary<Guid, HashSet<Guid>>();
-        var completedAssignmentIdsByModule = new Dictionary<Guid, HashSet<Guid>>();
+        var now = _currentTime.GetCurrentTime();
+
+        var taughtActivityIdsByModule = new Dictionary<Guid, HashSet<Guid>>();
+        var taughtAssignmentIdsByModule = new Dictionary<Guid, HashSet<Guid>>();
         var moduleFullyTaught = new Dictionary<Guid, bool>();
         foreach (var group in newClassSessions.GroupBy(cs => cs.ModuleId))
         {
-            var completedSessions = group
-                .Where(cs => cs.Status == ClassSessionStatus.Completed)
-                .ToList();
-            completedActivityIdsByModule[group.Key] = completedSessions
+            var taughtSessions = group.Where(cs => SessionAlreadyTaught(cs, now)).ToList();
+            taughtActivityIdsByModule[group.Key] = taughtSessions
                 .Where(cs => cs.ActivityId.HasValue)
                 .Select(cs => cs.ActivityId!.Value)
                 .ToHashSet();
-            completedAssignmentIdsByModule[group.Key] = completedSessions
+            taughtAssignmentIdsByModule[group.Key] = taughtSessions
                 .Where(cs => cs.AssignmentId.HasValue)
                 .Select(cs => cs.AssignmentId!.Value)
                 .ToHashSet();
 
             var teachable = group.Where(cs => cs.Status != ClassSessionStatus.Cancelled).ToList();
             moduleFullyTaught[group.Key] =
-                teachable.Count > 0 && teachable.All(cs => cs.Status == ClassSessionStatus.Completed);
+                teachable.Count > 0 && teachable.All(cs => SessionAlreadyTaught(cs, now));
         }
 
         var existingOnNew = await _unitOfWork.ModuleEnrollments.GetAllAsync(
             me => me.ProgramEnrollmentId == enrollment.Id && !me.IsDeleted);
         var alreadyCopiedModuleIds = existingOnNew.Select(me => me.ModuleId).ToHashSet();
 
-        var now = _currentTime.GetCurrentTime();
         var copiedRows = new List<(ModuleEnrollment Copied, ModuleEnrollment Source, bool FullyTaught)>();
 
         foreach (var sourceModuleEnrollment in completedSources)
@@ -474,14 +613,13 @@ public sealed class ProgramPurchaseLifecycle
             }
 
             var moduleId = sourceModuleEnrollment.ModuleId;
-            var completedActivityIds = completedActivityIdsByModule.GetValueOrDefault(moduleId) ?? [];
-            var completedAssignmentIds = completedAssignmentIdsByModule.GetValueOrDefault(moduleId) ?? [];
+            var taughtActivityIds = taughtActivityIdsByModule.GetValueOrDefault(moduleId) ?? [];
+            var taughtAssignmentIds = taughtAssignmentIdsByModule.GetValueOrDefault(moduleId) ?? [];
             var hasTeachableSessions = newClassSessions.Any(
                 cs => cs.ModuleId == moduleId && cs.Status != ClassSessionStatus.Cancelled);
             var fullyTaught = moduleFullyTaught.GetValueOrDefault(moduleId) || !hasTeachableSessions;
 
-            // Scheduled-only (or InProgress with nothing Completed yet): relearn with the new class.
-            if (!fullyTaught && completedActivityIds.Count == 0 && completedAssignmentIds.Count == 0)
+            if (!fullyTaught && taughtActivityIds.Count == 0 && taughtAssignmentIds.Count == 0)
             {
                 continue;
             }
@@ -495,10 +633,10 @@ public sealed class ProgramPurchaseLifecycle
 
             var progressesToCopy = fullyTaught
                 ? sourceProgresses
-                : sourceProgresses.Where(ap => completedActivityIds.Contains(ap.ActivityId)).ToList();
+                : sourceProgresses.Where(ap => taughtActivityIds.Contains(ap.ActivityId)).ToList();
             var submissionsToCopy = fullyTaught
                 ? sourceSubmissions
-                : sourceSubmissions.Where(s => completedAssignmentIds.Contains(s.AssignmentId)).ToList();
+                : sourceSubmissions.Where(s => taughtAssignmentIds.Contains(s.AssignmentId)).ToList();
 
             var allAttempts = await _unitOfWork.ModuleEnrollments.GetAllAsync(
                 me => me.StudentId == enrollment.StudentId
@@ -688,10 +826,21 @@ public sealed class ProgramPurchaseLifecycle
         enrollment.EndedAt = null;
         await _unitOfWork.ProgramEnrollments.Update(enrollment);
 
-        if (failedModuleEnrollment.Status == EnrollmentStatus.Failed)
+        if (failedModuleEnrollment.Status is EnrollmentStatus.Failed or EnrollmentStatus.Dropped)
         {
             failedModuleEnrollment.Status = EnrollmentStatus.Active;
             await _unitOfWork.ModuleEnrollments.Update(failedModuleEnrollment);
+        }
+
+        var siblingDropped = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.ProgramEnrollmentId == enrollment.Id
+                  && me.Id != failedModuleEnrollment.Id
+                  && !me.IsDeleted
+                  && me.Status == EnrollmentStatus.Dropped);
+        foreach (var sibling in siblingDropped)
+        {
+            sibling.Status = EnrollmentStatus.Active;
+            await _unitOfWork.ModuleEnrollments.Update(sibling);
         }
 
         var seats = await _unitOfWork.ClassEnrollments.GetAllAsync(

@@ -113,12 +113,12 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
                 assignment,
                 student.Id,
                 enrollment.Id);
-            var completed = await _unitOfWork.Submissions.GetAllAsync(
-                s => s.AssignmentId == assignment.Id
-                     && s.StudentId == student.Id
-                     && !s.IsDeleted
-                     && (s.Status == SubmissionStatus.Graded || s.Status == SubmissionStatus.TurnedIn));
-            if (completed.Count < effectiveMax)
+            var completedCount = await AssessmentAttemptPolicy.CountCompletedAttemptsAsync(
+                _unitOfWork,
+                assignment.Id,
+                student.Id,
+                enrollment.Id);
+            if (completedCount < effectiveMax)
             {
                 throw ErrorHelper.BadRequest(
                     "Attempts remain on this assignment. Use a normal retry before requesting recovery.");

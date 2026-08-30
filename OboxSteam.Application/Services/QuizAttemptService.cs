@@ -68,6 +68,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
         var pendingSubmission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.AssignmentId == assignmentId
                  && s.StudentId == student.Id
+                 && s.ModuleEnrollmentId == enrollment.Id
                  && s.Status == SubmissionStatus.Pending
                  && !s.IsDeleted);
 
@@ -166,11 +167,11 @@ public sealed class QuizAttemptService : IQuizAttemptService
                 assignment.AllowShuffle);
         }
 
-        var completedAttempts = await _unitOfWork.Submissions.GetAllAsync(
-            s => s.AssignmentId == assignmentId
-                 && s.StudentId == student.Id
-                 && !s.IsDeleted
-                 && (s.Status == SubmissionStatus.Graded || s.Status == SubmissionStatus.TurnedIn));
+        var completedAttemptCount = await AssessmentAttemptPolicy.CountCompletedAttemptsAsync(
+            _unitOfWork,
+            assignmentId,
+            student.Id,
+            enrollment.Id);
 
         var now = DateTime.UtcNow;
         var submission = new Submission
@@ -180,7 +181,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
             AssignmentId = assignment!.Id,
             StudentId = student.Id,
             ModuleEnrollmentId = enrollment.Id,
-            AttemptNumber = completedAttempts.Count + 1,
+            AttemptNumber = completedAttemptCount + 1,
             Status = SubmissionStatus.Pending,
             StartedAt = now,
             ExpiresAt = assignment.TimeLimitMinutes.HasValue

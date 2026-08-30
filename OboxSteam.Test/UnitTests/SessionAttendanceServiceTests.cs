@@ -820,7 +820,7 @@ public sealed class SessionAttendanceServiceTests
             n => n.PublishAsync(
                 It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
                 It.IsAny<CancellationToken>()),
-            Times.Exactly(2));
+            Times.Once);
     }
 
     [Fact]
@@ -891,7 +891,7 @@ public sealed class SessionAttendanceServiceTests
             n => n.PublishAsync(
                 It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
                 It.IsAny<CancellationToken>()),
-            Times.Exactly(2));
+            Times.Once);
     }
 
     [Fact]

@@ -217,16 +217,20 @@ public static class ClassEnrollmentValidator
                && AppDateTime.AsUtc(enrollment.HoldExpiresAt.Value) > now;
     }
 
+    public static Task<ClassEnrollment?> GetPendingSeatHoldAsync(
+        IUnitOfWork unitOfWork,
+        Guid programEnrollmentId)
+        => unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.ProgramEnrollmentId == programEnrollmentId
+                  && ce.Status == ClassEnrollmentStatus.Pending
+                  && !ce.IsDeleted);
+
     public static async Task<ClassEnrollment?> GetValidSeatHoldAsync(
         IUnitOfWork unitOfWork,
         Guid programEnrollmentId)
     {
         var now = DateTime.UtcNow;
-        var hold = await unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
-            ce => ce.ProgramEnrollmentId == programEnrollmentId
-                  && ce.Status == ClassEnrollmentStatus.Pending
-                  && !ce.IsDeleted);
-
+        var hold = await GetPendingSeatHoldAsync(unitOfWork, programEnrollmentId);
         if (hold == null || !OccupiesSeat(hold, now))
         {
             return null;
@@ -238,11 +242,17 @@ public static class ClassEnrollmentValidator
     public static async Task ValidateClassHasCapacityAsync(
         IUnitOfWork unitOfWork,
         Guid classId,
-        int maxCapacity)
+        int maxCapacity,
+        Guid? excludeEnrollmentId = null)
     {
-        var activeEnrollmentCount = await GetSeatsTakenAsync(unitOfWork, classId);
+        var now = DateTime.UtcNow;
+        var enrollments = await unitOfWork.ClassEnrollments.GetAllAsync(
+            ce => ce.ClassId == classId && !ce.IsDeleted);
 
-        if (activeEnrollmentCount >= maxCapacity)
+        var occupiedCount = enrollments.Count(
+            ce => ce.Id != excludeEnrollmentId && OccupiesSeat(ce, now));
+
+        if (occupiedCount >= maxCapacity)
         {
             throw ErrorHelper.Conflict("Class has reached maximum capacity.");
         }

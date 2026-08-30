@@ -5,8 +5,8 @@ namespace OboxSteam.Application.Interfaces;
 public interface IRebuyClassCatalogService
 {
     /// <summary>
-    /// Open or InProgress Standard classes the current student may consider for a rebuy of
-    /// <paramref name="programId"/>, with per-module session progress and eligibility.
+    /// Open-only for first purchase and Completed retakes; Open or InProgress with stop-module
+    /// eligibility after Failed/Dropped.
     /// </summary>
     Task<RebuyClassCatalogDto> GetRebuyClassesAsync(Guid programId);
 }

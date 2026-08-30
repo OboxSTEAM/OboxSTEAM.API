@@ -81,6 +81,7 @@ public class PaymentService : IPaymentService
         var enrollment = await _programEnrollmentService.GetOrCreatePendingEnrollmentAsync(studentId, programId);
 
         var hold = await _classSeatHoldService.RequireValidHoldAsync(studentId, enrollment, classId);
+        hold = await _classSeatHoldService.PinHoldForOpenCheckoutAsync(enrollment.Id);
 
         var amount = await _programPurchaseLifecycle.ResolveCheckoutAmountAsync(program, enrollment);
 
@@ -378,6 +379,8 @@ public class PaymentService : IPaymentService
                 ?? throw ErrorHelper.BadRequest(
                     "The class seat hold has expired. Ask the student to select a class again.");
 
+            hold = await _classSeatHoldService.PinHoldForOpenCheckoutAsync(paymentRequest.ProgramEnrollmentId.Value);
+
             itemName = program.Name;
             itemDescription = BuildRichCheckoutDescription(program);
             thumbnailUrl = program.ThumbnailUrl;
@@ -665,28 +668,16 @@ public class PaymentService : IPaymentService
 
     private async Task HandlePaymentSuccess(Payment payment, string transactionId)
     {
-        if(payment.Status == PaymentStatus.Success)
-        {
-            _logger.LogInformation("[HandlePaymentSuccess] Payment {PaymentId} is already marked as Success. Skipping.", payment.Id);
-            return;
-        }
-
+        var alreadySucceeded = payment.Status == PaymentStatus.Success;
         var now = DateTime.UtcNow;
 
-        // 1. Update Payment
-        payment.Status = PaymentStatus.Success;
-        payment.TransactionId = transactionId;
-        payment.PaidAt = now;
-
-        // 2. Activate enrollment (load once)
         ProgramEnrollment? enrollment = null;
         if (payment.ProgramEnrollmentId.HasValue)
         {
             enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(payment.ProgramEnrollmentId.Value);
-            if (enrollment != null)
+            if (enrollment is { IsDeleted: true })
             {
-                enrollment.Status = EnrollmentStatus.Active;
-                enrollment.EnrolledAt = now;
+                enrollment = null;
             }
         }
 
@@ -694,84 +685,111 @@ public class PaymentService : IPaymentService
         if (payment.ModuleEnrollmentId.HasValue)
         {
             moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(payment.ModuleEnrollmentId.Value);
+        }
+
+        PaymentRequest? paymentRequest = null;
+        User? payer = null;
+        User? student = null;
+        string? programName = null;
+        string? programThumbnail = null;
+        string? moduleName = null;
+        Invoice? invoice = null;
+
+        if (!alreadySucceeded)
+        {
+            payment.Status = PaymentStatus.Success;
+            payment.TransactionId = transactionId;
+            payment.PaidAt = now;
+
+            if (enrollment != null)
+            {
+                enrollment.Status = EnrollmentStatus.Active;
+                enrollment.EnrolledAt = now;
+            }
+
             if (moduleEnrollment != null)
             {
                 moduleEnrollment.Status = EnrollmentStatus.Active;
                 moduleEnrollment.EnrolledAt = now;
             }
+
+            if (payment.ProgramEnrollmentId.HasValue)
+            {
+                paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                    pr => pr.StudentId == payment.StudentId
+                          && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
+                          && pr.Status == PaymentRequestStatus.Accepted
+                          && !pr.IsDeleted);
+            }
+            else if (payment.ModuleEnrollmentId.HasValue)
+            {
+                paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                    pr => pr.StudentId == payment.StudentId
+                          && pr.ModuleEnrollmentId == payment.ModuleEnrollmentId
+                          && pr.Status == PaymentRequestStatus.Accepted
+                          && !pr.IsDeleted);
+            }
+
+            if (paymentRequest != null)
+            {
+                paymentRequest.Status = PaymentRequestStatus.Paid;
+                paymentRequest.PaymentId = payment.Id;
+            }
+
+            payer = await _unitOfWork.Users.GetByIdAsync(payment.PaidById);
+            student = payment.PaidById != payment.StudentId
+                ? await _unitOfWork.Users.GetByIdAsync(payment.StudentId)
+                : payer;
+
+            if (enrollment != null)
+            {
+                var program = await _unitOfWork.Programs.GetByIdAsync(enrollment.ProgramId);
+                programName = program?.Name;
+                programThumbnail = program?.ThumbnailUrl;
+            }
+
+            if (moduleEnrollment != null)
+            {
+                var module = await _unitOfWork.Modules.GetByIdAsync(moduleEnrollment.ModuleId);
+                moduleName = module?.Name;
+            }
+
+            invoice = new Invoice
+            {
+                InvoiceNumber = GenerateInvoiceNumber(),
+                PaymentId = payment.Id,
+                IssuedToId = payment.PaidById,
+                Currency = payment.Currency,
+                SubTotal = payment.Amount,
+                TotalAmount = payment.Amount,
+                BillingName = payer?.FullName ?? payer?.Email ?? string.Empty,
+                BillingEmail = payer?.Email ?? string.Empty,
+                ItemDescription = programName ?? (moduleName != null ? $"Module Retake: {moduleName}" : "Module Retake")
+            };
+            await _unitOfWork.Invoices.AddAsync(invoice);
+            await _unitOfWork.SaveChangesAsync();
         }
-
-        // 3. Update PaymentRequest if parent paid
-        PaymentRequest? paymentRequest = null;
-        if (payment.ProgramEnrollmentId.HasValue)
+        else if (enrollment != null && enrollment.Status == EnrollmentStatus.PendingPayment)
         {
-            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
-                pr => pr.StudentId == payment.StudentId
-                      && pr.ProgramEnrollmentId == payment.ProgramEnrollmentId
-                      && pr.Status == PaymentRequestStatus.Accepted
-                      && !pr.IsDeleted);
+            enrollment.Status = EnrollmentStatus.Active;
+            enrollment.EnrolledAt ??= now;
+            await _unitOfWork.ProgramEnrollments.Update(enrollment);
+            await _unitOfWork.SaveChangesAsync();
         }
-        else if (payment.ModuleEnrollmentId.HasValue)
-        {
-            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
-                pr => pr.StudentId == payment.StudentId
-                      && pr.ModuleEnrollmentId == payment.ModuleEnrollmentId
-                      && pr.Status == PaymentRequestStatus.Accepted
-                      && !pr.IsDeleted);
-        }
-
-        if (paymentRequest != null)
-        {
-            paymentRequest.Status = PaymentRequestStatus.Paid;
-            paymentRequest.PaymentId = payment.Id;
-        }
-
-        // 4. Load payer and student for emails and invoice info
-        var payer = await _unitOfWork.Users.GetByIdAsync(payment.PaidById);
-        var student = payment.PaidById != payment.StudentId
-            ? await _unitOfWork.Users.GetByIdAsync(payment.StudentId)
-            : payer;
-
-        string? programName = null;
-        string? programThumbnail = null;
-        if (enrollment != null)
-        {
-            var program = await _unitOfWork.Programs.GetByIdAsync(enrollment.ProgramId);
-            programName = program?.Name;
-            programThumbnail = program?.ThumbnailUrl;
-        }
-
-        string? moduleName = null;
-        if (moduleEnrollment != null)
-        {
-            var module = await _unitOfWork.Modules.GetByIdAsync(moduleEnrollment.ModuleId);
-            moduleName = module?.Name;
-        }
-
-        // 5. Create Invoice with all details populated
-        var invoiceNumber = GenerateInvoiceNumber();
-        var invoice = new Invoice
-        {
-            InvoiceNumber = invoiceNumber,
-            PaymentId = payment.Id,
-            IssuedToId = payment.PaidById,
-            Currency = payment.Currency,
-            SubTotal = payment.Amount,
-            TotalAmount = payment.Amount,
-            BillingName = payer?.FullName ?? payer?.Email ?? string.Empty,
-            BillingEmail = payer?.Email ?? string.Empty,
-            ItemDescription = programName ?? (moduleName != null ? $"Module Retake: {moduleName}" : "Module Retake")
-        };
-        await _unitOfWork.Invoices.AddAsync(invoice);
-
-        // 6. Save all changes atomically
-        await _unitOfWork.SaveChangesAsync();
 
         if (enrollment != null)
         {
-            // Activate the seat first so credit copy can read the new class's session progress.
             await _classSeatHoldService.ActivateHoldAfterPaymentAsync(enrollment.Id);
             await _programPurchaseLifecycle.ApplyRebuyCreditsAsync(enrollment);
+        }
+
+        if (alreadySucceeded)
+        {
+            await _classRedeliveryRequestService.CompleteAfterPaymentAsync(payment.Id);
+            _logger.LogInformation(
+                "[HandlePaymentSuccess] Payment {PaymentId} already Success; fulfilled seat and credits.",
+                payment.Id);
+            return;
         }
 
         Guid? nextActivityId = null;
@@ -809,8 +827,7 @@ public class PaymentService : IPaymentService
 
         await _notificationPublisher.PublishManyAsync(successNotifications);
 
-        // 7. Send invoice email to payer
-        if (payer != null)
+        if (payer != null && invoice != null)
         {
             await _emailService.SendPaymentInvoiceEmailAsync(new InvoiceEmailDto
             {
@@ -827,7 +844,6 @@ public class PaymentService : IPaymentService
             });
         }
 
-        // 8. If parent paid, also send confirmation to student
         if (paymentRequest != null && student != null && payer?.Id != student.Id)
         {
             await _emailService.SendEnrollmentConfirmationEmailAsync(new EnrollmentConfirmationEmailDto
@@ -840,7 +856,7 @@ public class PaymentService : IPaymentService
 
         _logger.LogInformation(
             "[HandlePaymentSuccess] Payment {PaymentId} confirmed. Invoice={InvoiceNumber}. Student={StudentId}",
-            payment.Id, invoice.InvoiceNumber, payment.StudentId);
+            payment.Id, invoice!.InvoiceNumber, payment.StudentId);
 
         await _classRedeliveryRequestService.CompleteAfterPaymentAsync(payment.Id);
     }

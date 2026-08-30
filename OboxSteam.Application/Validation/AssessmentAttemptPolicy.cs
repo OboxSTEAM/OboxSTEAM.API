@@ -57,6 +57,27 @@ public static class AssessmentAttemptPolicy
         return assignment.MaxAttempts + extra;
     }
 
+    /// <summary>
+    /// Completed (Graded/TurnedIn) attempts for this assignment. When
+    /// <paramref name="moduleEnrollmentId"/> is set, only that module enrollment
+    /// counts — a rebuy ME starts from zero except for submissions copied onto it.
+    /// </summary>
+    public static async Task<int> CountCompletedAttemptsAsync(
+        IUnitOfWork unitOfWork,
+        Guid assignmentId,
+        Guid studentId,
+        Guid? moduleEnrollmentId = null)
+    {
+        var submissions = await unitOfWork.Submissions.GetAllAsync(
+            s => s.AssignmentId == assignmentId
+                 && s.StudentId == studentId
+                 && !s.IsDeleted
+                 && (s.Status == SubmissionStatus.Graded || s.Status == SubmissionStatus.TurnedIn)
+                 && (!moduleEnrollmentId.HasValue || s.ModuleEnrollmentId == moduleEnrollmentId));
+
+        return submissions.Count;
+    }
+
     public static async Task<(DateTime? PersonalDueDate, DateTime? PersonalAvailableUntil)> GetPersonalWindowAsync(
         IUnitOfWork unitOfWork,
         Guid studentId,

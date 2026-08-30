@@ -172,12 +172,13 @@ public class ProgramController : ControllerBase
     [HttpGet("{id:guid}/rebuy-classes")]
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
-        Summary = "List classes eligible for a program rebuy",
-        Description = "For the current student with a Failed/Dropped/Completed purchase on this program, "
-            + "returns Open and InProgress Standard classes that still have seats, each with per-module "
-            + "session progress (NotStarted/InProgress/Completed) and isEligible. Join is allowed when the "
-            + "class has not started the stop module or any later module. First-time checkout still uses "
-            + "open-classes (Open only).")]
+        Summary = "List classes for first purchase or rebuy",
+        Description = "Student picker for this program. First purchase and a Completed (100%) source "
+            + "return Open Standard classes with seats (same join rule as open-classes). Failed or "
+            + "Dropped sources return Open and InProgress Standard classes with per-module session "
+            + "progress and isEligible (stop-module / source-class rules). IsRebuy is true only for "
+            + "Failed/Dropped. Active enrollment returns 409. Public browse of recruiting cohorts "
+            + "still uses GET .../open-classes.")]
     [ProducesResponseType(typeof(ApiResult<RebuyClassCatalogDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

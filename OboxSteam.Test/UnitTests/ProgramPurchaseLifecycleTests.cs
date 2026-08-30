@@ -87,7 +87,10 @@ public sealed class ProgramPurchaseLifecycleTests
 
         _notificationPublisher.Verify(
             n => n.PublishAsync(
-                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
+                It.Is<NotificationCommand>(c =>
+                    c.Type == NotificationType.ModuleFailed
+                    && c.Body != null
+                    && c.Body.Contains("vắng quá số buổi")),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -104,6 +107,116 @@ public sealed class ProgramPurchaseLifecycleTests
         Assert.Equal(ProgramPurchaseEndReason.Withdraw, enrollment.EndReason);
         Assert.Null(enrollment.EndedModuleId);
         Assert.Equal(_now, enrollment.EndedAt);
+
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ProgramWithdrawn),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ModuleFailed),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CloseAsync_AcademicFail_FailsEndedModule_AndDropsOtherOpenModules()
+    {
+        var enrollment = SeedEnrollment();
+        var otherModuleId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        _db.Modules.Seed(new Module
+        {
+            Id = _moduleId,
+            ProgramId = _programId,
+            Code = "MOD-END",
+            Name = "Lab",
+            IsDeleted = false,
+        });
+        var endedMe = new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = _moduleId,
+            ProgramEnrollmentId = _enrollmentId,
+            Status = EnrollmentStatus.Active,
+            AttemptNumber = 1,
+            IsDeleted = false,
+        };
+        var otherMe = new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = otherModuleId,
+            ProgramEnrollmentId = _enrollmentId,
+            Status = EnrollmentStatus.Active,
+            AttemptNumber = 1,
+            IsDeleted = false,
+        };
+        var completedMe = new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = Guid.NewGuid(),
+            ProgramEnrollmentId = _enrollmentId,
+            Status = EnrollmentStatus.Completed,
+            AttemptNumber = 1,
+            IsDeleted = false,
+        };
+        _db.ModuleEnrollments.Seed(endedMe);
+        _db.ModuleEnrollments.Seed(otherMe);
+        _db.ModuleEnrollments.Seed(completedMe);
+        var sut = CreateSut();
+
+        await sut.CloseAsync(enrollment, ProgramPurchaseEndReason.AcademicFail, _moduleId);
+
+        Assert.Equal(EnrollmentStatus.Failed, endedMe.Status);
+        Assert.Equal(EnrollmentStatus.Dropped, otherMe.Status);
+        Assert.Equal(EnrollmentStatus.Completed, completedMe.Status);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c =>
+                    c.Type == NotificationType.ModuleFailed
+                    && c.Body != null
+                    && c.Body.Contains("hết lượt làm bài")
+                    && !c.Body.Contains("vắng quá số buổi")),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CloseAsync_Withdraw_DropsOpenModules_KeepsCompleted()
+    {
+        var enrollment = SeedEnrollment();
+        var openMe = new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = _moduleId,
+            ProgramEnrollmentId = _enrollmentId,
+            Status = EnrollmentStatus.Active,
+            AttemptNumber = 1,
+            IsDeleted = false,
+        };
+        var completedMe = new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = Guid.NewGuid(),
+            ProgramEnrollmentId = _enrollmentId,
+            Status = EnrollmentStatus.Completed,
+            AttemptNumber = 1,
+            IsDeleted = false,
+        };
+        _db.ModuleEnrollments.Seed(openMe);
+        _db.ModuleEnrollments.Seed(completedMe);
+        var sut = CreateSut();
+
+        await sut.CloseAsync(enrollment, ProgramPurchaseEndReason.Withdraw, endedModuleId: null);
+
+        Assert.Equal(EnrollmentStatus.Dropped, openMe.Status);
+        Assert.Equal(EnrollmentStatus.Completed, completedMe.Status);
+        Assert.Equal(EnrollmentStatus.Dropped, enrollment.Status);
     }
 
     [Fact]
@@ -259,6 +372,9 @@ public sealed class ProgramPurchaseLifecycleTests
         Assert.Equal(EnrollmentStatus.Failed, enrollment.Status);
         Assert.Equal(ProgramPurchaseEndReason.AcademicFail, enrollment.EndReason);
         Assert.Equal(_moduleId, enrollment.EndedModuleId);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId).Status);
     }
 
     [Fact]
@@ -507,6 +623,52 @@ public sealed class ProgramPurchaseLifecycleTests
         await sut.ValidateRebuyClassEligibilityAsync(pending, Guid.NewGuid());
     }
 
+    [Fact]
+    public async Task ValidateRebuyClassEligibility_Throws_WhenClassIsSourceClass()
+    {
+        var classId = Guid.NewGuid();
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-1));
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = source.Id,
+            Status = ClassEnrollmentStatus.Withdrawn,
+            IsDeleted = false,
+        });
+        var pending = SeedEnrollment(EnrollmentStatus.PendingPayment);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.ValidateRebuyClassEligibilityAsync(pending, classId));
+        Assert.Equal(ProgramPurchaseLifecycle.RebuySameClassMessage, ex.Message);
+    }
+
+    [Fact]
+    public async Task ValidateRebuyClassEligibility_CompletedSource_StillBlocksSourceClass()
+    {
+        var classId = Guid.NewGuid();
+        var source = SeedClosedSource(EnrollmentStatus.Completed, completedAt: _now.AddDays(-1));
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = source.Id,
+            Status = ClassEnrollmentStatus.Completed,
+            IsDeleted = false,
+        });
+        var pending = SeedEnrollment(EnrollmentStatus.PendingPayment);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.ValidateRebuyClassEligibilityAsync(pending, classId));
+        Assert.Equal(ProgramPurchaseLifecycle.RebuySameClassMessage, ex.Message);
+    }
+
     private Module SeedModule(string code, int order)
     {
         var module = new Module
@@ -538,15 +700,59 @@ public sealed class ProgramPurchaseLifecycleTests
 
     private void SeedSession(Guid classId, Guid moduleId, ClassSessionStatus status)
     {
+        var (start, end) = DefaultSessionWindow(status);
         _db.ClassSessions.Seed(new ClassSession
         {
             Id = Guid.NewGuid(),
             ClassId = classId,
             ModuleId = moduleId,
             Title = "Session",
+            StartTime = start,
+            EndTime = end,
             Status = status,
             IsDeleted = false,
         });
+    }
+
+    private void SeedSessionAt(
+        Guid classId,
+        Guid moduleId,
+        ClassSessionStatus status,
+        DateTime start,
+        DateTime end,
+        Guid? activityId = null,
+        Guid? assignmentId = null)
+    {
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classId,
+            ModuleId = moduleId,
+            ActivityId = activityId,
+            AssignmentId = assignmentId,
+            Title = "Session",
+            StartTime = start,
+            EndTime = end,
+            Status = status,
+            IsDeleted = false,
+        });
+    }
+
+    private (DateTime Start, DateTime End) DefaultSessionWindow(ClassSessionStatus status)
+    {
+        if (status == ClassSessionStatus.Completed)
+        {
+            var start = _now.AddDays(-2);
+            return (start, start.AddHours(2));
+        }
+
+        if (status == ClassSessionStatus.InProgress)
+        {
+            return (_now.AddHours(-1), _now.AddHours(1));
+        }
+
+        var future = _now.AddDays(7);
+        return (future, future.AddHours(2));
     }
 
     /// <summary>Seeds the class seat the rebuy student holds on the new class.</summary>
@@ -605,6 +811,7 @@ public sealed class ProgramPurchaseLifecycleTests
         Guid? activityId = null,
         Guid? assignmentId = null)
     {
+        var (start, end) = DefaultSessionWindow(status);
         _db.ClassSessions.Seed(new ClassSession
         {
             Id = Guid.NewGuid(),
@@ -613,6 +820,8 @@ public sealed class ProgramPurchaseLifecycleTests
             ActivityId = activityId,
             AssignmentId = assignmentId,
             Title = "Session",
+            StartTime = start,
+            EndTime = end,
             Status = status,
             IsDeleted = false,
         });
@@ -968,6 +1177,110 @@ public sealed class ProgramPurchaseLifecycleTests
     }
 
     [Fact]
+    public async Task ApplyRebuyCredits_CopiesWholeModule_WhenScheduledSessionsAlreadyEnded()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var module = SeedModule("MOD-A", 1);
+        var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var activityId = Guid.NewGuid();
+        SeedCurriculumActivity(module.Id, activityId, "ACT-A");
+        _db.ActivityProgresses.Seed(new ActivityProgress
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ActivityId = activityId,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            ActivityStatus = ActivityStatus.Done,
+            IsCompleted = true,
+            IsDeleted = false,
+        });
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id);
+        SeedSessionAt(
+            newClassId,
+            module.Id,
+            ClassSessionStatus.Scheduled,
+            _now.AddDays(-3),
+            _now.AddDays(-3).AddHours(2),
+            activityId);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        var copied = Assert.Single(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == pending.Id);
+        Assert.Equal(EnrollmentStatus.Completed, copied.Status);
+        Assert.Contains(
+            _db.ActivityProgresses.Items,
+            ap => ap.ModuleEnrollmentId == copied.Id && ap.ActivityId == activityId);
+    }
+
+    [Fact]
+    public async Task ApplyRebuyCredits_PartialModule_CopiesPastScheduledAndSkipsFuture()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
+        var module = SeedModule("MOD-A", 1);
+        var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var doneActivityId = Guid.NewGuid();
+        var pendingActivityId = Guid.NewGuid();
+        SeedCurriculumActivity(module.Id, doneActivityId, "ACT-DONE");
+        SeedCurriculumActivity(module.Id, pendingActivityId, "ACT-TODO");
+        _db.ActivityProgresses.Seed(new ActivityProgress
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ActivityId = doneActivityId,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            ActivityStatus = ActivityStatus.Done,
+            IsCompleted = true,
+            IsDeleted = false,
+        });
+        _db.ActivityProgresses.Seed(new ActivityProgress
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ActivityId = pendingActivityId,
+            ModuleEnrollmentId = sourceModuleEnrollment.Id,
+            ActivityStatus = ActivityStatus.Done,
+            IsCompleted = true,
+            IsDeleted = false,
+        });
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id);
+        SeedSessionAt(
+            newClassId,
+            module.Id,
+            ClassSessionStatus.Scheduled,
+            _now.AddDays(-2),
+            _now.AddDays(-2).AddHours(2),
+            doneActivityId);
+        SeedSessionAt(
+            newClassId,
+            module.Id,
+            ClassSessionStatus.Scheduled,
+            _now.AddDays(5),
+            _now.AddDays(5).AddHours(2),
+            pendingActivityId);
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        var copied = Assert.Single(
+            _db.ModuleEnrollments.Items,
+            me => me.ProgramEnrollmentId == pending.Id);
+        Assert.Equal(EnrollmentStatus.Active, copied.Status);
+        Assert.Contains(
+            _db.ActivityProgresses.Items,
+            ap => ap.ModuleEnrollmentId == copied.Id && ap.ActivityId == doneActivityId);
+        Assert.DoesNotContain(
+            _db.ActivityProgresses.Items,
+            ap => ap.ModuleEnrollmentId == copied.Id && ap.ActivityId == pendingActivityId);
+    }
+
+    [Fact]
     public async Task ApplyRebuyCredits_PartialModule_CopiesOnlyCompletedActivitiesAndStaysActive()
     {
         var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
@@ -1186,6 +1499,48 @@ public sealed class ProgramPurchaseLifecycleTests
 
         Assert.Equal(50m, pending.ProgressPercent);
         Assert.Equal(EnrollmentStatus.Active, pending.Status);
+    }
+
+    [Fact]
+    public void SessionAlreadyTaught_UsesCompletedStatusOrPastEndTime()
+    {
+        var now = _now;
+        var completed = new ClassSession
+        {
+            Status = ClassSessionStatus.Completed,
+            StartTime = now.AddDays(1),
+            EndTime = now.AddDays(1).AddHours(2),
+        };
+        var pastScheduled = new ClassSession
+        {
+            Status = ClassSessionStatus.Scheduled,
+            StartTime = now.AddHours(-3),
+            EndTime = now.AddHours(-1),
+        };
+        var futureScheduled = new ClassSession
+        {
+            Status = ClassSessionStatus.Scheduled,
+            StartTime = now.AddDays(2),
+            EndTime = now.AddDays(2).AddHours(2),
+        };
+        var live = new ClassSession
+        {
+            Status = ClassSessionStatus.InProgress,
+            StartTime = now.AddHours(-1),
+            EndTime = now.AddHours(1),
+        };
+        var cancelled = new ClassSession
+        {
+            Status = ClassSessionStatus.Cancelled,
+            StartTime = now.AddHours(-3),
+            EndTime = now.AddHours(-1),
+        };
+
+        Assert.True(ProgramPurchaseLifecycle.SessionAlreadyTaught(completed, now));
+        Assert.True(ProgramPurchaseLifecycle.SessionAlreadyTaught(pastScheduled, now));
+        Assert.False(ProgramPurchaseLifecycle.SessionAlreadyTaught(futureScheduled, now));
+        Assert.False(ProgramPurchaseLifecycle.SessionAlreadyTaught(live, now));
+        Assert.False(ProgramPurchaseLifecycle.SessionAlreadyTaught(cancelled, now));
     }
 
     [Fact]

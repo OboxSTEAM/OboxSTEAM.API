@@ -96,7 +96,9 @@ service emits it.
 | `ParentLinkApproved`             | Student via `ForUser`                                        | `ParentService`                             |
 | `ProgramPendingPayment`          | `ForStudentAndParents`                                       | `ProgramEnrollmentService`                  |
 | `ProgramActivated`               | `ForStudentAndParents`                                       | `PaymentService`                            |
+| `ProgramWithdrawn`               | `ForStudentAndParents`                                       | `ProgramPurchaseLifecycle`                  |
 | `ModuleCompleted`                | `ForStudentAndParents`                                       | `ActivityProgressService`                   |
+| `ModuleFailed`                   | `ForStudentAndParents`                                       | `ProgramPurchaseLifecycle` (academic fail or attendance close) |
 | `ModuleUnlocked`                 | `ForStudentAndParents`                                       | `ActivityProgressService`                   |
 | `ModuleRetakePendingPayment`     | `ForStudentAndParents`                                       | `ModuleEnrollmentService`                   |
 | `ModuleRetakeInitiated`          | `ForStudentAndParents`                                       | `ModuleEnrollmentService`                   |

@@ -10,8 +10,8 @@ using OboxSteam.Domain.Interfaces;
 namespace OboxSteam.Application.Services;
 
 /// <summary>
-/// Student-facing rebuy class picker: Open or InProgress Standard classes with seats, module
-/// session progress, and stop-module eligibility for the latest closed purchase.
+/// Student class picker for checkout: Open-only for first purchase and Completed retakes;
+/// Open or InProgress with stop-module eligibility after Failed/Dropped.
 /// </summary>
 public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
 {
@@ -57,27 +57,31 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
         }
 
         var source = ProgramPurchaseLifecycle.FindRebuySource(enrollments);
-        if (source == null)
-        {
-            throw ErrorHelper.BadRequest("No closed program enrollment to rebuy.");
-        }
+        var isRebuy = ProgramPurchaseLifecycle.AllowsInProgressClassJoin(source);
 
         await ClassSeatHoldHelper.ReleaseExpiredHoldsAsync(_unitOfWork);
 
-        var stopModuleId = await _programPurchaseLifecycle.ResolveStopModuleIdAsync(source);
         Module? stopModule = null;
-        if (stopModuleId.HasValue)
+        if (isRebuy)
         {
-            stopModule = await _unitOfWork.Modules.GetByIdAsync(stopModuleId.Value);
-            if (stopModule != null && stopModule.IsDeleted)
+            var stopModuleId = await _programPurchaseLifecycle.ResolveStopModuleIdAsync(source!);
+            if (stopModuleId.HasValue)
             {
-                stopModule = null;
+                stopModule = await _unitOfWork.Modules.GetByIdAsync(stopModuleId.Value);
+                if (stopModule != null && stopModule.IsDeleted)
+                {
+                    stopModule = null;
+                }
             }
         }
 
         var now = _currentTime.GetCurrentTime();
-        var withinWindow = ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, now);
+        var withinWindow = source != null && ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, now);
         var checkoutAmount = ProgramPurchaseLifecycle.ResolveCheckoutAmount(program!, source, now);
+
+        var sourceClassIds = source == null
+            ? []
+            : await _programPurchaseLifecycle.GetSourceOccupiedClassIdsAsync(source.Id);
 
         var modules = (await _unitOfWork.Modules.GetAllAsync(
                 m => m.ProgramId == programId && !m.IsDeleted))
@@ -86,9 +90,10 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
 
         var openOrRunningClasses = await _unitOfWork.Classes.GetAllAsync(
             c => c.ProgramId == programId
-                 && (c.Status == ClassStatus.Open || c.Status == ClassStatus.InProgress)
                  && c.Kind == ClassKind.Standard
-                 && !c.IsDeleted);
+                 && !c.IsDeleted
+                 && (c.Status == ClassStatus.Open
+                     || (isRebuy && c.Status == ClassStatus.InProgress)));
 
         var classIds = openOrRunningClasses.Select(c => c.Id).ToList();
         var sessions = classIds.Count == 0
@@ -126,11 +131,14 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
                 .Select(module => MapModuleProgress(module, classSessions, stopModule))
                 .ToList();
 
-            var blocksRebuy = stopModule != null
-                && ProgramPurchaseLifecycle.ClassBlocksRebuy(
-                    modules,
-                    classSessions,
-                    stopModule.ModuleOrder);
+            var isSourceClass = sourceClassIds.Contains(openClass.Id);
+            var blocksRebuy = isSourceClass
+                || (isRebuy
+                    && stopModule != null
+                    && ProgramPurchaseLifecycle.ClassBlocksRebuy(
+                        modules,
+                        classSessions,
+                        stopModule.ModuleOrder));
 
             string? mentorName = null;
             if (openClass.MentorId.HasValue
@@ -154,17 +162,20 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
                 SeatsRemaining = seatsRemaining,
                 ScheduleSummary = openClass.ScheduleSummary,
                 IsEligible = !blocksRebuy,
-                IneligibleReason = blocksRebuy
-                    ? ProgramPurchaseLifecycle.RebuyClassIneligibleMessage
-                    : null,
+                IneligibleReason = isSourceClass
+                    ? ProgramPurchaseLifecycle.RebuySameClassMessage
+                    : blocksRebuy
+                        ? ProgramPurchaseLifecycle.RebuyClassIneligibleMessage
+                        : null,
                 Modules = moduleProgress,
             });
         }
 
         _logger.LogInformation(
-            "[GetRebuyClassesAsync] Student {StudentId} program {ProgramId}: {Eligible}/{Total} eligible open class(es), stop={StopModuleCode}.",
+            "[GetRebuyClassesAsync] Student {StudentId} program {ProgramId}: rebuy={IsRebuy}, {Eligible}/{Total} eligible class(es), stop={StopModuleCode}.",
             student.Id,
             programId,
+            isRebuy,
             classes.Count(c => c.IsEligible),
             classes.Count,
             stopModule?.Code);
@@ -172,9 +183,10 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
         return new RebuyClassCatalogDto
         {
             ProgramId = programId,
-            SourceProgramEnrollmentId = source.Id,
-            SourceStatus = source.Status,
-            SourceEndReason = source.EndReason,
+            IsRebuy = isRebuy,
+            SourceProgramEnrollmentId = source?.Id,
+            SourceStatus = source?.Status,
+            SourceEndReason = source?.EndReason,
             StopModuleId = stopModule?.Id,
             StopModuleCode = stopModule?.Code,
             StopModuleName = stopModule?.Name,

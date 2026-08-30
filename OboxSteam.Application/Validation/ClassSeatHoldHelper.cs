@@ -31,6 +31,11 @@ public static class ClassSeatHoldHelper
 
         foreach (var hold in expiredHolds)
         {
+            if (await ShouldRetainExpiredHoldAsync(unitOfWork, hold.ProgramEnrollmentId))
+            {
+                continue;
+            }
+
             programEnrollmentIds.Add(hold.ProgramEnrollmentId);
             hold.Status = ClassEnrollmentStatus.Withdrawn;
             hold.HoldExpiresAt = null;
@@ -41,6 +46,11 @@ public static class ClassSeatHoldHelper
             {
                 affected.Add((hold.ClassId, classEntity.ProgramId));
             }
+        }
+
+        if (programEnrollmentIds.Count == 0)
+        {
+            return Array.Empty<(Guid, Guid)>();
         }
 
         await unitOfWork.SaveChangesAsync();
@@ -55,5 +65,37 @@ public static class ClassSeatHoldHelper
         }
 
         return affected;
+    }
+
+    /// <summary>
+    /// Keep a timed-out Pending hold when payment already succeeded (fulfillment still
+    /// needs the row) or a Stripe checkout is still open for this enrollment.
+    /// </summary>
+    private static async Task<bool> ShouldRetainExpiredHoldAsync(
+        IUnitOfWork unitOfWork,
+        Guid programEnrollmentId)
+    {
+        var enrollment = await unitOfWork.ProgramEnrollments.GetByIdAsync(programEnrollmentId);
+        if (enrollment == null || enrollment.IsDeleted)
+        {
+            return false;
+        }
+
+        if (enrollment.Status == EnrollmentStatus.Active)
+        {
+            return true;
+        }
+
+        if (enrollment.Status != EnrollmentStatus.PendingPayment)
+        {
+            return false;
+        }
+
+        var pendingPayments = await unitOfWork.Payments.GetAllAsync(
+            p => p.ProgramEnrollmentId == programEnrollmentId
+                 && p.Status == PaymentStatus.Pending
+                 && !p.IsDeleted);
+
+        return pendingPayments.Count > 0;
     }
 }

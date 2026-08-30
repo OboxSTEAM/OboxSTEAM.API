@@ -19,6 +19,7 @@ public enum NotificationType
     // Enrollment
     ProgramPendingPayment,
     ProgramActivated,
+    ProgramWithdrawn,
     ModuleCompleted,
     ModuleFailed,
     ModuleUnlocked,

@@ -98,31 +98,36 @@ public static class QuizAttemptValidator
         Guid studentId,
         Assignment assignment)
     {
-        var activeEnrollment = await unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+        var activeEnrollments = await unitOfWork.ModuleEnrollments.GetAllAsync(
             me => me.StudentId == studentId
                   && me.ModuleId == assignment.ModuleId
                   && me.Status == EnrollmentStatus.Active
                   && !me.IsDeleted);
 
-        if (activeEnrollment == null)
+        foreach (var candidate in activeEnrollments.OrderByDescending(me => me.AttemptNumber))
         {
-            throw ErrorHelper.Forbidden(
-                "You must have an active module enrollment to access this assignment.");
-        }
+            if (!candidate.ProgramEnrollmentId.HasValue)
+            {
+                return candidate;
+            }
 
-        if (activeEnrollment.ProgramEnrollmentId.HasValue)
-        {
             var programEnrollment = await unitOfWork.ProgramEnrollments.GetByIdAsync(
-                activeEnrollment.ProgramEnrollmentId.Value);
+                candidate.ProgramEnrollmentId.Value);
             if (programEnrollment != null
                 && !programEnrollment.IsDeleted
-                && programEnrollment.Status != EnrollmentStatus.Active)
+                && programEnrollment.Status == EnrollmentStatus.Active)
             {
-                throw ErrorHelper.Forbidden(EnrollmentNotActiveMessage);
+                return candidate;
             }
         }
 
-        return activeEnrollment;
+        if (activeEnrollments.Count > 0)
+        {
+            throw ErrorHelper.Forbidden(EnrollmentNotActiveMessage);
+        }
+
+        throw ErrorHelper.Forbidden(
+            "You must have an active module enrollment to access this assignment.");
     }
 
     /// <summary>
@@ -235,13 +240,13 @@ public static class QuizAttemptValidator
             return;
         }
 
-        var completedAttempts = await unitOfWork.Submissions.GetAllAsync(
-            s => s.AssignmentId == assignment.Id
-                 && s.StudentId == studentId
-                 && !s.IsDeleted
-                 && (s.Status == SubmissionStatus.Graded || s.Status == SubmissionStatus.TurnedIn));
+        var completedAttempts = await AssessmentAttemptPolicy.CountCompletedAttemptsAsync(
+            unitOfWork,
+            assignment.Id,
+            studentId,
+            moduleEnrollmentId);
 
-        if (completedAttempts.Count >= effectiveMax)
+        if (completedAttempts >= effectiveMax)
         {
             throw ErrorHelper.Conflict(
                 $"Maximum number of attempts ({effectiveMax}) has been reached for this assignment.");

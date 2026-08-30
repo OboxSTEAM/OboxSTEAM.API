@@ -145,6 +145,31 @@ public static class NotificationCatalog
             entityId: programEnrollmentId,
             tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
+    public static NotificationCommand ProgramWithdrawn(
+        Guid studentId,
+        Guid programId,
+        Guid programEnrollmentId,
+        string? programName = null,
+        string? studentName = null)
+        => StudentAndParent(
+            NotificationType.ProgramWithdrawn,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Đã rút khỏi chương trình",
+            string.IsNullOrWhiteSpace(programName)
+                ? "Bạn đã rút khỏi chương trình. Ghi danh đã đóng. Muốn học tiếp thì mua lại."
+                : "Bạn đã rút khỏi chương trình \"{programName}\". Ghi danh đã đóng. Muốn học tiếp thì mua lại.",
+            string.IsNullOrWhiteSpace(programName)
+                ? "Con bạn {studentName} đã rút khỏi chương trình. Ghi danh đã đóng."
+                : "Con bạn {studentName} đã rút khỏi chương trình \"{programName}\". Ghi danh đã đóng.",
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
+            entityType: "ProgramEnrollment",
+            entityId: programEnrollmentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
+
     public static NotificationCommand ModuleCompleted(
         Guid studentId,
         Guid moduleId,
@@ -190,17 +215,31 @@ public static class NotificationCatalog
         Guid? programEnrollmentId = null,
         Guid? assignmentId = null,
         string? studentName = null,
-        string? programName = null)
-        => StudentAndParent(
+        string? programName = null,
+        ProgramPurchaseEndReason reason = ProgramPurchaseEndReason.Attendance)
+    {
+        var academic = reason == ProgramPurchaseEndReason.AcademicFail;
+        var studentBody = academic
+            ? string.IsNullOrWhiteSpace(moduleName)
+                ? "Một học phần không đạt vì đã hết lượt làm bài và hết yêu cầu phúc khảo. Ghi danh chương trình đã đóng. Bạn cần mua lại để học tiếp."
+                : "Học phần \"{moduleName}\" không đạt vì đã hết lượt làm bài và hết yêu cầu phúc khảo. Ghi danh chương trình đã đóng. Bạn cần mua lại để học tiếp."
+            : string.IsNullOrWhiteSpace(moduleName)
+                ? "Một lần học phần bị đánh dấu không đạt do vắng quá số buổi cho phép. Bạn cần mua lại để học tiếp."
+                : "Học phần \"{moduleName}\" bị đánh dấu không đạt do vắng quá số buổi cho phép. Bạn cần mua lại để học tiếp.";
+        var parentBody = academic
+            ? string.IsNullOrWhiteSpace(moduleName)
+                ? "Một học phần của con bạn {studentName} không đạt vì đã hết lượt làm bài và hết yêu cầu phúc khảo. Ghi danh đã đóng."
+                : "Học phần \"{moduleName}\" của con bạn {studentName} không đạt vì đã hết lượt làm bài và hết yêu cầu phúc khảo. Ghi danh đã đóng."
+            : string.IsNullOrWhiteSpace(moduleName)
+                ? "Lần học phần của con bạn {studentName} bị đánh dấu không đạt do vắng quá số buổi cho phép. Cần mua lại để học tiếp."
+                : "Học phần \"{moduleName}\" của con bạn {studentName} bị đánh dấu không đạt do vắng quá số buổi cho phép. Cần mua lại để học tiếp.";
+
+        return StudentAndParent(
             NotificationType.ModuleFailed,
             NotificationAudience.ForStudentAndParents(studentId),
             "Học phần không đạt",
-            string.IsNullOrWhiteSpace(moduleName)
-                ? "Một lần học phần bị đánh dấu không đạt do vắng quá số buổi cho phép. Bạn cần học lại."
-                : "Học phần \"{moduleName}\" bị đánh dấu không đạt do vắng quá số buổi cho phép. Bạn cần học lại.",
-            string.IsNullOrWhiteSpace(moduleName)
-                ? "Lần học phần của con bạn {studentName} bị đánh dấu không đạt do vắng quá số buổi cho phép. Cần học lại."
-                : "Học phần \"{moduleName}\" của con bạn {studentName} bị đánh dấu không đạt do vắng quá số buổi cho phép. Cần học lại.",
+            studentBody,
+            parentBody,
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -215,6 +254,7 @@ public static class NotificationCatalog
                 studentName: studentName,
                 programName: programName,
                 moduleName: moduleName));
+    }
 
     public static NotificationCommand ModuleUnlocked(
         Guid studentId,

@@ -45,24 +45,31 @@ fee and joining a new class whose progress has not reached the failed module.
 3. **Attendance**: the existing >=20% absence fail additionally closes the
    purchase with `EndReason = Attendance`.
 4. **Withdraw**: a self-service endpoint closes the purchase with
-   `EndReason = Withdraw` and `EndedModuleId = null`; no module is marked
-   failed.
+   `EndReason = Withdraw` and `EndedModuleId = null`. Open module enrollments
+   become `Dropped`; completed modules stay `Completed`.
 5. Closing withdraws all Active/Pending class seats of the enrollment
-   immediately (the student leaves the class at once).
+   immediately (the student leaves the class at once) and terminals every
+   open `ModuleEnrollment` (ended module `Failed` on AcademicFail/Attendance;
+   other Active/Deferred rows `Dropped`).
 6. **Rebuy**: a new `PendingPayment` enrollment is created and linked via
    `SourceProgramEnrollmentId`. The unique index on `(StudentId, ProgramId)`
    is relaxed to block only concurrent `PendingPayment`/`Active` rows. Eligible
    classes are `Open` or `InProgress` `Standard` classes of the same program
    that have not started the module the student stopped at, nor any later
    module in `ModuleOrder` (no session of those modules `InProgress`/`Completed`),
-   with seats available and no schedule conflict; brand-new classes qualify.
-   First-time checkout still requires `Open` only. For `Failed` sources the
+   with seats available, no schedule conflict, and not the class the student
+   already occupied on the source purchase. Brand-new classes qualify.
+   First-time checkout and a `Completed` (100%) retake require `Open` only.
+   For `Failed` sources the
    stop module is `EndedModuleId`; for `Dropped` sources it is the first
    not-`Completed` module in `ModuleOrder`. `Completed` does not block rebuy
-   either: it links as the source but carries pricing benefit only (item 9).
+   either: it links as the source but carries pricing benefit only (item 9)
+   and the class list is the same Open catalog as a first purchase.
    The "class has started module" check is re-implemented in the new lifecycle
    service - the legacy redelivery service is not reused. Students pick from
-   `GET /api/programs/{id}/rebuy-classes`.
+   `GET /api/programs/{id}/rebuy-classes`, which returns Open-only when there is
+   no failed/dropped source (`IsRebuy = false`) and the fail/drop catalog when
+   there is (`IsRebuy = true`).
 7. **Retake fee** = `Program.RetakeFee` (new nullable field) falling back to
    `Program.Price` when null. Retake pricing applies only inside the rebuy
    window (item 8); outside the window the rebuy bills full `Program.Price`.
@@ -74,25 +81,26 @@ fee and joining a new class whose progress has not reached the failed module.
    progress copy. The window applies equally to `Failed` and `Dropped` source
    enrollments.
 9. **On payment success**: inside the rebuy window, credit copy is scoped to
-   what the **new class** has already taught. A module with no non-cancelled
-   sessions on that class (self-paced content, or the class has not scheduled
-   it) is copied whole. A module whose every non-cancelled session is
-   `Completed` is copied whole. A module whose sessions are only `Scheduled`
-   is not copied — the student relearns it with the new class. A module the
-   class is part-way through copies only the `ActivityProgress` rows and
-   `Graded` submissions whose activity/assignment already has a `Completed`
-   session; the copied enrollment stays `Active` until the student finishes
-   the rest. Copied enrollments use the next global `AttemptNumber` per
-   (student, module). After copy, module and program `ProgressPercent` are
-   recalculated with the same unit formula as live learning (done activities
-   + passed required assignments). Quiz answers, evidence rows, and
-   non-graded submissions are not copied. Failed and in-progress modules are
-   not copied. Outside the window nothing is copied. A `Completed` source
-   never copies progress — its rebuy benefit is retake pricing only. The
-   student joins exactly one new `Standard` class. No Remedial class is
-   created. Rebuy does not reset assignment `MaxAttempts` or the recovery
-   cap (a student who already exhausted `MaxAttempts=1` plus the recovery
-   cap still cannot start that assignment on the new purchase).
+   what the **new class** has already taught by wall-clock and session status.
+   A session counts as taught when it is `Completed` or its `EndTime` is at or
+   before now (the class already passed that slot even if the row is still
+   `Scheduled`). A module with no non-cancelled sessions (self-paced /
+   unscheduled) is copied whole. A module whose every non-cancelled session is
+   already taught is copied whole. Future sessions are not copied — the student
+   relearns those with the new class. A part-taught module copies only the
+   `ActivityProgress` rows and `Graded` submissions whose activity/assignment
+   the class has already taught; the copied enrollment stays `Active` until the
+   student finishes the rest. Copied enrollments use the next global
+   `AttemptNumber` per (student, module). After copy, module and program
+   `ProgressPercent` are recalculated with the live unit formula. Quiz answers,
+   evidence rows, and non-graded submissions are not copied. Failed and
+   in-progress modules are not copied. Outside the window nothing is copied.
+   A `Completed` source never copies progress — its rebuy benefit is retake
+   pricing only. The student joins exactly one new `Standard` class (never the
+   class they left). No Remedial class is created. Quiz / assignment /
+   recovery attempt counts are scoped to the new `ModuleEnrollment`, so a
+   rebuy starts a fresh attempt budget except for submissions copied onto
+   that enrollment.
 10. `Failed`/`Dropped` enrollments keep read-only curriculum access; mutations
     still require `Active`. Reads (curriculum tree, mind map, activity detail)
     block only `PendingPayment`. Student mutations are blocked on terminal
@@ -157,5 +165,4 @@ Tradeoffs:
 ## Follow-Up
 
 - Execution plan: `docs/plans/completed/fail-rebuy-repurchase.md`.
-- Later slice: legacy redelivery cleanup, FE wiring, assignment attempt reset
-  on rebuy (currently `MaxAttempts` / recovery cap are not reset).
+- Later slice: legacy redelivery cleanup, FE wiring.
