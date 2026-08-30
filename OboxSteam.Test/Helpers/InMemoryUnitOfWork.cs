@@ -41,6 +41,11 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<Expert> Experts { get; } = new();
     public InMemoryRepository<ExpertDegree> ExpertDegrees { get; } = new();
     public InMemoryRepository<ExpertPublication> ExpertPublications { get; } = new();
+    public InMemoryRepository<ProgramFramework> ProgramFrameworks { get; } = new();
+    public InMemoryRepository<FrameworkRubricCriterion> FrameworkRubricCriteria { get; } = new();
+    public InMemoryRepository<CurriculumReview> CurriculumReviews { get; } = new();
+    public InMemoryRepository<ReviewCriterionScore> ReviewCriterionScores { get; } = new();
+    public InMemoryRepository<ClassSessionExpert> ClassSessionExperts { get; } = new();
     public InMemoryRepository<Certificate> Certificates { get; } = new();
     public InMemoryRepository<MediaAsset> MediaAssets { get; } = new();
     public InMemoryRepository<MediaTag> MediaTags { get; } = new();
@@ -105,6 +110,11 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<Expert> IUnitOfWork.Experts => Experts;
     IGenericRepository<ExpertDegree> IUnitOfWork.ExpertDegrees => ExpertDegrees;
     IGenericRepository<ExpertPublication> IUnitOfWork.ExpertPublications => ExpertPublications;
+    IGenericRepository<ProgramFramework> IUnitOfWork.ProgramFrameworks => ProgramFrameworks;
+    IGenericRepository<FrameworkRubricCriterion> IUnitOfWork.FrameworkRubricCriteria => FrameworkRubricCriteria;
+    IGenericRepository<CurriculumReview> IUnitOfWork.CurriculumReviews => CurriculumReviews;
+    IGenericRepository<ReviewCriterionScore> IUnitOfWork.ReviewCriterionScores => ReviewCriterionScores;
+    IGenericRepository<ClassSessionExpert> IUnitOfWork.ClassSessionExperts => ClassSessionExperts;
     IGenericRepository<Certificate> IUnitOfWork.Certificates => Certificates;
     IGenericRepository<MediaAsset> IUnitOfWork.MediaAssets => MediaAssets;
     IGenericRepository<MediaTag> IUnitOfWork.MediaTags => MediaTags;
@@ -173,6 +183,11 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(Expert) => Experts,
             nameof(ExpertDegree) => ExpertDegrees,
             nameof(ExpertPublication) => ExpertPublications,
+            nameof(ProgramFramework) => ProgramFrameworks,
+            nameof(FrameworkRubricCriterion) => FrameworkRubricCriteria,
+            nameof(CurriculumReview) => CurriculumReviews,
+            nameof(ReviewCriterionScore) => ReviewCriterionScores,
+            nameof(ClassSessionExpert) => ClassSessionExperts,
             nameof(Certificate) => Certificates,
             nameof(MediaAsset) => MediaAssets,
             nameof(MediaTag) => MediaTags,

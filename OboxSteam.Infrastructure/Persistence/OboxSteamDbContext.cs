@@ -20,6 +20,10 @@ public class OboxSteamDbContext : DbContext
     public DbSet<Expert> Experts { get; set; }
     public DbSet<ExpertDegree> ExpertDegrees { get; set; }
     public DbSet<ExpertPublication> ExpertPublications { get; set; }
+    public DbSet<ProgramFramework> ProgramFrameworks { get; set; }
+    public DbSet<FrameworkRubricCriterion> FrameworkRubricCriteria { get; set; }
+    public DbSet<CurriculumReview> CurriculumReviews { get; set; }
+    public DbSet<ReviewCriterionScore> ReviewCriterionScores { get; set; }
 
     // ── 3. Student Academic Profile ──
     public DbSet<StudentProfile> StudentProfiles { get; set; }
@@ -49,6 +53,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<Class> Classes { get; set; }
     public DbSet<ClassEnrollment> ClassEnrollments { get; set; }
     public DbSet<ClassSession> ClassSessions { get; set; }
+    public DbSet<ClassSessionExpert> ClassSessionExperts { get; set; }
     public DbSet<SessionAttendance> SessionAttendances { get; set; }
     public DbSet<ClassSkill> ClassSkills { get; set; }
     public DbSet<ClassMentorRequest> ClassMentorRequests { get; set; }
@@ -119,6 +124,11 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Expert>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ExpertDegree>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ExpertPublication>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramFramework>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<FrameworkRubricCriterion>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CurriculumReview>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ReviewCriterionScore>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ClassSessionExpert>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramBoard>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Skill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StudentSkill>().HasQueryFilter(e => !e.IsDeleted);
@@ -377,6 +387,120 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(e => new { e.StudentSkillId, e.MediaAssetId })
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false AND \"MediaAssetId\" IS NOT NULL");
+        });
+
+        // =============================================
+        // PROGRAM FRAMEWORK (expert-owned blueprint)
+        // =============================================
+        modelBuilder.Entity<ProgramFramework>(entity =>
+        {
+            entity.HasOne(f => f.Expert)
+                .WithMany(e => e.ProgramFrameworks)
+                .HasForeignKey(f => f.ExpertId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(f => f.ExpertId)
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(f => f.Category)
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_ProgramFrameworks_MinModulesPositive",
+                    "\"MinModules\" IS NULL OR \"MinModules\" > 0");
+                t.HasCheckConstraint(
+                    "CK_ProgramFrameworks_MinOfflineSessionsPositive",
+                    "\"MinOfflineSessions\" IS NULL OR \"MinOfflineSessions\" > 0");
+                t.HasCheckConstraint(
+                    "CK_ProgramFrameworks_MinLiveSessionsPositive",
+                    "\"MinLiveSessions\" IS NULL OR \"MinLiveSessions\" > 0");
+            });
+        });
+
+        // =============================================
+        // FRAMEWORK RUBRIC CRITERION
+        // =============================================
+        modelBuilder.Entity<FrameworkRubricCriterion>(entity =>
+        {
+            entity.HasOne(c => c.Framework)
+                .WithMany(f => f.RubricCriteria)
+                .HasForeignKey(c => c.FrameworkId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(c => c.FrameworkId)
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_FrameworkRubricCriteria_MaxScorePositive",
+                "\"MaxScore\" > 0"));
+        });
+
+        // =============================================
+        // PROGRAM (optional framework)
+        // =============================================
+        modelBuilder.Entity<Program>(entity =>
+        {
+            entity.HasOne(p => p.Framework)
+                .WithMany(f => f.Programs)
+                .HasForeignKey(p => p.FrameworkId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .IsRequired(false);
+
+            entity.HasIndex(p => p.FrameworkId)
+                .HasFilter("\"IsDeleted\" = false AND \"FrameworkId\" IS NOT NULL");
+        });
+
+        // =============================================
+        // CURRICULUM REVIEW (expert audit rounds)
+        // =============================================
+        modelBuilder.Entity<CurriculumReview>(entity =>
+        {
+            entity.HasOne(r => r.Program)
+                .WithMany(p => p.CurriculumReviews)
+                .HasForeignKey(r => r.ProgramId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Expert)
+                .WithMany(e => e.CurriculumReviews)
+                .HasForeignKey(r => r.ExpertId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(r => new { r.ProgramId, r.Round })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(r => r.ExpertId)
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_CurriculumReviews_RoundPositive",
+                "\"Round\" > 0"));
+        });
+
+        // =============================================
+        // REVIEW CRITERION SCORE
+        // =============================================
+        modelBuilder.Entity<ReviewCriterionScore>(entity =>
+        {
+            entity.HasOne(s => s.CurriculumReview)
+                .WithMany(r => r.CriterionScores)
+                .HasForeignKey(s => s.CurriculumReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(s => s.FrameworkRubricCriterion)
+                .WithMany(c => c.Scores)
+                .HasForeignKey(s => s.FrameworkRubricCriterionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(s => new { s.CurriculumReviewId, s.FrameworkRubricCriterionId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_ReviewCriterionScores_ScoreNonNegative",
+                "\"Score\" >= 0"));
         });
 
         // =============================================
@@ -1264,6 +1388,33 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(a => a.ClassSessions)
                 .HasForeignKey(cs => cs.AssignmentId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // CLASS SESSION EXPERT (co-teach invite + private mentor feedback)
+        // =============================================
+        modelBuilder.Entity<ClassSessionExpert>(entity =>
+        {
+            entity.HasOne(e => e.ClassSession)
+                .WithMany(cs => cs.ClassSessionExperts)
+                .HasForeignKey(e => e.ClassSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Expert)
+                .WithMany(x => x.ClassSessionExperts)
+                .HasForeignKey(e => e.ExpertId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.ClassSessionId, e.ExpertId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
+
+            entity.HasIndex(e => new { e.ExpertId, e.Status })
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_ClassSessionExperts_MentorFeedbackRatingRange",
+                "\"MentorFeedbackRating\" IS NULL OR (\"MentorFeedbackRating\" BETWEEN 1 AND 5)"));
         });
 
         // =============================================

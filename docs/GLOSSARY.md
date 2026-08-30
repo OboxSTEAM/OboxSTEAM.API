@@ -6,7 +6,23 @@ Short product terms for OboxSTEAM.API. Process vocabulary lives in
 ## Program
 
 Sellable STEAM track. Has `Price`, modules, classes, and enrollments.
-`ProgramStatus`: Draft, Active, Inactive.
+`ProgramStatus`: Draft, PendingReview, Approved, Active, Inactive.
+Optional `FrameworkId` links to an expert `ProgramFramework` blueprint.
+
+## ProgramFramework
+
+Expert-owned curriculum blueprint with opt-in constraints and a rubric
+scorecard (`FrameworkRubricCriterion`). Null rules are not enforced.
+
+## CurriculumReview
+
+Expert audit round on a program (not student `ProgramReview`). Scores live on
+`ReviewCriterionScore`.
+
+## ClassSessionExpert
+
+Co-teach invitation on a class session (`Invited` / `Accepted` / `Declined`)
+plus private mentor feedback (students must not see feedback).
 
 ## Module
 

@@ -69,4 +69,5 @@ public class ClassSession : BaseEntity
 
     // Navigation
     public ICollection<SessionAttendance> SessionAttendances { get; set; } = new List<SessionAttendance>();
+    public ICollection<ClassSessionExpert> ClassSessionExperts { get; set; } = new List<ClassSessionExpert>();
 }
