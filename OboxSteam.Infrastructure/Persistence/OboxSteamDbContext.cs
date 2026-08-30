@@ -1567,6 +1567,33 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
+        // CLASS SESSION EXPERT (co-teach invite + private mentor feedback)
+        // =============================================
+        modelBuilder.Entity<ClassSessionExpert>(entity =>
+        {
+            entity.HasOne(e => e.ClassSession)
+                .WithMany(cs => cs.ClassSessionExperts)
+                .HasForeignKey(e => e.ClassSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Expert)
+                .WithMany(x => x.ClassSessionExperts)
+                .HasForeignKey(e => e.ExpertId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.ClassSessionId, e.ExpertId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
+
+            entity.HasIndex(e => new { e.ExpertId, e.Status })
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_ClassSessionExperts_MentorFeedbackRatingRange",
+                "\"MentorFeedbackRating\" IS NULL OR (\"MentorFeedbackRating\" BETWEEN 1 AND 5)"));
+        });
+
+        // =============================================
         // SESSION ATTENDANCE (Unique: session + student)
         // =============================================
         modelBuilder.Entity<SessionAttendance>(entity =>
