@@ -38,6 +38,14 @@ public sealed class SeedTimeline
         return ClassSessionStatus.Scheduled;
     }
 
+    public static bool OccupiesWeeklyMeetingSlot(
+        SessionKind kind,
+        Guid? activityId,
+        Guid? assignmentId)
+        => kind is SessionKind.LiveOnline or SessionKind.Offline
+           && activityId.HasValue
+           && !assignmentId.HasValue;
+
     public static DateTime AlignToDayOfWeek(DateTime date, DayOfWeek dayOfWeek)
     {
         var delta = ((int)dayOfWeek - (int)date.DayOfWeek + 7) % 7;

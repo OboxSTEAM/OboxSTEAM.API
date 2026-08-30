@@ -137,6 +137,7 @@ public partial class SeedService
         var assignmentWindowMinutes = weeklySlots[0].DurationMinutes;
 
         var sessionIndex = 0;
+        var scheduledLives = new List<AssignmentWindowPlacement.ScheduledLive>();
         foreach (var module in modules)
         {
             var moduleCourses = courses
@@ -166,7 +167,7 @@ public partial class SeedService
                         continue;
                     }
 
-                    sessions.Add(CreateSeedSessionFromCurriculum(
+                    var live = CreateSeedSessionFromCurriculum(
                         classEntity,
                         module.Id,
                         activity,
@@ -175,40 +176,88 @@ public partial class SeedService
                         activity.Description,
                         slot.Value.StartTime,
                         assignmentWindowMinutes,
-                        sessionIndex - 1));
+                        sessionIndex - 1);
+                    sessions.Add(live);
+                    scheduledLives.Add(new AssignmentWindowPlacement.ScheduledLive(
+                        activity.Id,
+                        module.Id,
+                        course.Id,
+                        live.StartTime,
+                        live.EndTime));
                 }
             }
+        }
 
+        foreach (var module in modules)
+        {
             foreach (var assignment in assignments
                          .Where(a => a.ModuleId == module.Id)
                          .OrderBy(a => a.CreatedAt)
                          .ThenBy(a => a.Code))
             {
-                var slot = SeedTimeline.TryResolveSlotSequence(
+                var open = AssignmentWindowPlacement.ResolveRelatedTeachingEnd(
                     classEntity.StartDate,
-                    classEntity.EndDate,
-                    weeklySlots,
-                    sessionIndex);
-                sessionIndex++;
-                if (slot == null)
+                    scheduledLives,
+                    assignment.ModuleId,
+                    assignment.CourseId,
+                    null);
+                var nextLive = AssignmentWindowPlacement.NextLiveStart(scheduledLives, open);
+                if (!AssignmentWindowPlacement.TryComputeWindow(
+                        open,
+                        nextLive,
+                        classEntity.EndDate,
+                        out var close,
+                        out _))
                 {
                     continue;
                 }
 
-                sessions.Add(CreateSeedSessionFromCurriculum(
+                sessions.Add(CreateSeedAssignmentWindow(
                     classEntity,
-                    module.Id,
-                    null,
                     assignment,
-                    assignment.Title,
-                    "Assignment working window and deadline checkpoint.",
-                    slot.Value.StartTime,
-                    assignmentWindowMinutes,
-                    sessionIndex - 1));
+                    open,
+                    close,
+                    sessionIndex));
+                sessionIndex++;
             }
         }
 
         return sessions;
+    }
+
+    private ClassSession CreateSeedAssignmentWindow(
+        Class classEntity,
+        Assignment assignment,
+        DateTime startTime,
+        DateTime endTime,
+        int venueOrdinal)
+    {
+        var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
+            SessionKind.AssignmentWindow,
+            classEntity.Code,
+            venueOrdinal);
+
+        return new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classEntity.Id,
+            ModuleId = assignment.ModuleId,
+            AssignmentId = assignment.Id,
+            SessionKind = SessionKind.AssignmentWindow,
+            Title = assignment.Title,
+            Description = "Assignment working window and deadline checkpoint.",
+            StartTime = startTime,
+            EndTime = endTime,
+            Location = location,
+            MeetingUrl = meetingUrl,
+            Latitude = latitude,
+            Longitude = longitude,
+            RequiresAttendance = false,
+            Status = SeedTimeline.ResolveSessionStatus(startTime, endTime, _seedNow),
+            CreatedAt = classEntity.CreatedAt,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        };
     }
 
     private ClassSession CreateSeedSessionFromCurriculum(
@@ -464,6 +513,8 @@ public partial class SeedService
             cs => cs.ClassId == classEntity.Id
                   && !cs.IsDeleted
                   && cs.Status != ClassSessionStatus.Cancelled
+                  && cs.SessionKind != SessionKind.AssignmentWindow
+                  && cs.ActivityId != null
                   && !cs.Title.StartsWith(ScheduleFixtureTitlePrefix));
 
         if (sessions.Count == 0)
@@ -511,11 +562,6 @@ public partial class SeedService
             {
                 durationMinutes = activity.DurationMinutes.Value;
             }
-            else if (session.AssignmentId.HasValue)
-            {
-                durationMinutes = defaultDuration;
-            }
-
             var startUtc = slot.Value.StartTime;
             var endUtc = startUtc.AddMinutes(durationMinutes);
             if (session.StartTime == startUtc && session.EndTime == endUtc)

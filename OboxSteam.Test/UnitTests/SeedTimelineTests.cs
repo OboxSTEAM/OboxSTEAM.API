@@ -42,6 +42,17 @@ public sealed class SeedTimelineTests
     }
 
     [Fact]
+    public void OccupiesWeeklyMeetingSlot_LiveYes_AssignmentWindowNo()
+    {
+        Assert.True(SeedTimeline.OccupiesWeeklyMeetingSlot(
+            SessionKind.LiveOnline, Guid.NewGuid(), assignmentId: null));
+        Assert.True(SeedTimeline.OccupiesWeeklyMeetingSlot(
+            SessionKind.Offline, Guid.NewGuid(), assignmentId: null));
+        Assert.False(SeedTimeline.OccupiesWeeklyMeetingSlot(
+            SessionKind.AssignmentWindow, activityId: null, assignmentId: Guid.NewGuid()));
+    }
+
+    [Fact]
     public void TryResolveSlotSequence_LandsOnConfiguredWeekday()
     {
         var classStart = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc); // Monday
