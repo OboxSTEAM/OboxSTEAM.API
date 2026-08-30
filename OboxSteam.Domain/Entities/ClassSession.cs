@@ -61,6 +61,12 @@ public class ClassSession : BaseEntity
 
     public ClassSessionStatus Status { get; set; } = ClassSessionStatus.Scheduled;
 
+    /// <summary>
+    /// When the 30-minute session reminder was published. Null until
+    /// <c>SessionReminderService</c> fires once for this session.
+    /// </summary>
+    public DateTime? ReminderSentAt { get; set; }
+
     // Navigation
     public ICollection<SessionAttendance> SessionAttendances { get; set; } = new List<SessionAttendance>();
 }

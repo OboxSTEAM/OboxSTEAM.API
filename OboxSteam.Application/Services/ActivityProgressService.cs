@@ -598,6 +598,17 @@ public sealed class ActivityProgressService : IActivityProgressService
         var activity = ActivityProgressValidator.ValidateActivityExists(activityEntity, request.ActivityId);
         CurriculumAccessValidator.ValidateActivityTypeForMentorComplete(activity);
 
+        if (activity.RequireMediaEvidence)
+        {
+            var sessionMedia = await _unitOfWork.MediaAssets.GetAllAsync(
+                m => m.ClassSessionId == request.ClassSessionId
+                     && !m.IsDeleted
+                     && m.FileType == "image");
+            MentorCompleteValidator.EnsureMediaEvidencePresent(
+                activity,
+                SessionEvidenceService.HasSessionImageEvidence(sessionMedia, request.ClassSessionId));
+        }
+
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(classSession!.ClassId);
         ClassValidator.ValidateClassExists(classEntity, classSession.ClassId);
 

@@ -18,6 +18,10 @@ services:
       - JWT__SecretKey=${JWT__SecretKey}
       - JWT__Issuer=${JWT__Issuer}
       - JWT__Audience=${JWT__Audience}
+      - JaaS__AppId=${JaaS__AppId}
+      - JaaS__KeyId=${JaaS__KeyId}
+      - JaaS__PrivateKey=${JaaS__PrivateKey}
+      - JaaS__Domain=${JaaS__Domain:-8x8.vc}
       - RESEND_APITOKEN=${RESEND_APITOKEN}
       - RESEND_FROM=${RESEND_FROM}
       - APP_BASE_URL=${APP_BASE_URL}

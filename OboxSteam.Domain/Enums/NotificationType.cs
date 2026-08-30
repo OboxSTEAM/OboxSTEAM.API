@@ -72,6 +72,7 @@ public enum NotificationType
     ClassSessionStarted,
     ClassSessionCompleted,
     ClassSessionCancelled,
+    SessionStartingSoon,
 
     // Attendance
     AttendanceMarkedPresent,

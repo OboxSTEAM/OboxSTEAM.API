@@ -13,6 +13,8 @@ public class SessionAttendanceResponseDto
     public Guid ModuleEnrollmentId { get; set; }
     public AttendanceStatus Status { get; set; }
     public DateTime? CheckedInAt { get; set; }
+    public DateTime? LeftAt { get; set; }
+    public int? ParticipationMinutes { get; set; }
     public Guid? RecordedBy { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

@@ -19,6 +19,9 @@ public static class MentorCompleteValidator
     public const string QrCheckinRequiredMessage =
         "Student has not checked in via QR code for this session.";
 
+    public const string MediaEvidenceRequiredMessage =
+        "This activity requires media evidence. Upload at least one session photo before completing.";
+
     public static void ValidateRequest(MentorCompleteBulkRequestDto request)
     {
         if (request.ClassSessionId == Guid.Empty)
@@ -77,5 +80,18 @@ public static class MentorCompleteValidator
             && attendance.RecordedBy == attendance.StudentId;
 
         return hasSelfCheckIn ? null : QrCheckinRequiredMessage;
+    }
+
+    /// <summary>
+    /// When the activity requires media evidence, the session must already have
+    /// at least one non-deleted image. Throws BadRequest to block the whole bulk complete.
+    /// </summary>
+    public static void EnsureMediaEvidencePresent(Activity activity, bool hasSessionImageEvidence)
+    {
+        if (!activity.RequireMediaEvidence)
+            return;
+
+        if (!hasSessionImageEvidence)
+            throw ErrorHelper.BadRequest(MediaEvidenceRequiredMessage);
     }
 }

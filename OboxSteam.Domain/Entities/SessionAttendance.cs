@@ -20,6 +20,12 @@ public class SessionAttendance : BaseEntity
 
     public DateTime? CheckedInAt { get; set; }
 
+    /// <summary>When the participant left a LiveOnline meeting (set by POST .../leave).</summary>
+    public DateTime? LeftAt { get; set; }
+
+    /// <summary>Whole minutes between <see cref="CheckedInAt"/> and <see cref="LeftAt"/>.</summary>
+    public int? ParticipationMinutes { get; set; }
+
     public Guid? RecordedBy { get; set; }
     public User? Recorder { get; set; }
 }

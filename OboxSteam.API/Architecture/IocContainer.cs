@@ -71,6 +71,7 @@ public static class IocContainer
         services.AddHostedService<ClassSeatHoldCleanupService>();
         services.AddHostedService<OpenClassAutoStartService>();
         services.AddHostedService<PersonalVideoGenerationWorker>();
+        services.AddHostedService<SessionReminderService>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
@@ -83,6 +84,28 @@ public static class IocContainer
         services.SetupAwsMediaConvert();
         services.SetupBedrockMantle();
         services.SetupPaymentGateways(configuration);
+        services.SetupJaas();
+
+        return services;
+    }
+
+    public static IServiceCollection SetupJaas(this IServiceCollection services)
+    {
+        var appId = Environment.GetEnvironmentVariable("JaaS__AppId")
+            ?? throw new InvalidOperationException("JaaS__AppId not found in environment variables.");
+        var keyId = Environment.GetEnvironmentVariable("JaaS__KeyId")
+            ?? throw new InvalidOperationException("JaaS__KeyId not found in environment variables.");
+        var privateKey = Environment.GetEnvironmentVariable("JaaS__PrivateKey")
+            ?? throw new InvalidOperationException("JaaS__PrivateKey not found in environment variables.");
+        var domain = Environment.GetEnvironmentVariable("JaaS__Domain") ?? "8x8.vc";
+
+        services.AddSingleton<IJaasJwtService>(sp =>
+            new JaasJwtService(
+                appId,
+                keyId,
+                privateKey,
+                domain,
+                sp.GetRequiredService<ILogger<JaasJwtService>>()));
 
         return services;
     }
@@ -205,6 +228,9 @@ public static class IocContainer
         services.AddScoped<IMentorService, MentorService>();
         services.AddScoped<IClassSessionService, ClassSessionService>();
         services.AddScoped<ISessionAttendanceService, SessionAttendanceService>();
+        services.AddScoped<ISessionMeetingService, SessionMeetingService>();
+        services.AddScoped<ISessionEvidenceService, SessionEvidenceService>();
+        services.AddScoped<ISessionReminderPublisher, SessionReminderPublisher>();
         services.AddScoped<ProgramPurchaseLifecycle>();
         services.AddScoped<IQuestionBankService, QuestionBankService>();
         services.AddScoped<IBankQuestionService, BankQuestionService>();
