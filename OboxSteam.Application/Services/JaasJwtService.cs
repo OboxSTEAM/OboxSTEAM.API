@@ -16,6 +16,7 @@ public interface IJaasJwtService
     /// <summary>
     /// Creates a short-lived JaaS JWT for <paramref name="roomName"/>.
     /// Mentors receive <c>moderator: true</c> so they can open/control the room.
+    /// Paid JaaS features (recording, livestreaming, transcription, outbound-call) are disabled for all roles.
     /// </summary>
     string CreateMeetingToken(
         string roomName,
@@ -95,7 +96,7 @@ public sealed class JaasJwtService : IJaasJwtService
                     ["livestreaming"] = false,
                     ["outbound-call"] = false,
                     ["transcription"] = false,
-                    ["recording"] = isModerator,
+                    ["recording"] = false,
                 },
             },
         };

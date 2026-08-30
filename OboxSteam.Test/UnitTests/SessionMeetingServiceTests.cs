@@ -169,6 +169,9 @@ public sealed class SessionMeetingServiceTests
         var token = new JwtSecurityTokenHandler().ReadJwtToken(result.Jwt);
         Assert.Equal("test-key-id", token.Header.Kid);
         Assert.Equal("vpaas-magic-cookie-testapp", token.Payload["sub"]?.ToString());
+        var contextJson = System.Text.Json.JsonSerializer.Serialize(token.Payload["context"]);
+        Assert.Contains("\"moderator\":\"false\"", contextJson.Replace(" ", string.Empty));
+        Assert.Contains("\"recording\":false", contextJson.Replace(" ", string.Empty));
     }
 
     [Fact]
@@ -203,6 +206,9 @@ public sealed class SessionMeetingServiceTests
         Assert.True(token.Payload.ContainsKey("context"));
         var contextJson = System.Text.Json.JsonSerializer.Serialize(token.Payload["context"]);
         Assert.Contains("\"moderator\":\"true\"", contextJson.Replace(" ", string.Empty));
+        Assert.Contains("\"recording\":false", contextJson.Replace(" ", string.Empty));
+        Assert.Contains("\"livestreaming\":false", contextJson.Replace(" ", string.Empty));
+        Assert.Contains("\"transcription\":false", contextJson.Replace(" ", string.Empty));
     }
 
     [Fact]
