@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.EmailDTO;
@@ -558,6 +559,45 @@ public class EmailService : IEmailService
         await SendEmailAsync(request.To,
             $"You're Enrolled in {request.ProgramName} — OboxSTEAM",
             BuildEmailShell("Enrollment Confirmed", body));
+    }
+
+    public async Task SendInboxNotificationEmailAsync(InboxNotificationEmailDto request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var title = WebUtility.HtmlEncode(request.Title);
+        var bodyText = string.IsNullOrWhiteSpace(request.Body)
+            ? null
+            : WebUtility.HtmlEncode(request.Body);
+
+        var bodyParagraph = bodyText is null
+            ? string.Empty
+            : $@"
+<p style=""margin:0 0 24px;font-family:'DM Sans','Segoe UI',Arial,sans-serif;font-size:15px;color:{ColorMuted};line-height:1.7;"">
+  {bodyText}
+</p>";
+
+        var body = $@"
+<h1 style=""margin:0 0 12px;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:28px;font-weight:800;color:{ColorCharcoal};line-height:1.2;"">
+  {title}
+</h1>
+{bodyParagraph}
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0""
+       style=""background-color:{ColorSurface};border:1px solid {ColorBorder};border-radius:16px;margin-bottom:20px;"">
+  <tr>
+    <td style=""padding:28px 32px;text-align:center;"">
+      <a href=""{_appBaseUrl}""
+         style=""display:inline-block;background-color:{ColorGreen};color:#ffffff;font-family:'Nunito','DM Sans',Arial,sans-serif;font-size:15px;font-weight:700;padding:14px 44px;border-radius:10px;text-decoration:none;box-shadow:0 4px 14px rgba(124,179,66,0.30);"">
+        Mở OboxSTEAM
+      </a>
+    </td>
+  </tr>
+</table>";
+
+        await SendEmailAsync(
+            request.To,
+            $"{request.Title} — OboxSTEAM",
+            BuildEmailShell("Thông báo", body));
     }
 
 }

@@ -5,6 +5,7 @@ namespace OboxSteam.Application.Notifications;
 /// <summary>
 /// Static factories for consistent notification type, audience, role copy, tokens, and payload.
 /// Business services should call these methods instead of building raw <see cref="NotificationCommand"/>s.
+/// Student copy addresses the learner as "bạn". Parent copy names the child as "con bạn {studentName}".
 /// </summary>
 public static class NotificationCatalog
 {
@@ -14,8 +15,8 @@ public static class NotificationCatalog
         => new(
             NotificationType.AccountRegistered,
             NotificationAudience.ForUser(userId),
-            "Welcome to OboxSTEAM",
-            "Your account has been created. Verify your email to get started.",
+            "Chào mừng đến với OboxSTEAM",
+            "Tài khoản của bạn đã được tạo. Hãy xác minh email để bắt đầu.",
             entityType: "User",
             entityId: userId);
 
@@ -23,8 +24,8 @@ public static class NotificationCatalog
         => new(
             NotificationType.EmailVerified,
             NotificationAudience.ForUser(userId),
-            "Email verified",
-            "Your email address has been verified successfully.",
+            "Đã xác minh email",
+            "Địa chỉ email của bạn đã được xác minh thành công.",
             entityType: "User",
             entityId: userId);
 
@@ -32,46 +33,62 @@ public static class NotificationCatalog
         => new(
             NotificationType.PasswordChanged,
             NotificationAudience.ForUser(userId),
-            "Password changed",
-            "Your password was changed. If this wasn't you, contact support.",
+            "Đã đổi mật khẩu",
+            "Mật khẩu của bạn đã được thay đổi. Nếu không phải bạn thực hiện, hãy liên hệ hỗ trợ.",
             entityType: "User",
             entityId: userId);
 
     // ── Parent link ───────────────────────────────────────────────────────────
 
-    public static NotificationCommand ParentLinkRequested(Guid parentId, Guid studentId, Guid? actorUserId = null)
+    public static NotificationCommand ParentLinkRequested(
+        Guid parentId,
+        Guid studentId,
+        Guid? actorUserId = null,
+        string? studentName = null,
+        string? actorName = null)
         => new(
             NotificationType.ParentLinkRequested,
             NotificationAudience.ForUser(parentId, studentId),
             NotificationRoleTemplates.FromDefault(
-                "Parent link requested",
-                "A parent–student link request for {studentName} is waiting for verification."),
-            payload: new NotificationPayload { StudentId = studentId },
+                "Yêu cầu liên kết phụ huynh",
+                "Yêu cầu liên kết phụ huynh cho con bạn {studentName} đang chờ xác minh."),
+            payload: new NotificationPayload { StudentId = studentId }
+                .WithNames(studentName: studentName, actorName: actorName),
             actorUserId: actorUserId,
             entityType: "ParentStudent",
-            entityId: studentId);
+            entityId: studentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, actorName: actorName));
 
-    public static NotificationCommand ParentLinkVerified(Guid parentId, Guid studentId)
+    public static NotificationCommand ParentLinkVerified(Guid parentId, Guid studentId, string? studentName = null)
         => new(
             NotificationType.ParentLinkVerified,
             NotificationAudience.ForUser(parentId, studentId),
             NotificationRoleTemplates.FromDefault(
-                "Parent link verified",
-                "Your link with {studentName} has been verified."),
-            payload: new NotificationPayload { StudentId = studentId },
+                "Đã xác minh liên kết phụ huynh",
+                "Liên kết với con bạn {studentName} đã được xác minh."),
+            payload: new NotificationPayload { StudentId = studentId }.WithNames(studentName: studentName),
             entityType: "ParentStudent",
-            entityId: studentId);
+            entityId: studentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName));
 
-    public static NotificationCommand ParentLinkApproved(Guid studentId, Guid parentId, Guid? actorUserId = null)
+    public static NotificationCommand ParentLinkApproved(
+        Guid studentId,
+        Guid parentId,
+        Guid? actorUserId = null,
+        string? studentName = null,
+        string? actorName = null)
         => new(
             NotificationType.ParentLinkApproved,
             NotificationAudience.ForUser(studentId),
-            "Parent link approved",
-            "A parent has been linked to your account.",
-            payload: new NotificationPayload { StudentId = studentId },
+            NotificationRoleTemplates.FromDefault(
+                "Đã duyệt liên kết phụ huynh",
+                "{actorName} đã được liên kết với tài khoản của bạn."),
+            payload: new NotificationPayload { StudentId = studentId }
+                .WithNames(studentName: studentName, actorName: actorName),
             actorUserId: actorUserId,
             entityType: "ParentStudent",
-            entityId: parentId);
+            entityId: parentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, actorName: actorName));
 
     // ── Enrollment ────────────────────────────────────────────────────────────
 
@@ -79,52 +96,54 @@ public static class NotificationCatalog
         Guid studentId,
         Guid programId,
         Guid programEnrollmentId,
-        string? programName = null)
+        string? programName = null,
+        string? studentName = null)
         => StudentAndParent(
             NotificationType.ProgramPendingPayment,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Payment required",
+            "Cần thanh toán",
             string.IsNullOrWhiteSpace(programName)
-                ? "Complete payment to activate your program enrollment."
-                : "Complete payment to activate enrollment in \"{programName}\".",
+                ? "Hoàn tất thanh toán để kích hoạt ghi danh chương trình của bạn."
+                : "Hoàn tất thanh toán để kích hoạt ghi danh chương trình \"{programName}\".",
             string.IsNullOrWhiteSpace(programName)
-                ? "Complete payment to activate {studentName}'s program enrollment."
-                : "Complete payment to activate {studentName}'s enrollment in \"{programName}\".",
+                ? "Hoàn tất thanh toán để kích hoạt ghi danh chương trình của con bạn {studentName}."
+                : "Hoàn tất thanh toán để kích hoạt ghi danh chương trình \"{programName}\" của con bạn {studentName}.",
             payload: new NotificationPayload
             {
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "ProgramEnrollment",
             entityId: programEnrollmentId,
-            tokens: NotificationTokenKeys.Create(programName: programName));
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
     public static NotificationCommand ProgramActivated(
         Guid studentId,
         Guid programId,
         Guid programEnrollmentId,
         string? programName = null,
-        Guid? nextActivityId = null)
+        Guid? nextActivityId = null,
+        string? studentName = null)
         => StudentAndParent(
             NotificationType.ProgramActivated,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Program enrollment activated",
+            "Đã kích hoạt ghi danh chương trình",
             string.IsNullOrWhiteSpace(programName)
-                ? "Your program enrollment is now active."
-                : "Your enrollment in \"{programName}\" is now active.",
+                ? "Ghi danh chương trình của bạn đã được kích hoạt."
+                : "Ghi danh chương trình \"{programName}\" của bạn đã được kích hoạt.",
             string.IsNullOrWhiteSpace(programName)
-                ? "{studentName}'s program enrollment is now active."
-                : "{studentName}'s enrollment in \"{programName}\" is now active.",
+                ? "Ghi danh chương trình của con bạn {studentName} đã được kích hoạt."
+                : "Ghi danh chương trình \"{programName}\" của con bạn {studentName} đã được kích hoạt.",
             payload: new NotificationPayload
             {
                 ProgramId = programId,
                 StudentId = studentId,
                 NextActivityId = nextActivityId,
                 ActivityId = nextActivityId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "ProgramEnrollment",
             entityId: programEnrollmentId,
-            tokens: NotificationTokenKeys.Create(programName: programName));
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
     public static NotificationCommand ModuleCompleted(
         Guid studentId,
@@ -133,17 +152,19 @@ public static class NotificationCatalog
         Guid? programId = null,
         string? moduleName = null,
         Guid? programEnrollmentId = null,
-        Guid? nextActivityId = null)
+        Guid? nextActivityId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ModuleCompleted,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Module completed",
+            "Hoàn thành học phần",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "You completed a module."
-                : "You completed \"{moduleName}\".",
+                ? "Bạn đã hoàn thành một học phần."
+                : "Bạn đã hoàn thành \"{moduleName}\".",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "{studentName} completed a module."
-                : "{studentName} completed \"{moduleName}\".",
+                ? "Con bạn {studentName} đã hoàn thành một học phần."
+                : "Con bạn {studentName} đã hoàn thành \"{moduleName}\".",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -152,10 +173,13 @@ public static class NotificationCatalog
                 StudentId = studentId,
                 NextActivityId = nextActivityId,
                 ActivityId = nextActivityId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "Module",
             entityId: moduleId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand ModuleFailed(
         Guid studentId,
@@ -164,17 +188,19 @@ public static class NotificationCatalog
         Guid? programId = null,
         string? moduleName = null,
         Guid? programEnrollmentId = null,
-        Guid? assignmentId = null)
+        Guid? assignmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ModuleFailed,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Module failed",
+            "Học phần không đạt",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "A module attempt was marked as failed due to excess absences. A retake is required."
-                : "Module \"{moduleName}\" was marked as failed due to excess absences. A retake is required.",
+                ? "Một lần học phần bị đánh dấu không đạt do vắng quá số buổi cho phép. Bạn cần học lại."
+                : "Học phần \"{moduleName}\" bị đánh dấu không đạt do vắng quá số buổi cho phép. Bạn cần học lại.",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "{studentName}'s module attempt was marked as failed due to excess absences. A retake is required."
-                : "{studentName}'s module \"{moduleName}\" was marked as failed due to excess absences. A retake is required.",
+                ? "Lần học phần của con bạn {studentName} bị đánh dấu không đạt do vắng quá số buổi cho phép. Cần học lại."
+                : "Học phần \"{moduleName}\" của con bạn {studentName} bị đánh dấu không đạt do vắng quá số buổi cho phép. Cần học lại.",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -182,10 +208,13 @@ public static class NotificationCatalog
                 ProgramId = programId,
                 StudentId = studentId,
                 AssignmentId = assignmentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "Module",
             entityId: moduleId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand ModuleUnlocked(
         Guid studentId,
@@ -193,17 +222,19 @@ public static class NotificationCatalog
         Guid? programId = null,
         string? moduleName = null,
         Guid? programEnrollmentId = null,
-        Guid? nextActivityId = null)
+        Guid? nextActivityId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ModuleUnlocked,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Module unlocked",
+            "Đã mở học phần",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "A new module is now available."
-                : "Module \"{moduleName}\" is now available.",
+                ? "Một học phần mới đã sẵn sàng."
+                : "Học phần \"{moduleName}\" đã sẵn sàng.",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "A new module is now available for {studentName}."
-                : "Module \"{moduleName}\" is now available for {studentName}.",
+                ? "Một học phần mới đã sẵn sàng cho con bạn {studentName}."
+                : "Học phần \"{moduleName}\" đã sẵn sàng cho con bạn {studentName}.",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -211,10 +242,13 @@ public static class NotificationCatalog
                 StudentId = studentId,
                 NextActivityId = nextActivityId,
                 ActivityId = nextActivityId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "Module",
             entityId: moduleId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand ModuleRetakePendingPayment(
         Guid studentId,
@@ -222,27 +256,32 @@ public static class NotificationCatalog
         Guid? moduleEnrollmentId = null,
         string? moduleName = null,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ModuleRetakePendingPayment,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Retake payment required",
+            "Cần thanh toán để học lại",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "Complete payment to retake this module."
-                : "Complete payment to retake \"{moduleName}\".",
+                ? "Hoàn tất thanh toán để học lại học phần này."
+                : "Hoàn tất thanh toán để học lại \"{moduleName}\".",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "Complete payment so {studentName} can retake this module."
-                : "Complete payment so {studentName} can retake \"{moduleName}\".",
+                ? "Hoàn tất thanh toán để con bạn {studentName} học lại học phần này."
+                : "Hoàn tất thanh toán để con bạn {studentName} học lại \"{moduleName}\".",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
                 ModuleEnrollmentId = moduleEnrollmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "ModuleEnrollment",
             entityId: moduleEnrollmentId ?? moduleId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand ModuleRetakeInitiated(
         Guid studentId,
@@ -252,17 +291,19 @@ public static class NotificationCatalog
         Guid? programId = null,
         Guid? programEnrollmentId = null,
         Guid? nextActivityId = null,
-        Guid? assignmentId = null)
+        Guid? assignmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ModuleRetakeInitiated,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Module retake started",
+            "Đã bắt đầu học lại học phần",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "Your module retake has been initiated."
-                : "Retake of \"{moduleName}\" has been initiated.",
+                ? "Lần học lại học phần của bạn đã được khởi tạo."
+                : "Lần học lại \"{moduleName}\" đã được khởi tạo.",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "{studentName}'s module retake has been initiated."
-                : "Retake of \"{moduleName}\" has been initiated for {studentName}.",
+                ? "Lần học lại học phần của con bạn {studentName} đã được khởi tạo."
+                : "Lần học lại \"{moduleName}\" của con bạn {studentName} đã được khởi tạo.",
             payload: new NotificationPayload
             {
                 ModuleId = moduleId,
@@ -272,28 +313,34 @@ public static class NotificationCatalog
                 NextActivityId = nextActivityId,
                 ActivityId = nextActivityId,
                 AssignmentId = assignmentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "ModuleEnrollment",
             entityId: moduleEnrollmentId ?? moduleId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand PendingPaymentExpired(
         Guid studentId,
         Guid programEnrollmentId,
-        Guid? programId = null)
+        Guid? programId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.PendingPaymentExpired,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Pending enrollment expired",
-            "Your pending program enrollment expired because payment was not completed in time.",
-            "{studentName}'s pending program enrollment expired because payment was not completed in time.",
+            "Ghi danh chờ thanh toán đã hết hạn",
+            "Ghi danh chương trình đang chờ của bạn đã hết hạn vì chưa thanh toán kịp thời.",
+            "Ghi danh chương trình đang chờ của con bạn {studentName} đã hết hạn vì chưa thanh toán kịp thời.",
             payload: new NotificationPayload
             {
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "ProgramEnrollment",
-            entityId: programEnrollmentId);
+            entityId: programEnrollmentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
     public static NotificationCommand ActivityCompleted(
         Guid studentId,
@@ -303,17 +350,19 @@ public static class NotificationCatalog
         string? activityName = null,
         Guid? programEnrollmentId = null,
         Guid? nextActivityId = null,
-        Guid? courseId = null)
+        Guid? courseId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ActivityCompleted,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Activity completed",
+            "Hoàn thành hoạt động",
             string.IsNullOrWhiteSpace(activityName)
-                ? "You completed an activity."
-                : "You completed \"{activityName}\".",
+                ? "Bạn đã hoàn thành một hoạt động."
+                : "Bạn đã hoàn thành \"{activityName}\".",
             string.IsNullOrWhiteSpace(activityName)
-                ? "{studentName} completed an activity."
-                : "{studentName} completed \"{activityName}\".",
+                ? "Con bạn {studentName} đã hoàn thành một hoạt động."
+                : "Con bạn {studentName} đã hoàn thành \"{activityName}\".",
             payload: new NotificationPayload
             {
                 ActivityId = activityId,
@@ -322,10 +371,13 @@ public static class NotificationCatalog
                 StudentId = studentId,
                 NextActivityId = nextActivityId,
                 CourseId = courseId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "Activity",
             entityId: activityId,
-            tokens: NotificationTokenKeys.Create(activityName: activityName));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                activityName: activityName));
 
     // ── Payment ───────────────────────────────────────────────────────────────
 
@@ -334,13 +386,15 @@ public static class NotificationCatalog
         Guid paymentId,
         Guid? programId = null,
         Guid? programEnrollmentId = null,
-        Guid? nextActivityId = null)
+        Guid? nextActivityId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.PaymentSucceeded,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Payment succeeded",
-            "Your payment was successful.",
-            "{studentName}'s payment was successful.",
+            "Thanh toán thành công",
+            "Thanh toán của bạn đã thành công.",
+            "Thanh toán của con bạn {studentName} đã thành công.",
             payload: new NotificationPayload
             {
                 PaymentId = paymentId,
@@ -348,71 +402,81 @@ public static class NotificationCatalog
                 StudentId = studentId,
                 NextActivityId = nextActivityId,
                 ActivityId = nextActivityId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "Payment",
-            entityId: paymentId);
+            entityId: paymentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
     public static NotificationCommand PaymentFailed(
         Guid studentId,
         Guid paymentId,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.PaymentFailed,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Payment failed",
-            "Your payment could not be completed. Please try again.",
-            "{studentName}'s payment could not be completed. Please try again.",
+            "Thanh toán thất bại",
+            "Thanh toán của bạn không thể hoàn tất. Vui lòng thử lại.",
+            "Thanh toán của con bạn {studentName} không thể hoàn tất. Vui lòng thử lại.",
             payload: new NotificationPayload
             {
                 PaymentId = paymentId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "Payment",
-            entityId: paymentId);
+            entityId: paymentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
     public static NotificationCommand PaymentCancelled(
         Guid studentId,
         Guid paymentId,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.PaymentCancelled,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Payment cancelled",
-            "Your payment was cancelled.",
-            "{studentName}'s payment was cancelled.",
+            "Đã hủy thanh toán",
+            "Thanh toán của bạn đã bị hủy.",
+            "Thanh toán của con bạn {studentName} đã bị hủy.",
             payload: new NotificationPayload
             {
                 PaymentId = paymentId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "Payment",
-            entityId: paymentId);
+            entityId: paymentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
     public static NotificationCommand ParentPaymentRequested(
         Guid parentId,
         Guid studentId,
         Guid paymentRequestId,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => new(
             NotificationType.ParentPaymentRequested,
             NotificationAudience.ForUser(parentId, studentId),
             NotificationRoleTemplates.FromDefault(
-                "Payment request from student",
-                "{studentName} requested that you complete a program payment."),
+                "Yêu cầu thanh toán từ học viên",
+                "Con bạn {studentName} đề nghị bạn hoàn tất thanh toán chương trình."),
             payload: new NotificationPayload
             {
                 PaymentRequestId = paymentRequestId,
                 StudentId = studentId,
                 ProgramId = programId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             actorUserId: studentId,
             entityType: "PaymentRequest",
-            entityId: paymentRequestId);
+            entityId: paymentRequestId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
     public static NotificationCommand ParentModuleRetakeRequested(
         Guid parentId,
@@ -420,129 +484,162 @@ public static class NotificationCatalog
         Guid paymentRequestId,
         Guid? moduleId = null,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => new(
             NotificationType.ParentModuleRetakeRequested,
             NotificationAudience.ForUser(parentId, studentId),
             NotificationRoleTemplates.FromDefault(
-                "Module retake payment request",
-                "{studentName} requested that you complete a module retake payment."),
+                "Yêu cầu thanh toán học lại học phần",
+                "Con bạn {studentName} đề nghị bạn hoàn tất thanh toán để học lại học phần."),
             payload: new NotificationPayload
             {
                 PaymentRequestId = paymentRequestId,
                 StudentId = studentId,
                 ModuleId = moduleId,
                 ProgramId = programId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             actorUserId: studentId,
             entityType: "PaymentRequest",
-            entityId: paymentRequestId);
+            entityId: paymentRequestId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
     // ── Class lifecycle ───────────────────────────────────────────────────────
 
-    public static NotificationCommand ClassCreated(Guid classId, Guid programId, string? className = null)
+    public static NotificationCommand ClassCreated(
+        Guid classId,
+        Guid programId,
+        string? className = null,
+        string? programName = null)
         => new(
             NotificationType.ClassCreated,
             NotificationAudience.ForManagers(),
             NotificationRoleTemplates.FromDefault(
-                "Class created",
+                "Đã tạo lớp",
                 string.IsNullOrWhiteSpace(className)
-                    ? "A new class was created."
-                    : "Class \"{className}\" was created."),
-            payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
+                    ? "Một lớp mới đã được tạo."
+                    : "Lớp \"{className}\" đã được tạo."),
+            payload: new NotificationPayload { ClassId = classId, ProgramId = programId }
+                .WithNames(className: className, programName: programName),
             entityType: "Class",
             entityId: classId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
-    public static NotificationCommand ClassUpdated(Guid classId, Guid programId, string? className = null)
+    public static NotificationCommand ClassUpdated(
+        Guid classId,
+        Guid programId,
+        string? className = null,
+        string? programName = null)
         => StudentParentMentor(
             NotificationType.ClassUpdated,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
-            "Class updated",
+            "Đã cập nhật lớp",
             string.IsNullOrWhiteSpace(className)
-                ? "Class details were updated."
-                : "Class \"{className}\" was updated.",
+                ? "Thông tin lớp đã được cập nhật."
+                : "Lớp \"{className}\" đã được cập nhật.",
             string.IsNullOrWhiteSpace(className)
-                ? "{studentName}'s class details were updated."
-                : "{studentName}'s class \"{className}\" was updated.",
+                ? "Thông tin lớp của con bạn {studentName} đã được cập nhật."
+                : "Lớp \"{className}\" của con bạn {studentName} đã được cập nhật.",
             string.IsNullOrWhiteSpace(className)
-                ? "Class details were updated."
-                : "Class \"{className}\" was updated.",
-            payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
+                ? "Thông tin lớp đã được cập nhật."
+                : "Lớp \"{className}\" đã được cập nhật.",
+            payload: new NotificationPayload { ClassId = classId, ProgramId = programId }
+                .WithNames(className: className, programName: programName),
             entityType: "Class",
             entityId: classId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
-    public static NotificationCommand ClassOpenForEnrollment(Guid classId, Guid programId, string? className = null)
+    public static NotificationCommand ClassOpenForEnrollment(
+        Guid classId,
+        Guid programId,
+        string? className = null,
+        string? programName = null)
         => new(
             NotificationType.ClassOpenForEnrollment,
             NotificationAudience.ForManagers(),
             NotificationRoleTemplates.FromDefault(
-                "Class open for enrollment",
+                "Lớp đã mở ghi danh",
                 string.IsNullOrWhiteSpace(className)
-                    ? "A class is now open for enrollment."
-                    : "Class \"{className}\" is now open for enrollment."),
-            payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
+                    ? "Một lớp hiện đã mở ghi danh."
+                    : "Lớp \"{className}\" hiện đã mở ghi danh."),
+            payload: new NotificationPayload { ClassId = classId, ProgramId = programId }
+                .WithNames(className: className, programName: programName),
             entityType: "Class",
             entityId: classId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
-    public static NotificationCommand ClassStarted(Guid classId, Guid programId, string? className = null)
+    public static NotificationCommand ClassStarted(
+        Guid classId,
+        Guid programId,
+        string? className = null,
+        string? programName = null)
         => StudentParentMentor(
             NotificationType.ClassStarted,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
-            "Class started",
+            "Lớp đã bắt đầu",
             string.IsNullOrWhiteSpace(className)
-                ? "Your class has started."
-                : "Class \"{className}\" has started.",
+                ? "Lớp của bạn đã bắt đầu."
+                : "Lớp \"{className}\" đã bắt đầu.",
             string.IsNullOrWhiteSpace(className)
-                ? "{studentName}'s class has started."
-                : "{studentName}'s class \"{className}\" has started.",
+                ? "Lớp của con bạn {studentName} đã bắt đầu."
+                : "Lớp \"{className}\" của con bạn {studentName} đã bắt đầu.",
             string.IsNullOrWhiteSpace(className)
-                ? "Your class has started."
-                : "Class \"{className}\" has started.",
-            payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
+                ? "Lớp của bạn đã bắt đầu."
+                : "Lớp \"{className}\" đã bắt đầu.",
+            payload: new NotificationPayload { ClassId = classId, ProgramId = programId }
+                .WithNames(className: className, programName: programName),
             entityType: "Class",
             entityId: classId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
-    public static NotificationCommand ClassAutoStarted(Guid classId, Guid programId, string? className = null)
+    public static NotificationCommand ClassAutoStarted(
+        Guid classId,
+        Guid programId,
+        string? className = null,
+        string? programName = null)
         => StudentParentMentor(
             NotificationType.ClassAutoStarted,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
-            "Class auto-started",
+            "Lớp được tự động bắt đầu",
             string.IsNullOrWhiteSpace(className)
-                ? "Your class was automatically started."
-                : "Class \"{className}\" was automatically started.",
+                ? "Lớp của bạn đã được tự động bắt đầu."
+                : "Lớp \"{className}\" đã được tự động bắt đầu.",
             string.IsNullOrWhiteSpace(className)
-                ? "{studentName}'s class was automatically started."
-                : "{studentName}'s class \"{className}\" was automatically started.",
+                ? "Lớp của con bạn {studentName} đã được tự động bắt đầu."
+                : "Lớp \"{className}\" của con bạn {studentName} đã được tự động bắt đầu.",
             string.IsNullOrWhiteSpace(className)
-                ? "Your class was automatically started."
-                : "Class \"{className}\" was automatically started.",
-            payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
+                ? "Lớp của bạn đã được tự động bắt đầu."
+                : "Lớp \"{className}\" đã được tự động bắt đầu.",
+            payload: new NotificationPayload { ClassId = classId, ProgramId = programId }
+                .WithNames(className: className, programName: programName),
             entityType: "Class",
             entityId: classId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
-    public static NotificationCommand ClassCompleted(Guid classId, Guid programId, string? className = null)
+    public static NotificationCommand ClassCompleted(
+        Guid classId,
+        Guid programId,
+        string? className = null,
+        string? programName = null)
         => StudentParentMentor(
             NotificationType.ClassCompleted,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
-            "Class completed",
+            "Lớp đã hoàn thành",
             string.IsNullOrWhiteSpace(className)
-                ? "Your class has been completed."
-                : "Class \"{className}\" has been completed.",
+                ? "Lớp của bạn đã hoàn thành."
+                : "Lớp \"{className}\" đã hoàn thành.",
             string.IsNullOrWhiteSpace(className)
-                ? "{studentName}'s class has been completed."
-                : "{studentName}'s class \"{className}\" has been completed.",
+                ? "Lớp của con bạn {studentName} đã hoàn thành."
+                : "Lớp \"{className}\" của con bạn {studentName} đã hoàn thành.",
             string.IsNullOrWhiteSpace(className)
-                ? "Your class has been completed."
-                : "Class \"{className}\" has been completed.",
-            payload: new NotificationPayload { ClassId = classId, ProgramId = programId },
+                ? "Lớp của bạn đã hoàn thành."
+                : "Lớp \"{className}\" đã hoàn thành.",
+            payload: new NotificationPayload { ClassId = classId, ProgramId = programId }
+                .WithNames(className: className, programName: programName),
             entityType: "Class",
             entityId: classId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
     // ── Class mentor assignment ───────────────────────────────────────────────
 
@@ -551,73 +648,77 @@ public static class NotificationCatalog
         Guid classId,
         Guid programId,
         Guid mentorId,
-        string? className = null)
+        string? className = null,
+        string? programName = null,
+        string? actorName = null)
         => new(
             NotificationType.ClassMentorRequestSubmitted,
             NotificationAudience.ForManagers(),
             NotificationRoleTemplates.FromDefault(
-                "Mentor request submitted",
+                "Mentor gửi yêu cầu nhận lớp",
                 string.IsNullOrWhiteSpace(className)
-                    ? "A mentor requested assignment to a class."
-                    : "A mentor requested assignment to class \"{className}\"."),
+                    ? "{actorName} đã yêu cầu được phân công lớp."
+                    : "{actorName} đã yêu cầu được phân công lớp \"{className}\"."),
             payload: new NotificationPayload
             {
                 ClassMentorRequestId = requestId,
                 ClassId = classId,
                 ProgramId = programId,
-            },
+            }.WithNames(actorName: actorName, className: className, programName: programName),
             actorUserId: mentorId,
             entityType: "ClassMentorRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(actorName: actorName, className: className, programName: programName));
 
     public static NotificationCommand ClassMentorRequestApproved(
         Guid requestId,
         Guid classId,
         Guid programId,
         Guid mentorId,
-        string? className = null)
+        string? className = null,
+        string? programName = null)
         => new(
             NotificationType.ClassMentorRequestApproved,
             NotificationAudience.ForUser(mentorId),
             NotificationRoleTemplates.FromDefault(
-                "Mentor request approved",
+                "Yêu cầu nhận lớp đã được duyệt",
                 string.IsNullOrWhiteSpace(className)
-                    ? "Your class assignment request was approved."
-                    : "Your request for class \"{className}\" was approved."),
+                    ? "Yêu cầu nhận lớp của bạn đã được duyệt."
+                    : "Yêu cầu nhận lớp \"{className}\" của bạn đã được duyệt."),
             payload: new NotificationPayload
             {
                 ClassMentorRequestId = requestId,
                 ClassId = classId,
                 ProgramId = programId,
-            },
+            }.WithNames(className: className, programName: programName),
             entityType: "ClassMentorRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
     public static NotificationCommand ClassMentorRequestRejected(
         Guid requestId,
         Guid classId,
         Guid programId,
         Guid mentorId,
-        string? className = null)
+        string? className = null,
+        string? programName = null)
         => new(
             NotificationType.ClassMentorRequestRejected,
             NotificationAudience.ForUser(mentorId),
             NotificationRoleTemplates.FromDefault(
-                "Mentor request rejected",
+                "Yêu cầu nhận lớp bị từ chối",
                 string.IsNullOrWhiteSpace(className)
-                    ? "Your class assignment request was rejected."
-                    : "Your request for class \"{className}\" was rejected."),
+                    ? "Yêu cầu nhận lớp của bạn đã bị từ chối."
+                    : "Yêu cầu nhận lớp \"{className}\" của bạn đã bị từ chối."),
             payload: new NotificationPayload
             {
                 ClassMentorRequestId = requestId,
                 ClassId = classId,
                 ProgramId = programId,
-            },
+            }.WithNames(className: className, programName: programName),
             entityType: "ClassMentorRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
     // ── Assessment recovery ───────────────────────────────────────────────────
 
@@ -627,17 +728,21 @@ public static class NotificationCatalog
         Guid assignmentId,
         Guid moduleId,
         Guid? classId,
-        string? assignmentTitle = null)
+        string? assignmentTitle = null,
+        string? studentName = null,
+        string? actorName = null,
+        string? className = null,
+        string? programName = null)
         => new(
             NotificationType.AssessmentRecoveryRequested,
             classId.HasValue
                 ? NotificationAudience.ForClassMentor(classId.Value)
                 : NotificationAudience.ForManagers(),
             NotificationRoleTemplates.FromDefault(
-                "Assessment recovery requested",
+                "Yêu cầu làm lại bài đánh giá",
                 string.IsNullOrWhiteSpace(assignmentTitle)
-                    ? "{actorName} requested another attempt on an assignment."
-                    : "{actorName} requested another attempt on \"{assignmentTitle}\"."),
+                    ? "{actorName} đã yêu cầu thêm lượt làm bài tập."
+                    : "{actorName} đã yêu cầu thêm lượt làm \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 AssessmentRecoveryRequestId = requestId,
@@ -645,11 +750,16 @@ public static class NotificationCatalog
                 AssignmentId = assignmentId,
                 ModuleId = moduleId,
                 ClassId = classId,
-            },
+            }.WithNames(studentName: studentName, actorName: actorName, className: className, programName: programName),
             actorUserId: studentId,
             entityType: "AssessmentRecoveryRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                assignmentTitle: assignmentTitle));
 
     public static NotificationCommand AssessmentRecoveryApproved(
         Guid requestId,
@@ -658,27 +768,31 @@ public static class NotificationCatalog
         int extraAttempts,
         string? assignmentTitle = null,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.AssessmentRecoveryApproved,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Assessment recovery approved",
+            "Đã duyệt làm lại bài đánh giá",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "Your recovery request was approved (+{extraAttempts} attempt(s))."
-                : "Recovery for \"{assignmentTitle}\" was approved (+{extraAttempts} attempt(s)).",
+                ? "Yêu cầu làm lại của bạn đã được duyệt (+{extraAttempts} lượt)."
+                : "Yêu cầu làm lại \"{assignmentTitle}\" đã được duyệt (+{extraAttempts} lượt).",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "{studentName}'s recovery request was approved (+{extraAttempts} attempt(s))."
-                : "Recovery for \"{assignmentTitle}\" was approved for {studentName} (+{extraAttempts} attempt(s)).",
+                ? "Yêu cầu làm lại của con bạn {studentName} đã được duyệt (+{extraAttempts} lượt)."
+                : "Yêu cầu làm lại \"{assignmentTitle}\" của con bạn {studentName} đã được duyệt (+{extraAttempts} lượt).",
             payload: new NotificationPayload
             {
                 AssessmentRecoveryRequestId = requestId,
                 AssignmentId = assignmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "AssessmentRecoveryRequest",
             entityId: requestId,
             tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
                 assignmentTitle: assignmentTitle,
                 extraAttempts: extraAttempts.ToString()));
 
@@ -687,22 +801,25 @@ public static class NotificationCatalog
         Guid studentId,
         Guid assignmentId,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.AssessmentRecoveryRejected,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Assessment recovery rejected",
-            "Your assessment recovery request was rejected.",
-            "{studentName}'s assessment recovery request was rejected.",
+            "Yêu cầu làm lại bài đánh giá bị từ chối",
+            "Yêu cầu làm lại bài đánh giá của bạn đã bị từ chối.",
+            "Yêu cầu làm lại bài đánh giá của con bạn {studentName} đã bị từ chối.",
             payload: new NotificationPayload
             {
                 AssessmentRecoveryRequestId = requestId,
                 AssignmentId = assignmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "AssessmentRecoveryRequest",
-            entityId: requestId);
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
     // ── Class re-delivery ─────────────────────────────────────────────────────
 
@@ -711,25 +828,30 @@ public static class NotificationCatalog
         Guid studentId,
         Guid moduleId,
         Guid programId,
-        string? moduleName = null)
+        string? moduleName = null,
+        string? studentName = null,
+        string? programName = null)
         => new(
             NotificationType.ClassRedeliveryPendingManager,
             NotificationAudience.ForManagers(),
             NotificationRoleTemplates.FromDefault(
-                "Class re-delivery needs decision",
+                "Yêu cầu chuyển lớp học lại cần quyết định",
                 string.IsNullOrWhiteSpace(moduleName)
-                    ? "No eligible class found; a re-delivery request needs manager action."
-                    : "No eligible class for re-delivery of \"{moduleName}\"; manager action needed."),
+                    ? "Không tìm thấy lớp phù hợp; yêu cầu chuyển lớp học lại cần quản lý xử lý."
+                    : "Không tìm thấy lớp phù hợp để học lại \"{moduleName}\"; cần quản lý xử lý."),
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
                 StudentId = studentId,
                 ModuleId = moduleId,
                 ProgramId = programId,
-            },
+            }.WithNames(studentName: studentName, programName: programName),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand ClassRedeliveryMatchedPendingPayment(
         Guid requestId,
@@ -740,17 +862,19 @@ public static class NotificationCatalog
         string? moduleName = null,
         string? className = null,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryMatchedPendingPayment,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Pay retake fee to join another class",
+            "Thanh toán phí học lại để vào lớp khác",
             string.IsNullOrWhiteSpace(className)
-                ? "A class was matched for re-delivery. Complete retake payment to transfer."
-                : "Matched class \"{className}\" for re-delivery of \"{moduleName}\". Complete payment to transfer.",
+                ? "Đã ghép một lớp để học lại. Hoàn tất thanh toán để chuyển lớp."
+                : "Đã ghép lớp \"{className}\" để học lại \"{moduleName}\". Hoàn tất thanh toán để chuyển lớp.",
             string.IsNullOrWhiteSpace(className)
-                ? "A class was matched for {studentName}'s re-delivery. Complete retake payment to transfer."
-                : "Matched class \"{className}\" for re-delivery of \"{moduleName}\" for {studentName}. Complete payment to transfer.",
+                ? "Đã ghép một lớp để con bạn {studentName} học lại. Hoàn tất thanh toán để chuyển lớp."
+                : "Đã ghép lớp \"{className}\" để con bạn {studentName} học lại \"{moduleName}\". Hoàn tất thanh toán để chuyển lớp.",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
@@ -759,30 +883,39 @@ public static class NotificationCatalog
                 ClassId = targetClassId,
                 ModuleEnrollmentId = retakeModuleEnrollmentId,
                 ProgramId = programId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                className: className,
+                programName: programName),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName, className: className));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                className: className,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand ClassRedeliveryRejected(
         Guid requestId,
         Guid studentId,
         Guid moduleId,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryRejected,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Class re-delivery rejected",
-            "Your class re-delivery request was rejected.",
-            "{studentName}'s class re-delivery request was rejected.",
+            "Yêu cầu chuyển lớp học lại bị từ chối",
+            "Yêu cầu chuyển lớp học lại của bạn đã bị từ chối.",
+            "Yêu cầu chuyển lớp học lại của con bạn {studentName} đã bị từ chối.",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
                 ModuleId = moduleId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId);
 
@@ -793,13 +926,16 @@ public static class NotificationCatalog
         Guid targetClassId,
         Guid? programId = null,
         Guid? programEnrollmentId = null,
-        Guid? nextActivityId = null)
+        Guid? nextActivityId = null,
+        string? studentName = null,
+        string? programName = null,
+        string? className = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryCompleted,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Class re-delivery completed",
-            "You have been transferred for module re-delivery.",
-            "{studentName} has been transferred for module re-delivery.",
+            "Đã hoàn tất chuyển lớp học lại",
+            "Bạn đã được chuyển lớp để học lại học phần.",
+            "Con bạn {studentName} đã được chuyển lớp để học lại học phần.",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
@@ -809,9 +945,16 @@ public static class NotificationCatalog
                 StudentId = studentId,
                 NextActivityId = nextActivityId,
                 ActivityId = nextActivityId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                className: className,
+                programName: programName),
             entityType: "ClassRedeliveryRequest",
-            entityId: requestId);
+            entityId: requestId,
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                className: className,
+                programName: programName));
 
     public static NotificationCommand ClassRedeliveryWithdrawn(
         Guid requestId,
@@ -819,27 +962,32 @@ public static class NotificationCatalog
         Guid moduleId,
         string? moduleName = null,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryWithdrawn,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Class re-delivery withdrawn",
+            "Đã rút yêu cầu chuyển lớp học lại",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "Your class re-delivery request was withdrawn. Your progress is kept and you can request again later."
-                : "Your re-delivery request for \"{moduleName}\" was withdrawn. Your progress is kept and you can request again later.",
+                ? "Yêu cầu chuyển lớp học lại của bạn đã được rút. Tiến độ được giữ và bạn có thể gửi lại sau."
+                : "Yêu cầu học lại \"{moduleName}\" của bạn đã được rút. Tiến độ được giữ và bạn có thể gửi lại sau.",
             string.IsNullOrWhiteSpace(moduleName)
-                ? "{studentName}'s class re-delivery request was withdrawn. Progress is kept and a new request can be made later."
-                : "{studentName}'s re-delivery request for \"{moduleName}\" was withdrawn. Progress is kept and a new request can be made later.",
+                ? "Yêu cầu chuyển lớp học lại của con bạn {studentName} đã được rút. Tiến độ được giữ và có thể gửi lại sau."
+                : "Yêu cầu học lại \"{moduleName}\" của con bạn {studentName} đã được rút. Tiến độ được giữ và có thể gửi lại sau.",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
                 ModuleId = moduleId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand ClassRedeliveryAwaitingSelection(
         Guid requestId,
@@ -848,27 +996,32 @@ public static class NotificationCatalog
         int candidateCount,
         string? moduleName = null,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryAwaitingSelection,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Pick a class to re-take this module",
+            "Chọn lớp để học lại học phần",
             string.IsNullOrWhiteSpace(moduleName)
-                ? $"{candidateCount} eligible class(es) are available for re-delivery. Pick the one that fits your schedule."
-                : $"{candidateCount} eligible class(es) are available to re-take \"{{moduleName}}\". Pick the one that fits your schedule.",
+                ? $"{candidateCount} lớp đủ điều kiện để học lại. Hãy chọn lớp phù hợp lịch của bạn."
+                : $"{candidateCount} lớp đủ điều kiện để học lại \"{{moduleName}}\". Hãy chọn lớp phù hợp lịch của bạn.",
             string.IsNullOrWhiteSpace(moduleName)
-                ? $"{candidateCount} eligible class(es) are available for {{studentName}}'s re-delivery."
-                : $"{candidateCount} eligible class(es) are available for {{studentName}} to re-take \"{{moduleName}}\".",
+                ? $"{candidateCount} lớp đủ điều kiện để con bạn {{studentName}} học lại."
+                : $"{candidateCount} lớp đủ điều kiện để con bạn {{studentName}} học lại \"{{moduleName}}\".",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
                 ModuleId = moduleId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand ClassRedeliveryIntensiveOffered(
         Guid requestId,
@@ -878,17 +1031,19 @@ public static class NotificationCatalog
         string? moduleName = null,
         string? className = null,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryIntensiveOffered,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Remedial class offered — confirm the intensive pace",
+            "Có lớp bổ trợ — xác nhận lịch tăng cường",
             string.IsNullOrWhiteSpace(className)
-                ? "A remedial class was opened for your module. Confirm you can follow the intensive schedule, or decline."
-                : "Remedial class \"{className}\" was opened to re-take \"{moduleName}\". Confirm you can follow the intensive schedule, or decline.",
+                ? "Một lớp bổ trợ đã được mở cho học phần của bạn. Xác nhận bạn theo được lịch tăng cường, hoặc từ chối."
+                : "Lớp bổ trợ \"{className}\" đã được mở để học lại \"{moduleName}\". Xác nhận bạn theo được lịch tăng cường, hoặc từ chối.",
             string.IsNullOrWhiteSpace(className)
-                ? "A remedial class was opened for {studentName}'s module. The intensive schedule needs confirmation."
-                : "Remedial class \"{className}\" was opened for {studentName} to re-take \"{moduleName}\". The intensive schedule needs confirmation.",
+                ? "Một lớp bổ trợ đã được mở cho học phần của con bạn {studentName}. Cần xác nhận lịch tăng cường."
+                : "Lớp bổ trợ \"{className}\" đã được mở để con bạn {studentName} học lại \"{moduleName}\". Cần xác nhận lịch tăng cường.",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
@@ -896,10 +1051,17 @@ public static class NotificationCatalog
                 ClassId = remedialClassId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                className: className,
+                programName: programName),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName, className: className));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                className: className,
+                programName: programName,
+                moduleName: moduleName));
 
     public static NotificationCommand ClassRedeliveryCandidatesAvailable(
         Guid requestId,
@@ -909,17 +1071,19 @@ public static class NotificationCatalog
         string? moduleName = null,
         string? className = null,
         Guid? programId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ClassRedeliveryCandidatesAvailable,
             NotificationAudience.ForStudentAndParents(studentId),
-            "A new class matches your re-delivery request",
+            "Có lớp mới phù hợp yêu cầu học lại",
             string.IsNullOrWhiteSpace(className)
-                ? "A new class now fits your re-delivery request. Open the request to pick it."
-                : "New class \"{className}\" now fits your request to re-take \"{moduleName}\". Open the request to pick it.",
+                ? "Một lớp mới hiện phù hợp yêu cầu học lại của bạn. Mở yêu cầu để chọn lớp."
+                : "Lớp mới \"{className}\" hiện phù hợp yêu cầu học lại \"{moduleName}\" của bạn. Mở yêu cầu để chọn lớp.",
             string.IsNullOrWhiteSpace(className)
-                ? "A new class now fits {studentName}'s re-delivery request."
-                : "New class \"{className}\" now fits {studentName}'s request to re-take \"{moduleName}\".",
+                ? "Một lớp mới hiện phù hợp yêu cầu học lại của con bạn {studentName}."
+                : "Lớp mới \"{className}\" hiện phù hợp yêu cầu học lại \"{moduleName}\" của con bạn {studentName}.",
             payload: new NotificationPayload
             {
                 ClassRedeliveryRequestId = requestId,
@@ -927,10 +1091,17 @@ public static class NotificationCatalog
                 ClassId = classId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                className: className,
+                programName: programName),
             entityType: "ClassRedeliveryRequest",
             entityId: requestId,
-            tokens: NotificationTokenKeys.Create(moduleName: moduleName, className: className));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                className: className,
+                programName: programName,
+                moduleName: moduleName));
 
     // ── Class enrollment ──────────────────────────────────────────────────────
 
@@ -941,17 +1112,19 @@ public static class NotificationCatalog
         Guid? programId = null,
         string? className = null,
         Guid? programEnrollmentId = null,
-        Guid? nextActivityId = null)
+        Guid? nextActivityId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ClassEnrolled,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Enrolled in class",
+            "Đã ghi danh vào lớp",
             string.IsNullOrWhiteSpace(className)
-                ? "You have been enrolled in a class."
-                : "You have been enrolled in \"{className}\".",
+                ? "Bạn đã được ghi danh vào một lớp."
+                : "Bạn đã được ghi danh vào lớp \"{className}\".",
             string.IsNullOrWhiteSpace(className)
-                ? "{studentName} has been enrolled in a class."
-                : "{studentName} has been enrolled in \"{className}\".",
+                ? "Con bạn {studentName} đã được ghi danh vào một lớp."
+                : "Con bạn {studentName} đã được ghi danh vào lớp \"{className}\".",
             payload: new NotificationPayload
             {
                 ClassId = classId,
@@ -960,10 +1133,16 @@ public static class NotificationCatalog
                 StudentId = studentId,
                 NextActivityId = nextActivityId,
                 ActivityId = nextActivityId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                className: className,
+                programName: programName),
             entityType: "ClassEnrollment",
             entityId: classEnrollmentId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                className: className,
+                programName: programName));
 
     public static NotificationCommand ClassTransferred(
         Guid studentId,
@@ -972,17 +1151,19 @@ public static class NotificationCatalog
         Guid? programId = null,
         string? className = null,
         Guid? programEnrollmentId = null,
-        Guid? nextActivityId = null)
+        Guid? nextActivityId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ClassTransferred,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Transferred to another class",
+            "Đã chuyển sang lớp khác",
             string.IsNullOrWhiteSpace(className)
-                ? "You have been transferred to another class."
-                : "You have been transferred to \"{className}\".",
+                ? "Bạn đã được chuyển sang lớp khác."
+                : "Bạn đã được chuyển sang lớp \"{className}\".",
             string.IsNullOrWhiteSpace(className)
-                ? "{studentName} has been transferred to another class."
-                : "{studentName} has been transferred to \"{className}\".",
+                ? "Con bạn {studentName} đã được chuyển sang lớp khác."
+                : "Con bạn {studentName} đã được chuyển sang lớp \"{className}\".",
             payload: new NotificationPayload
             {
                 ClassId = classId,
@@ -991,108 +1172,133 @@ public static class NotificationCatalog
                 StudentId = studentId,
                 NextActivityId = nextActivityId,
                 ActivityId = nextActivityId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                className: className,
+                programName: programName),
             entityType: "ClassEnrollment",
             entityId: classEnrollmentId,
-            tokens: NotificationTokenKeys.Create(className: className));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                className: className,
+                programName: programName));
 
     // ── Class session ─────────────────────────────────────────────────────────
 
     public static NotificationCommand ClassSessionScheduled(
         Guid classId,
         Guid classSessionId,
-        Guid? programId = null)
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null)
         => StudentParentMentor(
             NotificationType.ClassSessionScheduled,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
-            "Session scheduled",
-            "A new class session has been scheduled.",
-            "A new class session has been scheduled for {studentName}.",
-            "A new class session has been scheduled.",
+            "Đã lên lịch buổi học",
+            "Một buổi học mới đã được lên lịch.",
+            "Một buổi học mới đã được lên lịch cho con bạn {studentName}.",
+            "Một buổi học mới đã được lên lịch.",
             payload: new NotificationPayload
             {
                 ClassId = classId,
                 ClassSessionId = classSessionId,
                 ProgramId = programId
-            },
+            }.WithNames(className: className, programName: programName),
             entityType: "ClassSession",
-            entityId: classSessionId);
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
     public static NotificationCommand ClassSessionRescheduled(
         Guid classId,
         Guid classSessionId,
-        Guid? programId = null)
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null)
         => StudentParentMentor(
             NotificationType.ClassSessionRescheduled,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
-            "Session rescheduled",
-            "A class session has been rescheduled.",
-            "A class session has been rescheduled for {studentName}.",
-            "A class session has been rescheduled.",
+            "Đã đổi lịch buổi học",
+            "Một buổi học đã được đổi lịch.",
+            "Một buổi học của con bạn {studentName} đã được đổi lịch.",
+            "Một buổi học đã được đổi lịch.",
             payload: new NotificationPayload
             {
                 ClassId = classId,
                 ClassSessionId = classSessionId,
                 ProgramId = programId
-            },
+            }.WithNames(className: className, programName: programName),
             entityType: "ClassSession",
-            entityId: classSessionId);
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
     public static NotificationCommand ClassSessionStarted(
         Guid classId,
         Guid classSessionId,
-        Guid? programId = null)
-        => new(
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null)
+        => StudentParentMentor(
             NotificationType.ClassSessionStarted,
-            NotificationAudience.ForClassRosterAndMentor(classId),
-            "Session started",
-            "A class session has started.",
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
+            "Buổi học đã bắt đầu",
+            "Một buổi học đã bắt đầu.",
+            "Một buổi học của con bạn {studentName} đã bắt đầu.",
+            "Một buổi học đã bắt đầu.",
             payload: new NotificationPayload
             {
                 ClassId = classId,
                 ClassSessionId = classSessionId,
                 ProgramId = programId
-            },
+            }.WithNames(className: className, programName: programName),
             entityType: "ClassSession",
-            entityId: classSessionId);
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
     public static NotificationCommand ClassSessionCompleted(
         Guid classId,
         Guid classSessionId,
-        Guid? programId = null)
-        => new(
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null)
+        => StudentParentMentor(
             NotificationType.ClassSessionCompleted,
-            NotificationAudience.ForClassRosterAndMentor(classId),
-            "Session completed",
-            "A class session has been completed.",
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
+            "Buổi học đã kết thúc",
+            "Một buổi học đã kết thúc.",
+            "Một buổi học của con bạn {studentName} đã kết thúc.",
+            "Một buổi học đã kết thúc.",
             payload: new NotificationPayload
             {
                 ClassId = classId,
                 ClassSessionId = classSessionId,
                 ProgramId = programId
-            },
+            }.WithNames(className: className, programName: programName),
             entityType: "ClassSession",
-            entityId: classSessionId);
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
     public static NotificationCommand ClassSessionCancelled(
         Guid classId,
         Guid classSessionId,
-        Guid? programId = null)
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null)
         => StudentParentMentor(
             NotificationType.ClassSessionCancelled,
             NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
-            "Session cancelled",
-            "A class session has been cancelled.",
-            "A class session has been cancelled for {studentName}.",
-            "A class session has been cancelled.",
+            "Buổi học đã bị hủy",
+            "Một buổi học đã bị hủy.",
+            "Một buổi học của con bạn {studentName} đã bị hủy.",
+            "Một buổi học đã bị hủy.",
             payload: new NotificationPayload
             {
                 ClassId = classId,
                 ClassSessionId = classSessionId,
                 ProgramId = programId
-            },
+            }.WithNames(className: className, programName: programName),
             entityType: "ClassSession",
-            entityId: classSessionId);
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(className: className, programName: programName));
 
     // ── Attendance ────────────────────────────────────────────────────────────
 
@@ -1104,35 +1310,39 @@ public static class NotificationCatalog
         Guid? actorUserId = null,
         Guid? programId = null,
         Guid? programEnrollmentId = null,
-        Guid? activityId = null)
+        Guid? activityId = null,
+        string? studentName = null,
+        string? actorName = null,
+        string? className = null,
+        string? programName = null)
     {
         var (type, title, studentBody, parentBody) = status switch
         {
             AttendanceStatus.Present => (
                 NotificationType.AttendanceMarkedPresent,
-                "Marked present",
-                "You were marked present for a class session.",
-                "{studentName} was marked present for a class session."),
+                "Được điểm danh có mặt",
+                "Bạn được {actorName} điểm danh có mặt cho một buổi học.",
+                "Con bạn {studentName} được {actorName} điểm danh có mặt cho một buổi học."),
             AttendanceStatus.Late => (
                 NotificationType.AttendanceMarkedLate,
-                "Marked late",
-                "You were marked late for a class session.",
-                "{studentName} was marked late for a class session."),
+                "Được điểm danh đi muộn",
+                "Bạn được {actorName} điểm danh đi muộn cho một buổi học.",
+                "Con bạn {studentName} được {actorName} điểm danh đi muộn cho một buổi học."),
             AttendanceStatus.Absent => (
                 NotificationType.AttendanceMarkedAbsent,
-                "Marked absent",
-                "You were marked absent for a class session.",
-                "{studentName} was marked absent for a class session."),
+                "Được điểm danh vắng",
+                "Bạn được {actorName} điểm danh vắng cho một buổi học.",
+                "Con bạn {studentName} được {actorName} điểm danh vắng cho một buổi học."),
             AttendanceStatus.Excused => (
                 NotificationType.AttendanceMarkedExcused,
-                "Marked excused",
-                "You were marked excused for a class session.",
-                "{studentName} was marked excused for a class session."),
+                "Được điểm danh vắng có phép",
+                "Bạn được {actorName} điểm danh vắng có phép cho một buổi học.",
+                "Con bạn {studentName} được {actorName} điểm danh vắng có phép cho một buổi học."),
             _ => (
                 NotificationType.AttendanceMarkedPresent,
-                "Attendance updated",
-                "Your attendance was updated for a class session.",
-                "{studentName}'s attendance was updated for a class session.")
+                "Đã cập nhật điểm danh",
+                "Điểm danh của bạn đã được {actorName} cập nhật cho một buổi học.",
+                "Điểm danh của con bạn {studentName} đã được {actorName} cập nhật cho một buổi học.")
         };
 
         return StudentAndParent(
@@ -1148,11 +1358,66 @@ public static class NotificationCatalog
                 StudentId = studentId,
                 ProgramId = programId,
                 ActivityId = activityId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                actorName: actorName,
+                className: className,
+                programName: programName),
             actorUserId: actorUserId,
             entityType: "ClassSession",
-            entityId: classSessionId);
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                actorName: actorName,
+                className: className,
+                programName: programName));
     }
+
+    /// <summary>
+    /// First student QR/code check-in. Reuses <see cref="NotificationType.AttendanceMarkedPresent"/>
+    /// but targets verified parents only, with Vietnam-local check-in time in the copy.
+    /// </summary>
+    public static NotificationCommand AttendanceCheckedIn(
+        Guid studentId,
+        Guid classSessionId,
+        string checkedInAt,
+        Guid? classId = null,
+        Guid? actorUserId = null,
+        Guid? programId = null,
+        Guid? programEnrollmentId = null,
+        Guid? activityId = null,
+        string? studentName = null,
+        string? actorName = null,
+        string? className = null,
+        string? programName = null)
+        => new(
+            NotificationType.AttendanceMarkedPresent,
+            NotificationAudience.ForParentsOfStudent(studentId),
+            NotificationRoleTemplates.ForParent(
+                "Đã check-in",
+                "Con bạn {studentName} đã check-in lúc {checkedInAt}."),
+            payload: new NotificationPayload
+            {
+                ClassSessionId = classSessionId,
+                ClassId = classId,
+                StudentId = studentId,
+                ProgramId = programId,
+                ActivityId = activityId,
+                Extra = checkedInAt
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                actorName: actorName,
+                className: className,
+                programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSession",
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                checkedInAt: checkedInAt));
 
     // ── Grading / Quiz ────────────────────────────────────────────────────────
 
@@ -1163,31 +1428,38 @@ public static class NotificationCatalog
         bool passed,
         Guid? programId = null,
         string? assignmentTitle = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             passed ? NotificationType.QuizPassed : NotificationType.QuizFailed,
             NotificationAudience.ForStudentAndParents(studentId),
-            passed ? "Quiz passed" : "Quiz needs attention",
+            passed ? "Đạt bài kiểm tra" : "Bài kiểm tra cần chú ý",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? (passed ? "You passed a quiz." : "A quiz was not passed.")
+                ? (passed ? "Bạn đã đạt một bài kiểm tra." : "Bạn chưa đạt một bài kiểm tra.")
                 : (passed
-                    ? "You passed \"{assignmentTitle}\"."
-                    : "\"{assignmentTitle}\" was not passed."),
+                    ? "Bạn đã đạt \"{assignmentTitle}\"."
+                    : "Bạn chưa đạt \"{assignmentTitle}\"."),
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? (passed ? "{studentName} passed a quiz." : "{studentName} did not pass a quiz.")
+                ? (passed
+                    ? "Con bạn {studentName} đã đạt một bài kiểm tra."
+                    : "Con bạn {studentName} chưa đạt một bài kiểm tra.")
                 : (passed
-                    ? "{studentName} passed \"{assignmentTitle}\"."
-                    : "{studentName} did not pass \"{assignmentTitle}\"."),
+                    ? "Con bạn {studentName} đã đạt \"{assignmentTitle}\"."
+                    : "Con bạn {studentName} chưa đạt \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
                 AssignmentId = assignmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "Submission",
             entityId: submissionId,
-            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                assignmentTitle: assignmentTitle));
 
     public static NotificationCommand ResearchGraded(
         Guid studentId,
@@ -1196,31 +1468,36 @@ public static class NotificationCatalog
         bool passed,
         Guid? programId = null,
         string? assignmentTitle = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? programName = null)
         => StudentAndParent(
             passed ? NotificationType.ResearchGradedPassed : NotificationType.ResearchGradedFailed,
             NotificationAudience.ForStudentAndParents(studentId),
-            passed ? "Assignment passed" : "Assignment needs attention",
+            passed ? "Bài tập đã đạt" : "Bài tập cần chú ý",
             string.IsNullOrWhiteSpace(assignmentTitle)
                 ? (passed
-                    ? "Your research submission was graded as passed."
-                    : "Your research submission was graded and needs attention.")
-                : "Your submission for \"{assignmentTitle}\" was graded.",
+                    ? "Bài nghiên cứu của bạn đã được chấm đạt."
+                    : "Bài nghiên cứu của bạn đã được chấm và cần chú ý.")
+                : "Bài nộp \"{assignmentTitle}\" của bạn đã được chấm.",
             string.IsNullOrWhiteSpace(assignmentTitle)
                 ? (passed
-                    ? "{studentName}'s research submission was graded as passed."
-                    : "{studentName}'s research submission was graded and needs attention.")
-                : "{studentName}'s submission for \"{assignmentTitle}\" was graded.",
+                    ? "Bài nghiên cứu của con bạn {studentName} đã được chấm đạt."
+                    : "Bài nghiên cứu của con bạn {studentName} đã được chấm và cần chú ý.")
+                : "Bài nộp \"{assignmentTitle}\" của con bạn {studentName} đã được chấm.",
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
                 AssignmentId = assignmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
             entityType: "Submission",
             entityId: submissionId,
-            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                programName: programName,
+                assignmentTitle: assignmentTitle));
 
     public static NotificationCommand ResearchReturnedForRevision(
         Guid studentId,
@@ -1229,28 +1506,38 @@ public static class NotificationCatalog
         Guid? programId = null,
         string? assignmentTitle = null,
         Guid? actorUserId = null,
-        Guid? programEnrollmentId = null)
+        Guid? programEnrollmentId = null,
+        string? studentName = null,
+        string? actorName = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.ResearchReturnedForRevision,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Submission returned for revision",
+            "Bài nộp được trả lại để chỉnh sửa",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "Your research submission was returned for revision."
-                : "Your submission for \"{assignmentTitle}\" was returned for revision.",
+                ? "{actorName} đã trả bài nghiên cứu của bạn để chỉnh sửa."
+                : "{actorName} đã trả bài nộp \"{assignmentTitle}\" của bạn để chỉnh sửa.",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "{studentName}'s research submission was returned for revision."
-                : "{studentName}'s submission for \"{assignmentTitle}\" was returned for revision.",
+                ? "{actorName} đã trả bài nghiên cứu của con bạn {studentName} để chỉnh sửa."
+                : "{actorName} đã trả bài nộp \"{assignmentTitle}\" của con bạn {studentName} để chỉnh sửa.",
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
                 AssignmentId = assignmentId,
                 ProgramId = programId,
                 StudentId = studentId
-            }.SetEnrollment(programEnrollmentId),
+            }.SetEnrollment(programEnrollmentId).WithNames(
+                studentName: studentName,
+                actorName: actorName,
+                programName: programName),
             actorUserId: actorUserId,
             entityType: "Submission",
             entityId: submissionId,
-            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                actorName: actorName,
+                programName: programName,
+                assignmentTitle: assignmentTitle));
 
     public static NotificationCommand ResearchSubmissionOpened(
         Guid studentId,
@@ -1260,8 +1547,8 @@ public static class NotificationCatalog
         => new(
             NotificationType.ResearchSubmissionOpened,
             NotificationAudience.ForUser(studentId),
-            "Research submission opened",
-            "You can now work on your research submission.",
+            "Đã mở bài nghiên cứu",
+            "Bạn có thể bắt đầu làm bài nghiên cứu.",
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
@@ -1278,17 +1565,21 @@ public static class NotificationCatalog
         Guid assignmentId,
         Guid? classId = null,
         Guid? programId = null,
-        string? assignmentTitle = null)
+        string? assignmentTitle = null,
+        string? studentName = null,
+        string? actorName = null,
+        string? className = null,
+        string? programName = null)
         => new(
             NotificationType.ResearchWorkSubmitted,
             classId.HasValue
                 ? NotificationAudience.ForClassMentor(classId.Value)
                 : NotificationAudience.ForUser(studentId),
             NotificationRoleTemplates.FromDefault(
-                "Research work submitted",
+                "Đã nộp bài nghiên cứu",
                 string.IsNullOrWhiteSpace(assignmentTitle)
-                    ? "{actorName} submitted research work for review."
-                    : "Research work was submitted for \"{assignmentTitle}\"."),
+                    ? "{actorName} đã nộp bài nghiên cứu để chấm."
+                    : "{actorName} đã nộp bài nghiên cứu cho \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 SubmissionId = submissionId,
@@ -1296,110 +1587,141 @@ public static class NotificationCatalog
                 ClassId = classId,
                 ProgramId = programId,
                 StudentId = studentId
-            },
+            }.WithNames(
+                studentName: studentName,
+                actorName: actorName,
+                className: className,
+                programName: programName),
             actorUserId: studentId,
             entityType: "Submission",
             entityId: submissionId,
-            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
+            tokens: NotificationTokenKeys.Create(
+                studentName: studentName,
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                assignmentTitle: assignmentTitle));
 
     // ── Media ─────────────────────────────────────────────────────────────────
 
     public static NotificationCommand MediaVideoReady(
         Guid uploaderUserId,
         Guid mediaAssetId,
-        Guid? classId = null)
+        Guid? classId = null,
+        string? className = null)
         => new(
             NotificationType.MediaVideoReady,
             NotificationAudience.ForUser(uploaderUserId),
-            "Video ready",
-            "Your video has finished processing and is ready.",
-            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId },
+            "Video đã sẵn sàng",
+            "Video của bạn đã xử lý xong và sẵn sàng.",
+            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId }
+                .WithNames(className: className),
             entityType: "MediaAsset",
             entityId: mediaAssetId);
 
     public static NotificationCommand MediaProcessingFailed(
         Guid uploaderUserId,
         Guid mediaAssetId,
-        Guid? classId = null)
+        Guid? classId = null,
+        string? className = null)
         => new(
             NotificationType.MediaProcessingFailed,
             NotificationAudience.ForUser(uploaderUserId),
-            "Video processing failed",
-            "Video processing failed. Please try uploading again.",
-            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId },
+            "Xử lý video thất bại",
+            "Xử lý video thất bại. Vui lòng tải lên lại.",
+            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId }
+                .WithNames(className: className),
             entityType: "MediaAsset",
             entityId: mediaAssetId);
 
     public static NotificationCommand MediaAiTaggingFailed(
         Guid uploaderUserId,
         Guid mediaAssetId,
-        Guid? classId = null)
+        Guid? classId = null,
+        string? className = null)
         => new(
             NotificationType.MediaAiTaggingFailed,
             NotificationAudience.ForUser(uploaderUserId),
-            "AI tagging failed",
-            "Automatic tagging for your video failed.",
-            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId },
+            "Gắn thẻ AI thất bại",
+            "Gắn thẻ tự động cho video của bạn đã thất bại.",
+            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId }
+                .WithNames(className: className),
             entityType: "MediaAsset",
             entityId: mediaAssetId);
 
     public static NotificationCommand MediaTagsProcessed(
         Guid uploaderUserId,
         Guid mediaAssetId,
-        Guid? classId = null)
+        Guid? classId = null,
+        string? className = null)
         => new(
             NotificationType.MediaTagsProcessed,
             NotificationAudience.ForUser(uploaderUserId),
-            "Video tags ready",
-            "AI tags for your video are ready.",
-            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId },
+            "Thẻ video đã sẵn sàng",
+            "Thẻ AI cho video của bạn đã sẵn sàng.",
+            payload: new NotificationPayload { MediaAssetId = mediaAssetId, ClassId = classId }
+                .WithNames(className: className),
             entityType: "MediaAsset",
             entityId: mediaAssetId);
 
     // ── Highlight video ───────────────────────────────────────────────────────
 
-    public static NotificationCommand HighlightVideoGenerationQueued(Guid studentId, Guid highlightVideoId)
+    public static NotificationCommand HighlightVideoGenerationQueued(
+        Guid studentId,
+        Guid highlightVideoId,
+        string? studentName = null)
         => new(
             NotificationType.HighlightVideoGenerationQueued,
             NotificationAudience.ForUser(studentId),
-            "Highlight video queued",
-            "Your personal highlight video generation has been queued.",
+            NotificationRoleTemplates.FromDefault(
+                "Video nổi bật đang chờ xử lý",
+                "Video nổi bật cá nhân của bạn đã được đưa vào hàng đợi."),
             payload: new NotificationPayload
             {
                 HighlightVideoId = highlightVideoId,
                 StudentId = studentId
-            },
+            }.WithNames(studentName: studentName),
             entityType: "HighlightVideo",
-            entityId: highlightVideoId);
+            entityId: highlightVideoId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName));
 
-    public static NotificationCommand HighlightVideoReady(Guid studentId, Guid highlightVideoId)
+    public static NotificationCommand HighlightVideoReady(
+        Guid studentId,
+        Guid highlightVideoId,
+        string? studentName = null)
         => StudentAndParent(
             NotificationType.HighlightVideoReady,
             NotificationAudience.ForStudentAndParents(studentId),
-            "Highlight video ready",
-            "Your personal highlight video is ready.",
-            "{studentName}'s personal highlight video is ready.",
+            "Video nổi bật đã sẵn sàng",
+            "Video nổi bật cá nhân của bạn đã sẵn sàng.",
+            "Video nổi bật cá nhân của con bạn {studentName} đã sẵn sàng.",
             payload: new NotificationPayload
             {
                 HighlightVideoId = highlightVideoId,
                 StudentId = studentId
-            },
+            }.WithNames(studentName: studentName),
             entityType: "HighlightVideo",
-            entityId: highlightVideoId);
+            entityId: highlightVideoId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName));
 
-    public static NotificationCommand HighlightVideoGenerationFailed(Guid studentId, Guid highlightVideoId)
+    public static NotificationCommand HighlightVideoGenerationFailed(
+        Guid studentId,
+        Guid highlightVideoId,
+        string? studentName = null)
         => new(
             NotificationType.HighlightVideoGenerationFailed,
             NotificationAudience.ForUser(studentId),
-            "Highlight video failed",
-            "Generating your personal highlight video failed.",
+            NotificationRoleTemplates.FromDefault(
+                "Tạo video nổi bật thất bại",
+                "Không tạo được video nổi bật cá nhân của bạn."),
             payload: new NotificationPayload
             {
                 HighlightVideoId = highlightVideoId,
                 StudentId = studentId
-            },
+            }.WithNames(studentName: studentName),
             entityType: "HighlightVideo",
-            entityId: highlightVideoId);
+            entityId: highlightVideoId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName));
 
     // ── Catalog ───────────────────────────────────────────────────────────────
 
@@ -1408,27 +1730,32 @@ public static class NotificationCatalog
         Guid assignmentId,
         Guid? programId = null,
         string? assignmentTitle = null,
-        Guid? moduleId = null)
+        Guid? moduleId = null,
+        string? className = null,
+        string? programName = null)
         => StudentAndParent(
             NotificationType.AssignmentPublished,
             NotificationAudience.ForClassRosterAndParents(classId),
-            "New assignment published",
+            "Bài tập mới đã được đăng",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "A new assignment is available."
-                : "Assignment \"{assignmentTitle}\" is now available.",
+                ? "Một bài tập mới đã sẵn sàng."
+                : "Bài tập \"{assignmentTitle}\" hiện đã sẵn sàng.",
             string.IsNullOrWhiteSpace(assignmentTitle)
-                ? "A new assignment is available for {studentName}."
-                : "Assignment \"{assignmentTitle}\" is now available for {studentName}.",
+                ? "Một bài tập mới đã sẵn sàng cho con bạn {studentName}."
+                : "Bài tập \"{assignmentTitle}\" hiện đã sẵn sàng cho con bạn {studentName}.",
             payload: new NotificationPayload
             {
                 AssignmentId = assignmentId,
                 ClassId = classId,
                 ProgramId = programId,
                 ModuleId = moduleId
-            },
+            }.WithNames(className: className, programName: programName),
             entityType: "Assignment",
             entityId: assignmentId,
-            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
+            tokens: NotificationTokenKeys.Create(
+                className: className,
+                programName: programName,
+                assignmentTitle: assignmentTitle));
 
     public static NotificationCommand MaterialUpdated(
         Guid classId,
@@ -1436,14 +1763,16 @@ public static class NotificationCatalog
         Guid? activityId = null,
         Guid? programId = null,
         string? materialTitle = null,
-        Guid? courseId = null)
+        Guid? courseId = null,
+        string? className = null,
+        string? programName = null)
         => new(
             NotificationType.MaterialUpdated,
             NotificationAudience.ForClassRoster(classId),
-            "Material updated",
+            "Tài liệu đã được cập nhật",
             string.IsNullOrWhiteSpace(materialTitle)
-                ? "Course material was updated."
-                : $"Material \"{materialTitle}\" was updated.",
+                ? "Tài liệu khóa học đã được cập nhật."
+                : $"Tài liệu \"{materialTitle}\" đã được cập nhật.",
             payload: new NotificationPayload
             {
                 MaterialId = materialId,
@@ -1451,7 +1780,7 @@ public static class NotificationCatalog
                 ClassId = classId,
                 ProgramId = programId,
                 CourseId = courseId
-            },
+            }.WithNames(className: className, programName: programName),
             entityType: "Material",
             entityId: materialId);
 
@@ -1462,25 +1791,30 @@ public static class NotificationCatalog
         Guid mentorId,
         Guid programId,
         string assignmentTitle,
-        Guid? moduleId = null)
+        Guid? moduleId = null,
+        string? actorName = null,
+        string? programName = null)
         => new(
             NotificationType.AssignmentEditedByMentor,
             NotificationAudience.ForManagers(),
             NotificationRoleTemplates.FromDefault(
-                "Assignment edited by mentor",
+                "Mentor đã chỉnh sửa bài tập",
                 string.IsNullOrWhiteSpace(assignmentTitle)
-                    ? "A mentor updated assignment details."
-                    : "Mentor updated assignment \"{assignmentTitle}\"."),
+                    ? "{actorName} đã cập nhật thông tin bài tập."
+                    : "{actorName} đã cập nhật bài tập \"{assignmentTitle}\"."),
             payload: new NotificationPayload
             {
                 AssignmentId = assignmentId,
                 ProgramId = programId,
                 ModuleId = moduleId
-            },
+            }.WithNames(actorName: actorName, programName: programName),
             actorUserId: mentorId,
             entityType: "Assignment",
             entityId: assignmentId,
-            tokens: NotificationTokenKeys.Create(assignmentTitle: assignmentTitle));
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                programName: programName,
+                assignmentTitle: assignmentTitle));
 
     public static NotificationCommand ClassQuizSetEditedByMentor(
         Guid assignmentId,
@@ -1489,14 +1823,18 @@ public static class NotificationCatalog
         Guid programId,
         string action,
         string? detail = null,
-        Guid? moduleId = null)
+        Guid? moduleId = null,
+        string? actorName = null,
+        string? className = null,
+        string? programName = null)
         => new(
             NotificationType.ClassQuizSetEditedByMentor,
             NotificationAudience.ForManagers(),
-            "Class quiz set edited by mentor",
-            string.IsNullOrWhiteSpace(detail)
-                ? $"A mentor {action} for a class quiz."
-                : $"A mentor {action}: {detail}",
+            NotificationRoleTemplates.FromDefault(
+                "Mentor đã chỉnh sửa bộ câu hỏi lớp",
+                string.IsNullOrWhiteSpace(detail)
+                    ? "{actorName} " + action + " cho bài kiểm tra của lớp."
+                    : "{actorName} " + action + ": " + detail),
             payload: new NotificationPayload
             {
                 AssignmentId = assignmentId,
@@ -1504,10 +1842,14 @@ public static class NotificationCatalog
                 ProgramId = programId,
                 ModuleId = moduleId,
                 Extra = action
-            },
+            }.WithNames(actorName: actorName, className: className, programName: programName),
             actorUserId: mentorId,
             entityType: "ClassQuizQuestionSet",
-            entityId: assignmentId);
+            entityId: assignmentId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName));
 
     private static NotificationCommand StudentAndParent(
         NotificationType type,

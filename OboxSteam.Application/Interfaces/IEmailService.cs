@@ -21,4 +21,6 @@ public interface IEmailService
     Task SendPaymentInvoiceEmailAsync(InvoiceEmailDto request);
 
     Task SendEnrollmentConfirmationEmailAsync(EnrollmentConfirmationEmailDto request);
+
+    Task SendInboxNotificationEmailAsync(InboxNotificationEmailDto request);
 }

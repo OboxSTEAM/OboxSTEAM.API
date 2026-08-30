@@ -62,7 +62,7 @@ public sealed class NotificationCommand
         Audience = audience ?? throw new ArgumentNullException(nameof(audience));
         Templates = templates ?? throw new ArgumentNullException(nameof(templates));
         Tokens = tokens ?? new Dictionary<string, string>(StringComparer.Ordinal);
-        Payload = payload;
+        Payload = CopyDisplayNames(payload, Tokens);
         ActorUserId = actorUserId;
         EntityType = entityType;
         EntityId = entityId;
@@ -70,5 +70,25 @@ public sealed class NotificationCommand
         var renderedDefault = NotificationTemplateRenderer.Interpolate(templates.Default, Tokens);
         Title = renderedDefault.Title;
         Body = renderedDefault.Body;
+    }
+
+    private static NotificationPayload? CopyDisplayNames(
+        NotificationPayload? payload,
+        IReadOnlyDictionary<string, string> tokens)
+    {
+        var hasNameTokens =
+            tokens.ContainsKey(NotificationTokenKeys.StudentName)
+            || tokens.ContainsKey(NotificationTokenKeys.ActorName)
+            || tokens.ContainsKey(NotificationTokenKeys.ClassName)
+            || tokens.ContainsKey(NotificationTokenKeys.ProgramName);
+
+        if (payload is null && !hasNameTokens)
+        {
+            return null;
+        }
+
+        var copy = payload?.Clone() ?? new NotificationPayload();
+        NotificationTokenKeys.CopyToPayload(copy, tokens);
+        return copy;
     }
 }

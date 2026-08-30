@@ -84,6 +84,10 @@ public sealed class NotificationPayloadSchemaFilter : ISchemaFilter
         ["assignmentId"] = new OpenApiString("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
         ["classId"] = new OpenApiString("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
         ["classSessionId"] = new OpenApiString("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
-        ["mediaAssetId"] = new OpenApiString("3fa85f64-5717-4562-b3fc-2c963f66afa6")
+        ["mediaAssetId"] = new OpenApiString("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+        ["studentName"] = new OpenApiString("An Nguyen"),
+        ["actorName"] = new OpenApiString("Mentor Name"),
+        ["className"] = new OpenApiString("Cohort A"),
+        ["programName"] = new OpenApiString("Robotics 1")
     };
 }

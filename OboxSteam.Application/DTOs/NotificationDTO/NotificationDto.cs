@@ -19,7 +19,8 @@ public sealed class NotificationDto
     /// </summary>
     [Description(
         "Typed deep-link ids for client routing (programId, enrollmentId, nextActivityId, " +
-        "assignmentId, classId, mediaAssetId, …). Prefer this over payloadJson.")]
+        "assignmentId, classId, mediaAssetId, …) plus display names " +
+        "(studentName, actorName, className, programName). Prefer this over payloadJson.")]
     public NotificationPayload? Payload { get; set; }
 
     /// <summary>

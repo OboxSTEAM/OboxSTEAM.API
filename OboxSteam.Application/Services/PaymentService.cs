@@ -238,7 +238,9 @@ public class PaymentService : IPaymentService
                 studentId,
                 paymentRequest.Id,
                 programId,
-                enrollment.Id));
+                enrollment.Id,
+                studentName: student.FullName,
+                programName: program.Name));
 
         // Build payment link for parent
         var frontendBaseUrl = (_configuration["APP_FRONTEND_URL"] ?? _configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
@@ -321,7 +323,8 @@ public class PaymentService : IPaymentService
                 paymentRequest.Id,
                 module.Id,
                 module.ProgramId,
-                moduleEnrollment.ProgramEnrollmentId));
+                moduleEnrollment.ProgramEnrollmentId,
+                studentName: student.FullName));
 
         // Build payment link for parent
         var frontendBaseUrl = (_configuration["APP_FRONTEND_URL"] ?? _configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
@@ -787,7 +790,9 @@ public class PaymentService : IPaymentService
                 payment.Id,
                 enrollment?.ProgramId,
                 payment.ProgramEnrollmentId,
-                nextActivityId)
+                nextActivityId,
+                studentName: student?.FullName,
+                programName: programName)
         };
 
         if (enrollment != null)
@@ -798,7 +803,8 @@ public class PaymentService : IPaymentService
                     enrollment.ProgramId,
                     enrollment.Id,
                     programName,
-                    nextActivityId));
+                    nextActivityId,
+                    studentName: student?.FullName));
         }
 
         await _notificationPublisher.PublishManyAsync(successNotifications);

@@ -428,7 +428,8 @@ public sealed class QuizAttemptService : IQuizAttemptService
             grade.Passed,
             module?.ProgramId,
             assignment.Title,
-            programEnrollmentId));
+            programEnrollmentId,
+            studentName: student.FullName));
 
         _logger.LogInformation(
             "SubmitQuiz graded submission. SubmissionId={SubmissionId}, Grade={Grade}, Passed={Passed}",

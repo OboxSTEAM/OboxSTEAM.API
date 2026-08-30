@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.NotificationDTO;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
@@ -169,12 +170,12 @@ public partial class SeedService
 
         // Manager — ForManagers types
         samples.Add((
-            NotificationCatalog.ClassCreated(classId, programId, className),
+            NotificationCatalog.ClassCreated(classId, programId, className, program.Name),
             manager.Id,
             RoleType.Manager,
             null));
         samples.Add((
-            NotificationCatalog.ClassOpenForEnrollment(classId, programId, className),
+            NotificationCatalog.ClassOpenForEnrollment(classId, programId, className, program.Name),
             manager.Id,
             RoleType.Manager,
             null));
@@ -190,7 +191,8 @@ public partial class SeedService
 
         samples.Add((
             NotificationCatalog.AssignmentEditedByMentor(
-                quizAssignmentId, mentor.Id, programId, quizAssignmentTitle, moduleId),
+                quizAssignmentId, mentor.Id, programId, quizAssignmentTitle, moduleId,
+                actorName: mentor.FullName, programName: program.Name),
             manager.Id,
             RoleType.Manager,
             null));
@@ -200,9 +202,12 @@ public partial class SeedService
                 classId,
                 mentor.Id,
                 programId,
-                "updated questions",
-                "Added two new MCQ items.",
-                moduleId),
+                "đã cập nhật câu hỏi",
+                "Đã thêm hai câu hỏi trắc nghiệm.",
+                moduleId,
+                actorName: mentor.FullName,
+                className: className,
+                programName: program.Name),
             manager.Id,
             RoleType.Manager,
             now.AddDays(-1)));
@@ -219,12 +224,12 @@ public partial class SeedService
         }
 
         samples.Add((
-            NotificationCatalog.ClassSessionScheduled(classId, classSessionId, programId),
+            NotificationCatalog.ClassSessionScheduled(classId, classSessionId, programId, className),
             mentor.Id,
             RoleType.Mentor,
             null));
         samples.Add((
-            NotificationCatalog.ClassSessionStarted(classId, classSessionId, programId),
+            NotificationCatalog.ClassSessionStarted(classId, classSessionId, programId, className),
             mentor.Id,
             RoleType.Mentor,
             now.AddHours(-3)));
@@ -238,19 +243,23 @@ public partial class SeedService
                     researchAssignment.Id,
                     classId,
                     programId,
-                    researchAssignment.Title),
+                    researchAssignment.Title,
+                    studentName: studentName,
+                    actorName: studentName,
+                    className: className,
+                    programName: program.Name),
                 mentor.Id,
                 RoleType.Mentor,
                 null));
         }
 
         samples.Add((
-            NotificationCatalog.ClassUpdated(classId, programId, className),
+            NotificationCatalog.ClassUpdated(classId, programId, className, program.Name),
             mentor.Id,
             RoleType.Mentor,
             now.AddDays(-2)));
         samples.Add((
-            NotificationCatalog.ClassSessionCompleted(classId, classSessionId, programId),
+            NotificationCatalog.ClassSessionCompleted(classId, classSessionId, programId, className),
             mentor.Id,
             RoleType.Mentor,
             null));
@@ -265,7 +274,8 @@ public partial class SeedService
         {
             samples.Add((
                 NotificationCatalog.ParentPaymentRequested(
-                    parent.Id, student.Id, paymentRequestId.Value, programId, programEnrollmentId),
+                    parent.Id, student.Id, paymentRequestId.Value, programId, programEnrollmentId,
+                    studentName: studentName, programName: program.Name),
                 parent.Id,
                 RoleType.Parent,
                 null));
@@ -273,15 +283,42 @@ public partial class SeedService
 
         samples.Add((
             NotificationCatalog.ProgramActivated(
-                student.Id, programId, programEnrollmentId, program.Name, nextActivityId),
+                student.Id, programId, programEnrollmentId, program.Name, nextActivityId, studentName),
             parent.Id,
             RoleType.Parent,
             null));
         samples.Add((
-            NotificationCatalog.ClassSessionScheduled(classId, classSessionId, programId),
+            NotificationCatalog.ClassSessionScheduled(classId, classSessionId, programId, className),
             parent.Id,
             RoleType.Parent,
             now.AddHours(-12)));
+        samples.Add((
+            NotificationCatalog.ClassSessionStarted(classId, classSessionId, programId, className),
+            parent.Id,
+            RoleType.Parent,
+            now.AddHours(-3)));
+        samples.Add((
+            NotificationCatalog.ClassSessionCompleted(classId, classSessionId, programId, className),
+            parent.Id,
+            RoleType.Parent,
+            now.AddHours(-1)));
+        samples.Add((
+            NotificationCatalog.AttendanceCheckedIn(
+                student.Id,
+                classSessionId,
+                AppDateTime.FormatVietnamClock(now.AddHours(-8)),
+                classId,
+                student.Id,
+                programId,
+                programEnrollmentId,
+                sessionActivityId,
+                studentName,
+                studentName,
+                className,
+                program.Name),
+            parent.Id,
+            RoleType.Parent,
+            now.AddHours(-8)));
         samples.Add((
             NotificationCatalog.AttendanceMarked(
                 AttendanceStatus.Absent,
@@ -291,19 +328,23 @@ public partial class SeedService
                 mentor.Id,
                 programId,
                 programEnrollmentId,
-                sessionActivityId),
+                sessionActivityId,
+                studentName,
+                mentor.FullName,
+                className,
+                program.Name),
             parent.Id,
             RoleType.Parent,
             null));
         samples.Add((
             NotificationCatalog.PaymentSucceeded(
-                student.Id, paymentId, programId, programEnrollmentId, nextActivityId),
+                student.Id, paymentId, programId, programEnrollmentId, nextActivityId, studentName, program.Name),
             parent.Id,
             RoleType.Parent,
             now.AddDays(-1)));
         samples.Add((
             NotificationCatalog.AssignmentPublished(
-                classId, quizAssignmentId, programId, quizAssignmentTitle, moduleId),
+                classId, quizAssignmentId, programId, quizAssignmentTitle, moduleId, className, program.Name),
             parent.Id,
             RoleType.Parent,
             null));
@@ -311,13 +352,13 @@ public partial class SeedService
         // Student — enrollment / progress / class / grading
         samples.Add((
             NotificationCatalog.ProgramActivated(
-                student.Id, programId, programEnrollmentId, program.Name, nextActivityId),
+                student.Id, programId, programEnrollmentId, program.Name, nextActivityId, studentName),
             student.Id,
             RoleType.Student,
             now.AddDays(-4)));
         samples.Add((
             NotificationCatalog.PaymentSucceeded(
-                student.Id, paymentId, programId, programEnrollmentId, nextActivityId),
+                student.Id, paymentId, programId, programEnrollmentId, nextActivityId, studentName, program.Name),
             student.Id,
             RoleType.Student,
             null));
@@ -329,7 +370,9 @@ public partial class SeedService
                 programId,
                 module.Name,
                 programEnrollmentId,
-                nextActivityId ?? firstModuleActivityId),
+                nextActivityId ?? firstModuleActivityId,
+                studentName: studentName,
+                programName: program.Name),
             student.Id,
             RoleType.Student,
             null));
@@ -341,7 +384,9 @@ public partial class SeedService
                 programId,
                 className,
                 programEnrollmentId,
-                nextActivityId),
+                nextActivityId,
+                studentName,
+                program.Name),
             student.Id,
             RoleType.Student,
             now.AddDays(-2)));
@@ -356,7 +401,9 @@ public partial class SeedService
                     passed: true,
                     programId,
                     quizAssignmentTitle,
-                    programEnrollmentId),
+                    programEnrollmentId,
+                    studentName: studentName,
+                    programName: program.Name),
                 student.Id,
                 RoleType.Student,
                 null));
@@ -371,12 +418,17 @@ public partial class SeedService
                 mentor.Id,
                 programId,
                 programEnrollmentId,
-                sessionActivityId),
+                sessionActivityId,
+                studentName,
+                mentor.FullName,
+                className,
+                program.Name),
             student.Id,
             RoleType.Student,
             now.AddHours(-8)));
         samples.Add((
-            NotificationCatalog.ParentLinkApproved(student.Id, parent.Id, parent.Id),
+            NotificationCatalog.ParentLinkApproved(
+                student.Id, parent.Id, parent.Id, actorName: parent.FullName),
             student.Id,
             RoleType.Student,
             now.AddDays(-5)));
@@ -420,12 +472,31 @@ public partial class SeedService
         {
             [NotificationTokenKeys.StudentName] = studentName
         };
+        if (!string.IsNullOrWhiteSpace(command.Payload?.ActorName)
+            && !tokens.ContainsKey(NotificationTokenKeys.ActorName))
+        {
+            tokens[NotificationTokenKeys.ActorName] = command.Payload.ActorName!;
+        }
+        if (!string.IsNullOrWhiteSpace(command.Payload?.ClassName)
+            && !tokens.ContainsKey(NotificationTokenKeys.ClassName))
+        {
+            tokens[NotificationTokenKeys.ClassName] = command.Payload.ClassName!;
+        }
+        if (!string.IsNullOrWhiteSpace(command.Payload?.ProgramName)
+            && !tokens.ContainsKey(NotificationTokenKeys.ProgramName))
+        {
+            tokens[NotificationTokenKeys.ProgramName] = command.Payload.ProgramName;
+        }
 
         var copy = NotificationTemplateRenderer.Interpolate(
             command.Templates.Resolve(recipientRole),
             tokens);
 
-        var payloadJson = NotificationDtoMapper.SerializePayload(command.Payload?.Clone());
+        var payload = command.Payload?.Clone() ?? new NotificationPayload();
+        payload.StudentName = studentName;
+        NotificationTokenKeys.CopyToPayload(payload, tokens);
+
+        var payloadJson = NotificationDtoMapper.SerializePayload(payload);
 
         return new Notification
         {

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.NotificationDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
@@ -34,6 +35,49 @@ public sealed class NotificationTemplateEngineTests
     }
 
     [Fact]
+    public void Renderer_InterpolatesCheckedInAtToken()
+    {
+        var tokens = NotificationTokenKeys.Create(
+            studentName: "An Nguyen",
+            checkedInAt: "14:02");
+
+        var result = NotificationTemplateRenderer.Interpolate(
+            "Con bạn {studentName} đã check-in lúc {checkedInAt}.",
+            tokens);
+
+        Assert.Equal("Con bạn An Nguyen đã check-in lúc 14:02.", result);
+    }
+
+    [Fact]
+    public void TokenKeys_CopyToPayload_FillsMissingDisplayNames()
+    {
+        var payload = new NotificationPayload();
+        var tokens = NotificationTokenKeys.Create(
+            studentName: "An Nguyen",
+            actorName: "Minh Mentor",
+            className: "Cohort A",
+            programName: "Robotics");
+
+        NotificationTokenKeys.CopyToPayload(payload, tokens);
+
+        Assert.Equal("An Nguyen", payload.StudentName);
+        Assert.Equal("Minh Mentor", payload.ActorName);
+        Assert.Equal("Cohort A", payload.ClassName);
+        Assert.Equal("Robotics", payload.ProgramName);
+    }
+
+    [Fact]
+    public void TokenKeys_CopyToPayload_DoesNotOverwriteExistingNames()
+    {
+        var payload = new NotificationPayload { StudentName = "Existing" };
+        var tokens = NotificationTokenKeys.Create(studentName: "An Nguyen");
+
+        NotificationTokenKeys.CopyToPayload(payload, tokens);
+
+        Assert.Equal("Existing", payload.StudentName);
+    }
+
+    [Fact]
     public void RoleTemplates_FallBackToDefault_WhenVariantMissing()
     {
         var templates = NotificationRoleTemplates.FromDefault("Title", "Default body");
@@ -50,7 +94,7 @@ public sealed class NotificationTemplateEngineTests
             Guid.NewGuid(),
             moduleName: "Robotics 1");
 
-        Assert.Equal("You completed \"Robotics 1\".", command.Body);
+        Assert.Equal("Bạn đã hoàn thành \"Robotics 1\".", command.Body);
         Assert.Contains("{studentName}", command.Templates.Parent!.Body);
         Assert.Equal("Robotics 1", command.Tokens[NotificationTokenKeys.ModuleName]);
     }
@@ -92,6 +136,30 @@ public sealed class NotificationTemplateEngineTests
     }
 
     [Fact]
+    public async Task Resolver_ParentsOfStudent_ExcludesStudent()
+    {
+        var db = new InMemoryUnitOfWork();
+        SeedUser(db, _studentAId, RoleType.Student, "An");
+        SeedUser(db, _parentId, RoleType.Parent, "Parent");
+        db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _parentId,
+            StudentId = _studentAId,
+            IsVerified = true,
+            IsDeleted = false
+        });
+
+        var sut = new NotificationRecipientResolver(db);
+        var recipients = await sut.ResolveAsync(NotificationAudience.ForParentsOfStudent(_studentAId));
+
+        var recipient = Assert.Single(recipients);
+        Assert.Equal(_parentId, recipient.UserId);
+        Assert.Equal(RoleType.Parent, recipient.Role);
+        Assert.Equal(_studentAId, recipient.ContextStudentId);
+    }
+
+    [Fact]
     public async Task Resolver_ClassRosterAndParents_EmitsOneParentRowPerChild()
     {
         var db = SeedClassWithTwoChildrenSameParent();
@@ -104,6 +172,20 @@ public sealed class NotificationTemplateEngineTests
         Assert.Contains(parentRows, r => r.ContextStudentId == _studentAId);
         Assert.Contains(parentRows, r => r.ContextStudentId == _studentBId);
         Assert.All(parentRows, r => Assert.Equal(RoleType.Parent, r.Role));
+    }
+
+    [Fact]
+    public async Task Resolver_ClassRosterAndParentsAndMentor_IncludesStudentsParentsAndMentor()
+    {
+        var db = SeedClassWithTwoChildrenSameParent();
+        var sut = new NotificationRecipientResolver(db);
+
+        var recipients = await sut.ResolveAsync(NotificationAudience.ForClassRosterAndParentsAndMentor(_classId));
+
+        Assert.Contains(recipients, r => r.UserId == _studentAId && r.Role == RoleType.Student);
+        Assert.Contains(recipients, r => r.UserId == _studentBId && r.Role == RoleType.Student);
+        Assert.Contains(recipients, r => r.UserId == _mentorId && r.Role == RoleType.Mentor);
+        Assert.Equal(2, recipients.Count(r => r.UserId == _parentId && r.Role == RoleType.Parent));
     }
 
     [Fact]
@@ -148,6 +230,43 @@ public sealed class NotificationTemplateEngineTests
         Assert.Equal(courseId, command.Payload.CourseId);
         Assert.Equal(_programId, command.Payload.ProgramId);
         Assert.Equal(_studentAId, command.Payload.StudentId);
+    }
+
+    [Fact]
+    public void Catalog_ProgramActivated_CopiesDisplayNamesOntoPayload()
+    {
+        var command = NotificationCatalog.ProgramActivated(
+            _studentAId,
+            _programId,
+            Guid.NewGuid(),
+            "STEAM 1",
+            studentName: "An Nguyen");
+
+        Assert.Equal("An Nguyen", command.Payload!.StudentName);
+        Assert.Equal("STEAM 1", command.Payload.ProgramName);
+    }
+
+    [Fact]
+    public void Catalog_ClassCreated_CopiesClassAndProgramNamesOntoPayload()
+    {
+        var command = NotificationCatalog.ClassCreated(_classId, _programId, "Cohort A", "Robotics");
+
+        Assert.Equal("Cohort A", command.Payload!.ClassName);
+        Assert.Equal("Robotics", command.Payload.ProgramName);
+    }
+
+    [Fact]
+    public void Catalog_ClassSessionScheduled_DoesNotSetStudentId_UntilPublish()
+    {
+        var sessionId = Guid.NewGuid();
+        var command = NotificationCatalog.ClassSessionScheduled(
+            _classId,
+            sessionId,
+            _programId,
+            "Cohort A");
+
+        Assert.Null(command.Payload!.StudentId);
+        Assert.Equal("Cohort A", command.Payload.ClassName);
     }
 
     [Fact]
@@ -225,8 +344,82 @@ public sealed class NotificationTemplateEngineTests
 
         Assert.Equal(_programId, command.Payload!.ProgramId);
         Assert.Equal(enrollmentId, command.Payload.EnrollmentId);
-        Assert.Equal(activityId, command.Payload.ActivityId);
         Assert.Equal(_classId, command.Payload.ClassId);
+    }
+
+    [Fact]
+    public void Catalog_ClassSessionStarted_IncludesParentsAndParentCopy()
+    {
+        var sessionId = Guid.NewGuid();
+        var command = NotificationCatalog.ClassSessionStarted(
+            _classId,
+            sessionId,
+            _programId,
+            "Cohort A");
+
+        Assert.Equal(NotificationAudienceKind.ClassRosterAndParentsAndMentor, command.Audience.Kind);
+        Assert.Contains("{studentName}", command.Templates.Parent!.Body);
+        Assert.Equal("Một buổi học đã bắt đầu.", command.Templates.Student!.Body);
+    }
+
+    [Fact]
+    public void Catalog_ClassSessionCompleted_IncludesParentsAndParentCopy()
+    {
+        var sessionId = Guid.NewGuid();
+        var command = NotificationCatalog.ClassSessionCompleted(
+            _classId,
+            sessionId,
+            _programId,
+            "Cohort A");
+
+        Assert.Equal(NotificationAudienceKind.ClassRosterAndParentsAndMentor, command.Audience.Kind);
+        Assert.Contains("{studentName}", command.Templates.Parent!.Body);
+        Assert.Equal("Một buổi học đã kết thúc.", command.Templates.Student!.Body);
+    }
+
+    [Fact]
+    public void Catalog_AttendanceCheckedIn_IsParentOnlyPresentWithClockToken()
+    {
+        var sessionId = Guid.NewGuid();
+        var command = NotificationCatalog.AttendanceCheckedIn(
+            _studentAId,
+            sessionId,
+            "16:00",
+            _classId);
+
+        Assert.Equal(NotificationType.AttendanceMarkedPresent, command.Type);
+        Assert.Equal(NotificationAudienceKind.ParentsOfStudent, command.Audience.Kind);
+        Assert.Equal(_studentAId, command.Audience.StudentId);
+        Assert.Equal("16:00", command.Tokens[NotificationTokenKeys.CheckedInAt]);
+        Assert.Equal("16:00", command.Payload!.Extra);
+        Assert.Contains("{checkedInAt}", command.Templates.Parent!.Body);
+    }
+
+    [Fact]
+    public void Catalog_AttendanceMarked_IncludesActorToken()
+    {
+        var command = NotificationCatalog.AttendanceMarked(
+            AttendanceStatus.Present,
+            _studentAId,
+            Guid.NewGuid(),
+            _classId,
+            _mentorId);
+
+        Assert.Contains("{actorName}", command.Templates.Student!.Body);
+        Assert.Contains("{actorName}", command.Templates.Parent!.Body);
+        Assert.Equal(_mentorId, command.ActorUserId);
+    }
+
+    [Fact]
+    public void Catalog_ParentLinkApproved_IncludesActorToken()
+    {
+        var command = NotificationCatalog.ParentLinkApproved(
+            _studentAId,
+            _parentId,
+            actorUserId: _parentId);
+
+        Assert.Contains("{actorName}", command.Templates.Default.Body);
+        Assert.Equal(_parentId, command.ActorUserId);
     }
 
     [Fact]
@@ -280,27 +473,27 @@ public sealed class NotificationTemplateEngineTests
             .Setup(d => d.DispatchManyAsync(It.IsAny<IReadOnlyList<NotificationDto>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var sut = new NotificationPublisher(
-            db,
-            new NotificationRecipientResolver(db),
-            dispatcher.Object,
-            NullLogger<NotificationPublisher>.Instance);
+        var sut = CreatePublisher(db, dispatcher);
 
         await sut.PublishAsync(NotificationCatalog.ModuleCompleted(
             _studentAId,
             Guid.NewGuid(),
-            moduleName: "Robotics 1"));
+            moduleName: "Robotics 1",
+            studentName: "An Nguyen",
+            programName: "Robotics 1"));
 
         var studentRow = db.Notifications.Items.Single(n => n.RecipientUserId == _studentAId);
         var parentRow = db.Notifications.Items.Single(n => n.RecipientUserId == _parentId);
 
-        Assert.Equal("You completed \"Robotics 1\".", studentRow.Body);
-        Assert.Equal("An Nguyen completed \"Robotics 1\".", parentRow.Body);
+        Assert.Equal("Bạn đã hoàn thành \"Robotics 1\".", studentRow.Body);
+        Assert.Equal("Con bạn An Nguyen đã hoàn thành \"Robotics 1\".", parentRow.Body);
         Assert.Contains(_studentAId.ToString(), parentRow.PayloadJson, StringComparison.OrdinalIgnoreCase);
 
         var parentDto = NotificationDtoMapper.ToDto(parentRow);
         Assert.NotNull(parentDto.Payload);
         Assert.Equal(_studentAId, parentDto.Payload!.StudentId);
+        Assert.Equal("An Nguyen", parentDto.Payload.StudentName);
+        Assert.Equal("Robotics 1", parentDto.Payload.ProgramName);
     }
 
     [Fact]
@@ -312,26 +505,285 @@ public sealed class NotificationTemplateEngineTests
             .Setup(d => d.DispatchManyAsync(It.IsAny<IReadOnlyList<NotificationDto>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var sut = new NotificationPublisher(
-            db,
-            new NotificationRecipientResolver(db),
-            dispatcher.Object,
-            NullLogger<NotificationPublisher>.Instance);
+        var sut = CreatePublisher(db, dispatcher);
 
         await sut.PublishAsync(NotificationCatalog.AssignmentPublished(
             _classId,
             Guid.NewGuid(),
             _programId,
-            "Build a robot"));
+            "Build a robot",
+            className: "Cohort A"));
 
         var parentRows = db.Notifications.Items
             .Where(n => n.RecipientUserId == _parentId)
             .ToList();
 
         Assert.Equal(2, parentRows.Count);
-        Assert.Contains(parentRows, n => n.Body == "Assignment \"Build a robot\" is now available for An Nguyen.");
-        Assert.Contains(parentRows, n => n.Body == "Assignment \"Build a robot\" is now available for Binh Tran.");
+        Assert.Contains(parentRows, n => n.Body == "Bài tập \"Build a robot\" hiện đã sẵn sàng cho con bạn An Nguyen.");
+        Assert.Contains(parentRows, n => n.Body == "Bài tập \"Build a robot\" hiện đã sẵn sàng cho con bạn Binh Tran.");
         Assert.Equal(2, db.Notifications.Items.Count(n => n.RecipientUserId == _studentAId || n.RecipientUserId == _studentBId));
+
+        var parentDtos = parentRows.Select(NotificationDtoMapper.ToDto).ToList();
+        Assert.Contains(parentDtos, d => d.Payload!.StudentId == _studentAId && d.Payload.StudentName == "An Nguyen");
+        Assert.Contains(parentDtos, d => d.Payload!.StudentId == _studentBId && d.Payload.StudentName == "Binh Tran");
+        Assert.All(parentDtos, d => Assert.Equal("Cohort A", d.Payload!.ClassName));
+        Assert.All(parentDtos, d => Assert.Equal("Robotics", d.Payload!.ProgramName));
+    }
+
+    [Fact]
+    public async Task Publisher_ClassSessionStarted_FillsProgramNameFromProgramId()
+    {
+        var db = SeedClassWithTwoChildrenSameParent();
+        var dispatcher = new Mock<INotificationDispatcher>();
+        dispatcher
+            .Setup(d => d.DispatchManyAsync(It.IsAny<IReadOnlyList<NotificationDto>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var sut = CreatePublisher(db, dispatcher);
+
+        await sut.PublishAsync(NotificationCatalog.ClassSessionStarted(
+            _classId,
+            Guid.NewGuid(),
+            _programId,
+            "Cohort A"));
+
+        var dtos = db.Notifications.Items.Select(NotificationDtoMapper.ToDto).ToList();
+        Assert.NotEmpty(dtos);
+        Assert.All(dtos, d =>
+        {
+            Assert.Equal("Cohort A", d.Payload!.ClassName);
+            Assert.Equal("Robotics", d.Payload.ProgramName);
+        });
+    }
+
+    [Fact]
+    public async Task Publisher_AttendanceMarked_InterpolatesActorName()
+    {
+        var db = new InMemoryUnitOfWork();
+        SeedUser(db, _studentAId, RoleType.Student, "An Nguyen");
+        SeedUser(db, _parentId, RoleType.Parent, "Parent");
+        SeedUser(db, _mentorId, RoleType.Mentor, "Minh Mentor");
+        db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _parentId,
+            StudentId = _studentAId,
+            IsVerified = true,
+            IsDeleted = false
+        });
+
+        var sut = CreatePublisher(db);
+
+        await sut.PublishAsync(NotificationCatalog.AttendanceMarked(
+            AttendanceStatus.Present,
+            _studentAId,
+            Guid.NewGuid(),
+            _classId,
+            _mentorId));
+
+        var studentRow = db.Notifications.Items.Single(n => n.RecipientUserId == _studentAId);
+        var parentRow = db.Notifications.Items.Single(n => n.RecipientUserId == _parentId);
+
+        Assert.Equal("Bạn được Minh Mentor điểm danh có mặt cho một buổi học.", studentRow.Body);
+        Assert.Equal("Con bạn An Nguyen được Minh Mentor điểm danh có mặt cho một buổi học.", parentRow.Body);
+
+        var parentDto = NotificationDtoMapper.ToDto(parentRow);
+        Assert.Equal("Minh Mentor", parentDto.Payload!.ActorName);
+    }
+
+    [Fact]
+    public async Task Publisher_PaymentFailed_DispatchesEmailForStudentAndParent()
+    {
+        var db = new InMemoryUnitOfWork();
+        SeedUser(db, _studentAId, RoleType.Student, "An Nguyen");
+        SeedUser(db, _parentId, RoleType.Parent, "Parent");
+        db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _parentId,
+            StudentId = _studentAId,
+            IsVerified = true,
+            IsDeleted = false
+        });
+
+        var email = new Mock<IEmailService>();
+        var emailDispatcher = new NotificationEmailDispatcher(
+            db,
+            email.Object,
+            NullLogger<NotificationEmailDispatcher>.Instance);
+
+        var sut = CreatePublisher(db, emailDispatcher: emailDispatcher);
+
+        await sut.PublishAsync(NotificationCatalog.PaymentFailed(_studentAId, Guid.NewGuid()));
+
+        email.Verify(
+            e => e.SendInboxNotificationEmailAsync(It.IsAny<InboxNotificationEmailDto>()),
+            Times.Exactly(2));
+        Assert.Equal(2, db.Notifications.Items.Count);
+    }
+
+    [Fact]
+    public async Task Publisher_ModuleCompleted_DoesNotSendPriorityEmail()
+    {
+        var db = new InMemoryUnitOfWork();
+        SeedUser(db, _studentAId, RoleType.Student, "An Nguyen");
+        SeedUser(db, _parentId, RoleType.Parent, "Parent");
+        db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _parentId,
+            StudentId = _studentAId,
+            IsVerified = true,
+            IsDeleted = false
+        });
+
+        var email = new Mock<IEmailService>();
+        var emailDispatcher = new NotificationEmailDispatcher(
+            db,
+            email.Object,
+            NullLogger<NotificationEmailDispatcher>.Instance);
+
+        var sut = CreatePublisher(db, emailDispatcher: emailDispatcher);
+
+        await sut.PublishAsync(NotificationCatalog.ModuleCompleted(
+            _studentAId,
+            Guid.NewGuid(),
+            moduleName: "Robotics 1"));
+
+        email.Verify(
+            e => e.SendInboxNotificationEmailAsync(It.IsAny<InboxNotificationEmailDto>()),
+            Times.Never);
+        Assert.Equal(2, db.Notifications.Items.Count);
+    }
+
+    [Fact]
+    public async Task Publisher_AttendanceCheckedIn_ParentOnlyWithInterpolatedCopy()
+    {
+        var db = new InMemoryUnitOfWork();
+        SeedUser(db, _studentAId, RoleType.Student, "An Nguyen");
+        SeedUser(db, _parentId, RoleType.Parent, "Parent");
+        db.ParentStudents.Seed(new ParentStudent
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _parentId,
+            StudentId = _studentAId,
+            IsVerified = true,
+            IsDeleted = false
+        });
+
+        var sut = CreatePublisher(db);
+
+        await sut.PublishAsync(NotificationCatalog.AttendanceCheckedIn(
+            _studentAId,
+            Guid.NewGuid(),
+            "14:02",
+            _classId,
+            _studentAId));
+
+        var studentRows = db.Notifications.Items.Where(n => n.RecipientUserId == _studentAId).ToList();
+        Assert.Empty(studentRows);
+
+        var parentRow = Assert.Single(db.Notifications.Items, n => n.RecipientUserId == _parentId);
+        Assert.Equal("Con bạn An Nguyen đã check-in lúc 14:02.", parentRow.Body);
+
+        var parentDto = NotificationDtoMapper.ToDto(parentRow);
+        Assert.Equal(_studentAId, parentDto.Payload!.StudentId);
+        Assert.Equal("An Nguyen", parentDto.Payload.StudentName);
+        Assert.Equal("14:02", parentDto.Payload.Extra);
+    }
+
+    [Fact]
+    public async Task Publisher_SignalRDispatchFailure_StillPersistsInbox()
+    {
+        var db = new InMemoryUnitOfWork();
+        SeedUser(db, _studentAId, RoleType.Student, "An Nguyen");
+
+        var dispatcher = new Mock<INotificationDispatcher>();
+        dispatcher
+            .Setup(d => d.DispatchManyAsync(It.IsAny<IReadOnlyList<NotificationDto>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Hub down"));
+
+        var sut = CreatePublisher(db, dispatcher: dispatcher);
+
+        await sut.PublishAsync(NotificationCatalog.ModuleCompleted(
+            _studentAId,
+            Guid.NewGuid(),
+            moduleName: "Robotics 1"));
+
+        Assert.Single(db.Notifications.Items);
+    }
+
+    [Fact]
+    public async Task Publisher_EmailDispatchFailure_StillPersistsInbox()
+    {
+        var db = new InMemoryUnitOfWork();
+        SeedUser(db, _studentAId, RoleType.Student, "An Nguyen");
+
+        var email = new Mock<IEmailService>();
+        email
+            .Setup(e => e.SendInboxNotificationEmailAsync(It.IsAny<InboxNotificationEmailDto>()))
+            .ThrowsAsync(new InvalidOperationException("Resend down"));
+        var emailDispatcher = new NotificationEmailDispatcher(
+            db,
+            email.Object,
+            NullLogger<NotificationEmailDispatcher>.Instance);
+
+        var sut = CreatePublisher(db, emailDispatcher: emailDispatcher);
+
+        await sut.PublishAsync(NotificationCatalog.PaymentFailed(_studentAId, Guid.NewGuid()));
+
+        Assert.Single(db.Notifications.Items);
+        Assert.Equal(NotificationType.PaymentFailed, db.Notifications.Items[0].Type);
+    }
+
+    [Fact]
+    public void EmailPriority_IncludesPaymentGapsAndResearchReview_ExcludesRichPaymentTemplates()
+    {
+        Assert.True(NotificationEmailPriority.ShouldEmail(NotificationType.PaymentFailed));
+        Assert.True(NotificationEmailPriority.ShouldEmail(NotificationType.PaymentCancelled));
+        Assert.True(NotificationEmailPriority.ShouldEmail(NotificationType.PendingPaymentExpired));
+        Assert.True(NotificationEmailPriority.ShouldEmail(NotificationType.ProgramPendingPayment));
+        Assert.True(NotificationEmailPriority.ShouldEmail(NotificationType.ModuleRetakePendingPayment));
+        Assert.True(NotificationEmailPriority.ShouldEmail(NotificationType.ResearchReturnedForRevision));
+        Assert.True(NotificationEmailPriority.ShouldEmail(NotificationType.ResearchWorkSubmitted));
+
+        Assert.False(NotificationEmailPriority.ShouldEmail(NotificationType.ParentPaymentRequested));
+        Assert.False(NotificationEmailPriority.ShouldEmail(NotificationType.ParentModuleRetakeRequested));
+        Assert.False(NotificationEmailPriority.ShouldEmail(NotificationType.PaymentSucceeded));
+        Assert.False(NotificationEmailPriority.ShouldEmail(NotificationType.ProgramActivated));
+        Assert.False(NotificationEmailPriority.ShouldEmail(NotificationType.ModuleCompleted));
+    }
+
+    private static NotificationPublisher CreatePublisher(
+        InMemoryUnitOfWork db,
+        Mock<INotificationDispatcher>? dispatcher = null,
+        INotificationEmailDispatcher? emailDispatcher = null)
+    {
+        if (dispatcher is null)
+        {
+            dispatcher = new Mock<INotificationDispatcher>();
+            dispatcher
+                .Setup(d => d.DispatchManyAsync(It.IsAny<IReadOnlyList<NotificationDto>>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+        }
+
+        emailDispatcher ??= CreateNoOpEmailDispatcher();
+
+        return new NotificationPublisher(
+            db,
+            new NotificationRecipientResolver(db),
+            dispatcher.Object,
+            emailDispatcher,
+            NullLogger<NotificationPublisher>.Instance);
+    }
+
+    private static INotificationEmailDispatcher CreateNoOpEmailDispatcher()
+    {
+        var mock = new Mock<INotificationEmailDispatcher>();
+        mock
+            .Setup(d => d.DispatchManyAsync(It.IsAny<IReadOnlyList<NotificationDto>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        return mock.Object;
     }
 
     private InMemoryUnitOfWork SeedClassWithTwoChildrenSameParent()
@@ -341,6 +793,16 @@ public sealed class NotificationTemplateEngineTests
         SeedUser(db, _studentBId, RoleType.Student, "Binh Tran");
         SeedUser(db, _parentId, RoleType.Parent, "Parent");
         SeedUser(db, _mentorId, RoleType.Mentor, "Mentor");
+
+        db.Programs.Seed(new Program
+        {
+            Id = _programId,
+            Code = "PRG-001",
+            Name = "Robotics",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false
+        });
 
         db.Classes.Seed(new Class
         {

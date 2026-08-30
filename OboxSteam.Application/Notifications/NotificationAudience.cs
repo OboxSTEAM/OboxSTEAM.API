@@ -33,6 +33,9 @@ public sealed class NotificationAudience
     public static NotificationAudience ForStudentAndParents(Guid studentId)
         => new(NotificationAudienceKind.StudentAndParents, studentId: studentId);
 
+    public static NotificationAudience ForParentsOfStudent(Guid studentId)
+        => new(NotificationAudienceKind.ParentsOfStudent, studentId: studentId);
+
     public static NotificationAudience ForClassRoster(Guid classId)
         => new(NotificationAudienceKind.ClassRoster, classId: classId);
 

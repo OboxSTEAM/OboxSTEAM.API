@@ -104,6 +104,13 @@ public static class AppDateTime
     public static DateTimeOffset ToUtcOffset(DateTime value)
         => new(AsUtc(value), TimeSpan.Zero);
 
+    /// <summary>Formats a UTC instant as <c>HH:mm</c> in Asia/Ho_Chi_Minh.</summary>
+    public static string FormatVietnamClock(DateTime utcInstant)
+    {
+        var local = TimeZoneInfo.ConvertTimeFromUtc(AsUtc(utcInstant), VietnamTimeZone);
+        return local.ToString("HH:mm", CultureInfo.InvariantCulture);
+    }
+
     private static bool HasExplicitOffset(string value)
     {
         if (value.EndsWith("Z", StringComparison.OrdinalIgnoreCase))

@@ -208,6 +208,15 @@ public sealed class SessionCheckInServiceTests
         Assert.Equal(_now, result.CheckedInAt);
         Assert.Equal(_moduleEnrollmentId, result.ModuleEnrollmentId);
         Assert.Single(_db.SessionAttendances.Items);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c =>
+                    c.Type == NotificationType.AttendanceMarkedPresent
+                    && c.Audience.Kind == NotificationAudienceKind.ParentsOfStudent
+                    && c.Audience.StudentId == _studentId
+                    && c.Tokens[NotificationTokenKeys.CheckedInAt] == "16:00"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -253,6 +262,40 @@ public sealed class SessionCheckInServiceTests
 
         Assert.Equal(AttendanceStatus.Present, result.Status);
         Assert.Single(_db.SessionAttendances.Items);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.AttendanceMarkedPresent),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CheckIn_DoesNotNotify_OnSecondSelfCheckIn()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedClass(mentorId: _mentorId);
+        SeedSession();
+        SeedStudentRoster();
+        _db.SessionAttendances.Seed(new SessionAttendance
+        {
+            Id = Guid.NewGuid(),
+            ClassSessionId = _sessionId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            Status = AttendanceStatus.Present,
+            CheckedInAt = _now.AddMinutes(-10),
+            RecordedBy = _studentId,
+            IsDeleted = false,
+        });
+        var sut = CreateSut(_studentId);
+
+        await sut.CheckInAsync(
+            _sessionId,
+            new ClassSessionCheckInRequestDto { Code = "123456" });
+
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

@@ -35,6 +35,12 @@ public sealed class NotificationRoleTemplates
     public static NotificationRoleTemplates FromDefault(string title, string? body)
         => new(new NotificationText(title, body));
 
+    public static NotificationRoleTemplates ForParent(string title, string parentBody)
+    {
+        var parent = new NotificationText(title, parentBody);
+        return new(parent, parent: parent);
+    }
+
     public static NotificationRoleTemplates ForStudentAndParent(
         string title,
         string studentBody,

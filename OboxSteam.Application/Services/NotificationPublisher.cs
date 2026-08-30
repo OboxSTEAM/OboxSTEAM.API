@@ -12,17 +12,20 @@ public sealed class NotificationPublisher : INotificationPublisher
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationRecipientResolver _recipientResolver;
     private readonly INotificationDispatcher _dispatcher;
+    private readonly INotificationEmailDispatcher _emailDispatcher;
     private readonly ILogger<NotificationPublisher> _logger;
 
     public NotificationPublisher(
         IUnitOfWork unitOfWork,
         INotificationRecipientResolver recipientResolver,
         INotificationDispatcher dispatcher,
+        INotificationEmailDispatcher emailDispatcher,
         ILogger<NotificationPublisher> logger)
     {
         _unitOfWork = unitOfWork;
         _recipientResolver = recipientResolver;
         _dispatcher = dispatcher;
+        _emailDispatcher = emailDispatcher;
         _logger = logger;
     }
 
@@ -57,15 +60,22 @@ public sealed class NotificationPublisher : INotificationPublisher
 
             var distinctRecipients = Deduplicate(recipients);
             var displayNames = await LoadDisplayNamesAsync(command, distinctRecipients);
+            var (className, programName) = await ResolveEntityNamesAsync(command);
 
             foreach (var recipient in distinctRecipients)
             {
-                var tokens = MergeTokens(command, recipient, displayNames);
+                var tokens = MergeTokens(command, recipient, displayNames, className, programName);
                 var copy = NotificationTemplateRenderer.Interpolate(
                     command.Templates.Resolve(recipient.Role),
                     tokens);
 
-                var payload = ClonePayloadForRecipient(command.Payload, recipient.ContextStudentId);
+                var payload = ClonePayloadForRecipient(
+                    command.Payload,
+                    recipient.ContextStudentId,
+                    command.ActorUserId,
+                    displayNames,
+                    className,
+                    programName);
                 var payloadJson = NotificationDtoMapper.SerializePayload(payload);
 
                 entities.Add(new Notification
@@ -100,6 +110,15 @@ public sealed class NotificationPublisher : INotificationPublisher
         {
             // Persist succeeded; log push failures so inbox remains the source of truth.
             _logger.LogWarning(ex, "Failed to dispatch {Count} notifications over SignalR.", dtos.Count);
+        }
+
+        try
+        {
+            await _emailDispatcher.DispatchManyAsync(dtos, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to dispatch {Count} notifications over email.", dtos.Count);
         }
     }
 
@@ -140,10 +159,49 @@ public sealed class NotificationPublisher : INotificationPublisher
     private static string DisplayName(User user)
         => !string.IsNullOrWhiteSpace(user.FullName) ? user.FullName! : user.Email;
 
+    private async Task<(string? ClassName, string? ProgramName)> ResolveEntityNamesAsync(
+        NotificationCommand command)
+    {
+        var payload = command.Payload;
+        string? className = null;
+        var programId = payload?.ProgramId;
+
+        if (payload?.ClassId is Guid classId && classId != Guid.Empty)
+        {
+            var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
+            if (classEntity is not null && !classEntity.IsDeleted)
+            {
+                if (!string.IsNullOrWhiteSpace(classEntity.Name))
+                {
+                    className = classEntity.Name;
+                }
+
+                if (programId is null || programId == Guid.Empty)
+                {
+                    programId = classEntity.ProgramId;
+                }
+            }
+        }
+
+        string? programName = null;
+        if (programId is Guid pid && pid != Guid.Empty)
+        {
+            var program = await _unitOfWork.Programs.GetByIdAsync(pid);
+            if (program is not null && !program.IsDeleted && !string.IsNullOrWhiteSpace(program.Name))
+            {
+                programName = program.Name;
+            }
+        }
+
+        return (className, programName);
+    }
+
     private static Dictionary<string, string> MergeTokens(
         NotificationCommand command,
         NotificationRecipient recipient,
-        IReadOnlyDictionary<Guid, string> displayNames)
+        IReadOnlyDictionary<Guid, string> displayNames,
+        string? className,
+        string? programName)
     {
         var tokens = new Dictionary<string, string>(command.Tokens, StringComparer.Ordinal);
 
@@ -161,12 +219,28 @@ public sealed class NotificationPublisher : INotificationPublisher
             tokens[NotificationTokenKeys.ActorName] = actorName;
         }
 
+        if (!tokens.ContainsKey(NotificationTokenKeys.ClassName)
+            && !string.IsNullOrWhiteSpace(className))
+        {
+            tokens[NotificationTokenKeys.ClassName] = className;
+        }
+
+        if (!tokens.ContainsKey(NotificationTokenKeys.ProgramName)
+            && !string.IsNullOrWhiteSpace(programName))
+        {
+            tokens[NotificationTokenKeys.ProgramName] = programName;
+        }
+
         return tokens;
     }
 
     private static NotificationPayload? ClonePayloadForRecipient(
         NotificationPayload? payload,
-        Guid? contextStudentId)
+        Guid? contextStudentId,
+        Guid? actorUserId,
+        IReadOnlyDictionary<Guid, string> displayNames,
+        string? className,
+        string? programName)
     {
         if (payload is null && contextStudentId is null)
         {
@@ -177,6 +251,29 @@ public sealed class NotificationPublisher : INotificationPublisher
         if (contextStudentId is not null && contextStudentId.Value != Guid.Empty)
         {
             clone.StudentId = contextStudentId.Value;
+            if (displayNames.TryGetValue(contextStudentId.Value, out var studentName)
+                && !string.IsNullOrWhiteSpace(studentName))
+            {
+                clone.StudentName = studentName;
+            }
+        }
+
+        if (actorUserId is not null
+            && actorUserId.Value != Guid.Empty
+            && displayNames.TryGetValue(actorUserId.Value, out var actorName)
+            && !string.IsNullOrWhiteSpace(actorName))
+        {
+            clone.ActorName = actorName;
+        }
+
+        if (string.IsNullOrWhiteSpace(clone.ClassName) && !string.IsNullOrWhiteSpace(className))
+        {
+            clone.ClassName = className;
+        }
+
+        if (string.IsNullOrWhiteSpace(clone.ProgramName) && !string.IsNullOrWhiteSpace(programName))
+        {
+            clone.ProgramName = programName;
         }
 
         return clone;

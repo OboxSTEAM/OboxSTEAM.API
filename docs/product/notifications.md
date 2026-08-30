@@ -9,6 +9,19 @@ token interpolation, persists one inbox record per `(recipient, context student)
 and then attempts real-time delivery through SignalR. Persistence is the source
 of truth if real-time delivery fails.
 
+Priority types also send email in parallel with SignalR, using the already-rendered
+inbox title and body. Email failure is logged and does not roll back the inbox.
+
+| Email | Types |
+| --- | --- |
+| Priority inbox email | `ProgramPendingPayment`, `ModuleRetakePendingPayment`, `PendingPaymentExpired`, `PaymentFailed`, `PaymentCancelled`, `ResearchReturnedForRevision`, `ResearchWorkSubmitted` |
+| Existing `IEmailService` templates (unchanged) | Parent payment request (checkout link), payment invoice, enrollment confirmation |
+| Not emailed | All other catalog types, including `PaymentSucceeded` / `ProgramActivated` / `ParentPaymentRequested` (covered by the templates above) |
+
+Scheduled session reminders, assignment due-soon reminders, and overdue alerts
+are not catalog events yet. When they are added, include them in
+`NotificationEmailPriority`.
+
 `NotificationService` provides inbox queries and read-state operations; it does
 not publish business notifications.
 
@@ -18,6 +31,7 @@ not publish business notifications.
 | --- | --- |
 | `ForUser` | One specified user, with optional context student id |
 | `ForStudentAndParents` | The student and parents with verified links |
+| `ForParentsOfStudent` | Verified parents of one student (student is not a recipient) |
 | `ForClassRoster` | Students with active class enrollments |
 | `ForClassRosterAndParents` | Active class-roster students and their verified parents |
 | `ForClassMentor` | The mentor currently assigned to the class |
@@ -49,10 +63,23 @@ include `{token}` placeholders interpolated at publish time:
 | `{activityName}` | Catalog token |
 | `{assignmentTitle}` | Catalog token |
 | `{extraAttempts}` | Catalog token |
+| `{checkedInAt}` | Catalog token (`HH:mm` Asia/Ho_Chi_Minh) |
 
-Student copy uses second-person ("You completed…"). Parent copy names the child
-("{studentName} completed…"). Vietnamese localization of these templates is a
-separate follow-up.
+Student copy addresses the learner as "bạn" ("Bạn đã hoàn thành…"). Parent copy
+names the child as "con bạn {studentName}" ("Con bạn {studentName} đã hoàn
+thành…"). Catalog titles and bodies are Vietnamese.
+
+## Payload display names
+
+`NotificationPayload` includes `studentName`, `actorName`, `className`, and
+`programName` in addition to deeplink ids. Catalog factories set class and
+program names from values the publishing service already has. At publish time
+the publisher also fills missing `className` / `programName` from
+`payload.classId` / `payload.programId` (and `class.programId` when only the
+class is present). `StudentName` and `ActorName` are filled per recipient from
+`ContextStudentId` and `ActorUserId`. Copy for events with a distinct actor
+includes `{actorName}`. Class-roster events do not set a single `studentId` in
+the catalog; the publisher writes the context student id onto each inbox row.
 
 ## Strict Type-to-Audience-to-Publisher Matrix
 
@@ -100,10 +127,10 @@ service emits it.
 | `ClassTransferred`               | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassSessionScheduled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
 | `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `ClassSessionStarted`            | `ForClassRosterAndMentor`                                    | `ClassSessionService`                       |
-| `ClassSessionCompleted`          | `ForClassRosterAndMentor`                                    | `ClassSessionService`                       |
+| `ClassSessionStarted`            | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `ClassSessionCompleted`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
 | `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `AttendanceMarkedPresent`        | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
+| `AttendanceMarkedPresent`        | `ForStudentAndParents` (staff mark); `ForParentsOfStudent` (first student check-in) | `SessionAttendanceService`                  |
 | `AttendanceMarkedLate`           | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
 | `AttendanceMarkedAbsent`         | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
 | `AttendanceMarkedExcused`        | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
@@ -131,12 +158,13 @@ Verified parents receive planning-relevant events that help them support a
 middle- or senior-school student:
 
 - class details and lifecycle changes;
-- session scheduling, rescheduling, and cancellation;
+- session scheduling, rescheduling, start, completion, and cancellation;
 - assignment publication;
 - enrollment, payment, progress, attendance, and grading events already sent
-  through `ForStudentAndParents`.
-
-Session started/completed events remain operational signals for students and
-mentors. Material updates remain student-only. Scheduled session reminders,
-assignment due-soon reminders, and overdue alerts are not implemented by this
-contract and require a separate scheduling feature.
+  through `ForStudentAndParents`;
+- the student's first QR/code check-in for a session (`AttendanceMarkedPresent`
+  via `ForParentsOfStudent`, copy includes `{checkedInAt}` in Vietnam local
+  time). Staff marking Present after that check-in does not send a second
+  Present notification. Material updates remain student-only. Scheduled session
+  reminders, assignment due-soon reminders, and overdue alerts are not
+  implemented by this contract and require a separate scheduling feature.

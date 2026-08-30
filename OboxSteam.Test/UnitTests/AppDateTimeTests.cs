@@ -64,4 +64,12 @@ public sealed class AppDateTimeTests
 
         Assert.Equal(new DateTime(2026, 8, 22, 2, 0, 0, DateTimeKind.Utc), utc);
     }
+
+    [Fact]
+    public void FormatVietnamClock_ConvertsUtcToHhMm()
+    {
+        var utc = new DateTime(2026, 8, 22, 9, 0, 0, DateTimeKind.Utc);
+
+        Assert.Equal("16:00", AppDateTime.FormatVietnamClock(utc));
+    }
 }
