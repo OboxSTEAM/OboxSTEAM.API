@@ -20,6 +20,7 @@ services:
       - JWT__Audience=${JWT__Audience}
       - JaaS__AppId=${JaaS__AppId}
       - JaaS__KeyId=${JaaS__KeyId}
+      # Empty PrivateKeyPath -> falls back to JaaS__PrivateKey in .env (local). VPS sets path + volume mount.
       - JaaS__PrivateKeyPath=${JaaS__PrivateKeyPath:-}
       - JaaS__PrivateKey=${JaaS__PrivateKey:-}
       - JaaS__Domain=${JaaS__Domain:-8x8.vc}
@@ -42,9 +43,6 @@ services:
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
     ports:
       - "${API_PORT}:5000"
-    # VPS/production: mount PEM read-only and set JaaS__PrivateKeyPath=/app/secrets/jaas-private.pem
-    # volumes:
-    #   - /opt/oboxsteam-be/secrets/jaas-private.pem:/app/secrets/jaas-private.pem:ro
     networks:
       - oboxsteam-network
 
