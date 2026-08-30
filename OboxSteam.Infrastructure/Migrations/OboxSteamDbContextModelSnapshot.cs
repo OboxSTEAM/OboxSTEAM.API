@@ -1153,6 +1153,67 @@ namespace OboxSteam.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSessionExpert", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ExpertId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("MentorFeedback")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("MentorFeedbackAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("MentorFeedbackRating")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClassSessionId", "ExpertId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
+
+                    b.HasIndex("ExpertId", "Status")
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("ClassSessionExperts", t =>
+                        {
+                            t.HasCheckConstraint("CK_ClassSessionExperts_MentorFeedbackRatingRange", "\"MentorFeedbackRating\" IS NULL OR (\"MentorFeedbackRating\" BETWEEN 1 AND 5)");
+                        });
+                });
+
             modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSkill", b =>
                 {
                     b.Property<Guid>("Id")
