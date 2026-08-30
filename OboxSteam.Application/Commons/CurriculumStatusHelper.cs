@@ -8,6 +8,7 @@ namespace OboxSteam.Application.Commons;
 /// <summary>
 /// Derives enrollment-scoped activity nav states for the learn-page curriculum tree.
 /// Sequential lock is within each course or research milestone; module prerequisite gates the whole module.
+/// LiveOnline/Offline attendance does not lock later activities or assignments.
 /// </summary>
 public static class CurriculumStatusHelper
 {
@@ -63,6 +64,27 @@ public static class CurriculumStatusHelper
         return "Complete the prerequisite module to unlock.";
     }
 
+    /// <summary>
+    /// SelfPaced completion can lock later work. LiveOnline/Offline never do —
+    /// absence is an attendance concern, not a homework gate. Unknown activities
+    /// stay conservative and still gate.
+    /// </summary>
+    public static bool CompletionGatesUnlock(Activity? activity)
+    {
+        if (activity == null || activity.IsDeleted)
+        {
+            return true;
+        }
+
+        return activity.ActivityType == ActivityType.SelfPaced;
+    }
+
+    public static bool CompletionGatesUnlock(ProgramCurriculumTreeSnapshot snapshot, Guid activityId)
+    {
+        snapshot.ActivitiesById.TryGetValue(activityId, out var activity);
+        return CompletionGatesUnlock(activity);
+    }
+
     public static bool IsActivitySequentiallyAccessible(
         Guid activityId,
         ProgramCurriculumTreeSnapshot snapshot,
@@ -78,6 +100,11 @@ public static class CurriculumStatusHelper
 
             for (var i = 0; i < index; i++)
             {
+                if (!CompletionGatesUnlock(snapshot, orderedIds[i]))
+                {
+                    continue;
+                }
+
                 if (!isCompleted(orderedIds[i]))
                 {
                     return false;
@@ -97,6 +124,11 @@ public static class CurriculumStatusHelper
 
             for (var i = 0; i < index; i++)
             {
+                if (!CompletionGatesUnlock(snapshot, orderedIds[i]))
+                {
+                    continue;
+                }
+
                 if (!isCompleted(orderedIds[i]))
                 {
                     return false;
@@ -171,9 +203,10 @@ public static class CurriculumStatusHelper
     }
 
     /// <summary>
-    /// Course-scoped assignments unlock once every activity in the course is completed.
-    /// Module-scoped assignments unlock once every activity in the module is completed.
-    /// Research milestone deliverables use <see cref="IsResearchMilestoneAssignmentAccessible"/>.
+    /// Course-scoped assignments unlock once every SelfPaced activity in the course is completed.
+    /// Module-scoped assignments unlock once every SelfPaced activity in the module is completed.
+    /// LiveOnline/Offline sessions do not gate unlock. Research milestone deliverables use
+    /// <see cref="IsResearchMilestoneAssignmentAccessible"/>.
     /// </summary>
     public static bool IsAssignmentAccessible(
         Assignment assignment,
@@ -213,7 +246,9 @@ public static class CurriculumStatusHelper
             return true;
         }
 
-        return activityIds.All(isActivityCompleted);
+        return activityIds
+            .Where(id => CompletionGatesUnlock(snapshot, id))
+            .All(isActivityCompleted);
     }
 
     public static bool AreAllModuleActivitiesCompleted(
@@ -231,7 +266,9 @@ public static class CurriculumStatusHelper
             return true;
         }
 
-        return activityIds.All(isActivityCompleted);
+        return activityIds
+            .Where(id => CompletionGatesUnlock(snapshot, id))
+            .All(isActivityCompleted);
     }
 
     public static bool IsResearchMilestoneAssignmentAccessible(
@@ -257,6 +294,11 @@ public static class CurriculumStatusHelper
 
         foreach (var link in links.Where(link => link.IsRequiredForSubmission))
         {
+            if (!CompletionGatesUnlock(snapshot, link.ActivityId))
+            {
+                continue;
+            }
+
             if (!isActivityCompleted(link.ActivityId))
             {
                 return false;

@@ -94,7 +94,6 @@ public sealed class AssignmentService : IAssignmentService
                 CourseId = a.CourseId,
                 MaxPoints = a.MaxPoints,
                 PassScore = a.PassScore,
-                DueDate = a.DueDate,
                 QuestionBankId = a.QuestionBankId,
                 QuestionCount = a.QuestionCount,
                 ModuleName = a.Module.Name,
@@ -155,9 +154,6 @@ public sealed class AssignmentService : IAssignmentService
             "code" => isDescending
                 ? query.OrderByDescending(a => a.Code)
                 : query.OrderBy(a => a.Code),
-            "duedate" => isDescending
-                ? query.OrderByDescending(a => a.DueDate)
-                : query.OrderBy(a => a.DueDate),
             "assignmenttype" => isDescending
                 ? query.OrderByDescending(a => a.AssignmentType)
                 : query.OrderBy(a => a.AssignmentType),
@@ -306,9 +302,6 @@ public sealed class AssignmentService : IAssignmentService
             MaxPoints = request.MaxPoints,
             PassScore = request.PassScore,
             IsRequiredForModulePass = request.IsRequiredForModulePass,
-            DueDate = request.DueDate,
-            AvailableFrom = request.AvailableFrom,
-            AvailableUntil = request.AvailableUntil,
             AllowShuffle = request.AllowShuffle,
             QuestionBankId = request.QuestionBankId,
             QuestionCount = request.QuestionCount,
@@ -345,9 +338,6 @@ public sealed class AssignmentService : IAssignmentService
             MaxPoints = assignment.MaxPoints,
             PassScore = assignment.PassScore,
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-            DueDate = assignment.DueDate,
-            AvailableFrom = assignment.AvailableFrom,
-            AvailableUntil = assignment.AvailableUntil,
             AllowShuffle = assignment.AllowShuffle,
             QuestionBankId = assignment.QuestionBankId,
             QuestionCount = assignment.QuestionCount,
@@ -385,9 +375,6 @@ public sealed class AssignmentService : IAssignmentService
             MaxPoints = assignment.MaxPoints,
             PassScore = assignment.PassScore,
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-            DueDate = assignment.DueDate,
-            AvailableFrom = assignment.AvailableFrom,
-            AvailableUntil = assignment.AvailableUntil,
             AllowShuffle = assignment.AllowShuffle,
             QuestionBankId = assignment.QuestionBankId,
             QuestionCount = assignment.QuestionCount,
@@ -428,12 +415,12 @@ public sealed class AssignmentService : IAssignmentService
             if (HasMentorRestrictedFields(request))
             {
                 throw ErrorHelper.Forbidden(
-                    "Mentors may only update Title, Description, DueDate, AvailableFrom, and AvailableUntil.");
+                    "Mentors may only update Title and Description.");
             }
         }
         else
         {
-            // Manager edits are structural curriculum changes; mentor edits (due dates etc.)
+            // Manager edits are structural curriculum changes; mentor edits (title/description)
             // are operational and stay allowed while their class is in progress.
             await EnsureCurriculumEditableForModuleAsync(originalModuleId);
         }
@@ -522,15 +509,6 @@ public sealed class AssignmentService : IAssignmentService
         if (request.IsRequiredForModulePass.HasValue)
             assignment.IsRequiredForModulePass = request.IsRequiredForModulePass.Value;
 
-        if (request.DueDate.HasValue)
-            assignment.DueDate = request.DueDate;
-
-        if (request.AvailableFrom.HasValue)
-            assignment.AvailableFrom = request.AvailableFrom;
-
-        if (request.AvailableUntil.HasValue)
-            assignment.AvailableUntil = request.AvailableUntil;
-
         if (request.AllowShuffle.HasValue)
             assignment.AllowShuffle = request.AllowShuffle.Value;
 
@@ -599,9 +577,6 @@ public sealed class AssignmentService : IAssignmentService
             MaxPoints = assignment.MaxPoints,
             PassScore = assignment.PassScore,
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-            DueDate = assignment.DueDate,
-            AvailableFrom = assignment.AvailableFrom,
-            AvailableUntil = assignment.AvailableUntil,
             AllowShuffle = assignment.AllowShuffle,
             QuestionBankId = assignment.QuestionBankId,
             QuestionCount = assignment.QuestionCount,

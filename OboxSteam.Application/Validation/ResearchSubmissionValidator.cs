@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ResearchSubmissionDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -60,24 +61,8 @@ public static class ResearchSubmissionValidator
         }
     }
 
-    public static void ValidateAssignmentAvailability(
-        Assignment assignment,
-        DateTime utcNow,
-        DateTime? personalAvailableUntil = null)
-    {
-        if (assignment.AvailableFrom.HasValue && utcNow < assignment.AvailableFrom.Value)
-        {
-            throw ErrorHelper.Forbidden("Assignment is not yet available.");
-        }
-
-        var effectiveUntil = AssessmentAttemptPolicy.ResolveEffectiveAvailableUntil(
-            assignment,
-            personalAvailableUntil);
-        if (effectiveUntil.HasValue && utcNow > effectiveUntil.Value)
-        {
-            throw ErrorHelper.Conflict("Assignment is no longer available.");
-        }
-    }
+    public static void ValidateAssignmentAvailability(ClassSession? window, DateTime utcNow)
+        => AssignmentWindowPolicy.EnsureAllowsNewAttempt(window, utcNow);
 
     public static void ValidateSubmitContent(CreateResearchSubmissionRequestDto request)
         => ValidateSubmitContent(request.ContentText, request.FileUrl, request.EvidenceMediaAssetIds);
@@ -248,7 +233,7 @@ public static class ResearchSubmissionValidator
         Assignment assignment,
         Submission? submission,
         DateTime utcNow,
-        DateTime? personalAvailableUntil = null)
+        ClassSession? window)
     {
         var submitBlockReasons = new List<string>();
 
@@ -259,17 +244,13 @@ public static class ResearchSubmissionValidator
 
         submitBlockReasons.AddRange(activityBlockReasons);
 
-        if (assignment.AvailableFrom.HasValue && utcNow < assignment.AvailableFrom.Value)
+        if (!AssignmentWindowPolicy.IsInProgressContinuation(submission))
         {
-            submitBlockReasons.Add("Assignment is not yet available.");
-        }
-
-        var effectiveUntil = AssessmentAttemptPolicy.ResolveEffectiveAvailableUntil(
-            assignment,
-            personalAvailableUntil);
-        if (effectiveUntil.HasValue && utcNow > effectiveUntil.Value)
-        {
-            submitBlockReasons.Add("Assignment is no longer available.");
+            var calendarReason = AssignmentWindowPolicy.GetNewAttemptBlockReason(window, utcNow);
+            if (calendarReason != null)
+            {
+                submitBlockReasons.Add(calendarReason);
+            }
         }
 
         if (submission == null)
@@ -424,7 +405,7 @@ public static class ResearchSubmissionValidator
         IReadOnlyDictionary<Guid, Assignment> assignmentsById,
         IReadOnlySet<Guid> completedActivityIds,
         DateTime utcNow,
-        DateTime? personalAvailableUntil = null)
+        ClassSession? window)
     {
         var moduleMilestones = await unitOfWork.ResearchMilestones.GetAllAsync(
             rm => rm.ModuleId == milestone.ModuleId && !rm.IsDeleted);
@@ -457,6 +438,11 @@ public static class ResearchSubmissionValidator
                 continue;
             }
 
+            if (!CurriculumStatusHelper.CompletionGatesUnlock(link.Activity))
+            {
+                continue;
+            }
+
             if (!completedActivityIds.Contains(link.ActivityId))
             {
                 throw ErrorHelper.Forbidden(
@@ -464,7 +450,7 @@ public static class ResearchSubmissionValidator
             }
         }
 
-        ValidateAssignmentAvailability(assignment, utcNow, personalAvailableUntil);
+        ValidateAssignmentAvailability(window, utcNow);
     }
 
     public static string GenerateSubmissionCode()

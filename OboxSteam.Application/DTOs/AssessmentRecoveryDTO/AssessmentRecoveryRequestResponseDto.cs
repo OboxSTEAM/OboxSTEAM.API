@@ -13,8 +13,6 @@ public class AssessmentRecoveryRequestResponseDto
     public string? StudentMessage { get; set; }
     public string? MentorNote { get; set; }
     public int ExtraAttemptsGranted { get; set; }
-    public DateTime? PersonalDueDate { get; set; }
-    public DateTime? PersonalAvailableUntil { get; set; }
     public DateTime? DecidedAt { get; set; }
     public Guid? DecidedBy { get; set; }
     public DateTime CreatedAt { get; set; }

@@ -76,17 +76,25 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
             assignment);
 
         var now = DateTime.UtcNow;
-        var (_, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
-            _unitOfWork,
-            student.Id,
-            assignment.Id,
-            enrollment.Id);
-        ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now, personalUntil);
-
         var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.AssignmentId == assignment.Id
                  && s.ModuleEnrollmentId == enrollment.Id
                  && !s.IsDeleted);
+
+        if (!AssignmentWindowPolicy.IsInProgressContinuation(submission))
+        {
+            var window = await AssignmentWindowPolicy.TryGetForStudentAsync(
+                _unitOfWork,
+                assignment.Id,
+                student.Id);
+            await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
+                student.Id,
+                assignment.Id,
+                enrollment.Id,
+                window,
+                now);
+            ResearchSubmissionValidator.ValidateAssignmentAvailability(window, now);
+        }
 
         if (submission == null)
         {
@@ -212,6 +220,11 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
             ? SubmissionStatus.ReturnedForRevision
             : SubmissionStatus.Graded;
 
+        if (request.ReturnForRevision)
+        {
+            submission.ExpiresAt = AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now);
+        }
+
         await _unitOfWork.Submissions.Update(submission);
         await _unitOfWork.SaveChangesAsync();
 
@@ -238,6 +251,14 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
                 submission.StudentId,
                 assignment.Id,
                 submission.ModuleEnrollmentId);
+        }
+        else if (submission.Status == SubmissionStatus.Graded
+                 && submission.AssignedGrade.HasValue
+                 && submission.AssignedGrade.Value >= assignment.PassScore)
+        {
+            await _programPurchaseLifecycle.TryExtendNextMilestoneWindowAfterPassAsync(
+                assignment,
+                submission.StudentId);
         }
 
         _logger.LogInformation(

@@ -5,6 +5,7 @@ using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -343,8 +344,8 @@ public sealed class ClassEnrollmentServiceTests
             ModuleId = Guid.Parse("66666666-6666-6666-6666-666666666666"),
             Title = "Assignment window",
             SessionKind = SessionKind.AssignmentWindow,
-            StartTime = DateTime.UtcNow.AddHours(10),
-            EndTime = DateTime.UtcNow.AddHours(12),
+            StartTime = DateTime.UtcNow.AddDays(-8),
+            EndTime = DateTime.UtcNow.AddDays(1),
             Status = ClassSessionStatus.Scheduled,
             IsDeleted = false
         });
@@ -356,7 +357,7 @@ public sealed class ClassEnrollmentServiceTests
                 ProgramEnrollmentId = _programEnrollmentId,
                 ClassId = _classId
             }));
-        Assert.Contains("Cannot join within", ex.Message);
+        Assert.Equal(ClassEnrollmentValidator.LateJoinBlockedMessage, ex.Message);
     }
 
     [Fact]

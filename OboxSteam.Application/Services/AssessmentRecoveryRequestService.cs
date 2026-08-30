@@ -78,12 +78,25 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
         }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
-        if (AssessmentAttemptPolicy.IsUnlimitedAttempts(module)
-            && !assignment.AvailableUntil.HasValue
-            && !assignment.DueDate.HasValue)
+        if (AssessmentAttemptPolicy.IsUnlimitedAttempts(module))
         {
             throw ErrorHelper.BadRequest(
-                "Theory modules allow unlimited attempts; request a personal deadline only when the assignment window is closed.");
+                "Theory modules allow unlimited attempts while the class window is open; recovery is not available.");
+        }
+
+        var window = await AssignmentWindowPolicy.ResolveForStudentAsync(
+            _unitOfWork,
+            assignment.Id,
+            student.Id);
+        if (DateTime.UtcNow > window.EndTime)
+        {
+            await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
+                student.Id,
+                assignment.Id,
+                enrollment.Id,
+                window,
+                DateTime.UtcNow);
+            throw ErrorHelper.Conflict(AssignmentWindowPolicy.ClosedMessage);
         }
 
         var priorRequests = await _unitOfWork.AssessmentRecoveryRequests.GetAllAsync(
@@ -208,9 +221,9 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
 
         await EnsureCanDecideForRequestAsync(mentor, entity);
 
-        if (dto.ExtraAttemptsGranted < 0)
+        if (dto.ExtraAttemptsGranted < 1)
         {
-            throw ErrorHelper.BadRequest("ExtraAttemptsGranted cannot be negative.");
+            throw ErrorHelper.BadRequest("Approve must grant at least one extra attempt.");
         }
 
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(entity.AssignmentId);
@@ -218,17 +231,25 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
             ? await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId)
             : null;
 
-        if (!AssessmentAttemptPolicy.IsUnlimitedAttempts(module) && dto.ExtraAttemptsGranted < 1
-            && !dto.PersonalDueDate.HasValue && !dto.PersonalAvailableUntil.HasValue)
+        if (assignment != null)
         {
-            throw ErrorHelper.BadRequest(
-                "Approve must grant at least one extra attempt or a personal deadline.");
+            var window = entity.ClassId.HasValue
+                ? await AssignmentWindowPolicy.TryGetForClassAsync(
+                    _unitOfWork,
+                    entity.ClassId.Value,
+                    assignment.Id)
+                : await AssignmentWindowPolicy.TryGetForStudentAsync(
+                    _unitOfWork,
+                    assignment.Id,
+                    entity.StudentId);
+            if (window == null || DateTime.UtcNow > window.EndTime)
+            {
+                throw ErrorHelper.Conflict(AssignmentWindowPolicy.ClosedMessage);
+            }
         }
 
         entity.Status = AssessmentRecoveryRequestStatus.Approved;
         entity.ExtraAttemptsGranted = dto.ExtraAttemptsGranted;
-        entity.PersonalDueDate = dto.PersonalDueDate;
-        entity.PersonalAvailableUntil = dto.PersonalAvailableUntil;
         entity.MentorNote = string.IsNullOrWhiteSpace(dto.MentorNote) ? null : dto.MentorNote.Trim();
         entity.DecidedAt = DateTime.UtcNow;
         entity.DecidedBy = mentor.Id;
@@ -352,6 +373,7 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
         }
 
         submission.Status = SubmissionStatus.ReturnedForRevision;
+        submission.ExpiresAt = AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, DateTime.UtcNow);
         submission.UpdatedAt = DateTime.UtcNow;
         await _unitOfWork.Submissions.Update(submission);
     }
@@ -412,8 +434,6 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
             StudentMessage = entity.StudentMessage,
             MentorNote = entity.MentorNote,
             ExtraAttemptsGranted = entity.ExtraAttemptsGranted,
-            PersonalDueDate = entity.PersonalDueDate,
-            PersonalAvailableUntil = entity.PersonalAvailableUntil,
             DecidedAt = entity.DecidedAt,
             DecidedBy = entity.DecidedBy,
             CreatedAt = entity.CreatedAt,

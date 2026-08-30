@@ -4,8 +4,8 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Domain.Entities;
 
 /// <summary>
-/// Student request for extra attempts and/or a personal deadline on an assignment.
-/// Grants keep the student on the same class enrollment.
+/// Student request for extra attempts on an assignment.
+/// Grants must be used while the class AssignmentWindow is still open.
 /// </summary>
 public class AssessmentRecoveryRequest : BaseEntity
 {
@@ -30,11 +30,8 @@ public class AssessmentRecoveryRequest : BaseEntity
     [MaxLength(1000)]
     public string? MentorNote { get; set; }
 
-    /// <summary>Extra attempts added on approve (0 allowed for deadline-only Theory grants).</summary>
+    /// <summary>Extra attempts added on approve. Must be used inside the class AssignmentWindow.</summary>
     public int ExtraAttemptsGranted { get; set; }
-
-    public DateTime? PersonalDueDate { get; set; }
-    public DateTime? PersonalAvailableUntil { get; set; }
 
     public DateTime? DecidedAt { get; set; }
     public Guid? DecidedBy { get; set; }

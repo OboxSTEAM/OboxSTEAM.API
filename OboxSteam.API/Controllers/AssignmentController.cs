@@ -121,7 +121,7 @@ public class AssignmentController : ControllerBase
     [Authorize(Roles = "Admin,Manager,Mentor")]
     [SwaggerOperation(
         Summary = "Update an assignment",
-        Description = "Updates an assignment by its ID. Managers/Admins may update all fields. Mentors may update Title, Description, DueDate, AvailableFrom, and AvailableUntil for assignments in programs they teach.")]
+        Description = "Updates an assignment by its ID. Managers/Admins may update all catalog fields. Mentors may update Title and Description for assignments in programs they teach. Assignment windows are set on the class session.")]
     [ProducesResponseType(typeof(ApiResult<AssignmentResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

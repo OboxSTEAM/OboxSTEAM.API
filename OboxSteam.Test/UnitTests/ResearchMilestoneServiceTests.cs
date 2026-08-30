@@ -27,6 +27,7 @@ public sealed class ResearchMilestoneServiceTests
     private readonly Guid _assignment2Id = Guid.Parse("67676767-6767-6767-6767-676767676767");
     private readonly Guid _linkId = Guid.Parse("77777777-7777-7777-7777-777777777777");
     private readonly Guid _moduleEnrollmentId = Guid.Parse("88888888-8888-8888-8888-888888888888");
+    private readonly Guid _programEnrollmentId = Guid.Parse("98989898-9898-9898-9898-989898989898");
 
     private readonly DateTime _now = DateTime.UtcNow;
 
@@ -146,10 +147,12 @@ public sealed class ResearchMilestoneServiceTests
             MaxPoints = 100,
             PassScore = 70m,
             MaxAttempts = 3,
+            TimeLimitMinutes = 60,
             IsRequiredForModulePass = true,
             IsDeleted = false,
         };
         _db.Assignments.Seed(assignment);
+        ClassAssignmentWindowSeed.Open(_db, _classId, assignment.ModuleId, assignment.Id);
         return assignment;
     }
 
@@ -197,12 +200,21 @@ public sealed class ResearchMilestoneServiceTests
 
     private void SeedModuleEnrollment(Guid? studentId = null)
     {
+        var sid = studentId ?? _studentId;
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            sid,
+            _programEnrollmentId,
+            _mentorId);
+
         _db.ModuleEnrollments.Seed(new ModuleEnrollment
         {
             Id = _moduleEnrollmentId,
-            StudentId = studentId ?? _studentId,
+            StudentId = sid,
             ModuleId = _researchModuleId,
-            ProgramEnrollmentId = Guid.NewGuid(),
+            ProgramEnrollmentId = _programEnrollmentId,
             Status = EnrollmentStatus.Active,
             AttemptNumber = 1,
             IsDeleted = false,
@@ -229,6 +241,7 @@ public sealed class ResearchMilestoneServiceTests
             MaxPoints = 100,
             PassScore = 70m,
             MaxAttempts = 2,
+            TimeLimitMinutes = 60,
         };
     }
 
@@ -248,6 +261,7 @@ public sealed class ResearchMilestoneServiceTests
         Assert.Equal(1, result.MilestoneOrder);
         Assert.Equal("ASG-NEW", result.Assignment.Code);
         Assert.Equal("Deliverable", result.Assignment.Title);
+        Assert.Equal(60, result.Assignment.TimeLimitMinutes);
         Assert.True(result.Assignment.IsRequiredForModulePass);
         Assert.Single(_db.ResearchMilestones.Items);
         Assert.Single(_db.Assignments.Items);
@@ -274,6 +288,19 @@ public sealed class ResearchMilestoneServiceTests
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.CreateMilestone(_theoryModuleId, BuildCreateRequest()));
+    }
+
+    [Fact]
+    public async Task Create_Throws_WhenClassInProgress()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedResearchCurriculum();
+        SeedClass();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.CreateMilestone(_researchModuleId, BuildCreateRequest()));
+        Assert.Contains("in progress", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -428,7 +455,6 @@ public sealed class ResearchMilestoneServiceTests
             MaxPoints = 120,
             PassScore = 80m,
             AssignmentTitle = "  New deliverable  ",
-            DueDate = _now.AddDays(10),
         });
 
         Assert.NotNull(result);
@@ -437,6 +463,21 @@ public sealed class ResearchMilestoneServiceTests
         Assert.Equal(120, result.Assignment.MaxPoints);
         Assert.Equal(80m, result.Assignment.PassScore);
         Assert.Equal("New deliverable", result.Assignment.Title);
+    }
+
+    [Fact]
+    public async Task Update_Throws_WhenClassInProgress()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedResearchCurriculum();
+        SeedClass();
+        SeedAssignment();
+        SeedMilestone();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateMilestone(_milestoneId, new UpdateResearchMilestoneRequestDto { Title = "X" }));
+        Assert.Contains("in progress", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -468,14 +509,11 @@ public sealed class ResearchMilestoneServiceTests
             IsCapstone = true,
             Description = "  ",
             AssignmentDescription = "  ",
-            AvailableFrom = _now.AddDays(-1),
-            AvailableUntil = _now.AddDays(30),
         });
 
         Assert.True(result!.IsCapstone);
         Assert.Null(result.Description);
         Assert.Null(result.Assignment.Description);
-        Assert.NotNull(result.Assignment.AvailableFrom);
     }
 
     [Fact]
@@ -523,6 +561,20 @@ public sealed class ResearchMilestoneServiceTests
         Assert.True(_db.ResearchMilestones.Items[0].IsDeleted);
         Assert.True(_db.Assignments.Items[0].IsDeleted);
         Assert.True(_db.ResearchMilestoneActivities.Items[0].IsDeleted);
+    }
+
+    [Fact]
+    public async Task Delete_Throws_WhenClassInProgress()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedResearchCurriculum();
+        SeedClass();
+        SeedAssignment();
+        SeedMilestone();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.DeleteMilestone(_milestoneId));
+        Assert.Contains("in progress", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

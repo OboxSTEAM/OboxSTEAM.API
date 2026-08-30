@@ -38,6 +38,7 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
 
         var moduleEntity = await _unitOfWork.Modules.GetByIdAsync(moduleId);
         ResearchMilestoneValidator.ValidateResearchModule(moduleEntity, moduleId);
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, moduleEntity!.ProgramId);
 
         AssignmentValidator.ValidateRequiredFields(request.Code, request.Title);
         AssignmentValidator.ValidateRequiredFields(request.AssignmentCode, request.AssignmentTitle);
@@ -45,7 +46,7 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
             request.MaxPoints,
             request.PassScore,
             request.MaxAttempts,
-            timeLimitMinutes: null);
+            request.TimeLimitMinutes);
 
         var duplicateMilestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
             rm => rm.Code.ToLower() == request.Code.Trim().ToLower() && !rm.IsDeleted);
@@ -91,10 +92,8 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
             MaxPoints = request.MaxPoints,
             PassScore = request.PassScore,
             IsRequiredForModulePass = true,
-            DueDate = request.DueDate,
-            AvailableFrom = request.AvailableFrom,
-            AvailableUntil = request.AvailableUntil,
             MaxAttempts = request.MaxAttempts,
+            TimeLimitMinutes = request.TimeLimitMinutes,
             IsDeleted = false
         };
 
@@ -142,9 +141,6 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
                 MaxPoints = assignment.MaxPoints,
                 PassScore = assignment.PassScore,
                 IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-                DueDate = assignment.DueDate,
-                AvailableFrom = assignment.AvailableFrom,
-                AvailableUntil = assignment.AvailableUntil,
                 AllowShuffle = assignment.AllowShuffle,
                 QuestionBankId = assignment.QuestionBankId,
                 QuestionCount = assignment.QuestionCount,
@@ -200,9 +196,6 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
                 MaxPoints = assignment.MaxPoints,
                 PassScore = assignment.PassScore,
                 IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-                DueDate = assignment.DueDate,
-                AvailableFrom = assignment.AvailableFrom,
-                AvailableUntil = assignment.AvailableUntil,
                 AllowShuffle = assignment.AllowShuffle,
                 QuestionBankId = assignment.QuestionBankId,
                 QuestionCount = assignment.QuestionCount,
@@ -299,9 +292,6 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
                     MaxPoints = assignment.MaxPoints,
                     PassScore = assignment.PassScore,
                     IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-                    DueDate = assignment.DueDate,
-                    AvailableFrom = assignment.AvailableFrom,
-                    AvailableUntil = assignment.AvailableUntil,
                     AllowShuffle = assignment.AllowShuffle,
                     QuestionBankId = assignment.QuestionBankId,
                     QuestionCount = assignment.QuestionCount,
@@ -348,6 +338,7 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
 
         var milestoneEntity = await _unitOfWork.ResearchMilestones.GetByIdAsync(milestoneId);
         var milestone = ResearchMilestoneValidator.ValidateMilestoneExists(milestoneEntity, milestoneId);
+        await EnsureCurriculumEditableForModuleAsync(milestone.ModuleId);
 
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(milestone.AssignmentId);
         if (assignment == null || assignment.IsDeleted)
@@ -394,6 +385,11 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
 
         var maxPoints = request.MaxPoints ?? assignment.MaxPoints;
         var passScore = request.PassScore ?? assignment.PassScore;
+        if (request.TimeLimitMinutes.HasValue)
+        {
+            assignment.TimeLimitMinutes = request.TimeLimitMinutes;
+        }
+
         AssignmentValidator.ValidateCommonFields(maxPoints, passScore, assignment.MaxAttempts, assignment.TimeLimitMinutes);
 
         if (!string.IsNullOrWhiteSpace(request.AssignmentTitle))
@@ -416,21 +412,6 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
         if (request.PassScore.HasValue)
         {
             assignment.PassScore = request.PassScore.Value;
-        }
-
-        if (request.DueDate.HasValue)
-        {
-            assignment.DueDate = request.DueDate;
-        }
-
-        if (request.AvailableFrom.HasValue)
-        {
-            assignment.AvailableFrom = request.AvailableFrom;
-        }
-
-        if (request.AvailableUntil.HasValue)
-        {
-            assignment.AvailableUntil = request.AvailableUntil;
         }
 
         await _unitOfWork.ResearchMilestones.Update(milestone);
@@ -460,9 +441,6 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
                 MaxPoints = assignment.MaxPoints,
                 PassScore = assignment.PassScore,
                 IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-                DueDate = assignment.DueDate,
-                AvailableFrom = assignment.AvailableFrom,
-                AvailableUntil = assignment.AvailableUntil,
                 AllowShuffle = assignment.AllowShuffle,
                 QuestionBankId = assignment.QuestionBankId,
                 QuestionCount = assignment.QuestionCount,
@@ -504,6 +482,7 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
 
         var milestoneEntity = await _unitOfWork.ResearchMilestones.GetByIdAsync(milestoneId);
         var milestone = ResearchMilestoneValidator.ValidateMilestoneExists(milestoneEntity, milestoneId);
+        await EnsureCurriculumEditableForModuleAsync(milestone.ModuleId);
 
         var submissions = await _unitOfWork.Submissions.GetAllAsync(
             s => s.ResearchMilestoneId == milestoneId && !s.IsDeleted);
@@ -739,6 +718,12 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
                 group => group.OrderByDescending(s => s.AttemptNumber).ThenByDescending(s => s.CreatedAt).First());
 
         var now = DateTime.UtcNow;
+        var windows = enrollmentEntity.ProgramEnrollmentId.HasValue
+            ? await AssignmentWindowPolicy.LoadWindowsForProgramEnrollmentAsync(
+                _unitOfWork,
+                enrollmentEntity.StudentId,
+                enrollmentEntity.ProgramEnrollmentId.Value)
+            : new Dictionary<Guid, ClassSession>();
         var milestoneItems = new List<StudentMilestoneItemProgressDto>();
         ResearchMilestone? previousMilestone = null;
 
@@ -781,11 +766,7 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
                 .Select(a => $"Required activity '{a.Title}' is not completed.")
                 .ToList();
 
-            var (_, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
-                _unitOfWork,
-                enrollmentEntity.StudentId,
-                assignment.Id,
-                moduleEnrollmentId);
+            windows.TryGetValue(assignment.Id, out var window);
 
             var (canSubmit, submitBlockReasons) = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
                 isUnlocked,
@@ -793,7 +774,7 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
                 assignment,
                 latestSubmission,
                 now,
-                personalUntil);
+                window);
 
             var passed = latestSubmission != null
                 && latestSubmission.Status == SubmissionStatus.Graded
@@ -828,5 +809,16 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
             ModuleId = enrollmentEntity.ModuleId,
             Milestones = milestoneItems
         };
+    }
+
+    private async Task EnsureCurriculumEditableForModuleAsync(Guid moduleId)
+    {
+        var module = await _unitOfWork.Modules.GetByIdAsync(moduleId);
+        if (module == null || module.IsDeleted)
+        {
+            return;
+        }
+
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module.ProgramId);
     }
 }

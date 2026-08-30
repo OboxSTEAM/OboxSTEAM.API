@@ -41,25 +41,8 @@ public static class QuizAttemptValidator
         return assignment;
     }
 
-    public static void ValidateAssignmentAvailability(
-        Assignment assignment,
-        DateTime utcNow,
-        DateTime? personalDueDate = null,
-        DateTime? personalAvailableUntil = null)
-    {
-        if (assignment.AvailableFrom.HasValue && utcNow < assignment.AvailableFrom.Value)
-            throw ErrorHelper.Forbidden("Assignment is not yet available.");
-
-        var effectiveUntil = AssessmentAttemptPolicy.ResolveEffectiveAvailableUntil(
-            assignment,
-            personalAvailableUntil);
-        if (effectiveUntil.HasValue && utcNow > effectiveUntil.Value)
-            throw ErrorHelper.Conflict("Assignment is no longer available.");
-
-        var effectiveDue = AssessmentAttemptPolicy.ResolveEffectiveDueDate(assignment, personalDueDate);
-        if (effectiveDue.HasValue && utcNow > effectiveDue.Value)
-            throw ErrorHelper.Conflict("Assignment is past due date.");
-    }
+    public static void ValidateAssignmentAvailability(ClassSession? window, DateTime utcNow)
+        => AssignmentWindowPolicy.EnsureAllowsNewAttempt(window, utcNow);
 
     public static Submission ValidateSubmissionExists(Submission? submission, Guid submissionId)
     {

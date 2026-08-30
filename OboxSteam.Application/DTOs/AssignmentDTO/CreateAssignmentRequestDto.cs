@@ -13,9 +13,6 @@ public class CreateAssignmentRequestDto
     public int MaxPoints { get; set; }
     public decimal PassScore { get; set; }
     public bool IsRequiredForModulePass { get; set; } = true;
-    public DateTime? DueDate { get; set; }
-    public DateTime? AvailableFrom { get; set; }
-    public DateTime? AvailableUntil { get; set; }
     public bool AllowShuffle { get; set; } = true;
     public Guid? QuestionBankId { get; set; }
     public int? QuestionCount { get; set; }

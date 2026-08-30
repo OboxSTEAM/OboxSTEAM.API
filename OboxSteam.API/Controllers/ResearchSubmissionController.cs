@@ -85,7 +85,7 @@ public sealed class ResearchSubmissionController : ControllerBase
         Description = "Student submits research deliverable content for a milestone. Creates the submission "
             + "when none exists (milestone unlock + required activities + availability). "
             + "Resubmission after ReturnedForRevision does not require mentor to reopen. "
-            + "Personal AvailableUntil from approved assessment recovery is honored. "
+            + "New attempts must fall inside the class AssignmentWindow. "
             + "Pass EvidenceMediaAssetIds from evidence upload (isEvidence=true); primary FileUrl stays a document URL.")]
     [ProducesResponseType(typeof(ApiResult<ResearchSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]

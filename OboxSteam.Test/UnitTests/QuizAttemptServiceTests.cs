@@ -21,6 +21,7 @@ public sealed class QuizAttemptServiceTests
     private readonly Guid _assignmentId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private readonly Guid _questionBankId = Guid.Parse("55555555-5555-5555-5555-555555555555");
     private readonly Guid _enrollmentId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+    private readonly Guid _classId = Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1");
 
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
@@ -84,6 +85,12 @@ public sealed class QuizAttemptServiceTests
             ProgramEnrollmentId = null,
             IsDeleted = false
         });
+
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId);
     }
 
     private Assignment SeedQuizAssignment(int maxAttempts = 3, decimal maxPoints = 10m, decimal passScore = 5m)
@@ -111,6 +118,7 @@ public sealed class QuizAttemptServiceTests
         };
 
         _db.Assignments.Seed(assignment);
+        ClassAssignmentWindowSeed.Open(_db, _classId, _moduleId, assignment.Id);
         return assignment;
     }
 
@@ -230,6 +238,7 @@ public sealed class QuizAttemptServiceTests
         Assert.Equal(_assignmentId, result.AssignmentId);
         Assert.Equal(1, result.AttemptNumber);
         Assert.Equal(30, result.TimeLimitMinutes);
+        Assert.NotNull(_db.Submissions.Items[0].ExpiresAt);
         Assert.Single(result.Questions);
         Assert.Empty(result.SavedAnswers);
         Assert.Single(_db.Submissions.Items);
@@ -253,6 +262,64 @@ public sealed class QuizAttemptServiceTests
         {
             Id = submissionId,
             Code = "SUB-PENDING1",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _enrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Pending,
+            StartedAt = DateTime.UtcNow.AddMinutes(-5),
+            IsDeleted = false
+        });
+
+        _db.QuizQuestions.Seed(new QuizQuestion
+        {
+            Id = questionId,
+            AssignmentId = _assignmentId,
+            SubmissionId = submissionId,
+            QuestionText = "Pending Q",
+            QuestionType = QuestionTypeConstants.SingleChoice,
+            Points = 1,
+            OrderIndex = 1,
+            AttemptNumber = 1,
+            IsDeleted = false
+        });
+
+        _db.QuizOptions.Seed(new QuizOption
+        {
+            Id = optionId,
+            QuestionId = questionId,
+            OptionText = "A",
+            IsCorrect = true,
+            IsDeleted = false
+        });
+
+        var sut = CreateSut();
+
+        var result = await sut.StartQuiz(_assignmentId);
+
+        Assert.Equal(submissionId, result.SubmissionId);
+        Assert.Equal(1, result.AttemptNumber);
+        Assert.Single(result.Questions);
+        Assert.Single(_db.Submissions.Items);
+        Assert.Equal(0, _db.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task StartQuiz_ResumesPendingSubmission_WhenWindowClosed()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment();
+        ClassAssignmentWindowSeed.Close(
+            _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId));
+
+        var submissionId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var questionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var optionId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+        _db.Submissions.Seed(new Submission
+        {
+            Id = submissionId,
+            Code = "SUB-PENDING2",
             AssignmentId = _assignmentId,
             StudentId = _studentId,
             ModuleEnrollmentId = _enrollmentId,
@@ -901,13 +968,32 @@ public sealed class QuizAttemptServiceTests
     public async Task StartQuiz_ThrowsConflict_WhenAssignmentNoLongerAvailable()
     {
         SeedStudentAndEnrollment();
-        var assignment = SeedQuizAssignment();
-        assignment.AvailableUntil = DateTime.UtcNow.AddMinutes(-1);
+        SeedQuizAssignment();
+        var window = _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId);
+        window.StartTime = DateTime.UtcNow.AddDays(-7);
+        window.EndTime = DateTime.UtcNow.AddMinutes(-1);
         SeedBankQuestion();
         var sut = CreateSut();
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartQuiz(_assignmentId));
-        Assert.Equal("Assignment is no longer available.", ex.Message);
+        Assert.Equal(AssignmentWindowPolicy.ClosedMessage, ex.Message);
+    }
+
+    [Fact]
+    public async Task StartQuiz_ThrowsConflict_WhenClassWindowIsMissing()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment();
+        foreach (var session in _db.ClassSessions.Items.Where(s => s.AssignmentId == _assignmentId).ToList())
+        {
+            session.IsDeleted = true;
+        }
+
+        SeedBankQuestion();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartQuiz(_assignmentId));
+        Assert.Equal(AssignmentWindowPolicy.NotAvailableMessage, ex.Message);
     }
 
     [Fact]
@@ -1188,48 +1274,15 @@ public sealed class QuizAttemptServiceTests
         SeedStudentAndEnrollment();
         SeedQuizAssignment();
 
-        var classId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         var setId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         var classQuestionId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
         var classOptionCorrectId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
         var classOptionWrongId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
-        var programEnrollmentId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
 
-        var classEntity = new Class
-        {
-            Id = classId,
-            Code = "CLS-Q",
-            Name = "Quiz Cohort",
-            ProgramId = _programId,
-            Status = ClassStatus.Open,
-            MaxCapacity = 30,
-            StartDate = DateTime.UtcNow.AddDays(-7),
-            EndDate = DateTime.UtcNow.AddDays(30),
-            IsDeleted = false
-        };
-        _db.Classes.Seed(classEntity);
-        _db.ProgramEnrollments.Seed(new ProgramEnrollment
-        {
-            Id = programEnrollmentId,
-            StudentId = _studentId,
-            ProgramId = _programId,
-            Status = EnrollmentStatus.Active,
-            IsDeleted = false
-        });
-        _db.ClassEnrollments.Seed(new ClassEnrollment
-        {
-            Id = Guid.NewGuid(),
-            ClassId = classId,
-            Class = classEntity,
-            StudentId = _studentId,
-            ProgramEnrollmentId = programEnrollmentId,
-            Status = ClassEnrollmentStatus.Active,
-            IsDeleted = false
-        });
         _db.ClassQuizQuestionSets.Seed(new ClassQuizQuestionSet
         {
             Id = setId,
-            ClassId = classId,
+            ClassId = _classId,
             AssignmentId = _assignmentId,
             PulledAt = DateTime.UtcNow,
             IsDeleted = false
@@ -1447,6 +1500,13 @@ public sealed class QuizAttemptServiceTests
             FullName = "Class Mentor",
             IsDeleted = false
         });
+
+        var existingClass = _db.Classes.Items.FirstOrDefault(c => c.Id == _classId);
+        if (existingClass != null)
+        {
+            existingClass.MentorId = mentorId;
+            return;
+        }
 
         var classEntity = new Class
         {

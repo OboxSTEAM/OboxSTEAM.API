@@ -341,6 +341,26 @@ public sealed class CommonsAndValidationTests
         Assert.False(CurriculumStatusHelper.IsAssignmentAccessible(
             courseAssignment, moduleId, snapshot, _ => false));
 
+        var liveId = Guid.NewGuid();
+        var liveSnapshot = new ProgramCurriculumTreeSnapshot
+        {
+            OrderedActivitiesByCourseId = new Dictionary<Guid, List<Guid>> { [courseId] = [liveId] },
+            ActivityModuleMap = new Dictionary<Guid, Guid> { [liveId] = moduleId },
+            ActivitiesById = new Dictionary<Guid, Activity>
+            {
+                [liveId] = new Activity
+                {
+                    Id = liveId,
+                    ActivityType = ActivityType.LiveOnline,
+                    IsDeleted = false,
+                },
+            },
+            LinksByMilestoneId = new Dictionary<Guid, List<ResearchMilestoneActivity>>(),
+            AssignmentsById = new Dictionary<Guid, Assignment>(),
+        };
+        Assert.True(CurriculumStatusHelper.IsAssignmentAccessible(
+            courseAssignment, moduleId, liveSnapshot, _ => false));
+
         var moduleAssignment = new Assignment { CourseId = null };
         Assert.True(CurriculumStatusHelper.IsAssignmentAccessible(
             moduleAssignment, moduleId, snapshot, _ => true));
@@ -348,5 +368,45 @@ public sealed class CommonsAndValidationTests
         var milestone = new ResearchMilestone { Id = Guid.NewGuid() };
         Assert.True(CurriculumStatusHelper.IsAssignmentAccessible(
             new Assignment(), moduleId, snapshot, _ => true, researchMilestone: milestone));
+    }
+
+    [Fact]
+    public void CurriculumStatusHelper_IsActivitySequentiallyAccessible_SkipsIncompleteLive()
+    {
+        var liveId = Guid.NewGuid();
+        var selfPacedId = Guid.NewGuid();
+        var courseId = Guid.NewGuid();
+        var snapshot = new ProgramCurriculumTreeSnapshot
+        {
+            OrderedActivitiesByCourseId = new Dictionary<Guid, List<Guid>>
+            {
+                [courseId] = [liveId, selfPacedId],
+            },
+            ActivityModuleMap = new Dictionary<Guid, Guid>
+            {
+                [liveId] = Guid.NewGuid(),
+                [selfPacedId] = Guid.NewGuid(),
+            },
+            ActivitiesById = new Dictionary<Guid, Activity>
+            {
+                [liveId] = new Activity
+                {
+                    Id = liveId,
+                    ActivityType = ActivityType.LiveOnline,
+                    IsDeleted = false,
+                },
+                [selfPacedId] = new Activity
+                {
+                    Id = selfPacedId,
+                    ActivityType = ActivityType.SelfPaced,
+                    IsDeleted = false,
+                },
+            },
+        };
+
+        Assert.True(CurriculumStatusHelper.IsActivitySequentiallyAccessible(
+            selfPacedId,
+            snapshot,
+            _ => false));
     }
 }

@@ -30,14 +30,6 @@ public class Assignment : BaseEntity
     /// <summary>If true, this assignment must be passed for the module to be completed.</summary>
     public bool IsRequiredForModulePass { get; set; } = true;
 
-    public DateTime? DueDate { get; set; }
-
-    /// <summary>Earliest moment a student may start this assignment (template default).</summary>
-    public DateTime? AvailableFrom { get; set; }
-
-    /// <summary>Hard close — no new attempts after this time (template default).</summary>
-    public DateTime? AvailableUntil { get; set; }
-
     public bool AllowShuffle { get; set; } = true;
 
     // ── Question-Bank quiz configuration ──
@@ -79,7 +71,10 @@ public class Assignment : BaseEntity
     /// </summary>
     public int HardPercent { get; set; }
 
-    /// <summary>Time limit in minutes for each quiz attempt. Null = unlimited.</summary>
+    /// <summary>
+    /// Minutes allowed per attempt. Application create/update and attempt start
+    /// require a value greater than 0. The column stays nullable for legacy rows.
+    /// </summary>
     public int? TimeLimitMinutes { get; set; }
 
     /// <summary>Maximum number of times a student can retake this quiz.</summary>

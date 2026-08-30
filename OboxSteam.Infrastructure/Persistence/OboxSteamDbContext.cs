@@ -1240,6 +1240,11 @@ public class OboxSteamDbContext : DbContext
         {
             entity.HasIndex(cs => new { cs.ClassId, cs.StartTime });
 
+            entity.HasIndex(cs => new { cs.ClassId, cs.AssignmentId })
+                .IsUnique()
+                .HasFilter(
+                    "\"IsDeleted\" = false AND \"Status\" <> 'Cancelled' AND \"SessionKind\" = 'AssignmentWindow' AND \"AssignmentId\" IS NOT NULL");
+
             entity.HasOne(cs => cs.Class)
                 .WithMany(c => c.ClassSessions)
                 .HasForeignKey(cs => cs.ClassId)

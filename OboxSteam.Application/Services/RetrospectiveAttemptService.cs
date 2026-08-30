@@ -17,15 +17,18 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<RetrospectiveAttemptService> _logger;
+    private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
     public RetrospectiveAttemptService(
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
-        ILogger<RetrospectiveAttemptService> logger)
+        ILogger<RetrospectiveAttemptService> logger,
+        ProgramPurchaseLifecycle programPurchaseLifecycle)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _programPurchaseLifecycle = programPurchaseLifecycle;
     }
 
     public async Task<RetrospectiveAttemptResponseDto> StartRetrospective(Guid assignmentId)
@@ -47,17 +50,6 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
             student.Id,
             assignment!);
 
-        var (personalDue, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
-            _unitOfWork,
-            student.Id,
-            assignment!.Id,
-            enrollment.Id);
-        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(
-            assignment,
-            now,
-            personalDue,
-            personalUntil);
-
         var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.AssignmentId == assignment!.Id
                  && s.ModuleEnrollmentId == enrollment.Id
@@ -78,6 +70,18 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
             return MapToDto(submission, assignment!);
         }
 
+        var window = await AssignmentWindowPolicy.TryGetForStudentAsync(
+            _unitOfWork,
+            assignment!.Id,
+            student.Id);
+        await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
+            student.Id,
+            assignment.Id,
+            enrollment.Id,
+            window,
+            now);
+        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(window, now);
+
         var newSubmission = new Submission
         {
             Id = Guid.NewGuid(),
@@ -87,6 +91,8 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
             ModuleEnrollmentId = enrollment.Id,
             AttemptNumber = 1,
             Status = SubmissionStatus.Pending,
+            StartedAt = now,
+            ExpiresAt = AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now),
             CreatedAt = now,
             CreatedBy = student.Id,
             IsDeleted = false
@@ -153,16 +159,6 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
             assignment!);
 
         var now = DateTime.UtcNow;
-        var (personalDue, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
-            _unitOfWork,
-            student.Id,
-            assignment!.Id,
-            submission.ModuleEnrollmentId);
-        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(
-            assignment,
-            now,
-            personalDue,
-            personalUntil);
 
         submission.ContentText = RetrospectiveAttemptValidator.NormalizeDraftContentText(request.ContentText);
         submission.UpdatedAt = now;
@@ -206,16 +202,6 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
             assignment!);
 
         var now = DateTime.UtcNow;
-        var (personalDue, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
-            _unitOfWork,
-            student.Id,
-            assignment!.Id,
-            submission.ModuleEnrollmentId);
-        RetrospectiveAttemptValidator.ValidateAssignmentAvailability(
-            assignment,
-            now,
-            personalDue,
-            personalUntil);
 
         var mergedContent = RetrospectiveAttemptValidator.NormalizeDraftContentText(request.ContentText)
             ?? submission.ContentText;

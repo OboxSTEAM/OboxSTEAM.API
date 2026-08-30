@@ -6,12 +6,12 @@ namespace OboxSteam.Application.Commons;
 /// <summary>
 /// Absence-based module fail rule: when Absent marks reach
 /// <see cref="MaxAbsencePercent"/> of the module's session-linked activities,
-/// the active module enrollment is failed and the student must retake.
+    /// the active module enrollment is failed and the student must chuyen ca.
 /// Only <see cref="AttendanceStatus.Absent"/> counts; Excused and Expected never count.
 /// </summary>
 public static class ModuleAbsencePolicy
 {
-    public const decimal MaxAbsencePercent = 20m;
+    public const decimal MaxAbsencePercent = 50m;
 
     public static async Task<int> CountMissedAsync(IUnitOfWork unitOfWork, Guid moduleEnrollmentId)
     {

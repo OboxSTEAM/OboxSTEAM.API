@@ -1,10 +1,12 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ActivityProgressDTO;
 using OboxSteam.Application.DTOs.EnrollmentDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -34,6 +36,7 @@ public sealed class EnrollmentCurriculumServiceTests
     private readonly Guid _moduleEnrollmentId = Guid.Parse("88888888-8888-8888-8888-888888888888");
     private readonly Guid _researchModuleEnrollmentId = Guid.Parse("89898989-8989-8989-8989-898989898989");
     private readonly Guid _progressId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+    private readonly Guid _classId = Guid.Parse("a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1");
 
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
@@ -373,6 +376,41 @@ public sealed class EnrollmentCurriculumServiceTests
         });
     }
 
+    private void SeedCompletedTheorySelfPacedActivities()
+    {
+        SeedModuleEnrollment(_moduleEnrollmentId, _theoryModuleId);
+        foreach (var activityId in new[] { _activity1Id, _activity2Id })
+        {
+            _db.ActivityProgresses.Seed(new ActivityProgress
+            {
+                Id = Guid.NewGuid(),
+                StudentId = _studentId,
+                ActivityId = activityId,
+                ModuleEnrollmentId = _moduleEnrollmentId,
+                ActivityStatus = ActivityStatus.Done,
+                IsCompleted = true,
+                CompletedAt = DateTime.UtcNow,
+                IsDeleted = false,
+            });
+        }
+    }
+
+    private void SeedCompletedTheoryActivities()
+    {
+        SeedCompletedTheorySelfPacedActivities();
+        _db.ActivityProgresses.Seed(new ActivityProgress
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ActivityId = _liveActivityId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            ActivityStatus = ActivityStatus.Done,
+            IsCompleted = true,
+            CompletedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+    }
+
     // ── GetEnrollmentCurriculumAsync ──────────────────────────────────────────
 
     [Fact]
@@ -397,6 +435,111 @@ public sealed class EnrollmentCurriculumServiceTests
         Assert.Equal(3, theory.Courses[0].Activities.Count);
         Assert.NotNull(theory.Courses[0].Activities[0].Material);
         Assert.Equal(_activity1Id, result.CurrentActivityId);
+    }
+
+    [Fact]
+    public async Task GetCurriculum_LocksAssignment_WhenClassWindowMissing()
+    {
+        SeedStudent();
+        SeedCurriculum();
+        SeedProgramEnrollment();
+        SeedCompletedTheoryActivities();
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId,
+            _programEnrollmentId);
+        var sut = CreateSut();
+
+        var result = await sut.GetEnrollmentCurriculumAsync(_programEnrollmentId);
+        var moduleQuiz = result.Modules[0].Assignments.Single(a => a.AssignmentId == _moduleAssignmentId);
+        Assert.Equal(CurriculumStatusHelper.StatusLocked, moduleQuiz.Status);
+
+        ClassAssignmentWindowSeed.Open(_db, _classId, _theoryModuleId, _moduleAssignmentId);
+        var open = await sut.GetEnrollmentCurriculumAsync(_programEnrollmentId);
+        moduleQuiz = open.Modules[0].Assignments.Single(a => a.AssignmentId == _moduleAssignmentId);
+        Assert.Equal(CurriculumStatusHelper.StatusAvailable, moduleQuiz.Status);
+    }
+
+    [Fact]
+    public async Task GetCurriculum_DoesNotLockAssignment_WhenLiveIncomplete()
+    {
+        SeedStudent();
+        SeedCurriculum();
+        SeedProgramEnrollment();
+        SeedCompletedTheorySelfPacedActivities();
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId,
+            _programEnrollmentId);
+        ClassAssignmentWindowSeed.Open(_db, _classId, _theoryModuleId, _moduleAssignmentId);
+        ClassAssignmentWindowSeed.Open(_db, _classId, _theoryModuleId, _courseAssignmentId);
+        var sut = CreateSut();
+
+        var result = await sut.GetEnrollmentCurriculumAsync(_programEnrollmentId);
+        var theory = result.Modules[0];
+        var moduleQuiz = theory.Assignments.Single(a => a.AssignmentId == _moduleAssignmentId);
+        var courseUpload = theory.Courses[0].Assignments.Single(a => a.AssignmentId == _courseAssignmentId);
+
+        Assert.Equal(CurriculumStatusHelper.StatusAvailable, moduleQuiz.Status);
+        Assert.Equal(CurriculumStatusHelper.StatusAvailable, courseUpload.Status);
+    }
+
+    [Fact]
+    public async Task GetCurriculum_KeepsInProgressAssignmentAvailable_WhenWindowClosed()
+    {
+        SeedStudent();
+        SeedCurriculum();
+        SeedProgramEnrollment();
+        SeedCompletedTheoryActivities();
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId,
+            _programEnrollmentId);
+        ClassAssignmentWindowSeed.Open(_db, _classId, _theoryModuleId, _moduleAssignmentId);
+        ClassAssignmentWindowSeed.Close(
+            _db.ClassSessions.Items.Single(s => s.AssignmentId == _moduleAssignmentId));
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-NAV",
+            AssignmentId = _moduleAssignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            Status = SubmissionStatus.Pending,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetEnrollmentCurriculumAsync(_programEnrollmentId);
+        var moduleQuiz = result.Modules[0].Assignments.Single(a => a.AssignmentId == _moduleAssignmentId);
+        Assert.Equal(CurriculumStatusHelper.StatusAvailable, moduleQuiz.Status);
+    }
+
+    [Fact]
+    public async Task GetMindMap_UsesCalendarLockReason_WhenWindowMissing()
+    {
+        SeedStudent();
+        SeedCurriculum();
+        SeedProgramEnrollment();
+        SeedCompletedTheoryActivities();
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId,
+            _programEnrollmentId);
+        var sut = CreateSut();
+
+        var result = await sut.GetEnrollmentCurriculumMindMapAsync(_programEnrollmentId);
+        var moduleQuiz = result.Modules[0].Assignments.Single(a => a.AssignmentInfo.AssignmentId == _moduleAssignmentId);
+        Assert.True(moduleQuiz.Learning.IsLocked);
+        Assert.Equal(AssignmentWindowPolicy.NotAvailableMessage, moduleQuiz.Learning.LockReason);
     }
 
     [Fact]

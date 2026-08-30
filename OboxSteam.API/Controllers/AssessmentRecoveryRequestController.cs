@@ -20,7 +20,7 @@ public class AssessmentRecoveryRequestController : ControllerBase
 
     [HttpPost]
     [Authorize(Roles = "Student")]
-    [SwaggerOperation(Summary = "Request extra attempts / personal deadline")]
+    [SwaggerOperation(Summary = "Request extra attempts (same class window)")]
     [ProducesResponseType(typeof(ApiResult<AssessmentRecoveryRequestResponseDto>), 201)]
     public async Task<IActionResult> Create([FromBody] CreateAssessmentRecoveryRequestDto dto)
     {

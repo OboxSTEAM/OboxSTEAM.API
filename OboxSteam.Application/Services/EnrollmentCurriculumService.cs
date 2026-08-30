@@ -494,6 +494,11 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                 g => g.Key,
                 g => g.OrderByDescending(s => s.AttemptNumber).ThenByDescending(s => s.CreatedAt).First());
 
+        var windows = await AssignmentWindowPolicy.LoadWindowsForProgramEnrollmentAsync(
+            _unitOfWork,
+            enrollment.StudentId,
+            enrollment.Id);
+
         return new EnrollmentCurriculumContext
         {
             LatestEnrollmentByModuleId = latestEnrollmentByModuleId,
@@ -501,6 +506,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             ProgressByActivityId = progressByActivityId,
             SubmissionsByAssignmentId = submissionsByAssignmentId,
             SubmissionsByMilestoneId = submissionsByMilestoneId,
+            AssignmentWindowsByAssignmentId = windows,
         };
     }
 
@@ -640,7 +646,8 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             MaxPoints = assignment.MaxPoints,
             PassScore = assignment.PassScore,
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-            DueDate = assignment.DueDate,
+            DueDate = AssignmentWindowPolicy.WindowEnd(context.AssignmentWindowsByAssignmentId, assignment.Id),
+            AvailableFrom = AssignmentWindowPolicy.WindowStart(context.AssignmentWindowsByAssignmentId, assignment.Id),
             Status = ResolveAssignmentStatus(
                 assignment,
                 snapshot,
@@ -699,7 +706,13 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             return CurriculumStatusHelper.StatusLocked;
         }
 
-        return CurriculumStatusHelper.StatusAvailable;
+        context.AssignmentWindowsByAssignmentId.TryGetValue(assignment.Id, out var window);
+        context.SubmissionsByAssignmentId.TryGetValue(assignment.Id, out var submissionsForCalendar);
+        return AssignmentWindowPolicy.ApplyCalendarToStudentNavStatus(
+            CurriculumStatusHelper.StatusAvailable,
+            window,
+            submissionsForCalendar,
+            DateTime.UtcNow);
     }
 
     private static bool IsAssignmentAccessible(
@@ -1134,6 +1147,17 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             previousResearchMilestone);
 
         var isLocked = status == CurriculumStatusHelper.StatusLocked;
+        context.AssignmentWindowsByAssignmentId.TryGetValue(assignment.Id, out var window);
+        var prereqsMet = IsAssignmentAccessible(
+            assignment,
+            moduleId,
+            snapshot,
+            context,
+            researchMilestone,
+            previousResearchMilestone);
+        var calendarLock = isLocked && !moduleLocked && prereqsMet
+            ? AssignmentWindowPolicy.GetNewAttemptBlockReason(window, DateTime.UtcNow)
+            : null;
 
         return new EnrollmentCurriculumMindMapAssignmentDto
         {
@@ -1146,7 +1170,8 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                 MaxPoints = assignment.MaxPoints,
                 PassScore = assignment.PassScore,
                 IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-                DueDate = assignment.DueDate,
+                DueDate = AssignmentWindowPolicy.WindowEnd(context.AssignmentWindowsByAssignmentId, assignment.Id),
+                AvailableFrom = AssignmentWindowPolicy.WindowStart(context.AssignmentWindowsByAssignmentId, assignment.Id),
             },
             Learning = new EnrollmentCurriculumMindMapAssignmentLearningDto
             {
@@ -1155,7 +1180,8 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                 LockReason = isLocked
                     ? (moduleLocked
                         ? moduleLockReason
-                        : "Complete required activities before this assignment unlocks.")
+                        : calendarLock
+                          ?? "Complete required activities before this assignment unlocks.")
                     : null,
             },
             Navigation = BuildMindMapNavigation(NodeTypeAssignment, assignment.Id, moduleEnrollmentId),
@@ -1557,5 +1583,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         public Dictionary<Guid, List<Submission>> SubmissionsByAssignmentId { get; init; } = new();
 
         public Dictionary<Guid, Submission> SubmissionsByMilestoneId { get; init; } = new();
+
+        public Dictionary<Guid, ClassSession> AssignmentWindowsByAssignmentId { get; init; } = new();
     }
 }

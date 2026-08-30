@@ -620,9 +620,8 @@ public sealed class ActivityProgressService : IActivityProgressService
 
         var courseActivities = await _unitOfWork.Activities.GetAllAsync(
             a => a.CourseId == activity.CourseId && !a.IsDeleted);
-        var orderedCourseActivityIds = courseActivities
+        var orderedCourseActivities = courseActivities
             .OrderBy(a => a.ActivityOrder)
-            .Select(a => a.Id)
             .ToList();
 
         var roster = await _unitOfWork.ClassEnrollments.GetAllAsync(
@@ -645,7 +644,7 @@ public sealed class ActivityProgressService : IActivityProgressService
                 classSession,
                 activity,
                 module,
-                orderedCourseActivityIds,
+                orderedCourseActivities,
                 attendanceByStudentId));
         }
 
@@ -671,7 +670,7 @@ public sealed class ActivityProgressService : IActivityProgressService
         ClassSession classSession,
         Activity activity,
         Module module,
-        IReadOnlyList<Guid> orderedCourseActivityIds,
+        IReadOnlyList<Activity> orderedCourseActivities,
         IReadOnlyDictionary<Guid, SessionAttendance> attendanceByStudentId)
     {
         var studentId = classEnrollment.StudentId;
@@ -711,7 +710,7 @@ public sealed class ActivityProgressService : IActivityProgressService
             if (!await IsCourseSequenceUnlockedAsync(
                     activity.Id,
                     moduleEnrollment.Id,
-                    orderedCourseActivityIds))
+                    orderedCourseActivities))
             {
                 return Skipped(studentId, CurriculumAccessValidator.ActivityLockedMessage);
             }
@@ -801,12 +800,12 @@ public sealed class ActivityProgressService : IActivityProgressService
     private async Task<bool> IsCourseSequenceUnlockedAsync(
         Guid activityId,
         Guid moduleEnrollmentId,
-        IReadOnlyList<Guid> orderedCourseActivityIds)
+        IReadOnlyList<Activity> orderedCourseActivities)
     {
         var index = -1;
-        for (var i = 0; i < orderedCourseActivityIds.Count; i++)
+        for (var i = 0; i < orderedCourseActivities.Count; i++)
         {
-            if (orderedCourseActivityIds[i] == activityId)
+            if (orderedCourseActivities[i].Id == activityId)
             {
                 index = i;
                 break;
@@ -818,15 +817,25 @@ public sealed class ActivityProgressService : IActivityProgressService
             return true;
         }
 
-        var priorIds = orderedCourseActivityIds.Take(index).ToList();
+        var priorGateIds = orderedCourseActivities
+            .Take(index)
+            .Where(CurriculumStatusHelper.CompletionGatesUnlock)
+            .Select(a => a.Id)
+            .ToList();
+
+        if (priorGateIds.Count == 0)
+        {
+            return true;
+        }
+
         var doneProgresses = await _unitOfWork.ActivityProgresses.GetAllAsync(
             ap => ap.ModuleEnrollmentId == moduleEnrollmentId
-                  && priorIds.Contains(ap.ActivityId)
+                  && priorGateIds.Contains(ap.ActivityId)
                   && ap.ActivityStatus == ActivityStatus.Done
                   && !ap.IsDeleted);
 
         var doneIds = doneProgresses.Select(ap => ap.ActivityId).ToHashSet();
-        return priorIds.All(id => doneIds.Contains(id));
+        return priorGateIds.All(id => doneIds.Contains(id));
     }
 
     private async Task TryEnsureProgramCertificateAsync(Guid programEnrollmentId)

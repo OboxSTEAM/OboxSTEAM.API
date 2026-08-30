@@ -24,8 +24,6 @@ public class AssignmentListItemDto
 
     public decimal PassScore { get; set; }
 
-    public DateTime? DueDate { get; set; }
-
     public Guid? QuestionBankId { get; set; }
 
     /// <summary>Quiz config: number of questions drawn per attempt (null = all).</summary>

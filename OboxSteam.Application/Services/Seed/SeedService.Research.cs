@@ -48,8 +48,6 @@ public partial class SeedService
         }
 
         var seedTime = _seedNow;
-        var availabilityFrom = seedTime.AddDays(-30);
-        var availabilityUntil = seedTime.AddDays(90);
 
         var assignmentDesign = new Assignment
         {
@@ -62,10 +60,8 @@ public partial class SeedService
             MaxPoints = 100,
             PassScore = 60m,
             IsRequiredForModulePass = true,
-            DueDate = seedTime.AddDays(14),
-            AvailableFrom = availabilityFrom,
-            AvailableUntil = availabilityUntil,
             MaxAttempts = 3,
+            TimeLimitMinutes = 60,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false
@@ -82,10 +78,8 @@ public partial class SeedService
             MaxPoints = 100,
             PassScore = 60m,
             IsRequiredForModulePass = true,
-            DueDate = seedTime.AddDays(28),
-            AvailableFrom = availabilityFrom,
-            AvailableUntil = availabilityUntil,
             MaxAttempts = 3,
+            TimeLimitMinutes = 60,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false
@@ -102,10 +96,8 @@ public partial class SeedService
             MaxPoints = 100,
             PassScore = 70m,
             IsRequiredForModulePass = true,
-            DueDate = seedTime.AddDays(42),
-            AvailableFrom = availabilityFrom,
-            AvailableUntil = availabilityUntil,
             MaxAttempts = 2,
+            TimeLimitMinutes = 60,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false
@@ -983,9 +975,6 @@ public partial class SeedService
             return;
         }
 
-        var availabilityFrom = seedTime.AddDays(-30);
-        var availabilityUntil = seedTime.AddDays(90);
-
         var assignmentWireframe = new Assignment
         {
             Id = Guid.NewGuid(),
@@ -997,10 +986,8 @@ public partial class SeedService
             MaxPoints = 100,
             PassScore = 60m,
             IsRequiredForModulePass = true,
-            DueDate = seedTime.AddDays(14),
-            AvailableFrom = availabilityFrom,
-            AvailableUntil = availabilityUntil,
             MaxAttempts = 3,
+            TimeLimitMinutes = 60,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false
@@ -1017,10 +1004,8 @@ public partial class SeedService
             MaxPoints = 100,
             PassScore = 70m,
             IsRequiredForModulePass = true,
-            DueDate = seedTime.AddDays(35),
-            AvailableFrom = availabilityFrom,
-            AvailableUntil = availabilityUntil,
             MaxAttempts = 2,
+            TimeLimitMinutes = 60,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false

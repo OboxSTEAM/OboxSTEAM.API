@@ -53,18 +53,6 @@ public sealed class QuizAttemptService : IQuizAttemptService
             student.Id,
             assignment!);
 
-        var (personalDue, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
-            _unitOfWork,
-            student.Id,
-            assignment!.Id,
-            enrollment.Id);
-
-        QuizAttemptValidator.ValidateAssignmentAvailability(
-            assignment,
-            DateTime.UtcNow,
-            personalDue,
-            personalUntil);
-
         var pendingSubmission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.AssignmentId == assignmentId
                  && s.StudentId == student.Id
@@ -125,6 +113,19 @@ public sealed class QuizAttemptService : IQuizAttemptService
             };
         }
 
+        var window = await AssignmentWindowPolicy.TryGetForStudentAsync(
+            _unitOfWork,
+            assignment!.Id,
+            student.Id);
+        var now = DateTime.UtcNow;
+        await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
+            student.Id,
+            assignment.Id,
+            enrollment.Id,
+            window,
+            now);
+        QuizAttemptValidator.ValidateAssignmentAvailability(window, now);
+
         await QuizAttemptValidator.ValidateMaxAttemptsForNewStartAsync(
             _unitOfWork,
             assignment!,
@@ -173,7 +174,6 @@ public sealed class QuizAttemptService : IQuizAttemptService
             student.Id,
             enrollment.Id);
 
-        var now = DateTime.UtcNow;
         var submission = new Submission
         {
             Id = Guid.NewGuid(),
@@ -184,9 +184,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
             AttemptNumber = completedAttemptCount + 1,
             Status = SubmissionStatus.Pending,
             StartedAt = now,
-            ExpiresAt = assignment.TimeLimitMinutes.HasValue
-                ? now.AddMinutes(assignment.TimeLimitMinutes.Value)
-                : null,
+            ExpiresAt = AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now),
             CreatedAt = now,
             CreatedBy = student.Id,
             IsDeleted = false
@@ -412,6 +410,12 @@ public sealed class QuizAttemptService : IQuizAttemptService
                 assignment!.Id,
                 submission.ModuleEnrollmentId);
         }
+        else
+        {
+            await _programPurchaseLifecycle.TryExtendNextMilestoneWindowAfterPassAsync(
+                assignment!,
+                student.Id);
+        }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment!.ModuleId);
         Guid? programEnrollmentId = null;
@@ -523,20 +527,10 @@ public sealed class QuizAttemptService : IQuizAttemptService
     }
 
     private async Task<Guid?> ResolveStudentClassIdForAssignmentAsync(Guid studentId, Assignment assignment)
-    {
-        var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
-        if (module == null || module.IsDeleted)
-            return null;
-
-        var classEnrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
-            ce => ce.StudentId == studentId
-                  && ce.Status == ClassEnrollmentStatus.Active
-                  && !ce.IsDeleted
-                  && ce.Class.ProgramId == module.ProgramId,
-            ce => ce.Class);
-
-        return classEnrollment?.ClassId;
-    }
+        => await AssignmentWindowPolicy.TryGetStudentClassIdForAssignmentAsync(
+            _unitOfWork,
+            assignment.Id,
+            studentId);
 
     private async Task<List<ClassQuizQuestion>> LoadClassSetQuestionsAsync(Guid setId)
     {

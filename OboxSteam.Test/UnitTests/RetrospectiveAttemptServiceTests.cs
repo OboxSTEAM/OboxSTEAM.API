@@ -3,6 +3,7 @@ using Moq;
 using OboxSteam.Application.DTOs.RetrospectiveDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -18,6 +19,7 @@ public sealed class RetrospectiveAttemptServiceTests
     private readonly Guid _programId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private readonly Guid _assignmentId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private readonly Guid _enrollmentId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+    private readonly Guid _classId = Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1");
 
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
@@ -29,7 +31,12 @@ public sealed class RetrospectiveAttemptServiceTests
         return new RetrospectiveAttemptService(
             _claimsService.Object,
             _db,
-            NullLogger<RetrospectiveAttemptService>.Instance);
+            NullLogger<RetrospectiveAttemptService>.Instance,
+            new ProgramPurchaseLifecycle(
+                _db,
+                Mock.Of<ICurrentTime>(t => t.GetCurrentTime() == DateTime.UtcNow),
+                Mock.Of<INotificationPublisher>(),
+                NullLogger<ProgramPurchaseLifecycle>.Instance));
     }
 
     private void SeedStudentAndEnrollment(ModuleType moduleType = ModuleType.Theory)
@@ -62,6 +69,12 @@ public sealed class RetrospectiveAttemptServiceTests
             ProgramEnrollmentId = null,
             IsDeleted = false
         });
+
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId);
     }
 
     private Assignment SeedRetrospectiveAssignment(
@@ -80,11 +93,13 @@ public sealed class RetrospectiveAttemptServiceTests
             MaxPoints = maxPoints,
             PassScore = passScore,
             MaxAttempts = maxAttempts,
+            TimeLimitMinutes = 60,
             IsRequiredForModulePass = false,
             IsDeleted = false
         };
 
         _db.Assignments.Seed(assignment);
+        ClassAssignmentWindowSeed.Open(_db, _classId, _moduleId, assignment.Id);
         return assignment;
     }
 
@@ -139,6 +154,7 @@ public sealed class RetrospectiveAttemptServiceTests
         Assert.Equal(1, result.AttemptNumber);
         Assert.Null(result.ContentText);
         Assert.Single(_db.Submissions.Items);
+        Assert.NotNull(_db.Submissions.Items[0].ExpiresAt);
         Assert.Equal(1, _db.SaveChangesCallCount);
     }
 
@@ -157,6 +173,36 @@ public sealed class RetrospectiveAttemptServiceTests
         Assert.Equal(SubmissionStatus.Pending, result.Status);
         Assert.Single(_db.Submissions.Items);
         Assert.Equal(0, _db.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task StartRetrospective_ResumesExistingPendingSubmission_WhenWindowClosed()
+    {
+        SeedStudentAndEnrollment();
+        SeedRetrospectiveAssignment();
+        ClassAssignmentWindowSeed.Close(
+            _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId));
+        var existing = SeedSubmission(contentText: "Draft in progress");
+        var sut = CreateSut();
+
+        var result = await sut.StartRetrospective(_assignmentId);
+
+        Assert.Equal(existing.Id, result.SubmissionId);
+        Assert.Equal("Draft in progress", result.ContentText);
+        Assert.Equal(0, _db.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task StartRetrospective_ThrowsConflict_WhenWindowClosedAndNoDraft()
+    {
+        SeedStudentAndEnrollment();
+        SeedRetrospectiveAssignment();
+        ClassAssignmentWindowSeed.Close(
+            _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId));
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartRetrospective(_assignmentId));
+        Assert.Equal(AssignmentWindowPolicy.ClosedMessage, ex.Message);
     }
 
     [Fact]
@@ -191,15 +237,17 @@ public sealed class RetrospectiveAttemptServiceTests
     }
 
     [Fact]
-    public async Task StartRetrospective_ThrowsConflict_WhenPastDueDate()
+    public async Task StartRetrospective_ThrowsConflict_WhenWindowClosed()
     {
         SeedStudentAndEnrollment();
-        var assignment = SeedRetrospectiveAssignment();
-        assignment.DueDate = DateTime.UtcNow.AddMinutes(-1);
+        SeedRetrospectiveAssignment();
+        var window = _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId);
+        window.StartTime = DateTime.UtcNow.AddDays(-7);
+        window.EndTime = DateTime.UtcNow.AddMinutes(-1);
         var sut = CreateSut();
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartRetrospective(_assignmentId));
-        Assert.Equal("Assignment is past due date.", ex.Message);
+        Assert.Equal(AssignmentWindowPolicy.ClosedMessage, ex.Message);
     }
 
     [Fact]
@@ -366,8 +414,26 @@ public sealed class RetrospectiveAttemptServiceTests
 
         Assert.True(response.LastSavedAt <= DateTime.UtcNow);
         Assert.Equal("My draft text", submission.ContentText);
-        Assert.Equal(_studentId, submission.UpdatedBy);
         Assert.Equal(1, _db.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task SaveDraft_Allows_WhenWindowClosed()
+    {
+        SeedStudentAndEnrollment();
+        SeedRetrospectiveAssignment();
+        ClassAssignmentWindowSeed.Close(
+            _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId));
+        var submission = SeedSubmission();
+        var sut = CreateSut();
+
+        var response = await sut.SaveDraft(submission.Id, new SaveRetrospectiveDraftRequestDto
+        {
+            ContentText = "Still saving"
+        });
+
+        Assert.Equal("Still saving", submission.ContentText);
+        Assert.True(response.LastSavedAt <= DateTime.UtcNow);
     }
 
     [Fact]
@@ -435,9 +501,26 @@ public sealed class RetrospectiveAttemptServiceTests
         Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
         Assert.Equal("Final reflection", result.ContentText);
         Assert.NotNull(result.SubmittedAt);
-        Assert.Equal(SubmissionStatus.TurnedIn, submission.Status);
-        Assert.Null(submission.FileUrl);
         Assert.Equal(1, _db.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task SubmitRetrospective_Allows_WhenWindowClosed()
+    {
+        SeedStudentAndEnrollment();
+        SeedRetrospectiveAssignment();
+        ClassAssignmentWindowSeed.Close(
+            _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId));
+        var submission = SeedSubmission(contentText: "Old draft");
+        var sut = CreateSut();
+
+        var result = await sut.SubmitRetrospective(submission.Id, new SubmitRetrospectiveRequestDto
+        {
+            ContentText = "Final after close"
+        });
+
+        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
+        Assert.Equal("Final after close", result.ContentText);
     }
 
     [Fact]

@@ -7,7 +7,7 @@ namespace OboxSteam.Application.DTOs.ClassEnrollmentDTO;
 /// Business rules enforced in the service layer:
 /// the selected class must belong to the same program as the program enrollment;
 /// one active class enrollment per program enrollment in v1;
-/// late-join guard via <c>Class.MinHoursBeforeAssignmentJoin</c> (managers may bypass).
+/// late-join guard after two-thirds of an open AssignmentWindow (managers may bypass).
 /// </summary>
 public class CreateClassEnrollmentRequestDto
 {

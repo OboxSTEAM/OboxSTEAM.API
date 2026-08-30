@@ -5,8 +5,9 @@ using OboxSteam.Domain.Interfaces;
 namespace OboxSteam.Application.Validation;
 
 /// <summary>
-/// Shared attempt and personal-deadline rules for quiz / file / retrospective / research.
+/// Shared attempt rules for quiz / file / retrospective / research.
 /// Theory modules: unlimited attempts. Other types: MaxAttempts + approved recovery grants.
+/// Calendar open/close is the class AssignmentWindow (see AssignmentWindowPolicy).
 /// </summary>
 public static class AssessmentAttemptPolicy
 {
@@ -76,65 +77,5 @@ public static class AssessmentAttemptPolicy
                  && (!moduleEnrollmentId.HasValue || s.ModuleEnrollmentId == moduleEnrollmentId));
 
         return submissions.Count;
-    }
-
-    public static async Task<(DateTime? PersonalDueDate, DateTime? PersonalAvailableUntil)> GetPersonalWindowAsync(
-        IUnitOfWork unitOfWork,
-        Guid studentId,
-        Guid assignmentId,
-        Guid? moduleEnrollmentId)
-    {
-        var grants = await unitOfWork.AssessmentRecoveryRequests.GetAllAsync(
-            r => r.StudentId == studentId
-                 && r.AssignmentId == assignmentId
-                 && r.Status == AssessmentRecoveryRequestStatus.Approved
-                 && !r.IsDeleted
-                 && (!moduleEnrollmentId.HasValue || r.ModuleEnrollmentId == moduleEnrollmentId.Value)
-                 && (r.PersonalDueDate != null || r.PersonalAvailableUntil != null));
-
-        if (grants.Count == 0)
-        {
-            return (null, null);
-        }
-
-        var latest = grants.OrderByDescending(r => r.DecidedAt ?? r.UpdatedAt).First();
-        return (latest.PersonalDueDate, latest.PersonalAvailableUntil);
-    }
-
-    /// <summary>
-    /// Effective availability end: personal override wins when later than assignment window.
-    /// </summary>
-    public static DateTime? ResolveEffectiveAvailableUntil(
-        Assignment assignment,
-        DateTime? personalAvailableUntil)
-    {
-        if (!personalAvailableUntil.HasValue)
-        {
-            return assignment.AvailableUntil;
-        }
-
-        if (!assignment.AvailableUntil.HasValue)
-        {
-            return personalAvailableUntil;
-        }
-
-        return personalAvailableUntil > assignment.AvailableUntil
-            ? personalAvailableUntil
-            : assignment.AvailableUntil;
-    }
-
-    public static DateTime? ResolveEffectiveDueDate(Assignment assignment, DateTime? personalDueDate)
-    {
-        if (!personalDueDate.HasValue)
-        {
-            return assignment.DueDate;
-        }
-
-        if (!assignment.DueDate.HasValue)
-        {
-            return personalDueDate;
-        }
-
-        return personalDueDate > assignment.DueDate ? personalDueDate : assignment.DueDate;
     }
 }

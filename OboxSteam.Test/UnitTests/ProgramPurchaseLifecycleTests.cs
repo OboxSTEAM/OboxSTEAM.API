@@ -16,6 +16,7 @@ public sealed class ProgramPurchaseLifecycleTests
     private readonly Guid _programId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly Guid _moduleId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private readonly Guid _enrollmentId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+    private readonly Guid _classId = Guid.Parse("99999999-9999-9999-9999-999999999999");
 
     private readonly DateTime _now = new(2026, 8, 29, 10, 0, 0, DateTimeKind.Utc);
 
@@ -90,7 +91,7 @@ public sealed class ProgramPurchaseLifecycleTests
                 It.Is<NotificationCommand>(c =>
                     c.Type == NotificationType.ModuleFailed
                     && c.Body != null
-                    && c.Body.Contains("vắng quá số buổi")),
+                    && c.Body.Contains("vắng từ 50% số buổi")),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -178,8 +179,8 @@ public sealed class ProgramPurchaseLifecycleTests
                 It.Is<NotificationCommand>(c =>
                     c.Type == NotificationType.ModuleFailed
                     && c.Body != null
-                    && c.Body.Contains("hết lượt làm bài")
-                    && !c.Body.Contains("vắng quá số buổi")),
+                    && c.Body.Contains("chuyển ca")
+                    && !c.Body.Contains("vắng từ 50% số buổi")),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -270,7 +271,8 @@ public sealed class ProgramPurchaseLifecycleTests
     private void SeedAcademicContext(
         int maxAttempts = 1,
         ModuleType moduleType = ModuleType.Experiential,
-        EnrollmentStatus programStatus = EnrollmentStatus.Active)
+        EnrollmentStatus programStatus = EnrollmentStatus.Active,
+        bool isRequiredForModulePass = true)
     {
         _db.Users.Seed(new User
         {
@@ -306,6 +308,7 @@ public sealed class ProgramPurchaseLifecycleTests
             MaxPoints = 100,
             PassScore = 50,
             MaxAttempts = maxAttempts,
+            IsRequiredForModulePass = isRequiredForModulePass,
             IsDeleted = false,
         });
         _db.ProgramEnrollments.Seed(new ProgramEnrollment
@@ -461,6 +464,296 @@ public sealed class ProgramPurchaseLifecycleTests
         var enrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId);
         Assert.Equal(EnrollmentStatus.Failed, enrollment.Status);
         Assert.Null(enrollment.EndReason);
+    }
+
+    [Fact]
+    public async Task TryCloseAfterFailedAssignmentAsync_NoOp_WhenAssignmentIsOptional()
+    {
+        SeedAcademicContext(maxAttempts: 1, isRequiredForModulePass: false);
+        SeedFailedSubmission(attemptNumber: 1);
+        SeedRecoveryRequest(AssessmentRecoveryRequestStatus.Approved);
+        SeedRecoveryRequest(AssessmentRecoveryRequestStatus.Rejected);
+        var sut = CreateSut();
+
+        await sut.TryCloseAfterFailedAssignmentAsync(_studentId, _assignmentId, _moduleEnrollmentId);
+
+        var enrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId);
+        Assert.Equal(EnrollmentStatus.Active, enrollment.Status);
+    }
+
+    [Fact]
+    public async Task TryCloseAfterFailedAssignmentAsync_NoOp_WhenTurnedInWaitingGrade()
+    {
+        SeedAcademicContext(maxAttempts: 1);
+        SeedFailedSubmission(attemptNumber: 1);
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-WAIT",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            AttemptNumber = 2,
+            Status = SubmissionStatus.TurnedIn,
+            IsDeleted = false,
+        });
+        SeedRecoveryRequest(AssessmentRecoveryRequestStatus.Approved);
+        SeedRecoveryRequest(AssessmentRecoveryRequestStatus.Rejected);
+        var sut = CreateSut();
+
+        await sut.TryCloseAfterFailedAssignmentAsync(_studentId, _assignmentId, _moduleEnrollmentId);
+
+        var enrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId);
+        Assert.Equal(EnrollmentStatus.Active, enrollment.Status);
+    }
+
+    private void SeedElapsedWindowSeat()
+    {
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId,
+            _enrollmentId);
+        ClassAssignmentWindowSeed.Open(
+            _db,
+            _classId,
+            _moduleId,
+            _assignmentId,
+            start: _now.AddDays(-10),
+            end: _now.AddHours(-1));
+    }
+
+    [Fact]
+    public async Task TryCloseAfterAssignmentWindowElapsedAsync_ClosesTheory_WhenRequiredAndNoDraft()
+    {
+        SeedAcademicContext(moduleType: ModuleType.Theory);
+        SeedElapsedWindowSeat();
+        var sut = CreateSut();
+
+        await sut.TryCloseAfterAssignmentWindowElapsedAsync(_studentId, _assignmentId, _moduleEnrollmentId);
+
+        var enrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId);
+        Assert.Equal(EnrollmentStatus.Failed, enrollment.Status);
+        Assert.Equal(ProgramPurchaseEndReason.AcademicFail, enrollment.EndReason);
+    }
+
+    [Fact]
+    public async Task TryCloseAfterAssignmentWindowElapsedAsync_NoOp_WhenOptional()
+    {
+        SeedAcademicContext(moduleType: ModuleType.Theory, isRequiredForModulePass: false);
+        SeedElapsedWindowSeat();
+        var sut = CreateSut();
+
+        await sut.TryCloseAfterAssignmentWindowElapsedAsync(_studentId, _assignmentId, _moduleEnrollmentId);
+
+        Assert.Equal(
+            EnrollmentStatus.Active,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task TryCloseAfterAssignmentWindowElapsedAsync_NoOp_WhenTurnedIn()
+    {
+        SeedAcademicContext();
+        SeedElapsedWindowSeat();
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-TIN",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.TurnedIn,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.TryCloseAfterAssignmentWindowElapsedAsync(_studentId, _assignmentId, _moduleEnrollmentId);
+
+        Assert.Equal(
+            EnrollmentStatus.Active,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task TryCloseAfterAssignmentWindowElapsedAsync_NoOp_WhenInProgressDraft()
+    {
+        SeedAcademicContext();
+        SeedElapsedWindowSeat();
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-DRAFT",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Pending,
+            ExpiresAt = _now.AddHours(1),
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.TryCloseAfterAssignmentWindowElapsedAsync(_studentId, _assignmentId, _moduleEnrollmentId);
+
+        Assert.Equal(
+            EnrollmentStatus.Active,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task TryCloseAfterAssignmentWindowElapsedAsync_Closes_WhenQuizExpiresAtPassed()
+    {
+        SeedAcademicContext();
+        SeedElapsedWindowSeat();
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-EXP",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Pending,
+            ExpiresAt = _now.AddMinutes(-5),
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.TryCloseAfterAssignmentWindowElapsedAsync(_studentId, _assignmentId, _moduleEnrollmentId);
+
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task TryCloseAfterAssignmentWindowElapsedAsync_Closes_WhenPendingDraftHasNoExpiresAt()
+    {
+        SeedAcademicContext();
+        SeedElapsedWindowSeat();
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-NOTIMER",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Pending,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.TryCloseAfterAssignmentWindowElapsedAsync(_studentId, _assignmentId, _moduleEnrollmentId);
+
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task CloseElapsedRequiredWindowsAsync_ClosesActiveSeat()
+    {
+        SeedAcademicContext(moduleType: ModuleType.Theory);
+        SeedElapsedWindowSeat();
+        var sut = CreateSut();
+
+        var closed = await sut.CloseElapsedRequiredWindowsAsync();
+
+        Assert.Equal(1, closed);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task TryExtendNextMilestoneWindowAfterPassAsync_ExtendsWhenClosedOrShort()
+    {
+        SeedAcademicContext(moduleType: ModuleType.Research);
+        var nextAssignmentId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1");
+        _db.Assignments.Seed(new Assignment
+        {
+            Id = nextAssignmentId,
+            Code = "ASM-NEXT",
+            Title = "Milestone 2",
+            ModuleId = _moduleId,
+            AssignmentType = AssignmentType.FileUpload,
+            MaxPoints = 100,
+            PassScore = 50,
+            IsRequiredForModulePass = true,
+            IsDeleted = false,
+        });
+        _db.ResearchMilestones.Seed(
+            new ResearchMilestone
+            {
+                Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1"),
+                Code = "MS-1",
+                Title = "Proposal",
+                ModuleId = _moduleId,
+                AssignmentId = _assignmentId,
+                MilestoneOrder = 1,
+                IsDeleted = false,
+            },
+            new ResearchMilestone
+            {
+                Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2"),
+                Code = "MS-2",
+                Title = "Report",
+                ModuleId = _moduleId,
+                AssignmentId = nextAssignmentId,
+                MilestoneOrder = 2,
+                IsDeleted = false,
+            });
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId,
+            _enrollmentId);
+        var nextWindow = ClassAssignmentWindowSeed.Open(
+            _db,
+            _classId,
+            _moduleId,
+            nextAssignmentId,
+            start: _now.AddDays(-10),
+            end: _now.AddHours(-1));
+        var sut = CreateSut();
+
+        await sut.TryExtendNextMilestoneWindowAfterPassAsync(
+            _db.Assignments.Items.Single(a => a.Id == _assignmentId),
+            _studentId);
+
+        Assert.Equal(_now.AddHours(ProgramPurchaseLifecycle.NextMilestoneWindowPadHours), nextWindow.EndTime);
+    }
+
+    [Fact]
+    public void ResolveCreditHint_MapsCopiedRedoAndAhead()
+    {
+        var taught = new ClassSession
+        {
+            Status = ClassSessionStatus.Completed,
+            EndTime = _now.AddDays(-1),
+            IsDeleted = false,
+        };
+        var upcoming = new ClassSession
+        {
+            Status = ClassSessionStatus.Scheduled,
+            EndTime = _now.AddDays(7),
+            IsDeleted = false,
+        };
+
+        Assert.Equal(
+            RebuyModuleCreditHint.Ahead,
+            ProgramPurchaseLifecycle.ResolveCreditHint(false, [taught], _now));
+        Assert.Equal(
+            RebuyModuleCreditHint.Copied,
+            ProgramPurchaseLifecycle.ResolveCreditHint(true, [taught], _now));
+        Assert.Equal(
+            RebuyModuleCreditHint.RedoWithClass,
+            ProgramPurchaseLifecycle.ResolveCreditHint(true, [upcoming], _now));
     }
 
     // ── Rebuy helpers ────────────────────────────────────────────────────────
@@ -1063,6 +1356,37 @@ public sealed class ProgramPurchaseLifecycleTests
     }
 
     [Fact]
+    public async Task ApplyRebuyCredits_CopiesWholeModule_WhenOpenAssignmentWindowDoesNotBlockTaughtLives()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-10));
+        var module = SeedModule("MOD-A", 1);
+        var sourceModuleEnrollment = SeedCompletedSourceModuleEnrollment(source.Id, module.Id);
+        var pending = SeedEnrollment(EnrollmentStatus.Active);
+        pending.SourceProgramEnrollmentId = source.Id;
+        var newClassId = SeedNewClassSeat(pending.Id);
+        SeedSession(newClassId, module.Id, ClassSessionStatus.Completed);
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = newClassId,
+            ModuleId = module.Id,
+            AssignmentId = Guid.NewGuid(),
+            Title = "Work window",
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = _now.AddHours(-1),
+            EndTime = _now.AddDays(2),
+            Status = ClassSessionStatus.InProgress,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.ApplyRebuyCreditsAsync(pending);
+
+        var copied = Assert.Single(_db.ModuleEnrollments.Items, me => me.Id != sourceModuleEnrollment.Id);
+        Assert.Equal(pending.Id, copied.ProgramEnrollmentId);
+    }
+
+    [Fact]
     public async Task ApplyRebuyCredits_SkipsNonCompletedModules()
     {
         var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-5));
@@ -1541,6 +1865,16 @@ public sealed class ProgramPurchaseLifecycleTests
         Assert.False(ProgramPurchaseLifecycle.SessionAlreadyTaught(futureScheduled, now));
         Assert.False(ProgramPurchaseLifecycle.SessionAlreadyTaught(live, now));
         Assert.False(ProgramPurchaseLifecycle.SessionAlreadyTaught(cancelled, now));
+
+        var closedWindow = new ClassSession
+        {
+            SessionKind = SessionKind.AssignmentWindow,
+            Status = ClassSessionStatus.Completed,
+            StartTime = now.AddDays(-3),
+            EndTime = now.AddDays(-1),
+        };
+        Assert.False(ProgramPurchaseLifecycle.IsTeachingSession(closedWindow));
+        Assert.False(ProgramPurchaseLifecycle.SessionAlreadyTaught(closedWindow, now));
     }
 
     [Fact]
@@ -1584,6 +1918,58 @@ public sealed class ProgramPurchaseLifecycleTests
         };
 
         Assert.False(ProgramPurchaseLifecycle.ClassBlocksRebuy([earlier, stop], sessions, stop.ModuleOrder));
+    }
+
+    [Fact]
+    public void ClassBlocksRebuy_False_WhenOnlyAssignmentWindowIsInProgressOnStopModule()
+    {
+        var stop = new Module { Id = Guid.NewGuid(), ModuleOrder = 2, IsDeleted = false };
+        var sessions = new[]
+        {
+            new ClassSession
+            {
+                ModuleId = stop.Id,
+                SessionKind = SessionKind.AssignmentWindow,
+                Status = ClassSessionStatus.InProgress,
+                IsDeleted = false,
+            },
+            new ClassSession
+            {
+                ModuleId = stop.Id,
+                SessionKind = SessionKind.LiveOnline,
+                Status = ClassSessionStatus.Scheduled,
+                IsDeleted = false,
+            },
+        };
+
+        Assert.Equal(
+            ClassModuleProgressStatus.NotStarted,
+            ProgramPurchaseLifecycle.ResolveModuleProgress(sessions));
+        Assert.False(ProgramPurchaseLifecycle.ClassBlocksRebuy([stop], sessions, stop.ModuleOrder));
+    }
+
+    [Fact]
+    public void ResolveCreditHint_IgnoresOpenAssignmentWindowWhenLivesAreTaught()
+    {
+        var taughtLive = new ClassSession
+        {
+            SessionKind = SessionKind.LiveOnline,
+            Status = ClassSessionStatus.Completed,
+            EndTime = _now.AddDays(-1),
+            IsDeleted = false,
+        };
+        var openWindow = new ClassSession
+        {
+            SessionKind = SessionKind.AssignmentWindow,
+            Status = ClassSessionStatus.InProgress,
+            StartTime = _now.AddDays(-1),
+            EndTime = _now.AddDays(6),
+            IsDeleted = false,
+        };
+
+        Assert.Equal(
+            RebuyModuleCreditHint.Copied,
+            ProgramPurchaseLifecycle.ResolveCreditHint(true, [taughtLive, openWindow], _now));
     }
 
     // ── Reopen vs concurrent rebuy ────────────────────────────────────────────

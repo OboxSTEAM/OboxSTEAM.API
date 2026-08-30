@@ -258,36 +258,56 @@ public static class ClassEnrollmentValidator
         }
     }
 
+    /// <summary>
+    /// Self-enrollment is blocked once this fraction of an open work window has elapsed.
+    /// </summary>
+    public const double LateJoinElapsedFraction = 2.0 / 3.0;
+
+    public const string LateJoinBlockedMessage =
+        "Cannot join after two-thirds of an assignment work window has elapsed.";
+
     public static string FormatLateJoinBlockedMessage(int minHours)
-        => $"Cannot join within {minHours} hours of the next assignment window.";
+    {
+        _ = minHours;
+        return LateJoinBlockedMessage;
+    }
 
     /// <summary>
-    /// Blocks joining when the class has a future <see cref="SessionKind.AssignmentWindow"/>
-    /// closer than <see cref="Class.MinHoursBeforeAssignmentJoin"/>. LiveOnline/Offline
-    /// sessions do not count. No future window means not blocked.
+    /// Blocks joining when any not-yet-ended AssignmentWindow is at or past
+    /// two-thirds of the span from <c>StartTime</c> to <c>EndTime</c>.
+    /// LiveOnline/Offline sessions do not count. <see cref="Class.MinHoursBeforeAssignmentJoin"/>
+    /// is the generate first-session buffer, not this cutoff.
     /// </summary>
     public static string? GetLateJoinBlockReason(
         Class classEntity,
         IEnumerable<ClassSession> classSessions,
         DateTime now)
     {
-        var nextAssignmentWindow = classSessions
-            .Where(cs => !cs.IsDeleted
-                         && cs.SessionKind == SessionKind.AssignmentWindow
-                         && cs.Status != ClassSessionStatus.Cancelled
-                         && cs.StartTime > now)
-            .OrderBy(cs => cs.StartTime)
-            .FirstOrDefault();
+        _ = classEntity;
+        var blocked = classSessions.Any(cs =>
+            !cs.IsDeleted
+            && cs.SessionKind == SessionKind.AssignmentWindow
+            && cs.Status != ClassSessionStatus.Cancelled
+            && IsPastLateJoinCutoff(cs, now));
 
-        if (nextAssignmentWindow == null)
+        return blocked ? LateJoinBlockedMessage : null;
+    }
+
+    public static bool IsPastLateJoinCutoff(ClassSession window, DateTime now)
+    {
+        if (window.EndTime <= now)
         {
-            return null;
+            return false;
         }
 
-        var hoursUntil = (nextAssignmentWindow.StartTime - now).TotalHours;
-        return hoursUntil < classEntity.MinHoursBeforeAssignmentJoin
-            ? FormatLateJoinBlockedMessage(classEntity.MinHoursBeforeAssignmentJoin)
-            : null;
+        var durationTicks = (window.EndTime - window.StartTime).Ticks;
+        if (durationTicks <= 0)
+        {
+            return true;
+        }
+
+        var cutoff = window.StartTime.AddTicks((long)(durationTicks * LateJoinElapsedFraction));
+        return now >= cutoff;
     }
 
     public static async Task ValidateLateJoinAllowedAsync(IUnitOfWork unitOfWork, Class classEntity)

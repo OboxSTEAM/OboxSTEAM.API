@@ -421,11 +421,22 @@ public sealed class ParentProgressionService : IParentProgressionService
             researchMilestone,
             previousResearchMilestone);
 
-        if (status == CurriculumStatusHelper.StatusAvailable
-            && assignment.DueDate.HasValue
-            && assignment.DueDate.Value < DateTime.UtcNow)
+        if (status == CurriculumStatusHelper.StatusAvailable)
         {
-            status = StatusOverdue;
+            context.AssignmentWindowsByAssignmentId.TryGetValue(assignment.Id, out var window);
+            context.SubmissionsByAssignmentId.TryGetValue(assignment.Id, out var submissionsForCalendar);
+            if (submissionsForCalendar == null || !submissionsForCalendar.Any(AssignmentWindowPolicy.IsInProgressContinuation))
+            {
+                var calendarReason = AssignmentWindowPolicy.GetNewAttemptBlockReason(window, DateTime.UtcNow);
+                if (calendarReason == AssignmentWindowPolicy.ClosedMessage)
+                {
+                    status = StatusOverdue;
+                }
+                else if (calendarReason != null)
+                {
+                    status = CurriculumStatusHelper.StatusLocked;
+                }
+            }
         }
 
         Submission? latest = null;
@@ -450,7 +461,7 @@ public sealed class ParentProgressionService : IParentProgressionService
             Title = assignment.Title,
             AssignmentType = assignment.AssignmentType,
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
-            DueDate = assignment.DueDate,
+            DueDate = AssignmentWindowPolicy.WindowEnd(context.AssignmentWindowsByAssignmentId, assignment.Id),
             Status = status,
             Score = latest?.AssignedGrade,
             MaxPoints = assignment.MaxPoints,
@@ -626,7 +637,8 @@ public sealed class ParentProgressionService : IParentProgressionService
                 context.ModulesById);
             foreach (var item in CollectModuleAssignments(module, snapshot))
             {
-                if (!item.Assignment.IsRequiredForModulePass || !item.Assignment.DueDate.HasValue)
+                if (!item.Assignment.IsRequiredForModulePass
+                    || !context.AssignmentWindowsByAssignmentId.TryGetValue(item.Assignment.Id, out var window))
                 {
                     continue;
                 }
@@ -645,7 +657,7 @@ public sealed class ParentProgressionService : IParentProgressionService
                     continue;
                 }
 
-                if (item.Assignment.DueDate.Value >= DateTime.UtcNow)
+                if (window.EndTime >= DateTime.UtcNow)
                 {
                     continue;
                 }
@@ -886,6 +898,11 @@ public sealed class ParentProgressionService : IParentProgressionService
                 g => g.Key,
                 g => g.OrderByDescending(s => s.AttemptNumber).ThenByDescending(s => s.CreatedAt).First());
 
+        var windows = await AssignmentWindowPolicy.LoadWindowsForProgramEnrollmentAsync(
+            _unitOfWork,
+            enrollment.StudentId,
+            enrollment.Id);
+
         return new ProgressContext
         {
             LatestEnrollmentByModuleId = latestEnrollmentByModuleId,
@@ -893,6 +910,7 @@ public sealed class ParentProgressionService : IParentProgressionService
             ProgressByActivityId = progressByActivityId,
             SubmissionsByAssignmentId = submissionsByAssignmentId,
             SubmissionsByMilestoneId = submissionsByMilestoneId,
+            AssignmentWindowsByAssignmentId = windows,
         };
     }
 
@@ -958,5 +976,7 @@ public sealed class ParentProgressionService : IParentProgressionService
         public Dictionary<Guid, List<Submission>> SubmissionsByAssignmentId { get; init; } = new();
 
         public Dictionary<Guid, Submission> SubmissionsByMilestoneId { get; init; } = new();
+
+        public Dictionary<Guid, ClassSession> AssignmentWindowsByAssignmentId { get; init; } = new();
     }
 }

@@ -23,9 +23,6 @@ public class UpdateResearchMilestoneRequestDto
 
     public decimal? PassScore { get; set; }
 
-    public DateTime? DueDate { get; set; }
-
-    public DateTime? AvailableFrom { get; set; }
-
-    public DateTime? AvailableUntil { get; set; }
+    [Range(1, int.MaxValue, ErrorMessage = "TimeLimitMinutes must be at least 1.")]
+    public int? TimeLimitMinutes { get; set; }
 }

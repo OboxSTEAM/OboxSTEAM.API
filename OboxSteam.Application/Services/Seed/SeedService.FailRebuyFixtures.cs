@@ -475,9 +475,6 @@ public partial class SeedService
             MaxPoints = 100,
             PassScore = 50,
             IsRequiredForModulePass = true,
-            DueDate = seedTime.AddDays(30),
-            AvailableFrom = seedTime.AddDays(-7),
-            AvailableUntil = seedTime.AddDays(60),
             AllowShuffle = false,
             ShuffleOptions = false,
             QuestionBankId = bankId,
@@ -517,10 +514,8 @@ public partial class SeedService
             MaxPoints = 100,
             PassScore = 50,
             IsRequiredForModulePass = true,
-            DueDate = seedTime.AddDays(30),
-            AvailableFrom = seedTime.AddDays(-7),
-            AvailableUntil = seedTime.AddDays(60),
             MaxAttempts = 1,
+            TimeLimitMinutes = 60,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,
@@ -553,10 +548,8 @@ public partial class SeedService
             MaxPoints = 100,
             PassScore = 60m,
             IsRequiredForModulePass = true,
-            DueDate = seedTime.AddDays(30),
-            AvailableFrom = seedTime.AddDays(-7),
-            AvailableUntil = seedTime.AddDays(60),
             MaxAttempts = 1,
+            TimeLimitMinutes = 60,
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,
@@ -1050,46 +1043,48 @@ public partial class SeedService
 
         async Task SeedLiveAbsenceAsync(ProgramEnrollment pe, ModuleEnrollment labMe)
         {
-            var liveSession = (await _unitOfWork.ClassSessions.GetAllAsync(
+            var labSessions = (await _unitOfWork.ClassSessions.GetAllAsync(
                     cs => cs.ClassId == currentClass.Id
                           && cs.ModuleId == labModule.Id
-                          && cs.Status == ClassSessionStatus.InProgress
+                          && cs.ActivityId != null
                           && !cs.IsDeleted))
-                .FirstOrDefault();
-            if (liveSession == null)
+                .OrderBy(cs => cs.StartTime)
+                .Take(3)
+                .ToList();
+
+            foreach (var liveSession in labSessions)
             {
-                return;
+                var existingAbsent = await _unitOfWork.SessionAttendances.FirstOrDefaultAsync(
+                    sa => sa.ClassSessionId == liveSession.Id
+                          && sa.StudentId == pe.StudentId
+                          && !sa.IsDeleted);
+                if (existingAbsent != null)
+                {
+                    continue;
+                }
+
+                await _unitOfWork.SessionAttendances.AddAsync(new SessionAttendance
+                {
+                    Id = Guid.NewGuid(),
+                    ClassSessionId = liveSession.Id,
+                    StudentId = pe.StudentId,
+                    ModuleEnrollmentId = labMe.Id,
+                    Status = AttendanceStatus.Absent,
+                    RecordedBy = currentClass.MentorId,
+                    CheckedInAt = seedTime.AddDays(-1),
+                    CreatedAt = seedTime.AddDays(-1),
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
             }
 
-            var existingAbsent = await _unitOfWork.SessionAttendances.FirstOrDefaultAsync(
-                sa => sa.ClassSessionId == liveSession.Id
-                      && sa.StudentId == pe.StudentId
-                      && !sa.IsDeleted);
-            if (existingAbsent != null)
-            {
-                return;
-            }
-
-            await _unitOfWork.SessionAttendances.AddAsync(new SessionAttendance
-            {
-                Id = Guid.NewGuid(),
-                ClassSessionId = liveSession.Id,
-                StudentId = pe.StudentId,
-                ModuleEnrollmentId = labMe.Id,
-                Status = AttendanceStatus.Absent,
-                RecordedBy = currentClass.MentorId,
-                CheckedInAt = seedTime.AddDays(-1),
-                CreatedAt = seedTime.AddDays(-1),
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
             await _unitOfWork.SaveChangesAsync();
         }
 
         var outsideWindow = seedTime.AddDays(-120);
         var recentClose = seedTime.AddDays(-1);
 
-        // STD-026 — Failed/Attendance after passing Foundations. 1/5 session absences.
+        // STD-026 — Failed/Attendance after passing Foundations. 3/5 session absences (>=50%).
         // Rebuy: ELIGIBLE copies Foundations (taught); Lab stays ahead on that class.
         {
             var pe = await EnsurePe(

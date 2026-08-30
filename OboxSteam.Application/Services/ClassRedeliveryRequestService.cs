@@ -62,7 +62,7 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
         if (module.ModuleType == ModuleType.Theory)
         {
             throw ErrorHelper.BadRequest(
-                "Theory modules do not use class re-delivery. Redo the assignment freely or request a deadline extension.");
+                "Theory modules do not use class re-delivery. Redo the assignment on the same class while the window is open.");
         }
 
         if (actor.Role == RoleType.Student)

@@ -118,7 +118,11 @@ public class EnrollmentCurriculumAssignmentDto
 
     public bool IsRequiredForModulePass { get; set; }
 
+    /// <summary>Class AssignmentWindow EndTime for this student, if scheduled.</summary>
     public DateTime? DueDate { get; set; }
+
+    /// <summary>Class AssignmentWindow StartTime for this student, if scheduled.</summary>
+    public DateTime? AvailableFrom { get; set; }
 
     /// <summary>Nav state: completed, submitted, available, or locked.</summary>
     public string Status { get; set; } = null!;

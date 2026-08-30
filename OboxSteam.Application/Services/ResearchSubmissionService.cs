@@ -90,7 +90,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         else
             ResearchSubmissionValidator.ValidateUploadFile(file);
 
-        var (enrollment, milestone, assignment, now, personalUntil) =
+        var (enrollment, milestone, assignment, now, window) =
             await ResolveStudentMilestoneContextAsync(student.Id, moduleEnrollmentId, researchMilestoneId);
 
         var submission = await EnsurePendingDraftAsync(
@@ -99,7 +99,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             milestone,
             assignment,
             now,
-            personalUntil);
+            window);
 
         if (isEvidence)
         {
@@ -180,7 +180,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
 
         ResearchSubmissionValidator.ValidateSubmitContent(request);
 
-        var (enrollment, milestone, assignment, now, personalUntil) =
+        var (enrollment, milestone, assignment, now, window) =
             await ResolveStudentMilestoneContextAsync(
                 student.Id,
                 request.ModuleEnrollmentId,
@@ -193,7 +193,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
 
         if (submission == null)
         {
-            await ValidateMilestoneReadyAsync(enrollment, milestone, assignment, now, personalUntil);
+            await ValidateMilestoneReadyAsync(enrollment, milestone, assignment, now, window);
 
             var nextAttemptNumber = 1;
             await ResearchSubmissionValidator.ValidateMaxAttemptsNotExceededAsync(
@@ -234,7 +234,10 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             ResearchSubmissionValidator.ValidateResearchSubmission(submission);
             ResearchSubmissionValidator.ValidateSubmissionOwnership(submission, student.Id);
             ResearchSubmissionValidator.ValidateSubmissionOpenForSubmit(submission);
-            ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now, personalUntil);
+            if (!AssignmentWindowPolicy.IsInProgressContinuation(submission))
+            {
+                ResearchSubmissionValidator.ValidateAssignmentAvailability(window, now);
+            }
 
             var nextAttemptNumber = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
             await ResearchSubmissionValidator.ValidateMaxAttemptsNotExceededAsync(
@@ -336,6 +339,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         if (request.ReturnForRevision)
         {
             submission.Status = SubmissionStatus.ReturnedForRevision;
+            submission.ExpiresAt = AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now);
         }
         else
         {
@@ -386,6 +390,14 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
                 submission.StudentId,
                 assignment.Id,
                 submission.ModuleEnrollmentId);
+        }
+        else if (submission.Status == SubmissionStatus.Graded
+                 && submission.AssignedGrade.HasValue
+                 && submission.AssignedGrade.Value >= assignment.PassScore)
+        {
+            await _programPurchaseLifecycle.TryExtendNextMilestoneWindowAfterPassAsync(
+                assignment,
+                submission.StudentId);
         }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
@@ -439,7 +451,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         ResearchMilestone Milestone,
         Assignment Assignment,
         DateTime Now,
-        DateTime? PersonalUntil)> ResolveStudentMilestoneContextAsync(
+        ClassSession? Window)> ResolveStudentMilestoneContextAsync(
         Guid studentId,
         Guid moduleEnrollmentId,
         Guid researchMilestoneId)
@@ -491,13 +503,12 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         }
 
         var now = DateTime.UtcNow;
-        var (_, personalUntil) = await AssessmentAttemptPolicy.GetPersonalWindowAsync(
+        var window = await AssignmentWindowPolicy.TryGetForStudentAsync(
             _unitOfWork,
-            studentId,
             assignment.Id,
-            enrollment.Id);
+            studentId);
 
-        return (enrollment, milestone, assignment, now, personalUntil);
+        return (enrollment, milestone, assignment, now, window);
     }
 
     private async Task ValidateMilestoneReadyAsync(
@@ -505,8 +516,15 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         ResearchMilestone milestone,
         Assignment assignment,
         DateTime now,
-        DateTime? personalUntil)
+        ClassSession? window)
     {
+        await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
+            enrollment.StudentId,
+            assignment.Id,
+            enrollment.Id,
+            window,
+            now);
+
         var milestoneIds = await ResearchSubmissionValidator.LoadModuleMilestoneIdsAsync(
             _unitOfWork,
             enrollment.ModuleId);
@@ -541,7 +559,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             assignmentsById,
             completedActivityIds,
             now,
-            personalUntil);
+            window);
     }
 
     private async Task<Submission> EnsurePendingDraftAsync(
@@ -550,7 +568,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         ResearchMilestone milestone,
         Assignment assignment,
         DateTime now,
-        DateTime? personalUntil)
+        ClassSession? window)
     {
         var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.ModuleEnrollmentId == enrollment.Id
@@ -562,11 +580,10 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             ResearchSubmissionValidator.ValidateResearchSubmission(existing);
             ResearchSubmissionValidator.ValidateSubmissionOwnership(existing, studentId);
             ResearchSubmissionValidator.ValidateSubmissionOpenForSubmit(existing);
-            ResearchSubmissionValidator.ValidateAssignmentAvailability(assignment, now, personalUntil);
             return existing;
         }
 
-        await ValidateMilestoneReadyAsync(enrollment, milestone, assignment, now, personalUntil);
+        await ValidateMilestoneReadyAsync(enrollment, milestone, assignment, now, window);
 
         var submission = new Submission
         {
@@ -578,6 +595,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             ResearchMilestoneId = milestone.Id,
             AttemptNumber = 0,
             Status = SubmissionStatus.Pending,
+            StartedAt = now,
+            ExpiresAt = AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now),
             CreatedAt = now,
             CreatedBy = studentId,
             IsDeleted = false

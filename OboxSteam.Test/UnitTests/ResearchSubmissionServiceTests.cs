@@ -7,6 +7,7 @@ using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -162,10 +163,12 @@ public sealed class ResearchSubmissionServiceTests
             MaxPoints = 100,
             PassScore = 70m,
             MaxAttempts = maxAttempts,
+            TimeLimitMinutes = 60,
             IsRequiredForModulePass = true,
             IsDeleted = false,
         };
         _db.Assignments.Seed(assignment);
+        ClassAssignmentWindowSeed.Open(_db, _classId, _researchModuleId, assignment.Id);
         return assignment;
     }
 
@@ -454,6 +457,77 @@ public sealed class ResearchSubmissionServiceTests
     }
 
     [Fact]
+    public async Task SubmitResearchWork_ThrowsForbidden_WhenRequiredSelfPacedIncomplete()
+    {
+        SeedResearchCurriculum();
+        SeedAssignment();
+        SeedMilestone();
+        SeedStudentEnrollmentChain();
+        _db.ResearchMilestoneActivities.Seed(new ResearchMilestoneActivity
+        {
+            Id = Guid.NewGuid(),
+            ResearchMilestoneId = _milestoneId,
+            ActivityId = _activityId,
+            IsRequiredForSubmission = true,
+            DisplayOrder = 1,
+            Activity = _db.Activities.Items[0],
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.SubmitResearchWork(new SubmitResearchWorkRequestDto
+            {
+                ModuleEnrollmentId = _moduleEnrollmentId,
+                ResearchMilestoneId = _milestoneId,
+                ContentText = "Proposal",
+            }));
+
+        Assert.Contains("not completed", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SubmitResearchWork_CreatesAndTurnsIn_WhenRequiredLiveIncomplete()
+    {
+        SeedResearchCurriculum();
+        SeedAssignment();
+        SeedMilestone();
+        SeedStudentEnrollmentChain();
+        var liveId = Guid.Parse("36363636-3636-3636-3636-363636363636");
+        var live = new Activity
+        {
+            Id = liveId,
+            Code = "ACT-LIVE",
+            Name = "Research Seminar",
+            CourseId = _courseId,
+            ActivityType = ActivityType.LiveOnline,
+            ActivityOrder = 2,
+            IsDeleted = false,
+        };
+        _db.Activities.Seed(live);
+        _db.ResearchMilestoneActivities.Seed(new ResearchMilestoneActivity
+        {
+            Id = Guid.NewGuid(),
+            ResearchMilestoneId = _milestoneId,
+            ActivityId = liveId,
+            IsRequiredForSubmission = true,
+            DisplayOrder = 1,
+            Activity = live,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.SubmitResearchWork(new SubmitResearchWorkRequestDto
+        {
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            ResearchMilestoneId = _milestoneId,
+            ContentText = "Proposal without attending seminar",
+        });
+
+        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
+    }
+
+    [Fact]
     public async Task SubmitResearchWork_TurnsIn_WithContentText()
     {
         SeedResearchCurriculum();
@@ -477,6 +551,51 @@ public sealed class ResearchSubmissionServiceTests
         _notificationPublisher.Verify(
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task SubmitResearchWork_ContinuesPendingDraft_WhenWindowClosed()
+    {
+        SeedResearchCurriculum();
+        SeedAssignment();
+        SeedMilestone();
+        SeedStudentEnrollmentChain();
+        SeedSubmission();
+        ClassAssignmentWindowSeed.Close(
+            _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId));
+        var sut = CreateSut();
+
+        var result = await sut.SubmitResearchWork(new SubmitResearchWorkRequestDto
+        {
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            ResearchMilestoneId = _milestoneId,
+            ContentText = "Finished after close",
+        });
+
+        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
+        Assert.Equal("Finished after close", result.ContentText);
+    }
+
+    [Fact]
+    public async Task SubmitResearchWork_ThrowsConflict_WhenWindowClosedAndNoDraft()
+    {
+        SeedResearchCurriculum();
+        SeedAssignment();
+        SeedMilestone();
+        SeedStudentEnrollmentChain();
+        SeedCompletedRequiredActivity();
+        ClassAssignmentWindowSeed.Close(
+            _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId));
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.SubmitResearchWork(new SubmitResearchWorkRequestDto
+            {
+                ModuleEnrollmentId = _moduleEnrollmentId,
+                ResearchMilestoneId = _milestoneId,
+                ContentText = "Too late",
+            }));
+        Assert.Equal(AssignmentWindowPolicy.ClosedMessage, ex.Message);
     }
 
     [Fact]

@@ -206,7 +206,7 @@ public sealed class ProgramPurchaseLifecycle
         Guid? moduleEnrollmentId)
     {
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(assignmentId);
-        if (assignment == null || assignment.IsDeleted)
+        if (assignment == null || assignment.IsDeleted || !assignment.IsRequiredForModulePass)
         {
             return;
         }
@@ -257,6 +257,11 @@ public sealed class ProgramPurchaseLifecycle
         if (latestGraded == null
             || !latestGraded.AssignedGrade.HasValue
             || latestGraded.AssignedGrade.Value >= assignment.PassScore)
+        {
+            return;
+        }
+
+        if (submissions.Any(s => s.Status == SubmissionStatus.TurnedIn && !s.IsDeleted))
         {
             return;
         }
@@ -419,12 +424,20 @@ public sealed class ProgramPurchaseLifecycle
         return await ResolveWithdrawStopModuleIdAsync(source);
     }
 
+    /// <summary>
+    /// LiveOnline/Offline teaching slots. AssignmentWindow is a work period, not taught time.
+    /// </summary>
+    public static bool IsTeachingSession(ClassSession session)
+        => !session.IsDeleted
+           && session.Status != ClassSessionStatus.Cancelled
+           && session.SessionKind is SessionKind.LiveOnline or SessionKind.Offline;
+
     public static ClassModuleProgressStatus ResolveModuleProgress(IEnumerable<ClassSession> sessionsForModule)
     {
         var furthest = ClassModuleProgressStatus.NotStarted;
         foreach (var session in sessionsForModule)
         {
-            if (session.IsDeleted || session.Status == ClassSessionStatus.Cancelled)
+            if (!IsTeachingSession(session))
             {
                 continue;
             }
@@ -483,14 +496,15 @@ public sealed class ProgramPurchaseLifecycle
     }
 
     /// <summary>
-    /// True when the new class has already gone past this session: status Completed, or the
-    /// session end time is at or before <paramref name="now"/> (calendar already moved on,
-    /// even if the mentor left the row Scheduled). Cancelled sessions never count.
-    /// In-progress sessions whose end is still in the future are not taught yet.
+    /// True when the new class has already gone past this teaching session: status Completed,
+    /// or the session end time is at or before <paramref name="now"/> (calendar already moved
+    /// on, even if the mentor left the row Scheduled). AssignmentWindow, cancelled, and
+    /// deleted rows never count. In-progress lives whose end is still in the future are not
+    /// taught yet.
     /// </summary>
     public static bool SessionAlreadyTaught(ClassSession session, DateTime now)
     {
-        if (session.IsDeleted || session.Status == ClassSessionStatus.Cancelled)
+        if (!IsTeachingSession(session))
         {
             return false;
         }
@@ -526,12 +540,13 @@ public sealed class ProgramPurchaseLifecycle
     /// <summary>
     /// On rebuy payment success, copies the source enrollment's Completed module enrollments
     /// into the new enrollment, scoped to what the new class has already taught by wall-clock
-    /// and session status. A module with no non-cancelled sessions (self-paced / unscheduled)
-    /// is copied whole. A module whose every non-cancelled session is already taught
-    /// (<see cref="SessionAlreadyTaught"/>: Completed, or EndTime &lt;= now) is copied whole.
-    /// Sessions still in the future are not copied — the student relearns those with the new
-    /// class. A part-taught module copies only ActivityProgress and Graded submissions whose
-    /// Activity/Assignment the class has already taught. ProgressPercent is then set by
+    /// and LiveOnline/Offline status. AssignmentWindow rows are ignored. A module with no
+    /// teaching sessions (self-paced / unscheduled) is copied whole. A module whose every
+    /// teaching session is already taught (<see cref="SessionAlreadyTaught"/>: Completed, or
+    /// EndTime &lt;= now) is copied whole. Lives still in the future are not copied — the
+    /// student relearns those with the new class. A part-taught module copies only
+    /// ActivityProgress and Graded submissions whose Activity/Assignment the class has already
+    /// taught. ProgressPercent is then set by
     /// <see cref="ActivityProgressCalculationHelper"/>. Only applies inside the rebuy window;
     /// Completed sources and out-of-window rebuys copy nothing. Each copied module enrollment
     /// gets the next global AttemptNumber per (student, module). Idempotent: modules already
@@ -587,7 +602,8 @@ public sealed class ProgramPurchaseLifecycle
         var moduleFullyTaught = new Dictionary<Guid, bool>();
         foreach (var group in newClassSessions.GroupBy(cs => cs.ModuleId))
         {
-            var taughtSessions = group.Where(cs => SessionAlreadyTaught(cs, now)).ToList();
+            var teachable = group.Where(IsTeachingSession).ToList();
+            var taughtSessions = teachable.Where(cs => SessionAlreadyTaught(cs, now)).ToList();
             taughtActivityIdsByModule[group.Key] = taughtSessions
                 .Where(cs => cs.ActivityId.HasValue)
                 .Select(cs => cs.ActivityId!.Value)
@@ -597,7 +613,6 @@ public sealed class ProgramPurchaseLifecycle
                 .Select(cs => cs.AssignmentId!.Value)
                 .ToHashSet();
 
-            var teachable = group.Where(cs => cs.Status != ClassSessionStatus.Cancelled).ToList();
             moduleFullyTaught[group.Key] =
                 teachable.Count > 0 && teachable.All(cs => SessionAlreadyTaught(cs, now));
         }
@@ -619,7 +634,7 @@ public sealed class ProgramPurchaseLifecycle
             var taughtActivityIds = taughtActivityIdsByModule.GetValueOrDefault(moduleId) ?? [];
             var taughtAssignmentIds = taughtAssignmentIdsByModule.GetValueOrDefault(moduleId) ?? [];
             var hasTeachableSessions = newClassSessions.Any(
-                cs => cs.ModuleId == moduleId && cs.Status != ClassSessionStatus.Cancelled);
+                cs => cs.ModuleId == moduleId && IsTeachingSession(cs));
             var fullyTaught = moduleFullyTaught.GetValueOrDefault(moduleId) || !hasTeachableSessions;
 
             if (!fullyTaught && taughtActivityIds.Count == 0 && taughtAssignmentIds.Count == 0)
@@ -880,4 +895,221 @@ public sealed class ProgramPurchaseLifecycle
             failedModuleEnrollment.Id,
             seats.Count);
     }
+
+    public const int NextMilestoneWindowPadHours = 48;
+
+    /// <summary>
+    /// Required work whose class window has ended, with no in-progress continuation and
+    /// nothing waiting to be graded, closes the purchase (including Theory).
+    /// </summary>
+    public async Task TryCloseAfterAssignmentWindowElapsedAsync(
+        Guid studentId,
+        Guid assignmentId,
+        Guid? moduleEnrollmentId,
+        ClassSession? window = null)
+    {
+        var assignment = await _unitOfWork.Assignments.GetByIdAsync(assignmentId);
+        if (assignment == null || assignment.IsDeleted || !assignment.IsRequiredForModulePass)
+        {
+            return;
+        }
+
+        ModuleEnrollment? moduleEnrollment = null;
+        if (moduleEnrollmentId.HasValue)
+        {
+            moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId.Value);
+        }
+        else
+        {
+            moduleEnrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+                me => me.StudentId == studentId
+                      && me.ModuleId == assignment.ModuleId
+                      && !me.IsDeleted
+                      && (me.Status == EnrollmentStatus.Active || me.Status == EnrollmentStatus.Deferred));
+        }
+
+        if (moduleEnrollment == null || moduleEnrollment.IsDeleted || !moduleEnrollment.ProgramEnrollmentId.HasValue)
+        {
+            return;
+        }
+
+        var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+            moduleEnrollment.ProgramEnrollmentId.Value);
+        if (programEnrollment == null
+            || programEnrollment.IsDeleted
+            || programEnrollment.Status is EnrollmentStatus.Failed
+                or EnrollmentStatus.Dropped
+                or EnrollmentStatus.Completed)
+        {
+            return;
+        }
+
+        var now = _currentTime.GetCurrentTime();
+        window ??= await AssignmentWindowPolicy.TryGetForStudentAsync(
+            _unitOfWork,
+            assignmentId,
+            studentId);
+        if (window == null || now <= window.EndTime)
+        {
+            return;
+        }
+
+        var submissions = await _unitOfWork.Submissions.GetAllAsync(
+            s => s.AssignmentId == assignmentId
+                 && s.StudentId == studentId
+                 && s.ModuleEnrollmentId == moduleEnrollment.Id
+                 && !s.IsDeleted);
+
+        if (HasPassedRequiredWork(submissions, assignment)
+            || HasWaitingGrade(submissions)
+            || submissions.Any(s => AssignmentWindowPolicy.IsBlockingInProgress(s, now)))
+        {
+            return;
+        }
+
+        await CloseAsync(programEnrollment, ProgramPurchaseEndReason.AcademicFail, assignment.ModuleId);
+    }
+
+    public async Task TryCloseIfWindowBlocksNewAttemptAsync(
+        Guid studentId,
+        Guid assignmentId,
+        Guid? moduleEnrollmentId,
+        ClassSession? window,
+        DateTime utcNow)
+    {
+        if (AssignmentWindowPolicy.GetNewAttemptBlockReason(window, utcNow)
+            != AssignmentWindowPolicy.ClosedMessage)
+        {
+            return;
+        }
+
+        await TryCloseAfterAssignmentWindowElapsedAsync(
+            studentId,
+            assignmentId,
+            moduleEnrollmentId,
+            window);
+    }
+
+    /// <summary>
+    /// Closes Active purchases whose required AssignmentWindow has already ended.
+    /// </summary>
+    public async Task<int> CloseElapsedRequiredWindowsAsync(CancellationToken cancellationToken = default)
+    {
+        var now = _currentTime.GetCurrentTime();
+        var windows = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.SessionKind == SessionKind.AssignmentWindow
+                  && cs.AssignmentId != null
+                  && cs.Status != ClassSessionStatus.Cancelled
+                  && !cs.IsDeleted
+                  && cs.EndTime < now);
+
+        if (windows.Count == 0)
+        {
+            return 0;
+        }
+
+        var closed = 0;
+        foreach (var window in windows)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var assignmentId = window.AssignmentId!.Value;
+            var seats = await _unitOfWork.ClassEnrollments.GetAllAsync(
+                ce => ce.ClassId == window.ClassId
+                      && ce.Status == ClassEnrollmentStatus.Active
+                      && !ce.IsDeleted);
+
+            foreach (var seat in seats)
+            {
+                var closedBefore = (await _unitOfWork.ProgramEnrollments.GetByIdAsync(seat.ProgramEnrollmentId))
+                    ?.Status;
+                await TryCloseAfterAssignmentWindowElapsedAsync(
+                    seat.StudentId,
+                    assignmentId,
+                    null,
+                    window);
+                var closedAfter = (await _unitOfWork.ProgramEnrollments.GetByIdAsync(seat.ProgramEnrollmentId))
+                    ?.Status;
+                if (closedBefore != EnrollmentStatus.Failed && closedAfter == EnrollmentStatus.Failed)
+                {
+                    closed++;
+                }
+            }
+        }
+
+        return closed;
+    }
+
+    public async Task TryExtendNextMilestoneWindowAfterPassAsync(Assignment assignment, Guid studentId)
+    {
+        var milestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
+            rm => rm.AssignmentId == assignment.Id && !rm.IsDeleted);
+        if (milestone == null)
+        {
+            return;
+        }
+
+        var next = (await _unitOfWork.ResearchMilestones.GetAllAsync(
+                rm => rm.ModuleId == milestone.ModuleId && !rm.IsDeleted))
+            .Where(rm => rm.MilestoneOrder > milestone.MilestoneOrder)
+            .OrderBy(rm => rm.MilestoneOrder)
+            .FirstOrDefault();
+        if (next == null)
+        {
+            return;
+        }
+
+        var window = await AssignmentWindowPolicy.TryGetForStudentAsync(
+            _unitOfWork,
+            next.AssignmentId,
+            studentId);
+        if (window == null)
+        {
+            return;
+        }
+
+        var now = _currentTime.GetCurrentTime();
+        var pad = now.AddHours(NextMilestoneWindowPadHours);
+        if (now <= window.EndTime && window.EndTime - now >= TimeSpan.FromHours(NextMilestoneWindowPadHours))
+        {
+            return;
+        }
+
+        var newEnd = window.EndTime > pad ? window.EndTime : pad;
+        if (newEnd <= window.EndTime)
+        {
+            return;
+        }
+
+        window.EndTime = newEnd;
+        await _unitOfWork.ClassSessions.Update(window);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    public static RebuyModuleCreditHint ResolveCreditHint(
+        bool sourceCompletedModule,
+        IEnumerable<ClassSession> sessionsForModule,
+        DateTime now)
+    {
+        if (!sourceCompletedModule)
+        {
+            return RebuyModuleCreditHint.Ahead;
+        }
+
+        var teachable = sessionsForModule.Where(IsTeachingSession).ToList();
+        if (teachable.Count == 0 || teachable.All(cs => SessionAlreadyTaught(cs, now)))
+        {
+            return RebuyModuleCreditHint.Copied;
+        }
+
+        return RebuyModuleCreditHint.RedoWithClass;
+    }
+
+    private static bool HasPassedRequiredWork(IEnumerable<Submission> submissions, Assignment assignment)
+        => submissions.Any(s =>
+            s.Status == SubmissionStatus.Graded
+            && s.AssignedGrade.HasValue
+            && s.AssignedGrade.Value >= assignment.PassScore);
+
+    private static bool HasWaitingGrade(IEnumerable<Submission> submissions)
+        => submissions.Any(s => s.Status == SubmissionStatus.TurnedIn);
 }

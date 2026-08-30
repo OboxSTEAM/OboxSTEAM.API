@@ -42,8 +42,8 @@ public class Class : BaseEntity
     public ClassStatus Status { get; set; } = ClassStatus.Draft;
 
     /// <summary>
-    /// Minimum hours before the next AssignmentWindow session during which
-    /// a student may not self-enroll (late-join guard). Manager may bypass.
+    /// Generate buffer (hours) before the first teaching session. Late-join
+    /// uses two-thirds of each open AssignmentWindow, not this field.
     /// </summary>
     public int MinHoursBeforeAssignmentJoin { get; set; } = 48;
 

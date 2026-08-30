@@ -6,6 +6,7 @@ using OboxSteam.Application.DTOs.CertificateDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -136,8 +137,6 @@ public sealed class AssignmentSubmissionServiceTests
         int maxAttempts = 3,
         int maxPoints = 10,
         decimal passScore = 5m,
-        DateTime? availableFrom = null,
-        DateTime? availableUntil = null,
         AssignmentType type = AssignmentType.FileUpload,
         bool isDeleted = false)
     {
@@ -151,14 +150,14 @@ public sealed class AssignmentSubmissionServiceTests
             MaxPoints = maxPoints,
             PassScore = passScore,
             MaxAttempts = maxAttempts,
-            AvailableFrom = availableFrom,
-            AvailableUntil = availableUntil,
+            TimeLimitMinutes = 60,
             IsRequiredForModulePass = true,
             AllowShuffle = false,
             ShuffleOptions = false,
             IsDeleted = isDeleted
         };
         _db.Assignments.Seed(assignment);
+        ClassAssignmentWindowSeed.Open(_db, _classId, _moduleId, assignment.Id);
         return assignment;
     }
 
@@ -170,6 +169,12 @@ public sealed class AssignmentSubmissionServiceTests
         SeedStudent();
         SeedModule(moduleType);
         SeedActiveEnrollment(programEnrollmentId);
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId,
+            programEnrollmentId);
         SeedFileUploadAssignment(maxAttempts: maxAttempts);
     }
 
@@ -279,12 +284,64 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
-    public async Task SubmitAssignment_AllowsWhenPersonalAvailableUntilExtendsWindow()
+    public async Task SubmitAssignment_ThrowsConflict_WhenClassWindowClosed()
     {
         SeedStudent();
         SeedModule(ModuleType.Experiential);
         SeedActiveEnrollment();
-        SeedFileUploadAssignment(availableUntil: DateTime.UtcNow.AddHours(-1));
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId);
+        SeedFileUploadAssignment();
+        var window = _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId);
+        window.StartTime = DateTime.UtcNow.AddDays(-7);
+        window.EndTime = DateTime.UtcNow.AddHours(-1);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.SubmitAssignment(new SubmitAssignmentRequestDto
+            {
+                AssignmentId = _assignmentId,
+                ContentText = "Too late"
+            }));
+        Assert.Equal(AssignmentWindowPolicy.ClosedMessage, ex.Message);
+    }
+
+    [Fact]
+    public async Task SubmitAssignment_ResubmitsReturnedForRevision_WhenWindowClosed()
+    {
+        SeedStudentModuleAndAssignment(maxAttempts: 3);
+        ClassAssignmentWindowSeed.Close(
+            _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId));
+        SeedTurnedInSubmission(status: SubmissionStatus.ReturnedForRevision, attemptNumber: 1);
+        var sut = CreateSut();
+
+        var result = await sut.SubmitAssignment(new SubmitAssignmentRequestDto
+        {
+            AssignmentId = _assignmentId,
+            ContentText = "Revised after close"
+        });
+
+        Assert.Equal(2, result.AttemptNumber);
+        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
+    }
+
+    [Fact]
+    public async Task SubmitAssignment_ThrowsConflict_WhenApprovedRecoveryCannotExtendClosedWindow()
+    {
+        SeedStudent();
+        SeedModule(ModuleType.Experiential);
+        SeedActiveEnrollment();
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId);
+        SeedFileUploadAssignment();
+        var window = _db.ClassSessions.Items.Single(s => s.AssignmentId == _assignmentId);
+        window.EndTime = DateTime.UtcNow.AddHours(-1);
         _db.AssessmentRecoveryRequests.Seed(new AssessmentRecoveryRequest
         {
             Id = Guid.NewGuid(),
@@ -292,37 +349,19 @@ public sealed class AssignmentSubmissionServiceTests
             ModuleEnrollmentId = _enrollmentId,
             AssignmentId = _assignmentId,
             Status = AssessmentRecoveryRequestStatus.Approved,
-            ExtraAttemptsGranted = 0,
-            PersonalAvailableUntil = DateTime.UtcNow.AddDays(2),
+            ExtraAttemptsGranted = 1,
             DecidedAt = DateTime.UtcNow.AddMinutes(-5),
             IsDeleted = false
         });
         var sut = CreateSut();
 
-        var result = await sut.SubmitAssignment(new SubmitAssignmentRequestDto
-        {
-            AssignmentId = _assignmentId,
-            ContentText = "Late but granted"
-        });
-
-        Assert.Equal(SubmissionStatus.TurnedIn, result.Status);
-    }
-
-    [Fact]
-    public async Task SubmitAssignment_ThrowsConflict_WhenWindowClosedWithoutPersonalGrant()
-    {
-        SeedStudent();
-        SeedModule(ModuleType.Experiential);
-        SeedActiveEnrollment();
-        SeedFileUploadAssignment(availableUntil: DateTime.UtcNow.AddHours(-1));
-        var sut = CreateSut();
-
-        await Assert.ThrowsAsync<ConflictException>(() =>
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
             sut.SubmitAssignment(new SubmitAssignmentRequestDto
             {
                 AssignmentId = _assignmentId,
-                ContentText = "Too late"
+                ContentText = "Late with recovery"
             }));
+        Assert.Equal(AssignmentWindowPolicy.ClosedMessage, ex.Message);
     }
 
     [Fact]
@@ -995,14 +1034,7 @@ public sealed class AssignmentSubmissionServiceTests
     public async Task SubmitAssignment_ThrowsForbidden_WhenProgramEnrollmentClosed()
     {
         SeedStudentModuleAndAssignment(programEnrollmentId: _programEnrollmentId);
-        _db.ProgramEnrollments.Seed(new ProgramEnrollment
-        {
-            Id = _programEnrollmentId,
-            StudentId = _studentId,
-            ProgramId = _programId,
-            Status = EnrollmentStatus.Failed,
-            IsDeleted = false
-        });
+        _db.ProgramEnrollments.Items.Single(p => p.Id == _programEnrollmentId).Status = EnrollmentStatus.Failed;
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>

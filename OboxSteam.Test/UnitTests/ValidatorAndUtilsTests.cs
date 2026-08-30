@@ -403,11 +403,23 @@ public sealed class ValidatorAndUtilsTests
 
         Assert.Throws<ForbiddenException>(() =>
             ResearchSubmissionValidator.ValidateAssignmentAvailability(
-                new Assignment { AvailableFrom = FixedNow.AddHours(1) },
+                new ClassSession
+                {
+                    StartTime = FixedNow.AddHours(1),
+                    EndTime = FixedNow.AddHours(3),
+                    SessionKind = SessionKind.AssignmentWindow,
+                    Status = ClassSessionStatus.Scheduled,
+                },
                 FixedNow));
         Assert.Throws<ConflictException>(() =>
             ResearchSubmissionValidator.ValidateAssignmentAvailability(
-                new Assignment { AvailableUntil = FixedNow.AddHours(-1) },
+                new ClassSession
+                {
+                    StartTime = FixedNow.AddHours(-3),
+                    EndTime = FixedNow.AddHours(-1),
+                    SessionKind = SessionKind.AssignmentWindow,
+                    Status = ClassSessionStatus.Scheduled,
+                },
                 FixedNow));
 
         var pdf = CreateFormFile("paper.pdf", 1024);
@@ -579,6 +591,38 @@ public sealed class ValidatorAndUtilsTests
             snapshot,
             new Dictionary<Guid, Submission>(),
             _ => false));
+
+        var liveId = Guid.NewGuid();
+        var liveSnapshot = new ProgramCurriculumTreeSnapshot
+        {
+            LinksByMilestoneId = new Dictionary<Guid, List<ResearchMilestoneActivity>>
+            {
+                [milestoneId] =
+                [
+                    new ResearchMilestoneActivity
+                    {
+                        ActivityId = liveId,
+                        IsRequiredForSubmission = true,
+                    },
+                ],
+            },
+            ActivitiesById = new Dictionary<Guid, Activity>
+            {
+                [liveId] = new Activity
+                {
+                    Id = liveId,
+                    ActivityType = ActivityType.LiveOnline,
+                    IsDeleted = false,
+                },
+            },
+            AssignmentsById = snapshot.AssignmentsById,
+        };
+        Assert.True(CurriculumStatusHelper.IsResearchMilestoneAssignmentAccessible(
+            new ResearchMilestone { Id = milestoneId },
+            null,
+            liveSnapshot,
+            new Dictionary<Guid, Submission>(),
+            _ => false));
     }
 
     // ── AssignmentValidator ───────────────────────────────────────────────────
@@ -686,29 +730,36 @@ public sealed class ValidatorAndUtilsTests
     {
         var assignment = new Assignment { MaxAttempts = 2 };
         var now = FixedNow;
+        var openWindow = new ClassSession
+        {
+            StartTime = now.AddDays(-1),
+            EndTime = now.AddDays(1),
+            SessionKind = SessionKind.AssignmentWindow,
+            Status = ClassSessionStatus.Scheduled,
+        };
 
         var locked = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
-            false, ["Activity incomplete"], assignment, null, now);
+            false, ["Activity incomplete"], assignment, null, now, openWindow);
         Assert.False(locked.CanSubmit);
         Assert.Contains("Milestone is locked.", locked.SubmitBlockReasons);
         Assert.Contains("Activity incomplete", locked.SubmitBlockReasons);
         Assert.DoesNotContain(locked.SubmitBlockReasons, r => r.Contains("Mentor has not opened", StringComparison.Ordinal));
 
         var unlockedNoSubmission = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
-            true, [], assignment, null, now);
+            true, [], assignment, null, now, openWindow);
         Assert.True(unlockedNoSubmission.CanSubmit);
 
         var pending = new Submission { Status = SubmissionStatus.Pending, AttemptNumber = 1 };
         var canSubmit = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
-            true, [], assignment, pending, now);
+            true, [], assignment, pending, now, openWindow);
         Assert.True(canSubmit.CanSubmit);
 
         var turnedIn = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
-            true, [], assignment, new Submission { Status = SubmissionStatus.TurnedIn }, now);
+            true, [], assignment, new Submission { Status = SubmissionStatus.TurnedIn }, now, openWindow);
         Assert.Contains("pending mentor review", turnedIn.SubmitBlockReasons[0]);
 
         var graded = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
-            true, [], assignment, new Submission { Status = SubmissionStatus.Graded }, now);
+            true, [], assignment, new Submission { Status = SubmissionStatus.Graded }, now, openWindow);
         Assert.Contains("already been graded", graded.SubmitBlockReasons[0]);
 
         var maxAttempts = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
@@ -716,34 +767,68 @@ public sealed class ValidatorAndUtilsTests
             [],
             assignment,
             new Submission { Status = SubmissionStatus.ReturnedForRevision, AttemptNumber = 2 },
-            now);
+            now,
+            openWindow);
         Assert.Contains("Maximum number of attempts", maxAttempts.SubmitBlockReasons[0]);
 
         var notYetAvailable = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
             true,
             [],
-            new Assignment { MaxAttempts = 2, AvailableFrom = now.AddHours(1) },
-            pending,
-            now);
-        Assert.Contains(notYetAvailable.SubmitBlockReasons, r => r.Contains("not yet available", StringComparison.OrdinalIgnoreCase));
-
-        var expiredWithoutPersonal = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
-            true,
-            [],
-            new Assignment { MaxAttempts = 2, AvailableUntil = now.AddHours(-1) },
-            null,
-            now);
-        Assert.False(expiredWithoutPersonal.CanSubmit);
-        Assert.Contains("Assignment is no longer available.", expiredWithoutPersonal.SubmitBlockReasons);
-
-        var expiredWithPersonal = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
-            true,
-            [],
-            new Assignment { MaxAttempts = 2, AvailableUntil = now.AddHours(-1) },
+            assignment,
             null,
             now,
-            personalAvailableUntil: now.AddDays(1));
-        Assert.True(expiredWithPersonal.CanSubmit);
+            new ClassSession
+            {
+                StartTime = now.AddHours(1),
+                EndTime = now.AddHours(3),
+                SessionKind = SessionKind.AssignmentWindow,
+                Status = ClassSessionStatus.Scheduled,
+            });
+        Assert.Contains(notYetAvailable.SubmitBlockReasons, r => r.Contains("not yet available", StringComparison.OrdinalIgnoreCase));
+
+        var pendingAfterClose = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
+            true,
+            [],
+            assignment,
+            pending,
+            now,
+            new ClassSession
+            {
+                StartTime = now.AddHours(-3),
+                EndTime = now.AddHours(-1),
+                SessionKind = SessionKind.AssignmentWindow,
+                Status = ClassSessionStatus.Scheduled,
+            });
+        Assert.True(pendingAfterClose.CanSubmit);
+        Assert.DoesNotContain(
+            pendingAfterClose.SubmitBlockReasons,
+            r => r.Contains("no longer available", StringComparison.OrdinalIgnoreCase));
+
+        var expiredWindow = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
+            true,
+            [],
+            assignment,
+            null,
+            now,
+            new ClassSession
+            {
+                StartTime = now.AddHours(-3),
+                EndTime = now.AddHours(-1),
+                SessionKind = SessionKind.AssignmentWindow,
+                Status = ClassSessionStatus.Scheduled,
+            });
+        Assert.False(expiredWindow.CanSubmit);
+        Assert.Contains(AssignmentWindowPolicy.ClosedMessage, expiredWindow.SubmitBlockReasons);
+
+        var missingWindow = ResearchSubmissionValidator.EvaluateStudentSubmitEligibility(
+            true,
+            [],
+            assignment,
+            null,
+            now,
+            null);
+        Assert.False(missingWindow.CanSubmit);
+        Assert.Contains(AssignmentWindowPolicy.NotAvailableMessage, missingWindow.SubmitBlockReasons);
     }
 
     // ── ProgramCurriculumTreeMapper ───────────────────────────────────────────
@@ -878,14 +963,31 @@ public sealed class ValidatorAndUtilsTests
     }
 
     [Fact]
-    public void GetLateJoinBlockReason_OnlyFutureAssignmentWindowsCount()
+    public void GetLateJoinBlockReason_BlocksAfterTwoThirdsOfOpenWindow()
     {
         var now = new DateTime(2026, 8, 30, 10, 0, 0, DateTimeKind.Utc);
         var classEntity = new Class { MinHoursBeforeAssignmentJoin = 48 };
-        var soon = new ClassSession
+        var lastThird = new ClassSession
+        {
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = now.AddDays(-8),
+            EndTime = now.AddDays(1),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        };
+        var notYetStarted = new ClassSession
         {
             SessionKind = SessionKind.AssignmentWindow,
             StartTime = now.AddHours(10),
+            EndTime = now.AddHours(12),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        };
+        var firstTwoThirds = new ClassSession
+        {
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = now.AddDays(-1),
+            EndTime = now.AddDays(6),
             Status = ClassSessionStatus.Scheduled,
             IsDeleted = false,
         };
@@ -893,31 +995,70 @@ public sealed class ValidatorAndUtilsTests
         {
             SessionKind = SessionKind.LiveOnline,
             StartTime = now.AddHours(10),
-            Status = ClassSessionStatus.Scheduled,
-            IsDeleted = false,
-        };
-        var far = new ClassSession
-        {
-            SessionKind = SessionKind.AssignmentWindow,
-            StartTime = now.AddHours(72),
+            EndTime = now.AddHours(12),
             Status = ClassSessionStatus.Scheduled,
             IsDeleted = false,
         };
         var past = new ClassSession
         {
             SessionKind = SessionKind.AssignmentWindow,
-            StartTime = now.AddHours(-2),
+            StartTime = now.AddDays(-3),
+            EndTime = now.AddHours(-1),
             Status = ClassSessionStatus.Scheduled,
             IsDeleted = false,
         };
 
         Assert.Equal(
-            ClassEnrollmentValidator.FormatLateJoinBlockedMessage(48),
-            ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [soon], now));
+            ClassEnrollmentValidator.LateJoinBlockedMessage,
+            ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [lastThird], now));
+        Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [notYetStarted], now));
+        Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [firstTwoThirds], now));
         Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [liveSoon], now));
-        Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [far], now));
         Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [past], now));
         Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [], now));
+    }
+
+    [Fact]
+    public void IsPastLateJoinCutoff_BlocksAtExactTwoThirds()
+    {
+        var start = new DateTime(2026, 8, 30, 8, 0, 0, DateTimeKind.Utc);
+        var end = start.AddHours(3);
+        var cutoff = start.AddHours(2);
+        var window = new ClassSession
+        {
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = start,
+            EndTime = end,
+        };
+
+        Assert.False(ClassEnrollmentValidator.IsPastLateJoinCutoff(window, cutoff.AddSeconds(-1)));
+        Assert.True(ClassEnrollmentValidator.IsPastLateJoinCutoff(window, cutoff));
+        Assert.False(ClassEnrollmentValidator.IsPastLateJoinCutoff(window, end));
+    }
+
+    [Fact]
+    public void AssignmentWindowPolicy_IsBlockingInProgress_RequiresFutureExpiresAt()
+    {
+        var now = new DateTime(2026, 8, 30, 10, 0, 0, DateTimeKind.Utc);
+        Assert.False(AssignmentWindowPolicy.IsBlockingInProgress(
+            new Submission { Status = SubmissionStatus.Pending, IsDeleted = false },
+            now));
+        Assert.False(AssignmentWindowPolicy.IsBlockingInProgress(
+            new Submission
+            {
+                Status = SubmissionStatus.Pending,
+                ExpiresAt = now.AddMinutes(-1),
+                IsDeleted = false,
+            },
+            now));
+        Assert.True(AssignmentWindowPolicy.IsBlockingInProgress(
+            new Submission
+            {
+                Status = SubmissionStatus.ReturnedForRevision,
+                ExpiresAt = now.AddMinutes(1),
+                IsDeleted = false,
+            },
+            now));
     }
 
     [Fact]
@@ -966,23 +1107,169 @@ public sealed class ValidatorAndUtilsTests
     {
         var now = DateTime.UtcNow;
 
-        // Available from in the future
         Assert.Throws<ForbiddenException>(() =>
             QuizAttemptValidator.ValidateAssignmentAvailability(
-                new Assignment { AvailableFrom = now.AddDays(1) }, now));
+                new ClassSession
+                {
+                    StartTime = now.AddDays(1),
+                    EndTime = now.AddDays(2),
+                    SessionKind = SessionKind.AssignmentWindow,
+                    Status = ClassSessionStatus.Scheduled,
+                },
+                now));
 
-        // Available until in the past
         Assert.Throws<ConflictException>(() =>
             QuizAttemptValidator.ValidateAssignmentAvailability(
-                new Assignment { AvailableUntil = now.AddDays(-1) }, now));
+                new ClassSession
+                {
+                    StartTime = now.AddDays(-2),
+                    EndTime = now.AddDays(-1),
+                    SessionKind = SessionKind.AssignmentWindow,
+                    Status = ClassSessionStatus.Scheduled,
+                },
+                now));
 
-        // Due date in the past
-        Assert.Throws<ConflictException>(() =>
-            QuizAttemptValidator.ValidateAssignmentAvailability(
-                new Assignment { DueDate = now.AddDays(-1) }, now));
+        QuizAttemptValidator.ValidateAssignmentAvailability(
+            new ClassSession
+            {
+                StartTime = now.AddDays(-1),
+                EndTime = now.AddDays(1),
+                SessionKind = SessionKind.AssignmentWindow,
+                Status = ClassSessionStatus.Scheduled,
+            },
+            now);
+    }
 
-        // No constraints - passes
-        QuizAttemptValidator.ValidateAssignmentAvailability(new Assignment(), now);
+    [Fact]
+    public async Task AssignmentWindowPolicy_ResolveForStudent_FailsClosedWithoutWindow()
+    {
+        var studentId = Guid.NewGuid();
+        var programId = Guid.NewGuid();
+        var moduleId = Guid.NewGuid();
+        var assignmentId = Guid.NewGuid();
+        var classId = Guid.NewGuid();
+
+        _db.Modules.Seed(new Module
+        {
+            Id = moduleId,
+            ProgramId = programId,
+            Name = "Module",
+            Code = "MOD-W",
+            IsDeleted = false,
+        });
+        _db.Assignments.Seed(new Assignment
+        {
+            Id = assignmentId,
+            ModuleId = moduleId,
+            Title = "Quiz",
+            Code = "ASN-W",
+            IsDeleted = false,
+        });
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(_db, classId, programId, studentId);
+
+        var missing = await Assert.ThrowsAsync<ConflictException>(() =>
+            AssignmentWindowPolicy.ResolveForStudentAsync(_db, assignmentId, studentId));
+        Assert.Equal(AssignmentWindowPolicy.NotAvailableMessage, missing.Message);
+
+        ClassAssignmentWindowSeed.Open(_db, classId, moduleId, assignmentId);
+        var window = await AssignmentWindowPolicy.ResolveForStudentAsync(_db, assignmentId, studentId);
+        Assert.Equal(assignmentId, window.AssignmentId);
+
+        AssignmentWindowPolicy.EnsureOpenForNewAttempt(window, DateTime.UtcNow);
+    }
+
+    [Fact]
+    public async Task AssignmentWindowPolicy_ResolveForStudent_UsesProgramEnrollmentClass_NotSiblingClassWindow()
+    {
+        var studentId = Guid.NewGuid();
+        var programId = Guid.NewGuid();
+        var moduleId = Guid.NewGuid();
+        var assignmentId = Guid.NewGuid();
+        var classA = Guid.NewGuid();
+        var classB = Guid.NewGuid();
+        var peId = Guid.NewGuid();
+
+        _db.Modules.Seed(new Module
+        {
+            Id = moduleId,
+            ProgramId = programId,
+            Name = "Module",
+            Code = "MOD-PE",
+            IsDeleted = false,
+        });
+        _db.Assignments.Seed(new Assignment
+        {
+            Id = assignmentId,
+            ModuleId = moduleId,
+            Title = "Quiz",
+            Code = "ASN-PE",
+            IsDeleted = false,
+        });
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(_db, classA, programId, studentId, peId);
+        _db.Classes.Seed(new Class
+        {
+            Id = classB,
+            Code = "CLS-B",
+            Name = "Other cohort",
+            ProgramId = programId,
+            Status = ClassStatus.InProgress,
+            Kind = ClassKind.Standard,
+            MaxCapacity = 30,
+            IsDeleted = false,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = classB,
+            StudentId = studentId,
+            ProgramEnrollmentId = peId,
+            Kind = ClassEnrollmentKind.Retake,
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false,
+        });
+        ClassAssignmentWindowSeed.Open(_db, classB, moduleId, assignmentId);
+
+        var missing = await Assert.ThrowsAsync<ConflictException>(() =>
+            AssignmentWindowPolicy.ResolveForStudentAsync(_db, assignmentId, studentId));
+        Assert.Equal(AssignmentWindowPolicy.NotAvailableMessage, missing.Message);
+
+        ClassAssignmentWindowSeed.Open(_db, classA, moduleId, assignmentId);
+        var window = await AssignmentWindowPolicy.ResolveForStudentAsync(_db, assignmentId, studentId);
+        Assert.Equal(classA, window.ClassId);
+    }
+
+    [Fact]
+    public void AssignmentWindowPolicy_ApplyCalendarToStudentNavStatus_LocksNewWork_KeepsInProgress()
+    {
+        var now = DateTime.UtcNow;
+        var closed = new ClassSession
+        {
+            StartTime = now.AddDays(-2),
+            EndTime = now.AddHours(-1),
+            SessionKind = SessionKind.AssignmentWindow,
+            Status = ClassSessionStatus.Scheduled,
+        };
+        var pending = new[]
+        {
+            new Submission { Status = SubmissionStatus.Pending, IsDeleted = false },
+        };
+
+        Assert.Equal(
+            CurriculumStatusHelper.StatusLocked,
+            AssignmentWindowPolicy.ApplyCalendarToStudentNavStatus(
+                CurriculumStatusHelper.StatusAvailable, closed, null, now));
+        Assert.Equal(
+            CurriculumStatusHelper.StatusAvailable,
+            AssignmentWindowPolicy.ApplyCalendarToStudentNavStatus(
+                CurriculumStatusHelper.StatusAvailable, closed, pending, now));
+        Assert.Equal(
+            CurriculumStatusHelper.StatusCompleted,
+            AssignmentWindowPolicy.ApplyCalendarToStudentNavStatus(
+                CurriculumStatusHelper.StatusCompleted, closed, null, now));
+        Assert.Equal(
+            CurriculumStatusHelper.StatusLocked,
+            AssignmentWindowPolicy.ApplyCalendarToStudentNavStatus(
+                CurriculumStatusHelper.StatusAvailable, null, null, now));
     }
 
     [Fact]

@@ -5,6 +5,7 @@ using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -128,6 +129,7 @@ public sealed class AssignmentServiceTests
             MaxPoints = 10,
             PassScore = 5,
             MaxAttempts = 2,
+            TimeLimitMinutes = 30,
             QuestionBankId = questionBankId,
             EasyPercent = type == AssignmentType.Quiz ? 100 : 0,
             MediumPercent = 0,
@@ -163,7 +165,7 @@ public sealed class AssignmentServiceTests
             MaxPoints = 10,
             PassScore = 6,
             MaxAttempts = 2,
-            TimeLimitMinutes = type == AssignmentType.Quiz ? 30 : null,
+            TimeLimitMinutes = 30,
             QuestionBankId = questionBankId,
             QuestionCount = questionCount,
             EasyPercent = easy,
@@ -221,7 +223,6 @@ public sealed class AssignmentServiceTests
         AssignmentType type = AssignmentType.FileUpload,
         Guid? courseId = null,
         DateTime? createdAt = null,
-        DateTime? dueDate = null,
         bool isDeleted = false)
     {
         var assignment = new Assignment
@@ -236,7 +237,7 @@ public sealed class AssignmentServiceTests
             MaxPoints = 10,
             PassScore = 5,
             MaxAttempts = 2,
-            DueDate = dueDate,
+            TimeLimitMinutes = 30,
             IsRequiredForModulePass = true,
             AllowShuffle = true,
             ShuffleOptions = true,
@@ -378,6 +379,7 @@ public sealed class AssignmentServiceTests
         Assert.Equal(AssignmentType.FileUpload, result.AssignmentType);
         Assert.Equal(10, result.MaxPoints);
         Assert.Equal(6m, result.PassScore);
+        Assert.Equal(30, result.TimeLimitMinutes);
         Assert.Single(_db.Assignments.Items);
         Assert.Equal(1, _db.SaveChangesCallCount);
         _notificationPublisher.Verify(
@@ -527,7 +529,20 @@ public sealed class AssignmentServiceTests
         var request = BuildCreateRequest();
         request.TimeLimitMinutes = 0;
 
-        await Assert.ThrowsAsync<BadRequestException>(() => sut.CreateAssignment(request));
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.CreateAssignment(request));
+        Assert.Equal(AssignmentValidator.TimeLimitRequiredMessage, ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateAssignment_ThrowsBadRequest_WhenTimeLimitMissing()
+    {
+        SeedModule();
+        var sut = CreateSut();
+        var request = BuildCreateRequest();
+        request.TimeLimitMinutes = null;
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.CreateAssignment(request));
+        Assert.Equal(AssignmentValidator.TimeLimitRequiredMessage, ex.Message);
     }
 
     [Fact]
@@ -835,9 +850,6 @@ public sealed class AssignmentServiceTests
             PassScore = 25,
             MaxAttempts = 5,
             IsRequiredForModulePass = true,
-            DueDate = DateTime.UtcNow.AddDays(30),
-            AvailableFrom = DateTime.UtcNow,
-            AvailableUntil = DateTime.UtcNow.AddDays(60),
             AllowShuffle = true,
             ShuffleOptions = true,
             TimeLimitMinutes = 90,
@@ -925,15 +937,11 @@ public sealed class AssignmentServiceTests
         SeedAssignment();
         SeedMentorWithClass();
         var sut = CreateSut(currentUserId: _mentorId);
-        var due = DateTime.UtcNow.AddDays(7);
 
         var result = await sut.UpdateAssignment(_assignmentId, new UpdateAssignmentRequestDto
         {
             Title = "Mentor Title",
             Description = "Mentor desc",
-            DueDate = due,
-            AvailableFrom = DateTime.UtcNow,
-            AvailableUntil = due.AddDays(1)
         });
 
         Assert.NotNull(result);
@@ -1073,8 +1081,8 @@ public sealed class AssignmentServiceTests
     public async Task GetAllAssignments_SortsAndSearchesByConfiguredColumns()
     {
         var module = SeedCatalogModule();
-        SeedCatalogAssignment(module, code: "ZZZ-999", title: "Zulu Task", dueDate: DateTime.UtcNow.AddDays(10));
-        SeedCatalogAssignment(module, code: "AAA-001", title: "Alpha Task", dueDate: DateTime.UtcNow.AddDays(1));
+        SeedCatalogAssignment(module, code: "ZZZ-999", title: "Zulu Task", createdAt: DateTime.UtcNow.AddDays(-2));
+        SeedCatalogAssignment(module, code: "AAA-001", title: "Alpha Task", createdAt: DateTime.UtcNow.AddDays(-1));
         var sut = CreateSut();
 
         var bySearch = await sut.GetAllAssignments("Zulu", null, false, 1, 10);
@@ -1086,8 +1094,8 @@ public sealed class AssignmentServiceTests
         var byCodeDesc = await sut.GetAllAssignments(null, "code", true, 1, 10);
         Assert.Equal("ZZZ-999", byCodeDesc.Items[0].Code);
 
-        var byDueDate = await sut.GetAllAssignments(null, "duedate", false, 1, 10);
-        Assert.Equal("Alpha Task", byDueDate.Items[0].Title);
+        var byCreatedAt = await sut.GetAllAssignments(null, "createdat", false, 1, 10);
+        Assert.Equal("Zulu Task", byCreatedAt.Items[0].Title);
 
         var byModuleName = await sut.GetAllAssignments(null, "modulename", false, 1, 10);
         Assert.NotEmpty(byModuleName.Items);

@@ -249,6 +249,8 @@ public class EnrollmentCurriculumMindMapAssignmentInfoDto
     public bool IsRequiredForModulePass { get; set; }
 
     public DateTime? DueDate { get; set; }
+
+    public DateTime? AvailableFrom { get; set; }
 }
 
 public class EnrollmentCurriculumMindMapAssignmentLearningDto

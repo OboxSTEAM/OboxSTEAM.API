@@ -37,8 +37,24 @@ public static class AssignmentValidator
         if (maxAttempts < 1)
             throw ErrorHelper.BadRequest("MaxAttempts must be at least 1.");
 
-        if (timeLimitMinutes.HasValue && timeLimitMinutes.Value <= 0)
-            throw ErrorHelper.BadRequest("TimeLimitMinutes must be greater than 0.");
+        ValidateTimeLimitRequired(timeLimitMinutes);
+    }
+
+    public const string TimeLimitRequiredMessage =
+        "TimeLimitMinutes is required and must be greater than 0.";
+
+    public static void ValidateTimeLimitRequired(int? timeLimitMinutes)
+    {
+        if (!timeLimitMinutes.HasValue || timeLimitMinutes.Value <= 0)
+        {
+            throw ErrorHelper.BadRequest(TimeLimitRequiredMessage);
+        }
+    }
+
+    public static DateTime ResolveAttemptExpiresAt(int? timeLimitMinutes, DateTime utcNow)
+    {
+        ValidateTimeLimitRequired(timeLimitMinutes);
+        return utcNow.AddMinutes(timeLimitMinutes!.Value);
     }
 
     public static Module ValidateModuleExists(Module? module)

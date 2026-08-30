@@ -926,7 +926,7 @@ public sealed class ActivityProgressServiceTests
         SeedModule();
         SeedCourse();
         var priorActivityId = Guid.Parse("f1f1f1f1-f1f1-f1f1-f1f1-f1f1f1f1f1f1");
-        SeedActivity(activityId: priorActivityId, type: ActivityType.Offline, order: 1);
+        SeedActivity(activityId: priorActivityId, type: ActivityType.SelfPaced, order: 1);
         SeedActivity(type: ActivityType.Offline, order: 2);
         SeedClassForMentor();
         _db.ClassSessions.Seed(new ClassSession
@@ -955,6 +955,42 @@ public sealed class ActivityProgressServiceTests
         var skipped = Assert.Single(result.Results);
         Assert.Equal(MentorCompleteOutcome.Skipped, skipped.Outcome);
         Assert.Equal(CurriculumAccessValidator.ActivityLockedMessage, skipped.Reason);
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_Completes_WhenPriorLiveIncomplete()
+    {
+        SeedManager();
+        SeedModule();
+        SeedCourse();
+        var priorActivityId = Guid.Parse("f2f2f2f2-f2f2-f2f2-f2f2-f2f2f2f2f2f2");
+        SeedActivity(activityId: priorActivityId, type: ActivityType.LiveOnline, order: 1);
+        SeedActivity(type: ActivityType.Offline, order: 2);
+        SeedClassForMentor();
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = _sessionId,
+            ClassId = _classId,
+            ModuleId = _moduleId,
+            ActivityId = _activityId,
+            Title = "Lab Session 2",
+            SessionKind = SessionKind.Offline,
+            StartTime = DateTime.UtcNow.AddHours(-1),
+            EndTime = DateTime.UtcNow.AddHours(2),
+            RequiresAttendance = true,
+            Status = ClassSessionStatus.InProgress,
+            IsDeleted = false
+        });
+        SeedRosterStudent(_studentId, _programEnrollmentId, _enrollmentId, AttendanceStatus.Present);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+        {
+            ClassSessionId = _sessionId,
+            ActivityId = _activityId,
+        });
+
+        Assert.Equal(MentorCompleteOutcome.Completed, Assert.Single(result.Results).Outcome);
     }
 
     [Fact]

@@ -35,12 +35,12 @@ public class Submission : BaseEntity
     public Guid? VerifiedBy { get; set; }
     public User? Verifier { get; set; }
 
-    /// <summary>When the student started this attempt (quiz timer begins).</summary>
+    /// <summary>When the student started this attempt (timer begins).</summary>
     public DateTime? StartedAt { get; set; }
 
     /// <summary>
-    /// When this attempt expires. Set to StartedAt + Assignment.TimeLimitMinutes at start.
-    /// Null when the assignment has no per-attempt time limit.
+    /// When this attempt expires (<c>StartedAt</c> plus <c>Assignment.TimeLimitMinutes</c>).
+    /// Null on legacy rows; those drafts do not hold AcademicFail.
     /// </summary>
     public DateTime? ExpiresAt { get; set; }
 
