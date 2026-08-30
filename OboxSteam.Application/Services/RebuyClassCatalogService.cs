@@ -75,6 +75,16 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
             }
         }
 
+        HashSet<Guid> completedModuleIds = [];
+        if (source != null)
+        {
+            var sourceModules = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+                me => me.ProgramEnrollmentId == source.Id
+                      && !me.IsDeleted
+                      && me.Status == EnrollmentStatus.Completed);
+            completedModuleIds = sourceModules.Select(me => me.ModuleId).ToHashSet();
+        }
+
         var now = _currentTime.GetCurrentTime();
         var withinWindow = source != null && ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, now);
         var checkoutAmount = ProgramPurchaseLifecycle.ResolveCheckoutAmount(program!, source, now);
@@ -128,7 +138,12 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
             classSessions ??= [];
 
             var moduleProgress = modules
-                .Select(module => MapModuleProgress(module, classSessions, stopModule))
+                .Select(module => MapModuleProgress(
+                    module,
+                    classSessions,
+                    stopModule,
+                    completedModuleIds,
+                    now))
                 .ToList();
 
             var isSourceClass = sourceClassIds.Contains(openClass.Id);
@@ -204,10 +219,12 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
     private static RebuyClassModuleProgressDto MapModuleProgress(
         Module module,
         IReadOnlyCollection<ClassSession> classSessions,
-        Module? stopModule)
+        Module? stopModule,
+        IReadOnlySet<Guid> completedModuleIds,
+        DateTime now)
     {
-        var progress = ProgramPurchaseLifecycle.ResolveModuleProgress(
-            classSessions.Where(cs => cs.ModuleId == module.Id));
+        var moduleSessions = classSessions.Where(cs => cs.ModuleId == module.Id).ToList();
+        var progress = ProgramPurchaseLifecycle.ResolveModuleProgress(moduleSessions);
         var blocks = stopModule != null
             && module.ModuleOrder >= stopModule.ModuleOrder
             && ProgramPurchaseLifecycle.ModuleProgressBlocksRebuy(progress);
@@ -221,6 +238,10 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
             ModuleType = module.ModuleType,
             Progress = progress,
             BlocksRebuy = blocks,
+            CreditHint = ProgramPurchaseLifecycle.ResolveCreditHint(
+                completedModuleIds.Contains(module.Id),
+                moduleSessions,
+                now),
         };
     }
 }

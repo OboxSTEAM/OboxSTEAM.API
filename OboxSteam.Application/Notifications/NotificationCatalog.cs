@@ -221,18 +221,18 @@ public static class NotificationCatalog
         var academic = reason == ProgramPurchaseEndReason.AcademicFail;
         var studentBody = academic
             ? string.IsNullOrWhiteSpace(moduleName)
-                ? "Một học phần không đạt vì đã hết lượt làm bài và hết yêu cầu phúc khảo. Ghi danh chương trình đã đóng. Bạn cần mua lại để học tiếp."
-                : "Học phần \"{moduleName}\" không đạt vì đã hết lượt làm bài và hết yêu cầu phúc khảo. Ghi danh chương trình đã đóng. Bạn cần mua lại để học tiếp."
+                ? "Một học phần bắt buộc không đạt. Ghi danh chương trình đã đóng. Mua lại để chuyển ca."
+                : "Học phần \"{moduleName}\" không đạt. Ghi danh chương trình đã đóng. Mua lại để chuyển ca."
             : string.IsNullOrWhiteSpace(moduleName)
-                ? "Một lần học phần bị đánh dấu không đạt do vắng quá số buổi cho phép. Bạn cần mua lại để học tiếp."
-                : "Học phần \"{moduleName}\" bị đánh dấu không đạt do vắng quá số buổi cho phép. Bạn cần mua lại để học tiếp.";
+                ? "Một lần học phần bị đánh dấu không đạt do vắng từ 50% số buổi. Ghi danh đã đóng. Mua lại để chuyển ca."
+                : "Học phần \"{moduleName}\" bị đánh dấu không đạt do vắng từ 50% số buổi. Ghi danh đã đóng. Mua lại để chuyển ca.";
         var parentBody = academic
             ? string.IsNullOrWhiteSpace(moduleName)
-                ? "Một học phần của con bạn {studentName} không đạt vì đã hết lượt làm bài và hết yêu cầu phúc khảo. Ghi danh đã đóng."
-                : "Học phần \"{moduleName}\" của con bạn {studentName} không đạt vì đã hết lượt làm bài và hết yêu cầu phúc khảo. Ghi danh đã đóng."
+                ? "Một học phần bắt buộc của con bạn {studentName} không đạt. Ghi danh đã đóng. Cần mua lại để chuyển ca."
+                : "Học phần \"{moduleName}\" của con bạn {studentName} không đạt. Ghi danh đã đóng. Cần mua lại để chuyển ca."
             : string.IsNullOrWhiteSpace(moduleName)
-                ? "Lần học phần của con bạn {studentName} bị đánh dấu không đạt do vắng quá số buổi cho phép. Cần mua lại để học tiếp."
-                : "Học phần \"{moduleName}\" của con bạn {studentName} bị đánh dấu không đạt do vắng quá số buổi cho phép. Cần mua lại để học tiếp.";
+                ? "Lần học phần của con bạn {studentName} bị đánh dấu không đạt do vắng từ 50% số buổi. Cần mua lại để chuyển ca."
+                : "Học phần \"{moduleName}\" của con bạn {studentName} bị đánh dấu không đạt do vắng từ 50% số buổi. Cần mua lại để chuyển ca.";
 
         return StudentAndParent(
             NotificationType.ModuleFailed,

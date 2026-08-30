@@ -162,6 +162,15 @@ public sealed class RebuyClassCatalogServiceTests
     {
         SeedStudentAndProgram();
         SeedFailedSource();
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = _theoryId,
+            ProgramEnrollmentId = _sourcePeId,
+            Status = EnrollmentStatus.Completed,
+            IsDeleted = false,
+        });
         SeedOpenClass(_eligibleId, "CLS-ELIGIBLE", "Next Cohort");
         SeedOpenClass(_blockedId, "CLS-BLOCKED", "Mid-lab Cohort");
         SeedOpenClass(_freshId, "CLS-FRESH", "Upcoming Cohort");
@@ -206,7 +215,9 @@ public sealed class RebuyClassCatalogServiceTests
         Assert.Equal("Rebuy Mentor", eligible.MentorName);
         Assert.Equal(ClassModuleProgressStatus.Completed, eligible.Modules.Single(m => m.ModuleId == _theoryId).Progress);
         Assert.False(eligible.Modules.Single(m => m.ModuleId == _theoryId).BlocksRebuy);
+        Assert.Equal(RebuyModuleCreditHint.Copied, eligible.Modules.Single(m => m.ModuleId == _theoryId).CreditHint);
         Assert.Equal(ClassModuleProgressStatus.NotStarted, eligible.Modules.Single(m => m.ModuleId == _labId).Progress);
+        Assert.Equal(RebuyModuleCreditHint.Ahead, eligible.Modules.Single(m => m.ModuleId == _labId).CreditHint);
 
         var blocked = Assert.Single(result.Classes, c => c.ClassId == _blockedId);
         Assert.False(blocked.IsEligible);
@@ -216,6 +227,7 @@ public sealed class RebuyClassCatalogServiceTests
         var fresh = Assert.Single(result.Classes, c => c.ClassId == _freshId);
         Assert.True(fresh.IsEligible);
         Assert.Equal(ClassModuleProgressStatus.NotStarted, fresh.Modules.Single(m => m.ModuleId == _theoryId).Progress);
+        Assert.Equal(RebuyModuleCreditHint.RedoWithClass, fresh.Modules.Single(m => m.ModuleId == _theoryId).CreditHint);
     }
 
     [Fact]
@@ -302,6 +314,7 @@ public sealed class RebuyClassCatalogServiceTests
         var item = Assert.Single(result.Classes);
         Assert.Equal(_freshId, item.ClassId);
         Assert.True(item.IsEligible);
+        Assert.All(item.Modules, m => Assert.Equal(RebuyModuleCreditHint.Ahead, m.CreditHint));
     }
 
     [Fact]
@@ -364,8 +377,8 @@ public sealed class RebuyClassCatalogServiceTests
             ModuleId = _labId,
             Title = "Lab quiz window",
             SessionKind = SessionKind.AssignmentWindow,
-            StartTime = _now.AddHours(10),
-            EndTime = _now.AddHours(12),
+            StartTime = _now.AddDays(-8),
+            EndTime = _now.AddDays(1),
             Status = ClassSessionStatus.Scheduled,
             IsDeleted = false,
         });
@@ -375,7 +388,7 @@ public sealed class RebuyClassCatalogServiceTests
         var item = Assert.Single(result.Classes);
         Assert.False(item.IsEligible);
         Assert.Equal(
-            ClassEnrollmentValidator.FormatLateJoinBlockedMessage(48),
+            ClassEnrollmentValidator.LateJoinBlockedMessage,
             item.IneligibleReason);
     }
 
@@ -404,6 +417,45 @@ public sealed class RebuyClassCatalogServiceTests
         var item = Assert.Single(result.Classes);
         Assert.True(item.IsEligible);
         Assert.Null(item.IneligibleReason);
+    }
+
+    [Fact]
+    public async Task GetRebuyClasses_DoesNotBlock_WhenStopModuleOnlyHasOpenAssignmentWindow()
+    {
+        SeedStudentAndProgram();
+        SeedFailedSource();
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ModuleId = _theoryId,
+            ProgramEnrollmentId = _sourcePeId,
+            Status = EnrollmentStatus.Completed,
+            IsDeleted = false,
+        });
+        SeedOpenClass(_eligibleId, "CLS-ELIGIBLE", "Next Cohort");
+        SeedSession(_eligibleId, _theoryId, ClassSessionStatus.Completed);
+        SeedSession(_eligibleId, _labId, ClassSessionStatus.Scheduled);
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _eligibleId,
+            ModuleId = _labId,
+            Title = "Lab work window",
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = _now.AddDays(-1),
+            EndTime = _now.AddDays(6),
+            Status = ClassSessionStatus.InProgress,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().GetRebuyClassesAsync(_programId);
+
+        var eligible = Assert.Single(result.Classes);
+        Assert.True(eligible.IsEligible);
+        Assert.Equal(RebuyModuleCreditHint.Copied, eligible.Modules.Single(m => m.ModuleId == _theoryId).CreditHint);
+        Assert.Equal(ClassModuleProgressStatus.NotStarted, eligible.Modules.Single(m => m.ModuleId == _labId).Progress);
+        Assert.Equal(RebuyModuleCreditHint.Ahead, eligible.Modules.Single(m => m.ModuleId == _labId).CreditHint);
     }
 
     [Fact]

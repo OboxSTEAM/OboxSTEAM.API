@@ -21,4 +21,9 @@ public sealed class RebuyClassModuleProgressDto
     /// True when this module is the student's stop module or later and the class has started it.
     /// </summary>
     public bool BlocksRebuy { get; set; }
+
+    /// <summary>
+    /// What credit copy will do if the student picks this class (fail/drop rebuy only).
+    /// </summary>
+    public RebuyModuleCreditHint CreditHint { get; set; }
 }
