@@ -26,11 +26,7 @@ public interface IJaasJwtService
         DateTime utcNow);
 }
 
-/// <summary>
-/// Reads JaaS credentials from environment variables
-/// (<c>JaaS__AppId</c>, <c>JaaS__KeyId</c>, <c>JaaS__PrivateKey</c>, <c>JaaS__Domain</c>),
-/// same pattern as AWS / Stripe secrets.
-/// </summary>
+/// <summary>Issues RS256 JWTs accepted by 8x8 JaaS for a single meeting room.</summary>
 public sealed class JaasJwtService : IJaasJwtService
 {
     private readonly string _appId;
@@ -40,29 +36,22 @@ public sealed class JaasJwtService : IJaasJwtService
     private readonly ILogger<JaasJwtService> _logger;
     private readonly Lazy<RsaSecurityKey> _signingKey;
 
-    public JaasJwtService(ILogger<JaasJwtService> logger)
-        : this(
-            Environment.GetEnvironmentVariable("JaaS__AppId"),
-            Environment.GetEnvironmentVariable("JaaS__KeyId"),
-            Environment.GetEnvironmentVariable("JaaS__PrivateKey"),
-            Environment.GetEnvironmentVariable("JaaS__Domain"),
-            logger)
-    {
-    }
-
-    /// <summary>Test / explicit wiring overload (same env keys as docker-compose).</summary>
-    internal JaasJwtService(
-        string? appId,
-        string? keyId,
-        string? privateKey,
+    public JaasJwtService(
+        string appId,
+        string keyId,
+        string privateKey,
         string? domain,
         ILogger<JaasJwtService> logger)
     {
-        _appId = appId?.Trim() ?? string.Empty;
-        _keyId = keyId?.Trim() ?? string.Empty;
-        _privateKey = privateKey ?? string.Empty;
+        ArgumentException.ThrowIfNullOrWhiteSpace(appId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(privateKey);
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        _appId = appId.Trim();
+        _keyId = keyId.Trim();
+        _privateKey = privateKey;
         _domain = string.IsNullOrWhiteSpace(domain) ? "8x8.vc" : domain.Trim();
-        _logger = logger;
         _signingKey = new Lazy<RsaSecurityKey>(CreateSigningKey);
     }
 
