@@ -11,8 +11,9 @@
 | Mentor | Delivers courses and mentors class cohorts |
 | Parent | Views and acts on behalf of linked students |
 | Student | Learns, enrolls, submits work |
+| Expert | Framework blueprints, curriculum review, Offline co-teach |
 
-JWT role claims must match enum names exactly (e.g. `"Student"`, `"Admin"`).
+JWT role claims must match enum names exactly (e.g. `"Student"`, `"Admin"`, `"Expert"`).
 
 ## Authorization Patterns
 
@@ -73,6 +74,16 @@ Create, update, delete for:
 - Mentor skill profile: freely create, update, delete, and set `IsPublic` on
   own `MentorSkill` rows and evidence (no manager verification). See
   `docs/product/mentor-skills.md`.
+
+### Expert
+
+- Dedicated login role (`"Expert"` JWT claim). Accounts are provisioned by
+  Manager/Admin; public `POST /api/auth/register` does not allow Expert.
+- Intended surfaces: program framework blueprints, curriculum review queue,
+  and Offline co-teach invitations. Dedicated endpoints are not exposed yet.
+- Until those endpoints land, Expert is not included in existing
+  `[Authorize(Roles=...)]` lists and is denied on role-switched services such
+  as media.
 
 ### Mentor skill visibility
 

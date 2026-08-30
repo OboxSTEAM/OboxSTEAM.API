@@ -4,12 +4,16 @@
 
 ```text
 Program
+  ├── Framework? (ProgramFramework — optional blueprint)
   ├── ProgramBoard (expert associations)
+  ├── CurriculumReview[] (expert audit rounds; not student ProgramReview)
   ├── Module[]
   │     ├── Course[] (each has a Mentor)
   │     │     └── Activity[]
   │     ├── Assignment[] (module- or course-scoped)
   ├── Class[] (cohorts)
+  │     └── ClassSession[]
+  │           └── ClassSessionExpert[] (co-teach invite + private mentor feedback)
   └── ProgramReview[]
 ```
 
@@ -18,9 +22,12 @@ Program
 Represents a sellable STEAM track (e.g. robotics, coding). Key fields: `Code`,
 `Name`, `Category`, `Level`, `Price`, `SkillsGained`, `Rating`, `Status`.
 
-`ProgramStatus`: **Draft** (not open for registration), **Active** (catalog +
-purchase/enroll allowed), **Inactive** (stopped; no new payment or pending
-enrollment). Create defaults to Draft when status is omitted.
+`ProgramStatus`: **Draft** (manager is authoring; not open for registration),
+**PendingReview** (submitted to expert review), **Approved** (expert accepted;
+waiting for manager publish), **Active** (catalog + purchase/enroll allowed),
+**Inactive** (stopped; no new payment or pending enrollment). Create defaults
+to Draft when status is omitted. Enrollment and class creation still require
+**Active**. Submit-review, decision, and publish endpoints are not exposed yet.
 
 API: `/api/programs` — list/detail public; mutations require Admin or
 Manager.
@@ -84,6 +91,9 @@ If sessions are deleted or cancelled so coverage no longer matches the curriculu
 curriculum item: **LiveOnline**, **Offline**, or **AssignmentWindow**. LiveOnline
 join links live on `MeetingUrl` (separate from free-text `Location`).
 `SessionAttendance` records attendance status per student.
+`ClassSessionExpert` stores a co-teach invitation (`Invited` / `Accepted` /
+`Declined`) and private mentor feedback after the session is completed.
+Invite/accept/feedback endpoints are not exposed yet.
 
 **AssignmentWindow** is the per-class work window for that assignment (one
 active row per `(ClassId, AssignmentId)`). `StartTime` / `EndTime` are the
@@ -136,14 +146,29 @@ Types via `MaterialType` enum. API: `/api/materials`.
 
 ## Experts
 
-External experts associated with programs via `ProgramBoard` and `Expert`
-entity. Profile credentials: `Specialization` tags, `ExpertDegree`, and
+Experts associated with programs via `ProgramBoard` and the `Expert` entity.
+`RoleType.Expert` is a dedicated login role (provisioned; not public register).
+Profile credentials: `Specialization` tags, `ExpertDegree`, and
 `ExpertPublication`. Manager/Admin CRUD:
 
 - `POST|PUT|DELETE /api/experts/{id}/degrees`
 - `POST|PUT|DELETE /api/experts/{id}/publications`
 
 Public reads: `GET /api/experts/{id}` and `GET /api/experts/{id}/profile`.
+
+### Program framework and curriculum review
+
+`ProgramFramework` is an expert-owned blueprint for a content family
+(opt-in rules: `MinModules`, `MinOfflineSessions`, `MinLiveSessions`,
+`RequireFinalAssessment` — null means not enforced). `Category` is a hint/filter
+only. `Program.FrameworkId` is optional; null means free-form expert review.
+Each framework has `FrameworkRubricCriterion` rows (name, description, max
+score, display order).
+
+`CurriculumReview` is one expert decision round (`Approved` /
+`ChangesRequested`) with optional `ReviewCriterionScore` rows. Distinct from
+student `ProgramReview` star ratings. Review-queue and decision endpoints are
+not exposed yet.
 
 ## Highlight Videos
 

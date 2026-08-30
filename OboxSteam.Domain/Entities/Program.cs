@@ -31,7 +31,7 @@ public class Program : BaseEntity
 
     public string? ThumbnailUrl { get; set; }
 
-    /// <summary>Catalog lifecycle: Draft, Active, or Inactive.</summary>
+    /// <summary>Catalog lifecycle: Draft, PendingReview, Approved, Active, or Inactive.</summary>
     public ProgramStatus Status { get; set; } = ProgramStatus.Draft;
 
     /// <summary>Bundle price for the entire program (usually discounted vs sum of modules).</summary>
@@ -40,12 +40,19 @@ public class Program : BaseEntity
     /// <summary>Retake fee when re-enrolling after a Failed/Dropped enrollment. Null = use Price.</summary>
     public decimal? RetakeFee { get; set; }
 
+    /// <summary>
+    /// Optional expert blueprint. Null means free-form expert review (no framework pre-check).
+    /// </summary>
+    public Guid? FrameworkId { get; set; }
+    public ProgramFramework? Framework { get; set; }
+
     // Navigation
     public ICollection<ProgramBoard> ProgramBoards { get; set; } = new List<ProgramBoard>();
     public ICollection<Module> Modules { get; set; } = new List<Module>();
     public ICollection<ProgramEnrollment> ProgramEnrollments { get; set; } = new List<ProgramEnrollment>();
     public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
     public ICollection<ProgramReview> Reviews { get; set; } = new List<ProgramReview>();
+    public ICollection<CurriculumReview> CurriculumReviews { get; set; } = new List<CurriculumReview>();
     public ICollection<Class> Classes { get; set; } = new List<Class>();
     public ICollection<PaymentRequest> PaymentRequests { get; set; } = new List<PaymentRequest>();
 }

@@ -50,7 +50,8 @@ such as payment requests) so `{studentName}` still interpolates.
 ## Role templates and tokens
 
 Each catalog event supplies a default copy plus optional Student, Parent,
-Mentor, and Manager variants. Missing variants fall back to default. Copy may
+Mentor, and Manager variants. Missing variants fall back to default. `RoleType.Expert`
+has no dedicated variant yet and resolves to default. Copy may
 include `{token}` placeholders interpolated at publish time:
 
 | Token | Source |

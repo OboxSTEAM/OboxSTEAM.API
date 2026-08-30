@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260830132216_AddExpertRoleAndCurriculumReview")]
+    partial class AddExpertRoleAndCurriculumReview
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -204,6 +207,12 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid>("ModuleEnrollmentId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("PersonalAvailableUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PersonalDueDate")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text");
@@ -251,6 +260,12 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("AvailableFrom")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("AvailableUntil")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -273,6 +288,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<string>("Description")
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("EasyPercent")
                         .HasColumnType("integer");
@@ -1044,9 +1062,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid>("ModuleId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("ReminderSentAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<bool>("RequiresAttendance")
                         .HasColumnType("boolean");
 
@@ -1082,10 +1097,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("AssignmentId");
 
                     b.HasIndex("ModuleId");
-
-                    b.HasIndex("ClassId", "AssignmentId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"Status\" <> 'Cancelled' AND \"SessionKind\" = 'AssignmentWindow' AND \"AssignmentId\" IS NOT NULL");
 
                     b.HasIndex("ClassId", "StartTime");
 
@@ -3938,14 +3949,8 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<DateTime?>("LeftAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<Guid>("ModuleEnrollmentId")
                         .HasColumnType("uuid");
-
-                    b.Property<int?>("ParticipationMinutes")
-                        .HasColumnType("integer");
 
                     b.Property<Guid?>("RecordedBy")
                         .HasColumnType("uuid");

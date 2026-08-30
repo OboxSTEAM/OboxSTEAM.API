@@ -6,5 +6,6 @@ public enum RoleType
     Manager,
     Mentor,
     Parent,
-    Student
+    Student,
+    Expert
 }
