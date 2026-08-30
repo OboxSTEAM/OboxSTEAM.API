@@ -794,7 +794,7 @@ public sealed class SessionAttendanceServiceTests
         SeedUser(_studentId, RoleType.Student, "STD-001");
         SeedModuleEntity();
         SeedClass();
-        SeedActivityLinkedSessions(count: 5);
+        SeedActivityLinkedSessions(count: 2);
         SeedStudentRoster();
         var sut = CreateSut(_managerId);
 
@@ -857,7 +857,7 @@ public sealed class SessionAttendanceServiceTests
         SeedUser(_studentId, RoleType.Student, "STD-001");
         SeedModuleEntity();
         SeedClass();
-        SeedActivityLinkedSessions(count: 5);
+        SeedActivityLinkedSessions(count: 2);
         SeedStudentRoster();
         var sut = CreateSut(_managerId);
 
@@ -901,7 +901,7 @@ public sealed class SessionAttendanceServiceTests
         SeedUser(_studentId, RoleType.Student, "STD-001");
         SeedModuleEntity();
         SeedClass();
-        SeedActivityLinkedSessions(count: 5);
+        SeedActivityLinkedSessions(count: 2);
         SeedStudentRoster();
         var sut = CreateSut(_managerId);
 
@@ -943,7 +943,7 @@ public sealed class SessionAttendanceServiceTests
         SeedUser(_studentId, RoleType.Student, "STD-001");
         SeedModuleEntity();
         SeedClass();
-        SeedActivityLinkedSessions(count: 5);
+        SeedActivityLinkedSessions(count: 2);
         SeedStudentRoster();
         var sut = CreateSut(_managerId);
 
@@ -985,11 +985,11 @@ public sealed class SessionAttendanceServiceTests
         SeedUser(_studentId, RoleType.Student, "STD-001");
         SeedModuleEntity();
         SeedClass();
-        SeedActivityLinkedSessions(count: 5);
+        SeedActivityLinkedSessions(count: 2);
         SeedStudentRoster();
         var sut = CreateSut(_managerId);
 
-        // 1/5 = 20% -> fail. Then a second absence is recorded (2/5 = 40%).
+        // 1/2 = 50% -> fail. Then a second absence is recorded (2/2).
         await sut.UpdateSessionAttendanceAsync(
             _classId,
             _sessionId,
@@ -1001,7 +1001,7 @@ public sealed class SessionAttendanceServiceTests
             _studentId,
             new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent });
 
-        // Correcting only one absence leaves 1/5 = 20% -> still at the threshold, no reopen.
+        // Correcting only one absence leaves 1/2 = 50% -> still at the threshold, no reopen.
         await sut.UpdateSessionAttendanceAsync(
             _classId,
             _sessionId,

@@ -44,7 +44,20 @@ public sealed class ClassSessionServiceTests
 
     private ClassSessionService CreateSut(Guid? currentUserId = null)
     {
-        _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _managerId);
+        var userId = currentUserId ?? _managerId;
+        if (_db.Users.Items.All(u => u.Id != userId))
+        {
+            var role = userId == _mentorId
+                ? RoleType.Mentor
+                : userId == _studentId
+                    ? RoleType.Student
+                    : userId == _parentId
+                        ? RoleType.Parent
+                        : RoleType.Manager;
+            SeedUser(userId, role, "USR");
+        }
+
+        _claimsService.Setup(c => c.GetCurrentUserId).Returns(userId);
         _notificationPublisher
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -671,6 +684,29 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
+    public async Task Create_AssignmentWindow_DoesNotCheckMentorOverlap()
+    {
+        SeedCurriculum();
+        var classEntity = SeedClass(mentorId: _mentorId);
+        var start = _now.AddDays(3);
+        var end = start.AddHours(2);
+        SeedSession(
+            activityId: Guid.Parse("abababab-abab-abab-abab-abababababab"),
+            startTime: start.AddMinutes(-30),
+            endTime: end.AddMinutes(30),
+            classEntity: classEntity);
+        var sut = CreateSut();
+
+        var result = await sut.CreateClassSessionAsync(
+            BuildCreateRequest(start: start, end: end, clearActivity: true, assignmentId: _assignmentId));
+
+        Assert.Equal(SessionKind.AssignmentWindow, result.SessionKind);
+        Assert.Equal(start, result.StartTime);
+        Assert.Equal(end, result.EndTime);
+        Assert.False(result.RequiresAttendance);
+    }
+
+    [Fact]
     public async Task Create_Throws_WhenBothActivityAndAssignment()
     {
         SeedCurriculum();
@@ -936,6 +972,87 @@ public sealed class ClassSessionServiceTests
         });
 
         Assert.Equal(newEnd, result.EndTime);
+    }
+
+    [Fact]
+    public async Task Update_MentorCanChangeAssignmentWindowTimes()
+    {
+        SeedCurriculum();
+        SeedClass(mentorId: _mentorId);
+        var session = SeedSession(status: ClassSessionStatus.Scheduled, activityId: null);
+        session.ActivityId = null;
+        session.AssignmentId = _assignmentId;
+        session.SessionKind = SessionKind.AssignmentWindow;
+        var sut = CreateSut(_mentorId);
+        var newStart = _now.AddDays(2);
+        var newEnd = newStart.AddDays(3);
+
+        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            StartTime = newStart,
+            EndTime = newEnd,
+            Description = "Window for this class",
+        });
+
+        Assert.Equal(newStart, result.StartTime);
+        Assert.Equal(newEnd, result.EndTime);
+        Assert.Equal("Window for this class", result.Description);
+    }
+
+    [Fact]
+    public async Task Update_AssignmentWindow_ForcesRequiresAttendanceFalse()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var session = SeedSession(status: ClassSessionStatus.Scheduled, activityId: null);
+        session.ActivityId = null;
+        session.AssignmentId = _assignmentId;
+        session.SessionKind = SessionKind.AssignmentWindow;
+        session.RequiresAttendance = true;
+        var sut = CreateSut();
+
+        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            RequiresAttendance = true,
+        });
+
+        Assert.False(result.RequiresAttendance);
+        Assert.False(session.RequiresAttendance);
+    }
+
+    [Fact]
+    public async Task Update_MentorCannotChangeLiveSession()
+    {
+        SeedCurriculum();
+        SeedClass(mentorId: _mentorId);
+        SeedSession(status: ClassSessionStatus.Scheduled);
+        var sut = CreateSut(_mentorId);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+            {
+                StartTime = _now.AddDays(2),
+            }));
+        Assert.Contains("assignment window", ex.Message);
+    }
+
+    [Fact]
+    public async Task Update_MentorCannotChangeAssignmentWindowTitle()
+    {
+        SeedCurriculum();
+        SeedClass(mentorId: _mentorId);
+        var session = SeedSession(status: ClassSessionStatus.Scheduled, activityId: null);
+        session.ActivityId = null;
+        session.AssignmentId = _assignmentId;
+        session.SessionKind = SessionKind.AssignmentWindow;
+        var sut = CreateSut(_mentorId);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+            {
+                Title = "Not allowed",
+            }));
+        Assert.Contains("StartTime, EndTime, and Description", ex.Message);
     }
 
     [Fact]

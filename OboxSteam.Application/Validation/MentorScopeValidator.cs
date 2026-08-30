@@ -156,6 +156,7 @@ public static class MentorScopeValidator
 
         var overlappingSession = await unitOfWork.ClassSessions.FirstOrDefaultAsync(
             cs => cs.Status != ClassSessionStatus.Cancelled
+                  && cs.SessionKind != SessionKind.AssignmentWindow
                   && cs.StartTime < endTime
                   && cs.EndTime > startTime
                   && (!excludeSessionId.HasValue || cs.Id != excludeSessionId.Value)
@@ -186,6 +187,11 @@ public static class MentorScopeValidator
 
         foreach (var session in sessions)
         {
+            if (session.SessionKind == SessionKind.AssignmentWindow)
+            {
+                continue;
+            }
+
             await ValidateMentorSessionNoOverlapAsync(
                 unitOfWork,
                 mentorId,

@@ -194,10 +194,11 @@ public class ClassSessionController : ControllerBase
     // =========================================================================
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "Admin,Manager")]
+    [Authorize(Roles = "Mentor,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update a class session",
-        Description = "Updates a scheduled class session. Requires Admin or Manager role.")]
+        Description = "Updates a scheduled class session. Admin/Manager may update any session. "
+            + "Mentors may update StartTime, EndTime, and Description of AssignmentWindow sessions on their class.")]
     [ProducesResponseType(typeof(ApiResult<ClassSessionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

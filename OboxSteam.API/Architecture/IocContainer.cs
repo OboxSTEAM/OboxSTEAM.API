@@ -73,6 +73,7 @@ public static class IocContainer
         services.AddHostedService<OpenClassAutoStartService>();
         services.AddHostedService<PersonalVideoGenerationWorker>();
         services.AddHostedService<SessionReminderService>();
+        services.AddHostedService<AssignmentWindowCloseService>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);

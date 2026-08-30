@@ -327,7 +327,7 @@ public sealed class ClassSessionService : IClassSessionService
         // Sessions may be scheduled before a mentor is assigned — the schedule is what
         // mentors review when requesting the class. Overlap is only checkable (and only
         // matters) once a mentor exists.
-        if (classEntity!.MentorId.HasValue)
+        if (classEntity!.MentorId.HasValue && sessionKind != SessionKind.AssignmentWindow)
         {
             await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
                 _unitOfWork,
@@ -351,7 +351,8 @@ public sealed class ClassSessionService : IClassSessionService
             MeetingUrl = string.IsNullOrWhiteSpace(request.MeetingUrl) ? null : request.MeetingUrl.Trim(),
             Latitude = request.Latitude,
             Longitude = request.Longitude,
-            RequiresAttendance = request.RequiresAttendance,
+            RequiresAttendance = sessionKind != SessionKind.AssignmentWindow
+                && request.RequiresAttendance,
             RequiresMentorCheckIn = request.RequiresMentorCheckIn,
             Status = ClassSessionStatus.Scheduled,
         };
@@ -428,34 +429,84 @@ public sealed class ClassSessionService : IClassSessionService
                 "Class already has scheduled sessions. Cancel or delete them before generating a new schedule.");
         }
 
-        var items = await BuildCurriculumScheduleItemsAsync(classEntity.ProgramId);
-        if (items.Count == 0)
+        var curriculum = await LoadCurriculumForGenerateAsync(classEntity.ProgramId);
+        if (curriculum.LiveItems.Count == 0 && curriculum.Assignments.Count == 0)
         {
             throw ErrorHelper.BadRequest(
                 "The program curriculum has no LiveOnline/Offline activities or assignments to schedule.");
         }
 
-        var slotStarts = BuildWeeklySlotStarts(classEntity, request, items.Count);
+        var scheduledLives = new List<(CurriculumScheduleItem Item, DateTime Start, DateTime End)>();
+        if (curriculum.LiveItems.Count > 0)
+        {
+            var slotStarts = BuildWeeklySlotStarts(classEntity, request, curriculum.LiveItems.Count);
+            scheduledLives = curriculum.LiveItems
+                .Zip(slotStarts, (item, start) =>
+                {
+                    var duration = TimeSpan.FromMinutes(item.DurationMinutes!.Value);
+                    return (Item: item, Start: start, End: start.Add(duration));
+                })
+                .ToList();
+        }
 
-        // Each session's end comes from its own length: the activity's DurationMinutes,
-        // or the request's start/end window as the default length for assignment sessions
-        // (assignments have no activity to carry a duration).
-        var assignmentDuration = request.SessionEndTime - request.SessionStartTime;
-        var scheduled = items
-            .Zip(slotStarts, (item, start) =>
-            {
-                var duration = item.DurationMinutes is > 0
-                    ? TimeSpan.FromMinutes(item.DurationMinutes.Value)
-                    : assignmentDuration;
-                return (Item: item, Start: start, End: start.Add(duration));
-            })
+        var livesForPlacement = scheduledLives
+            .Select(slot => new AssignmentWindowPlacement.ScheduledLive(
+                slot.Item.ActivityId!.Value,
+                slot.Item.ModuleId,
+                slot.Item.CourseId!.Value,
+                slot.Start,
+                slot.End))
             .ToList();
 
-        // Late-generation guard: slots are chronological, so the first one is the earliest
-        // commitment (lesson or assignment window alike). It must be in the future and leave
-        // the class's join buffer for students to enroll before it happens.
+        var scheduledWindows = new List<(CurriculumScheduleItem Item, DateTime Start, DateTime End)>();
+        foreach (var assignment in curriculum.Assignments)
+        {
+            var milestoneActivityIds = AssignmentWindowPlacement.MilestoneLiveActivityIds(
+                assignment,
+                curriculum.Milestones,
+                curriculum.MilestoneLinks,
+                livesForPlacement);
+            var open = AssignmentWindowPlacement.ResolveRelatedTeachingEnd(
+                classEntity.StartDate,
+                livesForPlacement,
+                assignment.ModuleId,
+                assignment.CourseId,
+                milestoneActivityIds);
+            var nextLive = AssignmentWindowPlacement.NextLiveStart(livesForPlacement, open);
+            if (!AssignmentWindowPlacement.TryComputeWindow(
+                    open,
+                    nextLive,
+                    classEntity.EndDate,
+                    out var close,
+                    out var windowError))
+            {
+                throw ErrorHelper.BadRequest(windowError!);
+            }
+
+            scheduledWindows.Add((
+                new CurriculumScheduleItem(
+                    assignment.ModuleId,
+                    assignment.CourseId,
+                    null,
+                    assignment.Id,
+                    SessionKind.AssignmentWindow,
+                    assignment.Title,
+                    null,
+                    RequiresAttendance: false),
+                open,
+                close));
+        }
+
+        var scheduled = scheduledLives.Concat(scheduledWindows).ToList();
+        if (scheduled.Count == 0)
+        {
+            throw ErrorHelper.BadRequest(
+                "The program curriculum has no LiveOnline/Offline activities or assignments to schedule.");
+        }
+
+        // Late-generation guard: the earliest commitment (usually the first live).
         var now = DateTime.UtcNow;
-        var firstStart = scheduled[0].Start;
+        var firstStart = scheduled.Min(slot => slot.Start);
 
         if (firstStart <= now)
         {
@@ -474,10 +525,10 @@ public sealed class ClassSessionService : IClassSessionService
         }
 
         // No mentor yet: overlap is enforced later, when a mentor requests the class
-        // (request-time and approve-time checks).
+        // (request-time and approve-time checks). AssignmentWindow is never busy time.
         if (classEntity.MentorId.HasValue)
         {
-            foreach (var slot in scheduled)
+            foreach (var slot in scheduledLives)
             {
                 await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
                     _unitOfWork,
@@ -498,8 +549,6 @@ public sealed class ClassSessionService : IClassSessionService
                 Title = slot.Item.Title,
                 StartTime = slot.Start,
                 EndTime = slot.End,
-                // Venue/join link are set per session by the manager afterwards — the
-                // curriculum template no longer carries them.
                 Location = null,
                 MeetingUrl = null,
                 RequiresAttendance = slot.Item.RequiresAttendance,
@@ -527,6 +576,7 @@ public sealed class ClassSessionService : IClassSessionService
 
     private sealed record CurriculumScheduleItem(
         Guid ModuleId,
+        Guid? CourseId,
         Guid? ActivityId,
         Guid? AssignmentId,
         SessionKind Kind,
@@ -534,7 +584,13 @@ public sealed class ClassSessionService : IClassSessionService
         int? DurationMinutes,
         bool RequiresAttendance);
 
-    private async Task<List<CurriculumScheduleItem>> BuildCurriculumScheduleItemsAsync(Guid programId)
+    private sealed record CurriculumForGenerate(
+        List<CurriculumScheduleItem> LiveItems,
+        List<Assignment> Assignments,
+        List<ResearchMilestone> Milestones,
+        List<ResearchMilestoneActivity> MilestoneLinks);
+
+    private async Task<CurriculumForGenerate> LoadCurriculumForGenerateAsync(Guid programId)
     {
         var modules = (await _unitOfWork.Modules.GetAllAsync(
                 m => m.ProgramId == programId && !m.IsDeleted))
@@ -543,7 +599,7 @@ public sealed class ClassSessionService : IClassSessionService
 
         if (modules.Count == 0)
         {
-            return new List<CurriculumScheduleItem>();
+            return new CurriculumForGenerate([], [], [], []);
         }
 
         var moduleIds = modules.Select(m => m.Id).ToList();
@@ -557,10 +613,22 @@ public sealed class ClassSessionService : IClassSessionService
                  && !a.IsDeleted
                  && (a.ActivityType == ActivityType.LiveOnline || a.ActivityType == ActivityType.Offline));
 
-        var assignments = await _unitOfWork.Assignments.GetAllAsync(
-            a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted);
+        var assignments = (await _unitOfWork.Assignments.GetAllAsync(
+                a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted))
+            .OrderBy(a => modules.FindIndex(m => m.Id == a.ModuleId))
+            .ThenBy(a => a.CreatedAt)
+            .ThenBy(a => a.Code)
+            .ToList();
 
-        var items = new List<CurriculumScheduleItem>();
+        var milestones = await _unitOfWork.ResearchMilestones.GetAllAsync(
+            rm => moduleIds.Contains(rm.ModuleId) && !rm.IsDeleted);
+        var milestoneIds = milestones.Select(m => m.Id).ToList();
+        var milestoneLinks = milestoneIds.Count == 0
+            ? []
+            : await _unitOfWork.ResearchMilestoneActivities.GetAllAsync(
+                link => milestoneIds.Contains(link.ResearchMilestoneId) && !link.IsDeleted);
+
+        var liveItems = new List<CurriculumScheduleItem>();
 
         foreach (var module in modules)
         {
@@ -581,8 +649,9 @@ public sealed class ClassSessionService : IClassSessionService
                     }
 
                     var isOffline = activity.ActivityType == ActivityType.Offline;
-                    items.Add(new CurriculumScheduleItem(
+                    liveItems.Add(new CurriculumScheduleItem(
                         module.Id,
+                        course.Id,
                         activity.Id,
                         null,
                         isOffline ? SessionKind.Offline : SessionKind.LiveOnline,
@@ -591,24 +660,9 @@ public sealed class ClassSessionService : IClassSessionService
                         RequiresAttendance: true));
                 }
             }
-
-            foreach (var assignment in assignments
-                         .Where(a => a.ModuleId == module.Id)
-                         .OrderBy(a => a.CreatedAt)
-                         .ThenBy(a => a.Code))
-            {
-                items.Add(new CurriculumScheduleItem(
-                    module.Id,
-                    null,
-                    assignment.Id,
-                    SessionKind.AssignmentWindow,
-                    assignment.Title,
-                    null,
-                    RequiresAttendance: false));
-            }
         }
 
-        return items;
+        return new CurriculumForGenerate(liveItems, assignments, milestones, milestoneLinks);
     }
 
     private static List<DateTime> BuildWeeklySlotStarts(
@@ -675,6 +729,8 @@ public sealed class ClassSessionService : IClassSessionService
 
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(session.ClassId);
         ClassValidator.ValidateClassExists(classEntity, session.ClassId);
+
+        await EnsureCanUpdateSessionAsync(classEntity!, session, request);
 
         var originalStatus = session.Status;
         var originalActivityId = session.ActivityId;
@@ -804,7 +860,7 @@ public sealed class ClassSessionService : IClassSessionService
                 targetStartTime,
                 targetEndTime);
 
-            if (classEntity!.MentorId.HasValue)
+            if (classEntity!.MentorId.HasValue && session.SessionKind != SessionKind.AssignmentWindow)
             {
                 await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
                     _unitOfWork,
@@ -839,6 +895,11 @@ public sealed class ClassSessionService : IClassSessionService
         if (request.RequiresAttendance.HasValue)
         {
             session.RequiresAttendance = request.RequiresAttendance.Value;
+        }
+
+        if (session.SessionKind == SessionKind.AssignmentWindow)
+        {
+            session.RequiresAttendance = false;
         }
 
         if (request.RequiresMentorCheckIn.HasValue)
@@ -994,4 +1055,54 @@ public sealed class ClassSessionService : IClassSessionService
                 classEntity.Id);
         }
     }
+
+    private async Task EnsureCanUpdateSessionAsync(
+        Class classEntity,
+        ClassSession session,
+        UpdateClassSessionRequestDto request)
+    {
+        var userId = _claimsService.GetCurrentUserId;
+        var user = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null || user.IsDeleted)
+        {
+            throw ErrorHelper.Unauthorized("Unauthorized access.");
+        }
+
+        if (user.Role is RoleType.Admin or RoleType.Manager)
+        {
+            return;
+        }
+
+        if (user.Role != RoleType.Mentor)
+        {
+            throw ErrorHelper.Forbidden("You do not have permission to update this class session.");
+        }
+
+        await MentorScopeValidator.EnsureMentorOwnsClassAsync(_unitOfWork, user.Id, classEntity.Id);
+
+        if (session.SessionKind != SessionKind.AssignmentWindow)
+        {
+            throw ErrorHelper.Forbidden("Mentors may only update assignment window times for their class.");
+        }
+
+        if (HasMentorForbiddenSessionFields(request))
+        {
+            throw ErrorHelper.Forbidden(
+                "Mentors may only update StartTime, EndTime, and Description of an assignment window.");
+        }
+    }
+
+    private static bool HasMentorForbiddenSessionFields(UpdateClassSessionRequestDto request)
+        => request.ModuleId.HasValue
+           || request.ActivityId.HasValue
+           || request.AssignmentId.HasValue
+           || request.SessionKind.HasValue
+           || request.Title != null
+           || request.Location != null
+           || request.MeetingUrl != null
+           || request.Latitude.HasValue
+           || request.Longitude.HasValue
+           || request.RequiresAttendance.HasValue
+           || request.RequiresMentorCheckIn.HasValue
+           || request.Status.HasValue;
 }

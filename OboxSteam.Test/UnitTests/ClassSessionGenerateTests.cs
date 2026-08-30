@@ -5,6 +5,7 @@ using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -21,6 +22,10 @@ public sealed class ClassSessionGenerateTests
     private readonly Guid _liveActivityId = Guid.Parse("35353535-3535-3535-3535-353535353535");
     private readonly Guid _offlineActivityId = Guid.Parse("36363636-3636-3636-3636-363636363636");
     private readonly Guid _assignmentId = Guid.Parse("37373737-3737-3737-3737-373737373737");
+    private readonly Guid _assignment2Id = Guid.Parse("37373737-3737-3737-3737-373737373738");
+    private readonly Guid _module2Id = Guid.Parse("33333333-3333-3333-3333-333333333334");
+    private readonly Guid _course2Id = Guid.Parse("34343434-3434-3434-3434-343434343435");
+    private readonly Guid _live2ActivityId = Guid.Parse("35353535-3535-3535-3535-353535353536");
     private readonly Guid _classId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private readonly Guid _otherClassId = Guid.Parse("45454545-4545-4545-4545-454545454545");
 
@@ -187,9 +192,9 @@ public sealed class ClassSessionGenerateTests
         var assignment = result[2];
         Assert.Equal(_assignmentId, assignment.AssignmentId);
         Assert.Equal(SessionKind.AssignmentWindow, assignment.SessionKind);
-        Assert.Equal(FirstSaturday.AddDays(14).AddHours(9), assignment.StartTime);
-        // Assignments have no duration; the request window (09:00–11:00) is the default length.
-        Assert.Equal(FirstSaturday.AddDays(14).AddHours(11), assignment.EndTime);
+        // Related teaching is the last live/offline of the module (offline); close is class end.
+        Assert.Equal(FirstSaturday.AddDays(7).AddHours(10).AddMinutes(30), assignment.StartTime);
+        Assert.Equal(AssignmentWindowPlacement.EndOfClassDay(_classEnd), assignment.EndTime);
         Assert.False(assignment.RequiresAttendance);
 
         Assert.Equal(3, _db.ClassSessions.Items.Count);
@@ -200,6 +205,124 @@ public sealed class ClassSessionGenerateTests
                 It.Is<IReadOnlyList<NotificationCommand>>(cmds => cmds.Count == 3),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Generate_TwoAssignmentsInSameCourse_ShareTheSameWindow()
+    {
+        SeedClass(mentorId: _mentorId);
+        SeedCurriculum();
+        _db.Assignments.Seed(new Assignment
+        {
+            Id = _assignment2Id,
+            Code = "ASM-002",
+            ModuleId = _moduleId,
+            CourseId = _courseId,
+            Title = "Quiz 2",
+            IsDeleted = false,
+        });
+        var existing = _db.Assignments.Items.Single(a => a.Id == _assignmentId);
+        existing.CourseId = _courseId;
+        var sut = CreateSut();
+
+        var result = await sut.GenerateClassSessionsAsync(_classId, SaturdayPattern());
+
+        var windows = result.Where(s => s.SessionKind == SessionKind.AssignmentWindow).ToList();
+        Assert.Equal(2, windows.Count);
+        Assert.All(windows, w =>
+        {
+            Assert.Equal(FirstSaturday.AddDays(7).AddHours(10).AddMinutes(30), w.StartTime);
+            Assert.Equal(AssignmentWindowPlacement.EndOfClassDay(_classEnd), w.EndTime);
+        });
+    }
+
+    [Fact]
+    public async Task Generate_BumpsAssignmentWindow_ToMinimumFortyEightHours()
+    {
+        SeedClass(mentorId: _mentorId);
+        _db.Modules.Seed(
+            new Module
+            {
+                Id = _moduleId,
+                Code = "MOD-001",
+                ProgramId = _programId,
+                Name = "Module 1",
+                ModuleOrder = 1,
+                IsDeleted = false,
+            },
+            new Module
+            {
+                Id = _module2Id,
+                Code = "MOD-002",
+                ProgramId = _programId,
+                Name = "Module 2",
+                ModuleOrder = 2,
+                IsDeleted = false,
+            });
+        _db.Courses.Seed(
+            new Course
+            {
+                Id = _courseId,
+                Code = "CRS-001",
+                ModuleId = _moduleId,
+                Name = "Course 1",
+                CourseOrder = 1,
+                IsDeleted = false,
+            },
+            new Course
+            {
+                Id = _course2Id,
+                Code = "CRS-002",
+                ModuleId = _module2Id,
+                Name = "Course 2",
+                CourseOrder = 1,
+                IsDeleted = false,
+            });
+        _db.Activities.Seed(
+            new Activity
+            {
+                Id = _liveActivityId,
+                Code = "ACT-001",
+                CourseId = _courseId,
+                Name = "Live 1",
+                ActivityType = ActivityType.LiveOnline,
+                ActivityOrder = 1,
+                DurationMinutes = 120,
+                IsDeleted = false,
+            },
+            new Activity
+            {
+                Id = _live2ActivityId,
+                Code = "ACT-002",
+                CourseId = _course2Id,
+                Name = "Live 2",
+                ActivityType = ActivityType.LiveOnline,
+                ActivityOrder = 1,
+                DurationMinutes = 120,
+                IsDeleted = false,
+            });
+        _db.Assignments.Seed(new Assignment
+        {
+            Id = _assignmentId,
+            Code = "ASM-001",
+            ModuleId = _moduleId,
+            CourseId = _courseId,
+            Title = "Quiz 1",
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GenerateClassSessionsAsync(_classId, new GenerateClassSessionsRequestDto
+        {
+            DaysOfWeek = new List<DayOfWeek> { DayOfWeek.Saturday, DayOfWeek.Sunday },
+            SessionStartTime = new TimeOnly(9, 0),
+            SessionEndTime = new TimeOnly(11, 0),
+        });
+
+        var window = Assert.Single(result, s => s.SessionKind == SessionKind.AssignmentWindow);
+        var open = FirstSaturday.AddHours(11);
+        Assert.Equal(open, window.StartTime);
+        Assert.Equal(open.AddHours(AssignmentWindowPlacement.MinimumWindowHours), window.EndTime);
     }
 
     [Fact]
@@ -284,7 +407,7 @@ public sealed class ClassSessionGenerateTests
         var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.GenerateClassSessionsAsync(_classId, SaturdayPattern()));
 
-        Assert.Contains("only fits 1 of 3 sessions", ex.Message);
+        Assert.Contains("only fits 1 of 2 sessions", ex.Message);
         Assert.Empty(_db.ClassSessions.Items);
     }
 

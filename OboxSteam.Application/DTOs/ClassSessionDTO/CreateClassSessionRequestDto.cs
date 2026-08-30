@@ -57,6 +57,9 @@ public class CreateClassSessionRequestDto
     [Range(-180, 180, ErrorMessage = "Longitude must be between -180 and 180.")]
     public double? Longitude { get; set; }
 
+    /// <summary>
+    /// Defaults to true for live/offline sessions. Forced to false for AssignmentWindow.
+    /// </summary>
     public bool RequiresAttendance { get; set; } = true;
 
     public bool RequiresMentorCheckIn { get; set; }
