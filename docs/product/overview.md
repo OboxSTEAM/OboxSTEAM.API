@@ -36,14 +36,15 @@ Program
         ├── Assignment (Quiz | FileUpload | Retrospective)
         └── Material
 Class (cohort / đợt học)
-  └── ClassSession (scheduled sessions tied to activities)
+  └── ClassSession (live/offline sessions and per-class AssignmentWindow)
 ```
 
 Programs can be sold as bundles. Modules can have prerequisites; tuition and
-the optional retake fee (`Program.RetakeFee`) are program-level. Classes group
-students moving through a program on a shared schedule. Failed or withdrawn
-purchases close (`Failed`/`Dropped`) and continuing requires a windowed
-retake-fee rebuy into an eligible class — see `docs/product/enrollment.md`.
+the optional chuyen-ca fee (`Program.RetakeFee`) are program-level. Classes
+group students moving through a program on a shared schedule. Failed or
+withdrawn purchases close (`Failed`/`Dropped`) and continuing is a windowed
+rebuy into another eligible cohort (chuyen ca), not a module retake — see
+`docs/product/enrollment.md`.
 
 ## Major Capability Areas
 

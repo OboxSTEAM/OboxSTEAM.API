@@ -18,5 +18,5 @@ Add a decision when:
 Current Harness protocol: `0009-adopt-harness-repository-protocol.md`.
 
 Do not use `0001`–`0005` for day-to-day work — they are superseded history
-(intake / SQLite / `harness-cli`). Product decisions `0006`–`0008` and `0010`
-remain active.
+(intake / SQLite / `harness-cli`). Product decisions `0006`–`0008` and
+`0010`–`0012` remain active (`0012` amends `0010` and `0011`).

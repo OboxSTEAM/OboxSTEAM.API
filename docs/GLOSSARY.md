@@ -39,7 +39,7 @@ Graded work (`Quiz`, `FileUpload`, `Retrospective`, …) and student attempts.
 ## Failed / Dropped enrollment
 
 Terminal `ProgramEnrollment` states. `Failed` = academic fail (attempts +
-recovery cap exhausted) or attendance fail (≥20% missed sessions);
+recovery cap exhausted) or attendance fail (≥50% missed sessions);
 `Dropped` = student withdraw. Closed purchases keep read-only curriculum;
 continuing requires a rebuy. See `docs/product/enrollment.md`.
 

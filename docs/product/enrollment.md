@@ -53,9 +53,13 @@ progress.
   (server-enforced on first-time select-class). A rebuy may instead join an
   `InProgress` Standard class when stop-module session eligibility holds.
 - Module prerequisites: `PrerequisiteModuleId` must be satisfied before access.
-- Class late-join: `Class.MinHoursBeforeAssignmentJoin` blocks self-enrollment
-  when a future `AssignmentWindow` session on that class starts sooner than
-  the buffer (default 48 hours). LiveOnline/Offline sessions do not count.
+- Class late-join: self-enrollment and the rebuy picker block when any
+  not-yet-ended `AssignmentWindow` is at or past two-thirds of
+  (`EndTime` − `StartTime`) from `StartTime`. Windows that have not opened
+  yet, and LiveOnline/Offline sessions, do not count.
+  `Class.MinHoursBeforeAssignmentJoin` is the generate first-session buffer,
+  not this cutoff. Message:
+  `Cannot join after two-thirds of an assignment work window has elapsed.`
   `GET .../rebuy-classes` marks those classes `IsEligible = false` with the
   same reason `POST .../select-class` returns.
 - Quiz and assignment access require active module enrollment (enforced in
@@ -70,14 +74,24 @@ nav status for activities and assignments (`locked`, `available`, `current`,
 Assignment locking mirrors activity gating:
 
 - **Module locked** — prerequisite module not complete → `locked`.
-- **Course assignment** — locked until all activities in that course are done.
-- **Module-scoped assignment** — locked until all activities in the module are done.
+- **Course assignment** — locked until every **SelfPaced** activity in that
+  course is done. LiveOnline/Offline sessions do not gate unlock (absence is
+  attendance, not a homework lock).
+- **Module-scoped assignment** — locked until every **SelfPaced** activity in
+  the module is done. LiveOnline/Offline do not gate.
 - **Research milestone deliverable** — locked until the previous milestone is
-  passed (if any) and required milestone activities are completed.
+  passed (if any) and required **SelfPaced** milestone activities are
+  completed. Required live/offline links do not block submit.
 
-Assignments with an in-progress draft (`Pending` / `ReturnedForRevision`) stay
-`available` when prerequisites are met. Turned-in work shows `submitted`; a
-passing grade shows `completed`.
+Sequential activity unlock in a course or milestone skips incomplete
+LiveOnline/Offline sessions, so a missed live does not block later SelfPaced
+work or the assignment. Absence still counts toward the 50% attendance fail.
+
+After prerequisites, the class AssignmentWindow also gates nav status. Missing,
+not-yet-open, or closed windows mark new work `locked` (parent view uses
+`overdue` when the window has already ended). In-progress drafts
+(`Pending` / `ReturnedForRevision`) stay `available` after close. Turned-in
+work shows `submitted`; a passing grade shows `completed`.
 
 ## Progress
 
@@ -93,12 +107,15 @@ refetch open-classes when notified.
 
 A `ProgramEnrollment` closes permanently when the student fails or withdraws:
 
-- **Academic fail** — latest non-theory assignment submission graded fail,
-  effective attempts exhausted, and the recovery cap (2) reached →
-  `ProgramEnrollment.Status = Failed`, `EndReason = AcademicFail`.
-  `IsRequiredForModulePass` does not gate this close. Theory modules never
-  close this way (unlimited attempts).
-- **Attendance fail** — ≥20% missed sessions on a module → `Failed` with
+- **Academic fail** — a **required** assignment (`IsRequiredForModulePass`)
+  is not passed and the student has no remaining way to continue it:
+  Experiential/Research while the window is open: latest graded fail, attempts
+  exhausted, and the recovery cap (2) reached; any module type after the
+  class AssignmentWindow `EndTime` (no in-progress draft; latest row not
+  `TurnedIn`) → `ProgramEnrollment.Status = Failed`, `EndReason = AcademicFail`.
+  Optional assignments never close the purchase. Theory still has unlimited
+  attempts while the window is open.
+- **Attendance fail** — ≥50% missed sessions on a module → `Failed` with
   `EndReason = Attendance`.
 - **Withdraw** — student self-withdraws via
   `POST /api/program-enrollments/{id}/withdraw` → `Dropped` with
@@ -113,7 +130,13 @@ records `EndedAt` / `EndedModuleId`. A closed enrollment keeps **read-only** cur
 completion, quiz/assignment/research submissions, recovery requests) require
 an **Active** enrollment and return 403 on closed ones.
 
-**Rebuy.** Continuing requires a new purchase of the same program:
+**Rebuy (chuyen ca).** Continuing requires a new purchase of the same program
+and a seat in a **different** Standard class. This is a cohort transfer, not a
+module retake. `Program.RetakeFee` is the chuyen-ca price (full `Program.Price`
+outside the 3-month window). Credit still follows what the **new class** has
+already taught — pick a class that has finished modules you already passed to
+keep that credit. `GET .../rebuy-classes` module rows include `creditHint`
+(`Copied` / `RedoWithClass` / `Ahead`).
 
 - Checkout detects the latest closed source enrollment and links it via
   `SourceProgramEnrollmentId`.
@@ -124,7 +147,8 @@ an **Active** enrollment and return 403 on closed ones.
 - **Class eligibility:** after **Failed** or **Dropped**, the rebuy must join
   exactly one `Open` or `InProgress` Standard class that has not started the
   module the student stopped at, nor any later module in `ModuleOrder` (no
-  `InProgress`/`Completed` `ClassSession` on those modules). The student cannot
+  `InProgress`/`Completed` LiveOnline/Offline session on those modules;
+  `AssignmentWindow` work periods do not count as teaching). The student cannot
   rejoin a class they already occupied on the source purchase. Class status
   `InProgress` is allowed; the session rule is the gate. For `Failed` sources
   the stop module is `EndedModuleId`; for `Dropped` sources it is the first
@@ -139,14 +163,16 @@ an **Active** enrollment and return 403 on closed ones.
   browse still uses `GET /api/programs/{programId}/open-classes`.
 - **Credit copy (inside the window only):** on payment success (including Stripe
   webhook retries after `Payment` is already `Success`), credit is
-  copied scoped to what the **new class** has already taught. A session counts
-  as taught when it is `Completed` **or** its `EndTime` is at or before now
-  (the class already passed that slot even if status is still `Scheduled`).
-  A module with no non-cancelled sessions on that class (self-paced or
-  unscheduled) is copied whole. A module whose every non-cancelled session is
-  already taught is copied whole as `Completed` with its `ActivityProgress`
-  rows and `Graded` submissions (new `Submission.Code` per copy). Future
-  sessions are not copied — the student relearns those with the new class.
+  copied scoped to what the **new class** has already taught. A **teaching**
+  session (LiveOnline/Offline) counts as taught when it is `Completed` **or**
+  its `EndTime` is at or before now (the class already passed that slot even if
+  status is still `Scheduled`). `AssignmentWindow` is a work period after
+  teaching and does not count as taught or as “started the stop module”.
+  A module with no teaching sessions on that class (self-paced or unscheduled)
+  is copied whole. A module whose every teaching session is already taught is
+  copied whole as `Completed` with its `ActivityProgress` rows and `Graded`
+  submissions (new `Submission.Code` per copy). Future lives are not copied —
+  the student relearns those with the new class.
   A module the new class is part-way through copies only the
   `ActivityProgress`/`Graded` submissions whose activity/assignment the new
   class has already taught; the copied enrollment stays `Active` and
@@ -158,14 +184,15 @@ an **Active** enrollment and return 403 on closed ones.
   (quiz, assignment, and recovery counts are per enrollment). Copied graded
   submissions on that enrollment still count toward `MaxAttempts`. Pending
   quiz attempts from the old enrollment are not resumed.
-  `Assignment.DueDate` and `Assignment.AvailableUntil` are catalog fields on
-  the module assignment; rebuy does not copy or extend them. Quiz start
-  enforces both; file/research submit enforces `AvailableUntil`. A recovery
-  personal window on the old enrollment does not apply to the new one.
+  Assignment open/close is the new class’s `AssignmentWindow` session
+  (`StartTime` / `EndTime`), not catalog dates. Quiz, file, retrospective, and
+  research start enforce that window. Recovery on the old enrollment does not
+  apply; extra attempts on the new enrollment must be used inside the new
+  window. After `EndTime` there is no personal-deadline recovery.
 
 **Manager correction.** Attendance stays editable on closed enrollments and
 Admin/Manager may re-grade `Graded` submissions. A correction that removes
-the closing condition (attendance below 20% for `Attendance` closes; a
+the closing condition (attendance below 50% for `Attendance` closes; a
 corrected pass for `AcademicFail` closes) reopens the purchase **unless**
 the student already has an `Active` or `PendingPayment` enrollment for the
 same program — that case returns 409 and leaves the closed purchase closed

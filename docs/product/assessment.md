@@ -11,18 +11,33 @@
 Hands-on session evidence is captured through activities and media upload (see
 `curriculum.md`); it is not an assignment type.
 
-Assignments belong to a `Module` and optionally a `Course`. Fields include
-`MaxPoints`, `PassScore`, `IsRequiredForModulePass`, availability window, and
-`DueDate`. Rebuy does not reset `DueDate` / `AvailableUntil`; those stay on
-the catalog assignment. `IsRequiredForModulePass` affects module progress
-units, not whether exhausting attempts closes the program purchase.
+Assignments belong to a `Module` and optionally a `Course`. Catalog fields
+include `MaxPoints`, `PassScore`, `IsRequiredForModulePass`,
+`TimeLimitMinutes`, and `MaxAttempts`. Every assignment type must have
+`TimeLimitMinutes` greater than 0 (application validation; the column stays
+nullable). Starting an attempt sets `Submission.ExpiresAt`. Calendar open/close
+is **not** on the assignment: each class has one `ClassSession` with
+`SessionKind = AssignmentWindow` (`StartTime` opens new attempts, `EndTime`
+hard-closes new attempts). An attempt already in progress (`Pending` or
+`ReturnedForRevision`) may continue after `EndTime` until the student submits.
+AcademicFail holds only while `ExpiresAt` is set and still in the future;
+a draft with no timer or an elapsed timer does not block close. Rebuy uses the
+**new** class window.
+`IsRequiredForModulePass` is a progress unit **and** the AcademicFail gate:
+optional assignments never close the program purchase.
+
+Mentors of the class may update AssignmentWindow `StartTime` / `EndTime`.
+Manager/Admin may also set them (including via session generate). Missing window:
+new attempts are blocked. The student’s class is the Active (then Deferred)
+program enrollment’s class seat — another class on the same program is not used
+as a fallback when that seat exists.
 
 ### Attempt limits by module type
 
 | ModuleType | `MaxAttempts` | Recovery |
 | --- | --- | --- |
-| Theory | Not enforced — unlimited free retries on the same class | No attempt grant needed; mentor may extend personal deadline if the window closed |
-| Experiential / Research | Enforced | After exhaustion, student submits `AssessmentRecoveryRequest`; mentor grants extra attempts ± personal deadline (same class). Cap: 2 requests per assignment per module enrollment |
+| Theory | Not enforced — unlimited free retries on the same class while the class window is open | No extra-attempt grant. Required work not passed after `EndTime` (no in-progress draft, nothing `TurnedIn`) → AcademicFail so the student can chuyen ca |
+| Experiential / Research | Enforced | After exhaustion, student submits `AssessmentRecoveryRequest`; mentor grants extra attempts **only** (same class, same open window). Cap: 2 requests per assignment per module enrollment. Window already ended → no recovery; required work AcademicFails. Latest `TurnedIn` never closes. Passing research milestone N extends milestone N+1’s window to at least `now+48h` if that window is closed or has less than 48 hours left |
 
 API: `/api/assignments` — CRUD for Manager/Admin; student submission
 flows via assignment, quiz, and retrospective services.

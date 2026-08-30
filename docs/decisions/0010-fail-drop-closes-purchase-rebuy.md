@@ -26,9 +26,10 @@ fee and joining a new class whose progress has not reached the failed module.
    Status is split by trigger: `AcademicFail` / `Attendance` -> `Failed`;
    `Withdraw` -> `Dropped`. Both are terminal and both allow rebuy. The close
    records `EndReason`, `EndedModuleId`, and `EndedAt` on the enrollment.
-2. **AcademicFail condition (all three must hold)** for one non-theory
-   assignment of the module (`IsRequiredForModulePass` is not consulted;
-   Theory never closes because attempts are unlimited):
+2. **AcademicFail** only for `IsRequiredForModulePass` assignments. While the
+   class window is still open, Experiential/Research close when all three hold
+   (Theory never uses this path because attempts are unlimited until the window
+   ends — see `0012` for window-elapsed Theory close):
    - The latest submission is graded fail (`Graded` with grade < `PassScore`;
      `ReturnedForRevision` does not count).
    - Effective attempts are exhausted: `MaxAttempts` + approved recovery extras
@@ -41,10 +42,9 @@ fee and joining a new class whose progress has not reached the failed module.
    was reached earlier and the final graded attempt just failed), and
    `AssessmentRecoveryRequestService.RejectAsync` (covers the case where
    attempts were already exhausted and the second rejection just hit the cap).
-   Approving a recovery never closes anything because it grants new attempts or
-   a new deadline.
-3. **Attendance**: the existing >=20% absence fail additionally closes the
-   purchase with `EndReason = Attendance`.
+   Approving a recovery never closes anything because it grants new attempts.
+3. **Attendance**: absence fail additionally closes the purchase with
+   `EndReason = Attendance`. Threshold is **50%** as of `0012` (was 20%).
 4. **Withdraw**: a self-service endpoint closes the purchase with
    `EndReason = Withdraw` and `EndedModuleId = null`. Open module enrollments
    become `Dropped`; completed modules stay `Completed`.
@@ -113,7 +113,7 @@ fee and joining a new class whose progress has not reached the failed module.
     records remain editable (withdrawn seats and failed module enrollments are
     resolvable), and already-`Graded` submissions can be re-graded by
     Admin/Manager only. A correction that removes the closing condition
-    reopens the purchase automatically: attendance corrected below the 20%
+    reopens the purchase automatically: attendance corrected below the 50%
     absence threshold reopens a `Failed`/`Attendance` purchase; a grade
     corrected to a pass reopens a `Failed`/`AcademicFail` purchase (attempt
     counts and recovery decisions are untouched - the corrected pass stands)
@@ -168,4 +168,6 @@ Tradeoffs:
 ## Follow-Up
 
 - Execution plan: `docs/plans/completed/fail-rebuy-repurchase.md`.
+- Amended by `0012` (work-period windows, Theory window-elapsed fail,
+  required-only AcademicFail, 50% absence, chuyen ca copy).
 - Later slice: legacy redelivery cleanup, FE wiring.

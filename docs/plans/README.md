@@ -30,5 +30,9 @@ decision into `docs/decisions/`; keep task-local choices in the plan.
 
 ## Active Plans
 
-- `active/fail-rebuy-repurchase.md` — fail/drop closes the program purchase;
-  retake requires rebuy (ADR 0010).
+None.
+
+## Completed (this slice)
+
+- `completed/cohort-windows-fail-exits.md` — AssignmentWindow work periods, fail
+  exits, 50% absence, chuyen ca copy (ADR 0012).

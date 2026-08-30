@@ -61,7 +61,8 @@ API: `/api/activities`.
 ## Class and Sessions
 
 `Class` is a running cohort (đợt học) for a program: date range, capacity,
-mentor, `MinHoursBeforeAssignmentJoin`, `ScheduleSummary`.
+mentor, `MinHoursBeforeAssignmentJoin` (generate first-session buffer),
+`ScheduleSummary`.
 
 Lifecycle (`ClassStatus`): **Draft → ReadyForMentor → Open → InProgress → Completed**.
 `Cancelled` is stored but has no public cancel endpoint.
@@ -79,6 +80,22 @@ If sessions are deleted or cancelled so coverage no longer matches the curriculu
 curriculum item: **LiveOnline**, **Offline**, or **AssignmentWindow**. LiveOnline
 join links live on `MeetingUrl` (separate from free-text `Location`).
 `SessionAttendance` records attendance status per student.
+
+**AssignmentWindow** is the per-class work window for that assignment (one
+active row per `(ClassId, AssignmentId)`). `StartTime` / `EndTime` are the
+open and hard close for new quiz, file, retrospective, and research
+attempts. An attempt already in progress may continue after `EndTime` until
+submit. AcademicFail holds a draft only while `Submission.ExpiresAt` is in the
+future. Generate does **not** put these on the weekly meeting pattern: lives
+and offlines take `DaysOfWeek` slots; each AssignmentWindow opens at the
+related teaching session’s `EndTime` (last live/offline of the course, or of
+the research milestone’s required lives, or of the module) and closes at the
+next live/offline `StartTime` (or class end). A generated window is at least
+48 hours, clamped to `Class.EndDate`. Mentors may then change the times.
+AssignmentWindow rows do not count as mentor calendar busy time and do not
+require attendance. SelfPaced activities are never scheduled. Research
+milestone create/update/delete uses the same curriculum edit lock as
+assignment CRUD (no InProgress class; no Open class with Active students).
 
 Mentor rollup: `GET /api/classes/{classId}/curriculum-progress` aggregates
 activity and assignment progress for active class enrollments (assigned mentor
