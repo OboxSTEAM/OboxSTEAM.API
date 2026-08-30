@@ -142,7 +142,7 @@ public sealed class JaasJwtService : IJaasJwtService
             || string.IsNullOrWhiteSpace(_privateKey))
         {
             throw ErrorHelper.BadRequest(
-                "JaaS is not configured. Set JaaS__AppId, JaaS__KeyId, and JaaS__PrivateKey.");
+                "JaaS is not configured. Set JaaS__AppId, JaaS__KeyId, and JaaS__PrivateKeyPath or JaaS__PrivateKey.");
         }
     }
 

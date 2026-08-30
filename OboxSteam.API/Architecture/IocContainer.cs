@@ -13,6 +13,7 @@ using Microsoft.OpenApi.Models;
 using OboxSteam.API.Attributes;
 using OboxSteam.API.Hubs;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.Configuration;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
 using OboxSteam.Infrastructure;
@@ -95,8 +96,7 @@ public static class IocContainer
             ?? throw new InvalidOperationException("JaaS__AppId not found in environment variables.");
         var keyId = Environment.GetEnvironmentVariable("JaaS__KeyId")
             ?? throw new InvalidOperationException("JaaS__KeyId not found in environment variables.");
-        var privateKey = Environment.GetEnvironmentVariable("JaaS__PrivateKey")
-            ?? throw new InvalidOperationException("JaaS__PrivateKey not found in environment variables.");
+        var privateKey = JaasPrivateKeyResolver.Resolve();
         var domain = Environment.GetEnvironmentVariable("JaaS__Domain") ?? "8x8.vc";
 
         services.AddSingleton<IJaasJwtService>(sp =>
