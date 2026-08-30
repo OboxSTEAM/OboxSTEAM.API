@@ -1585,4 +1585,123 @@ public sealed class ProgramPurchaseLifecycleTests
 
         Assert.False(ProgramPurchaseLifecycle.ClassBlocksRebuy([earlier, stop], sessions, stop.ModuleOrder));
     }
+
+    // ── Reopen vs concurrent rebuy ────────────────────────────────────────────
+
+    private void SeedClosedAcademicFailForReopen()
+    {
+        SeedAcademicContext();
+        var enrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId);
+        enrollment.Status = EnrollmentStatus.Failed;
+        enrollment.EndReason = ProgramPurchaseEndReason.AcademicFail;
+        enrollment.EndedModuleId = _moduleId;
+        enrollment.EndedAt = _now;
+        _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId).Status = EnrollmentStatus.Failed;
+        _db.Submissions.Seed(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = "SUB-PASS",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 80,
+            IsDeleted = false,
+        });
+    }
+
+    private void SeedOpenSiblingPurchase(EnrollmentStatus status)
+    {
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = status,
+            IsDeleted = false,
+        });
+    }
+
+    [Fact]
+    public async Task TryReopenAfterGradeCorrectionAsync_Throws_WhenPendingRebuyExists()
+    {
+        SeedClosedAcademicFailForReopen();
+        SeedOpenSiblingPurchase(EnrollmentStatus.PendingPayment);
+        var submission = _db.Submissions.Items.Single();
+        var assignment = _db.Assignments.Items.Single(a => a.Id == _assignmentId);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.TryReopenAfterGradeCorrectionAsync(submission, assignment));
+
+        Assert.Equal(ProgramPurchaseLifecycle.ReopenBlockedByOpenPurchaseMessage, ex.Message);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task TryReopenAfterGradeCorrectionAsync_Throws_WhenActiveRebuyExists()
+    {
+        SeedClosedAcademicFailForReopen();
+        SeedOpenSiblingPurchase(EnrollmentStatus.Active);
+        var submission = _db.Submissions.Items.Single();
+        var assignment = _db.Assignments.Items.Single(a => a.Id == _assignmentId);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.TryReopenAfterGradeCorrectionAsync(submission, assignment));
+
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task TryReopenAfterGradeCorrectionAsync_Reopens_WhenNoOpenSiblingPurchase()
+    {
+        SeedClosedAcademicFailForReopen();
+        var submission = _db.Submissions.Items.Single();
+        var assignment = _db.Assignments.Items.Single(a => a.Id == _assignmentId);
+        var sut = CreateSut();
+
+        var reopened = await sut.TryReopenAfterGradeCorrectionAsync(submission, assignment);
+
+        Assert.True(reopened);
+        var enrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId);
+        Assert.NotEqual(EnrollmentStatus.Failed, enrollment.Status);
+        Assert.Null(enrollment.EndReason);
+        Assert.Null(enrollment.EndedModuleId);
+        Assert.Null(enrollment.EndedAt);
+    }
+
+    [Fact]
+    public async Task TryReopenAfterAttendanceCorrectionAsync_Throws_WhenPendingRebuyExists()
+    {
+        SeedAcademicContext();
+        var enrollment = _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId);
+        enrollment.Status = EnrollmentStatus.Failed;
+        enrollment.EndReason = ProgramPurchaseEndReason.Attendance;
+        enrollment.EndedModuleId = _moduleId;
+        enrollment.EndedAt = _now;
+        _db.ModuleEnrollments.Items.Single(me => me.Id == _moduleEnrollmentId).Status = EnrollmentStatus.Failed;
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = Guid.NewGuid(),
+            ModuleId = _moduleId,
+            ActivityId = Guid.NewGuid(),
+            Status = ClassSessionStatus.Completed,
+            IsDeleted = false,
+        });
+        SeedOpenSiblingPurchase(EnrollmentStatus.PendingPayment);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.TryReopenAfterAttendanceCorrectionAsync(enrollment, _moduleId));
+
+        Assert.Equal(ProgramPurchaseLifecycle.ReopenBlockedByOpenPurchaseMessage, ex.Message);
+        Assert.Equal(EnrollmentStatus.Failed, enrollment.Status);
+    }
 }

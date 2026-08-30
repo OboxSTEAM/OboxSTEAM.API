@@ -54,7 +54,10 @@ progress.
   `InProgress` Standard class when stop-module session eligibility holds.
 - Module prerequisites: `PrerequisiteModuleId` must be satisfied before access.
 - Class late-join: `Class.MinHoursBeforeAssignmentJoin` blocks self-enrollment
-  near assignment windows; managers may bypass in service logic.
+  when a future `AssignmentWindow` session on that class starts sooner than
+  the buffer (default 48 hours). LiveOnline/Offline sessions do not count.
+  `GET .../rebuy-classes` marks those classes `IsEligible = false` with the
+  same reason `POST .../select-class` returns.
 - Quiz and assignment access require active module enrollment (enforced in
   `IQuizAttemptService` and assignment services).
 
@@ -90,9 +93,11 @@ refetch open-classes when notified.
 
 A `ProgramEnrollment` closes permanently when the student fails or withdraws:
 
-- **Academic fail** — latest required-assignment submission graded fail,
+- **Academic fail** — latest non-theory assignment submission graded fail,
   effective attempts exhausted, and the recovery cap (2) reached →
   `ProgramEnrollment.Status = Failed`, `EndReason = AcademicFail`.
+  `IsRequiredForModulePass` does not gate this close. Theory modules never
+  close this way (unlimited attempts).
 - **Attendance fail** — ≥20% missed sessions on a module → `Failed` with
   `EndReason = Attendance`.
 - **Withdraw** — student self-withdraws via
@@ -101,9 +106,9 @@ A `ProgramEnrollment` closes permanently when the student fails or withdraws:
 
 Closing withdraws class seats immediately, terminals every open
 `ModuleEnrollment` (the ended module becomes `Failed` on academic/attendance
-close; other Active/Deferred rows and all open rows on withdraw become
-`Dropped`; `Completed` rows stay `Completed`), and records `EndedAt` /
-`EndedModuleId`. A closed enrollment keeps **read-only** curriculum access
+close; every other Active/Deferred module — including later modules in
+`ModuleOrder` — becomes `Dropped`; `Completed` rows stay `Completed`), and
+records `EndedAt` / `EndedModuleId`. A closed enrollment keeps **read-only** curriculum access
 (`GET .../curriculum` still works); all student mutations (activity
 completion, quiz/assignment/research submissions, recovery requests) require
 an **Active** enrollment and return 403 on closed ones.
@@ -153,11 +158,18 @@ an **Active** enrollment and return 403 on closed ones.
   (quiz, assignment, and recovery counts are per enrollment). Copied graded
   submissions on that enrollment still count toward `MaxAttempts`. Pending
   quiz attempts from the old enrollment are not resumed.
+  `Assignment.DueDate` and `Assignment.AvailableUntil` are catalog fields on
+  the module assignment; rebuy does not copy or extend them. Quiz start
+  enforces both; file/research submit enforces `AvailableUntil`. A recovery
+  personal window on the old enrollment does not apply to the new one.
 
 **Manager correction.** Attendance stays editable on closed enrollments and
 Admin/Manager may re-grade `Graded` submissions. A correction that removes
 the closing condition (attendance below 20% for `Attendance` closes; a
-corrected pass for `AcademicFail` closes) automatically reopens the purchase:
+corrected pass for `AcademicFail` closes) reopens the purchase **unless**
+the student already has an `Active` or `PendingPayment` enrollment for the
+same program — that case returns 409 and leaves the closed purchase closed
+(the attendance or grade correction is still saved). On a successful reopen,
 PE/module enrollments return to `Active`, close fields are cleared, withdrawn
 seats reactivate, and progress is recalculated. Attempt counts and recovery
 decisions are not reset.

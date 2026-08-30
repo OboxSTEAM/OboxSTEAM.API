@@ -878,6 +878,49 @@ public sealed class ValidatorAndUtilsTests
     }
 
     [Fact]
+    public void GetLateJoinBlockReason_OnlyFutureAssignmentWindowsCount()
+    {
+        var now = new DateTime(2026, 8, 30, 10, 0, 0, DateTimeKind.Utc);
+        var classEntity = new Class { MinHoursBeforeAssignmentJoin = 48 };
+        var soon = new ClassSession
+        {
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = now.AddHours(10),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        };
+        var liveSoon = new ClassSession
+        {
+            SessionKind = SessionKind.LiveOnline,
+            StartTime = now.AddHours(10),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        };
+        var far = new ClassSession
+        {
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = now.AddHours(72),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        };
+        var past = new ClassSession
+        {
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = now.AddHours(-2),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        };
+
+        Assert.Equal(
+            ClassEnrollmentValidator.FormatLateJoinBlockedMessage(48),
+            ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [soon], now));
+        Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [liveSoon], now));
+        Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [far], now));
+        Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [past], now));
+        Assert.Null(ClassEnrollmentValidator.GetLateJoinBlockReason(classEntity, [], now));
+    }
+
+    [Fact]
     public void ClassEnrollmentValidator_OccupiesSeat_TreatsUnspecifiedHoldExpiryAsUtc()
     {
         var now = new DateTime(2026, 8, 28, 10, 0, 0, DateTimeKind.Utc);

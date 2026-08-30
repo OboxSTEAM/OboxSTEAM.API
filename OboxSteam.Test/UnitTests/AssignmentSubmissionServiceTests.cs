@@ -882,6 +882,41 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
+    public async Task GradeAssignment_RegradeToPass_Throws_WhenPendingRebuyExists()
+    {
+        SeedStudent();
+        SeedManager();
+        SeedModule();
+        SeedProgramEnrollment();
+        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
+        SeedFileUploadAssignment(maxPoints: 10, passScore: 5m);
+        SeedIncompleteActivity();
+        SeedTurnedInSubmission(status: SubmissionStatus.Graded, assignedGrade: 2m);
+        SeedClosedAcademicFailState(ProgramPurchaseEndReason.AcademicFail);
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.PendingPayment,
+            IsDeleted = false
+        });
+        var sut = CreateSut(currentUserId: _managerId);
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
+            {
+                AssignedGrade = 8
+            }));
+
+        Assert.Equal(ProgramPurchaseLifecycle.ReopenBlockedByOpenPurchaseMessage, ex.Message);
+        Assert.Equal(8m, _db.Submissions.Items.Single(s => s.Id == _submissionId).AssignedGrade);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId).Status);
+    }
+
+    [Fact]
     public async Task GradeAssignment_RegradeToPass_KeepsFailed_WhenEndReasonIsAttendance()
     {
         SeedStudent();

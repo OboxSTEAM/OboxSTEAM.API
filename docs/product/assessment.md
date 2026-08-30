@@ -13,7 +13,9 @@ Hands-on session evidence is captured through activities and media upload (see
 
 Assignments belong to a `Module` and optionally a `Course`. Fields include
 `MaxPoints`, `PassScore`, `IsRequiredForModulePass`, availability window, and
-`DueDate`.
+`DueDate`. Rebuy does not reset `DueDate` / `AvailableUntil`; those stay on
+the catalog assignment. `IsRequiredForModulePass` affects module progress
+units, not whether exhausting attempts closes the program purchase.
 
 ### Attempt limits by module type
 

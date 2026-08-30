@@ -258,30 +258,47 @@ public static class ClassEnrollmentValidator
         }
     }
 
-    public static async Task ValidateLateJoinAllowedAsync(IUnitOfWork unitOfWork, Class classEntity)
-    {
-        var now = DateTime.UtcNow;
+    public static string FormatLateJoinBlockedMessage(int minHours)
+        => $"Cannot join within {minHours} hours of the next assignment window.";
 
-        var nextAssignmentWindow = unitOfWork.ClassSessions
-            .GetQueryable()
-            .Where(cs => cs.ClassId == classEntity.Id
+    /// <summary>
+    /// Blocks joining when the class has a future <see cref="SessionKind.AssignmentWindow"/>
+    /// closer than <see cref="Class.MinHoursBeforeAssignmentJoin"/>. LiveOnline/Offline
+    /// sessions do not count. No future window means not blocked.
+    /// </summary>
+    public static string? GetLateJoinBlockReason(
+        Class classEntity,
+        IEnumerable<ClassSession> classSessions,
+        DateTime now)
+    {
+        var nextAssignmentWindow = classSessions
+            .Where(cs => !cs.IsDeleted
                          && cs.SessionKind == SessionKind.AssignmentWindow
-                         && cs.StartTime > now
                          && cs.Status != ClassSessionStatus.Cancelled
-                         && !cs.IsDeleted)
+                         && cs.StartTime > now)
             .OrderBy(cs => cs.StartTime)
             .FirstOrDefault();
 
         if (nextAssignmentWindow == null)
         {
-            return;
+            return null;
         }
 
         var hoursUntil = (nextAssignmentWindow.StartTime - now).TotalHours;
-        if (hoursUntil < classEntity.MinHoursBeforeAssignmentJoin)
+        return hoursUntil < classEntity.MinHoursBeforeAssignmentJoin
+            ? FormatLateJoinBlockedMessage(classEntity.MinHoursBeforeAssignmentJoin)
+            : null;
+    }
+
+    public static async Task ValidateLateJoinAllowedAsync(IUnitOfWork unitOfWork, Class classEntity)
+    {
+        var now = DateTime.UtcNow;
+        var sessions = await unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classEntity.Id && !cs.IsDeleted);
+        var reason = GetLateJoinBlockReason(classEntity, sessions, now);
+        if (reason != null)
         {
-            throw ErrorHelper.BadRequest(
-                $"Cannot join within {classEntity.MinHoursBeforeAssignmentJoin} hours of the next assignment window.");
+            throw ErrorHelper.BadRequest(reason);
         }
     }
 

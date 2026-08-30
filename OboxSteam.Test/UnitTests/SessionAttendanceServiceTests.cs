@@ -937,6 +937,48 @@ public sealed class SessionAttendanceServiceTests
     }
 
     [Fact]
+    public async Task Update_CorrectionBelowThreshold_Throws_WhenPendingRebuyExists()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedModuleEntity();
+        SeedClass();
+        SeedActivityLinkedSessions(count: 5);
+        SeedStudentRoster();
+        var sut = CreateSut(_managerId);
+
+        await sut.UpdateSessionAttendanceAsync(
+            _classId,
+            _sessionId,
+            _studentId,
+            new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Absent });
+
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ProgramId = _programId,
+            Status = EnrollmentStatus.PendingPayment,
+            IsDeleted = false
+        });
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateSessionAttendanceAsync(
+                _classId,
+                _sessionId,
+                _studentId,
+                new UpdateSessionAttendanceRequestDto { Status = AttendanceStatus.Present }));
+
+        Assert.Equal(ProgramPurchaseLifecycle.ReopenBlockedByOpenPurchaseMessage, ex.Message);
+        Assert.Equal(
+            EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId).Status);
+        Assert.Equal(
+            AttendanceStatus.Present,
+            _db.SessionAttendances.Items.Single(sa => sa.ClassSessionId == _sessionId && sa.StudentId == _studentId).Status);
+    }
+
+    [Fact]
     public async Task Update_CorrectionStillAboveThreshold_KeepsEnrollmentFailed()
     {
         SeedUser(_managerId, RoleType.Manager, "MGR-001");

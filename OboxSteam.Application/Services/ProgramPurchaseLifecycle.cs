@@ -26,6 +26,9 @@ public sealed class ProgramPurchaseLifecycle
     public const string RebuySameClassMessage =
         "You cannot rejoin the class you previously enrolled in. Choose a different class.";
 
+    public const string ReopenBlockedByOpenPurchaseMessage =
+        "This purchase cannot be reopened because the student already has an open checkout or enrollment for this program.";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentTime _currentTime;
     private readonly INotificationPublisher _notificationPublisher;
@@ -737,6 +740,8 @@ public sealed class ProgramPurchaseLifecycle
     /// Manager backup path: reopens a purchase closed by <see cref="ProgramPurchaseEndReason.Attendance"/>
     /// when an attendance correction brings the missed ratio below the fail threshold.
     /// Restores the failed module enrollment and every withdrawn class seat of the enrollment.
+    /// Refuses with Conflict when the student already has an Active or PendingPayment purchase
+    /// of the same program.
     /// </summary>
     public async Task<bool> TryReopenAfterAttendanceCorrectionAsync(ProgramEnrollment enrollment, Guid moduleId)
     {
@@ -776,6 +781,8 @@ public sealed class ProgramPurchaseLifecycle
     /// when a failing grade is corrected to a passing one. Attempt counts and recovery decisions
     /// are left untouched - the corrected pass stands. After reopening, module/program progress is
     /// recalculated so the corrected pass can complete the module (and program) naturally.
+    /// Refuses with Conflict when the student already has an Active or PendingPayment purchase
+    /// of the same program.
     /// </summary>
     public async Task<bool> TryReopenAfterGradeCorrectionAsync(Submission submission, Assignment assignment)
     {
@@ -820,6 +827,18 @@ public sealed class ProgramPurchaseLifecycle
 
     private async Task ReopenAsync(ProgramEnrollment enrollment, ModuleEnrollment failedModuleEnrollment)
     {
+        var openSiblings = await _unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => pe.StudentId == enrollment.StudentId
+                  && pe.ProgramId == enrollment.ProgramId
+                  && pe.Id != enrollment.Id
+                  && !pe.IsDeleted
+                  && (pe.Status == EnrollmentStatus.PendingPayment
+                      || pe.Status == EnrollmentStatus.Active));
+        if (openSiblings.Count > 0)
+        {
+            throw ErrorHelper.Conflict(ReopenBlockedByOpenPurchaseMessage);
+        }
+
         enrollment.Status = EnrollmentStatus.Active;
         enrollment.EndReason = null;
         enrollment.EndedModuleId = null;

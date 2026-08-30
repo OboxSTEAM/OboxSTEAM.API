@@ -26,8 +26,9 @@ fee and joining a new class whose progress has not reached the failed module.
    Status is split by trigger: `AcademicFail` / `Attendance` -> `Failed`;
    `Withdraw` -> `Dropped`. Both are terminal and both allow rebuy. The close
    records `EndReason`, `EndedModuleId`, and `EndedAt` on the enrollment.
-2. **AcademicFail condition (all three must hold)** for one required
-   assignment (`IsRequiredForModulePass`) of the module:
+2. **AcademicFail condition (all three must hold)** for one non-theory
+   assignment of the module (`IsRequiredForModulePass` is not consulted;
+   Theory never closes because attempts are unlimited):
    - The latest submission is graded fail (`Graded` with grade < `PassScore`;
      `ReturnedForRevision` does not count).
    - Effective attempts are exhausted: `MaxAttempts` + approved recovery extras
@@ -115,8 +116,10 @@ fee and joining a new class whose progress has not reached the failed module.
     reopens the purchase automatically: attendance corrected below the 20%
     absence threshold reopens a `Failed`/`Attendance` purchase; a grade
     corrected to a pass reopens a `Failed`/`AcademicFail` purchase (attempt
-    counts and recovery decisions are untouched - the corrected pass stands).
-    Reopen restores `Active` status, clears `EndReason`/`EndedModuleId`/
+    counts and recovery decisions are untouched - the corrected pass stands)
+    **unless** the student already has an `Active` or `PendingPayment`
+    enrollment for the same program (Conflict; the closed purchase stays
+    closed). Reopen restores `Active` status, clears `EndReason`/`EndedModuleId`/
     `EndedAt`, reactivates the failed module enrollment and every withdrawn
     seat, then recalculates module/program progress.
 11. Legacy `ClassRedeliveryRequest` / Remedial / retake checkout stay untouched

@@ -4,6 +4,7 @@ using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -347,6 +348,115 @@ public sealed class RebuyClassCatalogServiceTests
         Assert.False(result.WithinRebuyWindow);
         Assert.Equal(1_000_000m, result.CheckoutAmount);
         Assert.True(Assert.Single(result.Classes).IsEligible);
+    }
+
+    [Fact]
+    public async Task GetRebuyClasses_MarksLateJoinIneligible_WhenAssignmentWindowTooSoon()
+    {
+        SeedStudentAndProgram();
+        SeedFailedSource();
+        var next = SeedOpenClass(_eligibleId, "CLS-ELIGIBLE", "Next Cohort");
+        next.MinHoursBeforeAssignmentJoin = 48;
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _eligibleId,
+            ModuleId = _labId,
+            Title = "Lab quiz window",
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = _now.AddHours(10),
+            EndTime = _now.AddHours(12),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().GetRebuyClassesAsync(_programId);
+
+        var item = Assert.Single(result.Classes);
+        Assert.False(item.IsEligible);
+        Assert.Equal(
+            ClassEnrollmentValidator.FormatLateJoinBlockedMessage(48),
+            item.IneligibleReason);
+    }
+
+    [Fact]
+    public async Task GetRebuyClasses_LateJoin_DoesNotBlock_WhenWindowIsFarEnough()
+    {
+        SeedStudentAndProgram();
+        SeedFailedSource();
+        var next = SeedOpenClass(_eligibleId, "CLS-ELIGIBLE", "Next Cohort");
+        next.MinHoursBeforeAssignmentJoin = 48;
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _eligibleId,
+            ModuleId = _labId,
+            Title = "Lab quiz window",
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = _now.AddHours(72),
+            EndTime = _now.AddHours(74),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().GetRebuyClassesAsync(_programId);
+
+        var item = Assert.Single(result.Classes);
+        Assert.True(item.IsEligible);
+        Assert.Null(item.IneligibleReason);
+    }
+
+    [Fact]
+    public async Task GetRebuyClasses_LateJoin_DoesNotBlock_LiveOnlineSession()
+    {
+        SeedStudentAndProgram();
+        SeedFailedSource();
+        var next = SeedOpenClass(_eligibleId, "CLS-ELIGIBLE", "Next Cohort");
+        next.MinHoursBeforeAssignmentJoin = 48;
+        SeedSession(_eligibleId, _labId, ClassSessionStatus.Scheduled);
+        var live = _db.ClassSessions.Items.Single(cs => cs.ClassId == _eligibleId);
+        live.StartTime = _now.AddHours(10);
+        live.EndTime = _now.AddHours(12);
+
+        var result = await CreateSut().GetRebuyClassesAsync(_programId);
+
+        Assert.True(Assert.Single(result.Classes).IsEligible);
+    }
+
+    [Fact]
+    public async Task GetRebuyClasses_SourceClassReason_WinsOverLateJoin()
+    {
+        SeedStudentAndProgram();
+        SeedFailedSource();
+        var oldClass = SeedOpenClass(_currentId, "CLS-OLD", "Previous Class");
+        oldClass.MinHoursBeforeAssignmentJoin = 48;
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _currentId,
+            StudentId = _studentId,
+            ProgramEnrollmentId = _sourcePeId,
+            Status = ClassEnrollmentStatus.Withdrawn,
+            IsDeleted = false,
+        });
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _currentId,
+            ModuleId = _labId,
+            Title = "Quiz window",
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = _now.AddHours(10),
+            EndTime = _now.AddHours(12),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().GetRebuyClassesAsync(_programId);
+
+        var item = Assert.Single(result.Classes);
+        Assert.False(item.IsEligible);
+        Assert.Equal(ProgramPurchaseLifecycle.RebuySameClassMessage, item.IneligibleReason);
     }
 
     [Fact]

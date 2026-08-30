@@ -132,13 +132,17 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
                 .ToList();
 
             var isSourceClass = sourceClassIds.Contains(openClass.Id);
-            var blocksRebuy = isSourceClass
-                || (isRebuy
-                    && stopModule != null
-                    && ProgramPurchaseLifecycle.ClassBlocksRebuy(
-                        modules,
-                        classSessions,
-                        stopModule.ModuleOrder));
+            var blocksStopModule = isRebuy
+                && stopModule != null
+                && ProgramPurchaseLifecycle.ClassBlocksRebuy(
+                    modules,
+                    classSessions,
+                    stopModule.ModuleOrder);
+            var lateJoinReason = ClassEnrollmentValidator.GetLateJoinBlockReason(
+                openClass,
+                classSessions,
+                now);
+            var blocksRebuy = isSourceClass || blocksStopModule || lateJoinReason != null;
 
             string? mentorName = null;
             if (openClass.MentorId.HasValue
@@ -164,9 +168,9 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
                 IsEligible = !blocksRebuy,
                 IneligibleReason = isSourceClass
                     ? ProgramPurchaseLifecycle.RebuySameClassMessage
-                    : blocksRebuy
+                    : blocksStopModule
                         ? ProgramPurchaseLifecycle.RebuyClassIneligibleMessage
-                        : null,
+                        : lateJoinReason,
                 Modules = moduleProgress,
             });
         }
