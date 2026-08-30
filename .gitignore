@@ -8,6 +8,10 @@
 .env.*
 !.env.example
 
+# JaaS / local secrets (use mounted PEM on VPS instead)
+secrets/
+*.pem
+
 # User-specific files
 *.rsuser
 *.suo
