@@ -71,6 +71,7 @@ public static class IocContainer
         services.AddHostedService<ClassSeatHoldCleanupService>();
         services.AddHostedService<OpenClassAutoStartService>();
         services.AddHostedService<PersonalVideoGenerationWorker>();
+        services.AddHostedService<SessionReminderService>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
@@ -83,6 +84,7 @@ public static class IocContainer
         services.SetupAwsMediaConvert();
         services.SetupBedrockMantle();
         services.SetupPaymentGateways(configuration);
+        services.AddSingleton<IJaasJwtService, JaasJwtService>();
 
         return services;
     }
@@ -205,6 +207,9 @@ public static class IocContainer
         services.AddScoped<IMentorService, MentorService>();
         services.AddScoped<IClassSessionService, ClassSessionService>();
         services.AddScoped<ISessionAttendanceService, SessionAttendanceService>();
+        services.AddScoped<ISessionMeetingService, SessionMeetingService>();
+        services.AddScoped<ISessionEvidenceService, SessionEvidenceService>();
+        services.AddScoped<ISessionReminderPublisher, SessionReminderPublisher>();
         services.AddScoped<ProgramPurchaseLifecycle>();
         services.AddScoped<IQuestionBankService, QuestionBankService>();
         services.AddScoped<IBankQuestionService, BankQuestionService>();

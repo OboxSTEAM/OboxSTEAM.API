@@ -76,4 +76,21 @@ public sealed class MentorCompleteValidatorTests
 
         Assert.Null(MentorCompleteValidator.GetQrCheckinSkipReason(QrActivity(true), attendance));
     }
+
+    [Fact]
+    public void EnsureMediaEvidencePresent_Throws_WhenRequiredWithoutEvidence()
+    {
+        var activity = new Activity
+        {
+            Code = "ACT-001",
+            Name = "Field trip",
+            ActivityType = ActivityType.Offline,
+            RequireMediaEvidence = true,
+        };
+
+        var ex = Assert.Throws<OboxSteam.Application.Exceptions.BadRequestException>(
+            () => MentorCompleteValidator.EnsureMediaEvidencePresent(activity, false));
+
+        Assert.Equal(MentorCompleteValidator.MediaEvidenceRequiredMessage, ex.Message);
+    }
 }

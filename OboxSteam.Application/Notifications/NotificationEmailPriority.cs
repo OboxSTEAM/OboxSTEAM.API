@@ -19,7 +19,8 @@ public static class NotificationEmailPriority
         NotificationType.PaymentFailed,
         NotificationType.PaymentCancelled,
         NotificationType.ResearchReturnedForRevision,
-        NotificationType.ResearchWorkSubmitted
+        NotificationType.ResearchWorkSubmitted,
+        NotificationType.SessionStartingSoon
     ];
 
     public static bool ShouldEmail(NotificationType type) => Types.Contains(type);

@@ -1419,6 +1419,42 @@ public static class NotificationCatalog
                 programName: programName,
                 checkedInAt: checkedInAt));
 
+    public static NotificationCommand SessionStartingSoon(
+        Guid classId,
+        Guid classSessionId,
+        string sessionStartTime,
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null)
+        => StudentParentMentor(
+            NotificationType.SessionStartingSoon,
+            NotificationAudience.ForClassRosterAndParentsAndMentor(classId),
+            "Sắp đến giờ học",
+            string.IsNullOrWhiteSpace(sessionTitle)
+                ? "Buổi học sẽ bắt đầu lúc {sessionStartTime}."
+                : "Buổi học \"{sessionTitle}\" sẽ bắt đầu lúc {sessionStartTime}.",
+            string.IsNullOrWhiteSpace(sessionTitle)
+                ? "Buổi học của con bạn sẽ bắt đầu lúc {sessionStartTime}."
+                : "Buổi học \"{sessionTitle}\" của con bạn sẽ bắt đầu lúc {sessionStartTime}.",
+            string.IsNullOrWhiteSpace(sessionTitle)
+                ? "Buổi học sẽ bắt đầu lúc {sessionStartTime}."
+                : "Buổi học \"{sessionTitle}\" sẽ bắt đầu lúc {sessionStartTime}.",
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId,
+                Extra = sessionStartTime
+            }.WithNames(className: className, programName: programName),
+            entityType: "ClassSession",
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(
+                className: className,
+                programName: programName,
+                sessionStartTime: sessionStartTime,
+                sessionTitle: sessionTitle));
+
     // ── Grading / Quiz ────────────────────────────────────────────────────────
 
     public static NotificationCommand QuizGraded(

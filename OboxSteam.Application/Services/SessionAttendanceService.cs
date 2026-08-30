@@ -97,18 +97,7 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             .Take(pageSize)
             .ToList();
 
-        var dtos = items.Select(sa => new SessionAttendanceResponseDto
-        {
-            Id = sa.Id,
-            ClassSessionId = sa.ClassSessionId,
-            StudentId = sa.StudentId,
-            ModuleEnrollmentId = sa.ModuleEnrollmentId,
-            Status = sa.Status,
-            CheckedInAt = sa.CheckedInAt,
-            RecordedBy = sa.RecordedBy,
-            CreatedAt = sa.CreatedAt,
-            UpdatedAt = sa.UpdatedAt,
-        }).ToList();
+        var dtos = items.Select(MapToDto).ToList();
 
         return new Pagination<SessionAttendanceResponseDto>(dtos, totalCount, page, pageSize);
     }
@@ -260,18 +249,7 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             attendance.Status,
             currentUser.Id);
 
-        return new SessionAttendanceResponseDto
-        {
-            Id = attendance.Id,
-            ClassSessionId = attendance.ClassSessionId,
-            StudentId = attendance.StudentId,
-            ModuleEnrollmentId = attendance.ModuleEnrollmentId,
-            Status = attendance.Status,
-            CheckedInAt = attendance.CheckedInAt,
-            RecordedBy = attendance.RecordedBy,
-            CreatedAt = attendance.CreatedAt,
-            UpdatedAt = attendance.UpdatedAt,
-        };
+        return MapToDto(attendance);
     }
 
     public async Task<ClassSessionCheckInTokenResponseDto> GenerateCheckInTokenAsync(Guid classSessionId)
@@ -412,18 +390,7 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             currentUser.Id,
             classSessionId);
 
-        return new SessionAttendanceResponseDto
-        {
-            Id = attendance.Id,
-            ClassSessionId = attendance.ClassSessionId,
-            StudentId = attendance.StudentId,
-            ModuleEnrollmentId = attendance.ModuleEnrollmentId,
-            Status = attendance.Status,
-            CheckedInAt = attendance.CheckedInAt,
-            RecordedBy = attendance.RecordedBy,
-            CreatedAt = attendance.CreatedAt,
-            UpdatedAt = attendance.UpdatedAt,
-        };
+        return MapToDto(attendance);
     }
 
     private async Task TryFailModuleForExcessAbsencesAsync(ModuleEnrollment moduleEnrollment)
@@ -484,4 +451,19 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         => attendance.RecordedBy == studentId
            && attendance.Status == AttendanceStatus.Present
            && attendance.CheckedInAt != null;
+
+    private static SessionAttendanceResponseDto MapToDto(SessionAttendance attendance) => new()
+    {
+        Id = attendance.Id,
+        ClassSessionId = attendance.ClassSessionId,
+        StudentId = attendance.StudentId,
+        ModuleEnrollmentId = attendance.ModuleEnrollmentId,
+        Status = attendance.Status,
+        CheckedInAt = attendance.CheckedInAt,
+        LeftAt = attendance.LeftAt,
+        ParticipationMinutes = attendance.ParticipationMinutes,
+        RecordedBy = attendance.RecordedBy,
+        CreatedAt = attendance.CreatedAt,
+        UpdatedAt = attendance.UpdatedAt,
+    };
 }
