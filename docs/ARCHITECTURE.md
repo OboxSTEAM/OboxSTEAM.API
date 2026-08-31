@@ -125,6 +125,7 @@ operations own validation and side effects; queries return DTOs.
 | ModuleEnrollmentController | `/api/module-enrollments` | Module enrollment |
 | ParentController | `/api/parent` | Parent–student linking |
 | ExpertController | `/api/experts` | Expert profiles |
+| ProgramFrameworkController | `/api/program-frameworks` | Expert curriculum blueprints and rubric criteria |
 | ProgramReviewController | `/api/programs/{id}/reviews` | Student reviews |
 | MediaController | `/api/media` | Media assets |
 | HighlightVideoController | `/api/highlight-video` | Class-scoped highlight stacks |

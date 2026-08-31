@@ -18,6 +18,7 @@ public class ProgramListItemDto
     public string? ThumbnailUrl { get; set; }
     public ProgramStatus Status { get; set; }
     public decimal? Price { get; set; }
+    public Guid? FrameworkId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<ProgramExpertSummaryDto> Experts { get; set; } = new();

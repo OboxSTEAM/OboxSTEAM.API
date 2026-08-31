@@ -86,11 +86,11 @@ Create, update, delete for:
 - Updating an expert does not change login credentials. Deleting an expert
   locks the linked user (`AccountStatus.Locked`).
 - Intended surfaces: program framework blueprints, curriculum review queue,
-  and Offline co-teach invitations. Dedicated review/co-teach endpoints are
-  not exposed yet.
+  and Offline co-teach invitations. Framework APIs are live at
+  `GET|POST|PUT|DELETE /api/program-frameworks` (Expert owns their blueprints;
+  Manager/Admin may list and override updates; create/delete stay Expert-only).
+  Dedicated review/co-teach endpoints are not exposed yet.
 - Until those endpoints land, Expert is not included in existing
-  `[Authorize(Roles=...)]` lists and is denied on role-switched services such
-  as media.
 
 ### Mentor skill visibility
 

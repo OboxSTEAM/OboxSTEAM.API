@@ -15,4 +15,7 @@ public class CreateProgramRequestDto
     public string? ThumbnailUrl { get; set; }
     public ProgramStatus? Status { get; set; }
     public decimal? Price { get; set; }
+
+    /// <summary>Optional expert blueprint. Null means free-form review (no pre-check).</summary>
+    public Guid? FrameworkId { get; set; }
 }

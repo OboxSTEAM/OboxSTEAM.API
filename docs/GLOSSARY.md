@@ -12,7 +12,10 @@ Optional `FrameworkId` links to an expert `ProgramFramework` blueprint.
 ## ProgramFramework
 
 Expert-owned curriculum blueprint with opt-in constraints and a rubric
-scorecard (`FrameworkRubricCriterion`). Null rules are not enforced.
+scorecard (`FrameworkRubricCriterion`). Null or `false` rules are not
+enforced. `RequireFinalAssessment = true` requires ≥1 capstone research
+milestone. Zero rubric criteria is allowed (submit without expert wait);
+≥1 criterion requires expert review. CRUD: `/api/program-frameworks`.
 
 ## CurriculumReview
 

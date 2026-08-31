@@ -30,7 +30,9 @@ to Draft when status is omitted. Enrollment and class creation still require
 **Active**. Submit-review, decision, and publish endpoints are not exposed yet.
 
 API: `/api/programs` — list/detail public; mutations require Admin or
-Manager.
+Manager. Optional `frameworkId` on create/update selects an expert blueprint
+(`clearFramework` unlinks). Pre-check against that blueprint runs at
+submit-review, not on create/update.
 
 ## Module
 
@@ -164,10 +166,22 @@ Public reads: `GET /api/experts/{id}` and `GET /api/experts/{id}/profile`.
 
 `ProgramFramework` is an expert-owned blueprint for a content family
 (opt-in rules: `MinModules`, `MinOfflineSessions`, `MinLiveSessions`,
-`RequireFinalAssessment` — null means not enforced). `Category` is a hint/filter
+`RequireFinalAssessment` — null or `false` means not enforced; `true`
+requires ≥1 `ResearchMilestone` with `IsCapstone`). `Category` is a hint/filter
 only. `Program.FrameworkId` is optional; null means free-form expert review.
 Each framework has `FrameworkRubricCriterion` rows (name, description, max
-score, display order).
+score, display order). Zero criteria is allowed: those programs may submit
+without waiting for expert review once submit-review lands. A framework with
+≥1 criterion requires expert review.
+
+API: `/api/program-frameworks` — Expert CRUD on own blueprints; Manager/Admin
+may list all and override updates (not create or delete). Category query is a
+hint only. Frameworks stay editable while attached programs are
+`PendingReview`.
+
+`ProgramFrameworkValidator.ValidateForSubmitAsync` pre-checks a program against
+non-null rules and joins every failure into one 400 message. Submit-review
+will call it (`s5-be-review`); it is not wired to a public endpoint yet.
 
 `CurriculumReview` is one expert decision round (`Approved` /
 `ChangesRequested`) with optional `ReviewCriterionScore` rows. Distinct from

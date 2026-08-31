@@ -19,6 +19,7 @@ public class ProgramsResponseDto
     public string? ThumbnailUrl { get; set; }
     public ProgramStatus Status { get; set; }
     public decimal? Price { get; set; }
+    public Guid? FrameworkId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<ModulesResponseDto> Modules { get; set; } = new();
