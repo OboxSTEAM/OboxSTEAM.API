@@ -752,6 +752,63 @@ public sealed class ProgramPurchaseLifecycle
     }
 
     /// <summary>
+    /// Reject a passing AcademicFail correction before any grade or progress is written when
+    /// the student already has an Active or PendingPayment purchase of the same program.
+    /// </summary>
+    public async Task ThrowIfPassingGradeCorrectionIsBlockedAsync(
+        Guid? moduleEnrollmentId,
+        SubmissionStatus proposedStatus,
+        decimal? proposedGrade,
+        Assignment assignment)
+    {
+        var target = await TryResolveAcademicFailReopenAsync(
+            moduleEnrollmentId,
+            proposedStatus,
+            proposedGrade,
+            assignment);
+        if (target == null)
+        {
+            return;
+        }
+
+        await ThrowIfHasOpenSiblingPurchaseAsync(target.Value.Enrollment);
+    }
+
+    /// <summary>
+    /// Reject an attendance correction that would reopen an Attendance close before any
+    /// attendance row is written, when the student already has an open sibling purchase.
+    /// </summary>
+    public async Task ThrowIfAttendanceCorrectionIsBlockedAsync(
+        ProgramEnrollment enrollment,
+        Guid moduleId,
+        Guid sessionId,
+        AttendanceStatus proposedStatus)
+    {
+        if (proposedStatus == AttendanceStatus.Absent)
+        {
+            return;
+        }
+
+        var failedModuleEnrollment = await TryResolveAttendanceReopenModuleAsync(enrollment, moduleId);
+        if (failedModuleEnrollment == null)
+        {
+            return;
+        }
+
+        var missed = await CountMissedAfterProposedAsync(
+            failedModuleEnrollment.Id,
+            sessionId,
+            proposedStatus);
+        var total = await ModuleAbsencePolicy.CountSessionActivitiesAsync(_unitOfWork, moduleId);
+        if (ModuleAbsencePolicy.ShouldFail(missed, total))
+        {
+            return;
+        }
+
+        await ThrowIfHasOpenSiblingPurchaseAsync(enrollment);
+    }
+
+    /// <summary>
     /// Manager backup path: reopens a purchase closed by <see cref="ProgramPurchaseEndReason.Attendance"/>
     /// when an attendance correction brings the missed ratio below the fail threshold.
     /// Restores the failed module enrollment and every withdrawn class seat of the enrollment.
@@ -760,21 +817,7 @@ public sealed class ProgramPurchaseLifecycle
     /// </summary>
     public async Task<bool> TryReopenAfterAttendanceCorrectionAsync(ProgramEnrollment enrollment, Guid moduleId)
     {
-        if (enrollment.Status != EnrollmentStatus.Failed
-            || enrollment.EndReason != ProgramPurchaseEndReason.Attendance
-            || enrollment.EndedModuleId != moduleId)
-        {
-            return false;
-        }
-
-        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
-            me => me.ProgramEnrollmentId == enrollment.Id
-                  && me.ModuleId == moduleId
-                  && !me.IsDeleted
-                  && me.Status == EnrollmentStatus.Failed);
-        var failedModuleEnrollment = moduleEnrollments
-            .OrderByDescending(me => me.AttemptNumber)
-            .FirstOrDefault();
+        var failedModuleEnrollment = await TryResolveAttendanceReopenModuleAsync(enrollment, moduleId);
         if (failedModuleEnrollment == null)
         {
             return false;
@@ -801,21 +844,47 @@ public sealed class ProgramPurchaseLifecycle
     /// </summary>
     public async Task<bool> TryReopenAfterGradeCorrectionAsync(Submission submission, Assignment assignment)
     {
-        if (!submission.ModuleEnrollmentId.HasValue
-            || submission.Status != SubmissionStatus.Graded
-            || !submission.AssignedGrade.HasValue
-            || submission.AssignedGrade.Value < assignment.PassScore)
+        var target = await TryResolveAcademicFailReopenAsync(
+            submission.ModuleEnrollmentId,
+            submission.Status,
+            submission.AssignedGrade,
+            assignment);
+        if (target == null)
         {
             return false;
         }
 
-        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(
-            submission.ModuleEnrollmentId.Value);
+        await ReopenAsync(target.Value.Enrollment, target.Value.Module);
+
+        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, target.Value.Module);
+        await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+            _unitOfWork,
+            target.Value.Enrollment.Id,
+            target.Value.Module);
+        await _unitOfWork.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task<(ProgramEnrollment Enrollment, ModuleEnrollment Module)?> TryResolveAcademicFailReopenAsync(
+        Guid? moduleEnrollmentId,
+        SubmissionStatus status,
+        decimal? assignedGrade,
+        Assignment assignment)
+    {
+        if (!moduleEnrollmentId.HasValue
+            || status != SubmissionStatus.Graded
+            || !assignedGrade.HasValue
+            || assignedGrade.Value < assignment.PassScore)
+        {
+            return null;
+        }
+
+        var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId.Value);
         if (moduleEnrollment == null
             || moduleEnrollment.IsDeleted
             || !moduleEnrollment.ProgramEnrollmentId.HasValue)
         {
-            return false;
+            return null;
         }
 
         var enrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
@@ -826,21 +895,68 @@ public sealed class ProgramPurchaseLifecycle
             || enrollment.EndReason != ProgramPurchaseEndReason.AcademicFail
             || enrollment.EndedModuleId != moduleEnrollment.ModuleId)
         {
-            return false;
+            return null;
         }
 
-        await ReopenAsync(enrollment, moduleEnrollment);
-
-        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, moduleEnrollment);
-        await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
-            _unitOfWork,
-            enrollment.Id,
-            moduleEnrollment);
-        await _unitOfWork.SaveChangesAsync();
-        return true;
+        return (enrollment, moduleEnrollment);
     }
 
-    private async Task ReopenAsync(ProgramEnrollment enrollment, ModuleEnrollment failedModuleEnrollment)
+    private async Task<ModuleEnrollment?> TryResolveAttendanceReopenModuleAsync(
+        ProgramEnrollment enrollment,
+        Guid moduleId)
+    {
+        if (enrollment.Status != EnrollmentStatus.Failed
+            || enrollment.EndReason != ProgramPurchaseEndReason.Attendance
+            || enrollment.EndedModuleId != moduleId)
+        {
+            return null;
+        }
+
+        var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+            me => me.ProgramEnrollmentId == enrollment.Id
+                  && me.ModuleId == moduleId
+                  && !me.IsDeleted
+                  && me.Status == EnrollmentStatus.Failed);
+        return moduleEnrollments
+            .OrderByDescending(me => me.AttemptNumber)
+            .FirstOrDefault();
+    }
+
+    private async Task<int> CountMissedAfterProposedAsync(
+        Guid moduleEnrollmentId,
+        Guid sessionId,
+        AttendanceStatus proposedStatus)
+    {
+        var records = await _unitOfWork.SessionAttendances.GetAllAsync(
+            sa => sa.ModuleEnrollmentId == moduleEnrollmentId && !sa.IsDeleted);
+
+        var absentSessionIds = records
+            .Where(sa => sa.ClassSessionId != sessionId && sa.Status == AttendanceStatus.Absent)
+            .Select(sa => sa.ClassSessionId)
+            .ToHashSet();
+        if (proposedStatus == AttendanceStatus.Absent)
+        {
+            absentSessionIds.Add(sessionId);
+        }
+
+        if (absentSessionIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => absentSessionIds.Contains(cs.Id)
+                  && cs.ActivityId != null
+                  && !cs.IsDeleted);
+
+        return sessions
+            .Where(cs => cs.ActivityId.HasValue)
+            .Select(cs => cs.ActivityId!.Value)
+            .Distinct()
+            .Count();
+    }
+
+    private async Task ThrowIfHasOpenSiblingPurchaseAsync(ProgramEnrollment enrollment)
     {
         var openSiblings = await _unitOfWork.ProgramEnrollments.GetAllAsync(
             pe => pe.StudentId == enrollment.StudentId
@@ -853,6 +969,11 @@ public sealed class ProgramPurchaseLifecycle
         {
             throw ErrorHelper.Conflict(ReopenBlockedByOpenPurchaseMessage);
         }
+    }
+
+    private async Task ReopenAsync(ProgramEnrollment enrollment, ModuleEnrollment failedModuleEnrollment)
+    {
+        await ThrowIfHasOpenSiblingPurchaseAsync(enrollment);
 
         enrollment.Status = EnrollmentStatus.Active;
         enrollment.EndReason = null;
@@ -1059,7 +1180,10 @@ public sealed class ProgramPurchaseLifecycle
         return closed;
     }
 
-    public async Task TryExtendNextMilestoneWindowAfterPassAsync(Assignment assignment, Guid studentId)
+    public async Task TryExtendNextMilestoneWindowAfterPassAsync(
+        Assignment assignment,
+        Guid studentId,
+        Guid? moduleEnrollmentId = null)
     {
         var milestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
             rm => rm.AssignmentId == assignment.Id && !rm.IsDeleted);
@@ -1078,10 +1202,27 @@ public sealed class ProgramPurchaseLifecycle
             return;
         }
 
-        var window = await AssignmentWindowPolicy.TryGetForStudentAsync(
-            _unitOfWork,
-            next.AssignmentId,
-            studentId);
+        ClassSession? window = null;
+        if (moduleEnrollmentId.HasValue)
+        {
+            var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId.Value);
+            if (moduleEnrollment?.ProgramEnrollmentId is Guid programEnrollmentId)
+            {
+                var windows = await AssignmentWindowPolicy.LoadWindowsForProgramEnrollmentAsync(
+                    _unitOfWork,
+                    studentId,
+                    programEnrollmentId);
+                windows.TryGetValue(next.AssignmentId, out window);
+            }
+        }
+        else
+        {
+            window = await AssignmentWindowPolicy.TryGetForStudentAsync(
+                _unitOfWork,
+                next.AssignmentId,
+                studentId);
+        }
+
         if (window == null)
         {
             return;

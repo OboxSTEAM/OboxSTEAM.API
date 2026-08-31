@@ -208,12 +208,16 @@ public sealed class ClassCurriculumProgressServiceTests
         SubmissionStatus status,
         decimal? grade = null)
     {
+        var moduleEnrollmentId = _db.ModuleEnrollments.Items
+            .FirstOrDefault(me => me.StudentId == studentId && !me.IsDeleted)?.Id;
+
         _db.Submissions.Seed(new Submission
         {
             Id = Guid.NewGuid(),
             Code = $"SUB-{Guid.NewGuid():N}"[..20],
             AssignmentId = _assignmentId,
             StudentId = studentId,
+            ModuleEnrollmentId = moduleEnrollmentId,
             Status = status,
             AssignedGrade = grade,
             AttemptNumber = 1,

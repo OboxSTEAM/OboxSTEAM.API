@@ -153,10 +153,11 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission!.AssignmentId);
         RetrospectiveAttemptValidator.ValidateAssignmentForRetrospective(assignment);
 
-        await QuizAttemptValidator.ValidateActiveModuleEnrollmentAsync(
+        await QuizAttemptValidator.ValidateActiveModuleEnrollmentForSubmissionAsync(
             _unitOfWork,
             student.Id,
-            assignment!);
+            assignment!,
+            submission!);
 
         var now = DateTime.UtcNow;
 
@@ -196,10 +197,11 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission!.AssignmentId);
         RetrospectiveAttemptValidator.ValidateAssignmentForRetrospective(assignment);
 
-        await QuizAttemptValidator.ValidateActiveModuleEnrollmentAsync(
+        await QuizAttemptValidator.ValidateActiveModuleEnrollmentForSubmissionAsync(
             _unitOfWork,
             student.Id,
-            assignment!);
+            assignment!,
+            submission!);
 
         var now = DateTime.UtcNow;
 

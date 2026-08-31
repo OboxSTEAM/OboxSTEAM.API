@@ -880,12 +880,14 @@ public sealed class ParentProgressionService : IParentProgressionService
                 g => g.OrderByDescending(ap => ap.UpdatedAt ?? ap.CreatedAt).First());
 
         var assignmentIds = snapshot.AssignmentsById.Keys.ToList();
-        var submissions = assignmentIds.Count > 0
+        var submissions = assignmentIds.Count > 0 && moduleEnrollmentIds.Count > 0
             ? await _unitOfWork.Submissions.GetAllAsync(
                 s => s.StudentId == enrollment.StudentId
                      && assignmentIds.Contains(s.AssignmentId)
+                     && s.ModuleEnrollmentId.HasValue
+                     && moduleEnrollmentIds.Contains(s.ModuleEnrollmentId.Value)
                      && !s.IsDeleted)
-            : new List<Submission>();
+            : [];
 
         var submissionsByAssignmentId = submissions
             .GroupBy(s => s.AssignmentId)

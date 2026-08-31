@@ -185,15 +185,30 @@ public sealed class ClassQuizQuestionSetServiceTests
         });
     }
 
-    private void SeedSubmission()
+    private void SeedSubmission(Guid? moduleEnrollmentId = null)
     {
+        var enrollmentId = moduleEnrollmentId ?? Guid.NewGuid();
+        if (moduleEnrollmentId == null)
+        {
+            _db.ModuleEnrollments.Seed(new ModuleEnrollment
+            {
+                Id = enrollmentId,
+                StudentId = _studentId,
+                ModuleId = _moduleId,
+                ProgramEnrollmentId = _programEnrollmentId,
+                Status = EnrollmentStatus.Active,
+                AttemptNumber = 1,
+                IsDeleted = false,
+            });
+        }
+
         _db.Submissions.Seed(new Submission
         {
             Id = Guid.NewGuid(),
             Code = "SUB-001",
             AssignmentId = _assignmentId,
             StudentId = _studentId,
-            ModuleEnrollmentId = Guid.NewGuid(),
+            ModuleEnrollmentId = enrollmentId,
             AttemptNumber = 1,
             Status = SubmissionStatus.Pending,
             IsDeleted = false,

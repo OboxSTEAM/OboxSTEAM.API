@@ -174,6 +174,17 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             throw ErrorHelper.BadRequest("Student does not have an active module enrollment for this session.");
         }
 
+        var programEnrollmentForReopen = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+            classEnrollment.ProgramEnrollmentId);
+        if (programEnrollmentForReopen != null && !programEnrollmentForReopen.IsDeleted)
+        {
+            await _programPurchaseLifecycle.ThrowIfAttendanceCorrectionIsBlockedAsync(
+                programEnrollmentForReopen,
+                classSession.ModuleId,
+                sessionId,
+                request.Status);
+        }
+
         var attendance = await _unitOfWork.SessionAttendances.FirstOrDefaultAsync(
             sa => sa.ClassSessionId == sessionId
                   && sa.StudentId == studentId
@@ -230,16 +241,11 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         {
             await TryFailModuleForExcessAbsencesAsync(moduleEnrollment);
         }
-        else
+        else if (programEnrollmentForReopen != null && !programEnrollmentForReopen.IsDeleted)
         {
-            var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
-                classEnrollment.ProgramEnrollmentId);
-            if (programEnrollment != null && !programEnrollment.IsDeleted)
-            {
-                await _programPurchaseLifecycle.TryReopenAfterAttendanceCorrectionAsync(
-                    programEnrollment,
-                    classSession.ModuleId);
-            }
+            await _programPurchaseLifecycle.TryReopenAfterAttendanceCorrectionAsync(
+                programEnrollmentForReopen,
+                classSession.ModuleId);
         }
 
         _logger.LogInformation(

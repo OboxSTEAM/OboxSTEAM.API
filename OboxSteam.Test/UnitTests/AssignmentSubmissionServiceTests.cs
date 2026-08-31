@@ -792,6 +792,7 @@ public sealed class AssignmentSubmissionServiceTests
     {
         SeedStudent();
         SeedModule();
+        SeedActiveEnrollment();
         SeedFileUploadAssignment();
         SeedTurnedInSubmission();
         var sut = CreateSut();
@@ -821,6 +822,31 @@ public sealed class AssignmentSubmissionServiceTests
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             sut.UploadAssignmentFile(_submissionId, CreateFormFile().Object));
+    }
+
+    [Fact]
+    public async Task UploadAssignmentFile_ThrowsForbidden_WhenSubmissionBelongsToClosedEnrollment()
+    {
+        SeedStudent();
+        SeedModule();
+        SeedActiveEnrollment();
+        SeedFileUploadAssignment();
+        var sourceMeId = Guid.NewGuid();
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = sourceMeId,
+            StudentId = _studentId,
+            ModuleId = _moduleId,
+            Status = EnrollmentStatus.Failed,
+            ProgramEnrollmentId = Guid.NewGuid(),
+            IsDeleted = false
+        });
+        SeedTurnedInSubmission(moduleEnrollmentId: sourceMeId);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.UploadAssignmentFile(_submissionId, CreateFormFile().Object));
+        Assert.Equal(QuizAttemptValidator.EnrollmentNotActiveMessage, ex.Message);
     }
 
     [Fact]
@@ -949,10 +975,13 @@ public sealed class AssignmentSubmissionServiceTests
             }));
 
         Assert.Equal(ProgramPurchaseLifecycle.ReopenBlockedByOpenPurchaseMessage, ex.Message);
-        Assert.Equal(8m, _db.Submissions.Items.Single(s => s.Id == _submissionId).AssignedGrade);
+        Assert.Equal(2m, _db.Submissions.Items.Single(s => s.Id == _submissionId).AssignedGrade);
         Assert.Equal(
             EnrollmentStatus.Failed,
             _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId).Status);
+        Assert.Equal(
+            0m,
+            _db.ModuleEnrollments.Items.Single(me => me.Id == _enrollmentId).ProgressPercent);
     }
 
     [Fact]

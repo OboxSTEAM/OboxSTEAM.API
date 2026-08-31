@@ -55,8 +55,14 @@ public sealed class ClassCurriculumProgressService : IClassCurriculumProgressSer
         var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, classEntity.ProgramId);
 
         var latestModuleEnrollmentIds = await ResolveLatestModuleEnrollmentIdsAsync(programEnrollmentIds);
+        var classModuleEnrollmentIds = await SubmissionEnrollmentScope.GetModuleEnrollmentIdsForClassAsync(
+            _unitOfWork,
+            classId);
         var activityCountsById = AggregateActivityCounts(latestModuleEnrollmentIds);
-        var assignmentCountsById = AggregateAssignmentCounts(studentIds, snapshot.AssignmentsById.Keys);
+        var assignmentCountsById = AggregateAssignmentCounts(
+            studentIds,
+            classModuleEnrollmentIds,
+            snapshot.AssignmentsById.Keys);
 
         var modules = snapshot.Modules
             .Select(module => MapModule(module, snapshot, activityCountsById, assignmentCountsById))
@@ -119,10 +125,11 @@ public sealed class ClassCurriculumProgressService : IClassCurriculumProgressSer
 
     private Dictionary<Guid, (int Submitted, int Graded, double? AverageScore)> AggregateAssignmentCounts(
         List<Guid> studentIds,
+        List<Guid> moduleEnrollmentIds,
         IEnumerable<Guid> assignmentIds)
     {
         var assignmentIdList = assignmentIds.ToList();
-        if (studentIds.Count == 0 || assignmentIdList.Count == 0)
+        if (studentIds.Count == 0 || assignmentIdList.Count == 0 || moduleEnrollmentIds.Count == 0)
         {
             return new Dictionary<Guid, (int, int, double?)>();
         }
@@ -131,6 +138,8 @@ public sealed class ClassCurriculumProgressService : IClassCurriculumProgressSer
             .GetQueryable()
             .Where(s => studentIds.Contains(s.StudentId)
                         && assignmentIdList.Contains(s.AssignmentId)
+                        && s.ModuleEnrollmentId.HasValue
+                        && moduleEnrollmentIds.Contains(s.ModuleEnrollmentId.Value)
                         && !s.IsDeleted
                         && (s.Status == SubmissionStatus.TurnedIn
                             || s.Status == SubmissionStatus.Graded

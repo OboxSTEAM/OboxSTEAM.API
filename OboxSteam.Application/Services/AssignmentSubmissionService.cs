@@ -209,6 +209,15 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
             throw ErrorHelper.BadRequest($"AssignedGrade must be between 0 and {assignment.MaxPoints}.");
         }
 
+        var proposedStatus = request.ReturnForRevision
+            ? SubmissionStatus.ReturnedForRevision
+            : SubmissionStatus.Graded;
+        await _programPurchaseLifecycle.ThrowIfPassingGradeCorrectionIsBlockedAsync(
+            submission.ModuleEnrollmentId,
+            proposedStatus,
+            request.AssignedGrade,
+            assignment);
+
         var now = DateTime.UtcNow;
         submission.AssignedGrade = request.AssignedGrade;
         submission.MentorFeedback = request.MentorFeedback?.Trim();
@@ -258,7 +267,8 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         {
             await _programPurchaseLifecycle.TryExtendNextMilestoneWindowAfterPassAsync(
                 assignment,
-                submission.StudentId);
+                submission.StudentId,
+                submission.ModuleEnrollmentId);
         }
 
         _logger.LogInformation(
@@ -316,6 +326,18 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
 
         ResearchSubmissionValidator.ValidateSubmissionOwnership(submission, student.Id);
         ResearchSubmissionValidator.ValidateUploadFile(file);
+
+        var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission.AssignmentId);
+        if (assignment == null || assignment.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Assignment with id '{submission.AssignmentId}' not found.");
+        }
+
+        await QuizAttemptValidator.ValidateActiveModuleEnrollmentForSubmissionAsync(
+            _unitOfWork,
+            student.Id,
+            assignment,
+            submission);
 
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var folder = $"{SubmissionFolder}/{submissionId}";

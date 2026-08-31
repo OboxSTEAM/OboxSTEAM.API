@@ -329,39 +329,46 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         }
 
         var now = DateTime.UtcNow;
+        SubmissionStatus proposedStatus;
+        if (request.ReturnForRevision)
+        {
+            proposedStatus = SubmissionStatus.ReturnedForRevision;
+        }
+        else if (request.AssignedGrade >= assignment.PassScore)
+        {
+            proposedStatus = SubmissionStatus.Graded;
+        }
+        else
+        {
+            var nextAttempt = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
+            var effectiveMax = await AssessmentAttemptPolicy.GetEffectiveMaxAttemptsAsync(
+                _unitOfWork,
+                assignment,
+                submission.StudentId,
+                submission.ModuleEnrollmentId);
+
+            proposedStatus = nextAttempt <= effectiveMax
+                ? SubmissionStatus.ReturnedForRevision
+                : SubmissionStatus.Graded;
+        }
+
+        await _programPurchaseLifecycle.ThrowIfPassingGradeCorrectionIsBlockedAsync(
+            submission.ModuleEnrollmentId,
+            proposedStatus,
+            request.AssignedGrade,
+            assignment);
+
         submission.AssignedGrade = request.AssignedGrade;
         submission.MentorFeedback = request.MentorFeedback?.Trim();
         submission.VerifiedBy = grader.Id;
         submission.GradedAt = now;
         submission.UpdatedAt = now;
         submission.UpdatedBy = grader.Id;
+        submission.Status = proposedStatus;
 
-        if (request.ReturnForRevision)
+        if (proposedStatus == SubmissionStatus.ReturnedForRevision)
         {
-            submission.Status = SubmissionStatus.ReturnedForRevision;
             submission.ExpiresAt = AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now);
-        }
-        else
-        {
-            var passedGrade = request.AssignedGrade >= assignment.PassScore;
-            if (passedGrade)
-            {
-                submission.Status = SubmissionStatus.Graded;
-            }
-            else
-            {
-                // Reopen last failed milestone for another attempt when budget remains.
-                var nextAttempt = ResearchSubmissionValidator.GetNextAttemptNumber(submission);
-                var effectiveMax = await AssessmentAttemptPolicy.GetEffectiveMaxAttemptsAsync(
-                    _unitOfWork,
-                    assignment,
-                    submission.StudentId,
-                    submission.ModuleEnrollmentId);
-
-                submission.Status = nextAttempt <= effectiveMax
-                    ? SubmissionStatus.ReturnedForRevision
-                    : SubmissionStatus.Graded;
-            }
         }
 
         await _unitOfWork.Submissions.Update(submission);
@@ -397,7 +404,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         {
             await _programPurchaseLifecycle.TryExtendNextMilestoneWindowAfterPassAsync(
                 assignment,
-                submission.StudentId);
+                submission.StudentId,
+                submission.ModuleEnrollmentId);
         }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);

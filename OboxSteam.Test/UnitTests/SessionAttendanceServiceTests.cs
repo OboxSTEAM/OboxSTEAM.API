@@ -974,7 +974,7 @@ public sealed class SessionAttendanceServiceTests
             EnrollmentStatus.Failed,
             _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId).Status);
         Assert.Equal(
-            AttendanceStatus.Present,
+            AttendanceStatus.Absent,
             _db.SessionAttendances.Items.Single(sa => sa.ClassSessionId == _sessionId && sa.StudentId == _studentId).Status);
     }
 

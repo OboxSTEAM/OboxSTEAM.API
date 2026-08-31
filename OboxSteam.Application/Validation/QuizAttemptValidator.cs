@@ -114,6 +114,32 @@ public static class QuizAttemptValidator
     }
 
     /// <summary>
+    /// Student mutations on an existing submission must target the Active module
+    /// enrollment of the Active program enrollment — not a leftover row from a
+    /// closed purchase.
+    /// </summary>
+    public static void EnsureSubmissionMatchesActiveModuleEnrollment(
+        Submission submission,
+        ModuleEnrollment activeEnrollment)
+    {
+        if (submission.ModuleEnrollmentId != activeEnrollment.Id)
+        {
+            throw ErrorHelper.Forbidden(EnrollmentNotActiveMessage);
+        }
+    }
+
+    public static async Task<ModuleEnrollment> ValidateActiveModuleEnrollmentForSubmissionAsync(
+        IUnitOfWork unitOfWork,
+        Guid studentId,
+        Assignment assignment,
+        Submission submission)
+    {
+        var enrollment = await ValidateActiveModuleEnrollmentAsync(unitOfWork, studentId, assignment);
+        EnsureSubmissionMatchesActiveModuleEnrollment(submission, enrollment);
+        return enrollment;
+    }
+
+    /// <summary>
     /// Requires any non-deleted module enrollment (any status) for read-only assignment access.
     /// Prefer the latest attempt when multiple enrollments exist.
     /// </summary>

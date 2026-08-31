@@ -1114,14 +1114,25 @@ public sealed class AssignmentServiceTests
 
     private void SeedClassEnrollment(Guid studentId, ClassEnrollmentStatus status = ClassEnrollmentStatus.Active)
     {
+        var programEnrollmentId = Guid.NewGuid();
         _db.ClassEnrollments.Seed(new ClassEnrollment
         {
             Id = Guid.NewGuid(),
             ClassId = _classId,
             StudentId = studentId,
-            ProgramEnrollmentId = Guid.NewGuid(),
+            ProgramEnrollmentId = programEnrollmentId,
             Status = status,
             EnrolledAt = DateTime.UtcNow.AddDays(-7),
+            IsDeleted = false
+        });
+        _db.ModuleEnrollments.Seed(new ModuleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = studentId,
+            ModuleId = _moduleId,
+            ProgramEnrollmentId = programEnrollmentId,
+            Status = EnrollmentStatus.Active,
+            AttemptNumber = 1,
             IsDeleted = false
         });
     }
@@ -1133,12 +1144,20 @@ public sealed class AssignmentServiceTests
         int attemptNumber = 1,
         bool isDeleted = false)
     {
+        var seat = _db.ClassEnrollments.Items.FirstOrDefault(
+            ce => ce.StudentId == studentId && ce.ClassId == _classId);
+        var moduleEnrollmentId = seat == null
+            ? (Guid?)null
+            : _db.ModuleEnrollments.Items.FirstOrDefault(
+                me => me.ProgramEnrollmentId == seat.ProgramEnrollmentId)?.Id;
+
         var submission = new Submission
         {
             Id = Guid.NewGuid(),
             Code = $"SUB-{Guid.NewGuid():N}",
             AssignmentId = _assignmentId,
             StudentId = studentId,
+            ModuleEnrollmentId = moduleEnrollmentId,
             Status = status,
             AssignedGrade = assignedGrade,
             AttemptNumber = attemptNumber,

@@ -7,10 +7,18 @@ namespace OboxSteam.Application.Services;
 
 public partial class SeedService
 {
+    internal const string TaughtModuleSafetyNetDraftContent =
+        "Seeded in-progress work while the class is still teaching this module.";
+
+    internal const string TaughtModuleSafetyNetPassContent =
+        "Seeded pass after the class finished teaching this module.";
+
     /// <summary>
     /// Write assessment rows before AssignmentWindows exist so the close scan cannot
     /// AcademicFail an in-progress cohort mid-seed. Fully taught modules get a passing
     /// grade; modules the class has only started get a TurnedIn draft (waiting on mentor).
+    /// After windows exist, skip (and remove prior safety-net drafts) when the class
+    /// window has not started yet so curriculum does not look submitted while StartQuiz is 403.
     /// </summary>
     private async Task SeedTaughtModuleAssessmentSafetyNetAsync()
     {
@@ -49,6 +57,18 @@ public partial class SeedService
                     .Select(cs => cs.ActivityId!.Value)
                     .ToHashSet());
 
+        var assignmentWindows = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => classIds.Contains(cs.ClassId)
+                  && cs.SessionKind == SessionKind.AssignmentWindow
+                  && cs.AssignmentId != null
+                  && cs.Status != ClassSessionStatus.Cancelled
+                  && !cs.IsDeleted);
+        var windowByClassAssignment = assignmentWindows
+            .GroupBy(cs => (cs.ClassId, AssignmentId: cs.AssignmentId!.Value))
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(cs => cs.StartTime).First());
+
         var programIds = classById.Values.Select(c => c.ProgramId).Distinct().ToList();
         var modules = await _unitOfWork.Modules.GetAllAsync(
             m => programIds.Contains(m.ProgramId) && !m.IsDeleted);
@@ -80,6 +100,7 @@ public partial class SeedService
             s => studentIds.Contains(s.StudentId) && !s.IsDeleted);
         var toAdd = new List<Submission>();
         var upgraded = 0;
+        var removed = 0;
         foreach (var seat in seats)
         {
             if (!classById.TryGetValue(seat.ClassId, out var classEntity)
@@ -117,16 +138,30 @@ public partial class SeedService
                     continue;
                 }
 
+                windowByClassAssignment.TryGetValue((seat.ClassId, assignment.Id), out var window);
+                var existing = LatestStudentAssignmentSubmission(
+                    existingSubmissions,
+                    seat.StudentId,
+                    assignment.Id);
+                if (AssignmentWindowBlocksSafetyNetHold(window, _seedNow))
+                {
+                    if (existing != null && IsTaughtModuleSafetyNetDraft(existing))
+                    {
+                        existing.IsDeleted = true;
+                        existing.DeletedAt = _seedNow;
+                        await _unitOfWork.Submissions.Update(existing);
+                        removed++;
+                    }
+
+                    continue;
+                }
+
                 var moduleFullyTaught = taughtCount == lives.Count;
                 if (StudentHasLeftoverFailHold(existingSubmissions, seat.StudentId, assignment, _seedNow))
                 {
                     continue;
                 }
 
-                var existing = LatestStudentAssignmentSubmission(
-                    existingSubmissions,
-                    seat.StudentId,
-                    assignment.Id);
                 if (existing != null)
                 {
                     ApplySeededAssessmentHold(existing, assignment, moduleFullyTaught, _seedNow);
@@ -146,7 +181,7 @@ public partial class SeedService
             }
         }
 
-        if (toAdd.Count == 0 && upgraded == 0)
+        if (toAdd.Count == 0 && upgraded == 0 && removed == 0)
         {
             _loggerService.LogInformation("No taught-module assessment safety-net rows needed.");
             return;
@@ -159,9 +194,10 @@ public partial class SeedService
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Seeded {Added} taught-module assessment safety-net submission(s), upgraded {Upgraded}.",
+            "Seeded {Added} taught-module assessment safety-net submission(s), upgraded {Upgraded}, removed {Removed} holds before the window opens.",
             toAdd.Count,
-            upgraded);
+            upgraded,
+            removed);
     }
 
     /// <summary>
@@ -408,6 +444,14 @@ public partial class SeedService
         return AssignmentWindowPolicy.IsBlockingInProgress(submission, now);
     }
 
+    internal static bool AssignmentWindowBlocksSafetyNetHold(ClassSession? window, DateTime now)
+        => window is not null && now < window.StartTime;
+
+    internal static bool IsTaughtModuleSafetyNetDraft(Submission submission)
+        => !submission.IsDeleted
+           && submission.Status == SubmissionStatus.TurnedIn
+           && submission.ContentText == TaughtModuleSafetyNetDraftContent;
+
     private static void ApplySeededAssessmentHold(
         Submission submission,
         Assignment assignment,
@@ -417,8 +461,8 @@ public partial class SeedService
         submission.Status = moduleFullyTaught ? SubmissionStatus.Graded : SubmissionStatus.TurnedIn;
         submission.AssignedGrade = moduleFullyTaught ? Math.Max(assignment.PassScore, 80m) : null;
         submission.ContentText = moduleFullyTaught
-            ? "Seeded pass after the class finished teaching this module."
-            : "Seeded in-progress work while the class is still teaching this module.";
+            ? TaughtModuleSafetyNetPassContent
+            : TaughtModuleSafetyNetDraftContent;
         submission.SubmittedAt = at;
         submission.GradedAt = moduleFullyTaught ? at : null;
         submission.StartedAt ??= at.AddDays(-2);
@@ -443,8 +487,8 @@ public partial class SeedService
             Status = moduleFullyTaught ? SubmissionStatus.Graded : SubmissionStatus.TurnedIn,
             AssignedGrade = moduleFullyTaught ? Math.Max(assignment.PassScore, 80m) : null,
             ContentText = moduleFullyTaught
-                ? "Seeded pass after the class finished teaching this module."
-                : "Seeded in-progress work while the class is still teaching this module.",
+                ? TaughtModuleSafetyNetPassContent
+                : TaughtModuleSafetyNetDraftContent,
             SubmittedAt = at,
             GradedAt = moduleFullyTaught ? at : null,
             StartedAt = at.AddDays(-2),

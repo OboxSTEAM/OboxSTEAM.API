@@ -322,10 +322,11 @@ public sealed class QuizAttemptService : IQuizAttemptService
         if (draftAssignment == null || draftAssignment.IsDeleted)
             throw ErrorHelper.NotFound("Assignment not found.");
 
-        await QuizAttemptValidator.ValidateActiveModuleEnrollmentAsync(
+        await QuizAttemptValidator.ValidateActiveModuleEnrollmentForSubmissionAsync(
             _unitOfWork,
             student.Id,
-            draftAssignment);
+            draftAssignment,
+            submission!);
 
         var snapshotQuestions = await LoadSnapshotQuestionsAsync(submissionId);
         QuizAttemptValidator.ValidateSubmissionHasQuizSnapshot(snapshotQuestions);
@@ -361,10 +362,11 @@ public sealed class QuizAttemptService : IQuizAttemptService
 
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission!.AssignmentId);
         QuizAttemptValidator.ValidateAssignmentForQuizStart(assignment);
-        await QuizAttemptValidator.ValidateActiveModuleEnrollmentAsync(
+        await QuizAttemptValidator.ValidateActiveModuleEnrollmentForSubmissionAsync(
             _unitOfWork,
             student.Id,
-            assignment!);
+            assignment!,
+            submission!);
 
         var snapshotQuestions = await LoadSnapshotQuestionsAsync(submissionId);
         QuizAttemptValidator.ValidateSubmissionHasQuizSnapshot(snapshotQuestions);
@@ -414,7 +416,8 @@ public sealed class QuizAttemptService : IQuizAttemptService
         {
             await _programPurchaseLifecycle.TryExtendNextMilestoneWindowAfterPassAsync(
                 assignment!,
-                student.Id);
+                student.Id,
+                submission.ModuleEnrollmentId);
         }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment!.ModuleId);
@@ -480,7 +483,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
         var answers = await _unitOfWork.QuizAnswers.GetAllAsync(
             a => a.SubmissionId == submissionId && !a.IsDeleted);
 
-        var grade = QuizScoreCalculator.Calculate(assignment, snapshotQuestions, answers);
+        var grade = ResolveQuizResultGrade(assignment, submission, snapshotQuestions, answers);
 
         return new QuizResultResponseDto
         {
@@ -499,6 +502,27 @@ public sealed class QuizAttemptService : IQuizAttemptService
             Status = submission.Status,
             SubmittedAt = submission.SubmittedAt
         };
+    }
+
+    private static QuizGradeResult ResolveQuizResultGrade(
+        Assignment assignment,
+        Submission submission,
+        IReadOnlyList<QuizQuestion> snapshotQuestions,
+        IReadOnlyList<QuizAnswer> answers)
+    {
+        if (snapshotQuestions.Count == 0)
+        {
+            var stored = submission.AssignedGrade ?? 0m;
+            return new QuizGradeResult
+            {
+                AssignedGrade = stored,
+                CorrectCount = 0,
+                TotalQuestions = 0,
+                Passed = stored >= assignment.PassScore
+            };
+        }
+
+        return QuizScoreCalculator.Calculate(assignment, snapshotQuestions, answers);
     }
 
     private async Task<List<BankQuestion>> LoadBankQuestionsAsync(Guid questionBankId)

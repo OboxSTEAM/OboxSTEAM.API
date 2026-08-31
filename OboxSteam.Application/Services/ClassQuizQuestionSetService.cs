@@ -333,9 +333,17 @@ public sealed class ClassQuizQuestionSetService : IClassQuizQuestionSetService
             return false;
 
         var studentIds = enrollments.Select(ce => ce.StudentId).Distinct().ToList();
+        var moduleEnrollmentIds = await SubmissionEnrollmentScope.GetModuleEnrollmentIdsForClassAsync(
+            _unitOfWork,
+            classId);
+        if (moduleEnrollmentIds.Count == 0)
+            return false;
+
         var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.AssignmentId == assignmentId
                  && studentIds.Contains(s.StudentId)
+                 && s.ModuleEnrollmentId.HasValue
+                 && moduleEnrollmentIds.Contains(s.ModuleEnrollmentId.Value)
                  && !s.IsDeleted);
 
         return submission != null;

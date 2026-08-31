@@ -850,6 +850,40 @@ public sealed class QuizAttemptServiceTests
     }
 
     [Fact]
+    public async Task GetQuizResult_UsesStoredGrade_WhenSnapshotIsEmpty()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment(maxPoints: 10m, passScore: 5m);
+
+        var submissionId = Guid.NewGuid();
+        _db.Submissions.Seed(new Submission
+        {
+            Id = submissionId,
+            Code = "SUB-RESULT-STORED",
+            AssignmentId = _assignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _enrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 9,
+            StartedAt = DateTime.UtcNow.AddMinutes(-10),
+            SubmittedAt = DateTime.UtcNow.AddMinutes(-1),
+            IsDeleted = false
+        });
+
+        var sut = CreateSut();
+
+        var result = await sut.GetQuizResult(submissionId);
+
+        Assert.NotNull(result);
+        Assert.Equal(9m, result!.AssignedGrade);
+        Assert.True(result.Passed);
+        Assert.Equal(0, result.TotalQuestions);
+        Assert.Equal(0, result.CorrectCount);
+        Assert.Equal(SubmissionStatus.Graded, result.Status);
+    }
+
+    [Fact]
     public async Task GetQuizResult_AllowsStudent_WhenModuleEnrollmentCompleted()
     {
         SeedStudentAndEnrollment();

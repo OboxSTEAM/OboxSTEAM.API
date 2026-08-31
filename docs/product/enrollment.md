@@ -93,6 +93,14 @@ not-yet-open, or closed windows mark new work `locked` (parent view uses
 (`Pending` / `ReturnedForRevision`) stay `available` after close. Turned-in
 work shows `submitted`; a passing grade shows `completed`.
 
+Curriculum, parent progression, mentor submission lists, class assignment
+rollups, and class quiz-set lock use submissions whose `ModuleEnrollment`
+belongs to the program enrollment in view (or the Active class seat's
+enrollment). Copied credit rows on a rebuy enrollment count. Source-purchase
+rows never substitute. Student save, submit, and file upload of an existing
+attempt must target that enrollment's module enrollment; leftover drafts from
+a closed purchase are not resumed.
+
 ## Progress
 
 `ActivityProgress` tracks completion per student per activity.
@@ -183,7 +191,8 @@ keep that credit. `GET .../rebuy-classes` module rows include `creditHint`
 - Rebuy starts a **fresh attempt budget** on the new `ModuleEnrollment`
   (quiz, assignment, and recovery counts are per enrollment). Copied graded
   submissions on that enrollment still count toward `MaxAttempts`. Pending
-  quiz attempts from the old enrollment are not resumed.
+  quiz attempts from the old enrollment are not resumed. Reads and mutates
+  for the new class never fall back to source-purchase submissions.
   Assignment open/close is the new class’s `AssignmentWindow` session
   (`StartTime` / `EndTime`), not catalog dates. Quiz, file, retrospective, and
   research start enforce that window. Recovery on the old enrollment does not
@@ -195,8 +204,8 @@ Admin/Manager may re-grade `Graded` submissions. A correction that removes
 the closing condition (attendance below 50% for `Attendance` closes; a
 corrected pass for `AcademicFail` closes) reopens the purchase **unless**
 the student already has an `Active` or `PendingPayment` enrollment for the
-same program — that case returns 409 and leaves the closed purchase closed
-(the attendance or grade correction is still saved). On a successful reopen,
+same program — that case returns 409 **before** any attendance, grade, or
+progress is written, and leaves the closed purchase closed. On a successful reopen,
 PE/module enrollments return to `Active`, close fields are cleared, withdrawn
 seats reactivate, and progress is recalculated. Attempt counts and recovery
 decisions are not reset.

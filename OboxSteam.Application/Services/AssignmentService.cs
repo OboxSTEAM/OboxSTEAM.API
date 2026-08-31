@@ -216,10 +216,18 @@ public sealed class AssignmentService : IAssignmentService
         if (studentIds.Count == 0)
             return [];
 
+        var moduleEnrollmentIds = await SubmissionEnrollmentScope.GetModuleEnrollmentIdsForClassAsync(
+            _unitOfWork,
+            classId);
+        if (moduleEnrollmentIds.Count == 0)
+            return [];
+
         var submissions = await _unitOfWork.Submissions.GetAllAsync(
             s => s.AssignmentId == assignmentId
                  && !s.IsDeleted
-                 && studentIds.Contains(s.StudentId));
+                 && studentIds.Contains(s.StudentId)
+                 && s.ModuleEnrollmentId.HasValue
+                 && moduleEnrollmentIds.Contains(s.ModuleEnrollmentId.Value));
 
         var students = await _unitOfWork.Users.GetAllAsync(u => studentIds.Contains(u.Id));
         var studentNames = students.ToDictionary(u => u.Id, u => u.FullName);
