@@ -20,6 +20,7 @@ public partial class SeedService
             var student1 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-001");
             var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
             var student3 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-003");
+            var buyer = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-019");
 
             if (parent != null && student1 != null && student2 != null)
             {
@@ -55,6 +56,20 @@ public partial class SeedService
                         ParentId = parent.Id,
                         StudentId = student3.Id,
                         IsVerified = false,
+                        CreatedAt = _seedNow,
+                        CreatedBy = Guid.Empty,
+                        IsDeleted = false
+                    });
+                }
+
+                if (buyer != null)
+                {
+                    parentStudents.Add(new ParentStudent
+                    {
+                        Id = Guid.NewGuid(),
+                        ParentId = parent.Id,
+                        StudentId = buyer.Id,
+                        IsVerified = true,
                         CreatedAt = _seedNow,
                         CreatedBy = Guid.Empty,
                         IsDeleted = false

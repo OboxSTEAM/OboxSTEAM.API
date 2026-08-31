@@ -356,7 +356,7 @@ public partial class SeedService
                     Code = "STD-019",
                     Email = "student19@oboxsteam.com",
                     PasswordHash = new PasswordHasher().HashPassword("Student@123")!,
-                    FullName = "Open Class Student 19",
+                    FullName = "Gia Bao",
                     Phone = "0123456719",
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
@@ -371,7 +371,7 @@ public partial class SeedService
                     Code = "STD-020",
                     Email = "student20@oboxsteam.com",
                     PasswordHash = new PasswordHasher().HashPassword("Student@123")!,
-                    FullName = "Open Class Student 20",
+                    FullName = "Khanh Linh",
                     Phone = "0123456720",
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
@@ -386,7 +386,7 @@ public partial class SeedService
                     Code = "STD-021",
                     Email = "student21@oboxsteam.com",
                     PasswordHash = new PasswordHasher().HashPassword("Student@123")!,
-                    FullName = "Open Class Student 21",
+                    FullName = "Minh Duc",
                     Phone = "0123456721",
                     Role = RoleType.Student,
                     Status = AccountStatus.Active,
@@ -766,7 +766,7 @@ public partial class SeedService
                 Code = "STD-019",
                 Email = "student19@oboxsteam.com",
                 PasswordHash = new PasswordHasher().HashPassword("Student@123")!,
-                FullName = "Open Class Student 19",
+                FullName = "Gia Bao",
                 Phone = "0123456719",
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
@@ -781,7 +781,7 @@ public partial class SeedService
                 Code = "STD-020",
                 Email = "student20@oboxsteam.com",
                 PasswordHash = new PasswordHasher().HashPassword("Student@123")!,
-                FullName = "Open Class Student 20",
+                FullName = "Khanh Linh",
                 Phone = "0123456720",
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
@@ -796,7 +796,7 @@ public partial class SeedService
                 Code = "STD-021",
                 Email = "student21@oboxsteam.com",
                 PasswordHash = new PasswordHasher().HashPassword("Student@123")!,
-                FullName = "Open Class Student 21",
+                FullName = "Minh Duc",
                 Phone = "0123456721",
                 Role = RoleType.Student,
                 Status = AccountStatus.Active,
@@ -894,7 +894,8 @@ public partial class SeedService
     /// <summary>
     /// Dedicated students for fail/drop close, rebuy, window, and reopen E2E.
     /// Password: Student@123. Roster: STD-026..033 (triggers + snapshots),
-    /// STD-034..038 (window / withdraw-snapshot / completed / fail-at-first-module).
+    /// STD-034..038 (window / withdraw-snapshot / completed / fail-at-first-module),
+    /// STD-039..040 (already chuyen-ca: completed graduate cohort / active on ELIGIBLE).
     /// </summary>
     private static List<User> CreateFailRebuyFixtureStudents(DateTime seedNow)
     {
@@ -916,6 +917,8 @@ public partial class SeedService
             ("STD-036", "student36@oboxsteam.com", "Ha Ngo", "0123456736"),
             ("STD-037", "student37@oboxsteam.com", "Tien Pham", "0123456737"),
             ("STD-038", "student38@oboxsteam.com", "Bao Ly", "0123456738"),
+            ("STD-039", "student39@oboxsteam.com", "Linh Vu", "0123456739"),
+            ("STD-040", "student40@oboxsteam.com", "Duc Tran", "0123456740"),
         ];
 
         return defs.Select(def => new User

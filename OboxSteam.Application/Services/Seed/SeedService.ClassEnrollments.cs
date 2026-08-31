@@ -68,7 +68,11 @@ public partial class SeedService
                     ClassId = classEntity.Id,
                     StudentId = student.Id,
                     ProgramEnrollmentId = programEnrollment.Id,
+                    Kind = ClassEnrollmentKind.Primary,
                     Status = plan.Status,
+                    HoldExpiresAt = plan.Status == ClassEnrollmentStatus.Pending
+                        ? _seedNow.AddHours(24)
+                        : null,
                     EnrolledAt = enrolledAt,
                     CreatedAt = enrolledAt,
                     CreatedBy = Guid.Empty,

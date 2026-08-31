@@ -31,6 +31,8 @@ public partial class SeedService
             return;
         }
 
+        programs.TryGetValue("PRG-CERT-TEST", out var certTest);
+
         var programEnrollments = new List<ProgramEnrollment>();
 
         void Add(
@@ -70,17 +72,11 @@ public partial class SeedService
             });
         }
 
-        var roboticsActiveEnrolledAt = AtDays(-49);
-        var roboticsActiveStartedAt = AtDays(-42);
-        foreach (var studentCode in RoboticsCurrentStudentCodes.Concat(RoboticsOpenStudentCodes))
+        var roboticsActiveEnrolledAt = AtDays(-63);
+        var roboticsActiveStartedAt = AtDays(-56);
+        foreach (var studentCode in RoboticsCurrentStudentCodes)
         {
-            var enrolledAt = RoboticsOpenStudentCodes.Contains(studentCode, StringComparer.OrdinalIgnoreCase)
-                ? AtDays(-10)
-                : roboticsActiveEnrolledAt;
-            var startedAt = RoboticsOpenStudentCodes.Contains(studentCode, StringComparer.OrdinalIgnoreCase)
-                ? AtDays(-8)
-                : roboticsActiveStartedAt;
-            Add(studentCode, robotics, EnrollmentStatus.Active, 35m, enrolledAt, startedAt, null);
+            Add(studentCode, robotics, EnrollmentStatus.Active, 35m, roboticsActiveEnrolledAt, roboticsActiveStartedAt, null);
         }
 
         foreach (var studentCode in RoboticsPastStudentCodes)
@@ -162,6 +158,12 @@ public partial class SeedService
         else
         {
             _loggerService.LogWarning("PRG-MATHFUN missing. Skipping academic-fail enrollment seed.");
+        }
+
+        // STD-025: Robotics Active + CERT-TEST Active (cap = 2). Progress seed uses MOD-CERT-TEST-01.
+        if (certTest != null)
+        {
+            Add("STD-025", certTest, EnrollmentStatus.Active, 10m, AtDays(-5), AtDays(-4), null);
         }
 
         if (programEnrollments.Count == 0)

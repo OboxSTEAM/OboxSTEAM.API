@@ -347,76 +347,9 @@ public partial class SeedService
 
     private async Task SeedResearchModuleEnrollmentsAsync()
     {
-        _loggerService.LogInformation("Starting seed research module enrollments");
-        var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
-        if (moduleRobotics3 == null)
-        {
-            _loggerService.LogWarning("Module MOD-ROBOTICS-03 not found. Skipping research module enrollment seeding.");
-            return;
-        }
-
-        var student2 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
-        var student3 = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-003");
-        var roboticsProgram = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
-        var enrollTime = _seedNow;
-        var moduleEnrollments = new List<ModuleEnrollment>();
-
-        async Task TryAddEnrollmentAsync(User? student, decimal progressPercent)
-        {
-            if (student == null || roboticsProgram == null)
-            {
-                return;
-            }
-
-            var exists = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                me => me.StudentId == student.Id
-                      && me.ModuleId == moduleRobotics3.Id
-                      && !me.IsDeleted);
-
-            if (exists != null)
-            {
-                return;
-            }
-
-            var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-                pe => pe.StudentId == student.Id
-                      && pe.ProgramId == roboticsProgram.Id
-                      && !pe.IsDeleted);
-            if (programEnrollment == null)
-            {
-                return;
-            }
-
-            moduleEnrollments.Add(new ModuleEnrollment
-            {
-                Id = Guid.NewGuid(),
-                StudentId = student.Id,
-                ModuleId = moduleRobotics3.Id,
-                ProgramEnrollmentId = programEnrollment.Id,
-                Status = EnrollmentStatus.Active,
-                ProgressPercent = progressPercent,
-                EnrolledAt = enrollTime.AddDays(-7),
-                StartedAt = enrollTime.AddDays(-5),
-                CreatedAt = enrollTime.AddDays(-7),
-                CreatedBy = Guid.Empty,
-                IsDeleted = false
-            });
-        }
-
-        await TryAddEnrollmentAsync(student2, 20m);
-        await TryAddEnrollmentAsync(student3, 10m);
-
-        if (moduleEnrollments.Count == 0)
-        {
-            _loggerService.LogInformation("Research module enrollments already exist, skipping seeding");
-            return;
-        }
-
-        await _unitOfWork.ModuleEnrollments.AddRangeAsync(moduleEnrollments);
-        await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Finished seed research module enrollments — {Count} enrollment(s) created.",
-            moduleEnrollments.Count);
+            "Skipping dedicated robotics research module enrollments — program backfill owns MOD-ROBOTICS-03 rows.");
+        await Task.CompletedTask;
     }
 
     private async Task SeedResearchActivityProgressAsync()
@@ -436,49 +369,48 @@ public partial class SeedService
             return;
         }
 
-        var studentCodes = new[] { "STD-002", "STD-003" };
+        var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002");
+        if (student == null
+            || !await StudentClassHasStartedModuleAsync(student.Id, moduleRobotics3.Id))
+        {
+            _loggerService.LogInformation(
+                "STD-002 has not started MOD-ROBOTICS-03 with their class. Skipping research activity progress.");
+            return;
+        }
         var progressTime = _seedNow;
         var activityProgresses = new List<ActivityProgress>();
 
-        foreach (var studentCode in studentCodes)
+        var enrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+            me => me.StudentId == student.Id
+                  && me.ModuleId == moduleRobotics3.Id
+                  && !me.IsDeleted);
+
+        if (enrollment == null)
         {
-            var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
-            if (student == null)
+            _loggerService.LogInformation("STD-002 has no MOD-ROBOTICS-03 enrollment. Skipping research activity progress.");
+            return;
+        }
+
+        var existingProgress = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+            ap => ap.ModuleEnrollmentId == enrollment.Id
+                  && ap.ActivityId == designBriefActivity.Id
+                  && !ap.IsDeleted);
+
+        if (existingProgress == null)
+        {
+            activityProgresses.Add(new ActivityProgress
             {
-                continue;
-            }
-
-            var enrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                me => me.StudentId == student.Id
-                      && me.ModuleId == moduleRobotics3.Id
-                      && !me.IsDeleted);
-
-            if (enrollment == null)
-            {
-                continue;
-            }
-
-            var existingProgress = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
-                ap => ap.ModuleEnrollmentId == enrollment.Id
-                      && ap.ActivityId == designBriefActivity.Id
-                      && !ap.IsDeleted);
-
-            if (existingProgress == null)
-            {
-                activityProgresses.Add(new ActivityProgress
-                {
-                    Id = Guid.NewGuid(),
-                    StudentId = student.Id,
-                    ActivityId = designBriefActivity.Id,
-                    ModuleEnrollmentId = enrollment.Id,
-                    ActivityStatus = ActivityStatus.Done,
-                    IsCompleted = true,
-                    CompletedAt = progressTime.AddDays(-4),
-                    CreatedAt = progressTime,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false
-                });
-            }
+                Id = Guid.NewGuid(),
+                StudentId = student.Id,
+                ActivityId = designBriefActivity.Id,
+                ModuleEnrollmentId = enrollment.Id,
+                ActivityStatus = ActivityStatus.Done,
+                IsCompleted = true,
+                CompletedAt = progressTime.AddDays(-4),
+                CreatedAt = progressTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            });
         }
 
         if (activityProgresses.Count == 0)
@@ -490,35 +422,16 @@ public partial class SeedService
         await _unitOfWork.ActivityProgresses.AddRangeAsync(activityProgresses);
         await _unitOfWork.SaveChangesAsync();
 
-        foreach (var studentCode in studentCodes)
+        var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+            _unitOfWork,
+            enrollment);
+
+        if (moduleProgressPercent >= 100m && enrollment.ProgramEnrollmentId.HasValue)
         {
-            var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == studentCode);
-            if (student == null)
-            {
-                continue;
-            }
-
-            var enrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                me => me.StudentId == student.Id
-                      && me.ModuleId == moduleRobotics3.Id
-                      && !me.IsDeleted);
-
-            if (enrollment == null)
-            {
-                continue;
-            }
-
-            var moduleProgressPercent = await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(
+            await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
                 _unitOfWork,
+                enrollment.ProgramEnrollmentId.Value,
                 enrollment);
-
-            if (moduleProgressPercent >= 100m && enrollment.ProgramEnrollmentId.HasValue)
-            {
-                await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
-                    _unitOfWork,
-                    enrollment.ProgramEnrollmentId.Value,
-                    enrollment);
-            }
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -527,20 +440,9 @@ public partial class SeedService
             activityProgresses.Count);
     }
 
-    private async Task SeedEnrollmentActivityProgressAsync()
+    private async Task SeedCertTestProgressAsync()
     {
-        _loggerService.LogInformation("Starting seed enrollment activity progress");
-
-        await TrySeedModuleActivityProgressAsync(
-            "STD-001",
-            "MOD-WEBDEV-01",
-            "PRG-WEBDEV",
-            [
-                ("ACT-WEBDEV-01-01", ActivityStatus.Done, _seedNow.AddDays(-3)),
-                ("ACT-WEBDEV-01-02", ActivityStatus.InProgress, null),
-            ]);
-
-        // STD-025: Robotics Active + CERT Active (still within max 2 in-progress programs).
+        _loggerService.LogInformation("Starting seed CERT-TEST activity progress for STD-025");
         await EnsureCertTestEnrollmentForProgressAsync();
         await TrySeedModuleActivityProgressAsync(
             "STD-025",
@@ -549,8 +451,7 @@ public partial class SeedService
             [
                 ("ACT-CERT-TEST-01-01", ActivityStatus.Done, _seedNow.AddDays(-1)),
             ]);
-
-        _loggerService.LogInformation("Finished seed enrollment activity progress");
+        _loggerService.LogInformation("Finished seed CERT-TEST activity progress");
     }
 
     /// <summary>
@@ -835,6 +736,13 @@ public partial class SeedService
             || milestoneDesign == null)
         {
             _loggerService.LogWarning("Required research submission seed data not found. Skipping.");
+            return;
+        }
+
+        if (!await StudentClassHasStartedModuleAsync(student2.Id, moduleRobotics3.Id))
+        {
+            _loggerService.LogInformation(
+                "STD-002 has not started MOD-ROBOTICS-03 with their class. Skipping research submissions.");
             return;
         }
 

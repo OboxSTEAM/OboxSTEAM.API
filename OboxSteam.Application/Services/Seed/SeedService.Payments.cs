@@ -49,6 +49,15 @@ public partial class SeedService
             }
 
             // Failed/Dropped already paid the original purchase; rebuy is a new payment.
+            ProgramEnrollment? source = null;
+            if (enrollment.SourceProgramEnrollmentId.HasValue)
+            {
+                source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                    enrollment.SourceProgramEnrollmentId.Value);
+            }
+
+            var amount = ProgramPurchaseLifecycle.ResolveCheckoutAmount(program, source, _seedNow);
+            var isRebuy = source != null;
             var paidAt = (enrollment.EnrolledAt ?? _seedNow).AddDays(-1);
             var status = PaymentStatus.Success;
             var payment = new Payment
@@ -58,7 +67,7 @@ public partial class SeedService
                 StudentId = student.Id,
                 PaidById = student.Id,
                 ProgramEnrollmentId = enrollment.Id,
-                Amount = program.Price ?? 0m,
+                Amount = amount,
                 Gateway = gateways[paymentIndex % gateways.Length],
                 TransactionId = $"SEED-TXN-{paymentIndex:D4}",
                 Status = status,
@@ -79,7 +88,9 @@ public partial class SeedService
                     IssuedToId = student.Id,
                     BillingName = student.FullName ?? student.Email,
                     BillingEmail = student.Email,
-                    ItemDescription = $"{program.Name} tuition",
+                    ItemDescription = isRebuy
+                        ? $"{program.Name} chuyen ca"
+                        : $"{program.Name} tuition",
                     SubTotal = payment.Amount,
                     TotalAmount = payment.Amount,
                     Currency = "VND",

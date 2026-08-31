@@ -15,18 +15,28 @@ public partial class SeedService
     private const string IotUnassignedClassCode = "CLS-IOT-OPEN";
     private const string PythonUnassignedClassCode = "CLS-PYBASIC-OPEN";
 
+    /// <summary>
+    /// In-progress Robotics purchase on CLS-ROBOTICS-CURRENT (theory done, sensors
+    /// underway / research opening). STD-001 is the hero student; STD-002 holds the
+    /// in-progress research design-brief draft once the cohort has started module 3.
+    /// </summary>
     private static readonly string[] RoboticsCurrentStudentCodes =
     [
         "STD-001", "STD-002", "STD-005", "STD-008",
         "STD-022", "STD-023", "STD-024", "STD-025",
     ];
 
+    /// <summary>Finished Robotics on CLS-ROBOTICS-PAST (certificate + capstone on STD-009).</summary>
     private static readonly string[] RoboticsPastStudentCodes =
     [
         "STD-009", "STD-010", "STD-011", "STD-012",
     ];
 
-    private static readonly string[] RoboticsOpenStudentCodes =
+    /// <summary>
+    /// No purchase yet. First-time checkout into CLS-ROBOTICS-OPEN (mentor assigned,
+    /// seats empty). Password Student@123.
+    /// </summary>
+    internal static readonly string[] RoboticsReadyToBuyStudentCodes =
     [
         "STD-019", "STD-020",
     ];
@@ -70,6 +80,7 @@ public partial class SeedService
     internal const string FailRebuyEligibleClassCode = "CLS-FAILREBUY-ELIGIBLE";
     internal const string FailRebuyBlockedClassCode = "CLS-FAILREBUY-BLOCKED";
     internal const string FailRebuyFreshClassCode = "CLS-FAILREBUY-FRESH";
+    internal const string FailRebuyGraduatedClassCode = "CLS-FAILREBUY-GRADUATED";
     internal const string FailRebuyMentorCode = "MNT-006";
     internal const string FailRebuyRebuyMentorCode = "MNT-007";
 
@@ -87,6 +98,20 @@ public partial class SeedService
         "STD-036",
         "STD-037",
         "STD-038",
+        "STD-039",
+    ];
+
+    /// <summary>
+    /// Failed on CURRENT then already chuyen-ca'd. STD-039 finished the graduated
+    /// cohort (Completed, not in-progress). STD-040 is Active on ELIGIBLE with
+    /// Foundations credit copied.
+    /// </summary>
+    internal const string FailRebuyRebuyCompletedStudentCode = "STD-039";
+    internal const string FailRebuyRebuyActiveStudentCode = "STD-040";
+
+    internal static readonly string[] FailRebuyRebuyActiveStudentCodes =
+    [
+        FailRebuyRebuyActiveStudentCode,
     ];
 
     /// <summary>Active PRG-FAILREBUY purchases used to fire close/withdraw APIs.</summary>
@@ -176,7 +201,7 @@ public partial class SeedService
             "PRG-ROBOTICS",
             "MNT-001",
             ClassStatus.InProgress,
-            -42,
+            -56,
             42,
             12,
             "Tuesday & Thursday 09:00-11:30",
@@ -285,11 +310,12 @@ public partial class SeedService
         [
             (RoboticsCurrentClassCode, RoboticsCurrentStudentCodes, ClassEnrollmentStatus.Active),
             (RoboticsPastClassCode, RoboticsPastStudentCodes, ClassEnrollmentStatus.Completed),
-            (RoboticsOpenClassCode, RoboticsOpenStudentCodes, ClassEnrollmentStatus.Active),
             (IotCurrentClassCode, IotCurrentStudentCodes, ClassEnrollmentStatus.Active),
             (WebDevPastClassCode, WebDevPastStudentCodes, ClassEnrollmentStatus.Completed),
+            (GameDevOpenClassCode, GameDevPendingStudentCodes, ClassEnrollmentStatus.Pending),
+            (GameDevOpenClassCode, GameDevJustEnrolledStudentCodes, ClassEnrollmentStatus.Active),
+            // CLS-ROBOTICS-OPEN stays empty for first-time purchase (STD-019 / STD-020).
             // Unassigned ReadyForMentor (no mentor): CLS-WEBDEV-OPEN, CLS-IOT-OPEN, CLS-PYBASIC-OPEN.
-            // Open with mentor, no students yet: CLS-GAMEDEV-OPEN.
         ];
 
     /// <summary>
@@ -368,7 +394,7 @@ public partial class SeedService
             usage[studentCode] = usage.GetValueOrDefault(studentCode) + 1;
         }
 
-        foreach (var code in RoboticsCurrentStudentCodes.Concat(RoboticsOpenStudentCodes))
+        foreach (var code in RoboticsCurrentStudentCodes)
         {
             Add(code);
         }
@@ -400,6 +426,11 @@ public partial class SeedService
         }
 
         foreach (var code in FailRebuyActiveStudentCodes)
+        {
+            Add(code);
+        }
+
+        foreach (var code in FailRebuyRebuyActiveStudentCodes)
         {
             Add(code);
         }
@@ -441,6 +472,11 @@ public partial class SeedService
         }
 
         foreach (var code in FailRebuyActiveStudentCodes)
+        {
+            Add(code);
+        }
+
+        foreach (var code in FailRebuyRebuyActiveStudentCodes)
         {
             Add(code);
         }

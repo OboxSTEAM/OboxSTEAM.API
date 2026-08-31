@@ -61,6 +61,16 @@ public sealed class SeedMentorLoadTests
         {
             Assert.Equal(0, usage.GetValueOrDefault(code));
         }
+
+        foreach (var code in SeedService.RoboticsReadyToBuyStudentCodes)
+        {
+            Assert.Equal(0, usage.GetValueOrDefault(code));
+        }
+
+        foreach (var code in SeedService.FailRebuyRebuyActiveStudentCodes)
+        {
+            Assert.Equal(1, usage.GetValueOrDefault(code));
+        }
     }
 
     [Fact]
@@ -87,6 +97,18 @@ public sealed class SeedMentorLoadTests
         {
             Assert.Equal(0, usage.GetValueOrDefault(code));
         }
+
+        foreach (var code in SeedService.RoboticsReadyToBuyStudentCodes)
+        {
+            Assert.Equal(0, usage.GetValueOrDefault(code));
+        }
+
+        foreach (var code in SeedService.FailRebuyRebuyActiveStudentCodes)
+        {
+            Assert.Equal(1, usage.GetValueOrDefault(code));
+        }
+
+        Assert.Equal(1, usage.GetValueOrDefault("STD-021"));
     }
 
     [Fact]
