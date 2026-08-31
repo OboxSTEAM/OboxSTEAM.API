@@ -250,34 +250,54 @@ public sealed class SessionMeetingServiceTests
         Assert.Equal(37, attendance.ParticipationMinutes);
     }
 
+
     [Fact]
-    public async Task Join_Throws_WhenOutsideWindow()
+    public async Task Leave_IsIdempotent_ReturnsExistingValues()
     {
         SeedUsers();
         SeedClassAndEnrollments();
-        SeedLiveOnline(_now.AddMinutes(20), _now.AddHours(2));
+        SeedLiveOnline(_now.AddMinutes(-5), _now.AddHours(1));
 
         var sut = CreateSut(_studentId);
-        var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.JoinAsync(_sessionId));
-        Assert.Equal(ClassSessionJoinValidator.JoinWindowClosedMessage, ex.Message);
+        await sut.JoinAsync(_sessionId);
+
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(_now.AddMinutes(20));
+        var first = await sut.LeaveAsync(_sessionId);
+
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(_now.AddMinutes(45));
+        var second = await sut.LeaveAsync(_sessionId);
+
+        Assert.Equal(first.ParticipationMinutes, second.ParticipationMinutes);
+        Assert.Equal(first.LeftAt, second.LeftAt);
+
+        var attendance = _db.SessionAttendances.GetQueryable().Single();
+        Assert.Equal(20, attendance.ParticipationMinutes);
     }
 
     [Fact]
-    public void ResolveJoinAttendanceStatus_PresentWithinGrace()
+    public async Task Join_RejoinAfterLeave_KeepsFirstCheckedInAtAndFinalLeave()
     {
-        var session = new ClassSession { StartTime = _now };
-        Assert.Equal(
-            AttendanceStatus.Present,
-            ClassSessionJoinValidator.ResolveJoinAttendanceStatus(session, _now.AddMinutes(10)));
-        Assert.Equal(
-            AttendanceStatus.Late,
-            ClassSessionJoinValidator.ResolveJoinAttendanceStatus(session, _now.AddMinutes(11)));
+        SeedUsers();
+        SeedClassAndEnrollments();
+        SeedLiveOnline(_now.AddMinutes(-5), _now.AddHours(2));
+
+        var sut = CreateSut(_studentId);
+        await sut.JoinAsync(_sessionId);
+
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(_now.AddMinutes(30));
+        await sut.LeaveAsync(_sessionId);
+
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(_now.AddMinutes(35));
+        await sut.JoinAsync(_sessionId);
+
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(_now.AddMinutes(50));
+        var leave = await sut.LeaveAsync(_sessionId);
+
+        Assert.Equal(_now, leave.CheckedInAt);
+        Assert.Equal(50, leave.ParticipationMinutes);
     }
 
     [Fact]
-    public void JaasJwt_NormalizePem_ReplacesEscapedNewlines()
-    {
-        var normalized = JaasJwtService.NormalizePem("line1\\nline2\\r\\nline3");
-        Assert.Equal("line1\nline2\nline3", normalized);
-    }
-}
+    public async Task Join_Throws_WhenOutsideWindow()
+
+[Showing lines 1-300 of 330. Use :301 to continue]

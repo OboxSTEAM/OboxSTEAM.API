@@ -61,9 +61,12 @@ public sealed class ClassSessionGenerateTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        var currentTime = new Mock<ICurrentTime>();
+        currentTime.Setup(t => t.GetCurrentTime()).Returns(DateTime.UtcNow);
         return new ClassSessionService(
             _db,
             _claimsService.Object,
+            currentTime.Object,
             NullLogger<ClassSessionService>.Instance,
             _notificationPublisher.Object);
     }
