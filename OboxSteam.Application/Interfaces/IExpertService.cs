@@ -14,10 +14,10 @@ public interface IExpertService
         int page,
         int pageSize,
         string? code = null);
-    Task<ExpertResponseDto> AddExpertAsync(ExpertCreateDto expertCreateDto);
+    Task<ExpertResponseDto> AddExpertAsync(CreateExpertRequest request);
     Task<ExpertResponseDto> UploadAvatarAsync(Guid id, IFormFile file);
     Task<ExpertProgramSummaryDto> AddProgramToExpertAsync(Guid expertId, Guid programId, AddProgramToExpertDto? dto = null);
-    Task<ExpertResponseDto> UpdateExpertAsync(Guid id, ExpertUpdateDto expertUpdateDto);
+    Task<ExpertResponseDto> UpdateExpertAsync(Guid id, UpdateExpertRequest request);
     Task<ExpertProgramSummaryDto> UpdateProgramOfExpertAsync(Guid expertId, Guid programId);
     Task<bool> DeleteExpertAsync(Guid id);
     Task<bool> RemoveProgramFromExpertAsync(Guid expertId, Guid programId);

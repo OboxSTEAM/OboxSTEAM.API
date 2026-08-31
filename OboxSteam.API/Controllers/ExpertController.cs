@@ -71,14 +71,14 @@ public class ExpertController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a new expert",
-        Description = "Creates a new expert with the provided information. Requires Admin or Manager role.")]
+        Description = "Creates an expert profile and a dedicated Expert login. Email and password are required; the expert can sign in immediately. Password reset uses the existing forgot-password OTP flow. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> AddExpert(
-        [FromBody, SwaggerParameter("New expert data to be created")] ExpertCreateDto dto)
+        [FromBody, SwaggerParameter("New expert data to be created")] CreateExpertRequest dto)
     {
         var result = await _expertService.AddExpertAsync(dto);
 
@@ -133,7 +133,7 @@ public class ExpertController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> UpdateExpert(
         [FromRoute] Guid id,
-        [FromBody, SwaggerParameter("Updated expert data")] ExpertUpdateDto dto)
+        [FromBody, SwaggerParameter("Updated expert data")] UpdateExpertRequest dto)
     {
         if (dto == null)
         {

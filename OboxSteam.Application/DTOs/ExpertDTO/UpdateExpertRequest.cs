@@ -1,9 +1,8 @@
 namespace OboxSteam.Application.DTOs.ExpertDTO;
 
-public class ExpertUpdateDto
+public class UpdateExpertRequest
 {
     public string? Code { get; set; }
-    public Guid? UserId { get; set; }
     public string? FullName { get; set; }
     public string? Title { get; set; }
     public string? Organization { get; set; }

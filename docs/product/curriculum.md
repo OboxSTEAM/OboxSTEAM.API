@@ -147,7 +147,11 @@ Types via `MaterialType` enum. API: `/api/materials`.
 ## Experts
 
 Experts associated with programs via `ProgramBoard` and the `Expert` entity.
-`RoleType.Expert` is a dedicated login role (provisioned; not public register).
+`RoleType.Expert` is a dedicated login role. Manager/Admin provision it with
+`POST /api/experts` (email + password required); the expert signs in through
+`POST /api/auth/login` immediately. Public register does not allow Expert.
+Password reset uses forgot-password OTP. `PUT /api/experts/{id}` does not
+change credentials; `DELETE` locks the linked user.
 Profile credentials: `Specialization` tags, `ExpertDegree`, and
 `ExpertPublication`. Manager/Admin CRUD:
 

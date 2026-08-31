@@ -533,6 +533,7 @@ public partial class SeedService
             };
 
             users.AddRange(CreateFailRebuyFixtureStudents(_seedNow));
+            users.AddRange(CreateSeedExpertUsers(_seedNow));
 
             await _unitOfWork.Users.AddRangeAsync(users);
             await _unitOfWork.SaveChangesAsync();

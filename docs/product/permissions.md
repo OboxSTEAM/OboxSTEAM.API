@@ -78,9 +78,16 @@ Create, update, delete for:
 ### Expert
 
 - Dedicated login role (`"Expert"` JWT claim). Accounts are provisioned by
-  Manager/Admin; public `POST /api/auth/register` does not allow Expert.
+  Manager/Admin via `POST /api/experts` (email and password required). The
+  expert can log in immediately (`IsEmailVerified = true`). Public
+  `POST /api/auth/register` does not allow Expert. Password reset uses the
+  existing `POST /api/auth/forgot-password` OTP flow — OTP is not sent at
+  provisioning.
+- Updating an expert does not change login credentials. Deleting an expert
+  locks the linked user (`AccountStatus.Locked`).
 - Intended surfaces: program framework blueprints, curriculum review queue,
-  and Offline co-teach invitations. Dedicated endpoints are not exposed yet.
+  and Offline co-teach invitations. Dedicated review/co-teach endpoints are
+  not exposed yet.
 - Until those endpoints land, Expert is not included in existing
   `[Authorize(Roles=...)]` lists and is denied on role-switched services such
   as media.
