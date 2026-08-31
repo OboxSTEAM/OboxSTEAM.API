@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.Services;
 
 namespace OboxSteam.Infrastructure.Services;
@@ -32,6 +33,12 @@ public sealed class AssignmentWindowCloseService : BackgroundService
             try
             {
                 using var scope = _serviceProvider.CreateScope();
+                if (SeedExecutionGuard.IsSeeding)
+                {
+                    await Task.Delay(RunInterval, stoppingToken);
+                    continue;
+                }
+
                 var lifecycle = scope.ServiceProvider.GetRequiredService<ProgramPurchaseLifecycle>();
                 var closed = await lifecycle.CloseElapsedRequiredWindowsAsync(stoppingToken);
                 if (closed > 0)

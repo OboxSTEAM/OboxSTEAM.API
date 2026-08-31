@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
@@ -666,6 +667,60 @@ public sealed class ProgramPurchaseLifecycleTests
         Assert.Equal(1, closed);
         Assert.Equal(
             EnrollmentStatus.Failed,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task CloseElapsedRequiredWindowsAsync_NoOp_WhileSeeding()
+    {
+        SeedAcademicContext(moduleType: ModuleType.Theory);
+        SeedElapsedWindowSeat();
+        var sut = CreateSut();
+
+        using (SeedExecutionGuard.Begin())
+        {
+            var closed = await sut.CloseElapsedRequiredWindowsAsync();
+
+            Assert.Equal(0, closed);
+        }
+
+        Assert.Equal(
+            EnrollmentStatus.Active,
+            _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+    }
+
+    [Fact]
+    public async Task CloseElapsedRequiredWindowsAsync_NoOp_WhenCanonicalWindowStillOpen()
+    {
+        SeedAcademicContext(moduleType: ModuleType.Theory);
+        SeedElapsedWindowSeat();
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _classId,
+            ModuleId = _moduleId,
+            AssignmentId = _assignmentId,
+            SessionKind = SessionKind.AssignmentWindow,
+            Title = "Stale ended duplicate",
+            StartTime = _now.AddDays(-2),
+            EndTime = _now.AddHours(-1),
+            RequiresAttendance = false,
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+        var canonical = _db.ClassSessions.Items
+            .Where(s => s.AssignmentId == _assignmentId && s.SessionKind == SessionKind.AssignmentWindow)
+            .OrderBy(s => s.StartTime)
+            .First();
+        canonical.StartTime = _now.AddDays(-20);
+        canonical.EndTime = _now.AddDays(10);
+        var sut = CreateSut();
+
+        var closed = await sut.CloseElapsedRequiredWindowsAsync();
+
+        Assert.Equal(0, closed);
+        Assert.Equal(
+            EnrollmentStatus.Active,
             _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
     }
 

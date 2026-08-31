@@ -78,11 +78,8 @@ public partial class SeedService
             me => studentIds.Contains(me.StudentId) && !me.IsDeleted);
         var existingSubmissions = await _unitOfWork.Submissions.GetAllAsync(
             s => studentIds.Contains(s.StudentId) && !s.IsDeleted);
-        var submittedKeys = existingSubmissions
-            .Select(s => (s.StudentId, s.AssignmentId))
-            .ToHashSet();
-
         var toAdd = new List<Submission>();
+        var upgraded = 0;
         foreach (var seat in seats)
         {
             if (!classById.TryGetValue(seat.ClassId, out var classEntity)
@@ -100,11 +97,6 @@ public partial class SeedService
             foreach (var assignment in assignments.Where(a =>
                          modules.Any(m => m.Id == a.ModuleId && m.ProgramId == classEntity.ProgramId)))
             {
-                if (submittedKeys.Contains((seat.StudentId, assignment.Id)))
-                {
-                    continue;
-                }
-
                 if (!livesByModule.TryGetValue(assignment.ModuleId, out var lives) || lives.Count == 0)
                 {
                     continue;
@@ -126,41 +118,50 @@ public partial class SeedService
                 }
 
                 var moduleFullyTaught = taughtCount == lives.Count;
-                toAdd.Add(new Submission
+                if (StudentHasLeftoverFailHold(existingSubmissions, seat.StudentId, assignment, _seedNow))
                 {
-                    Id = Guid.NewGuid(),
-                    Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-                    AssignmentId = assignment.Id,
-                    StudentId = seat.StudentId,
-                    ModuleEnrollmentId = moduleEnrollment.Id,
-                    AttemptNumber = 1,
-                    Status = moduleFullyTaught ? SubmissionStatus.Graded : SubmissionStatus.TurnedIn,
-                    AssignedGrade = moduleFullyTaught ? Math.Max(assignment.PassScore, 80m) : null,
-                    ContentText = moduleFullyTaught
-                        ? "Seeded pass after the class finished teaching this module."
-                        : "Seeded in-progress work while the class is still teaching this module.",
-                    SubmittedAt = _seedNow,
-                    GradedAt = moduleFullyTaught ? _seedNow : null,
-                    StartedAt = _seedNow.AddDays(-2),
-                    CreatedAt = _seedNow,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false,
-                });
-                submittedKeys.Add((seat.StudentId, assignment.Id));
+                    continue;
+                }
+
+                var existing = LatestStudentAssignmentSubmission(
+                    existingSubmissions,
+                    seat.StudentId,
+                    assignment.Id);
+                if (existing != null)
+                {
+                    ApplySeededAssessmentHold(existing, assignment, moduleFullyTaught, _seedNow);
+                    await _unitOfWork.Submissions.Update(existing);
+                    upgraded++;
+                    continue;
+                }
+
+                var created = CreateSeededAssessmentHold(
+                    assignment,
+                    seat.StudentId,
+                    moduleEnrollment.Id,
+                    moduleFullyTaught,
+                    _seedNow);
+                toAdd.Add(created);
+                existingSubmissions.Add(created);
             }
         }
 
-        if (toAdd.Count == 0)
+        if (toAdd.Count == 0 && upgraded == 0)
         {
             _loggerService.LogInformation("No taught-module assessment safety-net rows needed.");
             return;
         }
 
-        await _unitOfWork.Submissions.AddRangeAsync(toAdd);
+        if (toAdd.Count > 0)
+        {
+            await _unitOfWork.Submissions.AddRangeAsync(toAdd);
+        }
+
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Seeded {Count} taught-module assessment safety-net submission(s).",
-            toAdd.Count);
+            "Seeded {Added} taught-module assessment safety-net submission(s), upgraded {Upgraded}.",
+            toAdd.Count,
+            upgraded);
     }
 
     /// <summary>
@@ -233,11 +234,9 @@ public partial class SeedService
             s => studentIds.Contains(s.StudentId)
                  && assignmentIds.Contains(s.AssignmentId)
                  && !s.IsDeleted);
-        var submittedKeys = existingSubmissions
-            .Select(s => (s.StudentId, s.AssignmentId))
-            .ToHashSet();
 
         var toAdd = new List<Submission>();
+        var upgraded = 0;
         foreach (var window in windows)
         {
             if (!assignments.TryGetValue(window.AssignmentId!.Value, out var assignment))
@@ -253,7 +252,7 @@ public partial class SeedService
                     continue;
                 }
 
-                if (submittedKeys.Contains((seat.StudentId, assignment.Id)))
+                if (StudentHasLeftoverFailHold(existingSubmissions, seat.StudentId, assignment, now))
                 {
                     continue;
                 }
@@ -267,38 +266,190 @@ public partial class SeedService
                     continue;
                 }
 
-                toAdd.Add(new Submission
+                var existing = LatestStudentAssignmentSubmission(
+                    existingSubmissions,
+                    seat.StudentId,
+                    assignment.Id);
+                if (existing != null)
                 {
-                    Id = Guid.NewGuid(),
-                    Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-                    AssignmentId = assignment.Id,
-                    StudentId = seat.StudentId,
-                    ModuleEnrollmentId = moduleEnrollment.Id,
-                    AttemptNumber = 1,
-                    Status = SubmissionStatus.Graded,
-                    AssignedGrade = Math.Max(assignment.PassScore, 80m),
-                    ContentText = "Seeded pass for elapsed class work window.",
-                    SubmittedAt = window.EndTime,
-                    GradedAt = window.EndTime,
-                    StartedAt = window.StartTime,
-                    CreatedAt = window.EndTime,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false,
-                });
-                submittedKeys.Add((seat.StudentId, assignment.Id));
+                    ApplySeededAssessmentHold(existing, assignment, moduleFullyTaught: true, now);
+                    existing.SubmittedAt = window.EndTime;
+                    existing.GradedAt = window.EndTime;
+                    existing.StartedAt = window.StartTime;
+                    existing.ContentText = "Seeded pass for elapsed class work window.";
+                    await _unitOfWork.Submissions.Update(existing);
+                    upgraded++;
+                    continue;
+                }
+
+                var created = CreateSeededAssessmentHold(
+                    assignment,
+                    seat.StudentId,
+                    moduleEnrollment.Id,
+                    moduleFullyTaught: true,
+                    window.EndTime);
+                created.SubmittedAt = window.EndTime;
+                created.StartedAt = window.StartTime;
+                created.ContentText = "Seeded pass for elapsed class work window.";
+                toAdd.Add(created);
+                existingSubmissions.Add(created);
             }
         }
 
-        if (toAdd.Count == 0)
+        if (toAdd.Count == 0 && upgraded == 0)
         {
             _loggerService.LogInformation("No elapsed-window pass submissions needed.");
             return;
         }
 
-        await _unitOfWork.Submissions.AddRangeAsync(toAdd);
+        if (toAdd.Count > 0)
+        {
+            await _unitOfWork.Submissions.AddRangeAsync(toAdd);
+        }
+
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Seeded {Count} passing submission(s) for elapsed required windows.",
-            toAdd.Count);
+            "Seeded {Added} passing submission(s) for elapsed required windows, upgraded {Upgraded}.",
+            toAdd.Count,
+            upgraded);
     }
+
+    /// <summary>
+    /// Reopens in-progress purchases the leftover-fail scan closed during this seed run
+    /// (EndedAt at/after <see cref="_seedNow"/>). Intentional FailRebuy snapshots use a past EndedAt.
+    /// </summary>
+    private async Task RestoreInProgressPurchasesClosedDuringSeedAsync()
+    {
+        var closed = await _unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => !pe.IsDeleted
+                  && pe.Status == EnrollmentStatus.Failed
+                  && pe.EndReason == ProgramPurchaseEndReason.AcademicFail
+                  && pe.EndedAt != null
+                  && pe.EndedAt >= _seedNow);
+        if (closed.Count == 0)
+        {
+            return;
+        }
+
+        var restored = 0;
+        foreach (var enrollment in closed)
+        {
+            enrollment.Status = EnrollmentStatus.Active;
+            enrollment.EndReason = null;
+            enrollment.EndedModuleId = null;
+            enrollment.EndedAt = null;
+            await _unitOfWork.ProgramEnrollments.Update(enrollment);
+
+            var moduleEnrollments = await _unitOfWork.ModuleEnrollments.GetAllAsync(
+                me => me.ProgramEnrollmentId == enrollment.Id && !me.IsDeleted);
+            foreach (var moduleEnrollment in moduleEnrollments)
+            {
+                if (moduleEnrollment.Status is EnrollmentStatus.Failed or EnrollmentStatus.Dropped)
+                {
+                    moduleEnrollment.Status = EnrollmentStatus.Active;
+                    await _unitOfWork.ModuleEnrollments.Update(moduleEnrollment);
+                }
+            }
+
+            var seats = await _unitOfWork.ClassEnrollments.GetAllAsync(
+                ce => ce.ProgramEnrollmentId == enrollment.Id
+                      && !ce.IsDeleted
+                      && ce.Status == ClassEnrollmentStatus.Withdrawn);
+            foreach (var seat in seats)
+            {
+                seat.Status = ClassEnrollmentStatus.Active;
+                await _unitOfWork.ClassEnrollments.Update(seat);
+            }
+
+            restored++;
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogWarning(
+            "Reopened {Count} in-progress purchase(s) closed by leftover-fail during seed.",
+            restored);
+    }
+
+    private static bool StudentHasLeftoverFailHold(
+        IReadOnlyCollection<Submission> submissions,
+        Guid studentId,
+        Assignment assignment,
+        DateTime now)
+        => submissions.Any(s =>
+            s.StudentId == studentId
+            && s.AssignmentId == assignment.Id
+            && !s.IsDeleted
+            && BlocksLeftoverAcademicFail(s, assignment, now));
+
+    private static Submission? LatestStudentAssignmentSubmission(
+        IReadOnlyCollection<Submission> submissions,
+        Guid studentId,
+        Guid assignmentId)
+        => submissions
+            .Where(s => s.StudentId == studentId && s.AssignmentId == assignmentId && !s.IsDeleted)
+            .OrderByDescending(s => s.AttemptNumber)
+            .ThenByDescending(s => s.CreatedAt)
+            .FirstOrDefault();
+
+    private static bool BlocksLeftoverAcademicFail(Submission submission, Assignment assignment, DateTime now)
+    {
+        if (submission.Status == SubmissionStatus.TurnedIn)
+        {
+            return true;
+        }
+
+        if (submission.Status == SubmissionStatus.Graded
+            && submission.AssignedGrade.HasValue
+            && submission.AssignedGrade.Value >= assignment.PassScore)
+        {
+            return true;
+        }
+
+        return AssignmentWindowPolicy.IsBlockingInProgress(submission, now);
+    }
+
+    private static void ApplySeededAssessmentHold(
+        Submission submission,
+        Assignment assignment,
+        bool moduleFullyTaught,
+        DateTime at)
+    {
+        submission.Status = moduleFullyTaught ? SubmissionStatus.Graded : SubmissionStatus.TurnedIn;
+        submission.AssignedGrade = moduleFullyTaught ? Math.Max(assignment.PassScore, 80m) : null;
+        submission.ContentText = moduleFullyTaught
+            ? "Seeded pass after the class finished teaching this module."
+            : "Seeded in-progress work while the class is still teaching this module.";
+        submission.SubmittedAt = at;
+        submission.GradedAt = moduleFullyTaught ? at : null;
+        submission.StartedAt ??= at.AddDays(-2);
+        submission.UpdatedAt = at;
+        submission.ExpiresAt = null;
+    }
+
+    private static Submission CreateSeededAssessmentHold(
+        Assignment assignment,
+        Guid studentId,
+        Guid moduleEnrollmentId,
+        bool moduleFullyTaught,
+        DateTime at)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
+            AssignmentId = assignment.Id,
+            StudentId = studentId,
+            ModuleEnrollmentId = moduleEnrollmentId,
+            AttemptNumber = 1,
+            Status = moduleFullyTaught ? SubmissionStatus.Graded : SubmissionStatus.TurnedIn,
+            AssignedGrade = moduleFullyTaught ? Math.Max(assignment.PassScore, 80m) : null,
+            ContentText = moduleFullyTaught
+                ? "Seeded pass after the class finished teaching this module."
+                : "Seeded in-progress work while the class is still teaching this module.",
+            SubmittedAt = at,
+            GradedAt = moduleFullyTaught ? at : null,
+            StartedAt = at.AddDays(-2),
+            CreatedAt = at,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        };
 }

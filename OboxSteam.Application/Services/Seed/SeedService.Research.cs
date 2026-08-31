@@ -783,6 +783,7 @@ public partial class SeedService
                 FileUrl = "https://storage.oboxsteam.com/submissions/robotics-design-brief-std002.pdf",
                 MentorFeedback = "Please add sensor placement diagrams and a parts list before resubmitting.",
                 SubmittedAt = seedTime.AddDays(-3),
+                ExpiresAt = seedTime.AddDays(14),
                 CreatedAt = seedTime.AddDays(-5),
                 CreatedBy = mentor.Id,
                 UpdatedAt = seedTime.AddDays(-2),
@@ -1203,42 +1204,6 @@ public partial class SeedService
                     await _unitOfWork.SaveChangesAsync();
                     createdCount++;
                 }
-            }
-        }
-
-        var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == "MOD-ROBOTICS-03");
-        var milestoneCapstone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
-            rm => rm.Code == "RML-ROBOTICS-03-03" && !rm.IsDeleted);
-        var enrollmentStudent1 = moduleRobotics3 == null
-            ? null
-            : await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-                me => me.StudentId == student1.Id
-                      && me.ModuleId == moduleRobotics3.Id
-                      && !me.IsDeleted);
-
-        if (milestoneCapstone != null
-            && enrollmentStudent1 != null
-            && !await SubmissionCodeExistsAsync("SUB-RML0303A"))
-        {
-            var assignmentCapstone = await _unitOfWork.Assignments.GetByIdAsync(milestoneCapstone.AssignmentId);
-            if (assignmentCapstone != null)
-            {
-                await _unitOfWork.Submissions.AddAsync(new Submission
-                {
-                    Id = Guid.NewGuid(),
-                    Code = "SUB-RML0303A",
-                    AssignmentId = assignmentCapstone.Id,
-                    StudentId = student1.Id,
-                    ModuleEnrollmentId = enrollmentStudent1.Id,
-                    ResearchMilestoneId = milestoneCapstone.Id,
-                    AttemptNumber = 0,
-                    Status = SubmissionStatus.Pending,
-                    CreatedAt = seedTime,
-                    CreatedBy = mentor.Id,
-                    IsDeleted = false
-                });
-                await _unitOfWork.SaveChangesAsync();
-                createdCount++;
             }
         }
 

@@ -995,6 +995,11 @@ public sealed class ProgramPurchaseLifecycle
     /// </summary>
     public async Task<int> CloseElapsedRequiredWindowsAsync(CancellationToken cancellationToken = default)
     {
+        if (SeedExecutionGuard.IsSeeding)
+        {
+            return 0;
+        }
+
         var now = _currentTime.GetCurrentTime();
         var windows = await _unitOfWork.ClassSessions.GetAllAsync(
             cs => cs.SessionKind == SessionKind.AssignmentWindow
@@ -1009,10 +1014,25 @@ public sealed class ProgramPurchaseLifecycle
         }
 
         var closed = 0;
+        var seen = new HashSet<(Guid ClassId, Guid AssignmentId)>();
         foreach (var window in windows)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var assignmentId = window.AssignmentId!.Value;
+            if (!seen.Add((window.ClassId, assignmentId)))
+            {
+                continue;
+            }
+
+            var canonical = await AssignmentWindowPolicy.TryGetForClassAsync(
+                _unitOfWork,
+                window.ClassId,
+                assignmentId);
+            if (canonical == null || now <= canonical.EndTime)
+            {
+                continue;
+            }
+
             var seats = await _unitOfWork.ClassEnrollments.GetAllAsync(
                 ce => ce.ClassId == window.ClassId
                       && ce.Status == ClassEnrollmentStatus.Active
@@ -1026,7 +1046,7 @@ public sealed class ProgramPurchaseLifecycle
                     seat.StudentId,
                     assignmentId,
                     null,
-                    window);
+                    canonical);
                 var closedAfter = (await _unitOfWork.ProgramEnrollments.GetByIdAsync(seat.ProgramEnrollmentId))
                     ?.Status;
                 if (closedBefore != EnrollmentStatus.Failed && closedAfter == EnrollmentStatus.Failed)

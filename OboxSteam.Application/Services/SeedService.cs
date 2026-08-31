@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Interfaces;
@@ -31,6 +32,16 @@ public partial class SeedService : ISeedService
         _loggerService.LogInformation("Starting seed all data");
         _seedNow = DateTime.UtcNow;
 
+        using (SeedExecutionGuard.Begin())
+        {
+            await SeedAllDataCoreAsync();
+        }
+
+        _loggerService.LogInformation("Finished seed all data");
+    }
+
+    private async Task SeedAllDataCoreAsync()
+    {
         await SeedUsersAsync();
         await EnsureAdditionalMentorUsersAsync();
         await SeedMentorProfilesAsync();
@@ -81,8 +92,10 @@ public partial class SeedService : ISeedService
         await SeedPaymentsAsync();
         await SeedProgramReviewsAsync();
         await SeedNotificationsAsync();
-
-        _loggerService.LogInformation("Finished seed all data");
+        await RestoreInProgressPurchasesClosedDuringSeedAsync();
+        await SeedTaughtModuleAssessmentSafetyNetAsync();
+        await SeedPassedSubmissionsForElapsedRequiredWindowsAsync();
+        await AlignInProgressCurriculumToClassTimetableAsync();
     }
 
     public async Task ClearAllDataAsync()
