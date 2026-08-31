@@ -132,10 +132,10 @@ public sealed class AuthServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.RegisterUserAsync(new UserRegistrationDto
             {
-                Email = "mgr@test.com",
+                Email = "expert@test.com",
                 Password = Password,
-                FullName = "Manager",
-                Role = RoleType.Manager,
+                FullName = "Expert",
+                Role = RoleType.Expert,
             }));
 
         await Assert.ThrowsAsync<ConflictException>(() =>
@@ -166,6 +166,23 @@ public sealed class AuthServiceTests
         Assert.False(string.IsNullOrWhiteSpace(result!.AccessToken));
         Assert.False(string.IsNullOrWhiteSpace(result.RefreshToken));
         Assert.NotNull(_db.Users.Items[0].RefreshToken);
+    }
+
+    [Fact]
+    public async Task Login_ReturnsTokens_WhenExpertCredentialsValid()
+    {
+        SeedUser(role: RoleType.Expert);
+        var sut = CreateSut();
+        var config = CreateConfiguration();
+
+        var result = await sut.LoginAsync(new LoginRequestDto
+        {
+            Email = Email,
+            Password = Password,
+        }, config);
+
+        Assert.False(string.IsNullOrWhiteSpace(result!.AccessToken));
+        Assert.Equal(RoleType.Expert, _db.Users.Items[0].Role);
     }
 
     [Fact]

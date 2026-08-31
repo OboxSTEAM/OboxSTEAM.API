@@ -1,16 +1,18 @@
 using System.ComponentModel.DataAnnotations;
+using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Domain.Entities;
 
 /// <summary>
-/// VIP Experts & PR Board — may or may not have an OBOX login (user_id nullable).
+/// Expert profile. New experts are provisioned with a dedicated <see cref="RoleType.Expert"/> login.
+/// <see cref="UserId"/> stays nullable for legacy rows until seed/upgrade links them.
 /// </summary>
 public class Expert : BaseEntity
 {
     [MaxLength(50)]
     public string Code { get; set; } = null!; // e.g., EXP-001
 
-    /// <summary>Null if external expert (no login).</summary>
+    /// <summary>Linked <see cref="User"/> with <c>RoleType.Expert</c>. Required for newly created experts.</summary>
     public Guid? UserId { get; set; }
     public User? User { get; set; }
 
