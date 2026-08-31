@@ -13,9 +13,11 @@ public class CreateProgramRequestDto
     public string? EstimatedDuration { get; set; }
     public string? SkillsGained { get; set; }
     public string? ThumbnailUrl { get; set; }
+
+    /// <summary>Must be omitted or Draft. Other values are rejected.</summary>
     public ProgramStatus? Status { get; set; }
     public decimal? Price { get; set; }
 
-    /// <summary>Optional expert blueprint. Null means free-form review (no pre-check).</summary>
+    /// <summary>Optional expert blueprint. Null skips expert review on submit.</summary>
     public Guid? FrameworkId { get; set; }
 }

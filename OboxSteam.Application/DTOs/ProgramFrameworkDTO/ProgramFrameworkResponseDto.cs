@@ -16,9 +16,7 @@ public class ProgramFrameworkResponseDto
     public bool? RequireFinalAssessment { get; set; }
 
     /// <summary>
-    /// True when the framework has at least one rubric criterion.
-    /// Programs on a framework without criteria may submit without waiting for expert review
-    /// (wired in the submit-review slice).
+    /// Always true: attaching this framework requires the owning expert to review.
     /// </summary>
     public bool RequiresExpertReview { get; set; }
 

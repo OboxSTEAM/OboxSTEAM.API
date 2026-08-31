@@ -113,7 +113,7 @@ public sealed class ProgramFrameworkServiceTests
     }
 
     [Fact]
-    public async Task Create_WithZeroCriteria_DoesNotRequireExpertReview()
+    public async Task Create_WithZeroCriteria_StillRequiresExpertReview()
     {
         SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
         SeedExpert(_expertId, _expertUserId);
@@ -125,7 +125,7 @@ public sealed class ProgramFrameworkServiceTests
             Category = ProgramCategory.Technology,
         });
 
-        Assert.False(result.RequiresExpertReview);
+        Assert.True(result.RequiresExpertReview);
         Assert.Empty(result.Criteria);
     }
 

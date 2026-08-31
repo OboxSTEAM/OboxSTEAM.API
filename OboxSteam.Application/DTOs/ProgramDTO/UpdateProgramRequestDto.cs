@@ -13,6 +13,11 @@ public class UpdateProgramRequestDto
     public string? EstimatedDuration { get; set; }
     public string? SkillsGained { get; set; }
     public string? ThumbnailUrl { get; set; }
+
+    /// <summary>
+    /// Catalog toggle only: Active ↔ Inactive when already in one of those states.
+    /// PendingReview and Approved cannot be set here.
+    /// </summary>
     public ProgramStatus? Status { get; set; }
     public decimal? Price { get; set; }
 

@@ -16,9 +16,9 @@ public enum ProgramStatus
     /// <summary>Stopped; no new registration or purchase.</summary>
     Inactive = 2,
 
-    /// <summary>Submitted for expert review; curriculum edits lock once review APIs land.</summary>
+    /// <summary>Submitted for expert review; curriculum and program edits are locked.</summary>
     PendingReview = 3,
 
-    /// <summary>Expert approved; waiting for manager publish before classes can be created.</summary>
+    /// <summary>Ready for manager publish; curriculum and program edits stay locked.</summary>
     Approved = 4,
 }
