@@ -506,6 +506,62 @@ public sealed class ProgramServiceTests
         Assert.Equal("Allowed", result.Name);
     }
 
+    [Fact]
+    public async Task Create_WithFrameworkId_AssignsBlueprint()
+    {
+        _db.ProgramFrameworks.Seed(new ProgramFramework
+        {
+            Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            ExpertId = _expertId,
+            Name = "Robotics",
+            Category = ProgramCategory.Technology,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.CreateProgramAsync(new CreateProgramRequestDto
+        {
+            Code = "PRG-FW",
+            Name = "With Framework",
+            Category = ProgramCategory.Technology,
+            FrameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        });
+
+        Assert.Equal(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), result.FrameworkId);
+    }
+
+    [Fact]
+    public async Task Create_WithUnknownFrameworkId_NotFound()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => sut.CreateProgramAsync(new CreateProgramRequestDto
+            {
+                Code = "PRG-FW",
+                Name = "Missing Framework",
+                Category = ProgramCategory.Technology,
+                FrameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            }));
+    }
+
+    [Fact]
+    public async Task Update_ClearFramework_UnlinksBlueprint()
+    {
+        SeedProgram();
+        var program = _db.Programs.Items.Single();
+        program.FrameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var sut = CreateSut();
+
+        var result = await sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+        {
+            ClearFramework = true,
+        });
+
+        Assert.Null(result.FrameworkId);
+        Assert.Null(_db.Programs.Items.Single().FrameworkId);
+    }
+
     private Guid SeedClass(ClassStatus status)
     {
         var classId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
