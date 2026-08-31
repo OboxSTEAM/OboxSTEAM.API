@@ -81,7 +81,7 @@ public static class ProgramFrameworkValidator
     /// <summary>
     /// Pre-check a program against its optional framework. No-op when
     /// <see cref="Program.FrameworkId"/> is null or the blueprint was removed.
-    /// Only non-null rules are evaluated. Call from submit-review (later slice).
+    /// Only non-null rules are evaluated. Called from submit-review.
     /// </summary>
     public static async Task ValidateForSubmitAsync(IUnitOfWork unitOfWork, Guid programId)
     {

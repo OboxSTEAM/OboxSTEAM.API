@@ -507,6 +507,88 @@ public sealed class ProgramServiceTests
     }
 
     [Fact]
+    public async Task Create_RejectsNonDraftStatus()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateProgramAsync(new CreateProgramRequestDto
+            {
+                Code = "PRG-ACTIVE",
+                Name = "Skip Lifecycle",
+                Category = ProgramCategory.Technology,
+                Status = ProgramStatus.Active,
+            }));
+    }
+
+    [Fact]
+    public async Task Create_OmitsStatus_PersistsDraft()
+    {
+        var sut = CreateSut();
+
+        var result = await sut.CreateProgramAsync(new CreateProgramRequestDto
+        {
+            Code = "PRG-DRAFT",
+            Name = "Draft Program",
+            Category = ProgramCategory.Technology,
+        });
+
+        Assert.Equal(ProgramStatus.Draft, result.Status);
+    }
+
+    [Fact]
+    public async Task Update_TogglesActiveToInactive()
+    {
+        SeedProgram();
+        var sut = CreateSut();
+
+        var result = await sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+        {
+            Status = ProgramStatus.Inactive,
+        });
+
+        Assert.Equal(ProgramStatus.Inactive, result.Status);
+    }
+
+    [Fact]
+    public async Task Update_RejectsDraftToActive()
+    {
+        SeedProgram();
+        _db.Programs.Items.Single().Status = ProgramStatus.Draft;
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+            {
+                Status = ProgramStatus.Active,
+            }));
+    }
+
+    [Fact]
+    public async Task Update_ThrowsConflict_WhenPendingReview()
+    {
+        SeedProgram();
+        _db.Programs.Items.Single().Status = ProgramStatus.PendingReview;
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Blocked" }));
+        Assert.Contains("pending expert review", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Update_ThrowsConflict_WhenApprovedWaitingPublish()
+    {
+        SeedProgram();
+        _db.Programs.Items.Single().Status = ProgramStatus.Approved;
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Blocked" }));
+        Assert.Contains("waiting to be published", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Create_WithFrameworkId_AssignsBlueprint()
     {
         _db.ProgramFrameworks.Seed(new ProgramFramework

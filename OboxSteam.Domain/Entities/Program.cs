@@ -41,7 +41,8 @@ public class Program : BaseEntity
     public decimal? RetakeFee { get; set; }
 
     /// <summary>
-    /// Optional expert blueprint. Null means free-form expert review (no framework pre-check).
+    /// Optional expert blueprint. Null means no expert review on submit.
+    /// Attaching a framework always requires the owning expert to approve.
     /// </summary>
     public Guid? FrameworkId { get; set; }
     public ProgramFramework? Framework { get; set; }

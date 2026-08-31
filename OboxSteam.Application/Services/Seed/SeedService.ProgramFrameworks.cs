@@ -13,6 +13,9 @@ public partial class SeedService
     internal const string SeedFrameworkEmptyProgramCode = "PRG-FW-EMPTY";
     internal const string SeedFrameworkPendingProgramCode = "PRG-FW-PENDING";
     internal const string SeedFrameworkEditableProgramCode = "PRG-FW-EDIT";
+    internal const string SeedFrameworkNoFrameworkProgramCode = "PRG-FW-NOFW";
+    internal const string SeedFrameworkOpenProgramCode = "PRG-FW-OPEN";
+    internal const string SeedFrameworkExp2PendingProgramCode = "PRG-FW-EXP2";
 
     private async Task SeedExpertCredentialsAsync()
     {
@@ -99,16 +102,17 @@ public partial class SeedService
                 ("Capstone completeness", "Final research milestone is present and required.", 10, 2),
             ]);
 
-        await EnsureFrameworkAsync(
+        var openFamily = await EnsureFrameworkAsync(
             expert001.Id,
             SeedFrameworkOpenName,
-            "No numeric rules and no rubric — programs on this frame may submit without waiting for expert review.",
+            "No numeric rules and no rubric — attaching this frame still requires the owning expert to approve.",
             ProgramCategory.Technology,
             criteria: null);
 
+        ProgramFramework? expert002Framework = null;
         if (expert002 != null)
         {
-            await EnsureFrameworkAsync(
+            expert002Framework = await EnsureFrameworkAsync(
                 expert002.Id,
                 SeedFrameworkOtherExpertName,
                 "Owned by EXP-002 so Expert list isolation can be checked.",
@@ -121,21 +125,51 @@ public partial class SeedService
         }
 
         await AttachFrameworkIfUnsetAsync("PRG-ROBOTICS", robotics.Id);
-        await EnsureDraftProgramAsync(
+
+        var editProgram = await EnsureQaProgramAsync(
             SeedFrameworkEditableProgramCode,
-            "Robotics framework QA (editable)",
+            "QA — Draft, Robotics, ready to submit",
+            "Has one Offline lab so Robotics MinOfflineSessions pre-check passes. Manager submit-review.",
             robotics.Id,
             ProgramStatus.Draft);
-        await EnsureDraftProgramAsync(
+        await EnsureQaProgramAsync(
             SeedFrameworkEmptyProgramCode,
-            "Framework pre-check empty draft",
+            "QA — Draft, C# framework, pre-check fail",
+            "No LiveOnline and no capstone. Submit-review must 400.",
             csharp.Id,
             ProgramStatus.Draft);
-        await EnsureDraftProgramAsync(
+        var pendingProgram = await EnsureQaProgramAsync(
             SeedFrameworkPendingProgramCode,
-            "Framework pending-review fixture",
+            "QA — PendingReview, Robotics",
+            "Already in expert queue. EXP-001 approve-review (2 scores) or request-changes.",
             robotics.Id,
             ProgramStatus.PendingReview);
+        await EnsureQaProgramAsync(
+            SeedFrameworkNoFrameworkProgramCode,
+            "QA — Draft, no framework",
+            "Submit-review skips expert and goes to Approved. Manager then publish.",
+            frameworkId: null,
+            status: ProgramStatus.Draft);
+        await EnsureQaProgramAsync(
+            SeedFrameworkOpenProgramCode,
+            "QA — Draft, Open family (no rubric)",
+            "Submit-review goes to PendingReview. EXP-001 approve-review with no scores.",
+            openFamily.Id,
+            ProgramStatus.Draft);
+
+        if (expert002Framework != null)
+        {
+            var exp2Program = await EnsureQaProgramAsync(
+                SeedFrameworkExp2PendingProgramCode,
+                "QA — PendingReview, EXP-002 framework",
+                "Only expert2@oboxsteam.com should see this on the review queue.",
+                expert002Framework.Id,
+                ProgramStatus.PendingReview);
+            await EnsureQaTheoryModuleAsync(exp2Program, "EXP2");
+        }
+
+        await EnsureQaOfflineLabAsync(editProgram, "EDIT");
+        await EnsureQaOfflineLabAsync(pendingProgram, "PEND");
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation("Finished seed program frameworks");
@@ -225,32 +259,38 @@ public partial class SeedService
         await _unitOfWork.Programs.Update(program);
     }
 
-    private async Task EnsureDraftProgramAsync(
+    private async Task<Program> EnsureQaProgramAsync(
         string code,
         string name,
-        Guid frameworkId,
+        string description,
+        Guid? frameworkId,
         ProgramStatus status)
     {
         var existing = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == code && !p.IsDeleted);
         if (existing != null)
         {
-            if (existing.FrameworkId != frameworkId || existing.Status != status)
+            if (existing.FrameworkId != frameworkId
+                || existing.Status != status
+                || existing.Name != name
+                || existing.Description != description)
             {
+                existing.Name = name;
+                existing.Description = description;
                 existing.FrameworkId = frameworkId;
                 existing.Status = status;
                 await _unitOfWork.Programs.Update(existing);
             }
 
-            return;
+            return existing;
         }
 
-        await _unitOfWork.Programs.AddAsync(new Program
+        var program = new Program
         {
             Id = Guid.NewGuid(),
             Code = code,
             Name = name,
             SeriesName = "Framework QA",
-            Description = "Seed fixture for program-framework PUT tests. No classes — not locked by CurriculumEditGuard.",
+            Description = description,
             Level = DifficultyLevel.Beginner,
             Category = ProgramCategory.Technology,
             EstimatedDuration = "n/a",
@@ -261,6 +301,84 @@ public partial class SeedService
             CreatedAt = _seedNow,
             CreatedBy = Guid.Empty,
             IsDeleted = false,
+        };
+        await _unitOfWork.Programs.AddAsync(program);
+        return program;
+    }
+
+    private async Task EnsureQaOfflineLabAsync(Program program, string suffix)
+    {
+        var module = await EnsureQaTheoryModuleAsync(program, suffix, ModuleType.Experiential);
+        var courseCode = $"CRS-FW-{suffix}";
+        var activityCode = $"ACT-FW-{suffix}-OFF";
+
+        var course = await _unitOfWork.Courses.FirstOrDefaultAsync(c => c.Code == courseCode && !c.IsDeleted);
+        if (course == null)
+        {
+            course = new Course
+            {
+                Id = Guid.NewGuid(),
+                Code = courseCode,
+                ModuleId = module.Id,
+                Name = "QA lab",
+                Description = "Offline session so MinOfflineSessions pre-check passes.",
+                CourseOrder = 1,
+                CreatedAt = _seedNow,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            };
+            await _unitOfWork.Courses.AddAsync(course);
+        }
+
+        var activity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == activityCode && !a.IsDeleted);
+        if (activity != null)
+        {
+            return;
+        }
+
+        await _unitOfWork.Activities.AddAsync(new Activity
+        {
+            Id = Guid.NewGuid(),
+            Code = activityCode,
+            CourseId = course.Id,
+            Name = "QA offline lab",
+            ActivityType = ActivityType.Offline,
+            Description = "Seed Offline activity for Robotics framework pre-check.",
+            ActivityOrder = 1,
+            DurationMinutes = 90,
+            RequireQrCheckin = true,
+            CreatedAt = _seedNow,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
         });
+    }
+
+    private async Task<Module> EnsureQaTheoryModuleAsync(
+        Program program,
+        string suffix,
+        ModuleType moduleType = ModuleType.Theory)
+    {
+        var moduleCode = $"MOD-FW-{suffix}";
+        var existing = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == moduleCode && !m.IsDeleted);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        var module = new Module
+        {
+            Id = Guid.NewGuid(),
+            Code = moduleCode,
+            ProgramId = program.Id,
+            Name = $"QA module {suffix}",
+            ModuleType = moduleType,
+            ModuleOrder = 1,
+            IsMandatory = true,
+            CreatedAt = _seedNow,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        };
+        await _unitOfWork.Modules.AddAsync(module);
+        return module;
     }
 }

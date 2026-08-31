@@ -23,16 +23,35 @@ Represents a sellable STEAM track (e.g. robotics, coding). Key fields: `Code`,
 `Name`, `Category`, `Level`, `Price`, `SkillsGained`, `Rating`, `Status`.
 
 `ProgramStatus`: **Draft** (manager is authoring; not open for registration),
-**PendingReview** (submitted to expert review), **Approved** (expert accepted;
-waiting for manager publish), **Active** (catalog + purchase/enroll allowed),
-**Inactive** (stopped; no new payment or pending enrollment). Create defaults
-to Draft when status is omitted. Enrollment and class creation still require
-**Active**. Submit-review, decision, and publish endpoints are not exposed yet.
+**PendingReview** (submitted to the owning expert), **Approved** (ready for
+manager publish), **Active** (catalog + purchase/enroll allowed),
+**Inactive** (stopped; no new payment or pending enrollment).
 
-API: `/api/programs` — list/detail public; mutations require Admin or
-Manager. Optional `frameworkId` on create/update selects an expert blueprint
-(`clearFramework` unlinks). Pre-check against that blueprint runs at
-submit-review, not on create/update.
+Create via API is always **Draft** (omitted or explicit). `PUT` cannot set
+`PendingReview` or `Approved`. `Active` ↔ `Inactive` is allowed only when the
+program is already in one of those two catalog states. Enrollment and class
+creation still require **Active**.
+
+Lifecycle endpoints (Manager/Admin unless noted):
+
+- `POST /api/programs/{id}/submit-review` — Draft only. Runs
+  `ProgramFrameworkValidator.ValidateForSubmitAsync`. Attached framework →
+  `PendingReview`; no framework → `Approved` (skip expert, still publish).
+- `POST /api/programs/{id}/withdraw-review` — `PendingReview` → `Draft`.
+- `POST /api/programs/{id}/publish` — `Approved` → `Active`.
+- `GET /api/programs/review-queue` — Expert sees `PendingReview` programs on
+  their own frameworks; Manager/Admin see all pending.
+- `GET /api/programs/{id}/curriculum-reviews` — decision history.
+- `POST /api/programs/{id}/approve-review` — owning Expert only;
+  `PendingReview` → `Approved`.
+- `POST /api/programs/{id}/request-changes` — owning Expert only;
+  `PendingReview` → `Draft`. `comment` is required.
+
+Curriculum structure (and program metadata update/delete) is locked while
+`PendingReview` or `Approved`. After `ChangesRequested` the program is `Draft`
+again and can be edited. Optional `frameworkId` on create/update selects an
+expert blueprint (`clearFramework` unlinks). Pre-check runs at submit-review,
+not on create/update.
 
 ## Module
 
@@ -168,11 +187,13 @@ Public reads: `GET /api/experts/{id}` and `GET /api/experts/{id}/profile`.
 (opt-in rules: `MinModules`, `MinOfflineSessions`, `MinLiveSessions`,
 `RequireFinalAssessment` — null or `false` means not enforced; `true`
 requires ≥1 `ResearchMilestone` with `IsCapstone`). `Category` is a hint/filter
-only. `Program.FrameworkId` is optional; null means free-form expert review.
+only. `Program.FrameworkId` is optional; null means no expert review (submit goes
+to `Approved`, manager still publishes). Attaching a framework always requires
+the owning expert to approve, including when the rubric has zero criteria.
 Each framework has `FrameworkRubricCriterion` rows (name, description, max
-score, display order). Zero criteria is allowed: those programs may submit
-without waiting for expert review once submit-review lands. A framework with
-≥1 criterion requires expert review.
+score, display order). Zero criteria is allowed; on approve, scores are
+required only when at least one criterion exists (`0 ≤ score ≤ MaxScore` for
+every criterion).
 
 API: `/api/program-frameworks` — Expert CRUD on own blueprints; Manager/Admin
 may list all and override updates (not create or delete). Category query is a
@@ -181,12 +202,11 @@ hint only. Frameworks stay editable while attached programs are
 
 `ProgramFrameworkValidator.ValidateForSubmitAsync` pre-checks a program against
 non-null rules and joins every failure into one 400 message. Submit-review
-will call it (`s5-be-review`); it is not wired to a public endpoint yet.
+calls it; a failing pre-check does not change status.
 
 `CurriculumReview` is one expert decision round (`Approved` /
 `ChangesRequested`) with optional `ReviewCriterionScore` rows. Distinct from
-student `ProgramReview` star ratings. Review-queue and decision endpoints are
-not exposed yet.
+student `ProgramReview` star ratings. Only the framework owner may decide.
 
 ## Highlight Videos
 

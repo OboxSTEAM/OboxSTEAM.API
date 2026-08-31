@@ -430,7 +430,7 @@ public class ProgramFrameworkService : IProgramFrameworkService
         MinOfflineSessions = framework.MinOfflineSessions,
         MinLiveSessions = framework.MinLiveSessions,
         RequireFinalAssessment = framework.RequireFinalAssessment,
-        RequiresExpertReview = criteria.Count > 0,
+        RequiresExpertReview = true,
         Criteria = criteria.Select(MapCriterion).ToList(),
         CreatedAt = framework.CreatedAt,
         UpdatedAt = framework.UpdatedAt,

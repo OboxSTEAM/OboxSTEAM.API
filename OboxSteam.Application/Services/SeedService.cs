@@ -77,6 +77,7 @@ public partial class SeedService : ISeedService
         await SeedResearchSubmissionsAsync();
         await SeedExtendedResearchDataAsync();
         await SeedDemoShowcaseProgramsAsync();
+        await SeedReviewDraftProgramsAsync();
         await SeedMaterialsAsync();
         await EnsureClassSessionCoverageAsync();
         await RealignSeedSessionWallClocksAsync();

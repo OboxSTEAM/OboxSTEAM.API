@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
+using OboxSteam.Application.DTOs.CurriculumReviewDTO;
 using OboxSteam.Application.DTOs.PaymentDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Interfaces;
@@ -17,6 +18,7 @@ namespace OboxSteam.API.Controllers;
 public class ProgramController : ControllerBase
 {
     private readonly IProgramService _programService;
+    private readonly ICurriculumReviewService _curriculumReviewService;
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
     private readonly IClassService _classService;
     private readonly IClassSeatHoldService _classSeatHoldService;
@@ -24,12 +26,14 @@ public class ProgramController : ControllerBase
 
     public ProgramController(
         IProgramService programService,
+        ICurriculumReviewService curriculumReviewService,
         IEnrollmentCurriculumService enrollmentCurriculumService,
         IClassService classService,
         IClassSeatHoldService classSeatHoldService,
         IRebuyClassCatalogService rebuyClassCatalogService)
     {
         _programService = programService;
+        _curriculumReviewService = curriculumReviewService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
         _classService = classService;
         _classSeatHoldService = classSeatHoldService;
@@ -260,6 +264,140 @@ public class ProgramController : ControllerBase
     }
 
     // =========================================================================
+    // REVIEW QUEUE  —  GET /api/programs/review-queue
+    // =========================================================================
+
+    [HttpGet("review-queue")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "Curriculum review queue",
+        Description = "Experts see PendingReview programs attached to their own frameworks. Manager and Admin see all pending programs.")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<ProgramReviewQueueItemDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    public async Task<IActionResult> GetReviewQueue(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        if (page < 1 || pageSize < 1)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+        }
+
+        var result = await _curriculumReviewService.GetReviewQueueAsync(page, pageSize);
+        return Ok(ApiResult<Pagination<ProgramReviewQueueItemDto>>.Success(
+            result, "200", "Review queue retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/curriculum-reviews")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "List curriculum review rounds for a program")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<CurriculumReviewResponseDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetCurriculumReviews([FromRoute] Guid id)
+    {
+        var result = await _curriculumReviewService.GetReviewsAsync(id);
+        return Ok(ApiResult<IReadOnlyList<CurriculumReviewResponseDto>>.Success(
+            result, "200", "Curriculum reviews retrieved successfully."));
+    }
+
+    [HttpPost("{id:guid}/submit-review")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Submit a draft program for review",
+        Description = "Runs framework pre-check. Attached framework moves the program to PendingReview; no framework moves it to Approved.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> SubmitForReview([FromRoute] Guid id)
+    {
+        var result = await _curriculumReviewService.SubmitForReviewAsync(id);
+        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program submitted for review."));
+    }
+
+    [HttpPost("{id:guid}/withdraw-review")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Withdraw a pending review",
+        Description = "Moves PendingReview back to Draft. No curriculum review row is created.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> WithdrawReview([FromRoute] Guid id)
+    {
+        var result = await _curriculumReviewService.WithdrawReviewAsync(id);
+        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program review withdrawn."));
+    }
+
+    [HttpPost("{id:guid}/publish")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Publish an approved program",
+        Description = "Moves Approved to Active. Enrollment and class creation require Active.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> PublishProgram([FromRoute] Guid id)
+    {
+        var result = await _curriculumReviewService.PublishAsync(id);
+        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program published successfully."));
+    }
+
+    [HttpPost("{id:guid}/approve-review")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(
+        Summary = "Approve a program as the framework owner",
+        Description = "PendingReview → Approved. Scores are required when the framework has rubric criteria.")]
+    [ProducesResponseType(typeof(ApiResult<CurriculumReviewResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> ApproveReview(
+        [FromRoute] Guid id,
+        [FromBody] ApproveCurriculumReviewRequest? request = null)
+    {
+        var result = await _curriculumReviewService.ApproveAsync(id, request);
+        return Ok(ApiResult<CurriculumReviewResponseDto>.Success(result, "200", "Program approved."));
+    }
+
+    [HttpPost("{id:guid}/request-changes")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(
+        Summary = "Request curriculum changes",
+        Description = "PendingReview → Draft. Comment is required so the manager knows what to fix.")]
+    [ProducesResponseType(typeof(ApiResult<CurriculumReviewResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> RequestChanges(
+        [FromRoute] Guid id,
+        [FromBody] RequestCurriculumChangesRequest request)
+    {
+        if (request == null)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Request body is required."));
+        }
+
+        var result = await _curriculumReviewService.RequestChangesAsync(id, request);
+        return Ok(ApiResult<CurriculumReviewResponseDto>.Success(
+            result, "200", "Changes requested."));
+    }
+
+    // =========================================================================
     // CREATE  —  POST /api/programs          [Admin only]
     // =========================================================================
 
@@ -268,7 +406,7 @@ public class ProgramController : ControllerBase
     [Consumes("multipart/form-data")]
     [SwaggerOperation(
         Summary = "Create a new program",
-        Description = "Creates a new program with form-data program information and uploads thumbnail image. Requires Admin or Manager role.")]
+        Description = "Creates a new program as Draft. Use submit-review and publish to change status. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -295,7 +433,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update program information",
-        Description = "Updates the details of a specific program by its ID. Requires Admin or Manager role.")]
+        Description = "Updates program details. Status may only toggle Active ↔ Inactive. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

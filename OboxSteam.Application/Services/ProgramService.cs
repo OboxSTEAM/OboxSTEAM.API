@@ -424,6 +424,8 @@ public class ProgramService : IProgramService
             throw ErrorHelper.Conflict($"Program with code '{request.Code}' already exists.");
         }
 
+        ProgramCatalogStatusGuard.EnsureCreateIsDraft(request.Status);
+
         var program = new Program
         {
             Code = request.Code,
@@ -435,7 +437,7 @@ public class ProgramService : IProgramService
             EstimatedDuration = request.EstimatedDuration,
             SkillsGained = request.SkillsGained,
             ThumbnailUrl = request.ThumbnailUrl,
-            Status = request.Status ?? ProgramStatus.Draft,
+            Status = ProgramStatus.Draft,
             Price = request.Price,
             FrameworkId = await ResolveFrameworkIdAsync(request.FrameworkId),
         };
@@ -513,8 +515,11 @@ public class ProgramService : IProgramService
             }
         }
 
+        var requestedStatus = request.Status;
+        request.Status = null;
+        var statusChanged = ProgramCatalogStatusGuard.ApplyUpdate(program, requestedStatus);
         var frameworkChanged = await ApplyFrameworkAssignmentAsync(program, request);
-        var isUpdated = UpdateHelper.ApplyUpdates(program, request) || frameworkChanged;
+        var isUpdated = UpdateHelper.ApplyUpdates(program, request) || frameworkChanged || statusChanged;
 
         if (!isUpdated)
         {

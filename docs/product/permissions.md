@@ -89,8 +89,12 @@ Create, update, delete for:
   and Offline co-teach invitations. Framework APIs are live at
   `GET|POST|PUT|DELETE /api/program-frameworks` (Expert owns their blueprints;
   Manager/Admin may list and override updates; create/delete stay Expert-only).
-  Dedicated review/co-teach endpoints are not exposed yet.
-- Until those endpoints land, Expert is not included in existing
+  Curriculum review: `GET /api/programs/review-queue`,
+  `GET /api/programs/{id}/curriculum-reviews`,
+  `POST /api/programs/{id}/approve-review`,
+  `POST /api/programs/{id}/request-changes` (owning Expert only).
+  Manager/Admin submit, withdraw, and publish. Co-teach endpoints are not
+  exposed yet.
 
 ### Mentor skill visibility
 
