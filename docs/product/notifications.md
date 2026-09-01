@@ -167,6 +167,8 @@ service emits it.
 | `ClassSessionExpertInvitationWithdrawn` | Expert via `ForUser`                                  | `ClassSessionExpertService`                 |
 | `ClassSessionExpertRescheduleRequested` | Accepted expert via `ForUser`                         | `ClassSessionService`                       |
 | `ClassSessionExpertRescheduleDeclined` | `ForManagers`                                          | `ClassSessionExpertService`                 |
+| `ClassSessionExpertFeedbackRequested`  | Accepted expert via `ForUser` when the session first becomes Completed | `ClassSessionService`        |
+| `ClassSessionExpertFeedbackSubmitted`  | Class mentor via `ForClassMentor`                      | `ClassSessionExpertService`                 |
 
 ## Parent Time-Support Policy
 

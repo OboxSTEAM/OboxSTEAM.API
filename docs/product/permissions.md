@@ -96,8 +96,11 @@ Create, update, delete for:
   Manager/Admin submit, withdraw, and publish. Offline co-teach:
   `POST|GET /api/class-session-experts`, Expert `GET /mine`,
   `POST /{id}/accept|decline|approve-reschedule|decline-reschedule`,
-  Manager/Admin `POST /{id}/withdraw` (Invited only). Mentor feedback PUT is
-  not exposed yet.
+  Manager/Admin `POST /{id}/withdraw` (Invited only). Owning Expert
+  `PUT /{id}/feedback` after the session is Completed (Accepted only).
+  Mentor, Manager, and Admin read `coTeachFeedback` on
+  `GET /api/classes/{classId}/sessions/with-students/{sessionId}`. Students
+  receive the public `coTeach` card only — never feedback text or rating.
 
 ### Mentor skill visibility
 

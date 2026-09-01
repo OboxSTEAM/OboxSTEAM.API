@@ -272,6 +272,23 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
+    public async Task GetByClass_AcceptedExpert_SetsPublicCoTeachBadge()
+    {
+        SeedClass();
+        SeedSession(kind: SessionKind.Offline);
+        SeedAcceptedExpert(withFeedback: true);
+        var sut = CreateSut();
+
+        var result = await sut.GetClassSessionsByClassIdAsync(_classId, null, false, 1, 10);
+
+        Assert.True(result.Items[0].HasAcceptedExpert);
+        var coTeach = result.Items[0].CoTeach;
+        Assert.NotNull(coTeach);
+        Assert.Equal("Dr. Expert", coTeach.FullName);
+        Assert.Single(coTeach.Degrees);
+    }
+
+    [Fact]
     public async Task GetByClass_AppliesFilters()
     {
         SeedClass();
@@ -421,6 +438,59 @@ public sealed class ClassSessionServiceTests
         Assert.Equal(_now.AddMinutes(42), result.Students[0].LeftAt);
         Assert.Equal(AttendanceStatus.Expected, result.Students[1].AttendanceStatus);
         Assert.Equal(_moduleEnrollmentId, result.Students[0].ModuleEnrollmentId);
+    }
+
+    [Fact]
+    public async Task GetWithStudents_StudentSeesPublicCoTeach_HidesFeedback()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(kind: SessionKind.Offline, status: ClassSessionStatus.Completed);
+        SeedStudentRoster(_studentId, "Alice");
+        SeedAcceptedExpert(withFeedback: true);
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.GetClassSessionWithStudentsAsync(_sessionId);
+
+        Assert.True(result.HasAcceptedExpert);
+        Assert.NotNull(result.CoTeach);
+        Assert.Equal("Dr. Expert", result.CoTeach!.FullName);
+        Assert.Equal("PhD in Robotics Education", result.CoTeach.Degrees[0].Title);
+        Assert.Null(result.CoTeachFeedback);
+    }
+
+    [Fact]
+    public async Task GetWithStudents_MentorSeesCoTeachFeedback()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(kind: SessionKind.Offline, status: ClassSessionStatus.Completed);
+        SeedAcceptedExpert(withFeedback: true);
+        var sut = CreateSut(_mentorId);
+
+        var result = await sut.GetClassSessionWithStudentsAsync(_sessionId);
+
+        Assert.True(result.HasAcceptedExpert);
+        Assert.NotNull(result.CoTeachFeedback);
+        Assert.Equal("Lead with more wait time.", result.CoTeachFeedback!.Comment);
+        Assert.Equal(4, result.CoTeachFeedback.Rating);
+    }
+
+    [Fact]
+    public async Task GetWithStudents_ManagerSeesCoTeachFeedback()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(kind: SessionKind.Offline, status: ClassSessionStatus.Completed);
+        SeedAcceptedExpert(withFeedback: true);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.GetClassSessionWithStudentsAsync(_sessionId);
+
+        Assert.NotNull(result.CoTeachFeedback);
+        Assert.Equal(4, result.CoTeachFeedback!.Rating);
     }
 
     [Fact]
@@ -1181,6 +1251,52 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
+    public async Task Update_StatusToCompleted_WithAcceptedExpert_RequestsFeedback()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(status: ClassSessionStatus.InProgress, kind: SessionKind.Offline);
+        SeedAcceptedExpert();
+        var sut = CreateSut();
+
+        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            Status = ClassSessionStatus.Completed,
+        });
+
+        _notificationPublisher.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Any(c => c.Type == NotificationType.ClassSessionCompleted)
+                    && commands.Any(c => c.Type == NotificationType.ClassSessionExpertFeedbackRequested)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_StatusToCompleted_WithoutAcceptedExpert_DoesNotRequestFeedback()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(status: ClassSessionStatus.InProgress, kind: SessionKind.Offline);
+        SeedInvitedExpert();
+        var sut = CreateSut();
+
+        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            Status = ClassSessionStatus.Completed,
+        });
+
+        _notificationPublisher.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Any(c => c.Type == NotificationType.ClassSessionCompleted)
+                    && commands.All(c => c.Type != NotificationType.ClassSessionExpertFeedbackRequested)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task Update_StatusToCancelled_PublishesCancelled()
     {
         SeedCurriculum();
@@ -1421,11 +1537,12 @@ public sealed class ClassSessionServiceTests
             Times.Exactly(2));
     }
 
-    private void SeedAcceptedExpert() => SeedCoTeach(ClassSessionExpertStatus.Accepted);
+    private void SeedAcceptedExpert(bool withFeedback = false)
+        => SeedCoTeach(ClassSessionExpertStatus.Accepted, withFeedback);
 
     private void SeedInvitedExpert() => SeedCoTeach(ClassSessionExpertStatus.Invited);
 
-    private void SeedCoTeach(ClassSessionExpertStatus status)
+    private void SeedCoTeach(ClassSessionExpertStatus status, bool withFeedback = false)
     {
         var expertUserId = Guid.Parse("16161616-1616-1616-1616-161616161616");
         var expertId = Guid.Parse("17171717-1717-1717-1717-171717171717");
@@ -1435,7 +1552,19 @@ public sealed class ClassSessionServiceTests
             Id = expertId,
             Code = "EXP-001",
             FullName = "Dr. Expert",
+            Title = "Senior Robotics Mentor",
+            AvatarUrl = "https://example.com/exp.png",
+            Specialization = ["Robotics"],
             UserId = expertUserId,
+            IsDeleted = false,
+        });
+        _db.ExpertDegrees.Seed(new ExpertDegree
+        {
+            Id = Guid.Parse("19191919-1919-1919-1919-191919191919"),
+            ExpertId = expertId,
+            Title = "PhD in Robotics Education",
+            Institution = "HUST",
+            Year = 2016,
             IsDeleted = false,
         });
         _db.ClassSessionExperts.Seed(new ClassSessionExpert
@@ -1444,6 +1573,9 @@ public sealed class ClassSessionServiceTests
             ClassSessionId = _sessionId,
             ExpertId = expertId,
             Status = status,
+            MentorFeedback = withFeedback ? "Lead with more wait time." : null,
+            MentorFeedbackRating = withFeedback ? 4 : null,
+            MentorFeedbackAt = withFeedback ? _now : null,
             IsDeleted = false,
         });
     }

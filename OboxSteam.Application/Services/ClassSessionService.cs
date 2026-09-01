@@ -104,6 +104,7 @@ public sealed class ClassSessionService : IClassSessionService
             .ToList();
 
         var dtos = items.Select(MapToResponseDto).ToList();
+        await AttachCoTeachPublicAsync(dtos);
 
         _logger.LogInformation(
             "[GetClassSessionsByClassIdAsync] Retrieved {Count}/{Total} sessions for class {ClassId}.",
@@ -123,7 +124,7 @@ public sealed class ClassSessionService : IClassSessionService
 
         _logger.LogInformation("[GetClassSessionByIdAsync] Class session with Id {Id} retrieved successfully.", id);
 
-        return MapToResponseDto(entity!);
+        return await MapToResponseDtoAsync(entity!);
     }
 
     public async Task<ClassSessionWithStudentsResponseDto> GetClassSessionWithStudentsAsync(Guid id)
@@ -218,6 +219,11 @@ public sealed class ClassSessionService : IClassSessionService
             id,
             studentDtos.Count);
 
+        var classEntity = await _unitOfWork.Classes.GetByIdAsync(session.ClassId);
+        var includeFeedback = currentUser.Role is RoleType.Manager or RoleType.Admin
+            || (currentUser.Role == RoleType.Mentor && classEntity?.MentorId == currentUser.Id);
+        var (coTeach, feedback) = await LoadAcceptedCoTeachAsync(session.Id, includeFeedback);
+
         return new ClassSessionWithStudentsResponseDto
         {
             Id = session.Id,
@@ -237,6 +243,9 @@ public sealed class ClassSessionService : IClassSessionService
             RequiresAttendance = session.RequiresAttendance,
             RequiresMentorCheckIn = session.RequiresMentorCheckIn,
             Status = session.Status,
+            HasAcceptedExpert = coTeach != null,
+            CoTeach = coTeach,
+            CoTeachFeedback = feedback,
             CreatedAt = session.CreatedAt,
             UpdatedAt = session.UpdatedAt,
             Students = studentDtos,
@@ -333,7 +342,7 @@ public sealed class ClassSessionService : IClassSessionService
             entity.Title,
             entity.Id);
 
-        return MapToResponseDto(entity);
+        return await MapToResponseDtoAsync(entity);
     }
 
     public async Task<List<ClassSessionResponseDto>> GenerateClassSessionsAsync(
@@ -513,7 +522,9 @@ public sealed class ClassSessionService : IClassSessionService
             entities.Count,
             classId);
 
-        return entities.Select(MapToResponseDto).ToList();
+        var generated = entities.Select(MapToResponseDto).ToList();
+        await AttachCoTeachPublicAsync(generated);
+        return generated;
     }
 
     private sealed record CurriculumScheduleItem(
@@ -659,6 +670,124 @@ public sealed class ClassSessionService : IClassSessionService
         ProposedStartTime = session.ProposedStartTime,
         ProposedEndTime = session.ProposedEndTime,
     };
+
+    private async Task<ClassSessionResponseDto> MapToResponseDtoAsync(ClassSession session)
+    {
+        var dto = MapToResponseDto(session);
+        await AttachCoTeachPublicAsync([dto]);
+        return dto;
+    }
+
+    private async Task AttachCoTeachPublicAsync(IReadOnlyList<ClassSessionResponseDto> dtos)
+    {
+        if (dtos.Count == 0)
+        {
+            return;
+        }
+
+        var sessionIds = dtos.Select(d => d.Id).ToList();
+        var invitations = await _unitOfWork.ClassSessionExperts.GetAllAsync(
+            e => sessionIds.Contains(e.ClassSessionId)
+                 && !e.IsDeleted
+                 && e.Status == ClassSessionExpertStatus.Accepted);
+        if (invitations.Count == 0)
+        {
+            return;
+        }
+
+        var expertIds = invitations.Select(i => i.ExpertId).Distinct().ToList();
+        var experts = await _unitOfWork.Experts.GetAllAsync(e => expertIds.Contains(e.Id) && !e.IsDeleted);
+        var expertsById = experts.ToDictionary(e => e.Id);
+        var degrees = await _unitOfWork.ExpertDegrees.GetAllAsync(
+            d => expertIds.Contains(d.ExpertId) && !d.IsDeleted);
+        var degreesByExpertId = degrees
+            .GroupBy(d => d.ExpertId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(d => d.Year).ToList());
+
+        var invitationBySessionId = invitations
+            .GroupBy(i => i.ClassSessionId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        foreach (var dto in dtos)
+        {
+            if (!invitationBySessionId.TryGetValue(dto.Id, out var invitation))
+            {
+                continue;
+            }
+
+            if (!expertsById.TryGetValue(invitation.ExpertId, out var expert))
+            {
+                continue;
+            }
+
+            degreesByExpertId.TryGetValue(expert.Id, out var expertDegrees);
+            dto.HasAcceptedExpert = true;
+            dto.CoTeach = MapCoTeachPublic(invitation, expert, expertDegrees);
+        }
+    }
+
+    private async Task<(ClassSessionCoTeachPublicDto? Public, ClassSessionCoTeachFeedbackDto? Feedback)> LoadAcceptedCoTeachAsync(
+        Guid sessionId,
+        bool includeFeedback)
+    {
+        var invitation = await _unitOfWork.ClassSessionExperts.FirstOrDefaultAsync(
+            e => e.ClassSessionId == sessionId
+                 && !e.IsDeleted
+                 && e.Status == ClassSessionExpertStatus.Accepted);
+        if (invitation == null)
+        {
+            return (null, null);
+        }
+
+        var expert = await _unitOfWork.Experts.GetByIdAsync(invitation.ExpertId);
+        if (expert == null || expert.IsDeleted)
+        {
+            return (null, null);
+        }
+
+        var degrees = await _unitOfWork.ExpertDegrees.GetAllAsync(
+            d => d.ExpertId == expert.Id && !d.IsDeleted);
+        var publicDto = MapCoTeachPublic(invitation, expert, degrees);
+
+        ClassSessionCoTeachFeedbackDto? feedback = null;
+        if (includeFeedback
+            && !string.IsNullOrWhiteSpace(invitation.MentorFeedback)
+            && invitation.MentorFeedbackRating.HasValue
+            && invitation.MentorFeedbackAt.HasValue)
+        {
+            feedback = new ClassSessionCoTeachFeedbackDto
+            {
+                Comment = invitation.MentorFeedback,
+                Rating = invitation.MentorFeedbackRating.Value,
+                FeedbackAt = invitation.MentorFeedbackAt.Value,
+            };
+        }
+
+        return (publicDto, feedback);
+    }
+
+    private static ClassSessionCoTeachPublicDto MapCoTeachPublic(
+        ClassSessionExpert invitation,
+        Expert expert,
+        IReadOnlyList<ExpertDegree>? degrees)
+        => new()
+        {
+            InvitationId = invitation.Id,
+            ExpertId = expert.Id,
+            FullName = expert.FullName,
+            Title = expert.Title,
+            AvatarUrl = expert.AvatarUrl,
+            Specialization = expert.Specialization ?? [],
+            Degrees = (degrees ?? [])
+                .OrderBy(d => d.Year)
+                .Select(d => new ClassSessionCoTeachDegreeDto
+                {
+                    Title = d.Title,
+                    Institution = d.Institution,
+                    Year = d.Year,
+                })
+                .ToList(),
+        };
 
     public async Task<ClassSessionResponseDto> UpdateClassSessionAsync(
         Guid id,
@@ -926,6 +1055,12 @@ public sealed class ClassSessionService : IClassSessionService
                 case ClassSessionStatus.Completed:
                     sessionNotifications.Add(
                         NotificationCatalog.ClassSessionCompleted(session.ClassId, session.Id, classEntity!.ProgramId, classEntity.Name));
+                    var feedbackRequested = await BuildExpertFeedbackRequestedCommandAsync(session, classEntity);
+                    if (feedbackRequested != null)
+                    {
+                        sessionNotifications.Add(feedbackRequested);
+                    }
+
                     break;
                 case ClassSessionStatus.Cancelled:
                     sessionNotifications.Add(
@@ -981,7 +1116,7 @@ public sealed class ClassSessionService : IClassSessionService
 
         _logger.LogInformation("[UpdateClassSessionAsync] Class session Id {Id} updated successfully.", id);
 
-        return MapToResponseDto(session);
+        return await MapToResponseDtoAsync(session);
     }
 
     public async Task<bool> DeleteClassSessionAsync(Guid id)
@@ -1179,6 +1314,33 @@ public sealed class ClassSessionService : IClassSessionService
             programName: null,
             session.Title,
             AppDateTime.FormatVietnamDateTime(session.StartTime));
+    }
+
+    private async Task<NotificationCommand?> BuildExpertFeedbackRequestedCommandAsync(
+        ClassSession session,
+        Class classEntity)
+    {
+        var coTeach = await GetActiveCoTeachAsync(session.Id);
+        if (coTeach is not { Status: ClassSessionExpertStatus.Accepted })
+        {
+            return null;
+        }
+
+        var expert = await _unitOfWork.Experts.GetByIdAsync(coTeach.ExpertId);
+        if (expert?.UserId is not Guid expertUserId)
+        {
+            return null;
+        }
+
+        return NotificationCatalog.ClassSessionExpertFeedbackRequested(
+            expertUserId,
+            coTeach.Id,
+            session.Id,
+            classEntity.Id,
+            classEntity.ProgramId,
+            classEntity.Name,
+            programName: null,
+            session.Title);
     }
 
     private async Task<NotificationCommand?> BuildExpertCancelledCommandAsync(

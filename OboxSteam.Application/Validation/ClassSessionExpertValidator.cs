@@ -113,4 +113,40 @@ public static class ClassSessionExpertValidator
             throw ErrorHelper.BadRequest("This session has no pending reschedule to decide.");
         }
     }
+
+    public static void ValidateAcceptedForFeedback(ClassSessionExpert invitation)
+    {
+        if (invitation.Status != ClassSessionExpertStatus.Accepted)
+        {
+            throw ErrorHelper.BadRequest(
+                $"Only an Accepted expert can submit mentor feedback (status: {invitation.Status}).");
+        }
+    }
+
+    public static void ValidateSessionCompletedForFeedback(ClassSession session)
+    {
+        if (session.Status == ClassSessionStatus.Cancelled)
+        {
+            throw ErrorHelper.Conflict("Feedback cannot be submitted for a cancelled session.");
+        }
+
+        if (session.Status != ClassSessionStatus.Completed)
+        {
+            throw ErrorHelper.Conflict(
+                $"Feedback can only be submitted after the session is Completed (status: {session.Status}).");
+        }
+    }
+
+    public static void ValidateFeedbackPayload(string? comment, int rating)
+    {
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+            throw ErrorHelper.BadRequest("Mentor feedback comment is required.");
+        }
+
+        if (rating is < 1 or > 5)
+        {
+            throw ErrorHelper.BadRequest("Mentor feedback rating must be between 1 and 5.");
+        }
+    }
 }

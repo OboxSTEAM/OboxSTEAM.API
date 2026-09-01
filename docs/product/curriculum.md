@@ -141,6 +141,25 @@ Co-teach API (`/api/class-session-experts`):
   fires only after approve. Decline keeps the old time and Accepted status.
   A later manager time change replaces the pending proposal and re-notifies.
   Invited-only sessions still reschedule immediately (plus notify the expert).
+- `PUT /{id}/feedback` — owning Accepted expert, session **Completed**. Upserts
+  one class-level overview (`MentorFeedback` + rating 1–5). Declined experts and
+  `Cancelled` sessions cannot submit. Feedback is private: Expert (own row),
+  Manager/Admin, and the class Mentor may read it. Students never receive
+  feedback fields.
+
+Session reads:
+
+- `GET /api/classes/{classId}/sessions` and `GET .../sessions/{id}` expose
+  `hasAcceptedExpert` plus a public `coTeach` card (name, title, avatar,
+  specialization, degrees) when an expert is **Accepted**. These routes do not
+  include feedback.
+- `GET .../sessions/with-students/{sessionId}` adds `coTeachFeedback`
+  (`comment`, `rating`, `feedbackAt`) only for Manager, Admin, and the assigned
+  class Mentor. Students still see the public `coTeach` card.
+
+When an Offline session with an Accepted expert first becomes **Completed**,
+the expert is notified to submit feedback. Submitting or updating feedback
+notifies the class mentor.
 
 **AssignmentWindow** is the per-class work window for that assignment (one
 active row per `(ClassId, AssignmentId)`). `StartTime` / `EndTime` are the
