@@ -36,16 +36,21 @@ Lifecycle endpoints (Manager/Admin unless noted):
 
 - `POST /api/programs/{id}/submit-review` — Draft only. Runs
   `ProgramFrameworkValidator.ValidateForSubmitAsync`. Attached framework →
-  `PendingReview`; no framework → `Approved` (skip expert, still publish).
+  `PendingReview` and `CurriculumReviewSubmitted` to the framework-owning
+  expert; no framework → `Approved` (skip expert, still publish, no review
+  notification).
 - `POST /api/programs/{id}/withdraw-review` — `PendingReview` → `Draft`.
 - `POST /api/programs/{id}/publish` — `Approved` → `Active`.
 - `GET /api/programs/review-queue` — Expert sees `PendingReview` programs on
   their own frameworks; Manager/Admin see all pending.
 - `GET /api/programs/{id}/curriculum-reviews` — decision history.
 - `POST /api/programs/{id}/approve-review` — owning Expert only;
-  `PendingReview` → `Approved`.
+  `PendingReview` → `Approved`. Notifies `ForManagers`
+  (`CurriculumReviewApproved`). Payload `programId` is the deeplink.
 - `POST /api/programs/{id}/request-changes` — owning Expert only;
-  `PendingReview` → `Draft`. `comment` is required.
+  `PendingReview` → `Draft`. `comment` is required. Notifies `ForManagers`
+  (`CurriculumReviewChangesRequested`); inbox body includes the expert
+  comment; payload `programId` is the deeplink.
 
 Curriculum structure (and program metadata update/delete) is locked while
 `PendingReview` or `Approved`. After `ChangesRequested` the program is `Draft`
