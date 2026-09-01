@@ -188,7 +188,7 @@ public class ClassController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a new class",
-        Description = "Creates a new class cohort in Draft status. Requires Admin or Manager role.")]
+        Description = "Creates a new class cohort in Draft status. The program must be Active. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -214,7 +214,7 @@ public class ClassController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update class information",
-        Description = "Updates class cohort details. Status changes must use ReadyForMentor, Open, Start, or Complete endpoints. Requires Admin or Manager role.")]
+        Description = "Updates class cohort details. Reassigning ProgramId requires the target program to be Active. Status changes must use ReadyForMentor, Open, Start, or Complete endpoints. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -264,7 +264,7 @@ public class ClassController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Open a class for enrollment",
-        Description = "Transitions a class from ReadyForMentor to Open. Requires an assigned mentor and a complete timetable. Students may enroll after this step. Requires Admin or Manager role.")]
+        Description = "Transitions a class from ReadyForMentor to Open. Requires an assigned mentor, a complete timetable, and an Active program. Students may enroll after this step. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -285,7 +285,7 @@ public class ClassController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Start a class",
-        Description = "Transitions a class from Open to InProgress. Requires Admin or Manager role.")]
+        Description = "Transitions a class from Open to InProgress. The program must be Active. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

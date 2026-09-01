@@ -67,7 +67,7 @@ public sealed class ClassServiceTests
         });
     }
 
-    private void SeedProgram(Guid? id = null)
+    private void SeedProgram(Guid? id = null, ProgramStatus status = ProgramStatus.Active)
     {
         _db.Programs.Seed(new Program
         {
@@ -76,6 +76,7 @@ public sealed class ClassServiceTests
             Name = "Robotics",
             Category = ProgramCategory.Technology,
             Level = DifficultyLevel.Beginner,
+            Status = status,
             IsDeleted = false,
         });
     }
@@ -564,6 +565,21 @@ public sealed class ClassServiceTests
             sut.CreateClassAsync(BuildCreateRequest(mentorId: _studentId)));
     }
 
+    [Theory]
+    [InlineData(ProgramStatus.Draft)]
+    [InlineData(ProgramStatus.PendingReview)]
+    [InlineData(ProgramStatus.Approved)]
+    [InlineData(ProgramStatus.Inactive)]
+    public async Task Create_Throws_WhenProgramNotActive(ProgramStatus status)
+    {
+        SeedProgram(status: status);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateClassAsync(BuildCreateRequest()));
+        Assert.Contains("PRG-001", ex.Message);
+    }
+
     // ── UpdateClassAsync ──────────────────────────────────────────────────────
 
     [Fact]
@@ -598,6 +614,19 @@ public sealed class ClassServiceTests
         _notificationPublisher.Verify(
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_Throws_WhenReassigningToNonActiveProgram()
+    {
+        SeedProgram();
+        SeedProgram(_otherProgramId, ProgramStatus.Draft);
+        SeedClass(status: ClassStatus.Draft);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateClassAsync(_classId, new UpdateClassRequestDto { ProgramId = _otherProgramId }));
+        Assert.Contains("draft", ex.Message);
     }
 
     [Fact]
@@ -807,6 +836,24 @@ public sealed class ClassServiceTests
         Assert.Contains("no longer matches the curriculum", ex.Message);
     }
 
+    [Theory]
+    [InlineData(ProgramStatus.Draft)]
+    [InlineData(ProgramStatus.PendingReview)]
+    [InlineData(ProgramStatus.Approved)]
+    [InlineData(ProgramStatus.Inactive)]
+    public async Task Open_Throws_WhenProgramNotActive(ProgramStatus status)
+    {
+        SeedProgram(status: status);
+        SeedClass(status: ClassStatus.ReadyForMentor, mentorId: _mentorId);
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.OpenClassAsync(_classId));
+        Assert.Contains("PRG-001", ex.Message);
+    }
+
     [Fact]
     public async Task Start_TransitionsOpenToInProgress()
     {
@@ -834,6 +881,24 @@ public sealed class ClassServiceTests
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.StartClassAsync(_classId));
+    }
+
+    [Theory]
+    [InlineData(ProgramStatus.Draft)]
+    [InlineData(ProgramStatus.PendingReview)]
+    [InlineData(ProgramStatus.Approved)]
+    [InlineData(ProgramStatus.Inactive)]
+    public async Task Start_Throws_WhenProgramNotActive(ProgramStatus status)
+    {
+        SeedProgram(status: status);
+        SeedClass(status: ClassStatus.Open, mentorId: _mentorId);
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.StartClassAsync(_classId));
+        Assert.Contains("PRG-001", ex.Message);
     }
 
     [Fact]
@@ -1050,6 +1115,29 @@ public sealed class ClassServiceTests
     }
 
     [Fact]
+    public async Task TryAutoStart_SkipsClass_WhenProgramNotActive()
+    {
+        SeedProgram(status: ProgramStatus.Inactive);
+        SeedClass(
+            status: ClassStatus.Open,
+            maxCapacity: 2,
+            startDate: _now.AddHours(-1),
+            endDate: _now.AddDays(20));
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
+        SeedEnrollment(_studentId);
+        SeedEnrollment(_otherStudentId);
+        var sut = CreateSut();
+
+        await sut.TryAutoStartClassIfReadyAsync(_classId);
+
+        Assert.Equal(ClassStatus.Open, _db.Classes.Items.Single(c => c.Id == _classId).Status);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ResolveSchedule_ReturnsIdle_WhenNoOpenClasses()
     {
         SeedProgram();
@@ -1111,6 +1199,44 @@ public sealed class ClassServiceTests
 
         Assert.True(schedule.ShouldRunAutoStart);
         Assert.Equal("ReadyToStart", schedule.Reason);
+    }
+
+    [Fact]
+    public async Task AutoStartEligible_SkipsClass_WhenProgramNotActive()
+    {
+        SeedProgram(status: ProgramStatus.Inactive);
+        SeedClass(
+            status: ClassStatus.Open,
+            maxCapacity: 1,
+            startDate: _now.AddHours(-2),
+            endDate: _now.AddDays(10));
+        SeedSchedulableCurriculum(liveActivityCount: 1);
+        SeedCoveringSessions(1);
+        SeedEnrollment(_studentId);
+        var sut = CreateSut();
+
+        var started = await sut.AutoStartEligibleOpenClassesAsync();
+
+        Assert.Equal(0, started);
+        Assert.Equal(ClassStatus.Open, _db.Classes.Items.Single(c => c.Id == _classId).Status);
+    }
+
+    [Fact]
+    public async Task ResolveSchedule_IgnoresFullClass_WhenProgramNotActive()
+    {
+        SeedProgram(status: ProgramStatus.Inactive);
+        SeedClass(
+            status: ClassStatus.Open,
+            maxCapacity: 1,
+            startDate: _now.AddHours(-1),
+            endDate: _now.AddDays(20));
+        SeedEnrollment(_studentId);
+        var sut = CreateSut();
+
+        var schedule = await sut.ResolveOpenClassAutoStartScheduleAsync();
+
+        Assert.False(schedule.ShouldRunAutoStart);
+        Assert.Equal("WaitingForCapacity", schedule.Reason);
     }
 
     // ── DeleteClassAsync ──────────────────────────────────────────────────────
