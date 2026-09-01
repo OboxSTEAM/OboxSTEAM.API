@@ -111,6 +111,13 @@ public static class AppDateTime
         return local.ToString("HH:mm", CultureInfo.InvariantCulture);
     }
 
+    /// <summary>Formats a UTC instant as <c>dd/MM/yyyy HH:mm</c> in Asia/Ho_Chi_Minh.</summary>
+    public static string FormatVietnamDateTime(DateTime utcInstant)
+    {
+        var local = TimeZoneInfo.ConvertTimeFromUtc(AsUtc(utcInstant), VietnamTimeZone);
+        return local.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+    }
+
     private static bool HasExplicitOffset(string value)
     {
         if (value.EndsWith("Z", StringComparison.OrdinalIgnoreCase))

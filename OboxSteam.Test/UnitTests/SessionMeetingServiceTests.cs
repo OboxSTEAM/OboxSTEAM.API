@@ -299,5 +299,15 @@ public sealed class SessionMeetingServiceTests
 
     [Fact]
     public async Task Join_Throws_WhenOutsideWindow()
+    {
+        SeedUsers();
+        SeedClassAndEnrollments();
+        SeedLiveOnline(_now.AddHours(2), _now.AddHours(3));
 
-[Showing lines 1-300 of 330. Use :301 to continue]
+        var sut = CreateSut(_studentId);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.JoinAsync(_sessionId));
+        Assert.Equal(ClassSessionJoinValidator.JoinWindowClosedMessage, ex.Message);
+    }
+}
+

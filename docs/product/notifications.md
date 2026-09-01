@@ -67,6 +67,8 @@ include `{token}` placeholders interpolated at publish time:
 | `{checkedInAt}` | Catalog token (`HH:mm` Asia/Ho_Chi_Minh) |
 | `{frameworkName}` | Catalog token (expert blueprint name) |
 | `{comment}` | Catalog token (expert request-changes feedback) |
+| `{sessionTitle}` | Catalog token (class session title) |
+| `{sessionStartTime}` | Catalog token (`dd/MM/yyyy HH:mm` Asia/Ho_Chi_Minh when set by co-teach / reminder publishers) |
 
 Student copy addresses the learner as "bạn" ("Bạn đã hoàn thành…"). Parent copy
 names the child as "con bạn {studentName}" ("Con bạn {studentName} đã hoàn
@@ -131,10 +133,10 @@ service emits it.
 | `ClassEnrolled`                  | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassTransferred`               | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassSessionScheduled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`; Invited expert via `ForUser` when the committed window moves | `ClassSessionService`, `ClassSessionExpertService` (approve-reschedule) |
 | `ClassSessionStarted`            | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
 | `ClassSessionCompleted`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`; Invited/Accepted expert via `ForUser` | `ClassSessionService`                       |
 | `AttendanceMarkedPresent`        | `ForStudentAndParents` (staff mark); `ForParentsOfStudent` (first student check-in) | `SessionAttendanceService`                  |
 | `AttendanceMarkedLate`           | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
 | `AttendanceMarkedAbsent`         | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
@@ -159,6 +161,12 @@ service emits it.
 | `CurriculumReviewSubmitted`      | Framework-owning expert via `ForUser`                        | `CurriculumReviewService`                   |
 | `CurriculumReviewApproved`       | `ForManagers`                                                | `CurriculumReviewService`                   |
 | `CurriculumReviewChangesRequested` | `ForManagers`                                              | `CurriculumReviewService`                   |
+| `ClassSessionExpertInvited`        | Expert via `ForUser`                                       | `ClassSessionExpertService`                 |
+| `ClassSessionExpertAccepted`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
+| `ClassSessionExpertDeclined`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
+| `ClassSessionExpertInvitationWithdrawn` | Expert via `ForUser`                                  | `ClassSessionExpertService`                 |
+| `ClassSessionExpertRescheduleRequested` | Accepted expert via `ForUser`                         | `ClassSessionService`                       |
+| `ClassSessionExpertRescheduleDeclined` | `ForManagers`                                          | `ClassSessionExpertService`                 |
 
 ## Parent Time-Support Policy
 
