@@ -101,6 +101,7 @@ public partial class SeedService : ISeedService
         await SeedTaughtModuleAssessmentSafetyNetAsync();
         await SeedPassedSubmissionsForElapsedRequiredWindowsAsync();
         await AlignInProgressCurriculumToClassTimetableAsync();
+        await SeedClassSessionExpertsAsync();
     }
 
     public async Task ClearAllDataAsync()
