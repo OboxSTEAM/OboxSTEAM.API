@@ -59,7 +59,6 @@ public partial class SeedService
         // Demo programs stay submission-free (quiz / retrospective / research file uploads).
         await ClearDemoProgramSubmissionsAsync();
         await EnsureExpert001OnDemoProgramBoardsAsync();
-        await EnsureDemoCoTeachFeedbackAsync();
 
         _loggerService.LogInformation("Finished seed demo showcase programs");
     }
@@ -111,94 +110,6 @@ public partial class SeedService
         _loggerService.LogInformation(
             "Added EXP-001 to {Count} demo program board(s) for Offline co-teach tests.",
             boards.Count);
-    }
-
-    /// <summary>
-    /// One Completed Offline demo session with EXP-001 Accepted plus sample mentor feedback.
-    /// Idempotent for re-seed without clear.
-    /// </summary>
-    private async Task EnsureDemoCoTeachFeedbackAsync()
-    {
-        var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
-        if (expert001 == null)
-        {
-            _loggerService.LogWarning("EXP-001 not found. Skipping demo co-teach feedback.");
-            return;
-        }
-
-        var demoProgramIds = await GetDemoProgramIdsAsync();
-        if (demoProgramIds.Count == 0)
-        {
-            return;
-        }
-
-        var demoClasses = await _unitOfWork.Classes.GetAllAsync(
-            c => demoProgramIds.Contains(c.ProgramId) && !c.IsDeleted);
-        var classIds = demoClasses.Select(c => c.Id).ToHashSet();
-        if (classIds.Count == 0)
-        {
-            return;
-        }
-
-        var offlineSessions = await _unitOfWork.ClassSessions.GetAllAsync(
-            s => classIds.Contains(s.ClassId)
-                 && s.SessionKind == SessionKind.Offline
-                 && !s.IsDeleted);
-        var completed = offlineSessions
-            .Where(s => s.Status == ClassSessionStatus.Completed)
-            .OrderBy(s => s.StartTime)
-            .FirstOrDefault();
-        if (completed == null)
-        {
-            _loggerService.LogWarning("No Completed Offline demo session found. Skipping co-teach feedback seed.");
-            return;
-        }
-
-        var active = await _unitOfWork.ClassSessionExperts.FirstOrDefaultAsync(
-            e => e.ClassSessionId == completed.Id
-                 && !e.IsDeleted
-                 && (e.Status == ClassSessionExpertStatus.Invited
-                     || e.Status == ClassSessionExpertStatus.Accepted));
-        if (active != null && active.ExpertId != expert001.Id)
-        {
-            _loggerService.LogWarning(
-                "Completed Offline session {SessionId} already has another expert. Skipping co-teach feedback seed.",
-                completed.Id);
-            return;
-        }
-
-        const string sampleFeedback =
-            "Mentor dẫn dắt rõ ràng; nên chừa thêm thời gian để học viên hỏi sau phần thực hành.";
-
-        if (active == null)
-        {
-            await _unitOfWork.ClassSessionExperts.AddAsync(new ClassSessionExpert
-            {
-                Id = Guid.NewGuid(),
-                ClassSessionId = completed.Id,
-                ExpertId = expert001.Id,
-                Status = ClassSessionExpertStatus.Accepted,
-                MentorFeedback = sampleFeedback,
-                MentorFeedbackRating = 4,
-                MentorFeedbackAt = _seedNow,
-                CreatedAt = _seedNow,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
-        }
-        else
-        {
-            active.Status = ClassSessionExpertStatus.Accepted;
-            active.MentorFeedback ??= sampleFeedback;
-            active.MentorFeedbackRating ??= 4;
-            active.MentorFeedbackAt ??= _seedNow;
-            await _unitOfWork.ClassSessionExperts.Update(active);
-        }
-
-        await _unitOfWork.SaveChangesAsync();
-        _loggerService.LogInformation(
-            "Seeded EXP-001 Accepted co-teach feedback on session {SessionId}.",
-            completed.Id);
     }
 
     private static HashSet<string> GetDemoProgramCodeSet()
