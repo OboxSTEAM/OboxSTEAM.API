@@ -133,4 +133,92 @@ public static class ScheduleConflictValidator
             $"in class '{classCode}' " +
             $"({overlapping.StartTime:yyyy-MM-dd HH:mm} – {overlapping.EndTime:yyyy-MM-dd HH:mm} UTC).");
     }
+
+    public static async Task<List<ClassSession>> GetExpertBusySessionsAsync(
+        IUnitOfWork unitOfWork,
+        Guid expertId,
+        Guid? excludeSessionId = null)
+    {
+        var invitations = await unitOfWork.ClassSessionExperts.GetAllAsync(
+            e => e.ExpertId == expertId
+                 && e.Status == ClassSessionExpertStatus.Accepted
+                 && !e.IsDeleted
+                 && (!excludeSessionId.HasValue || e.ClassSessionId != excludeSessionId.Value));
+
+        var sessionIds = invitations.Select(e => e.ClassSessionId).Distinct().ToList();
+        if (sessionIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await unitOfWork.ClassSessions.GetAllAsync(
+            cs => sessionIds.Contains(cs.Id)
+                  && cs.Status != ClassSessionStatus.Cancelled
+                  && cs.SessionKind != SessionKind.AssignmentWindow
+                  && !cs.IsDeleted);
+    }
+
+    public static async Task ValidateExpertSessionNoOverlapAsync(
+        IUnitOfWork unitOfWork,
+        Guid expertId,
+        DateTime startTime,
+        DateTime endTime,
+        Guid? excludeSessionId = null)
+    {
+        var overlapping = await FindExpertOverlapAsync(
+            unitOfWork, expertId, startTime, endTime, excludeSessionId);
+        if (overlapping == null)
+        {
+            return;
+        }
+
+        var classEntity = await unitOfWork.Classes.GetByIdAsync(overlapping.ClassId);
+        var classCode = classEntity?.Code ?? overlapping.ClassId.ToString();
+
+        throw ErrorHelper.Conflict(
+            $"Expert schedule overlaps with session '{overlapping.Title}' " +
+            $"in class '{classCode}' " +
+            $"({overlapping.StartTime:yyyy-MM-dd HH:mm} – {overlapping.EndTime:yyyy-MM-dd HH:mm} UTC).");
+    }
+
+    public static async Task<string?> BuildExpertOverlapWarningAsync(
+        IUnitOfWork unitOfWork,
+        Guid expertId,
+        DateTime startTime,
+        DateTime endTime,
+        Guid? excludeSessionId = null)
+    {
+        var overlapping = await FindExpertOverlapAsync(
+            unitOfWork, expertId, startTime, endTime, excludeSessionId);
+        if (overlapping == null)
+        {
+            return null;
+        }
+
+        var classEntity = await unitOfWork.Classes.GetByIdAsync(overlapping.ClassId);
+        var classCode = classEntity?.Code ?? overlapping.ClassId.ToString();
+
+        return $"This invitation overlaps session '{overlapping.Title}' in class '{classCode}' "
+            + $"({overlapping.StartTime:yyyy-MM-dd HH:mm} – {overlapping.EndTime:yyyy-MM-dd HH:mm} UTC). "
+            + "Accept will be blocked unless the other session is cancelled or declined.";
+    }
+
+    private static async Task<ClassSession?> FindExpertOverlapAsync(
+        IUnitOfWork unitOfWork,
+        Guid expertId,
+        DateTime startTime,
+        DateTime endTime,
+        Guid? excludeSessionId)
+    {
+        var busySessions = await GetExpertBusySessionsAsync(unitOfWork, expertId, excludeSessionId);
+        foreach (var busy in busySessions)
+        {
+            if (Overlaps(busy.StartTime, busy.EndTime, startTime, endTime))
+            {
+                return busy;
+            }
+        }
+
+        return null;
+    }
 }

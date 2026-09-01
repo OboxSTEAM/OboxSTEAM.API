@@ -440,6 +440,25 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
+    public async Task GetWithStudents_ReturnsCommittedTimes_WhenReschedulePending()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var session = SeedSession(status: ClassSessionStatus.Scheduled, kind: SessionKind.Offline);
+        var committedStart = session.StartTime;
+        var committedEnd = session.EndTime;
+        session.ProposedStartTime = committedStart.AddDays(3);
+        session.ProposedEndTime = committedStart.AddDays(3).AddHours(2);
+        SeedStudentRoster();
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.GetClassSessionWithStudentsAsync(_sessionId);
+
+        Assert.Equal(committedStart, result.StartTime);
+        Assert.Equal(committedEnd, result.EndTime);
+    }
+
+    [Fact]
     public async Task GetWithStudents_AllowsOwningMentor()
     {
         SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
@@ -1272,7 +1291,7 @@ public sealed class ClassSessionServiceTests
         Assert.True(deleted);
         Assert.True(_db.ClassSessions.Items[0].IsDeleted);
         _notificationPublisher.Verify(
-            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
+            n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -1311,5 +1330,121 @@ public sealed class ClassSessionServiceTests
         await sut.DeleteClassSessionAsync(_sessionId);
 
         Assert.Equal(ClassStatus.Draft, _db.Classes.Items.Single(c => c.Id == _classId).Status);
+    }
+
+    [Fact]
+    public async Task Update_AcceptedExpert_StoresPendingReschedule_DoesNotMoveCommittedTime()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(
+            status: ClassSessionStatus.Scheduled,
+            kind: SessionKind.Offline,
+            startTime: _now.AddDays(1),
+            endTime: _now.AddDays(1).AddHours(2));
+        SeedAcceptedExpert();
+        var sut = CreateSut();
+        var originalStart = _db.ClassSessions.Items.Single(s => s.Id == _sessionId).StartTime;
+        var newStart = _now.AddDays(5);
+
+        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            StartTime = newStart,
+        });
+
+        Assert.Equal(originalStart, result.StartTime);
+        Assert.Equal(newStart, result.ProposedStartTime);
+        Assert.Equal(newStart.AddMinutes(120), result.ProposedEndTime);
+        _notificationPublisher.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Any(c => c.Type == NotificationType.ClassSessionExpertRescheduleRequested)
+                    && commands.All(c => c.Type != NotificationType.ClassSessionRescheduled)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_InvitedExpert_AppliesRescheduleImmediately()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(
+            status: ClassSessionStatus.Scheduled,
+            kind: SessionKind.Offline,
+            startTime: _now.AddDays(1),
+            endTime: _now.AddDays(1).AddHours(2));
+        SeedInvitedExpert();
+        var sut = CreateSut();
+        var newStart = _now.AddDays(5);
+
+        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            StartTime = newStart,
+        });
+
+        Assert.Equal(newStart, result.StartTime);
+        Assert.Null(result.ProposedStartTime);
+        _notificationPublisher.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Any(c => c.Type == NotificationType.ClassSessionRescheduled)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_AcceptedExpert_ReplacesPendingProposal()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var session = SeedSession(
+            status: ClassSessionStatus.Scheduled,
+            kind: SessionKind.Offline,
+            startTime: _now.AddDays(1),
+            endTime: _now.AddDays(1).AddHours(2));
+        SeedAcceptedExpert();
+        var firstStart = _now.AddDays(5);
+        var secondStart = _now.AddDays(8);
+        var sut = CreateSut();
+
+        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto { StartTime = firstStart });
+        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto { StartTime = secondStart });
+
+        Assert.Equal(session.StartTime, result.StartTime);
+        Assert.Equal(secondStart, result.ProposedStartTime);
+        _notificationPublisher.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Any(c => c.Type == NotificationType.ClassSessionExpertRescheduleRequested)),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
+    private void SeedAcceptedExpert() => SeedCoTeach(ClassSessionExpertStatus.Accepted);
+
+    private void SeedInvitedExpert() => SeedCoTeach(ClassSessionExpertStatus.Invited);
+
+    private void SeedCoTeach(ClassSessionExpertStatus status)
+    {
+        var expertUserId = Guid.Parse("16161616-1616-1616-1616-161616161616");
+        var expertId = Guid.Parse("17171717-1717-1717-1717-171717171717");
+        SeedUser(expertUserId, RoleType.Expert, "EXP-USR");
+        _db.Experts.Seed(new Expert
+        {
+            Id = expertId,
+            Code = "EXP-001",
+            FullName = "Dr. Expert",
+            UserId = expertUserId,
+            IsDeleted = false,
+        });
+        _db.ClassSessionExperts.Seed(new ClassSessionExpert
+        {
+            Id = Guid.Parse("18181818-1818-1818-1818-181818181818"),
+            ClassSessionId = _sessionId,
+            ExpertId = expertId,
+            Status = status,
+            IsDeleted = false,
+        });
     }
 }

@@ -93,8 +93,11 @@ Create, update, delete for:
   `GET /api/programs/{id}/curriculum-reviews`,
   `POST /api/programs/{id}/approve-review`,
   `POST /api/programs/{id}/request-changes` (owning Expert only).
-  Manager/Admin submit, withdraw, and publish. Co-teach endpoints are not
-  exposed yet.
+  Manager/Admin submit, withdraw, and publish. Offline co-teach:
+  `POST|GET /api/class-session-experts`, Expert `GET /mine`,
+  `POST /{id}/accept|decline|approve-reschedule|decline-reschedule`,
+  Manager/Admin `POST /{id}/withdraw` (Invited only). Mentor feedback PUT is
+  not exposed yet.
 
 ### Mentor skill visibility
 

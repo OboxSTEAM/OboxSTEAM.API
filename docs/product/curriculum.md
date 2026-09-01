@@ -119,7 +119,28 @@ join links live on `MeetingUrl` (separate from free-text `Location`).
 `SessionAttendance` records attendance status per student.
 `ClassSessionExpert` stores a co-teach invitation (`Invited` / `Accepted` /
 `Declined`) and private mentor feedback after the session is completed.
-Invite/accept/feedback endpoints are not exposed yet.
+Students must not see feedback fields. **One active expert per session**
+(`Invited` or `Accepted`). After `Declined` or manager withdraw, another
+expert may be invited.
+
+Co-teach API (`/api/class-session-experts`):
+
+- `POST /` — Manager/Admin invites a `ProgramBoard` expert to a **Scheduled
+  Offline** session.
+- `GET /mine` — Expert lists own invitations.
+- `GET /` — Manager/Admin list (`classId` / `sessionId` / `expertId` / `status`).
+- `POST /{id}/accept` and `POST /{id}/decline` — owning Expert; accept is
+  blocked (`409`) on calendar overlap with another Accepted Offline/LiveOnline
+  session.
+- `POST /{id}/withdraw` — Manager/Admin, **Invited only**. Accepted cannot be
+  withdrawn.
+- `POST /{id}/approve-reschedule` / `POST /{id}/decline-reschedule` — owning
+  Accepted expert. Changing `StartTime` on a session with an Accepted expert
+  does **not** move the committed window; it stores `ProposedStartTime` /
+  `ProposedEndTime` and notifies the expert. Roster `ClassSessionRescheduled`
+  fires only after approve. Decline keeps the old time and Accepted status.
+  A later manager time change replaces the pending proposal and re-notifies.
+  Invited-only sessions still reschedule immediately (plus notify the expert).
 
 **AssignmentWindow** is the per-class work window for that assignment (one
 active row per `(ClassId, AssignmentId)`). `StartTime` / `EndTime` are the

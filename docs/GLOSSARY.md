@@ -26,8 +26,11 @@ required when requesting changes.
 
 ## ClassSessionExpert
 
-Co-teach invitation on a class session (`Invited` / `Accepted` / `Declined`)
-plus private mentor feedback (students must not see feedback).
+Co-teach invitation on a class session (`Invited` / `Accepted` / `Declined`).
+One Invited or Accepted expert per session. Manager may withdraw while
+`Invited`. Accepted reschedules require expert approval of
+`ProposedStartTime` / `ProposedEndTime` before the committed window moves.
+Private mentor feedback is stored on the row (students must not see it).
 
 ## Module
 

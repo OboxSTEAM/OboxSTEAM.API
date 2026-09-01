@@ -103,28 +103,7 @@ public sealed class ClassSessionService : IClassSessionService
             .Take(pageSize)
             .ToList();
 
-        var dtos = items.Select(cs => new ClassSessionResponseDto
-        {
-            Id = cs.Id,
-            ClassId = cs.ClassId,
-            ModuleId = cs.ModuleId,
-            ActivityId = cs.ActivityId,
-            AssignmentId = cs.AssignmentId,
-            SessionKind = cs.SessionKind,
-            Title = cs.Title,
-            Description = cs.Description,
-            StartTime = cs.StartTime,
-            EndTime = cs.EndTime,
-            Location = cs.Location,
-            MeetingUrl = cs.MeetingUrl,
-            Latitude = cs.Latitude,
-            Longitude = cs.Longitude,
-            RequiresAttendance = cs.RequiresAttendance,
-            RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
-            Status = cs.Status,
-            CreatedAt = cs.CreatedAt,
-            UpdatedAt = cs.UpdatedAt,
-        }).ToList();
+        var dtos = items.Select(MapToResponseDto).ToList();
 
         _logger.LogInformation(
             "[GetClassSessionsByClassIdAsync] Retrieved {Count}/{Total} sessions for class {ClassId}.",
@@ -144,28 +123,7 @@ public sealed class ClassSessionService : IClassSessionService
 
         _logger.LogInformation("[GetClassSessionByIdAsync] Class session with Id {Id} retrieved successfully.", id);
 
-        return new ClassSessionResponseDto
-        {
-            Id = entity!.Id,
-            ClassId = entity.ClassId,
-            ModuleId = entity.ModuleId,
-            ActivityId = entity.ActivityId,
-            AssignmentId = entity.AssignmentId,
-            SessionKind = entity.SessionKind,
-            Title = entity.Title,
-            Description = entity.Description,
-            StartTime = entity.StartTime,
-            EndTime = entity.EndTime,
-            Location = entity.Location,
-            MeetingUrl = entity.MeetingUrl,
-            Latitude = entity.Latitude,
-            Longitude = entity.Longitude,
-            RequiresAttendance = entity.RequiresAttendance,
-            RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
-            Status = entity.Status,
-            CreatedAt = entity.CreatedAt,
-            UpdatedAt = entity.UpdatedAt,
-        };
+        return MapToResponseDto(entity!);
     }
 
     public async Task<ClassSessionWithStudentsResponseDto> GetClassSessionWithStudentsAsync(Guid id)
@@ -375,28 +333,7 @@ public sealed class ClassSessionService : IClassSessionService
             entity.Title,
             entity.Id);
 
-        return new ClassSessionResponseDto
-        {
-            Id = entity.Id,
-            ClassId = entity.ClassId,
-            ModuleId = entity.ModuleId,
-            ActivityId = entity.ActivityId,
-            AssignmentId = entity.AssignmentId,
-            SessionKind = entity.SessionKind,
-            Title = entity.Title,
-            Description = entity.Description,
-            StartTime = entity.StartTime,
-            EndTime = entity.EndTime,
-            Location = entity.Location,
-            MeetingUrl = entity.MeetingUrl,
-            Latitude = entity.Latitude,
-            Longitude = entity.Longitude,
-            RequiresAttendance = entity.RequiresAttendance,
-            RequiresMentorCheckIn = entity.RequiresMentorCheckIn,
-            Status = entity.Status,
-            CreatedAt = entity.CreatedAt,
-            UpdatedAt = entity.UpdatedAt,
-        };
+        return MapToResponseDto(entity);
     }
 
     public async Task<List<ClassSessionResponseDto>> GenerateClassSessionsAsync(
@@ -719,6 +656,8 @@ public sealed class ClassSessionService : IClassSessionService
         Status = session.Status,
         CreatedAt = session.CreatedAt,
         UpdatedAt = session.UpdatedAt,
+        ProposedStartTime = session.ProposedStartTime,
+        ProposedEndTime = session.ProposedEndTime,
     };
 
     public async Task<ClassSessionResponseDto> UpdateClassSessionAsync(
@@ -739,6 +678,8 @@ public sealed class ClassSessionService : IClassSessionService
 
         var originalStatus = session.Status;
         var originalActivityId = session.ActivityId;
+        var originalStartTime = session.StartTime;
+        var originalEndTime = session.EndTime;
 
         var targetModuleId = session.ModuleId;
         var targetActivityId = session.ActivityId;
@@ -858,6 +799,9 @@ public sealed class ClassSessionService : IClassSessionService
             }
         }
 
+        var pendingExpertReschedule = false;
+        var notifyInvitedExpertOfReschedule = false;
+
         if (timeChanged)
         {
             ClassSessionValidator.ValidateSessionWithinClassDateRange(
@@ -873,6 +817,42 @@ public sealed class ClassSessionService : IClassSessionService
                     targetStartTime,
                     targetEndTime,
                     excludeSessionId: session.Id);
+            }
+
+            var windowMoved = session.StartTime != originalStartTime
+                              || session.EndTime != originalEndTime;
+            var coTeach = await GetActiveCoTeachAsync(session.Id);
+
+            if (windowMoved
+                && coTeach is { Status: ClassSessionExpertStatus.Accepted })
+            {
+                await ScheduleConflictValidator.ValidateExpertSessionNoOverlapAsync(
+                    _unitOfWork,
+                    coTeach.ExpertId,
+                    session.StartTime,
+                    session.EndTime,
+                    excludeSessionId: session.Id);
+
+                session.ProposedStartTime = session.StartTime;
+                session.ProposedEndTime = session.EndTime;
+                session.StartTime = originalStartTime;
+                session.EndTime = originalEndTime;
+                pendingExpertReschedule = true;
+                timeChanged = false;
+            }
+            else if (windowMoved && coTeach is { Status: ClassSessionExpertStatus.Invited })
+            {
+                session.ProposedStartTime = null;
+                session.ProposedEndTime = null;
+                notifyInvitedExpertOfReschedule = true;
+            }
+            else if (!windowMoved
+                     && coTeach is { Status: ClassSessionExpertStatus.Accepted }
+                     && request.StartTime.HasValue
+                     && session.ProposedStartTime.HasValue)
+            {
+                session.ProposedStartTime = null;
+                session.ProposedEndTime = null;
             }
         }
 
@@ -918,6 +898,12 @@ public sealed class ClassSessionService : IClassSessionService
             session.Status = request.Status.Value;
         }
 
+        if (session.Status == ClassSessionStatus.Cancelled)
+        {
+            session.ProposedStartTime = null;
+            session.ProposedEndTime = null;
+        }
+
         if (originalStatus != ClassSessionStatus.Completed
             && session.Status == ClassSessionStatus.Completed)
         {
@@ -957,6 +943,35 @@ public sealed class ClassSessionService : IClassSessionService
                 NotificationCatalog.ClassSessionRescheduled(session.ClassId, session.Id, classEntity!.ProgramId, classEntity.Name));
         }
 
+        if (pendingExpertReschedule)
+        {
+            var pendingCommand = await BuildExpertRescheduleRequestedCommandAsync(
+                session, classEntity!);
+            if (pendingCommand != null)
+            {
+                sessionNotifications.Add(pendingCommand);
+            }
+        }
+        else if (notifyInvitedExpertOfReschedule)
+        {
+            var invitedCommand = await BuildExpertRescheduledCommandAsync(session, classEntity!);
+            if (invitedCommand != null)
+            {
+                sessionNotifications.Add(invitedCommand);
+            }
+        }
+
+        if (request.Status.HasValue
+            && session.Status == ClassSessionStatus.Cancelled
+            && session.Status != originalStatus)
+        {
+            var cancelledCommand = await BuildExpertCancelledCommandAsync(session, classEntity!);
+            if (cancelledCommand != null)
+            {
+                sessionNotifications.Add(cancelledCommand);
+            }
+        }
+
         if (sessionNotifications.Count > 0)
         {
             await _notificationPublisher.PublishManyAsync(sessionNotifications);
@@ -966,28 +981,7 @@ public sealed class ClassSessionService : IClassSessionService
 
         _logger.LogInformation("[UpdateClassSessionAsync] Class session Id {Id} updated successfully.", id);
 
-        return new ClassSessionResponseDto
-        {
-            Id = session.Id,
-            ClassId = session.ClassId,
-            ModuleId = session.ModuleId,
-            ActivityId = session.ActivityId,
-            AssignmentId = session.AssignmentId,
-            SessionKind = session.SessionKind,
-            Title = session.Title,
-            Description = session.Description,
-            StartTime = session.StartTime,
-            EndTime = session.EndTime,
-            Location = session.Location,
-            MeetingUrl = session.MeetingUrl,
-            Latitude = session.Latitude,
-            Longitude = session.Longitude,
-            RequiresAttendance = session.RequiresAttendance,
-            RequiresMentorCheckIn = session.RequiresMentorCheckIn,
-            Status = session.Status,
-            CreatedAt = session.CreatedAt,
-            UpdatedAt = session.UpdatedAt,
-        };
+        return MapToResponseDto(session);
     }
 
     public async Task<bool> DeleteClassSessionAsync(Guid id)
@@ -1004,13 +998,22 @@ public sealed class ClassSessionService : IClassSessionService
 
         var classId = entity.ClassId;
         var sessionId = entity.Id;
+        var expertCancelCommand = await BuildExpertCancelledCommandAsync(entity, null);
 
         await _unitOfWork.ClassSessions.SoftRemove(entity);
         await _unitOfWork.SaveChangesAsync();
 
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(classId);
-        await _notificationPublisher.PublishAsync(
-            NotificationCatalog.ClassSessionCancelled(classId, sessionId, classEntity?.ProgramId, classEntity?.Name));
+        var notifications = new List<NotificationCommand>
+        {
+            NotificationCatalog.ClassSessionCancelled(classId, sessionId, classEntity?.ProgramId, classEntity?.Name)
+        };
+        if (expertCancelCommand != null)
+        {
+            notifications.Add(expertCancelCommand);
+        }
+
+        await _notificationPublisher.PublishManyAsync(notifications);
 
         if (classEntity != null)
         {
@@ -1116,6 +1119,100 @@ public sealed class ClassSessionService : IClassSessionService
            || request.RequiresAttendance.HasValue
            || request.RequiresMentorCheckIn.HasValue
            || request.Status.HasValue;
+
+    private async Task<ClassSessionExpert?> GetActiveCoTeachAsync(Guid sessionId)
+        => await _unitOfWork.ClassSessionExperts.FirstOrDefaultAsync(
+            e => e.ClassSessionId == sessionId
+                 && !e.IsDeleted
+                 && (e.Status == ClassSessionExpertStatus.Invited
+                     || e.Status == ClassSessionExpertStatus.Accepted));
+
+    private async Task<NotificationCommand?> BuildExpertRescheduleRequestedCommandAsync(
+        ClassSession session,
+        Class classEntity)
+    {
+        var coTeach = await GetActiveCoTeachAsync(session.Id);
+        if (coTeach == null || coTeach.Status != ClassSessionExpertStatus.Accepted)
+        {
+            return null;
+        }
+
+        var expert = await _unitOfWork.Experts.GetByIdAsync(coTeach.ExpertId);
+        if (expert?.UserId is not Guid expertUserId)
+        {
+            return null;
+        }
+
+        var actor = await _unitOfWork.Users.GetByIdAsync(_claimsService.GetCurrentUserId);
+        var proposedStart = session.ProposedStartTime ?? session.StartTime;
+
+        return NotificationCatalog.ClassSessionExpertRescheduleRequested(
+            expertUserId,
+            coTeach.Id,
+            session.Id,
+            classEntity.Id,
+            classEntity.ProgramId,
+            actor?.Id,
+            classEntity.Name,
+            programName: null,
+            session.Title,
+            AppDateTime.FormatVietnamDateTime(proposedStart),
+            actor?.FullName);
+    }
+
+    private async Task<NotificationCommand?> BuildExpertRescheduledCommandAsync(
+        ClassSession session,
+        Class classEntity)
+    {
+        var (expertUserId, _) = await GetActiveCoTeachExpertUserAsync(session.Id);
+        if (expertUserId == null)
+        {
+            return null;
+        }
+
+        return NotificationCatalog.ClassSessionRescheduledForExpert(
+            expertUserId.Value,
+            session.Id,
+            classEntity.Id,
+            classEntity.ProgramId,
+            classEntity.Name,
+            programName: null,
+            session.Title,
+            AppDateTime.FormatVietnamDateTime(session.StartTime));
+    }
+
+    private async Task<NotificationCommand?> BuildExpertCancelledCommandAsync(
+        ClassSession session,
+        Class? classEntity)
+    {
+        var (expertUserId, _) = await GetActiveCoTeachExpertUserAsync(session.Id);
+        if (expertUserId == null)
+        {
+            return null;
+        }
+
+        return NotificationCatalog.ClassSessionCancelledForExpert(
+            expertUserId.Value,
+            session.Id,
+            session.ClassId,
+            classEntity?.ProgramId,
+            classEntity?.Name,
+            session.Title);
+    }
+
+    private async Task<(Guid? UserId, ClassSessionExpert? Invitation)> GetActiveCoTeachExpertUserAsync(
+        Guid sessionId)
+    {
+        var coTeach = await GetActiveCoTeachAsync(sessionId);
+        if (coTeach == null)
+        {
+            return (null, null);
+        }
+
+        var expert = await _unitOfWork.Experts.GetByIdAsync(coTeach.ExpertId);
+        return (expert?.UserId, coTeach);
+    }
+
     private async Task CloseOpenParticipationSegmentsAsync(ClassSession session)
     {
         var attendances = await _unitOfWork.SessionAttendances.GetAllAsync(

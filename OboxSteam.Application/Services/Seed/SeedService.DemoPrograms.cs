@@ -58,8 +58,58 @@ public partial class SeedService
 
         // Demo programs stay submission-free (quiz / retrospective / research file uploads).
         await ClearDemoProgramSubmissionsAsync();
+        await EnsureExpert001OnDemoProgramBoardsAsync();
 
         _loggerService.LogInformation("Finished seed demo showcase programs");
+    }
+
+    /// <summary>
+    /// Puts EXP-001 on demo program boards so Offline co-teach invites work.
+    /// Demo classes hold the Scheduled Offline labs; catalog programs like
+    /// PRG-ROBOTICS already have EXP-001 on the board but no invitable sessions.
+    /// Idempotent for re-seed without clear.
+    /// </summary>
+    private async Task EnsureExpert001OnDemoProgramBoardsAsync()
+    {
+        var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
+        if (expert001 == null)
+        {
+            _loggerService.LogWarning("EXP-001 not found. Skipping demo co-teach program boards.");
+            return;
+        }
+
+        var demoProgramIds = await GetDemoProgramIdsAsync();
+        if (demoProgramIds.Count == 0)
+        {
+            return;
+        }
+
+        var existing = await _unitOfWork.ProgramBoards.GetAllAsync(
+            pb => pb.ExpertId == expert001.Id && demoProgramIds.Contains(pb.ProgramId) && !pb.IsDeleted);
+        var existingProgramIds = existing.Select(pb => pb.ProgramId).ToHashSet();
+        var missingProgramIds = demoProgramIds.Where(id => !existingProgramIds.Contains(id)).ToList();
+        if (missingProgramIds.Count == 0)
+        {
+            _loggerService.LogInformation("EXP-001 is already on all demo program boards.");
+            return;
+        }
+
+        var boards = missingProgramIds.Select(programId => new ProgramBoard
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = programId,
+            ExpertId = expert001.Id,
+            RoleInBoard = "Demo Co-Teach Advisor",
+            CreatedAt = _seedNow,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        }).ToList();
+
+        await _unitOfWork.ProgramBoards.AddRangeAsync(boards);
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Added EXP-001 to {Count} demo program board(s) for Offline co-teach tests.",
+            boards.Count);
     }
 
     private static HashSet<string> GetDemoProgramCodeSet()

@@ -114,5 +114,13 @@ public enum NotificationType
     // Curriculum review (expert framework)
     CurriculumReviewSubmitted,
     CurriculumReviewApproved,
-    CurriculumReviewChangesRequested
+    CurriculumReviewChangesRequested,
+
+    // Offline co-teach (ClassSessionExpert)
+    ClassSessionExpertInvited,
+    ClassSessionExpertAccepted,
+    ClassSessionExpertDeclined,
+    ClassSessionExpertInvitationWithdrawn,
+    ClassSessionExpertRescheduleRequested,
+    ClassSessionExpertRescheduleDeclined
 }
