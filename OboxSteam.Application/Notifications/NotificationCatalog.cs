@@ -2206,6 +2206,69 @@ public static class NotificationCatalog
                 programName: programName,
                 sessionTitle: sessionTitle));
 
+    public static NotificationCommand ClassSessionExpertFeedbackRequested(
+        Guid expertUserId,
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null)
+        => new(
+            NotificationType.ClassSessionExpertFeedbackRequested,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Nhắc gửi phản hồi buổi đồng hành",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "Buổi học của lớp {className} đã kết thúc. Hãy gửi nhận xét về cách mentor giảng dạy."
+                    : "Buổi \"{sessionTitle}\" của lớp {className} đã kết thúc. Hãy gửi nhận xét về cách mentor giảng dạy."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(className: className, programName: programName),
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle));
+
+    public static NotificationCommand ClassSessionExpertFeedbackSubmitted(
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        Guid? actorUserId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null,
+        string? actorName = null)
+        => new(
+            NotificationType.ClassSessionExpertFeedbackSubmitted,
+            NotificationAudience.ForClassMentor(classId),
+            NotificationRoleTemplates.FromDefault(
+                "Chuyên gia đã gửi phản hồi",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "{actorName} đã gửi phản hồi về buổi học của lớp {className}."
+                    : "{actorName} đã gửi phản hồi về buổi \"{sessionTitle}\" của lớp {className}."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(actorName: actorName, className: className, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle));
+
     public static NotificationCommand ClassSessionRescheduledForExpert(
         Guid expertUserId,
         Guid classSessionId,

@@ -23,6 +23,8 @@ public class ClassSessionResponseDto
     public bool RequiresAttendance { get; set; }
     public bool RequiresMentorCheckIn { get; set; }
     public ClassSessionStatus Status { get; set; }
+    public bool HasAcceptedExpert { get; set; }
+    public ClassSessionCoTeachPublicDto? CoTeach { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

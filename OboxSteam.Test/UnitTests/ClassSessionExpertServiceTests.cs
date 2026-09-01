@@ -349,4 +349,171 @@ public sealed class ClassSessionExpertServiceTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    [Fact]
+    public async Task SubmitFeedback_SavesCommentAndRating_AndNotifiesMentor()
+    {
+        SeedUsersAndClass();
+        SeedInvitation(ClassSessionExpertStatus.Accepted);
+        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        var sut = CreateSut(_expertUserId);
+
+        var result = await sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+        {
+            Comment = "  Mentor dẫn dắt rõ, nên chừa thời gian Q&A.  ",
+            Rating = 4,
+        });
+
+        var stored = _db.ClassSessionExperts.Items.Single(e => e.Id == _invitationId);
+        Assert.Equal("Mentor dẫn dắt rõ, nên chừa thời gian Q&A.", stored.MentorFeedback);
+        Assert.Equal(4, stored.MentorFeedbackRating);
+        Assert.NotNull(stored.MentorFeedbackAt);
+        Assert.Equal(stored.MentorFeedback, result.MentorFeedback);
+        Assert.Equal(4, result.MentorFeedbackRating);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c =>
+                    c.Type == NotificationType.ClassSessionExpertFeedbackSubmitted
+                    && c.Audience.Kind == NotificationAudienceKind.ClassMentor),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SubmitFeedback_UpsertsExistingFeedback()
+    {
+        SeedUsersAndClass();
+        var invitation = SeedInvitation(ClassSessionExpertStatus.Accepted);
+        invitation.MentorFeedback = "First note";
+        invitation.MentorFeedbackRating = 3;
+        invitation.MentorFeedbackAt = _now.AddHours(-2);
+        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        var sut = CreateSut(_expertUserId);
+
+        var result = await sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+        {
+            Comment = "Updated overview",
+            Rating = 5,
+        });
+
+        Assert.Equal("Updated overview", result.MentorFeedback);
+        Assert.Equal(5, result.MentorFeedbackRating);
+        Assert.True(result.MentorFeedbackAt > _now.AddHours(-1));
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c => c.Type == NotificationType.ClassSessionExpertFeedbackSubmitted),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SubmitFeedback_Throws_WhenInvited()
+    {
+        SeedUsersAndClass();
+        SeedInvitation();
+        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        var sut = CreateSut(_expertUserId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+            {
+                Comment = "Too soon",
+                Rating = 4,
+            }));
+    }
+
+    [Fact]
+    public async Task SubmitFeedback_Throws_WhenDeclined()
+    {
+        SeedUsersAndClass();
+        SeedInvitation(ClassSessionExpertStatus.Declined);
+        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        var sut = CreateSut(_expertUserId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+            {
+                Comment = "Declined expert",
+                Rating = 4,
+            }));
+    }
+
+    [Fact]
+    public async Task SubmitFeedback_Throws_WhenSessionNotCompleted()
+    {
+        SeedUsersAndClass();
+        SeedInvitation(ClassSessionExpertStatus.Accepted);
+        var sut = CreateSut(_expertUserId);
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+            {
+                Comment = "Still scheduled",
+                Rating = 4,
+            }));
+    }
+
+    [Fact]
+    public async Task SubmitFeedback_Throws_WhenSessionCancelled()
+    {
+        SeedUsersAndClass();
+        SeedInvitation(ClassSessionExpertStatus.Accepted);
+        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Cancelled;
+        var sut = CreateSut(_expertUserId);
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+            {
+                Comment = "Cancelled",
+                Rating = 4,
+            }));
+    }
+
+    [Fact]
+    public async Task SubmitFeedback_Throws_WhenCommentBlank()
+    {
+        SeedUsersAndClass();
+        SeedInvitation(ClassSessionExpertStatus.Accepted);
+        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        var sut = CreateSut(_expertUserId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+            {
+                Comment = "   ",
+                Rating = 4,
+            }));
+    }
+
+    [Fact]
+    public async Task SubmitFeedback_Throws_WhenRatingOutOfRange()
+    {
+        SeedUsersAndClass();
+        SeedInvitation(ClassSessionExpertStatus.Accepted);
+        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        var sut = CreateSut(_expertUserId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+            {
+                Comment = "Valid comment",
+                Rating = 0,
+            }));
+    }
+
+    [Fact]
+    public async Task SubmitFeedback_Throws_WhenOtherExpert()
+    {
+        SeedUsersAndClass();
+        SeedInvitation(ClassSessionExpertStatus.Accepted);
+        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        var sut = CreateSut(_otherExpertUserId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+            {
+                Comment = "Not my invitation",
+                Rating = 4,
+            }));
+    }
 }

@@ -401,6 +401,42 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
         return await MapResponseAsync(invitation, session, classEntity, loadedExpert);
     }
 
+    public async Task<ClassSessionExpertResponseDto> SubmitFeedbackAsync(
+        Guid id,
+        SubmitClassSessionExpertFeedbackDto request)
+    {
+        var expert = await GetCurrentExpertAsync();
+        var invitation = await LoadInvitationAsync(id);
+        ClassSessionExpertValidator.ValidateOwnership(invitation, expert.Id);
+        ClassSessionExpertValidator.ValidateAcceptedForFeedback(invitation);
+
+        var (session, classEntity, loadedExpert) = await LoadGraphAsync(invitation);
+        ClassSessionExpertValidator.ValidateSessionCompletedForFeedback(session);
+        ClassSessionExpertValidator.ValidateFeedbackPayload(request.Comment, request.Rating);
+
+        invitation.MentorFeedback = request.Comment.Trim();
+        invitation.MentorFeedbackRating = request.Rating;
+        invitation.MentorFeedbackAt = DateTime.UtcNow;
+        await _unitOfWork.ClassSessionExperts.Update(invitation);
+        await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ClassSessionExpertFeedbackSubmitted(
+                invitation.Id,
+                session.Id,
+                classEntity.Id,
+                classEntity.ProgramId,
+                expert.UserId,
+                classEntity.Name,
+                programName: null,
+                session.Title,
+                loadedExpert.FullName));
+
+        _logger.LogInformation("[SubmitFeedbackAsync] Invitation {InvitationId} mentor feedback saved.", id);
+
+        return await MapResponseAsync(invitation, session, classEntity, loadedExpert);
+    }
+
     private async Task<ClassSessionExpert> LoadInvitationAsync(Guid id)
     {
         var invitation = await _unitOfWork.ClassSessionExperts.GetByIdAsync(id);
@@ -453,6 +489,9 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
             ProposedStartTime = session.ProposedStartTime,
             ProposedEndTime = session.ProposedEndTime,
             ScheduleConflictWarning = warning,
+            MentorFeedback = invitation.MentorFeedback,
+            MentorFeedbackRating = invitation.MentorFeedbackRating,
+            MentorFeedbackAt = invitation.MentorFeedbackAt,
             CreatedAt = invitation.CreatedAt,
             UpdatedAt = invitation.UpdatedAt,
         });

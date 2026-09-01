@@ -22,6 +22,9 @@ public sealed class ClassSessionExpertResponseDto
     public DateTime? ProposedStartTime { get; set; }
     public DateTime? ProposedEndTime { get; set; }
     public string? ScheduleConflictWarning { get; set; }
+    public string? MentorFeedback { get; set; }
+    public int? MentorFeedbackRating { get; set; }
+    public DateTime? MentorFeedbackAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

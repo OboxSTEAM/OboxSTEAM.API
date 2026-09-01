@@ -30,7 +30,8 @@ Co-teach invitation on a class session (`Invited` / `Accepted` / `Declined`).
 One Invited or Accepted expert per session. Manager may withdraw while
 `Invited`. Accepted reschedules require expert approval of
 `ProposedStartTime` / `ProposedEndTime` before the committed window moves.
-Private mentor feedback is stored on the row (students must not see it).
+Private mentor feedback is stored on the row after the session is Completed
+(`PUT /api/class-session-experts/{id}/feedback`; students must not see it).
 
 ## Module
 

@@ -143,4 +143,20 @@ public class ClassSessionExpertController : ControllerBase
         return Ok(ApiResult<ClassSessionExpertResponseDto>.Success(
             result, "200", "Reschedule declined successfully."));
     }
+
+    [HttpPut("{id:guid}/feedback")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(
+        Summary = "Submit or update private mentor feedback",
+        Description = "Allowed after the Offline session is Completed and this expert has Accepted. "
+            + "One overview for the class focused on how the mentor taught. Students never see this.")]
+    [ProducesResponseType(typeof(ApiResult<ClassSessionExpertResponseDto>), 200)]
+    public async Task<IActionResult> SubmitFeedback(
+        [FromRoute] Guid id,
+        [FromBody] SubmitClassSessionExpertFeedbackDto dto)
+    {
+        var result = await _service.SubmitFeedbackAsync(id, dto);
+        return Ok(ApiResult<ClassSessionExpertResponseDto>.Success(
+            result, "200", "Mentor feedback saved successfully."));
+    }
 }

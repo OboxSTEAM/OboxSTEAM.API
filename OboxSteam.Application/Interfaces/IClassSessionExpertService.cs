@@ -32,4 +32,6 @@ public interface IClassSessionExpertService
     Task<ClassSessionExpertResponseDto> ApproveRescheduleAsync(Guid id);
 
     Task<ClassSessionExpertResponseDto> DeclineRescheduleAsync(Guid id);
+
+    Task<ClassSessionExpertResponseDto> SubmitFeedbackAsync(Guid id, SubmitClassSessionExpertFeedbackDto request);
 }
