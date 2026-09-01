@@ -29,8 +29,8 @@ manager publish), **Active** (catalog + purchase/enroll allowed),
 
 Create via API is always **Draft** (omitted or explicit). `PUT` cannot set
 `PendingReview` or `Approved`. `Active` ↔ `Inactive` is allowed only when the
-program is already in one of those two catalog states. Enrollment and class
-creation still require **Active**.
+program is already in one of those two catalog states. Enrollment, class
+creation, opening enrollment, and starting a class still require **Active**.
 
 Lifecycle endpoints (Manager/Admin unless noted):
 
@@ -104,11 +104,11 @@ mentor, `MinHoursBeforeAssignmentJoin` (generate first-session buffer),
 Lifecycle (`ClassStatus`): **Draft → ReadyForMentor → Open → InProgress → Completed**.
 `Cancelled` is stored but has no public cancel endpoint.
 
-1. `POST /api/classes` always creates **Draft**. `StartDate` must be at least 14 days out. Mentor is optional.
+1. `POST /api/classes` always creates **Draft**. The program must be **Active**. `StartDate` must be at least 14 days out. Mentor is optional. Reassigning `ProgramId` on `PUT` also requires the target program to be **Active**.
 2. Generate the timetable (`POST /api/class-sessions/generate`, or add sessions manually). Coverage is one active session per LiveOnline/Offline activity plus each assignment.
 3. When coverage is complete, the class becomes **ReadyForMentor** (automatically after generate/create, or `POST /api/classes/{id}/ready-for-mentor`). Mentors request assignment from the board (`GET /api/class-mentor-requests/board`). Students cannot enroll.
-4. After a mentor is assigned, `POST /api/classes/{id}/open` moves **ReadyForMentor → Open**. Students may enroll only in this status.
-5. `POST /api/classes/{id}/start` (or auto-start when full and `StartDate` has arrived) moves **Open → InProgress**. Enrollment closes.
+4. After a mentor is assigned, `POST /api/classes/{id}/open` moves **ReadyForMentor → Open**. The program must still be **Active**. Students may enroll only in this status.
+5. `POST /api/classes/{id}/start` (or auto-start when full and `StartDate` has arrived) moves **Open → InProgress**. The program must still be **Active**. Auto-start skips the class when the program is not Active. Enrollment closes.
 6. `POST /api/classes/{id}/complete` moves **InProgress → Completed**.
 
 If sessions are deleted or cancelled so coverage no longer matches the curriculum, **ReadyForMentor** returns to **Draft**.

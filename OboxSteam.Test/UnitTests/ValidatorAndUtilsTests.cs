@@ -699,6 +699,28 @@ public sealed class ValidatorAndUtilsTests
         Assert.False(ClassValidator.IsReadyForAutoStart(openClass, 5, FixedNow));
     }
 
+    [Theory]
+    [InlineData(ProgramStatus.Draft, "draft")]
+    [InlineData(ProgramStatus.PendingReview, "pending expert review")]
+    [InlineData(ProgramStatus.Approved, "approved but not published")]
+    [InlineData(ProgramStatus.Inactive, "inactive")]
+    public void ClassValidator_EnsureProgramIsActive_Throws_WhenNotActive(
+        ProgramStatus status,
+        string messageFragment)
+    {
+        var program = new Program { Code = "PRG-X", Status = status };
+
+        var ex = Assert.Throws<BadRequestException>(() =>
+            ClassValidator.EnsureProgramIsActive(program));
+        Assert.Contains(messageFragment, ex.Message);
+    }
+
+    [Fact]
+    public void ClassValidator_EnsureProgramIsActive_AllowsActive()
+    {
+        ClassValidator.EnsureProgramIsActive(new Program { Code = "PRG-X", Status = ProgramStatus.Active });
+    }
+
     // ── ResearchSubmissionValidator (more branches) ───────────────────────────
 
     [Fact]
