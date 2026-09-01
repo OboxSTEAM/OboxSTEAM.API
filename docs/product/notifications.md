@@ -65,6 +65,8 @@ include `{token}` placeholders interpolated at publish time:
 | `{assignmentTitle}` | Catalog token |
 | `{extraAttempts}` | Catalog token |
 | `{checkedInAt}` | Catalog token (`HH:mm` Asia/Ho_Chi_Minh) |
+| `{frameworkName}` | Catalog token (expert blueprint name) |
+| `{comment}` | Catalog token (expert request-changes feedback) |
 
 Student copy addresses the learner as "bạn" ("Bạn đã hoàn thành…"). Parent copy
 names the child as "con bạn {studentName}" ("Con bạn {studentName} đã hoàn
@@ -154,6 +156,9 @@ service emits it.
 | `MaterialUpdated`                | `ForClassRoster`                                             | `MaterialService`                           |
 | `AssignmentEditedByMentor`       | `ForManagers`                                                | `AssignmentService`                         |
 | `ClassQuizSetEditedByMentor`     | `ForManagers`                                                | `ClassQuizQuestionSetService`               |
+| `CurriculumReviewSubmitted`      | Framework-owning expert via `ForUser`                        | `CurriculumReviewService`                   |
+| `CurriculumReviewApproved`       | `ForManagers`                                                | `CurriculumReviewService`                   |
+| `CurriculumReviewChangesRequested` | `ForManagers`                                              | `CurriculumReviewService`                   |
 
 ## Parent Time-Support Policy
 

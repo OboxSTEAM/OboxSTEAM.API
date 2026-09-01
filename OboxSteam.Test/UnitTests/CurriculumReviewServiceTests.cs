@@ -4,6 +4,7 @@ using OboxSteam.Application.DTOs.CurriculumReviewDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -28,11 +29,17 @@ public sealed class CurriculumReviewServiceTests
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<ICurrentTime> _currentTime = new();
+    private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly List<NotificationCommand> _published = [];
 
     private CurriculumReviewService CreateSut(Guid currentUserId)
     {
         _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId);
         _currentTime.Setup(c => c.GetCurrentTime()).Returns(_now);
+        _notificationPublisher
+            .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
+            .Callback<NotificationCommand, CancellationToken>((command, _) => _published.Add(command))
+            .Returns(Task.CompletedTask);
         var programService = new ProgramService(
             _db,
             Mock.Of<IBlobService>(),
@@ -42,7 +49,8 @@ public sealed class CurriculumReviewServiceTests
             _claimsService.Object,
             programService,
             _currentTime.Object,
-            NullLogger<CurriculumReviewService>.Instance);
+            NullLogger<CurriculumReviewService>.Instance,
+            _notificationPublisher.Object);
     }
 
     private void SeedUser(Guid id, RoleType role, string code)
@@ -130,6 +138,7 @@ public sealed class CurriculumReviewServiceTests
 
         Assert.Equal(ProgramStatus.Approved, result.Status);
         Assert.Equal(ProgramStatus.Approved, _db.Programs.Items.Single().Status);
+        Assert.Empty(_published);
     }
 
     [Fact]
@@ -143,6 +152,11 @@ public sealed class CurriculumReviewServiceTests
         var result = await sut.SubmitForReviewAsync(_programId);
 
         Assert.Equal(ProgramStatus.PendingReview, result.Status);
+        var submitted = Assert.Single(_published);
+        Assert.Equal(NotificationType.CurriculumReviewSubmitted, submitted.Type);
+        Assert.Equal(_expertUserId, submitted.Audience.UserId);
+        Assert.Equal(_programId, submitted.Payload!.ProgramId);
+        Assert.Contains("Robotics blueprint", submitted.Body!);
     }
 
     [Fact]
@@ -155,6 +169,7 @@ public sealed class CurriculumReviewServiceTests
 
         await Assert.ThrowsAsync<BadRequestException>(() => sut.SubmitForReviewAsync(_programId));
         Assert.Equal(ProgramStatus.Draft, _db.Programs.Items.Single().Status);
+        Assert.Empty(_published);
     }
 
     [Fact]
@@ -278,6 +293,10 @@ public sealed class CurriculumReviewServiceTests
         Assert.Equal(_now, result.ReviewedAt);
         Assert.Equal(ProgramStatus.Approved, _db.Programs.Items.Single().Status);
         Assert.Single(_db.CurriculumReviews.Items);
+        var approved = Assert.Single(_published);
+        Assert.Equal(NotificationType.CurriculumReviewApproved, approved.Type);
+        Assert.Equal(NotificationAudienceKind.Managers, approved.Audience.Kind);
+        Assert.Equal(_programId, approved.Payload!.ProgramId);
     }
 
     [Fact]
@@ -379,6 +398,14 @@ public sealed class CurriculumReviewServiceTests
         Assert.Equal(CurriculumReviewDecision.ChangesRequested, result.Decision);
         Assert.Equal("Chỗ A sai, điều chỉnh lại.", result.Comment);
         Assert.Equal(ProgramStatus.Draft, _db.Programs.Items.Single().Status);
+        var returned = Assert.Single(_published);
+        Assert.Equal(NotificationType.CurriculumReviewChangesRequested, returned.Type);
+        Assert.Equal(NotificationAudienceKind.Managers, returned.Audience.Kind);
+        Assert.Equal(_programId, returned.Payload!.ProgramId);
+        Assert.Equal("Chỗ A sai, điều chỉnh lại.", returned.Payload.Extra);
+        Assert.Contains("không duyệt chương trình \"Robotics\"", returned.Body!, StringComparison.Ordinal);
+        Assert.Contains("Yêu cầu kiểm tra và sửa lại", returned.Body!, StringComparison.Ordinal);
+        Assert.Contains("Chỗ A sai, điều chỉnh lại.", returned.Body!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -427,5 +454,20 @@ public sealed class CurriculumReviewServiceTests
 
         Assert.Single(result);
         Assert.Equal("Fix module 1", result[0].Comment);
+    }
+
+    [Fact]
+    public async Task Submit_ExpertWithoutLogin_DoesNotPublish()
+    {
+        SeedStaffAndOwner();
+        _db.Experts.Items.Single(e => e.Id == _expertId).UserId = null;
+        SeedFramework();
+        SeedProgram(frameworkId: _frameworkId);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.SubmitForReviewAsync(_programId);
+
+        Assert.Equal(ProgramStatus.PendingReview, result.Status);
+        Assert.Empty(_published);
     }
 }

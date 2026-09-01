@@ -1927,6 +1927,103 @@ public static class NotificationCatalog
                 className: className,
                 programName: programName));
 
+    // ── Curriculum review ─────────────────────────────────────────────────────
+
+    public static NotificationCommand CurriculumReviewSubmitted(
+        Guid expertUserId,
+        Guid programId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? frameworkName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumReviewSubmitted,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Có chương trình chờ duyệt",
+                BuildCurriculumReviewSubmittedBody(programName, frameworkName)),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                programName: programName,
+                frameworkName: frameworkName));
+
+    public static NotificationCommand CurriculumReviewApproved(
+        Guid programId,
+        Guid? reviewId = null,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumReviewApproved,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chương trình đã được duyệt",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã duyệt chương trình. Bạn có thể xuất bản."
+                    : "{actorName} đã duyệt chương trình \"{programName}\". Bạn có thể xuất bản."),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "CurriculumReview",
+            entityId: reviewId ?? programId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
+    public static NotificationCommand CurriculumReviewChangesRequested(
+        Guid programId,
+        string comment,
+        Guid? reviewId = null,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumReviewChangesRequested,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chương trình cần chỉnh sửa",
+                BuildCurriculumReviewChangesRequestedBody(programName)),
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                Extra = comment
+            }.WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "CurriculumReview",
+            entityId: reviewId ?? programId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                programName: programName,
+                comment: comment));
+
+    private static string BuildCurriculumReviewSubmittedBody(string? programName, string? frameworkName)
+    {
+        if (!string.IsNullOrWhiteSpace(programName) && !string.IsNullOrWhiteSpace(frameworkName))
+        {
+            return "{actorName} đã gửi chương trình \"{programName}\" dựa trên khung \"{frameworkName}\" của bạn.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(programName))
+        {
+            return "{actorName} đã gửi chương trình \"{programName}\" để bạn duyệt.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(frameworkName))
+        {
+            return "{actorName} đã gửi một chương trình dựa trên khung \"{frameworkName}\" của bạn.";
+        }
+
+        return "{actorName} đã gửi một chương trình để bạn duyệt.";
+    }
+
+    private static string BuildCurriculumReviewChangesRequestedBody(string? programName)
+        => string.IsNullOrWhiteSpace(programName)
+            ? "{actorName} không duyệt chương trình. Yêu cầu kiểm tra và sửa lại. {comment}"
+            : "{actorName} không duyệt chương trình \"{programName}\". Yêu cầu kiểm tra và sửa lại. {comment}";
+
     private static NotificationCommand StudentAndParent(
         NotificationType type,
         NotificationAudience audience,

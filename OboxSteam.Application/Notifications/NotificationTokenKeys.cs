@@ -14,6 +14,8 @@ public static class NotificationTokenKeys
     public const string CheckedInAt = "checkedInAt";
     public const string SessionStartTime = "sessionStartTime";
     public const string SessionTitle = "sessionTitle";
+    public const string FrameworkName = "frameworkName";
+    public const string Comment = "comment";
 
     public static Dictionary<string, string> Create(
         string? studentName = null,
@@ -26,7 +28,9 @@ public static class NotificationTokenKeys
         string? extraAttempts = null,
         string? checkedInAt = null,
         string? sessionStartTime = null,
-        string? sessionTitle = null)
+        string? sessionTitle = null,
+        string? frameworkName = null,
+        string? comment = null)
     {
         var tokens = new Dictionary<string, string>(StringComparer.Ordinal);
         Add(tokens, StudentName, studentName);
@@ -40,6 +44,8 @@ public static class NotificationTokenKeys
         Add(tokens, CheckedInAt, checkedInAt);
         Add(tokens, SessionStartTime, sessionStartTime);
         Add(tokens, SessionTitle, sessionTitle);
+        Add(tokens, FrameworkName, frameworkName);
+        Add(tokens, Comment, comment);
         return tokens;
     }
 

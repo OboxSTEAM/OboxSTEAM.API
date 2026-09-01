@@ -3,6 +3,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.CurriculumReviewDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -18,19 +19,22 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     private readonly IProgramService _programService;
     private readonly ICurrentTime _currentTime;
     private readonly ILogger<CurriculumReviewService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public CurriculumReviewService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         IProgramService programService,
         ICurrentTime currentTime,
-        ILogger<CurriculumReviewService> logger)
+        ILogger<CurriculumReviewService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _programService = programService;
         _currentTime = currentTime;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<ProgramsResponseDto> SubmitForReviewAsync(Guid programId)
@@ -45,9 +49,10 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
         await ProgramFrameworkValidator.ValidateForSubmitAsync(_unitOfWork, programId);
 
+        ProgramFramework? framework = null;
         if (program.FrameworkId.HasValue)
         {
-            var framework = await RequireActiveFrameworkAsync(program.FrameworkId.Value);
+            framework = await RequireActiveFrameworkAsync(program.FrameworkId.Value);
             program.Status = ProgramStatus.PendingReview;
             _logger.LogInformation(
                 "[SubmitForReview] Program {ProgramId} submitted by {UserId} to PendingReview on framework {FrameworkId}.",
@@ -66,6 +71,12 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
         await _unitOfWork.Programs.Update(program);
         await _unitOfWork.SaveChangesAsync();
+
+        if (framework != null)
+        {
+            await PublishCurriculumReviewSubmittedAsync(program, framework, actor);
+        }
+
         return await _programService.GetProgramByIdAsync(programId);
     }
 
@@ -220,7 +231,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         Guid programId,
         ApproveCurriculumReviewRequest? request)
     {
-        var (program, expert, framework, criteria) = await RequirePendingOwnedReviewAsync(programId);
+        var (program, expert, _, criteria, actor) = await RequirePendingOwnedReviewAsync(programId);
         var comment = CurriculumReviewValidator.NormalizeOptionalComment(request?.Comment);
         var reviewId = Guid.NewGuid();
         var scoreRows = CurriculumReviewValidator.BuildScores(reviewId, criteria, request?.Scores);
@@ -243,6 +254,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             program.Id,
             review.Round);
 
+        await PublishCurriculumReviewDecisionAsync(program, review, actor);
         return await MapReviewAsync(review);
     }
 
@@ -255,7 +267,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             throw ErrorHelper.BadRequest("Request body is required.");
         }
 
-        var (program, expert, _, _) = await RequirePendingOwnedReviewAsync(programId);
+        var (program, expert, _, _, actor) = await RequirePendingOwnedReviewAsync(programId);
         var comment = CurriculumReviewValidator.RequireComment(request.Comment);
 
         var review = await PersistDecisionAsync(
@@ -276,6 +288,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             program.Id,
             review.Round);
 
+        await PublishCurriculumReviewDecisionAsync(program, review, actor);
         return await MapReviewAsync(review);
     }
 
@@ -315,7 +328,8 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         Program Program,
         Expert Expert,
         ProgramFramework Framework,
-        List<FrameworkRubricCriterion> Criteria)> RequirePendingOwnedReviewAsync(Guid programId)
+        List<FrameworkRubricCriterion> Criteria,
+        User Actor)> RequirePendingOwnedReviewAsync(Guid programId)
     {
         var actor = await ResolveReviewActorAsync();
         if (actor.Role != RoleType.Expert)
@@ -334,7 +348,12 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var criteria = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
             c => c.FrameworkId == framework.Id && !c.IsDeleted);
 
-        return (program, expert, framework, criteria.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList());
+        return (
+            program,
+            expert,
+            framework,
+            criteria.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList(),
+            actor);
     }
 
     private async Task<Program> GetActiveProgramAsync(Guid programId)
@@ -427,6 +446,57 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
         return expert;
     }
+
+    private async Task PublishCurriculumReviewSubmittedAsync(
+        Program program,
+        ProgramFramework framework,
+        User actor)
+    {
+        var expert = await _unitOfWork.Experts.GetByIdAsync(framework.ExpertId);
+        if (expert == null || expert.IsDeleted || !expert.UserId.HasValue || expert.UserId == Guid.Empty)
+        {
+            _logger.LogWarning(
+                "[SubmitForReview] Skip CurriculumReviewSubmitted; framework {FrameworkId} owner has no login.",
+                framework.Id);
+            return;
+        }
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.CurriculumReviewSubmitted(
+                expert.UserId.Value,
+                program.Id,
+                actor.Id,
+                program.Name,
+                framework.Name,
+                DisplayName(actor)));
+    }
+
+    private async Task PublishCurriculumReviewDecisionAsync(
+        Program program,
+        CurriculumReview review,
+        User actor)
+    {
+        var actorName = DisplayName(actor);
+        var command = review.Decision == CurriculumReviewDecision.Approved
+            ? NotificationCatalog.CurriculumReviewApproved(
+                program.Id,
+                review.Id,
+                actor.Id,
+                program.Name,
+                actorName)
+            : NotificationCatalog.CurriculumReviewChangesRequested(
+                program.Id,
+                review.Comment ?? string.Empty,
+                review.Id,
+                actor.Id,
+                program.Name,
+                actorName);
+
+        await _notificationPublisher.PublishAsync(command);
+    }
+
+    private static string DisplayName(User user)
+        => string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName;
 
     private async Task<CurriculumReviewResponseDto> MapReviewAsync(CurriculumReview review)
     {
