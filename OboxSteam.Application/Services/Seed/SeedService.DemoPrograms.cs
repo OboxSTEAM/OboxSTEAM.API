@@ -1320,6 +1320,18 @@ public partial class SeedService
             ordinal: 2,
             seedTime);
 
+        // FE Offline detail shows Location; pin a concrete campus room for Slice-2 testing.
+        offlineSession.Location = "NVH 601";
+        offlineSession.Latitude = 10.870000;
+        offlineSession.Longitude = 106.803000;
+        offlineSession.MeetingUrl = null;
+        offlineSession.RequiresAttendance = true;
+        offlineSession.RequiresMentorCheckIn = true;
+        offlineSession.UpdatedAt = seedTime;
+        offlineSession.UpdatedBy = Guid.Empty;
+        await _unitOfWork.ClassSessions.Update(offlineSession);
+        updated = Math.Max(updated, 1);
+
         if (updated > 0)
         {
             await _unitOfWork.SaveChangesAsync();
@@ -1371,9 +1383,10 @@ public partial class SeedService
     }
 
     /// <summary>
-    /// STD-010 on Maker only: complete Theory (module 1) and the Module 2 SelfPaced prep
-    /// so FE can open the Slice-2 LiveOnline / Offline pair immediately after reseed.
-    /// Runs after <c>ClearDemoProgramSubmissionsAsync</c> so the theory quiz grade survives.
+    /// STD-010 on Maker only: complete Theory, unlock Module 2 prep, and seed graded
+    /// Quiz / Retrospective / Research FileUpload submissions so curriculum
+    /// <c>latestSubmissionId</c> hydrates FE result routes after every reseed.
+    /// Runs after <c>ClearDemoProgramSubmissionsAsync</c> so submissions survive the clear.
     /// </summary>
     private async Task ApplyMakerStudent10Module1CompleteAsync()
     {
@@ -1381,10 +1394,15 @@ public partial class SeedService
         const string programCode = "PRG-DEMO-MAKER";
         const string theoryModuleCode = "MOD-DEMO-MAKER-01";
         const string experientialModuleCode = "MOD-DEMO-MAKER-02";
+        const string researchModuleCode = "MOD-DEMO-MAKER-03";
         const string theorySelfPacedCode = "ACT-DEMO-MAKER-01-01";
         const string theoryLiveCode = "ACT-DEMO-MAKER-01-02";
         const string experientialPrepCode = "ACT-DEMO-MAKER-02-01";
+        const string researchSelfPacedCode = "ACT-DEMO-MAKER-03-01";
         const string theoryQuizCode = "ASG-DEMO-MAKER-QUIZ";
+        const string retroCode = "ASG-DEMO-MAKER-RETRO";
+        const string researchMs1Code = "ASG-DEMO-MAKER-MS01";
+        const string researchMilestone1Code = "RML-DEMO-MAKER-01";
 
         var student = await _unitOfWork.Users.FirstOrDefaultAsync(
             u => u.Code == studentCode && !u.IsDeleted);
@@ -1393,7 +1411,7 @@ public partial class SeedService
         if (student == null || program == null)
         {
             _loggerService.LogWarning(
-                "Maker STD-010 module-1 complete skipped: student or program missing.");
+                "Maker STD-010 result hydration skipped: student or program missing.");
             return;
         }
 
@@ -1402,7 +1420,7 @@ public partial class SeedService
         if (programEnrollment == null)
         {
             _loggerService.LogWarning(
-                "Maker STD-010 module-1 complete skipped: program enrollment missing.");
+                "Maker STD-010 result hydration skipped: program enrollment missing.");
             return;
         }
 
@@ -1410,10 +1428,12 @@ public partial class SeedService
             m => m.Code == theoryModuleCode && !m.IsDeleted);
         var experientialModule = await _unitOfWork.Modules.FirstOrDefaultAsync(
             m => m.Code == experientialModuleCode && !m.IsDeleted);
-        if (theoryModule == null || experientialModule == null)
+        var researchModule = await _unitOfWork.Modules.FirstOrDefaultAsync(
+            m => m.Code == researchModuleCode && !m.IsDeleted);
+        if (theoryModule == null || experientialModule == null || researchModule == null)
         {
             _loggerService.LogWarning(
-                "Maker STD-010 module-1 complete skipped: theory/experiential module missing.");
+                "Maker STD-010 result hydration skipped: theory/experiential/research module missing.");
             return;
         }
 
@@ -1427,34 +1447,51 @@ public partial class SeedService
                   && me.ModuleId == experientialModule.Id
                   && me.ProgramEnrollmentId == programEnrollment.Id
                   && !me.IsDeleted);
-        if (theoryMe == null || experientialMe == null)
+        var researchMe = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+            me => me.StudentId == student.Id
+                  && me.ModuleId == researchModule.Id
+                  && me.ProgramEnrollmentId == programEnrollment.Id
+                  && !me.IsDeleted);
+        if (theoryMe == null || experientialMe == null || researchMe == null)
         {
             _loggerService.LogWarning(
-                "Maker STD-010 module-1 complete skipped: module enrollments missing.");
+                "Maker STD-010 result hydration skipped: module enrollments missing.");
             return;
         }
 
-        var activityCodes = new[] { theorySelfPacedCode, theoryLiveCode, experientialPrepCode };
+        var activityCodes = new[]
+        {
+            theorySelfPacedCode,
+            theoryLiveCode,
+            experientialPrepCode,
+            researchSelfPacedCode,
+        };
         var activities = await _unitOfWork.Activities.GetAllAsync(
             a => activityCodes.Contains(a.Code) && !a.IsDeleted);
         var byCode = activities.ToDictionary(a => a.Code, StringComparer.OrdinalIgnoreCase);
 
         if (!byCode.TryGetValue(theorySelfPacedCode, out var theorySelfPaced)
             || !byCode.TryGetValue(theoryLiveCode, out var theoryLive)
-            || !byCode.TryGetValue(experientialPrepCode, out var experientialPrep))
+            || !byCode.TryGetValue(experientialPrepCode, out var experientialPrep)
+            || !byCode.TryGetValue(researchSelfPacedCode, out var researchSelfPaced))
         {
             _loggerService.LogWarning(
-                "Maker STD-010 module-1 complete skipped: expected activities missing.");
+                "Maker STD-010 result hydration skipped: expected activities missing.");
             return;
         }
 
         var quiz = await _unitOfWork.Assignments.FirstOrDefaultAsync(
             a => a.Code == theoryQuizCode && !a.IsDeleted);
-        if (quiz == null)
+        var retrospective = await _unitOfWork.Assignments.FirstOrDefaultAsync(
+            a => a.Code == retroCode && !a.IsDeleted);
+        var researchMs1 = await _unitOfWork.Assignments.FirstOrDefaultAsync(
+            a => a.Code == researchMs1Code && !a.IsDeleted);
+        var researchMilestone1 = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
+            rm => rm.Code == researchMilestone1Code && !rm.IsDeleted);
+        if (quiz == null || retrospective == null || researchMs1 == null || researchMilestone1 == null)
         {
             _loggerService.LogWarning(
-                "Maker STD-010 module-1 complete skipped: quiz {QuizCode} missing.",
-                theoryQuizCode);
+                "Maker STD-010 result hydration skipped: quiz/retro/research assignment or milestone missing.");
             return;
         }
 
@@ -1462,10 +1499,20 @@ public partial class SeedService
         await EnsureMakerSeedActivityDoneAsync(theoryMe, theorySelfPaced, seedTime.AddDays(-3));
         await EnsureMakerSeedActivityDoneAsync(theoryMe, theoryLive, seedTime.AddDays(-2));
         await EnsureMakerSeedActivityDoneAsync(experientialMe, experientialPrep, seedTime.AddDays(-1));
+        await EnsureMakerSeedActivityDoneAsync(researchMe, researchSelfPaced, seedTime.AddDays(-1));
+
         await EnsureMakerSeedQuizPassedAsync(student, theoryMe, quiz, seedTime);
+        await EnsureMakerSeedRetrospectivePassedAsync(student, experientialMe, retrospective, seedTime);
+        await EnsureMakerSeedResearchFilePassedAsync(
+            student,
+            researchMe,
+            researchMs1,
+            researchMilestone1,
+            seedTime);
 
         await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, theoryMe);
         await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, experientialMe);
+        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, researchMe);
         await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
             _unitOfWork,
             programEnrollment.Id,
@@ -1473,8 +1520,10 @@ public partial class SeedService
         await _unitOfWork.SaveChangesAsync();
 
         _loggerService.LogInformation(
-            "Maker STD-010: Theory module completed ({Progress}%) and Module-2 prep marked Done for Slice-2 FE testing.",
-            theoryMe.ProgressPercent);
+            "Maker STD-010: Theory {TheoryProgress}%, Experiential {ExpProgress}%, Research {ResProgress}% — quiz/retro/research latestSubmissionId ready.",
+            theoryMe.ProgressPercent,
+            experientialMe.ProgressPercent,
+            researchMe.ProgressPercent);
     }
 
     private async Task EnsureMakerSeedActivityDoneAsync(
@@ -1528,29 +1577,255 @@ public partial class SeedService
         Assignment quiz,
         DateTime seedTime)
     {
-        var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+        var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.StudentId == student.Id
                  && s.AssignmentId == quiz.Id
                  && s.ModuleEnrollmentId == moduleEnrollment.Id
                  && !s.IsDeleted);
 
-        if (existing != null)
+        var startedAt = seedTime.AddDays(-2).AddMinutes(-20);
+        var submittedAt = seedTime.AddDays(-2);
+
+        if (submission == null)
         {
-            var needsUpdate = existing.Status != SubmissionStatus.Graded
-                              || existing.AssignedGrade is null
-                              || existing.AssignedGrade < quiz.PassScore;
-            if (!needsUpdate)
+            submission = new Submission
+            {
+                Id = Guid.NewGuid(),
+                Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
+                AssignmentId = quiz.Id,
+                StudentId = student.Id,
+                ModuleEnrollmentId = moduleEnrollment.Id,
+                AttemptNumber = 1,
+                Status = SubmissionStatus.Graded,
+                AssignedGrade = 90m,
+                ContentText = "Seeded Maker theory quiz pass for Slice-2 FE testing (STD-010).",
+                StartedAt = startedAt,
+                SubmittedAt = submittedAt,
+                GradedAt = seedTime.AddDays(-1),
+                CreatedAt = startedAt,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            };
+            await _unitOfWork.Submissions.AddAsync(submission);
+            await _unitOfWork.SaveChangesAsync();
+        }
+        else
+        {
+            submission.Status = SubmissionStatus.Graded;
+            submission.AssignedGrade = 90m;
+            submission.StartedAt ??= startedAt;
+            submission.SubmittedAt ??= submittedAt;
+            submission.GradedAt ??= seedTime.AddDays(-1);
+            submission.UpdatedAt = seedTime;
+            submission.UpdatedBy = Guid.Empty;
+            await _unitOfWork.Submissions.Update(submission);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        await EnsureMakerSeedQuizSnapshotAndAnswersAsync(quiz, submission, seedTime);
+    }
+
+    /// <summary>
+    /// Builds a graded quiz snapshot (10 questions, 9 correct → AssignedGrade 90 / MaxPoints 100)
+    /// so <c>GET /api/submissions/{id}/quiz/result</c> returns real CorrectCount/TotalQuestions.
+    /// </summary>
+    private async Task EnsureMakerSeedQuizSnapshotAndAnswersAsync(
+        Assignment quiz,
+        Submission submission,
+        DateTime seedTime)
+    {
+        var existingQuestions = await _unitOfWork.QuizQuestions.GetAllAsync(
+            q => q.SubmissionId == submission.Id && !q.IsDeleted);
+        if (existingQuestions.Count > 0)
+        {
+            var existingAnswers = await _unitOfWork.QuizAnswers.GetAllAsync(
+                a => a.SubmissionId == submission.Id && !a.IsDeleted);
+            if (existingAnswers.Count > 0
+                && submission.AssignedGrade is >= 90m
+                && submission.Status == SubmissionStatus.Graded)
             {
                 return;
             }
+        }
 
+        if (quiz.QuestionBankId is null)
+        {
+            _loggerService.LogWarning(
+                "Maker STD-010 quiz snapshot skipped: assignment {Code} has no QuestionBankId.",
+                quiz.Code);
+            return;
+        }
+
+        var bankQuestions = (await _unitOfWork.BankQuestions.GetAllAsync(
+                q => q.QuestionBankId == quiz.QuestionBankId.Value && !q.IsDeleted))
+            .OrderBy(q => q.OrderIndex)
+            .Take(10)
+            .ToList();
+        if (bankQuestions.Count == 0)
+        {
+            _loggerService.LogWarning(
+                "Maker STD-010 quiz snapshot skipped: bank has no questions.");
+            return;
+        }
+
+        var bankQuestionIds = bankQuestions.Select(q => q.Id).ToList();
+        var bankOptions = await _unitOfWork.BankQuestionOptions.GetAllAsync(
+            o => bankQuestionIds.Contains(o.BankQuestionId) && !o.IsDeleted);
+        var optionsByBankQuestion = bankOptions
+            .GroupBy(o => o.BankQuestionId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Soft-remove any incomplete prior snapshot on this submission before rebuilding.
+        if (existingQuestions.Count > 0)
+        {
+            var staleAnswers = await _unitOfWork.QuizAnswers.GetAllAsync(
+                a => a.SubmissionId == submission.Id && !a.IsDeleted);
+            if (staleAnswers.Count > 0)
+            {
+                await _unitOfWork.QuizAnswers.SoftRemoveRange(staleAnswers);
+            }
+
+            var staleOptionIds = existingQuestions.Select(q => q.Id).ToList();
+            var staleOptions = await _unitOfWork.QuizOptions.GetAllAsync(
+                o => staleOptionIds.Contains(o.QuestionId) && !o.IsDeleted);
+            if (staleOptions.Count > 0)
+            {
+                await _unitOfWork.QuizOptions.SoftRemoveRange(staleOptions);
+            }
+
+            await _unitOfWork.QuizQuestions.SoftRemoveRange(existingQuestions);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        var quizQuestions = new List<QuizQuestion>();
+        var quizOptions = new List<QuizOption>();
+        var quizAnswers = new List<QuizAnswer>();
+        // 9/10 correct → 90 points when MaxPoints is 100.
+        var correctLimit = Math.Max(1, bankQuestions.Count - 1);
+
+        for (var index = 0; index < bankQuestions.Count; index++)
+        {
+            var bankQuestion = bankQuestions[index];
+            if (!optionsByBankQuestion.TryGetValue(bankQuestion.Id, out var activeBankOptions)
+                || activeBankOptions.Count == 0)
+            {
+                continue;
+            }
+
+            var quizQuestion = new QuizQuestion
+            {
+                Id = Guid.NewGuid(),
+                AssignmentId = quiz.Id,
+                SubmissionId = submission.Id,
+                BankQuestionId = bankQuestion.Id,
+                QuestionText = bankQuestion.QuestionText,
+                QuestionType = bankQuestion.QuestionType,
+                Points = bankQuestion.Points,
+                OrderIndex = index + 1,
+                AttemptNumber = submission.AttemptNumber,
+                CreatedAt = seedTime.AddDays(-2),
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            };
+            quizQuestions.Add(quizQuestion);
+
+            QuizOption? correctOption = null;
+            QuizOption? wrongOption = null;
+            foreach (var bankOption in activeBankOptions)
+            {
+                var option = new QuizOption
+                {
+                    Id = Guid.NewGuid(),
+                    QuestionId = quizQuestion.Id,
+                    OptionText = bankOption.OptionText,
+                    IsCorrect = bankOption.IsCorrect,
+                    CreatedAt = seedTime.AddDays(-2),
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                };
+                quizOptions.Add(option);
+                if (bankOption.IsCorrect)
+                {
+                    correctOption = option;
+                }
+                else
+                {
+                    wrongOption ??= option;
+                }
+            }
+
+            var selected = index < correctLimit
+                ? correctOption
+                : wrongOption ?? correctOption;
+            if (selected == null)
+            {
+                continue;
+            }
+
+            quizAnswers.Add(new QuizAnswer
+            {
+                Id = Guid.NewGuid(),
+                SubmissionId = submission.Id,
+                QuizQuestionId = quizQuestion.Id,
+                QuizOptionId = selected.Id,
+                CreatedAt = seedTime.AddDays(-2),
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+        }
+
+        if (quizQuestions.Count == 0)
+        {
+            return;
+        }
+
+        await _unitOfWork.QuizQuestions.AddRangeAsync(quizQuestions);
+        await _unitOfWork.QuizOptions.AddRangeAsync(quizOptions);
+        await _unitOfWork.QuizAnswers.AddRangeAsync(quizAnswers);
+
+        // Attach options for scoring helper (in-memory).
+        foreach (var question in quizQuestions)
+        {
+            question.Options = quizOptions.Where(o => o.QuestionId == question.Id).ToList();
+        }
+
+        var grade = QuizScoreCalculator.Calculate(quiz, quizQuestions, quizAnswers);
+        submission.Status = SubmissionStatus.Graded;
+        submission.AssignedGrade = grade.AssignedGrade;
+        submission.SubmittedAt ??= seedTime.AddDays(-2);
+        submission.GradedAt ??= seedTime.AddDays(-1);
+        await _unitOfWork.Submissions.Update(submission);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task EnsureMakerSeedRetrospectivePassedAsync(
+        User student,
+        ModuleEnrollment moduleEnrollment,
+        Assignment retrospective,
+        DateTime seedTime)
+    {
+        var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+            s => s.StudentId == student.Id
+                 && s.AssignmentId == retrospective.Id
+                 && s.ModuleEnrollmentId == moduleEnrollment.Id
+                 && !s.IsDeleted);
+
+        const string content =
+            "Seeded Maker retrospective for Slice-2 FE result hydration (STD-010). "
+            + "Prototype iteration notes and next steps.";
+
+        if (existing != null)
+        {
             existing.Status = SubmissionStatus.Graded;
-            existing.AssignedGrade = Math.Max(quiz.PassScore, 90m);
-            existing.SubmittedAt ??= seedTime.AddDays(-2);
-            existing.GradedAt = seedTime.AddDays(-1);
+            existing.AssignedGrade = Math.Max(retrospective.PassScore, 88m);
+            existing.ContentText = content;
+            existing.StartedAt ??= seedTime.AddDays(-1).AddMinutes(-30);
+            existing.SubmittedAt ??= seedTime.AddDays(-1);
+            existing.GradedAt ??= seedTime.AddHours(-12);
             existing.UpdatedAt = seedTime;
             existing.UpdatedBy = Guid.Empty;
             await _unitOfWork.Submissions.Update(existing);
+            await _unitOfWork.SaveChangesAsync();
             return;
         }
 
@@ -1558,19 +1833,93 @@ public partial class SeedService
         {
             Id = Guid.NewGuid(),
             Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-            AssignmentId = quiz.Id,
+            AssignmentId = retrospective.Id,
             StudentId = student.Id,
             ModuleEnrollmentId = moduleEnrollment.Id,
             AttemptNumber = 1,
             Status = SubmissionStatus.Graded,
-            AssignedGrade = 90m,
-            ContentText = "Seeded Maker theory quiz pass for Slice-2 FE testing (STD-010).",
-            SubmittedAt = seedTime.AddDays(-2),
-            GradedAt = seedTime.AddDays(-1),
-            CreatedAt = seedTime.AddDays(-2),
+            AssignedGrade = 88m,
+            ContentText = content,
+            StartedAt = seedTime.AddDays(-1).AddMinutes(-30),
+            SubmittedAt = seedTime.AddDays(-1),
+            GradedAt = seedTime.AddHours(-12),
+            CreatedAt = seedTime.AddDays(-1),
             CreatedBy = Guid.Empty,
             IsDeleted = false,
         });
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task EnsureMakerSeedResearchFilePassedAsync(
+        User student,
+        ModuleEnrollment moduleEnrollment,
+        Assignment assignment,
+        ResearchMilestone milestone,
+        DateTime seedTime)
+    {
+        var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+            s => s.StudentId == student.Id
+                 && s.AssignmentId == assignment.Id
+                 && s.ModuleEnrollmentId == moduleEnrollment.Id
+                 && !s.IsDeleted);
+
+        var fileUrl = existing?.FileUrl;
+        if (string.IsNullOrWhiteSpace(fileUrl)
+            || !fileUrl.Contains("Seed/Submission/", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                fileUrl = await UploadSeedSubmissionPdfAsync(
+                    "ASG-DEMO-MAKER-MS01-std010-prototype.pdf",
+                    "OboxSTEAM Maker MS01 Seed Deliverable");
+            }
+            catch (Exception ex)
+            {
+                _loggerService.LogWarning(
+                    ex,
+                    "Maker STD-010 research file upload failed; using placeholder FileUrl.");
+                fileUrl = "https://cdn.example.com/seed/ASG-DEMO-MAKER-MS01-std010-prototype.pdf";
+            }
+        }
+
+        if (existing != null)
+        {
+            existing.Status = SubmissionStatus.Graded;
+            existing.AssignedGrade = Math.Max(assignment.PassScore, 85m);
+            existing.ResearchMilestoneId = milestone.Id;
+            existing.FileUrl = fileUrl;
+            existing.ContentText ??= "Seeded Maker milestone-1 upload for FE research result hydration.";
+            existing.MentorFeedback ??= "Solid first prototype photos. Seeded Graded for FE testing.";
+            existing.SubmittedAt ??= seedTime.AddDays(-1);
+            existing.GradedAt ??= seedTime.AddHours(-6);
+            existing.UpdatedAt = seedTime;
+            existing.UpdatedBy = Guid.Empty;
+            await _unitOfWork.Submissions.Update(existing);
+            await _unitOfWork.SaveChangesAsync();
+            return;
+        }
+
+        await _unitOfWork.Submissions.AddAsync(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
+            AssignmentId = assignment.Id,
+            StudentId = student.Id,
+            ModuleEnrollmentId = moduleEnrollment.Id,
+            ResearchMilestoneId = milestone.Id,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 85m,
+            ContentText = "Seeded Maker milestone-1 upload for FE research result hydration.",
+            FileUrl = fileUrl,
+            MentorFeedback = "Solid first prototype photos. Seeded Graded for FE testing.",
+            SubmittedAt = seedTime.AddDays(-1),
+            GradedAt = seedTime.AddHours(-6),
+            CreatedAt = seedTime.AddDays(-1),
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        });
+        await _unitOfWork.SaveChangesAsync();
     }
 
     private async Task PruneDemoStudentEnrollmentsAsync(

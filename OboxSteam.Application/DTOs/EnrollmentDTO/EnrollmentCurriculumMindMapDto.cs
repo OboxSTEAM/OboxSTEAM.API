@@ -261,4 +261,10 @@ public class EnrollmentCurriculumMindMapAssignmentLearningDto
     public bool IsLocked { get; set; }
 
     public string? LockReason { get; set; }
+
+    /// <summary>
+    /// Latest attempt for this assignment under the student's module enrollment.
+    /// Used by FE to open quiz/retrospective result routes.
+    /// </summary>
+    public Guid? LatestSubmissionId { get; set; }
 }
