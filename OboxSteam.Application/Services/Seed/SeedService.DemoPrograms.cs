@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
@@ -1367,6 +1368,209 @@ public partial class SeedService
         session.UpdatedBy = Guid.Empty;
         await _unitOfWork.ClassSessions.Update(session);
         return 1;
+    }
+
+    /// <summary>
+    /// STD-010 on Maker only: complete Theory (module 1) and the Module 2 SelfPaced prep
+    /// so FE can open the Slice-2 LiveOnline / Offline pair immediately after reseed.
+    /// Runs after <c>ClearDemoProgramSubmissionsAsync</c> so the theory quiz grade survives.
+    /// </summary>
+    private async Task ApplyMakerStudent10Module1CompleteAsync()
+    {
+        const string studentCode = "STD-010";
+        const string programCode = "PRG-DEMO-MAKER";
+        const string theoryModuleCode = "MOD-DEMO-MAKER-01";
+        const string experientialModuleCode = "MOD-DEMO-MAKER-02";
+        const string theorySelfPacedCode = "ACT-DEMO-MAKER-01-01";
+        const string theoryLiveCode = "ACT-DEMO-MAKER-01-02";
+        const string experientialPrepCode = "ACT-DEMO-MAKER-02-01";
+        const string theoryQuizCode = "ASG-DEMO-MAKER-QUIZ";
+
+        var student = await _unitOfWork.Users.FirstOrDefaultAsync(
+            u => u.Code == studentCode && !u.IsDeleted);
+        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
+            p => p.Code == programCode && !p.IsDeleted);
+        if (student == null || program == null)
+        {
+            _loggerService.LogWarning(
+                "Maker STD-010 module-1 complete skipped: student or program missing.");
+            return;
+        }
+
+        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+            pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted);
+        if (programEnrollment == null)
+        {
+            _loggerService.LogWarning(
+                "Maker STD-010 module-1 complete skipped: program enrollment missing.");
+            return;
+        }
+
+        var theoryModule = await _unitOfWork.Modules.FirstOrDefaultAsync(
+            m => m.Code == theoryModuleCode && !m.IsDeleted);
+        var experientialModule = await _unitOfWork.Modules.FirstOrDefaultAsync(
+            m => m.Code == experientialModuleCode && !m.IsDeleted);
+        if (theoryModule == null || experientialModule == null)
+        {
+            _loggerService.LogWarning(
+                "Maker STD-010 module-1 complete skipped: theory/experiential module missing.");
+            return;
+        }
+
+        var theoryMe = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+            me => me.StudentId == student.Id
+                  && me.ModuleId == theoryModule.Id
+                  && me.ProgramEnrollmentId == programEnrollment.Id
+                  && !me.IsDeleted);
+        var experientialMe = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+            me => me.StudentId == student.Id
+                  && me.ModuleId == experientialModule.Id
+                  && me.ProgramEnrollmentId == programEnrollment.Id
+                  && !me.IsDeleted);
+        if (theoryMe == null || experientialMe == null)
+        {
+            _loggerService.LogWarning(
+                "Maker STD-010 module-1 complete skipped: module enrollments missing.");
+            return;
+        }
+
+        var activityCodes = new[] { theorySelfPacedCode, theoryLiveCode, experientialPrepCode };
+        var activities = await _unitOfWork.Activities.GetAllAsync(
+            a => activityCodes.Contains(a.Code) && !a.IsDeleted);
+        var byCode = activities.ToDictionary(a => a.Code, StringComparer.OrdinalIgnoreCase);
+
+        if (!byCode.TryGetValue(theorySelfPacedCode, out var theorySelfPaced)
+            || !byCode.TryGetValue(theoryLiveCode, out var theoryLive)
+            || !byCode.TryGetValue(experientialPrepCode, out var experientialPrep))
+        {
+            _loggerService.LogWarning(
+                "Maker STD-010 module-1 complete skipped: expected activities missing.");
+            return;
+        }
+
+        var quiz = await _unitOfWork.Assignments.FirstOrDefaultAsync(
+            a => a.Code == theoryQuizCode && !a.IsDeleted);
+        if (quiz == null)
+        {
+            _loggerService.LogWarning(
+                "Maker STD-010 module-1 complete skipped: quiz {QuizCode} missing.",
+                theoryQuizCode);
+            return;
+        }
+
+        var seedTime = _seedNow;
+        await EnsureMakerSeedActivityDoneAsync(theoryMe, theorySelfPaced, seedTime.AddDays(-3));
+        await EnsureMakerSeedActivityDoneAsync(theoryMe, theoryLive, seedTime.AddDays(-2));
+        await EnsureMakerSeedActivityDoneAsync(experientialMe, experientialPrep, seedTime.AddDays(-1));
+        await EnsureMakerSeedQuizPassedAsync(student, theoryMe, quiz, seedTime);
+
+        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, theoryMe);
+        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, experientialMe);
+        await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
+            _unitOfWork,
+            programEnrollment.Id,
+            theoryMe);
+        await _unitOfWork.SaveChangesAsync();
+
+        _loggerService.LogInformation(
+            "Maker STD-010: Theory module completed ({Progress}%) and Module-2 prep marked Done for Slice-2 FE testing.",
+            theoryMe.ProgressPercent);
+    }
+
+    private async Task EnsureMakerSeedActivityDoneAsync(
+        ModuleEnrollment moduleEnrollment,
+        Activity activity,
+        DateTime completedAt)
+    {
+        var existing = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
+            ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
+                  && ap.ActivityId == activity.Id
+                  && !ap.IsDeleted);
+
+        if (existing != null)
+        {
+            if (existing.ActivityStatus == ActivityStatus.Done && existing.IsCompleted)
+            {
+                return;
+            }
+
+            existing.ActivityStatus = ActivityStatus.Done;
+            existing.IsCompleted = true;
+            existing.CompletionSource = CompletionSource.Manual;
+            existing.CompletedAt ??= completedAt;
+            existing.LastAccessedAt = completedAt;
+            existing.UpdatedAt = completedAt;
+            existing.UpdatedBy = Guid.Empty;
+            await _unitOfWork.ActivityProgresses.Update(existing);
+            return;
+        }
+
+        await _unitOfWork.ActivityProgresses.AddAsync(new ActivityProgress
+        {
+            Id = Guid.NewGuid(),
+            StudentId = moduleEnrollment.StudentId,
+            ActivityId = activity.Id,
+            ModuleEnrollmentId = moduleEnrollment.Id,
+            ActivityStatus = ActivityStatus.Done,
+            IsCompleted = true,
+            CompletionSource = CompletionSource.Manual,
+            CompletedAt = completedAt,
+            LastAccessedAt = completedAt,
+            CreatedAt = completedAt,
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        });
+    }
+
+    private async Task EnsureMakerSeedQuizPassedAsync(
+        User student,
+        ModuleEnrollment moduleEnrollment,
+        Assignment quiz,
+        DateTime seedTime)
+    {
+        var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+            s => s.StudentId == student.Id
+                 && s.AssignmentId == quiz.Id
+                 && s.ModuleEnrollmentId == moduleEnrollment.Id
+                 && !s.IsDeleted);
+
+        if (existing != null)
+        {
+            var needsUpdate = existing.Status != SubmissionStatus.Graded
+                              || existing.AssignedGrade is null
+                              || existing.AssignedGrade < quiz.PassScore;
+            if (!needsUpdate)
+            {
+                return;
+            }
+
+            existing.Status = SubmissionStatus.Graded;
+            existing.AssignedGrade = Math.Max(quiz.PassScore, 90m);
+            existing.SubmittedAt ??= seedTime.AddDays(-2);
+            existing.GradedAt = seedTime.AddDays(-1);
+            existing.UpdatedAt = seedTime;
+            existing.UpdatedBy = Guid.Empty;
+            await _unitOfWork.Submissions.Update(existing);
+            return;
+        }
+
+        await _unitOfWork.Submissions.AddAsync(new Submission
+        {
+            Id = Guid.NewGuid(),
+            Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
+            AssignmentId = quiz.Id,
+            StudentId = student.Id,
+            ModuleEnrollmentId = moduleEnrollment.Id,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 90m,
+            ContentText = "Seeded Maker theory quiz pass for Slice-2 FE testing (STD-010).",
+            SubmittedAt = seedTime.AddDays(-2),
+            GradedAt = seedTime.AddDays(-1),
+            CreatedAt = seedTime.AddDays(-2),
+            CreatedBy = Guid.Empty,
+            IsDeleted = false,
+        });
     }
 
     private async Task PruneDemoStudentEnrollmentsAsync(

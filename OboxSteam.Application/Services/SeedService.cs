@@ -100,6 +100,8 @@ public partial class SeedService : ISeedService
         // After RealignSeedSessionWallClocksAsync so Sat/Sun grid does not overwrite
         // the Maker Slice-2 join/check-in pair used by student10 FE testing.
         await ApplyMakerSlice2JoinableSessionsAsync();
+        // After ClearDemoProgramSubmissionsAsync so STD-010 theory quiz grade is not wiped.
+        await ApplyMakerStudent10Module1CompleteAsync();
     }
 
     public async Task ClearAllDataAsync()
