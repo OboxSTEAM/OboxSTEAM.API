@@ -51,10 +51,14 @@ Individual learning tasks within a course.
 | --- | --- |
 | SelfPaced | No fixed schedule; progress tracked individually |
 | LiveOnline | Scheduled online session |
-| Offline | Physical session; may require QR check-in |
+| Offline | Physical session; may offer QR check-in |
 
 Flags: `RequireQrCheckin`, `RequireMediaEvidence`. Template times on `Activity`
 are defaults; cohort-specific times live on `ClassSession`.
+`RequireQrCheckin` enables student QR/code check-in; it does not require that
+path for attendance or mentor-complete. `POST /api/activity-progresses/mentor-complete-bulk`
+completes students with `Present`, `Late`, or `Excused` from either student
+QR/code check-in or a mentor/manager roster mark.
 
 API: `/api/activities`.
 
