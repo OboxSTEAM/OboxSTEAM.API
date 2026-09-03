@@ -126,4 +126,10 @@ public class EnrollmentCurriculumAssignmentDto
 
     /// <summary>Nav state: completed, submitted, available, or locked.</summary>
     public string Status { get; set; } = null!;
+
+    /// <summary>
+    /// Latest attempt for this assignment under the student's module enrollment.
+    /// Used by FE to open quiz/retrospective result routes.
+    /// </summary>
+    public Guid? LatestSubmissionId { get; set; }
 }

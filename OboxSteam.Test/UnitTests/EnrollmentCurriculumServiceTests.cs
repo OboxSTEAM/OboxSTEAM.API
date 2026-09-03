@@ -522,6 +522,64 @@ public sealed class EnrollmentCurriculumServiceTests
     }
 
     [Fact]
+    public async Task GetCurriculum_ExposesLatestSubmissionId_WhenGraded()
+    {
+        SeedStudent();
+        SeedCurriculum();
+        SeedProgramEnrollment();
+        SeedCompletedTheoryActivities();
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId,
+            _programEnrollmentId);
+        ClassAssignmentWindowSeed.Open(_db, _classId, _theoryModuleId, _moduleAssignmentId);
+
+        var olderId = Guid.Parse("b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1");
+        var latestId = Guid.Parse("b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2");
+        _db.Submissions.Seed(new Submission
+        {
+            Id = olderId,
+            Code = "SUB-OLD",
+            AssignmentId = _moduleAssignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 40m,
+            SubmittedAt = DateTime.UtcNow.AddDays(-2),
+            IsDeleted = false,
+        });
+        _db.Submissions.Seed(new Submission
+        {
+            Id = latestId,
+            Code = "SUB-LATEST",
+            AssignmentId = _moduleAssignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            AttemptNumber = 2,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 90m,
+            SubmittedAt = DateTime.UtcNow.AddDays(-1),
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        var result = await sut.GetEnrollmentCurriculumAsync(_programEnrollmentId);
+        var moduleQuiz = result.Modules[0].Assignments.Single(a => a.AssignmentId == _moduleAssignmentId);
+
+        Assert.Equal(CurriculumStatusHelper.StatusCompleted, moduleQuiz.Status);
+        Assert.Equal(latestId, moduleQuiz.LatestSubmissionId);
+
+        var mindMap = await sut.GetEnrollmentCurriculumMindMapAsync(_programEnrollmentId);
+        var mindMapQuiz = mindMap.Modules[0].Assignments
+            .Single(a => a.AssignmentInfo.AssignmentId == _moduleAssignmentId);
+        Assert.Equal(latestId, mindMapQuiz.Learning.LatestSubmissionId);
+        Assert.Equal(CurriculumStatusHelper.StatusCompleted, mindMapQuiz.Learning.Status);
+    }
+
+    [Fact]
     public async Task GetMindMap_UsesCalendarLockReason_WhenWindowMissing()
     {
         SeedStudent();

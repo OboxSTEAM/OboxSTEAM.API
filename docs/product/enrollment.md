@@ -69,7 +69,17 @@ progress.
 
 `GET /api/program-enrollments/{enrollmentId}/curriculum` returns per-student
 nav status for activities and assignments (`locked`, `available`, `current`,
-`completed`, `submitted`).
+`completed`, `submitted`). Assignment nodes also expose `latestSubmissionId`
+(latest attempt under the student's module enrollment) so clients can hydrate
+result UIs without a separate submissions list:
+
+- Quiz → `GET /api/submissions/{latestSubmissionId}/quiz/result`
+- Retrospective → `GET /api/submissions/{latestSubmissionId}/retrospective`
+- Research FileUpload → milestone progress `submissionId` first, else
+  `latestSubmissionId` → `GET /api/research-submissions/{id}`
+
+The mind-map curriculum payload mirrors `latestSubmissionId` on each
+assignment's `learning` object.
 
 Assignment locking mirrors activity gating:
 

@@ -15,17 +15,20 @@ public sealed class ClassSessionService : IClassSessionService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
+    private readonly ICurrentTime _currentTime;
     private readonly ILogger<ClassSessionService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
 
     public ClassSessionService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
+        ICurrentTime currentTime,
         ILogger<ClassSessionService> logger,
         INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
+        _currentTime = currentTime;
         _logger = logger;
         _notificationPublisher = notificationPublisher;
     }
@@ -245,6 +248,8 @@ public sealed class ClassSessionService : IClassSessionService
                     ModuleEnrollmentId = moduleEnrollmentId,
                     AttendanceStatus = attendance?.Status ?? AttendanceStatus.Expected,
                     CheckedInAt = attendance?.CheckedInAt,
+                    LeftAt = attendance?.LeftAt,
+                    ParticipationMinutes = attendance?.ParticipationMinutes,
                     RecordedBy = attendance?.RecordedBy,
                 };
             })
@@ -913,6 +918,12 @@ public sealed class ClassSessionService : IClassSessionService
             session.Status = request.Status.Value;
         }
 
+        if (originalStatus != ClassSessionStatus.Completed
+            && session.Status == ClassSessionStatus.Completed)
+        {
+            await CloseOpenParticipationSegmentsAsync(session);
+        }
+
         await _unitOfWork.ClassSessions.Update(session);
         await _unitOfWork.SaveChangesAsync();
 
@@ -1105,4 +1116,21 @@ public sealed class ClassSessionService : IClassSessionService
            || request.RequiresAttendance.HasValue
            || request.RequiresMentorCheckIn.HasValue
            || request.Status.HasValue;
+    private async Task CloseOpenParticipationSegmentsAsync(ClassSession session)
+    {
+        var attendances = await _unitOfWork.SessionAttendances.GetAllAsync(
+            sa => sa.ClassSessionId == session.Id && !sa.IsDeleted);
+
+        var now = _currentTime.GetCurrentTime();
+        foreach (var attendance in attendances)
+        {
+            if (attendance.CheckedInAt == null || attendance.LeftAt != null)
+            {
+                continue;
+            }
+
+            SessionParticipationHelper.CloseOpenSegment(attendance, session.EndTime, now);
+            await _unitOfWork.SessionAttendances.Update(attendance);
+        }
+    }
 }

@@ -34,12 +34,14 @@ public sealed class ClassSessionServiceTests
 
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
+    private readonly Mock<ICurrentTime> _currentTime = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
 
     public ClassSessionServiceTests()
     {
         _classStart = _now.AddDays(-7);
         _classEnd = _now.AddDays(60);
+        _currentTime.Setup(t => t.GetCurrentTime()).Returns(_now);
     }
 
     private ClassSessionService CreateSut(Guid? currentUserId = null)
@@ -68,6 +70,7 @@ public sealed class ClassSessionServiceTests
         return new ClassSessionService(
             _db,
             _claimsService.Object,
+            _currentTime.Object,
             NullLogger<ClassSessionService>.Instance,
             _notificationPublisher.Object);
     }
@@ -403,6 +406,8 @@ public sealed class ClassSessionServiceTests
             ModuleEnrollmentId = _moduleEnrollmentId,
             Status = AttendanceStatus.Present,
             CheckedInAt = _now,
+            LeftAt = _now.AddMinutes(42),
+            ParticipationMinutes = 42,
             IsDeleted = false,
         });
         var sut = CreateSut(_managerId);
@@ -412,6 +417,8 @@ public sealed class ClassSessionServiceTests
         Assert.Equal(2, result.Students.Count);
         Assert.Equal("Alice", result.Students[0].StudentName);
         Assert.Equal(AttendanceStatus.Present, result.Students[0].AttendanceStatus);
+        Assert.Equal(42, result.Students[0].ParticipationMinutes);
+        Assert.Equal(_now.AddMinutes(42), result.Students[0].LeftAt);
         Assert.Equal(AttendanceStatus.Expected, result.Students[1].AttendanceStatus);
         Assert.Equal(_moduleEnrollmentId, result.Students[0].ModuleEnrollmentId);
     }
@@ -1104,6 +1111,35 @@ public sealed class ClassSessionServiceTests
         _notificationPublisher.Verify(
             n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_StatusToCompleted_ClosesOpenParticipationSegments()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var endTime = _now.AddHours(-1);
+        SeedSession(status: ClassSessionStatus.InProgress, endTime: endTime);
+        _db.SessionAttendances.Seed(new SessionAttendance
+        {
+            Id = Guid.NewGuid(),
+            ClassSessionId = _sessionId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _moduleEnrollmentId,
+            Status = AttendanceStatus.Present,
+            CheckedInAt = endTime.AddHours(-1),
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            Status = ClassSessionStatus.Completed,
+        });
+
+        var attendance = _db.SessionAttendances.GetQueryable().Single();
+        Assert.Equal(endTime, attendance.LeftAt);
+        Assert.Equal(60, attendance.ParticipationMinutes);
     }
 
     [Fact]

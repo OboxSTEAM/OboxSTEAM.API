@@ -658,7 +658,25 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                 moduleLocked,
                 researchMilestone,
                 previousResearchMilestone),
+            LatestSubmissionId = ResolveLatestSubmissionId(assignment, context),
         };
+    }
+
+    private static Guid? ResolveLatestSubmissionId(
+        Assignment assignment,
+        EnrollmentCurriculumContext context)
+    {
+        if (!context.SubmissionsByAssignmentId.TryGetValue(assignment.Id, out var submissions)
+            || submissions.Count == 0)
+        {
+            return null;
+        }
+
+        return submissions
+            .OrderByDescending(s => s.AttemptNumber)
+            .ThenByDescending(s => s.SubmittedAt ?? s.CreatedAt)
+            .Select(s => (Guid?)s.Id)
+            .FirstOrDefault();
     }
 
     private static string ResolveAssignmentStatus(
@@ -1185,6 +1203,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                         : calendarLock
                           ?? "Complete required activities before this assignment unlocks.")
                     : null,
+                LatestSubmissionId = ResolveLatestSubmissionId(assignment, context),
             },
             Navigation = BuildMindMapNavigation(NodeTypeAssignment, assignment.Id, moduleEnrollmentId),
         };

@@ -113,12 +113,20 @@ public sealed class SessionMeetingService : ISessionMeetingService
             throw ErrorHelper.BadRequest("You have not joined this meeting yet.");
         }
 
+        if (attendance.LeftAt != null)
+        {
+            return new ClassSessionLeaveResponseDto
+            {
+                ClassSessionId = classSessionId,
+                AttendanceId = attendance.Id,
+                CheckedInAt = attendance.CheckedInAt,
+                LeftAt = attendance.LeftAt,
+                ParticipationMinutes = attendance.ParticipationMinutes,
+            };
+        }
+
         var now = _currentTime.GetCurrentTime();
-        var checkedInAt = attendance.CheckedInAt ?? attendance.CreatedAt;
-        attendance.LeftAt = now;
-        attendance.ParticipationMinutes = Math.Max(
-            0,
-            (int)Math.Floor((now - checkedInAt).TotalMinutes));
+        SessionParticipationHelper.CloseOpenSegment(attendance, classSession!.EndTime, now);
 
         await _unitOfWork.SessionAttendances.Update(attendance);
         await _unitOfWork.SaveChangesAsync();
@@ -203,6 +211,13 @@ public sealed class SessionMeetingService : ISessionMeetingService
             attendance.Status = ClassSessionJoinValidator.ResolveJoinAttendanceStatus(classSession, now);
             attendance.CheckedInAt = now;
             attendance.RecordedBy = student.Id;
+            attendance.LeftAt = null;
+            attendance.ParticipationMinutes = null;
+        }
+        else if (attendance!.LeftAt != null)
+        {
+            // Re-join after leaving re-opens the segment: the first CheckedInAt
+            // stands and the final /leave writes the closing values.
             attendance.LeftAt = null;
             attendance.ParticipationMinutes = null;
         }

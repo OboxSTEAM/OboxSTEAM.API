@@ -17,5 +17,7 @@ public class ClassSessionStudentResponseDto
     public Guid ModuleEnrollmentId { get; set; }
     public AttendanceStatus AttendanceStatus { get; set; }
     public DateTime? CheckedInAt { get; set; }
+    public DateTime? LeftAt { get; set; }
+    public int? ParticipationMinutes { get; set; }
     public Guid? RecordedBy { get; set; }
 }
