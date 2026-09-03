@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
@@ -299,5 +299,15 @@ public sealed class SessionMeetingServiceTests
 
     [Fact]
     public async Task Join_Throws_WhenOutsideWindow()
+    {
+        SeedUsers();
+        SeedClassAndEnrollments();
+        // Join opens 15 minutes before start; session starts in 30 minutes â†’ still closed.
+        SeedLiveOnline(_now.AddMinutes(30), _now.AddHours(2));
 
-[Showing lines 1-300 of 330. Use :301 to continue]
+        var sut = CreateSut(_studentId);
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.JoinAsync(_sessionId));
+
+        Assert.Equal(ClassSessionJoinValidator.JoinWindowClosedMessage, ex.Message);
+    }
+}

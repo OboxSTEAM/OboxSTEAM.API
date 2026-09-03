@@ -1232,6 +1232,143 @@ public partial class SeedService
         await _unitOfWork.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Maker Cohort A only: pin experiential LiveOnline + Offline to <see cref="_seedNow"/>
+    /// so Slice 2 JaaS join and QR check-in are immediately testable after every reseed.
+    /// Leaves Scratch/Climate and all academic-year classes on the calendar grid.
+    /// Must run after <c>RealignSeedSessionWallClocksAsync</c>.
+    /// </summary>
+    private async Task ApplyMakerSlice2JoinableSessionsAsync()
+    {
+        const string makerClassCode = "CLS-DEMO-MAKER-2026A";
+        const string liveActivityCode = "ACT-DEMO-MAKER-02-02";
+        const string offlineActivityCode = "ACT-DEMO-MAKER-02-03";
+
+        var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
+            c => c.Code == makerClassCode && !c.IsDeleted);
+        if (classEntity == null)
+        {
+            _loggerService.LogWarning(
+                "Maker Slice-2 joinable sessions skipped: class {ClassCode} not found.",
+                makerClassCode);
+            return;
+        }
+
+        var activities = await _unitOfWork.Activities.GetAllAsync(
+            a => (a.Code == liveActivityCode || a.Code == offlineActivityCode) && !a.IsDeleted);
+        var liveActivity = activities.FirstOrDefault(a =>
+            string.Equals(a.Code, liveActivityCode, StringComparison.OrdinalIgnoreCase));
+        var offlineActivity = activities.FirstOrDefault(a =>
+            string.Equals(a.Code, offlineActivityCode, StringComparison.OrdinalIgnoreCase));
+        if (liveActivity == null || offlineActivity == null)
+        {
+            _loggerService.LogWarning(
+                "Maker Slice-2 joinable sessions skipped: activities {Live} / {Offline} not found.",
+                liveActivityCode,
+                offlineActivityCode);
+            return;
+        }
+
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classEntity.Id
+                  && !cs.IsDeleted
+                  && cs.Status != ClassSessionStatus.Cancelled
+                  && cs.ActivityId != null
+                  && (cs.ActivityId == liveActivity.Id || cs.ActivityId == offlineActivity.Id));
+
+        var liveSession = sessions.FirstOrDefault(cs => cs.ActivityId == liveActivity.Id);
+        var offlineSession = sessions.FirstOrDefault(cs => cs.ActivityId == offlineActivity.Id);
+        if (liveSession == null || offlineSession == null)
+        {
+            _loggerService.LogWarning(
+                "Maker Slice-2 joinable sessions skipped: LiveOnline/Offline class sessions missing on {ClassCode}.",
+                makerClassCode);
+            return;
+        }
+
+        var seedTime = _seedNow;
+        var updated = 0;
+
+        // LiveOnline: start in 5 minutes → join window already open (opens 15 min before start).
+        var liveDuration = liveActivity.DurationMinutes is > 0
+            ? liveActivity.DurationMinutes.Value
+            : 120;
+        var liveStart = seedTime.AddMinutes(5);
+        var liveEnd = liveStart.AddMinutes(liveDuration);
+        updated += await ApplyMakerJoinableClockAsync(
+            liveSession,
+            SessionKind.LiveOnline,
+            liveStart,
+            liveEnd,
+            classEntity.Code,
+            ordinal: 1,
+            seedTime);
+
+        // Offline: already started → mentor can mint QR; student can check in.
+        var offlineDuration = offlineActivity.DurationMinutes is > 0
+            ? offlineActivity.DurationMinutes.Value
+            : 180;
+        var offlineStart = seedTime.AddMinutes(-5);
+        var offlineEnd = offlineStart.AddMinutes(offlineDuration);
+        updated += await ApplyMakerJoinableClockAsync(
+            offlineSession,
+            SessionKind.Offline,
+            offlineStart,
+            offlineEnd,
+            classEntity.Code,
+            ordinal: 2,
+            seedTime);
+
+        if (updated > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        _loggerService.LogInformation(
+            "Maker Slice-2 joinable sessions: refreshed {Count} session(s) on {ClassCode} for FE join/check-in.",
+            updated,
+            makerClassCode);
+    }
+
+    private async Task<int> ApplyMakerJoinableClockAsync(
+        ClassSession session,
+        SessionKind kind,
+        DateTime startTime,
+        DateTime endTime,
+        string classCode,
+        int ordinal,
+        DateTime seedTime)
+    {
+        var status = SeedTimeline.ResolveSessionStatus(startTime, endTime, seedTime);
+        var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
+            kind,
+            classCode,
+            ordinal);
+
+        if (session.StartTime == startTime
+            && session.EndTime == endTime
+            && session.Status == status
+            && session.Location == location
+            && session.MeetingUrl == meetingUrl
+            && session.Latitude == latitude
+            && session.Longitude == longitude)
+        {
+            return 0;
+        }
+
+        session.StartTime = startTime;
+        session.EndTime = endTime;
+        session.Status = status;
+        session.Location = location;
+        session.MeetingUrl = meetingUrl;
+        session.Latitude = latitude;
+        session.Longitude = longitude;
+        session.UpdatedAt = seedTime;
+        session.UpdatedBy = Guid.Empty;
+        await _unitOfWork.ClassSessions.Update(session);
+        return 1;
+    }
+
     private async Task PruneDemoStudentEnrollmentsAsync(
         Program program,
         Class classEntity)

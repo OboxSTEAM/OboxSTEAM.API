@@ -97,6 +97,9 @@ public partial class SeedService : ISeedService
         await SeedTaughtModuleAssessmentSafetyNetAsync();
         await SeedPassedSubmissionsForElapsedRequiredWindowsAsync();
         await AlignInProgressCurriculumToClassTimetableAsync();
+        // After RealignSeedSessionWallClocksAsync so Sat/Sun grid does not overwrite
+        // the Maker Slice-2 join/check-in pair used by student10 FE testing.
+        await ApplyMakerSlice2JoinableSessionsAsync();
     }
 
     public async Task ClearAllDataAsync()
