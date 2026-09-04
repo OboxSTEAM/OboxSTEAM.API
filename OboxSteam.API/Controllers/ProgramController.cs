@@ -173,12 +173,13 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "List classes for first purchase or rebuy",
-        Description = "Student picker for this program. First purchase and a Completed (100%) source "
-            + "return Open Standard classes with seats (same join rule as open-classes). Failed or "
-            + "Dropped sources return Open and InProgress Standard classes with per-module session "
-            + "progress and isEligible (stop-module / source-class rules). IsRebuy is true only for "
-            + "Failed/Dropped. Active enrollment returns 409. Public browse of recruiting cohorts "
-            + "still uses GET .../open-classes.")]
+        Description = "Student picker for this program. First purchase, a Completed (100%) source, "
+            + "and Failed/Dropped after the 3-month window return Open Standard classes with seats "
+            + "(same join rule as open-classes; credit copy does not run after the window). Failed or "
+            + "Dropped sources inside the window return Open and InProgress Standard classes with "
+            + "per-module session progress and isEligible (stop-module / source-class rules). "
+            + "IsRebuy is true only for Failed/Dropped inside the window. Active enrollment returns 409. "
+            + "Public browse of recruiting cohorts still uses GET .../open-classes.")]
     [ProducesResponseType(typeof(ApiResult<RebuyClassCatalogDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

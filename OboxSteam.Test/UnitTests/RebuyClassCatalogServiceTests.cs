@@ -359,8 +359,30 @@ public sealed class RebuyClassCatalogServiceTests
         var result = await CreateSut().GetRebuyClassesAsync(_programId);
 
         Assert.False(result.WithinRebuyWindow);
+        Assert.False(result.IsRebuy);
+        Assert.Null(result.StopModuleId);
         Assert.Equal(1_000_000m, result.CheckoutAmount);
         Assert.True(Assert.Single(result.Classes).IsEligible);
+    }
+
+    [Fact]
+    public async Task GetRebuyClasses_OutsideWindow_OpenClassesOnly()
+    {
+        SeedStudentAndProgram();
+        SeedFailedSource(endedAt: _now.AddDays(-120));
+        SeedOpenClass(_freshId, "CLS-FRESH", "Upcoming");
+        var running = SeedOpenClass(_currentId, "CLS-RUNNING", "Running");
+        running.Status = ClassStatus.InProgress;
+        SeedSession(_currentId, _theoryId, ClassSessionStatus.Completed);
+
+        var result = await CreateSut().GetRebuyClassesAsync(_programId);
+
+        Assert.False(result.IsRebuy);
+        Assert.False(result.WithinRebuyWindow);
+        Assert.Null(result.StopModuleId);
+        var item = Assert.Single(result.Classes);
+        Assert.Equal(_freshId, item.ClassId);
+        Assert.True(item.IsEligible);
     }
 
     [Fact]

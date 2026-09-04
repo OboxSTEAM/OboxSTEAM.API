@@ -686,6 +686,19 @@ public sealed class PaymentServiceTests
     }
 
     [Fact]
+    public async Task SelectClass_FailedOutsideWindow_RejectsInProgressClass()
+    {
+        SeedStudent();
+        SeedProgram(retakeFee: 200_000m);
+        var running = SeedOpenEnrollmentClass(status: ClassStatus.InProgress);
+        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Failed, endedAt: DateTime.UtcNow.AddMonths(-4));
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            SelectClassAsync(running.Id, source.Id));
+        Assert.Contains("not open for enrollment", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SelectClass_Throws_WhenClassAlreadyStartedFailedModule()
     {
         SeedStudent();

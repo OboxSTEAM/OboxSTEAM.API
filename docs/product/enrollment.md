@@ -18,7 +18,8 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
    (public; Standard + **Open** + seats remaining > 0, with schedule sessions and seat
    counts). Logged-in students picking a class for checkout use
    `GET /api/programs/{programId}/rebuy-classes` instead (Open-only for first
-   purchase / Completed; Open + InProgress after fail/drop). Seat counts include
+   purchase / Completed / fail-drop after the 3-month window; Open + InProgress
+   after fail/drop inside the window). Seat counts include
    non-expired **Pending** holds from class selection.
 3. **Select class** via `POST /api/programs/{programId}/select-class` (`classId`) — starts
    the **5-minute** soft seat hold and publishes `seats.changed`.
@@ -162,18 +163,21 @@ keep that credit. `GET .../rebuy-classes` module rows include `creditHint`
   included) the student pays `Program.RetakeFee ?? Program.Price`; after the
   window they pay full `Program.Price`. A `Completed` source anchors the
   window at `CompletedAt` and gets retake **pricing only**.
-- **Class eligibility:** after **Failed** or **Dropped**, the rebuy must join
-  exactly one `Open` or `InProgress` Standard class that has not started the
-  module the student stopped at, nor any later module in `ModuleOrder` (no
-  `InProgress`/`Completed` LiveOnline/Offline session on those modules;
-  `AssignmentWindow` work periods do not count as teaching). The student cannot
-  rejoin a class they already occupied on the source purchase. Class status
-  `InProgress` is allowed; the session rule is the gate. For `Failed` sources
-  the stop module is `EndedModuleId`; for `Dropped` sources it is the first
-  not-`Completed` module. **First purchase** and a **Completed (100%)** source
-  only join `Open` Standard classes (same rule as `open-classes`); a Completed
-  source still links for retake pricing/credit and still cannot rejoin the old
-  class if it appears.
+- **Class eligibility:** after **Failed** or **Dropped** *inside the 3-month
+  rebuy window*, the rebuy must join exactly one `Open` or `InProgress`
+  Standard class that has not started the module the student stopped at, nor any
+  later module in `ModuleOrder` (no `InProgress`/`Completed` LiveOnline/Offline
+  session on those modules; `AssignmentWindow` work periods do not count as
+  teaching). The student cannot rejoin a class they already occupied on the
+  source purchase. Class status `InProgress` is allowed; the session rule is the
+  gate. For `Failed` sources the stop module is `EndedModuleId`; for `Dropped`
+  sources it is the first not-`Completed` module. **After the window**, fail/drop
+  is a fresh start: **Open** Standard classes only (same rule as `open-classes`);
+  stop-module / InProgress join is off, so credit copy (already window-gated)
+  has nothing mid-cohort to attach to. **First purchase** and a **Completed
+  (100%)** source only join `Open` Standard classes; a Completed source still
+  links for retake pricing/credit and still cannot rejoin the old class if it
+  appears.
   `GET /api/programs/{programId}/rebuy-classes` (Student) is the picker for both
   cases: `IsRebuy = false` lists Open classes with seats; `IsRebuy = true`
   lists Open and InProgress classes with per-module session progress

@@ -92,8 +92,9 @@ public static class ClassEnrollmentValidator
     }
 
     /// <summary>
-    /// Rebuy may join a Standard class that is still running, as long as sessions have not
-    /// started the student's stop module (enforced separately). Draft/Completed/etc. stay blocked.
+    /// Rebuy inside the 3-month window may join a Standard class that is still running,
+    /// as long as sessions have not started the student's stop module (enforced separately).
+    /// After the window, checkout uses <see cref="ValidateClassOpenForEnrollment"/> instead.
     /// </summary>
     public static void ValidateClassJoinableForRebuy(Class classEntity)
     {

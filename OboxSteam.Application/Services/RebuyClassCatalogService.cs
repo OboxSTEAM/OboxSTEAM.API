@@ -10,8 +10,9 @@ using OboxSteam.Domain.Interfaces;
 namespace OboxSteam.Application.Services;
 
 /// <summary>
-/// Student class picker for checkout: Open-only for first purchase and Completed retakes;
-/// Open or InProgress with stop-module eligibility after Failed/Dropped.
+/// Student class picker for checkout: Open-only for first purchase, Completed retakes,
+/// and Failed/Dropped after the 3-month window; Open or InProgress with stop-module
+/// eligibility after Failed/Dropped inside the window.
 /// </summary>
 public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
 {
@@ -57,7 +58,8 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
         }
 
         var source = ProgramPurchaseLifecycle.FindRebuySource(enrollments);
-        var isRebuy = ProgramPurchaseLifecycle.AllowsInProgressClassJoin(source);
+        var now = _currentTime.GetCurrentTime();
+        var isRebuy = ProgramPurchaseLifecycle.AllowsInProgressClassJoin(source, now);
 
         await ClassSeatHoldHelper.ReleaseExpiredHoldsAsync(_unitOfWork);
 
@@ -85,7 +87,6 @@ public sealed class RebuyClassCatalogService : IRebuyClassCatalogService
             completedModuleIds = sourceModules.Select(me => me.ModuleId).ToHashSet();
         }
 
-        var now = _currentTime.GetCurrentTime();
         var withinWindow = source != null && ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, now);
         var checkoutAmount = ProgramPurchaseLifecycle.ResolveCheckoutAmount(program!, source, now);
 
