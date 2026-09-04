@@ -884,6 +884,42 @@ public sealed class ProgramPurchaseLifecycleTests
     }
 
     [Fact]
+    public void AllowsInProgressClassJoin_True_WhenFailedInsideWindow()
+    {
+        var source = new ProgramEnrollment
+        {
+            Status = EnrollmentStatus.Failed,
+            EndedAt = _now.AddMonths(-1),
+        };
+
+        Assert.True(ProgramPurchaseLifecycle.AllowsInProgressClassJoin(source, _now));
+    }
+
+    [Fact]
+    public void AllowsInProgressClassJoin_False_WhenFailedOutsideWindow()
+    {
+        var source = new ProgramEnrollment
+        {
+            Status = EnrollmentStatus.Failed,
+            EndedAt = _now.AddMonths(-4),
+        };
+
+        Assert.False(ProgramPurchaseLifecycle.AllowsInProgressClassJoin(source, _now));
+    }
+
+    [Fact]
+    public void AllowsInProgressClassJoin_False_WhenCompletedInsideWindow()
+    {
+        var source = new ProgramEnrollment
+        {
+            Status = EnrollmentStatus.Completed,
+            CompletedAt = _now.AddDays(-1),
+        };
+
+        Assert.False(ProgramPurchaseLifecycle.AllowsInProgressClassJoin(source, _now));
+    }
+
+    [Fact]
     public async Task ResolveCheckoutAmount_NoSource_ChargesFullPrice()
     {
         var program = SeedPricedProgram(retakeFee: 200_000m);
@@ -1190,6 +1226,23 @@ public sealed class ProgramPurchaseLifecycleTests
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.ValidateRebuyClassEligibilityAsync(pending, classId));
+    }
+
+    [Fact]
+    public async Task ValidateRebuyClassEligibility_OutsideWindow_SkipsStopModuleRule()
+    {
+        var classId = Guid.NewGuid();
+        var module = SeedModule("MOD-A", 1);
+        var source = SeedClosedSource(
+            EnrollmentStatus.Failed,
+            endedAt: _now.AddMonths(-4),
+            endedModuleId: module.Id);
+        var pending = SeedEnrollment(EnrollmentStatus.PendingPayment);
+        pending.SourceProgramEnrollmentId = source.Id;
+        SeedSession(classId, module.Id, ClassSessionStatus.Completed);
+        var sut = CreateSut();
+
+        await sut.ValidateRebuyClassEligibilityAsync(pending, classId);
     }
 
     [Fact]

@@ -59,7 +59,9 @@ fee and joining a new class whose progress has not reached the failed module.
    that have not started the module the student stopped at, nor any later
    module in `ModuleOrder` (no session of those modules `InProgress`/`Completed`),
    with seats available, no schedule conflict, and not the class the student
-   already occupied on the source purchase. Brand-new classes qualify.
+   already occupied on the source purchase — **only while the rebuy is inside
+   the 3-month window** (item 8). After the window the class list is `Open`
+   only (same as first-time checkout). Brand-new classes qualify.
    First-time checkout and a `Completed` (100%) retake require `Open` only.
    For `Failed` sources the
    stop module is `EndedModuleId`; for `Dropped` sources it is the first
@@ -69,8 +71,8 @@ fee and joining a new class whose progress has not reached the failed module.
    The "class has started module" check is re-implemented in the new lifecycle
    service - the legacy redelivery service is not reused. Students pick from
    `GET /api/programs/{id}/rebuy-classes`, which returns Open-only when there is
-   no failed/dropped source (`IsRebuy = false`) and the fail/drop catalog when
-   there is (`IsRebuy = true`).
+   no failed/dropped source inside the window (`IsRebuy = false`) and the
+   fail/drop catalog when there is (`IsRebuy = true`).
 7. **Retake fee** = `Program.RetakeFee` (new nullable field) falling back to
    `Program.Price` when null. Retake pricing applies only inside the rebuy
    window (item 8); outside the window the rebuy bills full `Program.Price`.
@@ -79,7 +81,8 @@ fee and joining a new class whose progress has not reached the failed module.
    enrollment's close date - `EndedAt` for `Failed`/`Dropped`, `CompletedAt`
    for `Completed` (the boundary day is included). After the window the
    rebuy is still allowed but is a fresh start: full `Program.Price`, no
-   progress copy. The window applies equally to `Failed` and `Dropped` source
+   progress copy, and **Open classes only** (no InProgress / stop-module join).
+   The window applies equally to `Failed` and `Dropped` source
    enrollments.
 9. **On payment success**: inside the rebuy window, credit copy is scoped to
    what the **new class** has already taught by wall-clock and session status.

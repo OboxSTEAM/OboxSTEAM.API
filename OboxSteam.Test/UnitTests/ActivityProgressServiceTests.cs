@@ -110,7 +110,8 @@ public sealed class ActivityProgressServiceTests
         Guid? courseId = null,
         ActivityType type = ActivityType.SelfPaced,
         bool isDeleted = false,
-        int order = 1)
+        int order = 1,
+        bool requireQrCheckin = false)
     {
         var activity = new Activity
         {
@@ -120,7 +121,8 @@ public sealed class ActivityProgressServiceTests
             CourseId = courseId ?? _courseId,
             ActivityType = type,
             ActivityOrder = order,
-            IsDeleted = isDeleted
+            IsDeleted = isDeleted,
+            RequireQrCheckin = requireQrCheckin
         };
         _db.Activities.Seed(activity);
         return activity;
@@ -731,11 +733,11 @@ public sealed class ActivityProgressServiceTests
         });
     }
 
-    private void SeedSessionActivityGraph(ActivityType type = ActivityType.Offline)
+    private void SeedSessionActivityGraph(ActivityType type = ActivityType.Offline, bool requireQrCheckin = false)
     {
         SeedModule();
         SeedCourse();
-        SeedActivity(type: type);
+        SeedActivity(type: type, requireQrCheckin: requireQrCheckin);
         SeedClassForMentor();
         _db.ClassSessions.Seed(new ClassSession
         {
@@ -757,7 +759,9 @@ public sealed class ActivityProgressServiceTests
         Guid studentId,
         Guid programEnrollmentId,
         Guid moduleEnrollmentId,
-        AttendanceStatus? attendanceStatus)
+        AttendanceStatus? attendanceStatus,
+        Guid? recordedBy = null,
+        DateTime? checkedInAt = null)
     {
         _db.Users.Seed(new User
         {
@@ -804,6 +808,8 @@ public sealed class ActivityProgressServiceTests
                 StudentId = studentId,
                 ModuleEnrollmentId = moduleEnrollmentId,
                 Status = attendanceStatus.Value,
+                RecordedBy = recordedBy,
+                CheckedInAt = checkedInAt,
                 IsDeleted = false
             });
         }
@@ -842,6 +848,55 @@ public sealed class ActivityProgressServiceTests
         var absentResult = Assert.Single(result.Results, r => r.StudentId == _otherStudentId);
         Assert.Equal(MentorCompleteOutcome.Skipped, absentResult.Outcome);
         Assert.Contains("Present, Late, or Excused", absentResult.Reason);
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_RequireQrCheckin_CompletesWhenMentorMarkedPresent()
+    {
+        SeedMentor();
+        SeedManager();
+        SeedSessionActivityGraph(ActivityType.Offline, requireQrCheckin: true);
+        SeedRosterStudent(
+            _studentId,
+            _programEnrollmentId,
+            _enrollmentId,
+            AttendanceStatus.Present,
+            recordedBy: _mentorId,
+            checkedInAt: DateTime.UtcNow);
+
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+        {
+            ClassSessionId = _sessionId,
+            ActivityId = _activityId,
+        });
+
+        Assert.Equal(MentorCompleteOutcome.Completed, Assert.Single(result.Results).Outcome);
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_RequireQrCheckin_CompletesWhenStudentCheckedIn()
+    {
+        SeedManager();
+        SeedSessionActivityGraph(ActivityType.Offline, requireQrCheckin: true);
+        SeedRosterStudent(
+            _studentId,
+            _programEnrollmentId,
+            _enrollmentId,
+            AttendanceStatus.Present,
+            recordedBy: _studentId,
+            checkedInAt: DateTime.UtcNow);
+
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+        {
+            ClassSessionId = _sessionId,
+            ActivityId = _activityId,
+        });
+
+        Assert.Equal(MentorCompleteOutcome.Completed, Assert.Single(result.Results).Outcome);
     }
 
     [Theory]

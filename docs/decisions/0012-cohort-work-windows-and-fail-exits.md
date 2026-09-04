@@ -17,9 +17,11 @@ recovery, and no rebuy. Experiential/Research academic fail ignored
 `IsRequiredForModulePass` and could fire while a research deliverable was still
 `TurnedIn`. Attendance fail at 20% of a short module was one sick day.
 
-Product intent for rebuy stays **chuyen ca**: join a class that has not started
-the stop module; credit still follows what the new class has already taught.
-Copy and notifications must not call that fee “hoc lai module”.
+   Product intent for rebuy stays **chuyen ca** *inside the 3-month window*:
+   join a class that has not started the stop module; credit still follows
+   what the new class has already taught. After the window the join is Open
+   only (0010 item 8). Copy and notifications must not call that fee
+   “hoc lai module”.
 
 ## Decision
 

@@ -136,7 +136,7 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
                 programEnrollment.SourceProgramEnrollmentId.Value);
         }
 
-        if (ProgramPurchaseLifecycle.AllowsInProgressClassJoin(source))
+        if (_programPurchaseLifecycle.AllowsInProgressClassJoin(source))
         {
             ClassEnrollmentValidator.ValidateClassJoinableForRebuy(classToHold);
         }

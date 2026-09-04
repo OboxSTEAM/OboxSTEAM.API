@@ -306,11 +306,17 @@ public sealed class ProgramPurchaseLifecycle
             .FirstOrDefault();
 
     /// <summary>
-    /// Fail/drop rebuys may join Open or InProgress classes (stop-module gated).
-    /// First purchase and Completed retakes only join Open classes.
+    /// Fail/drop rebuys inside the 3-month window may join Open or InProgress classes
+    /// (stop-module gated). First purchase, Completed retakes, and fail/drop after the
+    /// window only join Open classes (fresh start; credit copy is already off).
     /// </summary>
-    public static bool AllowsInProgressClassJoin(ProgramEnrollment? source)
-        => source is { Status: EnrollmentStatus.Failed or EnrollmentStatus.Dropped };
+    public static bool AllowsInProgressClassJoin(ProgramEnrollment? source, DateTime now)
+        => source is { Status: EnrollmentStatus.Failed or EnrollmentStatus.Dropped }
+           && IsWithinRebuyWindow(source, now);
+
+    /// <inheritdoc cref="AllowsInProgressClassJoin(ProgramEnrollment?, DateTime)"/>
+    public bool AllowsInProgressClassJoin(ProgramEnrollment? source)
+        => AllowsInProgressClassJoin(source, _currentTime.GetCurrentTime());
 
     /// <summary>
     /// True when <paramref name="now"/> falls within the rebuy window anchored at the source's close
@@ -351,10 +357,12 @@ public sealed class ProgramPurchaseLifecycle
 
     /// <summary>
     /// For rebuys after a close, the selected class must not be the class the student
-    /// left, and must not have started the module the student stopped at, nor any later
-    /// module. Failed sources use <see cref="ProgramEnrollment.EndedModuleId"/>;
-    /// Withdraw sources use the first not-Completed module in <see cref="Module.ModuleOrder"/>.
-    /// Completed sources skip the stop-module rule but still cannot rejoin the old class.
+    /// left. Inside the rebuy window, it also must not have started the module the
+    /// student stopped at, nor any later module. Failed sources use
+    /// <see cref="ProgramEnrollment.EndedModuleId"/>; Withdraw sources use the first
+    /// not-Completed module in <see cref="Module.ModuleOrder"/>. Completed sources and
+    /// fail/drop checkouts after the window skip the stop-module rule (Open-only join)
+    /// but still cannot rejoin the old class.
     /// </summary>
     public async Task ValidateRebuyClassEligibilityAsync(ProgramEnrollment enrollment, Guid classId)
     {
@@ -375,7 +383,8 @@ public sealed class ProgramPurchaseLifecycle
             throw ErrorHelper.BadRequest(RebuySameClassMessage);
         }
 
-        if (source.Status == EnrollmentStatus.Completed)
+        if (source.Status == EnrollmentStatus.Completed
+            || !IsWithinRebuyWindow(source, _currentTime.GetCurrentTime()))
         {
             return;
         }

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
@@ -267,6 +268,7 @@ public sealed class ClassCurriculumProgressServiceTests
 
         Assert.Equal(_classId, result.ClassId);
         Assert.Equal(0, result.TotalStudents);
+        Assert.Equal(_activity1Id, result.CurrentActivityId);
         Assert.Single(result.Modules);
         Assert.Equal(_moduleId, result.Modules[0].ModuleId);
         Assert.Equal(2, result.Modules[0].Activities.Count);
@@ -276,8 +278,17 @@ public sealed class ClassCurriculumProgressServiceTests
             {
                 Assert.Equal(0, activity.CompletedCount);
                 Assert.Equal(0, activity.InProgressCount);
+                Assert.Null(activity.ClassSessionId);
+                Assert.Null(activity.SessionStatus);
             });
+        Assert.Equal(
+            CurriculumStatusHelper.StatusCurrent,
+            result.Modules[0].Activities.Single(a => a.ActivityId == _activity1Id).Status);
+        Assert.Equal(
+            CurriculumStatusHelper.StatusAvailable,
+            result.Modules[0].Activities.Single(a => a.ActivityId == _activity2Id).Status);
         Assert.Single(result.Modules[0].Assignments);
+        Assert.Equal(CurriculumStatusHelper.StatusAvailable, result.Modules[0].Assignments[0].Status);
         Assert.Equal(0, result.Modules[0].Assignments[0].SubmittedCount);
         Assert.Equal(0, result.Modules[0].Assignments[0].GradedCount);
         Assert.Null(result.Modules[0].Assignments[0].AverageScore);
@@ -315,18 +326,22 @@ public sealed class ClassCurriculumProgressServiceTests
         var result = await sut.GetCurriculumProgressAsync(_classId);
 
         Assert.Equal(3, result.TotalStudents);
+        Assert.Equal(_activity1Id, result.CurrentActivityId);
 
         var module = Assert.Single(result.Modules);
         var activity1 = module.Activities.Single(a => a.ActivityId == _activity1Id);
         Assert.Equal(2, activity1.CompletedCount);
         Assert.Equal(1, activity1.InProgressCount);
+        Assert.Equal(CurriculumStatusHelper.StatusCurrent, activity1.Status);
 
         var activity2 = module.Activities.Single(a => a.ActivityId == _activity2Id);
         Assert.Equal(0, activity2.CompletedCount);
         Assert.Equal(1, activity2.InProgressCount);
+        Assert.Equal(CurriculumStatusHelper.StatusAvailable, activity2.Status);
 
         var assignment = Assert.Single(module.Assignments);
         Assert.Equal(_assignmentId, assignment.AssignmentId);
+        Assert.Equal(CurriculumStatusHelper.StatusSubmitted, assignment.Status);
         Assert.Equal(2, assignment.SubmittedCount);
         Assert.Equal(1, assignment.GradedCount);
         Assert.Equal(80d, assignment.AverageScore);
@@ -401,5 +416,135 @@ public sealed class ClassCurriculumProgressServiceTests
         Assert.Equal(1, activity1.CompletedCount);
         Assert.Equal(1, result.Modules[0].Assignments[0].SubmittedCount);
         Assert.Equal(90d, result.Modules[0].Assignments[0].AverageScore);
+    }
+
+    [Fact]
+    public async Task GetCurriculumProgress_LiveSessionCompleted_MarksActivityCompleted()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MENTOR1");
+        SeedUser(_student1Id, RoleType.Student, "STU1");
+        SeedCurriculumWithLiveFirst();
+        SeedClass();
+        SeedActiveClassEnrollment(_student1Id, _programEnrollment1Id);
+        SeedModuleEnrollment(_moduleEnrollment1Id, _student1Id, _programEnrollment1Id);
+
+        var sessionId = Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1");
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = sessionId,
+            ClassId = _classId,
+            ModuleId = _moduleId,
+            ActivityId = _activity1Id,
+            SessionKind = SessionKind.LiveOnline,
+            Title = "Live 1",
+            StartTime = _now.AddHours(-2),
+            EndTime = _now.AddHours(-1),
+            Status = ClassSessionStatus.Completed,
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        var result = await sut.GetCurriculumProgressAsync(_classId);
+
+        var live = result.Modules[0].Activities.Single(a => a.ActivityId == _activity1Id);
+        Assert.Equal(CurriculumStatusHelper.StatusCompleted, live.Status);
+        Assert.Equal(sessionId, live.ClassSessionId);
+        Assert.Equal(ClassSessionStatus.Completed, live.SessionStatus);
+        Assert.Equal(_activity2Id, result.CurrentActivityId);
+    }
+
+    [Fact]
+    public async Task GetCurriculumProgress_AssignmentAllGraded_IsCompleted()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MENTOR1");
+        SeedUser(_student1Id, RoleType.Student, "STU1");
+        SeedUser(_student2Id, RoleType.Student, "STU2");
+        SeedCurriculum();
+        SeedClass();
+        SeedActiveClassEnrollment(_student1Id, _programEnrollment1Id);
+        SeedActiveClassEnrollment(_student2Id, _programEnrollment2Id);
+        SeedModuleEnrollment(_moduleEnrollment1Id, _student1Id, _programEnrollment1Id);
+        SeedModuleEnrollment(_moduleEnrollment2Id, _student2Id, _programEnrollment2Id);
+        SeedSubmission(_student1Id, SubmissionStatus.Graded, 70m);
+        SeedSubmission(_student2Id, SubmissionStatus.Graded, 85m);
+
+        var sut = CreateSut();
+        var result = await sut.GetCurriculumProgressAsync(_classId);
+
+        var assignment = Assert.Single(result.Modules[0].Assignments);
+        Assert.Equal(CurriculumStatusHelper.StatusCompleted, assignment.Status);
+        Assert.Equal(2, assignment.GradedCount);
+        Assert.Equal(2, assignment.SubmittedCount);
+    }
+
+    private void SeedCurriculumWithLiveFirst()
+    {
+        var module = new Module
+        {
+            Id = _moduleId,
+            Code = "MOD-001",
+            Name = "Module 1",
+            ProgramId = _programId,
+            ModuleType = ModuleType.Theory,
+            ModuleOrder = 1,
+            IsDeleted = false,
+        };
+
+        _db.Programs.Seed(new Program
+        {
+            Id = _programId,
+            Code = "PRG-001",
+            Name = "Robotics",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            IsDeleted = false,
+            Modules = [module],
+        });
+        _db.Modules.Seed(module);
+
+        _db.Courses.Seed(new Course
+        {
+            Id = _courseId,
+            Code = "CRS-001",
+            Name = "Course 1",
+            ModuleId = _moduleId,
+            CourseOrder = 1,
+            IsDeleted = false,
+        });
+
+        _db.Activities.Seed(
+            new Activity
+            {
+                Id = _activity1Id,
+                Code = "ACT-001",
+                Name = "Live Kickoff",
+                CourseId = _courseId,
+                ActivityType = ActivityType.LiveOnline,
+                ActivityOrder = 1,
+                IsDeleted = false,
+            },
+            new Activity
+            {
+                Id = _activity2Id,
+                Code = "ACT-002",
+                Name = "Reading",
+                CourseId = _courseId,
+                ActivityType = ActivityType.SelfPaced,
+                ActivityOrder = 2,
+                IsDeleted = false,
+            });
+
+        _db.Assignments.Seed(new Assignment
+        {
+            Id = _assignmentId,
+            Code = "ASN-001",
+            ModuleId = _moduleId,
+            CourseId = _courseId,
+            Title = "Homework",
+            AssignmentType = AssignmentType.FileUpload,
+            MaxPoints = 100,
+            PassScore = 50,
+            IsDeleted = false,
+        });
     }
 }

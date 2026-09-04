@@ -4,6 +4,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassCurriculumProgressDTO;
 using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.ClassMentorRequestDTO;
+using OboxSteam.Application.DTOs.ClassStudentProgressDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Enums;
@@ -18,15 +19,18 @@ public class ClassController : ControllerBase
     private readonly IClassService _classService;
     private readonly IClassMentorRequestService _classMentorRequestService;
     private readonly IClassCurriculumProgressService _classCurriculumProgressService;
+    private readonly IClassStudentProgressService _classStudentProgressService;
 
     public ClassController(
         IClassService classService,
         IClassMentorRequestService classMentorRequestService,
-        IClassCurriculumProgressService classCurriculumProgressService)
+        IClassCurriculumProgressService classCurriculumProgressService,
+        IClassStudentProgressService classStudentProgressService)
     {
         _classService = classService;
         _classMentorRequestService = classMentorRequestService;
         _classCurriculumProgressService = classCurriculumProgressService;
+        _classStudentProgressService = classStudentProgressService;
     }
 
     // =========================================================================
@@ -161,6 +165,64 @@ public class ClassController : ControllerBase
             result,
             "200",
             "Class curriculum progress retrieved successfully."));
+    }
+
+    // =========================================================================
+    // ACTIVITY STUDENT PROGRESS  —  GET /api/classes/{classId}/activities/{activityId}/student-progress
+    // [Mentor — assigned mentor of the class]
+    // =========================================================================
+
+    [HttpGet("{classId:guid}/activities/{activityId:guid}/student-progress")]
+    [Authorize(Roles = "Mentor")]
+    [SwaggerOperation(
+        Summary = "Get per-student activity progress for a class",
+        Description = "Returns one row per active class enrollment for the activity (missing progress → NotStart), "
+            + "plus summary counts. LiveOnline/Offline include primary session attendance fields. "
+            + "Requires the assigned mentor of the class.")]
+    [ProducesResponseType(typeof(ApiResult<ClassActivityStudentProgressDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetActivityStudentProgress(
+        [FromRoute] Guid classId,
+        [FromRoute] Guid activityId)
+    {
+        var result = await _classStudentProgressService.GetActivityStudentProgressAsync(classId, activityId);
+
+        return Ok(ApiResult<ClassActivityStudentProgressDto>.Success(
+            result,
+            "200",
+            "Class activity student progress retrieved successfully."));
+    }
+
+    // =========================================================================
+    // ASSIGNMENT STUDENT PROGRESS  —  GET /api/classes/{classId}/assignments/{assignmentId}/student-progress
+    // [Mentor — assigned mentor of the class]
+    // =========================================================================
+
+    [HttpGet("{classId:guid}/assignments/{assignmentId:guid}/student-progress")]
+    [Authorize(Roles = "Mentor")]
+    [SwaggerOperation(
+        Summary = "Get per-student assignment progress for a class",
+        Description = "Returns one row per active class enrollment with the latest class-scoped attempt "
+            + "(or nulls if never started), plus summary counts and class nav status "
+            + "(available | submitted | completed). Requires the assigned mentor of the class.")]
+    [ProducesResponseType(typeof(ApiResult<ClassAssignmentStudentProgressDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetAssignmentStudentProgress(
+        [FromRoute] Guid classId,
+        [FromRoute] Guid assignmentId)
+    {
+        var result = await _classStudentProgressService.GetAssignmentStudentProgressAsync(classId, assignmentId);
+
+        return Ok(ApiResult<ClassAssignmentStudentProgressDto>.Success(
+            result,
+            "200",
+            "Class assignment student progress retrieved successfully."));
     }
 
     // =========================================================================

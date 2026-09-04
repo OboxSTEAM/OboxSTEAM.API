@@ -13,6 +13,7 @@ namespace OboxSteam.Application.Services;
 /// <summary>
 /// Mentor-facing class rollup of activity progress and assignment submission/grading counts.
 /// Aggregates over active class enrollments only; no per-student PII is returned.
+/// Also exposes class-scoped nav statuses for the mentor curriculum tree.
 /// </summary>
 public sealed class ClassCurriculumProgressService : IClassCurriculumProgressService
 {
@@ -64,8 +65,20 @@ public sealed class ClassCurriculumProgressService : IClassCurriculumProgressSer
             classModuleEnrollmentIds,
             snapshot.AssignmentsById.Keys);
 
+        var sessionsByActivityId = await LoadPrimarySessionsByActivityIdAsync(classId, snapshot);
+        var orderedNavInputs = BuildOrderedNavInputs(snapshot, activityCountsById, sessionsByActivityId);
+        var (navByActivityId, currentActivityId) = ClassCurriculumNavStatusHelper.ResolveActivityStatuses(
+            orderedNavInputs,
+            studentIds.Count);
+
         var modules = snapshot.Modules
-            .Select(module => MapModule(module, snapshot, activityCountsById, assignmentCountsById))
+            .Select(module => MapModule(
+                module,
+                snapshot,
+                activityCountsById,
+                assignmentCountsById,
+                navByActivityId,
+                studentIds.Count))
             .ToList();
 
         _logger.LogInformation(
@@ -79,6 +92,7 @@ public sealed class ClassCurriculumProgressService : IClassCurriculumProgressSer
         {
             ClassId = classId,
             TotalStudents = studentIds.Count,
+            CurrentActivityId = currentActivityId,
             Modules = modules,
         };
     }
@@ -183,11 +197,70 @@ public sealed class ClassCurriculumProgressService : IClassCurriculumProgressSer
                 });
     }
 
+    private async Task<Dictionary<Guid, ClassSession>> LoadPrimarySessionsByActivityIdAsync(
+        Guid classId,
+        ProgramCurriculumTreeSnapshot snapshot)
+    {
+        var liveActivityIds = snapshot.ActivitiesById
+            .Where(kvp => kvp.Value.ActivityType is ActivityType.LiveOnline or ActivityType.Offline)
+            .Select(kvp => kvp.Key)
+            .ToHashSet();
+
+        if (liveActivityIds.Count == 0)
+        {
+            return new Dictionary<Guid, ClassSession>();
+        }
+
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ClassId == classId
+                  && cs.ActivityId.HasValue
+                  && liveActivityIds.Contains(cs.ActivityId.Value)
+                  && !cs.IsDeleted);
+
+        return sessions
+            .GroupBy(cs => cs.ActivityId!.Value)
+            .Select(g => (
+                ActivityId: g.Key,
+                Session: ClassCurriculumNavStatusHelper.SelectPrimarySession(g)))
+            .Where(x => x.Session != null)
+            .ToDictionary(x => x.ActivityId, x => x.Session!);
+    }
+
+    private static List<ClassCurriculumNavStatusHelper.ActivityNavInput> BuildOrderedNavInputs(
+        ProgramCurriculumTreeSnapshot snapshot,
+        Dictionary<Guid, (int Completed, int InProgress)> activityCountsById,
+        Dictionary<Guid, ClassSession> sessionsByActivityId)
+    {
+        var result = new List<ClassCurriculumNavStatusHelper.ActivityNavInput>(
+            snapshot.GlobalActivityOrder.Count);
+
+        foreach (var activityId in snapshot.GlobalActivityOrder)
+        {
+            if (!snapshot.ActivitiesById.TryGetValue(activityId, out var activity))
+            {
+                continue;
+            }
+
+            activityCountsById.TryGetValue(activityId, out var counts);
+            sessionsByActivityId.TryGetValue(activityId, out var session);
+
+            result.Add(new ClassCurriculumNavStatusHelper.ActivityNavInput(
+                activityId,
+                activity.ActivityType,
+                counts.Completed,
+                session));
+        }
+
+        return result;
+    }
+
     private static ClassCurriculumModuleProgressDto MapModule(
         Module module,
         ProgramCurriculumTreeSnapshot snapshot,
         Dictionary<Guid, (int Completed, int InProgress)> activityCountsById,
-        Dictionary<Guid, (int Submitted, int Graded, double? AverageScore)> assignmentCountsById)
+        Dictionary<Guid, (int Submitted, int Graded, double? AverageScore)> assignmentCountsById,
+        IReadOnlyDictionary<Guid, ClassCurriculumNavStatusHelper.ActivityNavResult> navByActivityId,
+        int totalStudents)
     {
         var activityIds = snapshot.ActivityModuleMap
             .Where(kvp => kvp.Value == module.Id)
@@ -198,9 +271,14 @@ public sealed class ClassCurriculumProgressService : IClassCurriculumProgressSer
             .Select(activityId =>
             {
                 activityCountsById.TryGetValue(activityId, out var counts);
+                navByActivityId.TryGetValue(activityId, out var nav);
+
                 return new ClassCurriculumActivityProgressDto
                 {
                     ActivityId = activityId,
+                    Status = nav?.Status ?? CurriculumStatusHelper.StatusAvailable,
+                    ClassSessionId = nav?.ClassSessionId,
+                    SessionStatus = nav?.SessionStatus,
                     CompletedCount = counts.Completed,
                     InProgressCount = counts.InProgress,
                 };
@@ -214,6 +292,10 @@ public sealed class ClassCurriculumProgressService : IClassCurriculumProgressSer
                 return new ClassCurriculumAssignmentProgressDto
                 {
                     AssignmentId = assignment.Id,
+                    Status = ClassCurriculumNavStatusHelper.ResolveAssignmentStatus(
+                        totalStudents,
+                        counts.Submitted,
+                        counts.Graded),
                     SubmittedCount = counts.Submitted,
                     GradedCount = counts.Graded,
                     AverageScore = counts.AverageScore,

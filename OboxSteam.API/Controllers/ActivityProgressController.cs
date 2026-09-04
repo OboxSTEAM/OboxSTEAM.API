@@ -107,7 +107,8 @@ public class ActivityProgressController : ControllerBase
     [SwaggerOperation(
         Summary = "Mentor-complete a session activity for the class roster",
         Description = "Marks a LiveOnline or Offline activity Done for every active student on the "
-            + "class roster of the given class session who has Present, Late, or Excused attendance. "
+            + "class roster of the given class session who has Present, Late, or Excused attendance "
+            + "(student QR/code check-in or mentor/manager roster mark; neither source is required). "
             + "Returns per-student outcomes (Completed, AlreadyDone, Skipped). Requires Mentor or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<MentorCompleteBulkResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]

@@ -84,10 +84,14 @@ Individual learning tasks within a course.
 | --- | --- |
 | SelfPaced | No fixed schedule; progress tracked individually |
 | LiveOnline | Scheduled online session |
-| Offline | Physical session; may require QR check-in |
+| Offline | Physical session; may offer QR check-in |
 
 Flags: `RequireQrCheckin`, `RequireMediaEvidence`. Template times on `Activity`
 are defaults; cohort-specific times live on `ClassSession`.
+`RequireQrCheckin` enables student QR/code check-in; it does not require that
+path for attendance or mentor-complete. `POST /api/activity-progresses/mentor-complete-bulk`
+completes students with `Present`, `Late`, or `Excused` from either student
+QR/code check-in or a mentor/manager roster mark.
 
 API: `/api/activities`.
 
@@ -176,7 +180,25 @@ assignment CRUD (no InProgress class; no Open class with Active students).
 Mentor rollup: `GET /api/classes/{classId}/curriculum-progress` aggregates
 activity and assignment progress for active class enrollments (assigned mentor
 only). Modules/activities/assignments are always returned with zero counts when
-there is no progress.
+there is no progress. Each activity also exposes class nav `status`
+(`completed` | `current` | `available`), optional `classSessionId` /
+`sessionStatus` for LiveOnline/Offline, and the root `currentActivityId`
+(single class cursor). Live/Offline completion follows the linked session
+(`Completed`, or full-roster `Done` after mentor-complete); SelfPaced is
+completed when all active students are `Done` or the class has moved past
+(a later activity is `current`/`completed`). Assignment `status` is
+`completed` (all active students graded), `submitted` (handed-in awaiting
+grade), or `available`. Mentors are not locked out of future nodes.
+
+Mentor student-progress (detail pane): roster-complete reads for the assigned
+mentor —
+
+- `GET /api/classes/{classId}/activities/{activityId}/student-progress` —
+  one row per active enrollment (`NotStart` when no progress), counts, and for
+  LiveOnline/Offline the primary session plus attendance fields.
+- `GET /api/classes/{classId}/assignments/{assignmentId}/student-progress` —
+  one row per active enrollment with the latest class-scoped attempt (or nulls
+  if never started), counts, and class nav `status` matching curriculum-progress.
 
 Class APIs are exposed through program and enrollment flows; entities exist in
 domain and migrations.
