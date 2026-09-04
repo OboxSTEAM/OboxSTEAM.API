@@ -62,6 +62,11 @@ Create, update, delete for:
 - Class curriculum progress rollup: `GET /api/classes/{classId}/curriculum-progress`
   (assigned mentor only). Returns activity Done/InProgress and assignment
   submitted/graded aggregates over active enrollments — no roster PII.
+- Class student progress (detail pane): 
+  `GET /api/classes/{classId}/activities/{activityId}/student-progress` and
+  `GET /api/classes/{classId}/assignments/{assignmentId}/student-progress`
+  (assigned mentor only). Roster-complete rows with identity + progress /
+  latest attempt.
 - Media review: list media for mentored class activities; add/remove/verify
   student tags on that media (`Mentor,Manager,Admin` on tag mutation routes).
   AI tags start with `IsVerified = false` until mentor approval.

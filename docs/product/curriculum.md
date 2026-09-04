@@ -114,6 +114,16 @@ completed when all active students are `Done` or the class has moved past
 `completed` (all active students graded), `submitted` (handed-in awaiting
 grade), or `available`. Mentors are not locked out of future nodes.
 
+Mentor student-progress (detail pane): roster-complete reads for the assigned
+mentor —
+
+- `GET /api/classes/{classId}/activities/{activityId}/student-progress` —
+  one row per active enrollment (`NotStart` when no progress), counts, and for
+  LiveOnline/Offline the primary session plus attendance fields.
+- `GET /api/classes/{classId}/assignments/{assignmentId}/student-progress` —
+  one row per active enrollment with the latest class-scoped attempt (or nulls
+  if never started), counts, and class nav `status` matching curriculum-progress.
+
 Class APIs are exposed through program and enrollment flows; entities exist in
 domain and migrations.
 
