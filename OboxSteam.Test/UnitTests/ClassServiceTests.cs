@@ -1268,6 +1268,59 @@ public sealed class ClassServiceTests
     }
 
     [Fact]
+    public async Task Delete_UnlinksAcceptedCoTeach_AndNotifiesExpert()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedProgram();
+        SeedClass(status: ClassStatus.Draft);
+        var expertUserId = Guid.Parse("17171717-1717-1717-1717-171717171717");
+        var expertId = Guid.Parse("18181818-1818-1818-1818-181818181818");
+        SeedUser(expertUserId, RoleType.Expert, "EXP-USR", "Dr. Expert");
+        _db.Experts.Seed(new Expert
+        {
+            Id = expertId,
+            Code = "EXP-001",
+            FullName = "Dr. Expert",
+            UserId = expertUserId,
+            IsDeleted = false,
+        });
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = _sessionId,
+            ClassId = _classId,
+            ModuleId = Guid.NewGuid(),
+            Title = "Lab",
+            SessionKind = SessionKind.Offline,
+            StartTime = _now.AddDays(1),
+            EndTime = _now.AddDays(1).AddHours(2),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
+        _db.ClassSessionExperts.Seed(new ClassSessionExpert
+        {
+            Id = Guid.Parse("19191919-1919-1919-1919-191919191919"),
+            ClassSessionId = _sessionId,
+            ExpertId = expertId,
+            Status = ClassSessionExpertStatus.Accepted,
+            IsDeleted = false,
+        });
+        var sut = CreateSut(_managerId);
+
+        await sut.DeleteClassAsync(_classId);
+
+        Assert.True(_db.ClassSessionExperts.Items.Single().IsDeleted);
+        _notificationPublisher.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Any(c => c.Type == NotificationType.ClassSessionCancelled)
+                    && commands.Any(c =>
+                        c.Type == NotificationType.ClassSessionCancelled
+                        && c.Audience.Kind == NotificationAudienceKind.User)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task Delete_Throws_WhenNotManager()
     {
         SeedUser(_mentorId, RoleType.Mentor, "MNT-001");

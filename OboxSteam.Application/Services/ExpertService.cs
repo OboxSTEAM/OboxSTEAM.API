@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ExpertDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -16,12 +17,21 @@ public class ExpertService : IExpertService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
     private readonly ILogger<ExpertService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
+    private readonly IClaimsService _claimsService;
 
-    public ExpertService(IUnitOfWork unitOfWork, IBlobService blobService, ILogger<ExpertService> logger)
+    public ExpertService(
+        IUnitOfWork unitOfWork,
+        IBlobService blobService,
+        ILogger<ExpertService> logger,
+        INotificationPublisher notificationPublisher,
+        IClaimsService claimsService)
     {
         _unitOfWork = unitOfWork;
         _blobService = blobService;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
+        _claimsService = claimsService;
     }
 
     public async Task<ExpertProgramSummaryDto> UpdateProgramOfExpertAsync(Guid expertId, Guid programId)
@@ -470,6 +480,7 @@ public class ExpertService : IExpertService
 
         var previousFullName = expert.FullName;
         var isUpdated = UpdateHelper.ApplyUpdates(expert, request);
+        var withdrawnCommands = new List<NotificationCommand>();
 
         if (request.Programs != null)
         {
@@ -492,6 +503,14 @@ public class ExpertService : IExpertService
             }
 
             var existingBoards = await _unitOfWork.ProgramBoards.GetAllAsync(pb => pb.ExpertId == expert.Id);
+            var keptProgramIds = distinctAssignments.Select(a => a.ProgramId).ToHashSet();
+            var removedProgramIds = existingBoards
+                .Select(b => b.ProgramId)
+                .Where(pid => !keptProgramIds.Contains(pid))
+                .Distinct()
+                .ToList();
+
+            withdrawnCommands.AddRange(await ClearCoTeachOnProgramsAsync(expert, removedProgramIds));
 
             if (existingBoards.Any())
             {
@@ -538,6 +557,11 @@ public class ExpertService : IExpertService
         await _unitOfWork.Experts.Update(expert);
         await _unitOfWork.SaveChangesAsync();
 
+        if (withdrawnCommands.Count > 0)
+        {
+            await _notificationPublisher.PublishManyAsync(withdrawnCommands);
+        }
+
         _logger.LogInformation("[UpdateExpertAsync] Expert Id {Id} updated successfully.", id);
 
         return await GetExpertByIdAsync(expert.Id);
@@ -571,7 +595,13 @@ public class ExpertService : IExpertService
         }
 
         await _unitOfWork.ProgramBoards.HardRemoveRange(new List<ProgramBoard> { programBoard });
+        var withdrawnCommands = await ClearCoTeachOnProgramsAsync(expert, [programId]);
         await _unitOfWork.SaveChangesAsync();
+
+        if (withdrawnCommands.Count > 0)
+        {
+            await _notificationPublisher.PublishManyAsync(withdrawnCommands);
+        }
 
         _logger.LogInformation("[RemoveProgramFromExpertAsync] Program {ProgramId} removed from expert {ExpertId}.", programId, expertId);
 
@@ -600,8 +630,15 @@ public class ExpertService : IExpertService
             }
         }
 
+        var withdrawnCommands = await ClearCoTeachForExpertAsync(expert);
+
         await _unitOfWork.Experts.SoftRemove(expert);
         await _unitOfWork.SaveChangesAsync();
+
+        if (withdrawnCommands.Count > 0)
+        {
+            await _notificationPublisher.PublishManyAsync(withdrawnCommands);
+        }
 
         _logger.LogInformation("[DeleteExpertAsync] Expert Id {Id} soft-deleted successfully.", id);
 
@@ -720,6 +757,66 @@ public class ExpertService : IExpertService
         await _unitOfWork.ExpertPublications.SoftRemove(publication);
         await _unitOfWork.SaveChangesAsync();
         return true;
+    }
+
+    private async Task<List<NotificationCommand>> ClearCoTeachOnProgramsAsync(
+        Expert expert,
+        IReadOnlyCollection<Guid> programIds)
+    {
+        var rows = await CoTeachStaffing.LoadActiveForExpertOnProgramsAsync(
+            _unitOfWork, expert.Id, programIds);
+        return await UnlinkAndBuildWithdrawnAsync(expert, rows);
+    }
+
+    private async Task<List<NotificationCommand>> ClearCoTeachForExpertAsync(Expert expert)
+    {
+        var rows = await CoTeachStaffing.LoadActiveForExpertAsync(_unitOfWork, expert.Id);
+        return await UnlinkAndBuildWithdrawnAsync(expert, rows);
+    }
+
+    private async Task<List<NotificationCommand>> UnlinkAndBuildWithdrawnAsync(
+        Expert expert,
+        List<ClassSessionExpert> rows)
+    {
+        await CoTeachStaffing.SoftRemoveAsync(_unitOfWork, rows);
+        if (rows.Count == 0 || expert.UserId is not Guid expertUserId || expertUserId == Guid.Empty)
+        {
+            return [];
+        }
+
+        var actor = await _unitOfWork.Users.GetByIdAsync(_claimsService.GetCurrentUserId);
+        var sessionIds = rows.Select(r => r.ClassSessionId).Distinct().ToList();
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            s => sessionIds.Contains(s.Id));
+        var sessionsById = sessions.ToDictionary(s => s.Id);
+        var classIds = sessions.Select(s => s.ClassId).Distinct().ToList();
+        var classes = await _unitOfWork.Classes.GetAllAsync(c => classIds.Contains(c.Id));
+        var classesById = classes.ToDictionary(c => c.Id);
+
+        var commands = new List<NotificationCommand>();
+        foreach (var row in rows)
+        {
+            if (!sessionsById.TryGetValue(row.ClassSessionId, out var session))
+            {
+                continue;
+            }
+
+            classesById.TryGetValue(session.ClassId, out var classEntity);
+            commands.Add(
+                NotificationCatalog.ClassSessionExpertInvitationWithdrawn(
+                    expertUserId,
+                    row.Id,
+                    session.Id,
+                    session.ClassId,
+                    classEntity?.ProgramId,
+                    actor?.Id,
+                    classEntity?.Name,
+                    programName: null,
+                    session.Title,
+                    actor?.FullName));
+        }
+
+        return commands;
     }
 
     private async Task<Expert> RequireExpertAsync(Guid expertId)
