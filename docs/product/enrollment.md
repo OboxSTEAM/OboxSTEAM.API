@@ -224,27 +224,44 @@ PE/module enrollments return to `Active`, close fields are cleared, withdrawn
 seats reactivate, and progress is recalculated. Attempt counts and recovery
 decisions are not reset.
 
-## Assessment recovery vs class re-delivery (legacy)
+## Assessment recovery vs class continuity
 
 - **Same class:** mentor-granted extra attempts never transfer the student.
 - **Theory:** unlimited assignment retries; never pay or transfer only to redo a test.
-- **Class re-delivery** (`ClassRedeliveryRequest`) is the **legacy** transfer
-  path for Experiential/Research retakes. It is superseded by the
-  fail/drop → rebuy lifecycle above; the new flow does not call into it.
-  Schema still stores `Class.Kind` / `Class.RemedialModuleId`,
-  `ClassEnrollment.Kind`, and request `IntensivePaceAcceptedAt` /
-  `ResolutionType` for the two-tier retake ladder (endpoints in later stories).
-- Module retake invoices appear in `GET /api/invoices/me` alongside program tuition.
+- **Active continuity** (Experiential/Research, still on an Active purchase): after
+  recovery is exhausted (or for a voluntary retake of a Completed module), the
+  student opens a **shared class catalog** and picks an Open or eligible
+  InProgress Standard class. Dismissing the picker does **not** withdraw the
+  program enrollment — the student stays Active and can reopen the list later.
+  There is **no** manager waitlist, Remedial intensive class, or intensive
+  consent step.
+- **Catalog contract (shared with rebuy):**
+  - `GET /api/module-enrollments/{id}/continuity-classes` (Active PE only)
+  - `GET /api/class-redelivery-requests/{id}/candidates` after
+    `POST /api/class-redelivery-requests` (status is always
+    `AwaitingClassSelection`, even when the list is empty)
+  - Same `RebuyClassCatalogDto` shape as `GET /api/programs/{id}/rebuy-classes`
+    (`context`, `checkoutAmount`, `isEligible`, `creditHint`, optional
+    `moduleSessions` on Active catalogs)
+- **Price:** Active continuity checkout charges `Program.RetakeFee ?? Program.Price`
+  (same in-window continuity amount as rebuy). Routes:
+  `POST /api/payments/checkout/retake` and parent retake request.
+- **After fail/drop:** use the rebuy lifecycle and `rebuy-classes` above — not
+  Active continuity. Do not wire `POST /api/program-enrollments/{id}/withdraw`
+  into this picker UX.
+- Manager waitlist / open-remedial / intensive / assign-target / reject endpoints
+  return **410 Gone**. Schema may still store `Class.Kind` / `RemedialModuleId`
+  for historical rows.
 
-API: `/api/class-redelivery-requests` (legacy).
+API: `/api/class-redelivery-requests`, `/api/module-enrollments/{id}/continuity-classes`.
 
 ## Payments
 
 `Payment` entity and `PaymentStatus` / `PaymentGateway` enums exist in the
-domain model. Program tuition and rebuy retakes both create `Invoice` rows
-visible via invoice endpoints. Module-level retail price columns have been
-dropped; the retake price lives on `Program.RetakeFee` (nullable, falls back
-to `Program.Price`).
+domain model. Program tuition and rebuy / Active continuity retakes both create
+`Invoice` rows visible via invoice endpoints. Module-level retail price columns
+have been dropped; the continuity / rebuy price lives on `Program.RetakeFee`
+(nullable, falls back to `Program.Price`).
 
 Program tuition checkout requires the student to select an Open Standard class
 (`classId` on checkout / parent request). A **5-minute** soft seat hold and parent

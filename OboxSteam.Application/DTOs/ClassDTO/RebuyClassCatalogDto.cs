@@ -12,10 +12,13 @@ public sealed class RebuyClassCatalogDto
 {
     public Guid ProgramId { get; set; }
 
+    /// <summary>Picker entry point — shared shape for Active redelivery and rebuy.</summary>
+    public ClassContinuityContext Context { get; set; }
+
     /// <summary>
     /// True when the latest closed purchase is Failed or Dropped and still inside
     /// the 3-month window (InProgress classes and stop-module rules apply). False for
-    /// first purchase, Completed retakes, and fail/drop after the window (Open only).
+    /// first purchase, Completed retakes, fail/drop after the window, and Active continuity.
     /// </summary>
     public bool IsRebuy { get; set; }
 

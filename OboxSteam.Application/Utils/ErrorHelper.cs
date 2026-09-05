@@ -28,6 +28,10 @@ public static class ErrorHelper
     public static Exception Conflict(string message = "A conflict occurred.")
         => new ConflictException(message);
 
+    /// <summary>410 — Resource or API surface permanently removed.</summary>
+    public static Exception Gone(string message = "This resource is no longer available.")
+        => new GoneException(message);
+
     /// <summary>500 — Unexpected system error.</summary>
     public static Exception Internal(string message = "An internal server error occurred.")
         => new InternalException(message);

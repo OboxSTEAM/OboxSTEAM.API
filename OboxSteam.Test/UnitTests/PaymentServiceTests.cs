@@ -63,6 +63,15 @@ public sealed class PaymentServiceTests
             NullLogger<ProgramPurchaseLifecycle>.Instance);
     }
 
+    private RebuyClassCatalogService CreateRebuyClassCatalogService()
+        => new(
+            _db,
+            _claimsService.Object,
+            CreateLifecycle(),
+            new ClassContinuityCatalogBuilder(_db),
+            _currentTime.Object,
+            NullLogger<RebuyClassCatalogService>.Instance);
+
     private ClassSeatHoldService CreateSeatHoldService()
         => new(
             _db,
@@ -156,6 +165,8 @@ public sealed class PaymentServiceTests
                 _db,
                 _claimsService.Object,
                 _notificationPublisher.Object,
+                CreateRebuyClassCatalogService(),
+                _currentTime.Object,
                 NullLogger<ClassRedeliveryRequestService>.Instance),
             CreateSeatHoldService(),
             CreateLifecycle());
@@ -767,6 +778,21 @@ public sealed class PaymentServiceTests
 
         Assert.Single(_db.Payments.Items);
         Assert.Equal(_moduleEnrollmentId, result.EnrollmentId);
+        Assert.Equal(500_000m, _db.Payments.Items[0].Amount);
+    }
+
+    [Fact]
+    public async Task CreateModuleRetakeCheckout_UsesRetakeFeeWhenSet()
+    {
+        SeedStudent();
+        SeedProgram(retakeFee: 200_000m);
+        var module = SeedModule();
+        SeedModuleEnrollment(module);
+        var sut = CreateSut();
+
+        await sut.CreateModuleRetakeCheckout(_moduleEnrollmentId, PaymentGateway.Stripe);
+
+        Assert.Equal(200_000m, Assert.Single(_db.Payments.Items).Amount);
     }
 
     [Fact]

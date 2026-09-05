@@ -1,8 +1,9 @@
+using OboxSteam.Application.DTOs.ClassRedeliveryDTO;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ClassDTO;
 
-/// <summary>Open or InProgress Standard class in the rebuy picker, with per-module session progress.</summary>
+/// <summary>Open or InProgress Standard class in the continuity / rebuy picker.</summary>
 public sealed class RebuyClassDto
 {
     public Guid ClassId { get; set; }
@@ -35,4 +36,9 @@ public sealed class RebuyClassDto
     public string? IneligibleReason { get; set; }
 
     public List<RebuyClassModuleProgressDto> Modules { get; set; } = [];
+
+    /// <summary>
+    /// Sessions for the stop / focus module (Active redelivery schedule cards). Empty on rebuy.
+    /// </summary>
+    public List<ClassRedeliveryCandidateSessionDto> ModuleSessions { get; set; } = [];
 }

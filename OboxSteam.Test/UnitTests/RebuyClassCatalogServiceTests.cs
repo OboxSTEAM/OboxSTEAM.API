@@ -50,6 +50,7 @@ public sealed class RebuyClassCatalogServiceTests
             _db,
             _claimsService.Object,
             lifecycle,
+            new ClassContinuityCatalogBuilder(_db),
             _currentTime.Object,
             NullLogger<RebuyClassCatalogService>.Instance);
     }
@@ -198,6 +199,7 @@ public sealed class RebuyClassCatalogServiceTests
         Assert.Equal(_sourcePeId, result.SourceProgramEnrollmentId);
         Assert.Equal(EnrollmentStatus.Failed, result.SourceStatus);
         Assert.True(result.IsRebuy);
+        Assert.Equal(ClassContinuityContext.Rebuy, result.Context);
         Assert.Equal(_labId, result.StopModuleId);
         Assert.Equal("MOD-LAB", result.StopModuleCode);
         Assert.True(result.WithinRebuyWindow);

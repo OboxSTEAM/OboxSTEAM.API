@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.ClassRedeliveryDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -11,6 +12,10 @@ namespace OboxSteam.API.Controllers;
 [ApiController]
 public class ClassRedeliveryRequestController : ControllerBase
 {
+    private const string GoneMessage =
+        "Manager waitlist / remedial intensive redelivery is no longer available. "
+        + "Students pick a Standard class via the continuity catalog.";
+
     private readonly IClassRedeliveryRequestService _service;
 
     public ClassRedeliveryRequestController(IClassRedeliveryRequestService service)
@@ -20,7 +25,7 @@ public class ClassRedeliveryRequestController : ControllerBase
 
     [HttpPost]
     [Authorize(Roles = "Student,Mentor,Manager,Admin")]
-    [SwaggerOperation(Summary = "Request class re-delivery (auto-match or manager queue)")]
+    [SwaggerOperation(Summary = "Request class continuity (always AwaitingClassSelection)")]
     [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 201)]
     public async Task<IActionResult> Create([FromBody] CreateClassRedeliveryRequestDto dto)
     {
@@ -42,18 +47,20 @@ public class ClassRedeliveryRequestController : ControllerBase
 
     [HttpGet("{id:guid}/candidates")]
     [Authorize(Roles = "Student,Mentor,Manager,Admin")]
-    [SwaggerOperation(Summary = "Eligible classes the student can pick for re-delivery (tier 1)")]
-    [ProducesResponseType(typeof(ApiResult<List<ClassRedeliveryCandidateDto>>), 200)]
+    [SwaggerOperation(
+        Summary = "Continuity class catalog for an open redelivery request",
+        Description = "Same shape as GET /api/programs/{id}/rebuy-classes (RebuyClassCatalogDto).")]
+    [ProducesResponseType(typeof(ApiResult<RebuyClassCatalogDto>), 200)]
     public async Task<IActionResult> GetCandidates([FromRoute] Guid id)
     {
         var result = await _service.GetCandidatesAsync(id);
-        return Ok(ApiResult<List<ClassRedeliveryCandidateDto>>.Success(
-            result, "200", "Candidate classes retrieved."));
+        return Ok(ApiResult<RebuyClassCatalogDto>.Success(
+            result, "200", "Continuity class catalog retrieved."));
     }
 
     [HttpPost("{id:guid}/select-class")]
     [Authorize(Roles = "Student")]
-    [SwaggerOperation(Summary = "Student picks a class for re-delivery (then pays the program price)")]
+    [SwaggerOperation(Summary = "Student picks a class for continuity (then pays RetakeFee ?? Price)")]
     [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
     public async Task<IActionResult> SelectClass(
         [FromRoute] Guid id,
@@ -66,40 +73,37 @@ public class ClassRedeliveryRequestController : ControllerBase
 
     [HttpPost("{id:guid}/accept-intensive")]
     [Authorize(Roles = "Student")]
-    [SwaggerOperation(Summary = "Student accepts the intensive remedial-class schedule (tier 2)")]
-    [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
+    [SwaggerOperation(Summary = "Removed — intensive remedial consent is no longer available")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
     public async Task<IActionResult> AcceptIntensive([FromRoute] Guid id)
     {
-        var result = await _service.AcceptIntensiveAsync(id);
-        return Ok(ApiResult<ClassRedeliveryRequestResponseDto>.Success(
-            result, "200", "Intensive schedule accepted; payment pending."));
+        await _service.AcceptIntensiveAsync(id);
+        return StatusCode(410, ApiResult<object>.Failure("410", GoneMessage));
     }
 
     [HttpPost("{id:guid}/decline-intensive")]
     [Authorize(Roles = "Student")]
-    [SwaggerOperation(Summary = "Student declines the remedial-class offer (progress is kept)")]
-    [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
+    [SwaggerOperation(Summary = "Removed — intensive remedial consent is no longer available")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
     public async Task<IActionResult> DeclineIntensive([FromRoute] Guid id)
     {
-        var result = await _service.DeclineIntensiveAsync(id);
-        return Ok(ApiResult<ClassRedeliveryRequestResponseDto>.Success(
-            result, "200", "Remedial class offer declined."));
+        await _service.DeclineIntensiveAsync(id);
+        return StatusCode(410, ApiResult<object>.Failure("410", GoneMessage));
     }
 
     [HttpGet("pending-manager")]
     [Authorize(Roles = "Manager,Admin")]
-    [SwaggerOperation(Summary = "Manager queue when no eligible class was auto-matched")]
-    [ProducesResponseType(typeof(ApiResult<List<ClassRedeliveryRequestResponseDto>>), 200)]
+    [SwaggerOperation(Summary = "Removed — manager redelivery queue is no longer available")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
     public async Task<IActionResult> GetPendingManager()
     {
-        var result = await _service.GetPendingManagerAsync();
-        return Ok(ApiResult<List<ClassRedeliveryRequestResponseDto>>.Success(
-            result, "200", "Pending manager re-delivery requests retrieved."));
+        await _service.GetPendingManagerAsync();
+        return StatusCode(410, ApiResult<object>.Failure("410", GoneMessage));
     }
 
     [HttpPost("{id:guid}/withdraw")]
     [Authorize(Roles = "Student,Mentor,Manager,Admin")]
-    [SwaggerOperation(Summary = "Withdraw an open re-delivery request")]
+    [SwaggerOperation(Summary = "Cancel an open re-delivery request (does not close the program enrollment)")]
     [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
     public async Task<IActionResult> Withdraw([FromRoute] Guid id)
     {
@@ -110,27 +114,25 @@ public class ClassRedeliveryRequestController : ControllerBase
 
     [HttpPost("{id:guid}/assign-target")]
     [Authorize(Roles = "Manager,Admin")]
-    [SwaggerOperation(Summary = "Manager assigns a target class (then student pays program price for re-delivery)")]
-    [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
+    [SwaggerOperation(Summary = "Removed — manager assign-target is no longer available")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
     public async Task<IActionResult> AssignTarget(
         [FromRoute] Guid id,
         [FromBody] DecideClassRedeliveryRequestDto dto)
     {
-        var result = await _service.ManagerAssignTargetAsync(id, dto);
-        return Ok(ApiResult<ClassRedeliveryRequestResponseDto>.Success(
-            result, "200", "Target class assigned; payment pending."));
+        await _service.ManagerAssignTargetAsync(id, dto);
+        return StatusCode(410, ApiResult<object>.Failure("410", GoneMessage));
     }
 
     [HttpPost("{id:guid}/reject")]
     [Authorize(Roles = "Manager,Admin")]
-    [SwaggerOperation(Summary = "Reject a re-delivery request")]
-    [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
+    [SwaggerOperation(Summary = "Removed — manager reject is no longer available")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
     public async Task<IActionResult> Reject(
         [FromRoute] Guid id,
         [FromBody] DecideClassRedeliveryRequestDto? dto = null)
     {
-        var result = await _service.RejectAsync(id, dto);
-        return Ok(ApiResult<ClassRedeliveryRequestResponseDto>.Success(
-            result, "200", "Re-delivery request rejected."));
+        await _service.RejectAsync(id, dto);
+        return StatusCode(410, ApiResult<object>.Failure("410", GoneMessage));
     }
 }
