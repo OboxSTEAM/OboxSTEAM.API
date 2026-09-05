@@ -152,17 +152,9 @@ public sealed class ClassContinuityCatalogBuilder
         };
     }
 
-    /// <summary>Active continuity amount: RetakeFee with Price fallback (always in-window).</summary>
+    /// <summary>Active continuity amount: always 50% of <see cref="Program.Price"/> (no expiry while Active).</summary>
     public static decimal ResolveActiveContinuityAmount(Program program)
-    {
-        var price = program.Price ?? 0m;
-        if (program.Price == null || program.Price <= 0)
-        {
-            return 0m;
-        }
-
-        return program.RetakeFee ?? price;
-    }
+        => ProgramPurchaseLifecycle.ResolveContinuityFee(program);
 
     private static RebuyClassModuleProgressDto MapModuleProgress(
         Module module,

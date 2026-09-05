@@ -855,12 +855,12 @@ public sealed class ProgramPurchaseLifecycleTests
     [Fact]
     public void IsWithinRebuyWindow_TrueInside_AndOnBoundary_FalseAfter()
     {
-        var endedAt = _now.AddMonths(-2);
+        var endedAt = _now.AddDays(-15);
         var source = new ProgramEnrollment { Status = EnrollmentStatus.Failed, EndedAt = endedAt };
 
         Assert.True(ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, _now));
-        Assert.True(ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, endedAt.AddMonths(3)));
-        Assert.False(ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, endedAt.AddMonths(3).AddTicks(1)));
+        Assert.True(ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, endedAt.AddMonths(1)));
+        Assert.False(ProgramPurchaseLifecycle.IsWithinRebuyWindow(source, endedAt.AddMonths(1).AddTicks(1)));
     }
 
     [Fact]
@@ -932,23 +932,23 @@ public sealed class ProgramPurchaseLifecycleTests
     }
 
     [Fact]
-    public async Task ResolveCheckoutAmount_RebuyWithinWindow_ChargesRetakeFee()
+    public async Task ResolveCheckoutAmount_RebuyWithinWindow_ChargesHalfPrice()
     {
         var program = SeedPricedProgram(retakeFee: 200_000m);
-        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddMonths(-1));
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-15));
         var pending = SeedEnrollment(EnrollmentStatus.PendingPayment);
         pending.SourceProgramEnrollmentId = source.Id;
         var sut = CreateSut();
 
         var amount = await sut.ResolveCheckoutAmountAsync(program, pending);
 
-        Assert.Equal(200_000m, amount);
+        Assert.Equal(250_000m, amount);
     }
 
     [Fact]
-    public async Task ResolveCheckoutAmount_RebuyWithinWindow_NoRetakeFee_FallsBackToPrice()
+    public async Task ResolveCheckoutAmount_RebuyWithinWindow_IgnoresRetakeFeeField()
     {
-        var program = SeedPricedProgram();
+        var program = SeedPricedProgram(retakeFee: 200_000m);
         var source = SeedClosedSource(EnrollmentStatus.Dropped, endedAt: _now.AddDays(-5));
         var pending = SeedEnrollment(EnrollmentStatus.PendingPayment);
         pending.SourceProgramEnrollmentId = source.Id;
@@ -956,7 +956,7 @@ public sealed class ProgramPurchaseLifecycleTests
 
         var amount = await sut.ResolveCheckoutAmountAsync(program, pending);
 
-        Assert.Equal(500_000m, amount);
+        Assert.Equal(250_000m, amount);
     }
 
     [Fact]
@@ -974,17 +974,17 @@ public sealed class ProgramPurchaseLifecycleTests
     }
 
     [Fact]
-    public async Task ResolveCheckoutAmount_CompletedSourceWithinWindow_ChargesRetakeFee()
+    public async Task ResolveCheckoutAmount_CompletedSourceWithinWindow_ChargesHalfPrice()
     {
         var program = SeedPricedProgram(retakeFee: 200_000m);
-        var source = SeedClosedSource(EnrollmentStatus.Completed, completedAt: _now.AddMonths(-2));
+        var source = SeedClosedSource(EnrollmentStatus.Completed, completedAt: _now.AddDays(-10));
         var pending = SeedEnrollment(EnrollmentStatus.PendingPayment);
         pending.SourceProgramEnrollmentId = source.Id;
         var sut = CreateSut();
 
         var amount = await sut.ResolveCheckoutAmountAsync(program, pending);
 
-        Assert.Equal(200_000m, amount);
+        Assert.Equal(250_000m, amount);
     }
 
     [Fact]

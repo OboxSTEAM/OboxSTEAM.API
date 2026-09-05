@@ -75,7 +75,7 @@ public sealed class ClassRedeliveryRequestServiceTests
 
         Assert.Equal(ClassContinuityContext.ActiveRedelivery, result.Context);
         Assert.False(result.IsRebuy);
-        Assert.Equal(1_200_000m, result.CheckoutAmount);
+        Assert.Equal(1_000_000m, result.CheckoutAmount);
         Assert.DoesNotContain(result.Classes, c => c.ClassId == _fullClassId);
 
         var open = Assert.Single(result.Classes, c => c.ClassId == _openClassId);

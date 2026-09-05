@@ -18,7 +18,7 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
    (public; Standard + **Open** + seats remaining > 0, with schedule sessions and seat
    counts). Logged-in students picking a class for checkout use
    `GET /api/programs/{programId}/rebuy-classes` instead (Open-only for first
-   purchase / Completed / fail-drop after the 3-month window; Open + InProgress
+   purchase / Completed / fail-drop after the 1-month window; Open + InProgress
    after fail/drop inside the window). Seat counts include
    non-expired **Pending** holds from class selection.
 3. **Select class** via `POST /api/programs/{programId}/select-class` (`classId`) — starts
@@ -151,19 +151,21 @@ an **Active** enrollment and return 403 on closed ones.
 
 **Rebuy (chuyen ca).** Continuing requires a new purchase of the same program
 and a seat in a **different** Standard class. This is a cohort transfer, not a
-module retake. `Program.RetakeFee` is the chuyen-ca price (full `Program.Price`
-outside the 3-month window). Credit still follows what the **new class** has
-already taught — pick a class that has finished modules you already passed to
-keep that credit. `GET .../rebuy-classes` module rows include `creditHint`
+module retake. Continuity / in-window rebuy price is always **50% of
+`Program.Price`**; after the window the student pays full `Program.Price`.
+(`Program.RetakeFee` remains on the schema for historical rows but is **not**
+used for checkout.) Credit still follows what the **new class** has already
+taught — pick a class that has finished modules you already passed to keep
+that credit. `GET .../rebuy-classes` module rows include `creditHint`
 (`Copied` / `RedoWithClass` / `Ahead`).
 
 - Checkout detects the latest closed source enrollment and links it via
   `SourceProgramEnrollmentId`.
-- **Price:** within 3 calendar months of the source `EndedAt` (boundary day
-  included) the student pays `Program.RetakeFee ?? Program.Price`; after the
-  window they pay full `Program.Price`. A `Completed` source anchors the
-  window at `CompletedAt` and gets retake **pricing only**.
-- **Class eligibility:** after **Failed** or **Dropped** *inside the 3-month
+- **Price:** within **1 calendar month** of the source `EndedAt` (boundary day
+  included) the student pays **50% of `Program.Price`**; after the window they
+  pay full `Program.Price`. A `Completed` source anchors the window at
+  `CompletedAt` and gets continuity **pricing only**.
+- **Class eligibility:** after **Failed** or **Dropped** *inside the 1-month
   rebuy window*, the rebuy must join exactly one `Open` or `InProgress`
   Standard class that has not started the module the student stopped at, nor any
   later module in `ModuleOrder` (no `InProgress`/`Completed` LiveOnline/Offline
@@ -243,15 +245,23 @@ decisions are not reset.
   - Same `RebuyClassCatalogDto` shape as `GET /api/programs/{id}/rebuy-classes`
     (`context`, `checkoutAmount`, `isEligible`, `creditHint`, optional
     `moduleSessions` on Active catalogs)
-- **Price:** Active continuity checkout charges `Program.RetakeFee ?? Program.Price`
-  (same in-window continuity amount as rebuy). Routes:
-  `POST /api/payments/checkout/retake` and parent retake request.
+- **Price:** Active continuity checkout always charges **50% of `Program.Price`**
+  (no expiry while the purchase stays Active). Same rate as in-window rebuy.
+  Routes: `POST /api/payments/checkout/retake` and parent retake request.
+- **Cancel request:** `POST /api/class-redelivery-requests/{id}/cancel` cancels
+  only the continuity request (status `Withdrawn`); PE stays Active. Prefer
+  `/cancel` over the obsolete `/withdraw` alias. Quitting the whole program is
+  `POST /api/program-enrollments/{id}/withdraw` → PE `Dropped` /
+  `EndReason = Withdraw`.
 - **After fail/drop:** use the rebuy lifecycle and `rebuy-classes` above — not
-  Active continuity. Do not wire `POST /api/program-enrollments/{id}/withdraw`
-  into this picker UX.
+  Active continuity. Do not wire program withdraw into the continuity picker UX.
 - Manager waitlist / open-remedial / intensive / assign-target / reject endpoints
   return **410 Gone**. Schema may still store `Class.Kind` / `RemedialModuleId`
   for historical rows.
+- **Legacy enum values (do not send / ignore on FE):** request status
+  `PendingManager`, `PendingAutoMatch`, `AwaitingIntensiveConsent`, `Approved`;
+  resolution `RemedialClass`. Happy path only uses
+  `AwaitingClassSelection` → `MatchedPendingPayment` → `Completed` | `Withdrawn`.
 
 API: `/api/class-redelivery-requests`, `/api/module-enrollments/{id}/continuity-classes`.
 
@@ -260,8 +270,9 @@ API: `/api/class-redelivery-requests`, `/api/module-enrollments/{id}/continuity-
 `Payment` entity and `PaymentStatus` / `PaymentGateway` enums exist in the
 domain model. Program tuition and rebuy / Active continuity retakes both create
 `Invoice` rows visible via invoice endpoints. Module-level retail price columns
-have been dropped; the continuity / rebuy price lives on `Program.RetakeFee`
-(nullable, falls back to `Program.Price`).
+have been dropped. Continuity / in-window rebuy checkout is **50% of
+`Program.Price`**; after the 1-month window (or first purchase) it is full
+`Price`. `Program.RetakeFee` is unused for these amounts.
 
 Program tuition checkout requires the student to select an Open Standard class
 (`classId` on checkout / parent request). A **5-minute** soft seat hold and parent

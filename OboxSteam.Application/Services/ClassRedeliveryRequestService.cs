@@ -229,14 +229,14 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
         return Map(entity);
     }
 
-    public async Task<ClassRedeliveryRequestResponseDto> WithdrawAsync(Guid requestId)
+    public async Task<ClassRedeliveryRequestResponseDto> CancelAsync(Guid requestId)
     {
         var userId = _claimsService.GetCurrentUserId;
         var entity = await GetOrThrow(requestId);
 
         if (entity.StudentId != userId && entity.RequestedByUserId != userId)
         {
-            throw ErrorHelper.Forbidden("You cannot withdraw this request.");
+            throw ErrorHelper.Forbidden("You cannot cancel this request.");
         }
 
         if (entity.Status is not (
@@ -246,7 +246,22 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
             or ClassRedeliveryRequestStatus.PendingManager
             or ClassRedeliveryRequestStatus.AwaitingIntensiveConsent))
         {
-            throw ErrorHelper.BadRequest("This request can no longer be withdrawn.");
+            throw ErrorHelper.BadRequest("This request can no longer be cancelled.");
+        }
+
+        // Drop orphan PendingPayment retake enrollment created at select-class.
+        if (entity.RetakeModuleEnrollmentId.HasValue)
+        {
+            var retakeEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(
+                entity.RetakeModuleEnrollmentId.Value);
+            if (retakeEnrollment != null
+                && !retakeEnrollment.IsDeleted
+                && retakeEnrollment.Status == EnrollmentStatus.PendingPayment)
+            {
+                retakeEnrollment.Status = EnrollmentStatus.Dropped;
+                retakeEnrollment.IsDeleted = true;
+                await _unitOfWork.ModuleEnrollments.Update(retakeEnrollment);
+            }
         }
 
         entity.Status = ClassRedeliveryRequestStatus.Withdrawn;
@@ -257,6 +272,10 @@ public sealed class ClassRedeliveryRequestService : IClassRedeliveryRequestServi
 
         return Map(entity);
     }
+
+    /// <inheritdoc cref="CancelAsync"/>
+    public Task<ClassRedeliveryRequestResponseDto> WithdrawAsync(Guid requestId)
+        => CancelAsync(requestId);
 
     public Task<ClassRedeliveryRequestResponseDto> ManagerAssignTargetAsync(
         Guid requestId,

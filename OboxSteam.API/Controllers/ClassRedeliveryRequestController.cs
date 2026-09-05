@@ -60,7 +60,7 @@ public class ClassRedeliveryRequestController : ControllerBase
 
     [HttpPost("{id:guid}/select-class")]
     [Authorize(Roles = "Student")]
-    [SwaggerOperation(Summary = "Student picks a class for continuity (then pays RetakeFee ?? Price)")]
+    [SwaggerOperation(Summary = "Student picks a class for continuity (then pays 50% of program price)")]
     [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
     public async Task<IActionResult> SelectClass(
         [FromRoute] Guid id,
@@ -101,15 +101,34 @@ public class ClassRedeliveryRequestController : ControllerBase
         return StatusCode(410, ApiResult<object>.Failure("410", GoneMessage));
     }
 
+    [HttpPost("{id:guid}/cancel")]
+    [Authorize(Roles = "Student,Mentor,Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "Cancel a continuity / redelivery request",
+        Description = "Cancels only this ClassRedeliveryRequest (status Withdrawn). "
+            + "Does NOT withdraw the student from the program — the ProgramEnrollment stays Active. "
+            + "Any PendingPayment retake module enrollment created at select-class is discarded. "
+            + "To quit the whole program use POST /api/program-enrollments/{id}/withdraw.")]
+    [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
+    public async Task<IActionResult> Cancel([FromRoute] Guid id)
+    {
+        var result = await _service.CancelAsync(id);
+        return Ok(ApiResult<ClassRedeliveryRequestResponseDto>.Success(
+            result, "200", "Continuity request cancelled."));
+    }
+
     [HttpPost("{id:guid}/withdraw")]
     [Authorize(Roles = "Student,Mentor,Manager,Admin")]
-    [SwaggerOperation(Summary = "Cancel an open re-delivery request (does not close the program enrollment)")]
+    [SwaggerOperation(
+        Summary = "Alias for cancel (obsolete name)",
+        Description = "Same as POST .../cancel. Prefer /cancel to avoid confusion with "
+            + "POST /api/program-enrollments/{id}/withdraw (quit program → Dropped).")]
     [ProducesResponseType(typeof(ApiResult<ClassRedeliveryRequestResponseDto>), 200)]
     public async Task<IActionResult> Withdraw([FromRoute] Guid id)
     {
-        var result = await _service.WithdrawAsync(id);
+        var result = await _service.CancelAsync(id);
         return Ok(ApiResult<ClassRedeliveryRequestResponseDto>.Success(
-            result, "200", "Re-delivery request withdrawn."));
+            result, "200", "Continuity request cancelled."));
     }
 
     [HttpPost("{id:guid}/assign-target")]

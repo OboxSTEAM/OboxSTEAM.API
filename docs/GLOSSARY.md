@@ -12,8 +12,10 @@ Sellable STEAM track. Has `Price`, modules, classes, and enrollments.
 
 Stage within a program (`Theory`, `Experiential`, `Research`). Ordered via
 `ModuleOrder`; optional `PrerequisiteModuleId`. Retail module price columns
-were removed; tuition is program-level. The retake price lives on
-`Program.RetakeFee` (nullable, falls back to `Program.Price`).
+were removed; tuition is program-level. Continuity / in-window rebuy is
+**50% of `Program.Price`** for 1 month after close (Active continuity: same
+50% with no expiry). Full `Price` after the window. `Program.RetakeFee` is
+legacy unused for checkout.
 
 ## Course
 
@@ -46,14 +48,17 @@ continuing requires a rebuy. See `docs/product/enrollment.md`.
 ## Rebuy
 
 New purchase of the same program after a `Failed`/`Dropped` (or `Completed`)
-enrollment. Within 3 calendar months of the source `EndedAt` (or
-`CompletedAt`), the price is `Program.RetakeFee ?? Program.Price` and
-completed modules carry over; after the window it is full price from scratch.
+enrollment. Within **1 calendar month** of the source `EndedAt` (or
+`CompletedAt`), the price is **50% of `Program.Price`** and completed modules
+carry over (scoped to what the new class has taught); after the window it is
+full price from scratch.
 
-## Class re-delivery
+## Class continuity / re-delivery
 
-`ClassRedeliveryRequest` — **legacy** transfer or remedial path after failed
-experiential work, superseded by the fail/drop → rebuy lifecycle.
+Active purchase: student picks another Standard class at **50%** (no expiry
+while Active). After fail/drop: same catalog via rebuy. Prefer
+`POST .../class-redelivery-requests/{id}/cancel` to drop an open request.
+Program quit remains `POST .../program-enrollments/{id}/withdraw`.
 
 ## Harness (this repo)
 

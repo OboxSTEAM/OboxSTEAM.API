@@ -16,6 +16,13 @@ public interface IClassRedeliveryRequestService
     /// <summary>The student picks one eligible Standard class from the continuity catalog.</summary>
     Task<ClassRedeliveryRequestResponseDto> SelectClassAsync(Guid requestId, Guid classId);
 
+    /// <summary>
+    /// Cancel an open continuity request only. Does not close the program enrollment —
+    /// the student stays Active and may open the catalog again later.
+    /// </summary>
+    Task<ClassRedeliveryRequestResponseDto> CancelAsync(Guid requestId);
+
+    /// <summary>Obsolete alias for <see cref="CancelAsync"/> (same behavior).</summary>
     Task<ClassRedeliveryRequestResponseDto> WithdrawAsync(Guid requestId);
 
     /// <summary>Gone: the manager waitlist tier was removed.</summary>
