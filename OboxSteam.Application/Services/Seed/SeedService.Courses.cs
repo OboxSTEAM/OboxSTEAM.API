@@ -8,12 +8,10 @@ public partial class SeedService
     private async Task SeedCoursesAsync()
     {
         _loggerService.LogInformation("Starting seed courses");
-        var existingCourses = await _unitOfWork.Courses.GetAllAsync();
-        if (existingCourses.Any())
-        {
-            _loggerService.LogInformation("Courses already exist, skipping course seeding");
-            return;
-        }
+        var existingCourses = await _unitOfWork.Courses.GetAllAsync(c => !c.IsDeleted);
+        var existingCodes = existingCourses
+            .Select(c => c.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var modules = await _unitOfWork.Modules.GetAllAsync(m => !m.IsDeleted);
         var moduleByCode = modules.ToDictionary(m => m.Code, m => m, StringComparer.OrdinalIgnoreCase);
@@ -43,9 +41,21 @@ public partial class SeedService
 
         AddThinCatalogCourses(courses, moduleByCode, createdAt);
 
+        var builtCount = courses.Count;
+        courses = courses
+            .Where(c => !existingCodes.Contains(c.Code))
+            .ToList();
         if (courses.Count == 0)
         {
-            _loggerService.LogWarning("No courses seeded because required modules were not found.");
+            if (builtCount == 0)
+            {
+                _loggerService.LogWarning("No courses seeded because required modules were not found.");
+            }
+            else
+            {
+                _loggerService.LogInformation("Catalog courses already present, nothing to insert.");
+            }
+
             return;
         }
 

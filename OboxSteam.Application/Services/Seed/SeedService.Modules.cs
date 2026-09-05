@@ -14,7 +14,15 @@ public partial class SeedService
     {
         _loggerService.LogInformation("Starting seed modules");
         var existingModules = await _unitOfWork.Modules.GetAllAsync();
-        if (!existingModules.Any())
+        var existingCodes = existingModules
+            .Select(m => m.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Program-framework QA programs insert modules first. Do not skip the catalog
+        // (MOD-ROBOTICS-*, MOD-WEBDEV-*, …) just because those QA rows exist.
+        if (!existingCodes.Contains("MOD-ROBOTICS-01")
+            || !existingCodes.Contains("MOD-ROBOTICS-03")
+            || !existingCodes.Contains("MOD-WEBDEV-03")
+            || !existingCodes.Contains("MOD-CERT-TEST-01"))
         {
             var programRobotics = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS");
             var programWebDev = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-WEBDEV");
@@ -827,9 +835,19 @@ public partial class SeedService
                     };
                 }
 
-                await _unitOfWork.Modules.AddRangeAsync(modules);
-                await _unitOfWork.SaveChangesAsync();
-                _loggerService.LogInformation("Finished seed modules â€” {Count} module(s) created.", modules.Count);
+                modules = modules
+                    .Where(m => !existingCodes.Contains(m.Code))
+                    .ToList();
+                if (modules.Count == 0)
+                {
+                    _loggerService.LogInformation("Catalog modules already present, nothing to insert.");
+                }
+                else
+                {
+                    await _unitOfWork.Modules.AddRangeAsync(modules);
+                    await _unitOfWork.SaveChangesAsync();
+                    _loggerService.LogInformation("Finished seed modules — {Count} module(s) created.", modules.Count);
+                }
             }
             else
             {
@@ -838,7 +856,7 @@ public partial class SeedService
         }
         else
         {
-            _loggerService.LogInformation("Modules already exist, skipping module seeding");
+            _loggerService.LogInformation("Catalog modules already exist, backfilling learning outcomes only");
 
             var modulesToBackfill = await _unitOfWork.Modules.GetAllAsync(
                 m => !m.IsDeleted && (m.LearningOutcomes == null || m.LearningOutcomes.Length == 0));
