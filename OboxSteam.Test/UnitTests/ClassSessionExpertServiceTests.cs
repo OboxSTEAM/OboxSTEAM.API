@@ -179,7 +179,25 @@ public sealed class ClassSessionExpertServiceTests
     }
 
     [Fact]
-    public async Task Invite_Throws_WhenSessionAlreadyHasActiveExpert()
+    public async Task Invite_SecondBoardExpert_Allowed()
+    {
+        SeedUsersAndClass();
+        SeedInvitation();
+        var sut = CreateSut();
+
+        var result = await sut.InviteAsync(new InviteClassSessionExpertDto
+        {
+            ClassSessionId = _sessionId,
+            ExpertId = _otherExpertId,
+        });
+
+        Assert.Equal(ClassSessionExpertStatus.Invited, result.Status);
+        Assert.Equal(_otherExpertId, result.ExpertId);
+        Assert.Equal(2, _db.ClassSessionExperts.Items.Count);
+    }
+
+    [Fact]
+    public async Task Invite_Throws_WhenSameExpertAlreadyActive()
     {
         SeedUsersAndClass();
         SeedInvitation();
@@ -189,7 +207,7 @@ public sealed class ClassSessionExpertServiceTests
             sut.InviteAsync(new InviteClassSessionExpertDto
             {
                 ClassSessionId = _sessionId,
-                ExpertId = _otherExpertId,
+                ExpertId = _expertId,
             }));
     }
 
@@ -301,53 +319,6 @@ public sealed class ClassSessionExpertServiceTests
 
         await Assert.ThrowsAsync<ConflictException>(() => sut.WithdrawAsync(_invitationId));
         Assert.False(_db.ClassSessionExperts.Items.Single(e => e.Id == _invitationId).IsDeleted);
-    }
-
-    [Fact]
-    public async Task ApproveReschedule_AppliesProposedTimes()
-    {
-        SeedUsersAndClass();
-        SeedInvitation(ClassSessionExpertStatus.Accepted);
-        var session = _db.ClassSessions.Items[0];
-        var originalStart = session.StartTime;
-        session.ProposedStartTime = originalStart.AddDays(3);
-        session.ProposedEndTime = originalStart.AddDays(3).AddHours(2);
-        var sut = CreateSut(_expertUserId);
-
-        var result = await sut.ApproveRescheduleAsync(_invitationId);
-
-        Assert.Null(_db.ClassSessions.Items[0].ProposedStartTime);
-        Assert.Equal(originalStart.AddDays(3), _db.ClassSessions.Items[0].StartTime);
-        Assert.Equal(originalStart.AddDays(3), result.SessionStartTime);
-        Assert.Equal(ClassSessionExpertStatus.Accepted, result.Status);
-        _notificationPublisher.Verify(
-            n => n.PublishAsync(
-                It.Is<NotificationCommand>(c => c.Type == NotificationType.ClassSessionRescheduled),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task DeclineReschedule_ClearsProposal_KeepsAcceptedAndOldTime()
-    {
-        SeedUsersAndClass();
-        SeedInvitation(ClassSessionExpertStatus.Accepted);
-        var session = _db.ClassSessions.Items[0];
-        var originalStart = session.StartTime;
-        session.ProposedStartTime = originalStart.AddDays(3);
-        session.ProposedEndTime = originalStart.AddDays(3).AddHours(2);
-        var sut = CreateSut(_expertUserId);
-
-        var result = await sut.DeclineRescheduleAsync(_invitationId);
-
-        Assert.Equal(originalStart, _db.ClassSessions.Items[0].StartTime);
-        Assert.Null(_db.ClassSessions.Items[0].ProposedStartTime);
-        Assert.Equal(ClassSessionExpertStatus.Accepted, result.Status);
-        _notificationPublisher.Verify(
-            n => n.PublishAsync(
-                It.Is<NotificationCommand>(c => c.Type == NotificationType.ClassSessionExpertRescheduleDeclined),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
     }
 
     [Fact]
@@ -515,5 +486,46 @@ public sealed class ClassSessionExpertServiceTests
                 Comment = "Not my invitation",
                 Rating = 4,
             }));
+    }
+
+    [Fact]
+    public async Task GetMine_ReturnsInvitation_WhenSessionIsLive()
+    {
+        SeedUsersAndClass();
+        SeedInvitation();
+        var sut = CreateSut(_expertUserId);
+
+        var result = await sut.GetMineAsync(null, 1, 10);
+
+        Assert.Single(result.Items);
+        Assert.Equal(_invitationId, result.Items[0].Id);
+    }
+
+    [Fact]
+    public async Task GetMine_OmitsInvitationsWhoseSessionIsDeleted()
+    {
+        SeedUsersAndClass();
+        SeedInvitation();
+        _db.ClassSessions.Items[0].IsDeleted = true;
+        var sut = CreateSut(_expertUserId);
+
+        var result = await sut.GetMineAsync(null, 1, 10);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetForManager_OmitsInvitationsWhoseSessionIsDeleted()
+    {
+        SeedUsersAndClass();
+        SeedInvitation();
+        _db.ClassSessions.Items[0].IsDeleted = true;
+        var sut = CreateSut();
+
+        var result = await sut.GetForManagerAsync(null, null, null, null, 1, 10);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
     }
 }

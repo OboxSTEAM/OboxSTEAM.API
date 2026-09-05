@@ -449,6 +449,7 @@ public class OboxSteamDbContext : DbContext
                 .IsRequired(false);
 
             entity.HasIndex(p => p.FrameworkId)
+                .IsUnique()
                 .HasFilter("\"IsDeleted\" = false AND \"FrameworkId\" IS NOT NULL");
         });
 
@@ -1388,10 +1389,6 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(a => a.ClassSessions)
                 .HasForeignKey(cs => cs.AssignmentId)
                 .OnDelete(DeleteBehavior.SetNull);
-
-            entity.ToTable(t => t.HasCheckConstraint(
-                "CK_ClassSessions_ProposedWindowPair",
-                "(\"ProposedStartTime\" IS NULL AND \"ProposedEndTime\" IS NULL) OR (\"ProposedStartTime\" IS NOT NULL AND \"ProposedEndTime\" IS NOT NULL AND \"ProposedEndTime\" > \"ProposedStartTime\")"));
         });
 
         // =============================================
@@ -1410,10 +1407,6 @@ public class OboxSteamDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(e => new { e.ClassSessionId, e.ExpertId })
-                .IsUnique()
-                .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
-
-            entity.HasIndex(e => e.ClassSessionId)
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
 

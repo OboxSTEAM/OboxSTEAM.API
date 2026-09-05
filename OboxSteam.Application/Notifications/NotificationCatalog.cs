@@ -1939,7 +1939,7 @@ public static class NotificationCatalog
         => new(
             NotificationType.CurriculumReviewSubmitted,
             NotificationAudience.ForUser(expertUserId),
-            NotificationRoleTemplates.FromDefault(
+            NotificationRoleTemplates.ForExpert(
                 "Có chương trình chờ duyệt",
                 BuildCurriculumReviewSubmittedBody(programName, frameworkName)),
             payload: new NotificationPayload { ProgramId = programId }
@@ -1999,6 +1999,26 @@ public static class NotificationCatalog
                 programName: programName,
                 comment: comment));
 
+    public static NotificationCommand CurriculumReviewPublished(
+        Guid programId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumReviewPublished,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chương trình đã được xuất bản",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã xuất bản chương trình. Học viên có thể đăng ký."
+                    : "{actorName} đã xuất bản chương trình \"{programName}\". Học viên có thể đăng ký."),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
     // ── Offline co-teach ──────────────────────────────────────────────────────
 
     public static NotificationCommand ClassSessionExpertInvited(
@@ -2016,7 +2036,7 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassSessionExpertInvited,
             NotificationAudience.ForUser(expertUserId),
-            NotificationRoleTemplates.FromDefault(
+            NotificationRoleTemplates.ForExpert(
                 "Lời mời đồng hành buổi học",
                 string.IsNullOrWhiteSpace(sessionTitle)
                     ? "Bạn được mời đồng hành một buổi học của lớp {className} lúc {sessionStartTime}."
@@ -2117,7 +2137,7 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassSessionExpertInvitationWithdrawn,
             NotificationAudience.ForUser(expertUserId),
-            NotificationRoleTemplates.FromDefault(
+            NotificationRoleTemplates.ForExpert(
                 "Lời mời đồng hành đã được thu hồi",
                 string.IsNullOrWhiteSpace(sessionTitle)
                     ? "Lời mời đồng hành buổi học của lớp {className} đã được thu hồi."
@@ -2137,7 +2157,7 @@ public static class NotificationCatalog
                 programName: programName,
                 sessionTitle: sessionTitle));
 
-    public static NotificationCommand ClassSessionExpertRescheduleRequested(
+    public static NotificationCommand ClassSessionExpertInvitationClearedOnReschedule(
         Guid expertUserId,
         Guid invitationId,
         Guid classSessionId,
@@ -2150,13 +2170,13 @@ public static class NotificationCatalog
         string? sessionStartTime = null,
         string? actorName = null)
         => new(
-            NotificationType.ClassSessionExpertRescheduleRequested,
+            NotificationType.ClassSessionExpertClearedOnReschedule,
             NotificationAudience.ForUser(expertUserId),
-            NotificationRoleTemplates.FromDefault(
-                "Yêu cầu đổi lịch buổi đồng hành",
+            NotificationRoleTemplates.ForExpert(
+                "Lời mời đồng hành đã bị hủy",
                 string.IsNullOrWhiteSpace(sessionTitle)
-                    ? "Quản lý đề xuất đổi lịch buổi học của lớp {className} sang {sessionStartTime}. Lịch mới chỉ được áp dụng khi bạn đồng ý."
-                    : "Quản lý đề xuất đổi buổi \"{sessionTitle}\" sang {sessionStartTime}. Lịch mới chỉ được áp dụng khi bạn đồng ý."),
+                    ? "Lời mời đồng hành buổi học của lớp {className} đã bị hủy vì quản lý đổi lịch sang {sessionStartTime}."
+                    : "Lời mời đồng hành buổi \"{sessionTitle}\" của lớp {className} đã bị hủy vì quản lý đổi lịch sang {sessionStartTime}."),
             payload: new NotificationPayload
             {
                 ClassId = classId,
@@ -2173,7 +2193,8 @@ public static class NotificationCatalog
                 sessionTitle: sessionTitle,
                 sessionStartTime: sessionStartTime));
 
-    public static NotificationCommand ClassSessionExpertRescheduleDeclined(
+    public static NotificationCommand ClassSessionExpertAcceptedClearedOnReschedule(
+        Guid expertUserId,
         Guid invitationId,
         Guid classSessionId,
         Guid classId,
@@ -2182,15 +2203,16 @@ public static class NotificationCatalog
         string? className = null,
         string? programName = null,
         string? sessionTitle = null,
+        string? sessionStartTime = null,
         string? actorName = null)
         => new(
-            NotificationType.ClassSessionExpertRescheduleDeclined,
-            NotificationAudience.ForManagers(),
-            NotificationRoleTemplates.FromDefault(
-                "Chuyên gia từ chối đổi lịch",
+            NotificationType.ClassSessionExpertClearedOnReschedule,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.ForExpert(
+                "Liên kết đồng hành đã bị hủy",
                 string.IsNullOrWhiteSpace(sessionTitle)
-                    ? "{actorName} đã từ chối đổi lịch buổi học của lớp {className}. Lịch hiện tại được giữ nguyên."
-                    : "{actorName} đã từ chối đổi lịch buổi \"{sessionTitle}\" của lớp {className}. Lịch hiện tại được giữ nguyên."),
+                    ? "Buổi học của lớp {className} bạn đã nhận đồng hành đã bị hủy liên kết vì quản lý đổi lịch sang {sessionStartTime}. Bạn có thể được mời lại."
+                    : "Buổi \"{sessionTitle}\" của lớp {className} bạn đã nhận đồng hành đã bị hủy liên kết vì quản lý đổi lịch sang {sessionStartTime}. Bạn có thể được mời lại."),
             payload: new NotificationPayload
             {
                 ClassId = classId,
@@ -2204,7 +2226,8 @@ public static class NotificationCatalog
                 actorName: actorName,
                 className: className,
                 programName: programName,
-                sessionTitle: sessionTitle));
+                sessionTitle: sessionTitle,
+                sessionStartTime: sessionStartTime));
 
     public static NotificationCommand ClassSessionExpertFeedbackRequested(
         Guid expertUserId,
@@ -2218,7 +2241,7 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassSessionExpertFeedbackRequested,
             NotificationAudience.ForUser(expertUserId),
-            NotificationRoleTemplates.FromDefault(
+            NotificationRoleTemplates.ForExpert(
                 "Nhắc gửi phản hồi buổi đồng hành",
                 string.IsNullOrWhiteSpace(sessionTitle)
                     ? "Buổi học của lớp {className} đã kết thúc. Hãy gửi nhận xét về cách mentor giảng dạy."
@@ -2269,37 +2292,6 @@ public static class NotificationCatalog
                 programName: programName,
                 sessionTitle: sessionTitle));
 
-    public static NotificationCommand ClassSessionRescheduledForExpert(
-        Guid expertUserId,
-        Guid classSessionId,
-        Guid classId,
-        Guid? programId = null,
-        string? className = null,
-        string? programName = null,
-        string? sessionTitle = null,
-        string? sessionStartTime = null)
-        => new(
-            NotificationType.ClassSessionRescheduled,
-            NotificationAudience.ForUser(expertUserId),
-            NotificationRoleTemplates.FromDefault(
-                "Đã đổi lịch buổi đồng hành",
-                string.IsNullOrWhiteSpace(sessionTitle)
-                    ? "Buổi học của lớp {className} đã được đổi lịch sang {sessionStartTime}."
-                    : "Buổi \"{sessionTitle}\" đã được đổi lịch sang {sessionStartTime}."),
-            payload: new NotificationPayload
-            {
-                ClassId = classId,
-                ClassSessionId = classSessionId,
-                ProgramId = programId
-            }.WithNames(className: className, programName: programName),
-            entityType: "ClassSession",
-            entityId: classSessionId,
-            tokens: NotificationTokenKeys.Create(
-                className: className,
-                programName: programName,
-                sessionTitle: sessionTitle,
-                sessionStartTime: sessionStartTime));
-
     public static NotificationCommand ClassSessionCancelledForExpert(
         Guid expertUserId,
         Guid classSessionId,
@@ -2311,7 +2303,7 @@ public static class NotificationCatalog
         => new(
             NotificationType.ClassSessionCancelled,
             NotificationAudience.ForUser(expertUserId),
-            NotificationRoleTemplates.FromDefault(
+            NotificationRoleTemplates.ForExpert(
                 "Buổi đồng hành đã bị hủy",
                 string.IsNullOrWhiteSpace(sessionTitle)
                     ? "Buổi học của lớp {className} đã bị hủy."
@@ -2333,7 +2325,7 @@ public static class NotificationCatalog
     {
         if (!string.IsNullOrWhiteSpace(programName) && !string.IsNullOrWhiteSpace(frameworkName))
         {
-            return "{actorName} đã gửi chương trình \"{programName}\" dựa trên khung \"{frameworkName}\" của bạn.";
+            return "{actorName} đã gửi chương trình \"{programName}\" dựa trên khung \"{frameworkName}\" để bạn duyệt.";
         }
 
         if (!string.IsNullOrWhiteSpace(programName))
@@ -2343,7 +2335,7 @@ public static class NotificationCatalog
 
         if (!string.IsNullOrWhiteSpace(frameworkName))
         {
-            return "{actorName} đã gửi một chương trình dựa trên khung \"{frameworkName}\" của bạn.";
+            return "{actorName} đã gửi một chương trình dựa trên khung \"{frameworkName}\" để bạn duyệt.";
         }
 
         return "{actorName} đã gửi một chương trình để bạn duyệt.";

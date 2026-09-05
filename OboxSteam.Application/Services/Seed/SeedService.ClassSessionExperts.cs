@@ -115,20 +115,14 @@ public partial class SeedService
     /// <returns>True when this session now has the expert Accepted (created or already present).</returns>
     private async Task<bool> TryEnsureAcceptedCoTeachAsync(ClassSession session, Guid expertId)
     {
-        var active = await _unitOfWork.ClassSessionExperts.FirstOrDefaultAsync(
+        var mine = await _unitOfWork.ClassSessionExperts.FirstOrDefaultAsync(
             e => e.ClassSessionId == session.Id
+                 && e.ExpertId == expertId
                  && !e.IsDeleted
                  && (e.Status == ClassSessionExpertStatus.Invited
                      || e.Status == ClassSessionExpertStatus.Accepted));
-        if (active != null && active.ExpertId != expertId)
-        {
-            _loggerService.LogWarning(
-                "Session {SessionId} already has another expert. Skipping co-teach seed for that slot.",
-                session.Id);
-            return false;
-        }
 
-        if (active == null)
+        if (mine == null)
         {
             await _unitOfWork.ClassSessionExperts.AddAsync(new ClassSessionExpert
             {
@@ -143,10 +137,10 @@ public partial class SeedService
             return true;
         }
 
-        if (active.Status != ClassSessionExpertStatus.Accepted)
+        if (mine.Status != ClassSessionExpertStatus.Accepted)
         {
-            active.Status = ClassSessionExpertStatus.Accepted;
-            await _unitOfWork.ClassSessionExperts.Update(active);
+            mine.Status = ClassSessionExpertStatus.Accepted;
+            await _unitOfWork.ClassSessionExperts.Update(mine);
         }
 
         return true;

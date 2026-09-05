@@ -55,12 +55,13 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
                  && !b.IsDeleted);
         ClassSessionExpertValidator.ValidateExpertOnProgramBoard(board, expert);
 
-        var activeOnSession = await _unitOfWork.ClassSessionExperts.FirstOrDefaultAsync(
+        var existingSameExpert = await _unitOfWork.ClassSessionExperts.FirstOrDefaultAsync(
             e => e.ClassSessionId == session.Id
+                 && e.ExpertId == expert.Id
                  && !e.IsDeleted
                  && (e.Status == ClassSessionExpertStatus.Invited
                      || e.Status == ClassSessionExpertStatus.Accepted));
-        ClassSessionExpertValidator.ValidateNoActiveExpertOnSession(activeOnSession);
+        ClassSessionExpertValidator.ValidateExpertNotAlreadyActiveOnSession(existingSameExpert);
 
         var warning = await ScheduleConflictValidator.BuildExpertOverlapWarningAsync(
             _unitOfWork,
@@ -135,9 +136,10 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
         ClassSessionExpertValidator.ValidatePagination(page, pageSize);
         var expert = await GetCurrentExpertAsync();
 
-        var query = _unitOfWork.ClassSessionExperts
-            .GetQueryable()
-            .Where(e => !e.IsDeleted && e.ExpertId == expert.Id);
+        var query = RestrictToLiveSessions(
+            _unitOfWork.ClassSessionExperts
+                .GetQueryable()
+                .Where(e => !e.IsDeleted && e.ExpertId == expert.Id));
 
         if (status.HasValue)
         {
@@ -170,9 +172,10 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
         ClassSessionExpertValidator.ValidatePagination(page, pageSize);
         await EnsureManagerOrAdminAsync();
 
-        var query = _unitOfWork.ClassSessionExperts
-            .GetQueryable()
-            .Where(e => !e.IsDeleted);
+        var query = RestrictToLiveSessions(
+            _unitOfWork.ClassSessionExperts
+                .GetQueryable()
+                .Where(e => !e.IsDeleted));
 
         if (sessionId.HasValue)
         {
@@ -311,96 +314,6 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
         _logger.LogInformation("[WithdrawAsync] Invitation {InvitationId} withdrawn.", id);
     }
 
-    public async Task<ClassSessionExpertResponseDto> ApproveRescheduleAsync(Guid id)
-    {
-        var expert = await GetCurrentExpertAsync();
-        var invitation = await LoadInvitationAsync(id);
-        ClassSessionExpertValidator.ValidateOwnership(invitation, expert.Id);
-        ClassSessionExpertValidator.ValidateAcceptedForRescheduleDecision(invitation);
-
-        var (session, classEntity, loadedExpert) = await LoadGraphAsync(invitation);
-        ClassSessionValidator.ValidateSessionModifiable(session);
-        ClassSessionExpertValidator.ValidatePendingReschedule(session);
-
-        var proposedStart = session.ProposedStartTime!.Value;
-        var proposedEnd = session.ProposedEndTime!.Value;
-
-        ClassSessionValidator.ValidateSessionWithinClassDateRange(classEntity, proposedStart, proposedEnd);
-
-        if (classEntity.MentorId.HasValue && session.SessionKind != SessionKind.AssignmentWindow)
-        {
-            await MentorScopeValidator.ValidateMentorSessionNoOverlapAsync(
-                _unitOfWork,
-                classEntity.MentorId.Value,
-                proposedStart,
-                proposedEnd,
-                excludeSessionId: session.Id);
-        }
-
-        await ScheduleConflictValidator.ValidateExpertSessionNoOverlapAsync(
-            _unitOfWork,
-            expert.Id,
-            proposedStart,
-            proposedEnd,
-            excludeSessionId: session.Id);
-
-        session.StartTime = proposedStart;
-        session.EndTime = proposedEnd;
-        session.ProposedStartTime = null;
-        session.ProposedEndTime = null;
-
-        await _unitOfWork.ClassSessions.Update(session);
-        await _unitOfWork.SaveChangesAsync();
-
-        await _notificationPublisher.PublishAsync(
-            NotificationCatalog.ClassSessionRescheduled(
-                classEntity.Id,
-                session.Id,
-                classEntity.ProgramId,
-                classEntity.Name));
-
-        _logger.LogInformation(
-            "[ApproveRescheduleAsync] Invitation {InvitationId} approved pending reschedule for session {SessionId}.",
-            id,
-            session.Id);
-
-        return await MapResponseAsync(invitation, session, classEntity, loadedExpert);
-    }
-
-    public async Task<ClassSessionExpertResponseDto> DeclineRescheduleAsync(Guid id)
-    {
-        var expert = await GetCurrentExpertAsync();
-        var invitation = await LoadInvitationAsync(id);
-        ClassSessionExpertValidator.ValidateOwnership(invitation, expert.Id);
-        ClassSessionExpertValidator.ValidateAcceptedForRescheduleDecision(invitation);
-
-        var (session, classEntity, loadedExpert) = await LoadGraphAsync(invitation);
-        ClassSessionExpertValidator.ValidatePendingReschedule(session);
-
-        session.ProposedStartTime = null;
-        session.ProposedEndTime = null;
-        await _unitOfWork.ClassSessions.Update(session);
-        await _unitOfWork.SaveChangesAsync();
-
-        await _notificationPublisher.PublishAsync(
-            NotificationCatalog.ClassSessionExpertRescheduleDeclined(
-                invitation.Id,
-                session.Id,
-                classEntity.Id,
-                classEntity.ProgramId,
-                expert.UserId,
-                classEntity.Name,
-                programName: null,
-                session.Title,
-                loadedExpert.FullName));
-
-        _logger.LogInformation(
-            "[DeclineRescheduleAsync] Invitation {InvitationId} declined pending reschedule.",
-            id);
-
-        return await MapResponseAsync(invitation, session, classEntity, loadedExpert);
-    }
-
     public async Task<ClassSessionExpertResponseDto> SubmitFeedbackAsync(
         Guid id,
         SubmitClassSessionExpertFeedbackDto request)
@@ -435,6 +348,15 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
         _logger.LogInformation("[SubmitFeedbackAsync] Invitation {InvitationId} mentor feedback saved.", id);
 
         return await MapResponseAsync(invitation, session, classEntity, loadedExpert);
+    }
+
+    private IQueryable<ClassSessionExpert> RestrictToLiveSessions(IQueryable<ClassSessionExpert> query)
+    {
+        var liveSessionIds = _unitOfWork.ClassSessions
+            .GetQueryable()
+            .Where(s => !s.IsDeleted)
+            .Select(s => s.Id);
+        return query.Where(e => liveSessionIds.Contains(e.ClassSessionId));
     }
 
     private async Task<ClassSessionExpert> LoadInvitationAsync(Guid id)
@@ -486,8 +408,6 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
             SessionStatus = session.Status,
             SessionStartTime = session.StartTime,
             SessionEndTime = session.EndTime,
-            ProposedStartTime = session.ProposedStartTime,
-            ProposedEndTime = session.ProposedEndTime,
             ScheduleConflictWarning = warning,
             MentorFeedback = invitation.MentorFeedback,
             MentorFeedbackRating = invitation.MentorFeedbackRating,

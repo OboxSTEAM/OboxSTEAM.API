@@ -18,6 +18,6 @@ public class CreateProgramRequestDto
     public ProgramStatus? Status { get; set; }
     public decimal? Price { get; set; }
 
-    /// <summary>Optional expert blueprint. Null skips expert review on submit.</summary>
+    /// <summary>Optional expert blueprint for pre-check and rubric. Null is free-form review.</summary>
     public Guid? FrameworkId { get; set; }
 }

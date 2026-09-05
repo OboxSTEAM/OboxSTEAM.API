@@ -18,13 +18,17 @@ public class UpdateProgramFrameworkRequest
 
     public int? MinLiveSessions { get; set; }
 
-    public bool? RequireFinalAssessment { get; set; }
+    /// <summary>
+    /// When true, submit-review requires ≥1 ResearchMilestone with IsCapstone.
+    /// Null or false is not enforced.
+    /// </summary>
+    public bool? RequireCapstoneResearchMilestone { get; set; }
 
     /// <summary>
-    /// When true, clears <c>RequireFinalAssessment</c> (null = not enforced).
-    /// Ignored when <see cref="RequireFinalAssessment"/> is set.
+    /// When true, clears <c>RequireCapstoneResearchMilestone</c> (null = not enforced).
+    /// Ignored when <see cref="RequireCapstoneResearchMilestone"/> is set.
     /// </summary>
-    public bool? ClearRequireFinalAssessment { get; set; }
+    public bool? ClearRequireCapstoneResearchMilestone { get; set; }
 
     /// <summary>
     /// When true, clears <c>MinModules</c>. Ignored when <see cref="MinModules"/> is set.

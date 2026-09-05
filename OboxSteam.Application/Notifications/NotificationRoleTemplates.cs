@@ -18,18 +18,22 @@ public sealed class NotificationRoleTemplates
 
     public NotificationText? Manager { get; }
 
+    public NotificationText? Expert { get; }
+
     public NotificationRoleTemplates(
         NotificationText @default,
         NotificationText? student = null,
         NotificationText? parent = null,
         NotificationText? mentor = null,
-        NotificationText? manager = null)
+        NotificationText? manager = null,
+        NotificationText? expert = null)
     {
         Default = @default ?? throw new ArgumentNullException(nameof(@default));
         Student = student;
         Parent = parent;
         Mentor = mentor;
         Manager = manager;
+        Expert = expert;
     }
 
     public static NotificationRoleTemplates FromDefault(string title, string? body)
@@ -64,12 +68,19 @@ public sealed class NotificationRoleTemplates
             mentor: new NotificationText(title, mentorBody ?? studentBody));
     }
 
+    public static NotificationRoleTemplates ForExpert(string title, string expertBody)
+    {
+        var expert = new NotificationText(title, expertBody);
+        return new(expert, expert: expert);
+    }
+
     public NotificationText Resolve(RoleType role) => role switch
     {
         RoleType.Student => Student ?? Default,
         RoleType.Parent => Parent ?? Default,
         RoleType.Mentor => Mentor ?? Default,
         RoleType.Manager or RoleType.Admin => Manager ?? Default,
+        RoleType.Expert => Expert ?? Default,
         _ => Default
     };
 }

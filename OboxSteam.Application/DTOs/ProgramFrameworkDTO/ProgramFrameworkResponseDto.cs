@@ -13,10 +13,15 @@ public class ProgramFrameworkResponseDto
     public int? MinModules { get; set; }
     public int? MinOfflineSessions { get; set; }
     public int? MinLiveSessions { get; set; }
-    public bool? RequireFinalAssessment { get; set; }
+    /// <summary>
+    /// When true, submit-review requires ≥1 ResearchMilestone with IsCapstone.
+    /// Null or false is not enforced.
+    /// </summary>
+    public bool? RequireCapstoneResearchMilestone { get; set; }
 
     /// <summary>
-    /// Always true: attaching this framework requires the owning expert to review.
+    /// Always true: submit still requires expert review (framework owner when
+    /// attached; program-board experts when there is no framework).
     /// </summary>
     public bool RequiresExpertReview { get; set; }
 

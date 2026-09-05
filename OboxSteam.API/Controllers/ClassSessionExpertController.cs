@@ -24,7 +24,7 @@ public class ClassSessionExpertController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Invite an expert to co-teach an Offline session",
-        Description = "One Invited or Accepted expert per session. The expert must be on the class program board.")]
+        Description = "Multiple Invited or Accepted experts are allowed. The expert must be on the class program board. The same expert cannot be invited twice while Invited or Accepted.")]
     [ProducesResponseType(typeof(ApiResult<ClassSessionExpertResponseDto>), 201)]
     public async Task<IActionResult> Invite([FromBody] InviteClassSessionExpertDto dto)
     {
@@ -118,30 +118,6 @@ public class ClassSessionExpertController : ControllerBase
     {
         await _service.WithdrawAsync(id);
         return Ok(ApiResult<bool>.Success(true, "200", "Invitation withdrawn successfully."));
-    }
-
-    [HttpPost("{id:guid}/approve-reschedule")]
-    [Authorize(Roles = "Expert")]
-    [SwaggerOperation(Summary = "Approve a pending session reschedule")]
-    [ProducesResponseType(typeof(ApiResult<ClassSessionExpertResponseDto>), 200)]
-    public async Task<IActionResult> ApproveReschedule([FromRoute] Guid id)
-    {
-        var result = await _service.ApproveRescheduleAsync(id);
-        return Ok(ApiResult<ClassSessionExpertResponseDto>.Success(
-            result, "200", "Reschedule approved successfully."));
-    }
-
-    [HttpPost("{id:guid}/decline-reschedule")]
-    [Authorize(Roles = "Expert")]
-    [SwaggerOperation(
-        Summary = "Decline a pending session reschedule",
-        Description = "Keeps the committed session time and the expert Accepted.")]
-    [ProducesResponseType(typeof(ApiResult<ClassSessionExpertResponseDto>), 200)]
-    public async Task<IActionResult> DeclineReschedule([FromRoute] Guid id)
-    {
-        var result = await _service.DeclineRescheduleAsync(id);
-        return Ok(ApiResult<ClassSessionExpertResponseDto>.Success(
-            result, "200", "Reschedule declined successfully."));
     }
 
     [HttpPut("{id:guid}/feedback")]

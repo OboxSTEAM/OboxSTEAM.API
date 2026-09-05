@@ -19,7 +19,11 @@ public class CreateProgramFrameworkRequest
 
     public int? MinLiveSessions { get; set; }
 
-    public bool? RequireFinalAssessment { get; set; }
+    /// <summary>
+    /// When true, submit-review requires ≥1 ResearchMilestone with IsCapstone.
+    /// Null or false is not enforced.
+    /// </summary>
+    public bool? RequireCapstoneResearchMilestone { get; set; }
 
     public List<FrameworkRubricCriterionRequest>? Criteria { get; set; }
 }

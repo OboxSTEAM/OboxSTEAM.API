@@ -19,8 +19,6 @@ public sealed class ClassSessionExpertResponseDto
     public ClassSessionStatus SessionStatus { get; set; }
     public DateTime SessionStartTime { get; set; }
     public DateTime SessionEndTime { get; set; }
-    public DateTime? ProposedStartTime { get; set; }
-    public DateTime? ProposedEndTime { get; set; }
     public string? ScheduleConflictWarning { get; set; }
     public string? MentorFeedback { get; set; }
     public int? MentorFeedbackRating { get; set; }

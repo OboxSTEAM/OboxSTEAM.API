@@ -10,6 +10,8 @@ public partial class SeedService
     internal const string SeedFrameworkCsharpName = "Lập trình C#";
     internal const string SeedFrameworkOpenName = "Open family (no rubric)";
     internal const string SeedFrameworkOtherExpertName = "STEAM curriculum (Minh)";
+    internal const string SeedFrameworkQaDraftName = "QA Robotics (Draft)";
+    internal const string SeedFrameworkQaPendingName = "QA Robotics (PendingReview)";
     internal const string SeedFrameworkEmptyProgramCode = "PRG-FW-EMPTY";
     internal const string SeedFrameworkPendingProgramCode = "PRG-FW-PENDING";
     internal const string SeedFrameworkEditableProgramCode = "PRG-FW-EDIT";
@@ -82,7 +84,33 @@ public partial class SeedService
             "Hands-on family: at least one Offline lab. Rubric is used at expert review.",
             ProgramCategory.Technology,
             minOfflineSessions: 1,
-            requireFinalAssessment: null,
+            requireCapstoneResearchMilestone: null,
+            criteria:
+            [
+                ("Safety and workspace setup", "Students can set up and reset the kit safely.", 10, 1),
+                ("Hands-on build quality", "Prototype matches the session goal.", 10, 2),
+            ]);
+
+        var qaDraft = await EnsureFrameworkAsync(
+            expert001.Id,
+            SeedFrameworkQaDraftName,
+            "Copy of Robotics rules for the Draft QA program. One framework per program.",
+            ProgramCategory.Technology,
+            minOfflineSessions: 1,
+            requireCapstoneResearchMilestone: null,
+            criteria:
+            [
+                ("Safety and workspace setup", "Students can set up and reset the kit safely.", 10, 1),
+                ("Hands-on build quality", "Prototype matches the session goal.", 10, 2),
+            ]);
+
+        var qaPending = await EnsureFrameworkAsync(
+            expert001.Id,
+            SeedFrameworkQaPendingName,
+            "Copy of Robotics rules for the PendingReview QA program. One framework per program.",
+            ProgramCategory.Technology,
+            minOfflineSessions: 1,
+            requireCapstoneResearchMilestone: null,
             criteria:
             [
                 ("Safety and workspace setup", "Students can set up and reset the kit safely.", 10, 1),
@@ -95,7 +123,7 @@ public partial class SeedService
             "Live coaching plus a capstone research milestone (IsCapstone).",
             ProgramCategory.Technology,
             minLiveSessions: 1,
-            requireFinalAssessment: true,
+            requireCapstoneResearchMilestone: true,
             criteria:
             [
                 ("Live coaching quality", "LiveOnline sessions cover the learning outcomes.", 10, 1),
@@ -105,7 +133,7 @@ public partial class SeedService
         var openFamily = await EnsureFrameworkAsync(
             expert001.Id,
             SeedFrameworkOpenName,
-            "No numeric rules and no rubric — attaching this frame still requires the owning expert to approve.",
+            "No numeric rules and no rubric — board experts still review after submit.",
             ProgramCategory.Technology,
             criteria: null);
 
@@ -130,9 +158,9 @@ public partial class SeedService
             SeedFrameworkEditableProgramCode,
             "QA — Draft, Robotics, ready to submit",
             "Has one Offline lab so Robotics MinOfflineSessions pre-check passes. Manager submit-review.",
-            robotics.Id,
+            qaDraft.Id,
             ProgramStatus.Draft);
-        await EnsureQaProgramAsync(
+        var emptyProgram = await EnsureQaProgramAsync(
             SeedFrameworkEmptyProgramCode,
             "QA — Draft, C# framework, pre-check fail",
             "No LiveOnline and no capstone. Submit-review must 400.",
@@ -141,35 +169,42 @@ public partial class SeedService
         var pendingProgram = await EnsureQaProgramAsync(
             SeedFrameworkPendingProgramCode,
             "QA — PendingReview, Robotics",
-            "Already in expert queue. EXP-001 approve-review (2 scores) or request-changes.",
-            robotics.Id,
+            "Already in expert queue. EXP-001 (framework owner) approve-review (2 scores) or request-changes. Board members may view only.",
+            qaPending.Id,
             ProgramStatus.PendingReview);
-        await EnsureQaProgramAsync(
+        var noFrameworkProgram = await EnsureQaProgramAsync(
             SeedFrameworkNoFrameworkProgramCode,
             "QA — Draft, no framework",
-            "Submit-review skips expert and goes to Approved. Manager then publish.",
+            "Submit-review still goes to PendingReview. No framework: EXP-001 on the board reviews free-form (any board expert with a login may decide).",
             frameworkId: null,
             status: ProgramStatus.Draft);
-        await EnsureQaProgramAsync(
+        var openProgram = await EnsureQaProgramAsync(
             SeedFrameworkOpenProgramCode,
             "QA — Draft, Open family (no rubric)",
-            "Submit-review goes to PendingReview. EXP-001 approve-review with no scores.",
+            "Submit-review goes to PendingReview. EXP-001 (framework owner) approve-review with no scores. Board members may view only.",
             openFamily.Id,
             ProgramStatus.Draft);
 
-        if (expert002Framework != null)
+        if (expert002Framework != null && expert002 != null)
         {
             var exp2Program = await EnsureQaProgramAsync(
                 SeedFrameworkExp2PendingProgramCode,
                 "QA — PendingReview, EXP-002 framework",
-                "Only expert2@oboxsteam.com should see this on the review queue.",
+                "Owner expert2@oboxsteam.com decides. EXP-001 does not own this framework and is not on this board, so they should not see this queue item.",
                 expert002Framework.Id,
                 ProgramStatus.PendingReview);
             await EnsureQaTheoryModuleAsync(exp2Program, "EXP2");
+            await EnsureExpertOnProgramBoardAsync(expert002, exp2Program.Id, "Reviewer");
         }
 
         await EnsureQaOfflineLabAsync(editProgram, "EDIT");
         await EnsureQaOfflineLabAsync(pendingProgram, "PEND");
+
+        await EnsureExpertOnProgramBoardAsync(expert001, editProgram.Id, "Reviewer");
+        await EnsureExpertOnProgramBoardAsync(expert001, emptyProgram.Id, "Reviewer");
+        await EnsureExpertOnProgramBoardAsync(expert001, pendingProgram.Id, "Reviewer");
+        await EnsureExpertOnProgramBoardAsync(expert001, noFrameworkProgram.Id, "Reviewer");
+        await EnsureExpertOnProgramBoardAsync(expert001, openProgram.Id, "Reviewer");
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation("Finished seed program frameworks");
@@ -183,7 +218,7 @@ public partial class SeedService
         int? minModules = null,
         int? minOfflineSessions = null,
         int? minLiveSessions = null,
-        bool? requireFinalAssessment = null,
+        bool? requireCapstoneResearchMilestone = null,
         (string Name, string Description, int MaxScore, int DisplayOrder)[]? criteria = null)
     {
         var existing = await _unitOfWork.ProgramFrameworks.FirstOrDefaultAsync(
@@ -204,7 +239,7 @@ public partial class SeedService
             MinModules = minModules,
             MinOfflineSessions = minOfflineSessions,
             MinLiveSessions = minLiveSessions,
-            RequireFinalAssessment = requireFinalAssessment,
+            RequireCapstoneResearchMilestone = requireCapstoneResearchMilestone,
             CreatedAt = _seedNow,
             CreatedBy = Guid.Empty,
             IsDeleted = false,

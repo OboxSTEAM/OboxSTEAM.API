@@ -84,6 +84,16 @@ public sealed class NotificationTemplateEngineTests
 
         Assert.Equal("Default body", templates.Resolve(RoleType.Parent).Body);
         Assert.Equal("Default body", templates.Resolve(RoleType.Admin).Body);
+        Assert.Equal("Default body", templates.Resolve(RoleType.Expert).Body);
+    }
+
+    [Fact]
+    public void RoleTemplates_ExpertVariant_ResolvesExplicitCopy()
+    {
+        var templates = NotificationRoleTemplates.ForExpert("Title", "Expert body");
+
+        Assert.Equal("Expert body", templates.Resolve(RoleType.Expert).Body);
+        Assert.Equal("Expert body", templates.Resolve(RoleType.Student).Body);
     }
 
     [Fact]

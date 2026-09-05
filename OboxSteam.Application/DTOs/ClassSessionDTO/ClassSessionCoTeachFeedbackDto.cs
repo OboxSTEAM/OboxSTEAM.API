@@ -5,6 +5,12 @@ namespace OboxSteam.Application.DTOs.ClassSessionDTO;
 /// </summary>
 public sealed class ClassSessionCoTeachFeedbackDto
 {
+    public Guid InvitationId { get; set; }
+
+    public Guid ExpertId { get; set; }
+
+    public string? ExpertName { get; set; }
+
     public string Comment { get; set; } = null!;
     public int Rating { get; set; }
     public DateTime FeedbackAt { get; set; }

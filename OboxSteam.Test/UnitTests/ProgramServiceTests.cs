@@ -613,6 +613,32 @@ public sealed class ProgramServiceTests
     }
 
     [Fact]
+    public async Task Create_WithFrameworkAlreadyAssigned_Conflict()
+    {
+        var frameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        _db.ProgramFrameworks.Seed(new ProgramFramework
+        {
+            Id = frameworkId,
+            ExpertId = _expertId,
+            Name = "Robotics",
+            Category = ProgramCategory.Technology,
+            IsDeleted = false,
+        });
+        SeedProgram();
+        _db.Programs.Items.Single().FrameworkId = frameworkId;
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(
+            () => sut.CreateProgramAsync(new CreateProgramRequestDto
+            {
+                Code = "PRG-FW-2",
+                Name = "Second",
+                Category = ProgramCategory.Technology,
+                FrameworkId = frameworkId,
+            }));
+    }
+
+    [Fact]
     public async Task Create_WithUnknownFrameworkId_NotFound()
     {
         var sut = CreateSut();

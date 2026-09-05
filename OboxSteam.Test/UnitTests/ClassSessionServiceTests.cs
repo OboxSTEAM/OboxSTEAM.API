@@ -510,22 +510,18 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
-    public async Task GetWithStudents_ReturnsCommittedTimes_WhenReschedulePending()
+    public async Task GetWithStudents_ReturnsSessionTimes()
     {
         SeedCurriculum();
         SeedClass();
         var session = SeedSession(status: ClassSessionStatus.Scheduled, kind: SessionKind.Offline);
-        var committedStart = session.StartTime;
-        var committedEnd = session.EndTime;
-        session.ProposedStartTime = committedStart.AddDays(3);
-        session.ProposedEndTime = committedStart.AddDays(3).AddHours(2);
         SeedStudentRoster();
         var sut = CreateSut(_studentId);
 
         var result = await sut.GetClassSessionWithStudentsAsync(_sessionId);
 
-        Assert.Equal(committedStart, result.StartTime);
-        Assert.Equal(committedEnd, result.EndTime);
+        Assert.Equal(session.StartTime, result.StartTime);
+        Assert.Equal(session.EndTime, result.EndTime);
     }
 
     [Fact]
@@ -1316,6 +1312,99 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
+    public async Task Update_StatusToCancelled_UnlinksInvitedAndAccepted_KeepsDeclined()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(status: ClassSessionStatus.Scheduled, kind: SessionKind.Offline);
+        SeedAcceptedExpert();
+        _db.ClassSessionExperts.Seed(new ClassSessionExpert
+        {
+            Id = Guid.Parse("1a1a1a1a-1a1a-1a1a-1a1a-1a1a1a1a1a1a"),
+            ClassSessionId = _sessionId,
+            ExpertId = Guid.Parse("17171717-1717-1717-1717-171717171717"),
+            Status = ClassSessionExpertStatus.Declined,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            Status = ClassSessionStatus.Cancelled,
+        });
+
+        var accepted = _db.ClassSessionExperts.Items.Single(e => e.Status == ClassSessionExpertStatus.Accepted);
+        var declined = _db.ClassSessionExperts.Items.Single(e => e.Status == ClassSessionExpertStatus.Declined);
+        Assert.True(accepted.IsDeleted);
+        Assert.False(declined.IsDeleted);
+        _notificationPublisher.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Any(c => c.Type == NotificationType.ClassSessionCancelled)
+                    && commands.Any(c =>
+                        c.Type == NotificationType.ClassSessionCancelled
+                        && c.Audience.Kind == NotificationAudienceKind.User)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_StartTimeChange_ClearsReminderSentAt()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var session = SeedSession(status: ClassSessionStatus.Scheduled);
+        session.ReminderSentAt = _now.AddHours(-1);
+        var sut = CreateSut();
+
+        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            StartTime = _now.AddDays(5),
+        });
+
+        Assert.Null(session.ReminderSentAt);
+    }
+
+    [Fact]
+    public async Task Update_DescriptionOnly_KeepsReminderSentAt()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var sentAt = _now.AddHours(-1);
+        var session = SeedSession(status: ClassSessionStatus.Scheduled);
+        session.ReminderSentAt = sentAt;
+        var sut = CreateSut();
+
+        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            Description = "Lab notes",
+        });
+
+        Assert.Equal(sentAt, session.ReminderSentAt);
+    }
+
+    [Fact]
+    public async Task Update_AssignmentEndTimeOnly_KeepsReminderSentAt()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var sentAt = _now.AddHours(-1);
+        var session = SeedSession(status: ClassSessionStatus.Scheduled, activityId: null);
+        session.ActivityId = null;
+        session.AssignmentId = _assignmentId;
+        session.SessionKind = SessionKind.AssignmentWindow;
+        session.ReminderSentAt = sentAt;
+        var sut = CreateSut();
+
+        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            EndTime = session.StartTime.AddHours(4),
+        });
+
+        Assert.Equal(sentAt, session.ReminderSentAt);
+    }
+
+    [Fact]
     public async Task Update_TimeChange_PublishesRescheduled()
     {
         SeedCurriculum();
@@ -1412,6 +1501,28 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
+    public async Task Delete_UnlinksAcceptedCoTeach_AndNotifiesExpert()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(kind: SessionKind.Offline);
+        SeedAcceptedExpert();
+        var sut = CreateSut();
+
+        await sut.DeleteClassSessionAsync(_sessionId);
+
+        Assert.True(_db.ClassSessionExperts.Items.Single().IsDeleted);
+        _notificationPublisher.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Count(c =>
+                        c.Type == NotificationType.ClassSessionCancelled
+                        && c.Audience.Kind == NotificationAudienceKind.User) == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task Delete_ReturnsFalse_WhenMissingOrAlreadyDeleted()
     {
         SeedClass();
@@ -1449,7 +1560,7 @@ public sealed class ClassSessionServiceTests
     }
 
     [Fact]
-    public async Task Update_AcceptedExpert_StoresPendingReschedule_DoesNotMoveCommittedTime()
+    public async Task Update_AcceptedExpert_AppliesTime_AndClearsCoTeach()
     {
         SeedCurriculum();
         SeedClass();
@@ -1460,7 +1571,6 @@ public sealed class ClassSessionServiceTests
             endTime: _now.AddDays(1).AddHours(2));
         SeedAcceptedExpert();
         var sut = CreateSut();
-        var originalStart = _db.ClassSessions.Items.Single(s => s.Id == _sessionId).StartTime;
         var newStart = _now.AddDays(5);
 
         var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
@@ -1468,20 +1578,20 @@ public sealed class ClassSessionServiceTests
             StartTime = newStart,
         });
 
-        Assert.Equal(originalStart, result.StartTime);
-        Assert.Equal(newStart, result.ProposedStartTime);
-        Assert.Equal(newStart.AddMinutes(120), result.ProposedEndTime);
+        Assert.Equal(newStart, result.StartTime);
+        Assert.True(_db.ClassSessionExperts.Items.Single().IsDeleted);
+        Assert.False(result.HasAcceptedExpert);
         _notificationPublisher.Verify(
             n => n.PublishManyAsync(
                 It.Is<IReadOnlyList<NotificationCommand>>(commands =>
-                    commands.Any(c => c.Type == NotificationType.ClassSessionExpertRescheduleRequested)
-                    && commands.All(c => c.Type != NotificationType.ClassSessionRescheduled)),
+                    commands.Any(c => c.Type == NotificationType.ClassSessionRescheduled)
+                    && commands.Any(c => c.Type == NotificationType.ClassSessionExpertClearedOnReschedule)),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
     [Fact]
-    public async Task Update_InvitedExpert_AppliesRescheduleImmediately()
+    public async Task Update_InvitedExpert_AppliesTime_AndClearsInvite()
     {
         SeedCurriculum();
         SeedClass();
@@ -1500,41 +1610,79 @@ public sealed class ClassSessionServiceTests
         });
 
         Assert.Equal(newStart, result.StartTime);
-        Assert.Null(result.ProposedStartTime);
+        Assert.True(_db.ClassSessionExperts.Items.Single().IsDeleted);
         _notificationPublisher.Verify(
             n => n.PublishManyAsync(
                 It.Is<IReadOnlyList<NotificationCommand>>(commands =>
-                    commands.Any(c => c.Type == NotificationType.ClassSessionRescheduled)),
+                    commands.Any(c => c.Type == NotificationType.ClassSessionRescheduled)
+                    && commands.Any(c => c.Type == NotificationType.ClassSessionExpertClearedOnReschedule)),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
     [Fact]
-    public async Task Update_AcceptedExpert_ReplacesPendingProposal()
+    public async Task Update_DescriptionOnly_KeepsAcceptedCoTeach()
     {
         SeedCurriculum();
         SeedClass();
-        var session = SeedSession(
+        SeedSession(status: ClassSessionStatus.Scheduled, kind: SessionKind.Offline);
+        SeedAcceptedExpert();
+        var sut = CreateSut();
+
+        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            Description = "Lab notes",
+        });
+
+        Assert.Equal("Lab notes", result.Description);
+        Assert.False(_db.ClassSessionExperts.Items.Single().IsDeleted);
+        Assert.True(result.HasAcceptedExpert);
+    }
+
+    [Fact]
+    public async Task Update_DeclinedExpert_KeptWhenTimeChanges()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(
             status: ClassSessionStatus.Scheduled,
             kind: SessionKind.Offline,
             startTime: _now.AddDays(1),
             endTime: _now.AddDays(1).AddHours(2));
-        SeedAcceptedExpert();
-        var firstStart = _now.AddDays(5);
-        var secondStart = _now.AddDays(8);
+        SeedCoTeach(ClassSessionExpertStatus.Declined);
         var sut = CreateSut();
 
-        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto { StartTime = firstStart });
-        var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto { StartTime = secondStart });
+        await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+        {
+            StartTime = _now.AddDays(5),
+        });
 
-        Assert.Equal(session.StartTime, result.StartTime);
-        Assert.Equal(secondStart, result.ProposedStartTime);
+        Assert.False(_db.ClassSessionExperts.Items.Single().IsDeleted);
         _notificationPublisher.Verify(
             n => n.PublishManyAsync(
                 It.Is<IReadOnlyList<NotificationCommand>>(commands =>
-                    commands.Any(c => c.Type == NotificationType.ClassSessionExpertRescheduleRequested)),
+                    commands.All(c => c.Type != NotificationType.ClassSessionExpertClearedOnReschedule)),
                 It.IsAny<CancellationToken>()),
-            Times.Exactly(2));
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_InProgress_ThrowsWhenTimeChanges()
+    {
+        SeedCurriculum();
+        SeedClass();
+        SeedSession(
+            status: ClassSessionStatus.InProgress,
+            kind: SessionKind.Offline,
+            startTime: _now.AddHours(-1),
+            endTime: _now.AddHours(1));
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+            {
+                StartTime = _now.AddDays(1),
+            }));
     }
 
     private void SeedAcceptedExpert(bool withFeedback = false)
