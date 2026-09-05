@@ -23,7 +23,7 @@ Represents a sellable STEAM track (e.g. robotics, coding). Key fields: `Code`,
 `Name`, `Category`, `Level`, `Price`, `SkillsGained`, `Rating`, `Status`.
 
 `ProgramStatus`: **Draft** (manager is authoring; not open for registration),
-**PendingReview** (submitted to the owning expert), **Approved** (ready for
+**PendingReview** (submitted to the deciding expert), **Approved** (ready for
 manager publish), **Active** (catalog + purchase/enroll allowed),
 **Inactive** (stopped; no new payment or pending enrollment).
 
@@ -34,23 +34,31 @@ creation, opening enrollment, and starting a class still require **Active**.
 
 Lifecycle endpoints (Manager/Admin unless noted):
 
-- `POST /api/programs/{id}/submit-review` — Draft only. Runs
-  `ProgramFrameworkValidator.ValidateForSubmitAsync`. Attached framework →
-  `PendingReview` and `CurriculumReviewSubmitted` to the framework-owning
-  expert; no framework → `Approved` (skip expert, still publish, no review
-  notification).
-- `POST /api/programs/{id}/withdraw-review` — `PendingReview` → `Draft`.
-- `POST /api/programs/{id}/publish` — `Approved` → `Active`.
+- `POST /api/programs/{id}/submit-review` — Draft only. With `FrameworkId`:
+  the framework owner must have a login; notifies that owner
+  (`CurriculumReviewSubmitted`). Without a framework: requires ≥1
+  `ProgramBoard` expert with a login and notifies those board experts.
+  Runs `ProgramFrameworkValidator.ValidateForSubmitAsync` when `FrameworkId`
+  is set. Always `PendingReview`. No framework is free-form board review
+  (comment; no scores).
+- `POST /api/programs/{id}/withdraw-review` — `PendingReview` or `Approved`
+  → `Draft`.
+- `POST /api/programs/{id}/publish` — `Approved` → `Active`. Notifies
+  `ForManagers` (`CurriculumReviewPublished`).
 - `GET /api/programs/review-queue` — Expert sees `PendingReview` programs on
-  their own frameworks; Manager/Admin see all pending.
-- `GET /api/programs/{id}/curriculum-reviews` — decision history.
-- `POST /api/programs/{id}/approve-review` — owning Expert only;
-  `PendingReview` → `Approved`. Notifies `ForManagers`
+  their `ProgramBoard` **or** whose attached framework they own;
+  Manager/Admin see all pending. Board members may view a framework program
+  without being able to decide it.
+- `GET /api/programs/{id}/curriculum-reviews` — decision history (framework
+  owner, board experts, and Manager/Admin).
+- `POST /api/programs/{id}/approve-review` — with a framework: only the
+  framework owner; without a framework: any one login Expert on
+  `ProgramBoard`. `PendingReview` → `Approved`. Notifies `ForManagers`
   (`CurriculumReviewApproved`). Payload `programId` is the deeplink.
-- `POST /api/programs/{id}/request-changes` — owning Expert only;
-  `PendingReview` → `Draft`. `comment` is required. Notifies `ForManagers`
-  (`CurriculumReviewChangesRequested`); inbox body includes the expert
-  comment; payload `programId` is the deeplink.
+- `POST /api/programs/{id}/request-changes` — same actor as approve;
+  `PendingReview` → `Draft`. `comment` is required. Notifies
+  `ForManagers` (`CurriculumReviewChangesRequested`); inbox body includes the
+  expert comment; payload `programId` is the deeplink.
 
 Curriculum structure (and program metadata update/delete) is locked while
 `PendingReview` or `Approved`. After `ChangesRequested` the program is `Draft`
@@ -119,9 +127,25 @@ join links live on `MeetingUrl` (separate from free-text `Location`).
 `SessionAttendance` records attendance status per student.
 `ClassSessionExpert` stores a co-teach invitation (`Invited` / `Accepted` /
 `Declined`) and private mentor feedback after the session is completed.
-Students must not see feedback fields. **One active expert per session**
-(`Invited` or `Accepted`). After `Declined` or manager withdraw, another
-expert may be invited.
+Students must not see feedback fields. Multiple Invited or Accepted experts
+are allowed on one session. The same expert cannot hold two active invites
+on the same session. After `Declined` or manager withdraw, that expert (or
+another) may be invited again. Changing `StartTime` or `EndTime` applies
+immediately, then soft-deletes every `Invited` and `Accepted` co-teach row
+and notifies those experts (`ClassSessionExpertClearedOnReschedule`).
+`Declined` rows stay. Title, location, and other non-time edits do not
+touch co-teach links. Time changes are blocked while the session is
+`InProgress` (`400`). `Completed` and `Cancelled` sessions cannot be
+modified at all. Manager may invite experts again after a time change.
+Deleting a session, or moving it to `Cancelled`, also soft-deletes every
+`Invited` and `Accepted` row and notifies those experts
+(`ClassSessionCancelled`). Deleting the class (Draft / ReadyForMentor / Open
+with no students) does the same for every remaining session. `GET /mine`
+and the manager list omit invitations whose session is soft-deleted.
+Removing an expert from `ProgramBoard` (or replacing their program list, or
+deleting the expert) soft-deletes that expert's `Invited` and `Accepted`
+rows on the program's sessions (`ClassSessionExpertInvitationWithdrawn`).
+`Declined` rows stay.
 
 Co-teach API (`/api/class-session-experts`):
 
@@ -134,13 +158,6 @@ Co-teach API (`/api/class-session-experts`):
   session.
 - `POST /{id}/withdraw` — Manager/Admin, **Invited only**. Accepted cannot be
   withdrawn.
-- `POST /{id}/approve-reschedule` / `POST /{id}/decline-reschedule` — owning
-  Accepted expert. Changing `StartTime` on a session with an Accepted expert
-  does **not** move the committed window; it stores `ProposedStartTime` /
-  `ProposedEndTime` and notifies the expert. Roster `ClassSessionRescheduled`
-  fires only after approve. Decline keeps the old time and Accepted status.
-  A later manager time change replaces the pending proposal and re-notifies.
-  Invited-only sessions still reschedule immediately (plus notify the expert).
 - `PUT /{id}/feedback` — owning Accepted expert, session **Completed**. Upserts
   one class-level overview (`MentorFeedback` + rating 1–5). Declined experts and
   `Cancelled` sessions cannot submit. Feedback is private: Expert (own row),
@@ -150,16 +167,17 @@ Co-teach API (`/api/class-session-experts`):
 Session reads:
 
 - `GET /api/classes/{classId}/sessions` and `GET .../sessions/{id}` expose
-  `hasAcceptedExpert` plus a public `coTeach` card (name, title, avatar,
-  specialization, degrees) when an expert is **Accepted**. These routes do not
-  include feedback.
-- `GET .../sessions/with-students/{sessionId}` adds `coTeachFeedback`
-  (`comment`, `rating`, `feedbackAt`) only for Manager, Admin, and the assigned
-  class Mentor. Students still see the public `coTeach` card.
+  `hasAcceptedExpert`, `coTeach` (first Accepted card, backward compatible),
+  and `coTeaches` (all Accepted cards: name, title, avatar, specialization,
+  degrees). These routes do not include feedback.
+- `GET .../sessions/with-students/{sessionId}` adds `coTeachFeedback` /
+  `coTeachFeedbacks` (`invitationId`, `expertId`, `expertName`, `comment`,
+  `rating`, `feedbackAt`) only for Manager, Admin, and the assigned class
+  Mentor. Students still see the public cards.
 
-When an Offline session with an Accepted expert first becomes **Completed**,
-the expert is notified to submit feedback. Submitting or updating feedback
-notifies the class mentor.
+When an Offline session with at least one Accepted expert first becomes
+**Completed**, each Accepted expert is notified to submit feedback. Submitting
+or updating feedback notifies the class mentor.
 
 **AssignmentWindow** is the per-class work window for that assignment (one
 active row per `(ClassId, AssignmentId)`). `StartTime` / `EndTime` are the
@@ -228,22 +246,28 @@ Public reads: `GET /api/experts/{id}` and `GET /api/experts/{id}/profile`.
 
 ### Program framework and curriculum review
 
-`ProgramFramework` is an expert-owned blueprint for a content family
-(opt-in rules: `MinModules`, `MinOfflineSessions`, `MinLiveSessions`,
-`RequireFinalAssessment` — null or `false` means not enforced; `true`
-requires ≥1 `ResearchMilestone` with `IsCapstone`). `Category` is a hint/filter
-only. `Program.FrameworkId` is optional; null means no expert review (submit goes
-to `Approved`, manager still publishes). Attaching a framework always requires
-the owning expert to approve, including when the rubric has zero criteria.
+`ProgramFramework` is an expert-owned blueprint assigned to **at most one**
+program (opt-in rules: `MinModules`, `MinOfflineSessions`, `MinLiveSessions`,
+`RequireCapstoneResearchMilestone` — null or `false` means not enforced;
+`true` requires ≥1 `ResearchMilestone` with `IsCapstone`). `Category` is a
+hint/filter only. `Program.FrameworkId` is optional. Null is free-form board
+review (still `PendingReview`; no rubric scores). Attaching a framework adds
+pre-check rules and optional rubric scores; **only the framework owner**
+decides Approve / ChangesRequested. Board experts may view the queue and
+history and may be invited to co-teach. An expert may own many
+framework–program pairs.
 Each framework has `FrameworkRubricCriterion` rows (name, description, max
 score, display order). Zero criteria is allowed; on approve, scores are
 required only when at least one criterion exists (`0 ≤ score ≤ MaxScore` for
-every criterion).
+every criterion). `ChangesRequested` requires a comment, not scores.
 
 API: `/api/program-frameworks` — Expert CRUD on own blueprints; Manager/Admin
-may list all and override updates (not create or delete). Category query is a
-hint only. Frameworks stay editable while attached programs are
-`PendingReview`.
+may list and read all but cannot write another expert's blueprint.
+Create/delete stay Expert-only. Category query is a hint only. Update,
+criteria, and delete are allowed only while the framework is unattached or
+the attached program is **Draft**. `PendingReview`, `Approved`, `Active`, and
+`Inactive` lock the blueprint (`409`). Delete unlinks a Draft program; it
+does not change program status.
 
 `ProgramFrameworkValidator.ValidateForSubmitAsync` pre-checks a program against
 non-null rules and joins every failure into one 400 message. Submit-review
@@ -251,7 +275,12 @@ calls it; a failing pre-check does not change status.
 
 `CurriculumReview` is one expert decision round (`Approved` /
 `ChangesRequested`) with optional `ReviewCriterionScore` rows. Distinct from
-student `ProgramReview` star ratings. Only the framework owner may decide.
+student `ProgramReview` star ratings. With a framework, only the owning
+expert may decide. Without a framework, any one login expert on
+`ProgramBoard` may decide (first decision wins the round). Board membership
+is who can view during review and who can be invited to co-teach. Leaving
+the board unlinks that expert's Invited and Accepted co-teach rows on the
+program.
 
 ## Highlight Videos
 
