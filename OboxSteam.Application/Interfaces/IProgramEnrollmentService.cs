@@ -15,14 +15,16 @@ public interface IProgramEnrollmentService
         string? sortBy,
         bool isDescending,
         int page,
-        int pageSize);
+        int pageSize,
+        bool includeSuperseded = false);
 
     Task<Pagination<ProgramEnrollmentResponseDto>> GetProgramEnrollmentsByStudentIdAsync(
         Guid studentId,
         string? sortBy,
         bool isDescending,
         int page,
-        int pageSize);
+        int pageSize,
+        bool includeSuperseded = false);
 
     Task<ProgramEnrollmentClassDto> GetProgramEnrollmentClassAsync(Guid enrollmentId);
 

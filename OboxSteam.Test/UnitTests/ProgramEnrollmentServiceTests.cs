@@ -111,7 +111,12 @@ public sealed class ProgramEnrollmentServiceTests
         decimal progress = 0m,
         DateTime? enrolledAt = null,
         bool isDeleted = false,
-        Program? program = null)
+        Program? program = null,
+        Guid? sourceProgramEnrollmentId = null,
+        Guid? supersededByEnrollmentId = null,
+        ProgramPurchaseEndReason? endReason = null,
+        DateTime? endedAt = null,
+        DateTime? completedAt = null)
     {
         var enrollment = new ProgramEnrollment
         {
@@ -123,7 +128,12 @@ public sealed class ProgramEnrollmentServiceTests
             ProgressPercent = progress,
             EnrolledAt = enrolledAt ?? DateTime.UtcNow.AddDays(-1),
             CreatedAt = DateTime.UtcNow.AddDays(-1),
-            IsDeleted = isDeleted
+            IsDeleted = isDeleted,
+            SourceProgramEnrollmentId = sourceProgramEnrollmentId,
+            SupersededByEnrollmentId = supersededByEnrollmentId,
+            EndReason = endReason,
+            EndedAt = endedAt,
+            CompletedAt = completedAt
         };
         _db.ProgramEnrollments.Seed(enrollment);
         return enrollment;
@@ -504,15 +514,18 @@ public sealed class ProgramEnrollmentServiceTests
     public async Task GetMy_SortsByProgressPercentAscending()
     {
         SeedStudent();
-        var program = SeedProgram();
+        var programA = SeedProgram();
+        var programB = SeedProgram(_programId2, "Art");
         SeedEnrollment(
             id: Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-            program: program,
+            programId: _programId,
+            program: programA,
             progress: 80,
             enrolledAt: DateTime.UtcNow.AddDays(-2));
         SeedEnrollment(
             id: Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
-            program: program,
+            programId: _programId2,
+            program: programB,
             progress: 20,
             enrolledAt: DateTime.UtcNow.AddDays(-1));
         var sut = CreateSut();
@@ -528,6 +541,137 @@ public sealed class ProgramEnrollmentServiceTests
         Assert.True(byCreated.TotalCount >= 1);
         var byEnrolled = await sut.GetMyProgramEnrollmentsAsync(null, "enrolledat", false, 1, 10);
         Assert.True(byEnrolled.TotalCount >= 1);
+    }
+
+    [Fact]
+    public async Task GetMy_DefaultHidesFailedWhenPendingPaymentRebuyExists()
+    {
+        SeedStudent();
+        var program = SeedProgram();
+        var failedId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var pendingId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        SeedEnrollment(
+            id: failedId,
+            program: program,
+            status: EnrollmentStatus.Failed,
+            endReason: ProgramPurchaseEndReason.AcademicFail,
+            endedAt: DateTime.UtcNow.AddDays(-3),
+            enrolledAt: DateTime.UtcNow.AddDays(-30));
+        SeedEnrollment(
+            id: pendingId,
+            program: program,
+            status: EnrollmentStatus.PendingPayment,
+            sourceProgramEnrollmentId: failedId,
+            enrolledAt: DateTime.UtcNow);
+        var sut = CreateSut();
+
+        var current = await sut.GetMyProgramEnrollmentsAsync(null, null, true, 1, 10);
+        Assert.Equal(1, current.TotalCount);
+        Assert.Equal(pendingId, current.Items[0].Id);
+        Assert.True(current.Items[0].IsRebuy);
+        Assert.Equal(2, current.Items[0].AttemptNumber);
+        Assert.Equal(EnrollmentStatus.Failed, current.Items[0].PriorStatus);
+        Assert.Equal(ProgramPurchaseEndReason.AcademicFail, current.Items[0].PriorEndReason);
+        Assert.False(current.Items[0].IsSuperseded);
+
+        var history = await sut.GetMyProgramEnrollmentsAsync(
+            null, null, true, 1, 10, includeSuperseded: true);
+        Assert.Equal(2, history.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetMy_DefaultHidesSupersededFailedWhenActiveRebuyExists()
+    {
+        SeedStudent();
+        var program = SeedProgram();
+        var failedId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var activeId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        SeedEnrollment(
+            id: failedId,
+            program: program,
+            status: EnrollmentStatus.Failed,
+            endReason: ProgramPurchaseEndReason.Attendance,
+            endedAt: DateTime.UtcNow.AddDays(-3),
+            enrolledAt: DateTime.UtcNow.AddDays(-30),
+            supersededByEnrollmentId: activeId);
+        SeedEnrollment(
+            id: activeId,
+            program: program,
+            status: EnrollmentStatus.Active,
+            sourceProgramEnrollmentId: failedId,
+            enrolledAt: DateTime.UtcNow);
+        var sut = CreateSut();
+
+        var current = await sut.GetMyProgramEnrollmentsAsync(null, null, true, 1, 10);
+        Assert.Equal(1, current.TotalCount);
+        Assert.Equal(activeId, current.Items[0].Id);
+        Assert.True(current.Items[0].IsRebuy);
+        Assert.Equal(2, current.Items[0].AttemptNumber);
+
+        var history = await sut.GetMyProgramEnrollmentsAsync(
+            null, null, true, 1, 10, includeSuperseded: true);
+        Assert.Equal(2, history.TotalCount);
+        var failedDto = history.Items.Single(i => i.Id == failedId);
+        Assert.True(failedDto.IsSuperseded);
+        Assert.Equal(activeId, failedDto.SupersededByEnrollmentId);
+    }
+
+    [Fact]
+    public async Task GetMy_ShowsLatestNonSupersededTerminal_WhenNoOpenEnrollment()
+    {
+        SeedStudent();
+        var program = SeedProgram();
+        SeedEnrollment(
+            id: Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            program: program,
+            status: EnrollmentStatus.Failed,
+            endedAt: DateTime.UtcNow.AddDays(-10),
+            enrolledAt: DateTime.UtcNow.AddDays(-40));
+        var droppedId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        SeedEnrollment(
+            id: droppedId,
+            program: program,
+            status: EnrollmentStatus.Dropped,
+            endReason: ProgramPurchaseEndReason.Withdraw,
+            endedAt: DateTime.UtcNow.AddDays(-1),
+            enrolledAt: DateTime.UtcNow.AddDays(-5));
+        var sut = CreateSut();
+
+        var result = await sut.GetMyProgramEnrollmentsAsync(null, null, true, 1, 10);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal(droppedId, result.Items[0].Id);
+        Assert.Equal(EnrollmentStatus.Dropped, result.Items[0].Status);
+    }
+
+    [Fact]
+    public async Task GetByStudentId_DefaultHidesSuperseded_SameAsMe()
+    {
+        SeedStudent();
+        SeedManager();
+        var program = SeedProgram();
+        var failedId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var activeId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        SeedEnrollment(
+            id: failedId,
+            program: program,
+            status: EnrollmentStatus.Failed,
+            supersededByEnrollmentId: activeId,
+            endedAt: DateTime.UtcNow.AddDays(-2));
+        SeedEnrollment(
+            id: activeId,
+            program: program,
+            status: EnrollmentStatus.Active,
+            sourceProgramEnrollmentId: failedId);
+        var sut = CreateSut(currentUserId: _managerId);
+
+        var current = await sut.GetProgramEnrollmentsByStudentIdAsync(_studentId, null, true, 1, 10);
+        Assert.Equal(1, current.TotalCount);
+        Assert.Equal(activeId, current.Items[0].Id);
+
+        var history = await sut.GetProgramEnrollmentsByStudentIdAsync(
+            _studentId, null, true, 1, 10, includeSuperseded: true);
+        Assert.Equal(2, history.TotalCount);
     }
 
     [Fact]
@@ -598,7 +742,7 @@ public sealed class ProgramEnrollmentServiceTests
         var sut = CreateSut(currentUserId: _managerId);
 
         var result = await sut.GetProgramEnrollmentsByStudentIdAsync(
-            _studentId, "status", false, 1, 10);
+            _studentId, "status", false, 1, 10, includeSuperseded: true);
 
         Assert.Equal(EnrollmentStatus.Active, result.Items[0].Status);
         Assert.Equal(EnrollmentStatus.Completed, result.Items[1].Status);

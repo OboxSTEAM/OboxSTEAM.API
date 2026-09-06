@@ -188,35 +188,13 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
             throw ErrorHelper.NotFound($"Program with id '{enrollment.ProgramId}' not found.");
         }
 
-        return new ProgramEnrollmentResponseDto
-        {
-            Id = enrollment.Id,
-            StudentId = enrollment.StudentId,
-            ProgramId = enrollment.ProgramId,
-            Status = enrollment.Status,
-            ProgressPercent = enrollment.ProgressPercent,
-            EnrolledAt = enrollment.EnrolledAt,
-            StartedAt = enrollment.StartedAt,
-            CompletedAt = enrollment.CompletedAt,
-            EndReason = enrollment.EndReason,
-            EndedModuleId = enrollment.EndedModuleId,
-            EndedAt = enrollment.EndedAt,
-            SourceProgramEnrollmentId = enrollment.SourceProgramEnrollmentId,
-            CreatedAt = enrollment.CreatedAt,
-            UpdatedAt = enrollment.UpdatedAt,
-            Code = program.Code,
-            Name = program.Name,
-            SeriesName = program.SeriesName,
-            Description = program.Description,
-            Level = program.Level,
-            EstimatedDuration = program.EstimatedDuration,
-            SkillsGained = program.SkillsGained,
-            Rating = program.Rating,
-            TotalReviews = program.TotalReviews,
-            ThumbnailUrl = program.ThumbnailUrl,
-            ProgramStatus = program.Status,
-            Price = program.Price,
-        };
+        var related = await _unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => pe.StudentId == enrollment.StudentId
+                  && pe.ProgramId == enrollment.ProgramId
+                  && !pe.IsDeleted);
+        var byId = related.ToDictionary(pe => pe.Id);
+
+        return MapToDto(enrollment, program, byId);
     }
 
     public async Task<Pagination<ProgramEnrollmentResponseDto>> GetMyProgramEnrollmentsAsync(
@@ -224,13 +202,15 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
         string? sortBy,
         bool isDescending,
         int page,
-        int pageSize)
+        int pageSize,
+        bool includeSuperseded = false)
     {
         _logger.LogInformation(
-            "[GetMyProgramEnrollmentsAsync] Start — programId: {ProgramId}, page: {Page}, pageSize: {PageSize}",
+            "[GetMyProgramEnrollmentsAsync] Start — programId: {ProgramId}, page: {Page}, pageSize: {PageSize}, includeSuperseded: {IncludeSuperseded}",
             programId,
             page,
-            pageSize);
+            pageSize,
+            includeSuperseded);
 
         ProgramEnrollmentValidator.ValidatePagination(page, pageSize);
 
@@ -261,79 +241,22 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
             ProgramEnrollmentValidator.ValidateCanListProgramEnrollments(currentUser.Role);
         }
 
-        query = sortBy?.ToLower() switch
-        {
-            "progresspercent" => isDescending
-                ? query.OrderByDescending(pe => pe.ProgressPercent)
-                : query.OrderBy(pe => pe.ProgressPercent),
-            "status" => isDescending
-                ? query.OrderByDescending(pe => pe.Status)
-                : query.OrderBy(pe => pe.Status),
-            "createdat" => isDescending
-                ? query.OrderByDescending(pe => pe.CreatedAt)
-                : query.OrderBy(pe => pe.CreatedAt),
-            "enrolledat" or _ => isDescending
-                ? query.OrderByDescending(pe => pe.EnrolledAt)
-                : query.OrderBy(pe => pe.EnrolledAt),
-        };
-
-        var totalCount = query.Count();
-
-        var items = query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToList();
-
-        var programIds = items.Select(pe => pe.ProgramId).Distinct().ToList();
-        var programs = await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id) && !p.IsDeleted);
-        var programsById = programs.ToDictionary(p => p.Id);
-
-        var dtos = new List<ProgramEnrollmentResponseDto>();
-        foreach (var enrollment in items)
-        {
-            if (!programsById.TryGetValue(enrollment.ProgramId, out var program))
-            {
-                throw ErrorHelper.NotFound($"Program with id '{enrollment.ProgramId}' not found.");
-            }
-
-            dtos.Add(new ProgramEnrollmentResponseDto
-            {
-                Id = enrollment.Id,
-                StudentId = enrollment.StudentId,
-                ProgramId = enrollment.ProgramId,
-                Status = enrollment.Status,
-                ProgressPercent = enrollment.ProgressPercent,
-                EnrolledAt = enrollment.EnrolledAt,
-                StartedAt = enrollment.StartedAt,
-                CompletedAt = enrollment.CompletedAt,
-                EndReason = enrollment.EndReason,
-                EndedModuleId = enrollment.EndedModuleId,
-                EndedAt = enrollment.EndedAt,
-                SourceProgramEnrollmentId = enrollment.SourceProgramEnrollmentId,
-                CreatedAt = enrollment.CreatedAt,
-                UpdatedAt = enrollment.UpdatedAt,
-                Code = program.Code,
-                Name = program.Name,
-                SeriesName = program.SeriesName,
-                Description = program.Description,
-                Level = program.Level,
-                EstimatedDuration = program.EstimatedDuration,
-                SkillsGained = program.SkillsGained,
-                Rating = program.Rating,
-                TotalReviews = program.TotalReviews,
-                ThumbnailUrl = program.ThumbnailUrl,
-                ProgramStatus = program.Status,
-                Price = program.Price,
-            });
-        }
+        var allItems = query.ToList();
+        var result = await PaginateAndMapAsync(
+            allItems,
+            sortBy,
+            isDescending,
+            page,
+            pageSize,
+            includeSuperseded);
 
         _logger.LogInformation(
             "[GetMyProgramEnrollmentsAsync] Retrieved {Count}/{Total} enrollments for user {UserId}.",
-            dtos.Count,
-            totalCount,
+            result.Items.Count,
+            result.TotalCount,
             currentUser.Id);
 
-        return new Pagination<ProgramEnrollmentResponseDto>(dtos, totalCount, page, pageSize);
+        return result;
     }
 
     public async Task<Pagination<ProgramEnrollmentResponseDto>> GetProgramEnrollmentsByStudentIdAsync(
@@ -341,13 +264,15 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
         string? sortBy,
         bool isDescending,
         int page,
-        int pageSize)
+        int pageSize,
+        bool includeSuperseded = false)
     {
         _logger.LogInformation(
-            "[GetProgramEnrollmentsByStudentIdAsync] Start — studentId: {StudentId}, page: {Page}, pageSize: {PageSize}",
+            "[GetProgramEnrollmentsByStudentIdAsync] Start — studentId: {StudentId}, page: {Page}, pageSize: {PageSize}, includeSuperseded: {IncludeSuperseded}",
             studentId,
             page,
-            pageSize);
+            pageSize,
+            includeSuperseded);
 
         ProgramEnrollmentValidator.ValidatePagination(page, pageSize);
         ProgramEnrollmentValidator.ValidateStudentIdRequired(studentId);
@@ -361,82 +286,201 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
         var student = await _unitOfWork.Users.GetByIdAsync(studentId);
         ProgramEnrollmentValidator.ValidateStudentExists(student, studentId);
 
-        var query = _unitOfWork.ProgramEnrollments
+        var allItems = _unitOfWork.ProgramEnrollments
             .GetQueryable()
-            .Where(pe => pe.StudentId == studentId && !pe.IsDeleted);
+            .Where(pe => pe.StudentId == studentId && !pe.IsDeleted)
+            .ToList();
 
-        query = sortBy?.ToLower() switch
-        {
-            "progresspercent" => isDescending
-                ? query.OrderByDescending(pe => pe.ProgressPercent)
-                : query.OrderBy(pe => pe.ProgressPercent),
-            "status" => isDescending
-                ? query.OrderByDescending(pe => pe.Status)
-                : query.OrderBy(pe => pe.Status),
-            "createdat" => isDescending
-                ? query.OrderByDescending(pe => pe.CreatedAt)
-                : query.OrderBy(pe => pe.CreatedAt),
-            "enrolledat" or _ => isDescending
-                ? query.OrderByDescending(pe => pe.EnrolledAt)
-                : query.OrderBy(pe => pe.EnrolledAt),
-        };
+        var result = await PaginateAndMapAsync(
+            allItems,
+            sortBy,
+            isDescending,
+            page,
+            pageSize,
+            includeSuperseded);
 
-        var totalCount = query.Count();
+        _logger.LogInformation(
+            "[GetProgramEnrollmentsByStudentIdAsync] Retrieved {Count}/{Total} enrollments.",
+            result.Items.Count,
+            result.TotalCount);
 
-        var items = query
+        return result;
+    }
+
+    private async Task<Pagination<ProgramEnrollmentResponseDto>> PaginateAndMapAsync(
+        IReadOnlyList<ProgramEnrollment> allItems,
+        string? sortBy,
+        bool isDescending,
+        int page,
+        int pageSize,
+        bool includeSuperseded)
+    {
+        var byId = allItems.ToDictionary(pe => pe.Id);
+        var visible = includeSuperseded
+            ? allItems.ToList()
+            : SelectCurrentEnrollments(allItems);
+
+        var sorted = ApplySort(visible, sortBy, isDescending);
+        var totalCount = sorted.Count;
+        var pageItems = sorted
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToList();
 
-        var programIds = items.Select(pe => pe.ProgramId).Distinct().ToList();
+        var programIds = pageItems.Select(pe => pe.ProgramId).Distinct().ToList();
         var programs = await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id) && !p.IsDeleted);
         var programsById = programs.ToDictionary(p => p.Id);
 
-        var dtos = new List<ProgramEnrollmentResponseDto>();
-        foreach (var enrollment in items)
+        var dtos = new List<ProgramEnrollmentResponseDto>(pageItems.Count);
+        foreach (var enrollment in pageItems)
         {
             if (!programsById.TryGetValue(enrollment.ProgramId, out var program))
             {
                 throw ErrorHelper.NotFound($"Program with id '{enrollment.ProgramId}' not found.");
             }
 
-            dtos.Add(new ProgramEnrollmentResponseDto
-            {
-                Id = enrollment.Id,
-                StudentId = enrollment.StudentId,
-                ProgramId = enrollment.ProgramId,
-                Status = enrollment.Status,
-                ProgressPercent = enrollment.ProgressPercent,
-                EnrolledAt = enrollment.EnrolledAt,
-                StartedAt = enrollment.StartedAt,
-                CompletedAt = enrollment.CompletedAt,
-                EndReason = enrollment.EndReason,
-                EndedModuleId = enrollment.EndedModuleId,
-                EndedAt = enrollment.EndedAt,
-                SourceProgramEnrollmentId = enrollment.SourceProgramEnrollmentId,
-                CreatedAt = enrollment.CreatedAt,
-                UpdatedAt = enrollment.UpdatedAt,
-                Code = program.Code,
-                Name = program.Name,
-                SeriesName = program.SeriesName,
-                Description = program.Description,
-                Level = program.Level,
-                EstimatedDuration = program.EstimatedDuration,
-                SkillsGained = program.SkillsGained,
-                Rating = program.Rating,
-                TotalReviews = program.TotalReviews,
-                ThumbnailUrl = program.ThumbnailUrl,
-                ProgramStatus = program.Status,
-                Price = program.Price,
-            });
+            dtos.Add(MapToDto(enrollment, program, byId));
         }
 
-        _logger.LogInformation(
-            "[GetProgramEnrollmentsByStudentIdAsync] Retrieved {Count}/{Total} enrollments.",
-            dtos.Count,
-            totalCount);
-
         return new Pagination<ProgramEnrollmentResponseDto>(dtos, totalCount, page, pageSize);
+    }
+
+    /// <summary>
+    /// One row per (student, program): prefer PendingPayment / Active / Deferred; otherwise the
+    /// latest non-superseded terminal. Open rebuy rows hide prior terminals without requiring
+    /// <see cref="ProgramEnrollment.SupersededByEnrollmentId"/> yet (that is set only on Active).
+    /// </summary>
+    internal static List<ProgramEnrollment> SelectCurrentEnrollments(
+        IEnumerable<ProgramEnrollment> enrollments)
+    {
+        return enrollments
+            .GroupBy(pe => (pe.StudentId, pe.ProgramId))
+            .Select(PickCurrentEnrollment)
+            .ToList();
+    }
+
+    internal static ProgramEnrollment PickCurrentEnrollment(
+        IEnumerable<ProgramEnrollment> group)
+    {
+        var list = group.ToList();
+
+        var open = list
+            .Where(pe => pe.Status is EnrollmentStatus.PendingPayment
+                or EnrollmentStatus.Active
+                or EnrollmentStatus.Deferred)
+            .OrderByDescending(CurrentSortKey)
+            .FirstOrDefault();
+        if (open != null)
+        {
+            return open;
+        }
+
+        var nonSupersededTerminal = list
+            .Where(pe => pe.SupersededByEnrollmentId == null)
+            .OrderByDescending(CurrentSortKey)
+            .FirstOrDefault();
+        if (nonSupersededTerminal != null)
+        {
+            return nonSupersededTerminal;
+        }
+
+        return list.OrderByDescending(CurrentSortKey).First();
+    }
+
+    private static DateTime CurrentSortKey(ProgramEnrollment pe)
+        => pe.EndedAt ?? pe.CompletedAt ?? pe.EnrolledAt ?? pe.CreatedAt;
+
+    private static List<ProgramEnrollment> ApplySort(
+        IEnumerable<ProgramEnrollment> enrollments,
+        string? sortBy,
+        bool isDescending)
+    {
+        return sortBy?.ToLower() switch
+        {
+            "progresspercent" => isDescending
+                ? enrollments.OrderByDescending(pe => pe.ProgressPercent).ToList()
+                : enrollments.OrderBy(pe => pe.ProgressPercent).ToList(),
+            "status" => isDescending
+                ? enrollments.OrderByDescending(pe => pe.Status).ToList()
+                : enrollments.OrderBy(pe => pe.Status).ToList(),
+            "createdat" => isDescending
+                ? enrollments.OrderByDescending(pe => pe.CreatedAt).ToList()
+                : enrollments.OrderBy(pe => pe.CreatedAt).ToList(),
+            "enrolledat" or _ => isDescending
+                ? enrollments.OrderByDescending(pe => pe.EnrolledAt).ToList()
+                : enrollments.OrderBy(pe => pe.EnrolledAt).ToList(),
+        };
+    }
+
+    private static ProgramEnrollmentResponseDto MapToDto(
+        ProgramEnrollment enrollment,
+        Program program,
+        IReadOnlyDictionary<Guid, ProgramEnrollment> byId)
+    {
+        ProgramEnrollment? source = null;
+        if (enrollment.SourceProgramEnrollmentId is Guid sourceId)
+        {
+            byId.TryGetValue(sourceId, out source);
+        }
+
+        return new ProgramEnrollmentResponseDto
+        {
+            Id = enrollment.Id,
+            StudentId = enrollment.StudentId,
+            ProgramId = enrollment.ProgramId,
+            Status = enrollment.Status,
+            ProgressPercent = enrollment.ProgressPercent,
+            EnrolledAt = enrollment.EnrolledAt,
+            StartedAt = enrollment.StartedAt,
+            CompletedAt = enrollment.CompletedAt,
+            EndReason = enrollment.EndReason,
+            EndedModuleId = enrollment.EndedModuleId,
+            EndedAt = enrollment.EndedAt,
+            SourceProgramEnrollmentId = enrollment.SourceProgramEnrollmentId,
+            IsRebuy = enrollment.SourceProgramEnrollmentId.HasValue,
+            AttemptNumber = ResolveAttemptNumber(enrollment, byId),
+            PriorStatus = source?.Status,
+            PriorEndReason = source?.EndReason,
+            IsSuperseded = enrollment.SupersededByEnrollmentId.HasValue,
+            SupersededByEnrollmentId = enrollment.SupersededByEnrollmentId,
+            CreatedAt = enrollment.CreatedAt,
+            UpdatedAt = enrollment.UpdatedAt,
+            Code = program.Code,
+            Name = program.Name,
+            SeriesName = program.SeriesName,
+            Description = program.Description,
+            Level = program.Level,
+            EstimatedDuration = program.EstimatedDuration,
+            SkillsGained = program.SkillsGained,
+            Rating = program.Rating,
+            TotalReviews = program.TotalReviews,
+            ThumbnailUrl = program.ThumbnailUrl,
+            ProgramStatus = program.Status,
+            Price = program.Price,
+        };
+    }
+
+    internal static int ResolveAttemptNumber(
+        ProgramEnrollment enrollment,
+        IReadOnlyDictionary<Guid, ProgramEnrollment> byId)
+    {
+        var attempt = 1;
+        var current = enrollment;
+        var guard = 0;
+        while (current.SourceProgramEnrollmentId is Guid sourceId
+               && byId.TryGetValue(sourceId, out var source)
+               && guard++ < 50)
+        {
+            attempt++;
+            current = source;
+        }
+
+        if (enrollment.SourceProgramEnrollmentId.HasValue && attempt == 1)
+        {
+            return 2;
+        }
+
+        return attempt;
     }
 
     public async Task<ProgramEnrollmentClassDto> GetProgramEnrollmentClassAsync(Guid enrollmentId)

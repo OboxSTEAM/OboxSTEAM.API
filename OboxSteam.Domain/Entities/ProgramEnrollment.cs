@@ -37,6 +37,13 @@ public class ProgramEnrollment : BaseEntity
     public Guid? SourceProgramEnrollmentId { get; set; }
     public ProgramEnrollment? SourceProgramEnrollment { get; set; }
 
+    /// <summary>
+    /// Set on a terminal purchase when a rebuy for the same program becomes Active.
+    /// Null while the row is still the student's current card (or never superseded).
+    /// </summary>
+    public Guid? SupersededByEnrollmentId { get; set; }
+    public ProgramEnrollment? SupersededByEnrollment { get; set; }
+
     // Navigation
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();

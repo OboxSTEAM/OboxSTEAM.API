@@ -1395,6 +1395,7 @@ public sealed class PaymentServiceTests
         Assert.Contains(
             _db.ModuleEnrollments.Items,
             me => me.ProgramEnrollmentId == enrollment.Id && me.ModuleId == module.Id);
+        Assert.Equal(enrollment.Id, source.SupersededByEnrollmentId);
         Assert.Empty(_db.Invoices.Items);
     }
 

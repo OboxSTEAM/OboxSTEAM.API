@@ -1348,6 +1348,46 @@ public sealed class ProgramPurchaseLifecycleTests
     }
 
     [Fact]
+    public async Task MarkSourceSuperseded_SetsSupersededByOnSource()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Failed, endedAt: _now.AddDays(-2));
+        var rebuy = SeedEnrollment(EnrollmentStatus.Active);
+        rebuy.SourceProgramEnrollmentId = source.Id;
+        var sut = CreateSut();
+
+        await sut.MarkSourceSupersededAsync(rebuy);
+
+        Assert.Equal(rebuy.Id, source.SupersededByEnrollmentId);
+    }
+
+    [Fact]
+    public async Task MarkSourceSuperseded_Noops_WhenAlreadyMarked()
+    {
+        var source = SeedClosedSource(EnrollmentStatus.Dropped, endedAt: _now.AddDays(-2));
+        var rebuy = SeedEnrollment(EnrollmentStatus.Active);
+        rebuy.SourceProgramEnrollmentId = source.Id;
+        source.SupersededByEnrollmentId = rebuy.Id;
+        var sut = CreateSut();
+        var savesBefore = _db.SaveChangesCallCount;
+
+        await sut.MarkSourceSupersededAsync(rebuy);
+
+        Assert.Equal(rebuy.Id, source.SupersededByEnrollmentId);
+        Assert.Equal(savesBefore, _db.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task MarkSourceSuperseded_Noops_WhenNoSource()
+    {
+        var rebuy = SeedEnrollment(EnrollmentStatus.Active);
+        var sut = CreateSut();
+
+        await sut.MarkSourceSupersededAsync(rebuy);
+
+        Assert.DoesNotContain(_db.ProgramEnrollments.Items, pe => pe.SupersededByEnrollmentId.HasValue);
+    }
+
+    [Fact]
     public async Task ApplyRebuyCredits_NoSource_CopiesNothing()
     {
         var pending = SeedEnrollment(EnrollmentStatus.Active);

@@ -390,3 +390,6 @@ scripts/bin/harness
 scripts/bin/harness.exe
 .harness-backup/
 *.ps1
+
+# Codex — local agent config
+.codex/config.toml

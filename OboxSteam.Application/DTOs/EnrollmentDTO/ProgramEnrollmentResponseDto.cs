@@ -19,6 +19,24 @@ public class ProgramEnrollmentResponseDto
     public Guid? EndedModuleId { get; set; }
     public DateTime? EndedAt { get; set; }
     public Guid? SourceProgramEnrollmentId { get; set; }
+
+    /// <summary>True when this row continues a prior closed purchase (<see cref="SourceProgramEnrollmentId"/> set).</summary>
+    public bool IsRebuy { get; set; }
+
+    /// <summary>1 for a first purchase; 2+ when linked through a rebuy source chain.</summary>
+    public int AttemptNumber { get; set; }
+
+    /// <summary>Status of the immediate source purchase, when this is a rebuy.</summary>
+    public EnrollmentStatus? PriorStatus { get; set; }
+
+    /// <summary>End reason of the immediate source purchase, when this is a rebuy.</summary>
+    public ProgramPurchaseEndReason? PriorEndReason { get; set; }
+
+    /// <summary>True when a later Active rebuy superseded this terminal row.</summary>
+    public bool IsSuperseded { get; set; }
+
+    public Guid? SupersededByEnrollmentId { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 

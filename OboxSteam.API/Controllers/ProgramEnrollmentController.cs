@@ -82,7 +82,9 @@ public class ProgramEnrollmentController : ControllerBase
     [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get program enrollments for current user",
-        Description = "Students: own enrollments. Parents: linked students. Admins: all enrollments.")]
+        Description = "Students: own enrollments. Parents: linked students. Admins: all enrollments. "
+            + "By default returns one current row per program (PendingPayment/Active/Deferred preferred; "
+            + "otherwise the latest non-superseded terminal). Pass includeSuperseded=true for full purchase history.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ProgramEnrollmentResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -92,7 +94,8 @@ public class ProgramEnrollmentController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Sort by: enrolledAt, progressPercent, status, createdAt")] string? sortBy = null,
         [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
         [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
-        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10)
+        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
+        [FromQuery, SwaggerParameter(Description = "When true, return every purchase row including superseded history. Default: false (one current card per program).")] bool includeSuperseded = false)
     {
         if (page < 1 || pageSize < 1)
         {
@@ -104,7 +107,8 @@ public class ProgramEnrollmentController : ControllerBase
             sortBy,
             isDescending,
             page,
-            pageSize);
+            pageSize,
+            includeSuperseded);
 
         return Ok(ApiResult<Pagination<ProgramEnrollmentResponseDto>>.Success(
             result,
@@ -281,7 +285,8 @@ public class ProgramEnrollmentController : ControllerBase
     [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get program enrollments by student ID",
-        Description = "List program enrollments for a student. Access rules apply per role (self, linked parent, or admin).")]
+        Description = "List program enrollments for a student. Access rules apply per role (self, linked parent, or admin). "
+            + "By default returns one current row per program; pass includeSuperseded=true for full purchase history.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ProgramEnrollmentResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -292,7 +297,8 @@ public class ProgramEnrollmentController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Sort by: enrolledAt, progressPercent, status, createdAt")] string? sortBy = null,
         [FromQuery, SwaggerParameter(Description = "Sort in descending order? Default: false")] bool isDescending = false,
         [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
-        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10)
+        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10,
+        [FromQuery, SwaggerParameter(Description = "When true, return every purchase row including superseded history. Default: false (one current card per program).")] bool includeSuperseded = false)
     {
         if (page < 1 || pageSize < 1)
         {
@@ -304,7 +310,8 @@ public class ProgramEnrollmentController : ControllerBase
             sortBy,
             isDescending,
             page,
-            pageSize);
+            pageSize,
+            includeSuperseded);
 
         return Ok(ApiResult<Pagination<ProgramEnrollmentResponseDto>>.Success(
             result,

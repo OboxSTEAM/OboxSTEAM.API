@@ -563,6 +563,39 @@ public sealed class ProgramPurchaseLifecycle
     }
 
     /// <summary>
+    /// After a rebuy becomes <see cref="EnrollmentStatus.Active"/>, marks the linked source
+    /// purchase as superseded so list APIs can hide it from the default "current courses" view.
+    /// Idempotent: no-op when there is no source, or the source is already superseded by this row.
+    /// </summary>
+    public async Task MarkSourceSupersededAsync(ProgramEnrollment enrollment)
+    {
+        if (!enrollment.SourceProgramEnrollmentId.HasValue)
+        {
+            return;
+        }
+
+        var source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(enrollment.SourceProgramEnrollmentId.Value);
+        if (source == null || source.IsDeleted)
+        {
+            return;
+        }
+
+        if (source.SupersededByEnrollmentId == enrollment.Id)
+        {
+            return;
+        }
+
+        source.SupersededByEnrollmentId = enrollment.Id;
+        await _unitOfWork.ProgramEnrollments.Update(source);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[MarkSourceSupersededAsync] Source enrollment {SourceId} superseded by Active rebuy {EnrollmentId}.",
+            source.Id,
+            enrollment.Id);
+    }
+
+    /// <summary>
     /// On rebuy payment success, copies the source enrollment's Completed module enrollments
     /// into the new enrollment, scoped to what the new class has already taught by wall-clock
     /// and LiveOnline/Offline status. AssignmentWindow rows are ignored. A module with no

@@ -161,6 +161,19 @@ that credit. `GET .../rebuy-classes` module rows include `creditHint`
 
 - Checkout detects the latest closed source enrollment and links it via
   `SourceProgramEnrollmentId`.
+- When the rebuy payment succeeds and the new enrollment becomes **Active**,
+  the source row is marked with `SupersededByEnrollmentId` pointing at the new
+  purchase (Failed / Dropped / Completed sources alike). Until pay succeeds, a
+  `PendingPayment` rebuy is already treated as the **current** card on list
+  APIs (the prior terminal is history-only).
+- **My courses list:** `GET /api/program-enrollments/me` and
+  `GET /api/program-enrollments/student/{studentId}` default to **one row per
+  program** — the current enrollment (`PendingPayment` | `Active` | `Deferred`,
+  else the latest non-superseded terminal). Pass `includeSuperseded=true` for
+  full purchase history. Response fields for rebuy UX: `isRebuy`,
+  `attemptNumber`, `priorStatus`, `priorEndReason`, `isSuperseded`,
+  `supersededByEnrollmentId` (plus existing `sourceProgramEnrollmentId` /
+  close fields).
 - **Price:** within **1 calendar month** of the source `EndedAt` (boundary day
   included) the student pays **50% of `Program.Price`**; after the window they
   pay full `Program.Price`. A `Completed` source anchors the window at
