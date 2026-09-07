@@ -126,9 +126,13 @@ expert may be invited.
 Co-teach API (`/api/class-session-experts`):
 
 - `POST /` — Manager/Admin invites a `ProgramBoard` expert to a **Scheduled
-  Offline** session.
-- `GET /mine` — Expert lists own invitations.
-- `GET /` — Manager/Admin list (`classId` / `sessionId` / `expertId` / `status`).
+  Offline** session. Response may include `scheduleConflictWarning` (soft
+  warning only; accept still hard-blocks overlap).
+- `GET /mine` — Expert lists own invitations (`status`, `page`, `pageSize`).
+- `GET /` — Manager/Admin list (`classId` / `sessionId` / `expertId` /
+  `status`, `page`, `pageSize`).
+- `GET /{id}` — Manager/Admin, or the owning Expert. Includes private feedback
+  fields when present (students never call this route).
 - `POST /{id}/accept` and `POST /{id}/decline` — owning Expert; accept is
   blocked (`409`) on calendar overlap with another Accepted Offline/LiveOnline
   session.
@@ -240,10 +244,17 @@ score, display order). Zero criteria is allowed; on approve, scores are
 required only when at least one criterion exists (`0 ≤ score ≤ MaxScore` for
 every criterion).
 
-API: `/api/program-frameworks` — Expert CRUD on own blueprints; Manager/Admin
-may list all and override updates (not create or delete). Category query is a
-hint only. Frameworks stay editable while attached programs are
-`PendingReview`.
+API: `/api/program-frameworks`:
+
+- `GET /` / `GET /{id}` — Expert sees own blueprints; Manager/Admin see all.
+  Category query is a hint only.
+- `POST /` / `DELETE /{id}` — owning Expert only.
+- `PUT /{id}` — owning Expert, or Manager/Admin override.
+- `POST /{id}/criteria`, `PUT /{id}/criteria/{criterionId}`,
+  `DELETE /{id}/criteria/{criterionId}` — same write rules as framework update
+  (Expert owner or Manager/Admin override).
+
+Frameworks stay editable while attached programs are `PendingReview`.
 
 `ProgramFrameworkValidator.ValidateForSubmitAsync` pre-checks a program against
 non-null rules and joins every failure into one 400 message. Submit-review

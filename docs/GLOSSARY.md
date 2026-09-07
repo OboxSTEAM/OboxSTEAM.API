@@ -32,6 +32,7 @@ One Invited or Accepted expert per session. Manager may withdraw while
 `ProposedStartTime` / `ProposedEndTime` before the committed window moves.
 Private mentor feedback is stored on the row after the session is Completed
 (`PUT /api/class-session-experts/{id}/feedback`; students must not see it).
+Routes: `/api/class-session-experts` including `GET /{id}` and `GET /mine`.
 
 ## Module
 

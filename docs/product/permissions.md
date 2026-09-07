@@ -93,8 +93,11 @@ Create, update, delete for:
   `GET /api/programs/{id}/curriculum-reviews`,
   `POST /api/programs/{id}/approve-review`,
   `POST /api/programs/{id}/request-changes` (owning Expert only).
-  Manager/Admin submit, withdraw, and publish. Offline co-teach:
-  `POST|GET /api/class-session-experts`, Expert `GET /mine`,
+  Manager/Admin submit, withdraw, and publish. Framework criteria:
+  `POST|PUT|DELETE /api/program-frameworks/{id}/criteria...` (Expert owner or
+  Manager/Admin override). Offline co-teach:
+  `POST|GET /api/class-session-experts`, `GET /{id}` (Manager/Admin or owning
+  Expert), Expert `GET /mine`,
   `POST /{id}/accept|decline|approve-reschedule|decline-reschedule`,
   Manager/Admin `POST /{id}/withdraw` (Invited only). Owning Expert
   `PUT /{id}/feedback` after the session is Completed (Accepted only).
