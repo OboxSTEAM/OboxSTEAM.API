@@ -89,6 +89,8 @@ public sealed class NotificationCatalogCopyTests
         Assert.Equal(SampleId2, command.Payload!.ProgramId);
         Assert.Contains("{frameworkName}", command.Templates.Default.Body!, StringComparison.Ordinal);
         Assert.Contains("Robotics blueprint", command.Body!);
+        Assert.NotNull(command.Templates.Expert);
+        Assert.Contains("để bạn duyệt", command.Templates.Expert!.Body!, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -243,6 +245,11 @@ public sealed class NotificationCatalogCopyTests
         if (command.Templates.Manager is { } manager)
         {
             yield return ("Manager", manager.Title, manager.Body);
+        }
+
+        if (command.Templates.Expert is { } expert)
+        {
+            yield return ("Expert", expert.Title, expert.Body);
         }
     }
 }

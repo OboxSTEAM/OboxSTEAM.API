@@ -302,7 +302,7 @@ public sealed class SessionMeetingServiceTests
     {
         SeedUsers();
         SeedClassAndEnrollments();
-        // Join opens 15 minutes before start; session starts in 30 minutes â†’ still closed.
+        // Join opens 15 minutes before start; session starts in 30 minutes so still closed.
         SeedLiveOnline(_now.AddMinutes(30), _now.AddHours(2));
 
         var sut = CreateSut(_studentId);

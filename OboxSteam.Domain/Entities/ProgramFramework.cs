@@ -4,7 +4,7 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Domain.Entities;
 
 /// <summary>
-/// Expert-owned curriculum blueprint for a content family.
+/// Expert-owned curriculum blueprint assigned to at most one program.
 /// Opt-in rules: a null constraint is not enforced at submit-review.
 /// </summary>
 public class ProgramFramework : BaseEntity
@@ -26,7 +26,11 @@ public class ProgramFramework : BaseEntity
 
     public int? MinLiveSessions { get; set; }
 
-    public bool? RequireFinalAssessment { get; set; }
+    /// <summary>
+    /// When true, submit-review requires ≥1 <c>ResearchMilestone</c> with
+    /// <c>IsCapstone</c>. Null or false is not enforced.
+    /// </summary>
+    public bool? RequireCapstoneResearchMilestone { get; set; }
 
     public ICollection<FrameworkRubricCriterion> RubricCriteria { get; set; } = new List<FrameworkRubricCriterion>();
     public ICollection<Program> Programs { get; set; } = new List<Program>();

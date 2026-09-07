@@ -108,4 +108,42 @@ public sealed class SessionReminderPublisherTests
             n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    [Fact]
+    public async Task PublishDueReminders_SendsAgain_AfterReminderSentAtCleared()
+    {
+        _db.Classes.Seed(new Class
+        {
+            Id = _classId,
+            Code = "CLS",
+            Name = "Cohort A",
+            ProgramId = _programId,
+            Status = ClassStatus.InProgress,
+            MaxCapacity = 20,
+            StartDate = _now.AddDays(-1),
+            EndDate = _now.AddDays(30),
+            IsDeleted = false,
+        });
+        var session = new ClassSession
+        {
+            Id = _sessionId,
+            ClassId = _classId,
+            ModuleId = _moduleId,
+            Title = "Moved session",
+            SessionKind = SessionKind.LiveOnline,
+            StartTime = _now.AddMinutes(20),
+            EndTime = _now.AddMinutes(80),
+            Status = ClassSessionStatus.Scheduled,
+            ReminderSentAt = _now.AddHours(-1),
+            IsDeleted = false,
+        };
+        _db.ClassSessions.Seed(session);
+
+        var sut = CreateSut();
+        Assert.Equal(0, await sut.PublishDueRemindersAsync());
+
+        session.ReminderSentAt = null;
+        Assert.Equal(1, await sut.PublishDueRemindersAsync());
+        Assert.Equal(_now, session.ReminderSentAt);
+    }
 }

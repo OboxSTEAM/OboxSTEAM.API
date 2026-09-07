@@ -120,7 +120,7 @@ public class ProgramFrameworkService : IProgramFrameworkService
             MinModules = request.MinModules,
             MinOfflineSessions = request.MinOfflineSessions,
             MinLiveSessions = request.MinLiveSessions,
-            RequireFinalAssessment = request.RequireFinalAssessment,
+            RequireCapstoneResearchMilestone = request.RequireCapstoneResearchMilestone,
         };
 
         await _unitOfWork.ProgramFrameworks.AddAsync(framework);
@@ -157,7 +157,8 @@ public class ProgramFrameworkService : IProgramFrameworkService
     {
         var actor = await ResolveActorAsync();
         var framework = await GetActiveFrameworkAsync(id);
-        await EnsureCanWriteAsync(actor, framework, allowManagerOverride: true);
+        await EnsureCanWriteAsync(actor, framework);
+        await ProgramFrameworkValidator.EnsureNotLockedByReviewAsync(_unitOfWork, framework.Id);
 
         ProgramFrameworkValidator.ValidateName(request.Name, required: false);
         ProgramFrameworkValidator.ValidatePositiveConstraint(nameof(request.MinModules), request.MinModules);
@@ -189,13 +190,13 @@ public class ProgramFrameworkService : IProgramFrameworkService
             request.ClearMinLiveSessions,
             value => framework.MinLiveSessions = value);
 
-        if (request.RequireFinalAssessment.HasValue)
+        if (request.RequireCapstoneResearchMilestone.HasValue)
         {
-            framework.RequireFinalAssessment = request.RequireFinalAssessment;
+            framework.RequireCapstoneResearchMilestone = request.RequireCapstoneResearchMilestone;
         }
-        else if (request.ClearRequireFinalAssessment == true)
+        else if (request.ClearRequireCapstoneResearchMilestone == true)
         {
-            framework.RequireFinalAssessment = null;
+            framework.RequireCapstoneResearchMilestone = null;
         }
 
         await _unitOfWork.ProgramFrameworks.Update(framework);
@@ -213,7 +214,8 @@ public class ProgramFrameworkService : IProgramFrameworkService
     {
         var actor = await ResolveActorAsync();
         var framework = await GetActiveFrameworkAsync(id);
-        await EnsureCanWriteAsync(actor, framework, allowManagerOverride: false);
+        await EnsureCanWriteAsync(actor, framework);
+        await ProgramFrameworkValidator.EnsureNotLockedByReviewAsync(_unitOfWork, framework.Id);
 
         var attachedPrograms = await _unitOfWork.Programs.GetAllAsync(
             p => p.FrameworkId == id && !p.IsDeleted);
@@ -247,7 +249,8 @@ public class ProgramFrameworkService : IProgramFrameworkService
     {
         var actor = await ResolveActorAsync();
         var framework = await GetActiveFrameworkAsync(frameworkId);
-        await EnsureCanWriteAsync(actor, framework, allowManagerOverride: true);
+        await EnsureCanWriteAsync(actor, framework);
+        await ProgramFrameworkValidator.EnsureNotLockedByReviewAsync(_unitOfWork, framework.Id);
 
         ProgramFrameworkValidator.ValidateCriterion(request);
 
@@ -279,7 +282,8 @@ public class ProgramFrameworkService : IProgramFrameworkService
     {
         var actor = await ResolveActorAsync();
         var framework = await GetActiveFrameworkAsync(frameworkId);
-        await EnsureCanWriteAsync(actor, framework, allowManagerOverride: true);
+        await EnsureCanWriteAsync(actor, framework);
+        await ProgramFrameworkValidator.EnsureNotLockedByReviewAsync(_unitOfWork, framework.Id);
 
         ProgramFrameworkValidator.ValidateCriterion(request);
 
@@ -302,7 +306,8 @@ public class ProgramFrameworkService : IProgramFrameworkService
     {
         var actor = await ResolveActorAsync();
         var framework = await GetActiveFrameworkAsync(frameworkId);
-        await EnsureCanWriteAsync(actor, framework, allowManagerOverride: true);
+        await EnsureCanWriteAsync(actor, framework);
+        await ProgramFrameworkValidator.EnsureNotLockedByReviewAsync(_unitOfWork, framework.Id);
 
         var criterion = await GetActiveCriterionAsync(frameworkId, criterionId);
         await _unitOfWork.FrameworkRubricCriteria.SoftRemove(criterion);
@@ -380,28 +385,18 @@ public class ProgramFrameworkService : IProgramFrameworkService
         }
     }
 
-    private async Task EnsureCanWriteAsync(
-        User actor,
-        ProgramFramework framework,
-        bool allowManagerOverride)
+    private async Task EnsureCanWriteAsync(User actor, ProgramFramework framework)
     {
-        if (actor.Role == RoleType.Expert)
+        if (actor.Role != RoleType.Expert)
         {
-            var expert = await RequireCurrentExpertAsync(actor);
-            if (framework.ExpertId != expert.Id)
-            {
-                throw ErrorHelper.Forbidden("You can only manage your own program frameworks.");
-            }
-
-            return;
+            throw ErrorHelper.Forbidden("Only the owning expert can perform this action.");
         }
 
-        if (allowManagerOverride && actor.Role is RoleType.Manager or RoleType.Admin)
+        var expert = await RequireCurrentExpertAsync(actor);
+        if (framework.ExpertId != expert.Id)
         {
-            return;
+            throw ErrorHelper.Forbidden("You can only manage your own program frameworks.");
         }
-
-        throw ErrorHelper.Forbidden("Only the owning expert can perform this action.");
     }
 
     private async Task<ProgramFrameworkResponseDto> MapFrameworkAsync(ProgramFramework framework)
@@ -429,7 +424,7 @@ public class ProgramFrameworkService : IProgramFrameworkService
         MinModules = framework.MinModules,
         MinOfflineSessions = framework.MinOfflineSessions,
         MinLiveSessions = framework.MinLiveSessions,
-        RequireFinalAssessment = framework.RequireFinalAssessment,
+        RequireCapstoneResearchMilestone = framework.RequireCapstoneResearchMilestone,
         RequiresExpertReview = true,
         Criteria = criteria.Select(MapCriterion).ToList(),
         CreatedAt = framework.CreatedAt,

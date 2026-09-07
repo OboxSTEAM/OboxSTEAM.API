@@ -121,7 +121,7 @@ public partial class SeedService
             research.Id,
             $"CRS-REV-{definition.Slug}-03",
             definition.ResearchCourseName,
-            "Research course feeding the capstone milestone (C# RequireFinalAssessment).");
+            "Research course feeding the capstone milestone (C# RequireCapstoneResearchMilestone).");
 
         await EnsureReviewDraftActivityAsync(
             theoryCourse.Id,
@@ -351,7 +351,7 @@ public partial class SeedService
             Code = $"ASG-REV-{slug}-CAP",
             ModuleId = researchModuleId,
             Title = $"{researchModuleName} deliverable",
-            Description = "Capstone file upload so C# RequireFinalAssessment pre-check passes.",
+            Description = "Capstone file upload so C# RequireCapstoneResearchMilestone pre-check passes.",
             AssignmentType = AssignmentType.FileUpload,
             MaxPoints = 100,
             PassScore = 60m,

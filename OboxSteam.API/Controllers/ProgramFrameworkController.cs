@@ -74,11 +74,12 @@ public class ProgramFrameworkController : ControllerBase
     [HttpPut("{id:guid}")]
     [SwaggerOperation(
         Summary = "Update a program framework",
-        Description = "Owning expert, or Manager/Admin override. Allowed while attached programs are PendingReview.")]
+        Description = "Owning expert only. Allowed when the framework is unattached or the attached program is Draft. Blocked with 409 otherwise.")]
     [ProducesResponseType(typeof(ApiResult<ProgramFrameworkResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> UpdateFramework(
         [FromRoute] Guid id,
         [FromBody] UpdateProgramFrameworkRequest request)
@@ -92,10 +93,11 @@ public class ProgramFrameworkController : ControllerBase
     [Authorize(Roles = "Expert")]
     [SwaggerOperation(
         Summary = "Delete a program framework",
-        Description = "Owning expert only. Attached programs are unlinked (free-form review).")]
+        Description = "Owning expert only. Unlinks the attached Draft program. Blocked with 409 when the attached program is not Draft.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> DeleteFramework([FromRoute] Guid id)
     {
         var result = await _frameworkService.DeleteFrameworkAsync(id);
@@ -103,11 +105,14 @@ public class ProgramFrameworkController : ControllerBase
     }
 
     [HttpPost("{id:guid}/criteria")]
-    [SwaggerOperation(Summary = "Add a rubric criterion to a program framework")]
+    [SwaggerOperation(
+        Summary = "Add a rubric criterion to a program framework",
+        Description = "Owning expert only. Allowed when the framework is unattached or the attached program is Draft. Blocked with 409 otherwise.")]
     [ProducesResponseType(typeof(ApiResult<FrameworkRubricCriterionResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> AddCriterion(
         [FromRoute] Guid id,
         [FromBody] FrameworkRubricCriterionRequest request)
@@ -120,11 +125,14 @@ public class ProgramFrameworkController : ControllerBase
     }
 
     [HttpPut("{id:guid}/criteria/{criterionId:guid}")]
-    [SwaggerOperation(Summary = "Update a rubric criterion")]
+    [SwaggerOperation(
+        Summary = "Update a rubric criterion",
+        Description = "Owning expert only. Allowed when the framework is unattached or the attached program is Draft. Blocked with 409 otherwise.")]
     [ProducesResponseType(typeof(ApiResult<FrameworkRubricCriterionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> UpdateCriterion(
         [FromRoute] Guid id,
         [FromRoute] Guid criterionId,
@@ -136,10 +144,13 @@ public class ProgramFrameworkController : ControllerBase
     }
 
     [HttpDelete("{id:guid}/criteria/{criterionId:guid}")]
-    [SwaggerOperation(Summary = "Delete a rubric criterion")]
+    [SwaggerOperation(
+        Summary = "Delete a rubric criterion",
+        Description = "Owning expert only. Allowed when the framework is unattached or the attached program is Draft. Blocked with 409 otherwise.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> DeleteCriterion([FromRoute] Guid id, [FromRoute] Guid criterionId)
     {
         var result = await _frameworkService.DeleteCriterionAsync(id, criterionId);

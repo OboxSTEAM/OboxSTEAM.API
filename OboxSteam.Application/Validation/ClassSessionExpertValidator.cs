@@ -53,12 +53,12 @@ public static class ClassSessionExpertValidator
         }
     }
 
-    public static void ValidateNoActiveExpertOnSession(ClassSessionExpert? existing)
+    public static void ValidateExpertNotAlreadyActiveOnSession(ClassSessionExpert? existing)
     {
         if (existing != null)
         {
             throw ErrorHelper.Conflict(
-                "This session already has an invited or accepted expert. Withdraw or wait for a decline before inviting another.");
+                "This expert already has an invited or accepted invitation for this session.");
         }
     }
 
@@ -94,23 +94,6 @@ public static class ClassSessionExpertValidator
         {
             throw ErrorHelper.Conflict(
                 $"This session is no longer Scheduled (status: {session.Status}).");
-        }
-    }
-
-    public static void ValidateAcceptedForRescheduleDecision(ClassSessionExpert invitation)
-    {
-        if (invitation.Status != ClassSessionExpertStatus.Accepted)
-        {
-            throw ErrorHelper.BadRequest(
-                $"Only an Accepted expert can approve or decline a reschedule (status: {invitation.Status}).");
-        }
-    }
-
-    public static void ValidatePendingReschedule(ClassSession session)
-    {
-        if (!session.ProposedStartTime.HasValue || !session.ProposedEndTime.HasValue)
-        {
-            throw ErrorHelper.BadRequest("This session has no pending reschedule to decide.");
         }
     }
 

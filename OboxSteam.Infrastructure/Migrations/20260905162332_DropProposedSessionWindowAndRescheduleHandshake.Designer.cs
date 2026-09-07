@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260905162332_DropProposedSessionWindowAndRescheduleHandshake")]
+    partial class DropProposedSessionWindowAndRescheduleHandshake
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3389,9 +3392,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid>("StudentId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("SupersededByEnrollmentId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -3405,8 +3405,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("ProgramId");
 
                     b.HasIndex("SourceProgramEnrollmentId");
-
-                    b.HasIndex("SupersededByEnrollmentId");
 
                     b.HasIndex("Status", "CreatedAt")
                         .HasFilter("\"IsDeleted\" = false");
@@ -5523,11 +5521,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramEnrollment", "SupersededByEnrollment")
-                        .WithMany()
-                        .HasForeignKey("SupersededByEnrollmentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.Navigation("EndedModule");
 
                     b.Navigation("Program");
@@ -5535,8 +5528,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("SourceProgramEnrollment");
 
                     b.Navigation("Student");
-
-                    b.Navigation("SupersededByEnrollment");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramFramework", b =>

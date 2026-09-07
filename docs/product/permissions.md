@@ -88,22 +88,26 @@ Create, update, delete for:
 - Intended surfaces: program framework blueprints, curriculum review queue,
   and Offline co-teach invitations. Framework APIs are live at
   `GET|POST|PUT|DELETE /api/program-frameworks` (Expert owns their blueprints;
-  Manager/Admin may list and override updates; create/delete stay Expert-only).
+  Manager/Admin may list and read all, not write). Create/delete stay
+  Expert-only. Blueprint/criteria writes are blocked unless the framework is
+  unattached or the attached program is `Draft`.
   Curriculum review: `GET /api/programs/review-queue`,
-  `GET /api/programs/{id}/curriculum-reviews`,
-  `POST /api/programs/{id}/approve-review`,
-  `POST /api/programs/{id}/request-changes` (owning Expert only).
-  Manager/Admin submit, withdraw, and publish. Framework criteria:
-  `POST|PUT|DELETE /api/program-frameworks/{id}/criteria...` (Expert owner or
-  Manager/Admin override). Offline co-teach:
-  `POST|GET /api/class-session-experts`, `GET /{id}` (Manager/Admin or owning
-  Expert), Expert `GET /mine`,
-  `POST /{id}/accept|decline|approve-reschedule|decline-reschedule`,
-  Manager/Admin `POST /{id}/withdraw` (Invited only). Owning Expert
+  `GET /api/programs/{id}/curriculum-reviews` (framework owner or board may
+  view), `POST /api/programs/{id}/approve-review`,
+  `POST /api/programs/{id}/request-changes` (framework owner when attached;
+  otherwise any one login Expert on `ProgramBoard`).
+  Manager/Admin submit, withdraw (`PendingReview` or `Approved`), and publish.
+  Offline co-teach:
+  `POST|GET /api/class-session-experts`, Expert `GET /mine`,
+  `POST /{id}/accept|decline`,
+  Manager/Admin `POST /{id}/withdraw` (Invited only). Removing the expert from
+  `ProgramBoard` also unlinks their Invited and Accepted co-teach rows on that
+  program. Owning Expert
   `PUT /{id}/feedback` after the session is Completed (Accepted only).
-  Mentor, Manager, and Admin read `coTeachFeedback` on
+  Mentor, Manager, and Admin read `coTeachFeedback` / `coTeachFeedbacks` on
   `GET /api/classes/{classId}/sessions/with-students/{sessionId}`. Students
-  receive the public `coTeach` card only — never feedback text or rating.
+  receive public `coTeach` / `coTeaches` cards only — never feedback text or
+  rating.
 
 ### Mentor skill visibility
 

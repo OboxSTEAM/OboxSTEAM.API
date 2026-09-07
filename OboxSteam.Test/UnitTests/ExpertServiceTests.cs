@@ -4,6 +4,7 @@ using Moq;
 using OboxSteam.Application.DTOs.ExpertDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
@@ -23,9 +24,22 @@ public sealed class ExpertServiceTests
 
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IBlobService> _blobService = new();
+    private readonly Mock<INotificationPublisher> _notifications = new();
+    private readonly Mock<IClaimsService> _claimsService = new();
 
-    private ExpertService CreateSut() =>
-        new(_db, _blobService.Object, NullLogger<ExpertService>.Instance);
+    private ExpertService CreateSut()
+    {
+        _claimsService.Setup(c => c.GetCurrentUserId).Returns(_userId);
+        _notifications
+            .Setup(n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        return new(
+            _db,
+            _blobService.Object,
+            NullLogger<ExpertService>.Instance,
+            _notifications.Object,
+            _claimsService.Object);
+    }
 
     private static IFormFile CreateAvatarFile(string fileName = "avatar.png", long length = 1024)
     {
@@ -129,6 +143,34 @@ public sealed class ExpertServiceTests
         };
         _db.ProgramBoards.Seed(board);
         return board;
+    }
+
+    private void SeedClassAndOfflineSession(Guid classId, Guid sessionId)
+    {
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-001",
+            Name = "Cohort A",
+            ProgramId = _programId,
+            Status = ClassStatus.Draft,
+            MaxCapacity = 20,
+            StartDate = DateTime.UtcNow.AddDays(1),
+            EndDate = DateTime.UtcNow.AddDays(30),
+            IsDeleted = false,
+        });
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = sessionId,
+            ClassId = classId,
+            ModuleId = Guid.NewGuid(),
+            Title = "Lab",
+            SessionKind = SessionKind.Offline,
+            StartTime = DateTime.UtcNow.AddDays(2),
+            EndTime = DateTime.UtcNow.AddDays(2).AddHours(2),
+            Status = ClassSessionStatus.Scheduled,
+            IsDeleted = false,
+        });
     }
 
     // ── GetExpertByIdAsync ────────────────────────────────────────────────────
@@ -440,6 +482,51 @@ public sealed class ExpertServiceTests
     }
 
     [Fact]
+    public async Task Update_ReplacingPrograms_UnlinksRemovedProgramCoTeach()
+    {
+        SeedUser();
+        SeedProgram();
+        SeedProgram(_otherProgramId, "PRG-002", "Advanced");
+        SeedExpert(userId: _userId, boards:
+        [
+            new ProgramBoard
+            {
+                Id = _boardId,
+                ExpertId = _expertId,
+                ProgramId = _programId,
+                RoleInBoard = "Old",
+                IsDeleted = false,
+            },
+        ]);
+        var classId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var sessionId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        SeedClassAndOfflineSession(classId, sessionId);
+        _db.ClassSessionExperts.Seed(new ClassSessionExpert
+        {
+            Id = Guid.Parse("18181818-1818-1818-1818-181818181818"),
+            ClassSessionId = sessionId,
+            ExpertId = _expertId,
+            Status = ClassSessionExpertStatus.Invited,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.UpdateExpertAsync(_expertId, new UpdateExpertRequest
+        {
+            Programs =
+            [
+                new ExpertProgramAssignmentDto
+                {
+                    ProgramId = _otherProgramId,
+                    RoleInBoard = "New Role",
+                },
+            ],
+        });
+
+        Assert.True(_db.ClassSessionExperts.Items.Single().IsDeleted);
+    }
+
+    [Fact]
     public async Task Update_ClearsPrograms_WhenEmptyListProvided()
     {
         SeedProgram();
@@ -560,6 +647,48 @@ public sealed class ExpertServiceTests
     }
 
     [Fact]
+    public async Task RemoveProgram_UnlinksInvitedAndAccepted_KeepsDeclined()
+    {
+        SeedUser();
+        SeedProgram();
+        SeedExpert(userId: _userId);
+        SeedBoard(_expertId, _programId);
+        var classId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var sessionId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        SeedClassAndOfflineSession(classId, sessionId);
+        _db.ClassSessionExperts.Seed(
+            new ClassSessionExpert
+            {
+                Id = Guid.Parse("18181818-1818-1818-1818-181818181818"),
+                ClassSessionId = sessionId,
+                ExpertId = _expertId,
+                Status = ClassSessionExpertStatus.Accepted,
+                IsDeleted = false,
+            },
+            new ClassSessionExpert
+            {
+                Id = Guid.Parse("19191919-1919-1919-1919-191919191919"),
+                ClassSessionId = sessionId,
+                ExpertId = _expertId,
+                Status = ClassSessionExpertStatus.Declined,
+                IsDeleted = false,
+            });
+        var sut = CreateSut();
+
+        await sut.RemoveProgramFromExpertAsync(_expertId, _programId);
+
+        Assert.True(_db.ClassSessionExperts.Items.Single(e => e.Status == ClassSessionExpertStatus.Accepted).IsDeleted);
+        Assert.False(_db.ClassSessionExperts.Items.Single(e => e.Status == ClassSessionExpertStatus.Declined).IsDeleted);
+        _notifications.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Count == 1
+                    && commands[0].Type == NotificationType.ClassSessionExpertInvitationWithdrawn),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task RemoveProgram_Throws_WhenExpertProgramOrAssignmentMissing()
     {
         SeedExpert();
@@ -601,6 +730,36 @@ public sealed class ExpertServiceTests
         Assert.True(_db.Experts.Items[0].IsDeleted);
         Assert.Equal(AccountStatus.Locked, _db.Users.Items[0].Status);
         Assert.False(_db.Users.Items[0].IsDeleted);
+    }
+
+    [Fact]
+    public async Task Delete_UnlinksActiveCoTeach()
+    {
+        SeedUser();
+        SeedProgram();
+        SeedExpert(userId: _userId);
+        var classId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var sessionId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        SeedClassAndOfflineSession(classId, sessionId);
+        _db.ClassSessionExperts.Seed(new ClassSessionExpert
+        {
+            Id = Guid.Parse("18181818-1818-1818-1818-181818181818"),
+            ClassSessionId = sessionId,
+            ExpertId = _expertId,
+            Status = ClassSessionExpertStatus.Invited,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        await sut.DeleteExpertAsync(_expertId);
+
+        Assert.True(_db.ClassSessionExperts.Items.Single().IsDeleted);
+        _notifications.Verify(
+            n => n.PublishManyAsync(
+                It.Is<IReadOnlyList<NotificationCommand>>(commands =>
+                    commands.Single().Type == NotificationType.ClassSessionExpertInvitationWithdrawn),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

@@ -40,6 +40,10 @@ public sealed class CurriculumReviewServiceTests
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Callback<NotificationCommand, CancellationToken>((command, _) => _published.Add(command))
             .Returns(Task.CompletedTask);
+        _notificationPublisher
+            .Setup(n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<NotificationCommand>, CancellationToken>((commands, _) => _published.AddRange(commands))
+            .Returns(Task.CompletedTask);
         var programService = new ProgramService(
             _db,
             Mock.Of<IBlobService>(),
@@ -127,17 +131,44 @@ public sealed class CurriculumReviewServiceTests
         SeedExpert(_otherExpertId, _otherExpertUserId, "EXP-002");
     }
 
+    private void SeedBoard(Guid programId, Guid expertId)
+    {
+        _db.ProgramBoards.Seed(new ProgramBoard
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = programId,
+            ExpertId = expertId,
+            RoleInBoard = "Reviewer",
+            IsDeleted = false,
+        });
+    }
+
     [Fact]
-    public async Task Submit_NoFramework_GoesToApproved()
+    public async Task Submit_NoFramework_GoesToPendingReview()
+    {
+        SeedStaffAndOwner();
+        SeedProgram();
+        SeedBoard(_programId, _expertId);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.SubmitForReviewAsync(_programId);
+
+        Assert.Equal(ProgramStatus.PendingReview, result.Status);
+        Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
+        var submitted = Assert.Single(_published);
+        Assert.Equal(NotificationType.CurriculumReviewSubmitted, submitted.Type);
+        Assert.Equal(_expertUserId, submitted.Audience.UserId);
+    }
+
+    [Fact]
+    public async Task Submit_NoBoardExpertWithLogin_BadRequest()
     {
         SeedStaffAndOwner();
         SeedProgram();
         var sut = CreateSut(_managerId);
 
-        var result = await sut.SubmitForReviewAsync(_programId);
-
-        Assert.Equal(ProgramStatus.Approved, result.Status);
-        Assert.Equal(ProgramStatus.Approved, _db.Programs.Items.Single().Status);
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.SubmitForReviewAsync(_programId));
+        Assert.Equal(ProgramStatus.Draft, _db.Programs.Items.Single().Status);
         Assert.Empty(_published);
     }
 
@@ -157,6 +188,21 @@ public sealed class CurriculumReviewServiceTests
         Assert.Equal(_expertUserId, submitted.Audience.UserId);
         Assert.Equal(_programId, submitted.Payload!.ProgramId);
         Assert.Contains("Robotics blueprint", submitted.Body!);
+    }
+
+    [Fact]
+    public async Task Submit_WithFramework_NotifiesOwnerNotOtherBoardMember()
+    {
+        SeedStaffAndOwner();
+        SeedFramework();
+        SeedProgram(frameworkId: _frameworkId);
+        SeedBoard(_programId, _otherExpertId);
+        var sut = CreateSut(_managerId);
+
+        await sut.SubmitForReviewAsync(_programId);
+
+        var submitted = Assert.Single(_published);
+        Assert.Equal(_expertUserId, submitted.Audience.UserId);
     }
 
     [Fact]
@@ -207,7 +253,19 @@ public sealed class CurriculumReviewServiceTests
     }
 
     [Fact]
-    public async Task Withdraw_NotPending_Conflict()
+    public async Task Withdraw_Approved_ReturnsToDraft()
+    {
+        SeedStaffAndOwner();
+        SeedProgram(status: ProgramStatus.Approved);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.WithdrawReviewAsync(_programId);
+
+        Assert.Equal(ProgramStatus.Draft, result.Status);
+    }
+
+    [Fact]
+    public async Task Withdraw_NotPendingOrApproved_Conflict()
     {
         SeedStaffAndOwner();
         SeedProgram(status: ProgramStatus.Draft);
@@ -226,6 +284,10 @@ public sealed class CurriculumReviewServiceTests
         var result = await sut.PublishAsync(_programId);
 
         Assert.Equal(ProgramStatus.Active, result.Status);
+        var published = Assert.Single(_published);
+        Assert.Equal(NotificationType.CurriculumReviewPublished, published.Type);
+        Assert.Equal(NotificationAudienceKind.Managers, published.Audience.Kind);
+        Assert.Equal(_programId, published.Payload!.ProgramId);
     }
 
     [Fact]
@@ -239,7 +301,7 @@ public sealed class CurriculumReviewServiceTests
     }
 
     [Fact]
-    public async Task Queue_ExpertSeesOnlyOwnFrameworkPrograms()
+    public async Task Queue_ExpertSeesBoardAndOwnedFrameworkPrograms()
     {
         SeedStaffAndOwner();
         SeedFramework();
@@ -250,6 +312,8 @@ public sealed class CurriculumReviewServiceTests
             status: ProgramStatus.PendingReview,
             frameworkId: _otherFrameworkId,
             code: "PRG-002");
+        SeedBoard(_programId, _expertId);
+        SeedBoard(_otherProgramId, _otherExpertId);
         var sut = CreateSut(_expertUserId);
 
         var result = await sut.GetReviewQueueAsync(1, 10);
@@ -257,6 +321,36 @@ public sealed class CurriculumReviewServiceTests
         Assert.Single(result.Items);
         Assert.Equal(_programId, result.Items[0].Id);
         Assert.Equal(_frameworkId, result.Items[0].FrameworkId);
+    }
+
+    [Fact]
+    public async Task Queue_FrameworkOwnerSeesPendingWhenNotOnBoard()
+    {
+        SeedStaffAndOwner();
+        SeedFramework();
+        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        var sut = CreateSut(_expertUserId);
+
+        var result = await sut.GetReviewQueueAsync(1, 10);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(_programId, item.Id);
+    }
+
+    [Fact]
+    public async Task Queue_BoardMemberSeesFrameworkProgramTheyDoNotOwn()
+    {
+        SeedStaffAndOwner();
+        SeedFramework();
+        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedBoard(_programId, _otherExpertId);
+        var sut = CreateSut(_otherExpertUserId);
+
+        var result = await sut.GetReviewQueueAsync(1, 10);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(_programId, item.Id);
+        Assert.Equal(_expertId, item.ExpertId);
     }
 
     [Fact]
@@ -279,7 +373,23 @@ public sealed class CurriculumReviewServiceTests
     }
 
     [Fact]
-    public async Task Approve_OwnerWithoutCriteria_MovesToApproved()
+    public async Task Queue_ExpertSeesFreeFormPendingWhenOnBoard()
+    {
+        SeedStaffAndOwner();
+        SeedProgram(status: ProgramStatus.PendingReview);
+        SeedBoard(_programId, _expertId);
+        var sut = CreateSut(_expertUserId);
+
+        var result = await sut.GetReviewQueueAsync(1, 10);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(_programId, item.Id);
+        Assert.Null(item.FrameworkId);
+        Assert.Null(item.ExpertId);
+    }
+
+    [Fact]
+    public async Task Approve_FrameworkOwnerWithoutCriteria_MovesToApproved()
     {
         SeedStaffAndOwner();
         SeedFramework();
@@ -297,6 +407,21 @@ public sealed class CurriculumReviewServiceTests
         Assert.Equal(NotificationType.CurriculumReviewApproved, approved.Type);
         Assert.Equal(NotificationAudienceKind.Managers, approved.Audience.Kind);
         Assert.Equal(_programId, approved.Payload!.ProgramId);
+    }
+
+    [Fact]
+    public async Task Approve_NoFramework_BoardExpert_MovesToApproved()
+    {
+        SeedStaffAndOwner();
+        SeedProgram(status: ProgramStatus.PendingReview);
+        SeedBoard(_programId, _expertId);
+        var sut = CreateSut(_expertUserId);
+
+        var result = await sut.ApproveAsync(_programId, null);
+
+        Assert.Equal(CurriculumReviewDecision.Approved, result.Decision);
+        Assert.Empty(result.Scores);
+        Assert.Equal(ProgramStatus.Approved, _db.Programs.Items.Single().Status);
     }
 
     [Fact]
@@ -363,9 +488,23 @@ public sealed class CurriculumReviewServiceTests
         SeedStaffAndOwner();
         SeedFramework();
         SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedBoard(_programId, _expertId);
         var sut = CreateSut(_otherExpertUserId);
 
         await Assert.ThrowsAsync<ForbiddenException>(() => sut.ApproveAsync(_programId, null));
+    }
+
+    [Fact]
+    public async Task Approve_BoardMemberWhoDoesNotOwnFramework_Forbidden()
+    {
+        SeedStaffAndOwner();
+        SeedFramework();
+        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedBoard(_programId, _otherExpertId);
+        var sut = CreateSut(_otherExpertUserId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => sut.ApproveAsync(_programId, null));
+        Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
     }
 
     [Fact]
@@ -457,17 +596,42 @@ public sealed class CurriculumReviewServiceTests
     }
 
     [Fact]
-    public async Task Submit_ExpertWithoutLogin_DoesNotPublish()
+    public async Task GetReviews_BoardMemberCanViewFrameworkProgramHistory()
+    {
+        SeedStaffAndOwner();
+        SeedFramework();
+        SeedProgram(status: ProgramStatus.Draft, frameworkId: _frameworkId);
+        SeedBoard(_programId, _otherExpertId);
+        _db.CurriculumReviews.Seed(new CurriculumReview
+        {
+            Id = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+            ProgramId = _programId,
+            ExpertId = _expertId,
+            Round = 1,
+            Decision = CurriculumReviewDecision.ChangesRequested,
+            Comment = "Fix module 1",
+            ReviewedAt = _now,
+            IsDeleted = false,
+        });
+        var sut = CreateSut(_otherExpertUserId);
+
+        var result = await sut.GetReviewsAsync(_programId);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task Submit_FrameworkOwnerWithoutLogin_BadRequest()
     {
         SeedStaffAndOwner();
         _db.Experts.Items.Single(e => e.Id == _expertId).UserId = null;
         SeedFramework();
         SeedProgram(frameworkId: _frameworkId);
+        SeedBoard(_programId, _expertId);
         var sut = CreateSut(_managerId);
 
-        var result = await sut.SubmitForReviewAsync(_programId);
-
-        Assert.Equal(ProgramStatus.PendingReview, result.Status);
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.SubmitForReviewAsync(_programId));
+        Assert.Equal(ProgramStatus.Draft, _db.Programs.Items.Single().Status);
         Assert.Empty(_published);
     }
 }

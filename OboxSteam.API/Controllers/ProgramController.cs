@@ -271,7 +271,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Curriculum review queue",
-        Description = "Experts see PendingReview programs attached to their own frameworks. Manager and Admin see all pending programs.")]
+        Description = "Experts see PendingReview programs on their program board or whose attached framework they own. Manager and Admin see all pending.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ProgramReviewQueueItemDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -292,7 +292,9 @@ public class ProgramController : ControllerBase
 
     [HttpGet("{id:guid}/curriculum-reviews")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "List curriculum review rounds for a program")]
+    [SwaggerOperation(
+        Summary = "List curriculum review rounds for a program",
+        Description = "Framework owner and program-board experts may read history. Manager and Admin may read all.")]
     [ProducesResponseType(typeof(ApiResult<IReadOnlyList<CurriculumReviewResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -308,7 +310,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Submit a draft program for review",
-        Description = "Runs framework pre-check. Attached framework moves the program to PendingReview; no framework moves it to Approved.")]
+        Description = "With a framework: the owner must have a login. Without a framework: at least one program-board expert with a login. Always PendingReview. Framework pre-check runs when FrameworkId is set; no framework is free-form board review.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -325,7 +327,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Withdraw a pending review",
-        Description = "Moves PendingReview back to Draft. No curriculum review row is created.")]
+        Description = "Moves PendingReview or Approved back to Draft. No curriculum review row is created.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -341,7 +343,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Publish an approved program",
-        Description = "Moves Approved to Active. Enrollment and class creation require Active.")]
+        Description = "Moves Approved to Active. Notifies managers. Enrollment and class creation require Active.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -356,8 +358,8 @@ public class ProgramController : ControllerBase
     [HttpPost("{id:guid}/approve-review")]
     [Authorize(Roles = "Expert")]
     [SwaggerOperation(
-        Summary = "Approve a program as the framework owner",
-        Description = "PendingReview → Approved. Scores are required when the framework has rubric criteria.")]
+        Summary = "Approve a program as the deciding expert",
+        Description = "PendingReview → Approved. With a framework: only the framework owner. Without a framework: any one login expert on ProgramBoard. Scores are required when the attached framework has rubric criteria.")]
     [ProducesResponseType(typeof(ApiResult<CurriculumReviewResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -376,7 +378,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert")]
     [SwaggerOperation(
         Summary = "Request curriculum changes",
-        Description = "PendingReview → Draft. Comment is required so the manager knows what to fix.")]
+        Description = "PendingReview → Draft. Same actor as approve-review. Comment is required so the manager knows what to fix.")]
     [ProducesResponseType(typeof(ApiResult<CurriculumReviewResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

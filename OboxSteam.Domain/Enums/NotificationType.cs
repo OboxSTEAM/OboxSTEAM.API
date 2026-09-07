@@ -121,8 +121,10 @@ public enum NotificationType
     ClassSessionExpertAccepted,
     ClassSessionExpertDeclined,
     ClassSessionExpertInvitationWithdrawn,
-    ClassSessionExpertRescheduleRequested,
-    ClassSessionExpertRescheduleDeclined,
     ClassSessionExpertFeedbackRequested,
-    ClassSessionExpertFeedbackSubmitted
+    ClassSessionExpertFeedbackSubmitted,
+
+    CurriculumReviewPublished,
+
+    ClassSessionExpertClearedOnReschedule
 }

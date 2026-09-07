@@ -12,11 +12,11 @@ public sealed class ProgramReviewQueueItemDto
 
     public ProgramStatus Status { get; set; }
 
-    public Guid FrameworkId { get; set; }
+    public Guid? FrameworkId { get; set; }
 
     public string? FrameworkName { get; set; }
 
-    public Guid ExpertId { get; set; }
+    public Guid? ExpertId { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

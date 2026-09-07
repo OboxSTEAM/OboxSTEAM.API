@@ -11,28 +11,34 @@ Optional `FrameworkId` links to an expert `ProgramFramework` blueprint.
 
 ## ProgramFramework
 
-Expert-owned curriculum blueprint with opt-in constraints and a rubric
-scorecard (`FrameworkRubricCriterion`). Null or `false` rules are not
-enforced. `RequireFinalAssessment = true` requires ≥1 capstone research
-milestone. Attaching a framework always requires the owning expert to review
-(zero criteria still wait). No `FrameworkId` skips expert review (submit →
-`Approved`, then manager publish). CRUD: `/api/program-frameworks`.
+Expert-owned curriculum blueprint assigned to at most one program, with
+opt-in constraints and a rubric scorecard (`FrameworkRubricCriterion`).
+Null or `false` rules are not enforced. `RequireCapstoneResearchMilestone =
+true` requires ≥1 `ResearchMilestone` with `IsCapstone`. With a framework,
+only the owning expert may approve or request-changes; board experts may
+view and co-teach. Removing an expert from the board unlinks their Invited
+and Accepted co-teach rows on that program. No `FrameworkId` is free-form board review (still
+`PendingReview`). CRUD: `/api/program-frameworks`.
+Blueprint edits are locked unless the framework is unattached or the
+attached program is `Draft`.
 
 ## CurriculumReview
 
 Expert audit round on a program (not student `ProgramReview`). Scores live on
-`ReviewCriterionScore`. Owner-only approve / request-changes; comment is
-required when requesting changes.
+`ReviewCriterionScore`. With a framework, only the owner decides; without a
+framework, any one board expert may approve or request-changes. Comment is
+required when requesting changes. Manager may withdraw from
+`PendingReview` or `Approved` back to `Draft`.
 
 ## ClassSessionExpert
 
 Co-teach invitation on a class session (`Invited` / `Accepted` / `Declined`).
-One Invited or Accepted expert per session. Manager may withdraw while
-`Invited`. Accepted reschedules require expert approval of
-`ProposedStartTime` / `ProposedEndTime` before the committed window moves.
-Private mentor feedback is stored on the row after the session is Completed
-(`PUT /api/class-session-experts/{id}/feedback`; students must not see it).
-Routes: `/api/class-session-experts` including `GET /{id}` and `GET /mine`.
+Multiple Invited or Accepted experts per session; the same expert cannot
+hold two active invites on one session. Manager may withdraw while
+`Invited`. Changing session `StartTime` / `EndTime` clears Invited and
+Accepted links (Declined stays) and the manager may invite again. Private mentor feedback is stored on each row after
+the session is Completed (`PUT /api/class-session-experts/{id}/feedback`;
+students must not see it).
 
 ## Module
 

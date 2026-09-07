@@ -53,30 +53,21 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         if (program.FrameworkId.HasValue)
         {
             framework = await RequireActiveFrameworkAsync(program.FrameworkId.Value);
-            program.Status = ProgramStatus.PendingReview;
-            _logger.LogInformation(
-                "[SubmitForReview] Program {ProgramId} submitted by {UserId} to PendingReview on framework {FrameworkId}.",
-                program.Id,
-                actor.Id,
-                framework.Id);
-        }
-        else
-        {
-            program.Status = ProgramStatus.Approved;
-            _logger.LogInformation(
-                "[SubmitForReview] Program {ProgramId} submitted by {UserId} to Approved (no framework).",
-                program.Id,
-                actor.Id);
         }
 
+        var reviewers = await ResolveSubmitReviewersAsync(program, framework);
+
+        program.Status = ProgramStatus.PendingReview;
         await _unitOfWork.Programs.Update(program);
         await _unitOfWork.SaveChangesAsync();
 
-        if (framework != null)
-        {
-            await PublishCurriculumReviewSubmittedAsync(program, framework, actor);
-        }
+        _logger.LogInformation(
+            "[SubmitForReview] Program {ProgramId} submitted by {UserId} to PendingReview (framework {FrameworkId}).",
+            program.Id,
+            actor.Id,
+            framework?.Id);
 
+        await PublishCurriculumReviewSubmittedAsync(program, framework, reviewers, actor);
         return await _programService.GetProgramByIdAsync(programId);
     }
 
@@ -85,9 +76,9 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var actor = await RequireManagerOrAdminAsync();
         var program = await GetActiveProgramAsync(programId);
 
-        if (program.Status != ProgramStatus.PendingReview)
+        if (program.Status is not (ProgramStatus.PendingReview or ProgramStatus.Approved))
         {
-            throw ErrorHelper.Conflict("Only programs pending expert review can be withdrawn.");
+            throw ErrorHelper.Conflict("Only programs pending expert review or approved for publish can be withdrawn.");
         }
 
         program.Status = ProgramStatus.Draft;
@@ -121,6 +112,13 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             program.Id,
             actor.Id);
 
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.CurriculumReviewPublished(
+                program.Id,
+                actor.Id,
+                program.Name,
+                DisplayName(actor)));
+
         return await _programService.GetProgramByIdAsync(programId);
     }
 
@@ -129,16 +127,22 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var actor = await ResolveReviewActorAsync();
 
         var pending = await _unitOfWork.Programs.GetAllAsync(
-            p => p.Status == ProgramStatus.PendingReview && !p.IsDeleted && p.FrameworkId.HasValue);
+            p => p.Status == ProgramStatus.PendingReview && !p.IsDeleted);
 
         if (actor.Role == RoleType.Expert)
         {
             var expert = await RequireCurrentExpertAsync(actor);
-            var frameworks = await _unitOfWork.ProgramFrameworks.GetAllAsync(
-                f => f.ExpertId == expert.Id && !f.IsDeleted);
-            var ownedIds = frameworks.Select(f => f.Id).ToHashSet();
+            var boards = await _unitOfWork.ProgramBoards.GetAllAsync(
+                b => b.ExpertId == expert.Id && !b.IsDeleted);
+            var boardProgramIds = boards.Select(b => b.ProgramId).ToHashSet();
+            var ownedFrameworkIds = (await _unitOfWork.ProgramFrameworks.GetAllAsync(
+                    f => f.ExpertId == expert.Id && !f.IsDeleted))
+                .Select(f => f.Id)
+                .ToHashSet();
             pending = pending
-                .Where(p => p.FrameworkId.HasValue && ownedIds.Contains(p.FrameworkId.Value))
+                .Where(p =>
+                    boardProgramIds.Contains(p.Id)
+                    || (p.FrameworkId.HasValue && ownedFrameworkIds.Contains(p.FrameworkId.Value)))
                 .ToList();
         }
 
@@ -163,16 +167,21 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             .Take(pageSize)
             .Select(p =>
             {
-                frameworksById.TryGetValue(p.FrameworkId!.Value, out var framework);
+                ProgramFramework? framework = null;
+                if (p.FrameworkId.HasValue)
+                {
+                    frameworksById.TryGetValue(p.FrameworkId.Value, out framework);
+                }
+
                 return new ProgramReviewQueueItemDto
                 {
                     Id = p.Id,
                     Code = p.Code,
                     Name = p.Name,
                     Status = p.Status,
-                    FrameworkId = p.FrameworkId!.Value,
+                    FrameworkId = p.FrameworkId,
                     FrameworkName = framework?.Name,
-                    ExpertId = framework?.ExpertId ?? Guid.Empty,
+                    ExpertId = framework?.ExpertId,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
                 };
@@ -189,7 +198,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
         if (actor.Role == RoleType.Expert)
         {
-            await EnsureExpertOwnsAttachedFrameworkAsync(actor, program);
+            await EnsureExpertCanViewReviewAsync(actor, program);
         }
 
         var reviews = await _unitOfWork.CurriculumReviews.GetAllAsync(
@@ -231,7 +240,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         Guid programId,
         ApproveCurriculumReviewRequest? request)
     {
-        var (program, expert, _, criteria, actor) = await RequirePendingOwnedReviewAsync(programId);
+        var (program, expert, _, criteria, actor) = await RequirePendingDecisionAsync(programId);
         var comment = CurriculumReviewValidator.NormalizeOptionalComment(request?.Comment);
         var reviewId = Guid.NewGuid();
         var scoreRows = CurriculumReviewValidator.BuildScores(reviewId, criteria, request?.Scores);
@@ -267,7 +276,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             throw ErrorHelper.BadRequest("Request body is required.");
         }
 
-        var (program, expert, _, _, actor) = await RequirePendingOwnedReviewAsync(programId);
+        var (program, expert, _, _, actor) = await RequirePendingDecisionAsync(programId);
         var comment = CurriculumReviewValidator.RequireComment(request.Comment);
 
         var review = await PersistDecisionAsync(
@@ -327,14 +336,14 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     private async Task<(
         Program Program,
         Expert Expert,
-        ProgramFramework Framework,
+        ProgramFramework? Framework,
         List<FrameworkRubricCriterion> Criteria,
-        User Actor)> RequirePendingOwnedReviewAsync(Guid programId)
+        User Actor)> RequirePendingDecisionAsync(Guid programId)
     {
         var actor = await ResolveReviewActorAsync();
         if (actor.Role != RoleType.Expert)
         {
-            throw ErrorHelper.Forbidden("Only the owning expert can decide a curriculum review.");
+            throw ErrorHelper.Forbidden("Only an expert can decide a curriculum review.");
         }
 
         var program = await GetActiveProgramAsync(programId);
@@ -343,17 +352,28 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             throw ErrorHelper.Conflict("Only programs pending expert review can receive a decision.");
         }
 
-        var expert = await EnsureExpertOwnsAttachedFrameworkAsync(actor, program);
-        var framework = await RequireActiveFrameworkAsync(program.FrameworkId!.Value);
-        var criteria = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
-            c => c.FrameworkId == framework.Id && !c.IsDeleted);
+        var expert = await RequireCurrentExpertAsync(actor);
+        ProgramFramework? framework = null;
+        List<FrameworkRubricCriterion> criteria = [];
+        if (program.FrameworkId.HasValue)
+        {
+            framework = await RequireActiveFrameworkAsync(program.FrameworkId.Value);
+            if (framework.ExpertId != expert.Id)
+            {
+                throw ErrorHelper.Forbidden(
+                    "Only the assigned framework owner can approve or request changes on this program.");
+            }
 
-        return (
-            program,
-            expert,
-            framework,
-            criteria.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList(),
-            actor);
+            var rows = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
+                c => c.FrameworkId == framework.Id && !c.IsDeleted);
+            criteria = rows.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList();
+        }
+        else
+        {
+            await EnsureExpertOnProgramBoardAsync(expert, program);
+        }
+
+        return (program, expert, framework, criteria, actor);
     }
 
     private async Task<Program> GetActiveProgramAsync(Guid programId)
@@ -379,21 +399,86 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         return framework;
     }
 
-    private async Task<Expert> EnsureExpertOwnsAttachedFrameworkAsync(User actor, Program program)
+    private async Task EnsureExpertCanViewReviewAsync(User actor, Program program)
     {
         var expert = await RequireCurrentExpertAsync(actor);
-        if (!program.FrameworkId.HasValue)
+        if (await IsBoardMemberAsync(program.Id, expert.Id))
         {
-            throw ErrorHelper.Forbidden("This program is not attached to a framework.");
+            return;
         }
 
-        var framework = await RequireActiveFrameworkAsync(program.FrameworkId.Value);
-        if (framework.ExpertId != expert.Id)
+        if (program.FrameworkId.HasValue)
         {
-            throw ErrorHelper.Forbidden("You can only review programs attached to your own frameworks.");
+            var framework = await RequireActiveFrameworkAsync(program.FrameworkId.Value);
+            if (framework.ExpertId == expert.Id)
+            {
+                return;
+            }
         }
 
-        return expert;
+        throw ErrorHelper.Forbidden(
+            "You can only view curriculum reviews for programs on your board or frameworks you own.");
+    }
+
+    private async Task EnsureExpertOnProgramBoardAsync(Expert expert, Program program)
+    {
+        if (await IsBoardMemberAsync(program.Id, expert.Id))
+        {
+            return;
+        }
+
+        throw ErrorHelper.Forbidden("You can only review programs on your program board.");
+    }
+
+    private async Task<bool> IsBoardMemberAsync(Guid programId, Guid expertId)
+    {
+        var board = await _unitOfWork.ProgramBoards.FirstOrDefaultAsync(
+            b => b.ProgramId == programId && b.ExpertId == expertId && !b.IsDeleted);
+        return board != null;
+    }
+
+    private async Task<List<Expert>> ResolveSubmitReviewersAsync(Program program, ProgramFramework? framework)
+    {
+        if (framework != null)
+        {
+            var owner = await _unitOfWork.Experts.GetByIdAsync(framework.ExpertId);
+            if (owner == null
+                || owner.IsDeleted
+                || !owner.UserId.HasValue
+                || owner.UserId.Value == Guid.Empty)
+            {
+                throw ErrorHelper.BadRequest(
+                    "The assigned framework owner must have a login before submitting for review.");
+            }
+
+            return [owner];
+        }
+
+        var reviewers = await GetBoardExpertsWithLoginAsync(program.Id);
+        if (reviewers.Count == 0)
+        {
+            throw ErrorHelper.BadRequest(
+                "Add at least one program-board expert with a login before submitting for review.");
+        }
+
+        return reviewers;
+    }
+
+    private async Task<List<Expert>> GetBoardExpertsWithLoginAsync(Guid programId)
+    {
+        var boards = await _unitOfWork.ProgramBoards.GetAllAsync(
+            b => b.ProgramId == programId && !b.IsDeleted);
+        var expertIds = boards.Select(b => b.ExpertId).Distinct().ToList();
+        if (expertIds.Count == 0)
+        {
+            return [];
+        }
+
+        var experts = await _unitOfWork.Experts.GetAllAsync(
+            e => expertIds.Contains(e.Id) && !e.IsDeleted);
+        return experts
+            .Where(e => e.UserId.HasValue && e.UserId.Value != Guid.Empty)
+            .ToList();
     }
 
     private async Task<User> RequireManagerOrAdminAsync()
@@ -449,26 +534,28 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
     private async Task PublishCurriculumReviewSubmittedAsync(
         Program program,
-        ProgramFramework framework,
+        ProgramFramework? framework,
+        IReadOnlyList<Expert> reviewers,
         User actor)
     {
-        var expert = await _unitOfWork.Experts.GetByIdAsync(framework.ExpertId);
-        if (expert == null || expert.IsDeleted || !expert.UserId.HasValue || expert.UserId == Guid.Empty)
-        {
-            _logger.LogWarning(
-                "[SubmitForReview] Skip CurriculumReviewSubmitted; framework {FrameworkId} owner has no login.",
-                framework.Id);
-            return;
-        }
-
-        await _notificationPublisher.PublishAsync(
-            NotificationCatalog.CurriculumReviewSubmitted(
-                expert.UserId.Value,
+        var actorName = DisplayName(actor);
+        var commands = reviewers
+            .Where(e => e.UserId.HasValue && e.UserId.Value != Guid.Empty)
+            .Select(e => NotificationCatalog.CurriculumReviewSubmitted(
+                e.UserId!.Value,
                 program.Id,
                 actor.Id,
                 program.Name,
-                framework.Name,
-                DisplayName(actor)));
+                framework?.Name,
+                actorName))
+            .ToList();
+
+        if (commands.Count == 0)
+        {
+            return;
+        }
+
+        await _notificationPublisher.PublishManyAsync(commands);
     }
 
     private async Task PublishCurriculumReviewDecisionAsync(

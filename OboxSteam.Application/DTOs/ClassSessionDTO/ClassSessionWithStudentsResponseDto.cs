@@ -26,7 +26,9 @@ public class ClassSessionWithStudentsResponseDto
     public ClassSessionStatus Status { get; set; }
     public bool HasAcceptedExpert { get; set; }
     public ClassSessionCoTeachPublicDto? CoTeach { get; set; }
+    public List<ClassSessionCoTeachPublicDto> CoTeaches { get; set; } = [];
     public ClassSessionCoTeachFeedbackDto? CoTeachFeedback { get; set; }
+    public List<ClassSessionCoTeachFeedbackDto> CoTeachFeedbacks { get; set; } = [];
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<ClassSessionStudentResponseDto> Students { get; set; } = new();

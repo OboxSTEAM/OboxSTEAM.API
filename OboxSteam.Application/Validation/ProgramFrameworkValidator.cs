@@ -140,7 +140,7 @@ public static class ProgramFrameworkValidator
                 $"Program has {liveCount} LiveOnline session(s); framework requires at least {framework.MinLiveSessions.Value}.");
         }
 
-        if (framework.RequireFinalAssessment == true)
+        if (framework.RequireCapstoneResearchMilestone == true)
         {
             var capstoneCount = snapshot.MilestonesByModuleId.Values
                 .SelectMany(m => m)
@@ -148,10 +148,28 @@ public static class ProgramFrameworkValidator
             if (capstoneCount < 1)
             {
                 errors.Add(
-                    "Program has no capstone research milestone; framework requires a final assessment.");
+                    "Program has no ResearchMilestone with IsCapstone; framework requires a capstone research milestone.");
             }
         }
 
         return errors;
+    }
+
+    /// <summary>
+    /// A framework belongs to at most one program. Edits and delete are allowed
+    /// only while unattached or while that program is Draft.
+    /// </summary>
+    public static async Task EnsureNotLockedByReviewAsync(IUnitOfWork unitOfWork, Guid frameworkId)
+    {
+        var attached = await unitOfWork.Programs.FirstOrDefaultAsync(
+            p => p.FrameworkId == frameworkId && !p.IsDeleted);
+        if (attached == null || attached.Status == ProgramStatus.Draft)
+        {
+            return;
+        }
+
+        throw ErrorHelper.Conflict(
+            $"Framework can only be changed while the attached program is Draft. " +
+            $"Program '{attached.Code}' is {attached.Status}.");
     }
 }

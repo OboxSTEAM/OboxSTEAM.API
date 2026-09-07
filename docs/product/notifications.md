@@ -18,9 +18,8 @@ inbox title and body. Email failure is logged and does not roll back the inbox.
 | Existing `IEmailService` templates (unchanged) | Parent payment request (checkout link), payment invoice, enrollment confirmation |
 | Not emailed | All other catalog types, including `PaymentSucceeded` / `ProgramActivated` / `ParentPaymentRequested` (covered by the templates above) |
 
-Scheduled session reminders, assignment due-soon reminders, and overdue alerts
-are not catalog events yet. When they are added, include them in
-`NotificationEmailPriority`.
+`SessionStartingSoon` is a catalog event (also emailed via `NotificationEmailPriority`).
+Assignment due-soon reminders and overdue alerts are not catalog events yet.
 
 `NotificationService` provides inbox queries and read-state operations; it does
 not publish business notifications.
@@ -50,9 +49,8 @@ such as payment requests) so `{studentName}` still interpolates.
 ## Role templates and tokens
 
 Each catalog event supplies a default copy plus optional Student, Parent,
-Mentor, and Manager variants. Missing variants fall back to default. `RoleType.Expert`
-has no dedicated variant yet and resolves to default. Copy may
-include `{token}` placeholders interpolated at publish time:
+Mentor, Manager, and Expert variants. Missing variants fall back to default.
+Copy may include `{token}` placeholders interpolated at publish time:
 
 | Token | Source |
 | --- | --- |
@@ -133,10 +131,11 @@ service emits it.
 | `ClassEnrolled`                  | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassTransferred`               | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassSessionScheduled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`; Invited expert via `ForUser` when the committed window moves | `ClassSessionService`, `ClassSessionExpertService` (approve-reschedule) |
+| `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `SessionStartingSoon`            | `ForClassRosterAndParentsAndMentor`; hosted publisher ~30 minutes before `StartTime`, once per slot. Changing `StartTime` clears `ReminderSentAt` so the new slot can remind again. EndTime-only and description-only edits do not. | `SessionReminderPublisher`, `ClassSessionService` |
 | `ClassSessionStarted`            | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
 | `ClassSessionCompleted`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`; Invited/Accepted expert via `ForUser` | `ClassSessionService`                       |
+| `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`; Invited/Accepted expert via `ForUser`. Those co-teach rows are then soft-deleted (same on session delete and class delete). | `ClassSessionService`, `ClassService`       |
 | `AttendanceMarkedPresent`        | `ForStudentAndParents` (staff mark); `ForParentsOfStudent` (first student check-in) | `SessionAttendanceService`                  |
 | `AttendanceMarkedLate`           | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
 | `AttendanceMarkedAbsent`         | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
@@ -158,15 +157,15 @@ service emits it.
 | `MaterialUpdated`                | `ForClassRoster`                                             | `MaterialService`                           |
 | `AssignmentEditedByMentor`       | `ForManagers`                                                | `AssignmentService`                         |
 | `ClassQuizSetEditedByMentor`     | `ForManagers`                                                | `ClassQuizQuestionSetService`               |
-| `CurriculumReviewSubmitted`      | Framework-owning expert via `ForUser`                        | `CurriculumReviewService`                   |
+| `CurriculumReviewSubmitted`      | Framework owner via `ForUser` when `FrameworkId` is set; otherwise each login `ProgramBoard` expert via `ForUser` | `CurriculumReviewService`                   |
 | `CurriculumReviewApproved`       | `ForManagers`                                                | `CurriculumReviewService`                   |
 | `CurriculumReviewChangesRequested` | `ForManagers`                                              | `CurriculumReviewService`                   |
+| `CurriculumReviewPublished`      | `ForManagers`                                                | `CurriculumReviewService`                   |
 | `ClassSessionExpertInvited`        | Expert via `ForUser`                                       | `ClassSessionExpertService`                 |
 | `ClassSessionExpertAccepted`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
 | `ClassSessionExpertDeclined`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
-| `ClassSessionExpertInvitationWithdrawn` | Expert via `ForUser`                                  | `ClassSessionExpertService`                 |
-| `ClassSessionExpertRescheduleRequested` | Accepted expert via `ForUser`                         | `ClassSessionService`                       |
-| `ClassSessionExpertRescheduleDeclined` | `ForManagers`                                          | `ClassSessionExpertService`                 |
+| `ClassSessionExpertInvitationWithdrawn` | Expert via `ForUser` (manager withdraw, or board removal / expert delete) | `ClassSessionExpertService`, `ExpertService` |
+| `ClassSessionExpertClearedOnReschedule` | Invited and Accepted experts via `ForUser` when session time changes | `ClassSessionService`              |
 | `ClassSessionExpertFeedbackRequested`  | Accepted expert via `ForUser` when the session first becomes Completed | `ClassSessionService`        |
 | `ClassSessionExpertFeedbackSubmitted`  | Class mentor via `ForClassMentor`                      | `ClassSessionExpertService`                 |
 
@@ -183,6 +182,7 @@ middle- or senior-school student:
 - the student's first QR/code check-in for a session (`AttendanceMarkedPresent`
   via `ForParentsOfStudent`, copy includes `{checkedInAt}` in Vietnam local
   time). Staff marking Present after that check-in does not send a second
-  Present notification. Material updates remain student-only. Scheduled session
-  reminders, assignment due-soon reminders, and overdue alerts are not
-  implemented by this contract and require a separate scheduling feature.
+  Present notification. Material updates remain student-only. `SessionStartingSoon`
+  is the hosted 30-minute session reminder (re-armed when `StartTime` changes).
+  Assignment due-soon reminders and overdue alerts are not implemented by this
+  contract and require a separate scheduling feature.

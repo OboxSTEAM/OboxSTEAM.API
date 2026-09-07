@@ -221,6 +221,14 @@ public static class ClassSessionValidator
         }
     }
 
+    public static void ValidateTimeChangeAllowed(ClassSession session)
+    {
+        if (session.Status == ClassSessionStatus.InProgress)
+        {
+            throw ErrorHelper.BadRequest("Cannot change the time of a session that is in progress.");
+        }
+    }
+
     public static void ValidateStatusTransition(ClassSessionStatus currentStatus, ClassSessionStatus targetStatus)
     {
         if (currentStatus == targetStatus)

@@ -32,13 +32,13 @@ public sealed class ProgramFrameworkValidatorTests
     }
 
     [Fact]
-    public void CollectRuleFailures_RequireFinalAssessmentFalse_DoesNotRequireCapstone()
+    public void CollectRuleFailures_RequireCapstoneResearchMilestoneFalse_DoesNotRequireCapstone()
     {
         var framework = new ProgramFramework
         {
             Name = "C#",
             Category = ProgramCategory.Technology,
-            RequireFinalAssessment = false,
+            RequireCapstoneResearchMilestone = false,
         };
 
         var errors = ProgramFrameworkValidator.CollectRuleFailures(framework, EmptySnapshot());
@@ -56,7 +56,7 @@ public sealed class ProgramFrameworkValidatorTests
             MinModules = 2,
             MinOfflineSessions = 1,
             MinLiveSessions = 1,
-            RequireFinalAssessment = true,
+            RequireCapstoneResearchMilestone = true,
         };
 
         var errors = ProgramFrameworkValidator.CollectRuleFailures(framework, EmptySnapshot());
@@ -69,7 +69,7 @@ public sealed class ProgramFrameworkValidatorTests
     }
 
     [Fact]
-    public void CollectRuleFailures_RequireFinalAssessmentTrue_PassesWithCapstone()
+    public void CollectRuleFailures_RequireCapstoneResearchMilestoneTrue_PassesWithCapstone()
     {
         var capstone = new ResearchMilestone
         {
@@ -94,7 +94,7 @@ public sealed class ProgramFrameworkValidatorTests
         {
             Name = "C#",
             Category = ProgramCategory.Technology,
-            RequireFinalAssessment = true,
+            RequireCapstoneResearchMilestone = true,
         };
 
         Assert.Empty(ProgramFrameworkValidator.CollectRuleFailures(framework, snapshot));
@@ -120,7 +120,7 @@ public sealed class ProgramFrameworkValidatorTests
             Category = ProgramCategory.Technology,
             MinModules = 2,
             MinOfflineSessions = 1,
-            RequireFinalAssessment = true,
+            RequireCapstoneResearchMilestone = true,
         });
 
         var ex = await Assert.ThrowsAsync<BadRequestException>(
@@ -144,7 +144,7 @@ public sealed class ProgramFrameworkValidatorTests
             MinModules = 1,
             MinOfflineSessions = 1,
             MinLiveSessions = 1,
-            RequireFinalAssessment = true,
+            RequireCapstoneResearchMilestone = true,
         });
 
         await ProgramFrameworkValidator.ValidateForSubmitAsync(_db, _programId);

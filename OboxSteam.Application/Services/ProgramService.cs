@@ -426,6 +426,9 @@ public class ProgramService : IProgramService
 
         ProgramCatalogStatusGuard.EnsureCreateIsDraft(request.Status);
 
+        var frameworkId = await ResolveFrameworkIdAsync(request.FrameworkId);
+        await EnsureFrameworkNotAssignedToOtherProgramAsync(frameworkId, currentProgramId: null);
+
         var program = new Program
         {
             Code = request.Code,
@@ -439,7 +442,7 @@ public class ProgramService : IProgramService
             ThumbnailUrl = request.ThumbnailUrl,
             Status = ProgramStatus.Draft,
             Price = request.Price,
-            FrameworkId = await ResolveFrameworkIdAsync(request.FrameworkId),
+            FrameworkId = frameworkId,
         };
 
         if (thumbnailFile != null)
@@ -705,6 +708,26 @@ public class ProgramService : IProgramService
         return framework.Id;
     }
 
+    private async Task EnsureFrameworkNotAssignedToOtherProgramAsync(Guid? frameworkId, Guid? currentProgramId)
+    {
+        if (!frameworkId.HasValue)
+        {
+            return;
+        }
+
+        var owner = await _unitOfWork.Programs.FirstOrDefaultAsync(
+            p => p.FrameworkId == frameworkId
+                 && !p.IsDeleted
+                 && (!currentProgramId.HasValue || p.Id != currentProgramId.Value));
+        if (owner == null)
+        {
+            return;
+        }
+
+        throw ErrorHelper.Conflict(
+            $"Framework is already assigned to program '{owner.Code}'. Each framework can attach to only one program.");
+    }
+
     private async Task<bool> ApplyFrameworkAssignmentAsync(Program program, UpdateProgramRequestDto request)
     {
         if (request.FrameworkId.HasValue)
@@ -715,6 +738,7 @@ public class ProgramService : IProgramService
                 return false;
             }
 
+            await EnsureFrameworkNotAssignedToOtherProgramAsync(resolved, program.Id);
             program.FrameworkId = resolved;
             return true;
         }

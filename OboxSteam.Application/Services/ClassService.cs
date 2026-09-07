@@ -197,19 +197,17 @@ public sealed class ClassService : IClassService
                 SessionKind = cs.SessionKind,
                 Title = cs.Title,
                 Description = cs.Description,
-            StartTime = cs.StartTime,
-            EndTime = cs.EndTime,
-            Location = cs.Location,
-            MeetingUrl = cs.MeetingUrl,
-            Latitude = cs.Latitude,
-            Longitude = cs.Longitude,
-            RequiresAttendance = cs.RequiresAttendance,
-            RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
-            Status = cs.Status,
-            CreatedAt = cs.CreatedAt,
-            UpdatedAt = cs.UpdatedAt,
-            ProposedStartTime = cs.ProposedStartTime,
-            ProposedEndTime = cs.ProposedEndTime,
+                StartTime = cs.StartTime,
+                EndTime = cs.EndTime,
+                Location = cs.Location,
+                MeetingUrl = cs.MeetingUrl,
+                Latitude = cs.Latitude,
+                Longitude = cs.Longitude,
+                RequiresAttendance = cs.RequiresAttendance,
+                RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
+                Status = cs.Status,
+                CreatedAt = cs.CreatedAt,
+                UpdatedAt = cs.UpdatedAt,
             })
             .ToList();
 
@@ -986,6 +984,10 @@ public sealed class ClassService : IClassService
         var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
             cs => cs.ClassId == id && !cs.IsDeleted);
 
+        var sessionIds = sessions.Select(s => s.Id).ToList();
+        var coTeaches = await CoTeachStaffing.LoadActiveOnSessionsAsync(_unitOfWork, sessionIds);
+        await CoTeachStaffing.SoftRemoveAsync(_unitOfWork, coTeaches);
+
         if (sessions.Count > 0)
         {
             await _unitOfWork.ClassSessions.SoftRemoveRange(sessions);
@@ -993,6 +995,41 @@ public sealed class ClassService : IClassService
 
         await _unitOfWork.Classes.SoftRemove(classEntity);
         await _unitOfWork.SaveChangesAsync();
+
+        var notifications = new List<NotificationCommand>();
+        foreach (var session in sessions)
+        {
+            notifications.Add(
+                NotificationCatalog.ClassSessionCancelled(
+                    classId: id,
+                    classSessionId: session.Id,
+                    classEntity.ProgramId,
+                    classEntity.Name));
+        }
+
+        foreach (var coTeach in coTeaches)
+        {
+            var expert = await _unitOfWork.Experts.GetByIdAsync(coTeach.ExpertId);
+            if (expert?.UserId is not Guid expertUserId || expertUserId == Guid.Empty)
+            {
+                continue;
+            }
+
+            var session = sessions.First(s => s.Id == coTeach.ClassSessionId);
+            notifications.Add(
+                NotificationCatalog.ClassSessionCancelledForExpert(
+                    expertUserId,
+                    session.Id,
+                    session.ClassId,
+                    classEntity.ProgramId,
+                    classEntity.Name,
+                    session.Title));
+        }
+
+        if (notifications.Count > 0)
+        {
+            await _notificationPublisher.PublishManyAsync(notifications);
+        }
 
         _logger.LogInformation(
             "[DeleteClassAsync] Class Id {Id} soft-deleted successfully ({SessionCount} sessions soft-deleted).",
