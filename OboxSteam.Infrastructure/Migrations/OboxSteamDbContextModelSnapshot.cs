@@ -7148,6 +7148,35 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Program");
                 });
 
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramBundle", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.ProgramFramework", "Framework")
+                        .WithMany("ProgramBundles")
+                        .HasForeignKey("FrameworkId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Framework");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramBundleItem", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.ProgramBundle", "Bundle")
+                        .WithMany("Items")
+                        .HasForeignKey("BundleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
+                        .WithMany("BundleItems")
+                        .HasForeignKey("ProgramId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Bundle");
+
+                    b.Navigation("Program");
+                });
+
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramEnrollment", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.Module", "EndedModule")
