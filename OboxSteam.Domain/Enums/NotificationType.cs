@@ -109,5 +109,20 @@ public enum NotificationType
 
     // Mentor curriculum edits
     AssignmentEditedByMentor,
-    ClassQuizSetEditedByMentor
+    ClassQuizSetEditedByMentor,
+
+    // Curriculum review (expert framework)
+    CurriculumReviewSubmitted,
+    CurriculumReviewApproved,
+    CurriculumReviewChangesRequested,
+
+    // Offline co-teach (ClassSessionExpert)
+    ClassSessionExpertInvited,
+    ClassSessionExpertAccepted,
+    ClassSessionExpertDeclined,
+    ClassSessionExpertInvitationWithdrawn,
+    ClassSessionExpertRescheduleRequested,
+    ClassSessionExpertRescheduleDeclined,
+    ClassSessionExpertFeedbackRequested,
+    ClassSessionExpertFeedbackSubmitted
 }

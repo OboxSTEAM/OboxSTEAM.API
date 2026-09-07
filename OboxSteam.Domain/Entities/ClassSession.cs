@@ -31,6 +31,15 @@ public class ClassSession : BaseEntity
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
 
+    /// <summary>
+    /// Proposed replacement window while an Accepted co-teach expert must approve.
+    /// Null when no reschedule is pending. Roster still sees <see cref="StartTime"/> / <see cref="EndTime"/>.
+    /// </summary>
+    public DateTime? ProposedStartTime { get; set; }
+
+    /// <summary>Proposed end; set together with <see cref="ProposedStartTime"/>.</summary>
+    public DateTime? ProposedEndTime { get; set; }
+
     [MaxLength(500)]
     public string? Location { get; set; }
 
@@ -69,4 +78,5 @@ public class ClassSession : BaseEntity
 
     // Navigation
     public ICollection<SessionAttendance> SessionAttendances { get; set; } = new List<SessionAttendance>();
+    public ICollection<ClassSessionExpert> ClassSessionExperts { get; set; } = new List<ClassSessionExpert>();
 }

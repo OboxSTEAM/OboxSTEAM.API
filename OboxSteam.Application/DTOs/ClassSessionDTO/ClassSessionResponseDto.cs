@@ -14,6 +14,8 @@ public class ClassSessionResponseDto
     public string? Description { get; set; }
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
+    public DateTime? ProposedStartTime { get; set; }
+    public DateTime? ProposedEndTime { get; set; }
     public string? Location { get; set; }
     public string? MeetingUrl { get; set; }
     public double? Latitude { get; set; }
@@ -21,6 +23,8 @@ public class ClassSessionResponseDto
     public bool RequiresAttendance { get; set; }
     public bool RequiresMentorCheckIn { get; set; }
     public ClassSessionStatus Status { get; set; }
+    public bool HasAcceptedExpert { get; set; }
+    public ClassSessionCoTeachPublicDto? CoTeach { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

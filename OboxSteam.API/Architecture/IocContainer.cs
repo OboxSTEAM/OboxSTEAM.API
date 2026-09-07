@@ -206,6 +206,8 @@ public static class IocContainer
         services.AddScoped<IMediaService, MediaService>();
         services.AddScoped<IMaterialService, MaterialService>();
         services.AddScoped<IExpertService, ExpertService>();
+        services.AddScoped<IProgramFrameworkService, ProgramFrameworkService>();
+        services.AddScoped<ICurriculumReviewService, CurriculumReviewService>();
         services.AddScoped<IParentService, ParentService>();
         services.AddScoped<IParentProgressionService, ParentProgressionService>();
         services.AddScoped<IPersonalVideoService, PersonalVideoService>();
@@ -226,6 +228,7 @@ public static class IocContainer
         services.AddScoped<IClassCurriculumProgressService, ClassCurriculumProgressService>();
         services.AddScoped<IClassStudentProgressService, ClassStudentProgressService>();
         services.AddScoped<IClassMentorRequestService, ClassMentorRequestService>();
+        services.AddScoped<IClassSessionExpertService, ClassSessionExpertService>();
         services.AddScoped<IAssessmentRecoveryRequestService, AssessmentRecoveryRequestService>();
         services.AddScoped<IClassRedeliveryRequestService, ClassRedeliveryRequestService>();
         services.AddScoped<IMentorService, MentorService>();

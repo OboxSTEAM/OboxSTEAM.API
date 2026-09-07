@@ -72,6 +72,7 @@ public class ProgramService : IProgramService
             ThumbnailUrl = program.ThumbnailUrl,
             Status = program.Status,
             Price = program.Price,
+            FrameworkId = program.FrameworkId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModulesResponseDto
@@ -145,6 +146,7 @@ public class ProgramService : IProgramService
             ThumbnailUrl = program.ThumbnailUrl,
             Status = program.Status,
             Price = program.Price,
+            FrameworkId = program.FrameworkId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModulesResponseDto
@@ -275,6 +277,7 @@ public class ProgramService : IProgramService
             ThumbnailUrl = program.ThumbnailUrl,
             Status = program.Status,
             Price = program.Price,
+            FrameworkId = program.FrameworkId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = modulesByProgramId.TryGetValue(program.Id, out var programModules)
@@ -396,6 +399,7 @@ public class ProgramService : IProgramService
         ThumbnailUrl = program.ThumbnailUrl,
         Status = program.Status,
         Price = program.Price,
+            FrameworkId = program.FrameworkId,
         CreatedAt = program.CreatedAt,
         UpdatedAt = program.UpdatedAt,
     };
@@ -420,6 +424,8 @@ public class ProgramService : IProgramService
             throw ErrorHelper.Conflict($"Program with code '{request.Code}' already exists.");
         }
 
+        ProgramCatalogStatusGuard.EnsureCreateIsDraft(request.Status);
+
         var program = new Program
         {
             Code = request.Code,
@@ -431,8 +437,9 @@ public class ProgramService : IProgramService
             EstimatedDuration = request.EstimatedDuration,
             SkillsGained = request.SkillsGained,
             ThumbnailUrl = request.ThumbnailUrl,
-            Status = request.Status ?? ProgramStatus.Draft,
+            Status = ProgramStatus.Draft,
             Price = request.Price,
+            FrameworkId = await ResolveFrameworkIdAsync(request.FrameworkId),
         };
 
         if (thumbnailFile != null)
@@ -467,6 +474,7 @@ public class ProgramService : IProgramService
             ThumbnailUrl = program.ThumbnailUrl,
             Status = program.Status,
             Price = program.Price,
+            FrameworkId = program.FrameworkId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = new(),
@@ -507,7 +515,11 @@ public class ProgramService : IProgramService
             }
         }
 
-        var isUpdated = UpdateHelper.ApplyUpdates(program, request);
+        var requestedStatus = request.Status;
+        request.Status = null;
+        var statusChanged = ProgramCatalogStatusGuard.ApplyUpdate(program, requestedStatus);
+        var frameworkChanged = await ApplyFrameworkAssignmentAsync(program, request);
+        var isUpdated = UpdateHelper.ApplyUpdates(program, request) || frameworkChanged || statusChanged;
 
         if (!isUpdated)
         {
@@ -528,6 +540,7 @@ public class ProgramService : IProgramService
                 ThumbnailUrl = program.ThumbnailUrl,
                 Status = program.Status,
                 Price = program.Price,
+            FrameworkId = program.FrameworkId,
                 CreatedAt = program.CreatedAt,
                 UpdatedAt = program.UpdatedAt,
                 Modules = program.Modules?.Select(m => new ModulesResponseDto
@@ -567,6 +580,7 @@ public class ProgramService : IProgramService
             ThumbnailUrl = program.ThumbnailUrl,
             Status = program.Status,
             Price = program.Price,
+            FrameworkId = program.FrameworkId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.Select(m => new ModulesResponseDto
@@ -628,6 +642,7 @@ public class ProgramService : IProgramService
             ThumbnailUrl = program.ThumbnailUrl,
             Status = program.Status,
             Price = program.Price,
+            FrameworkId = program.FrameworkId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.Select(m => new ModulesResponseDto
@@ -667,6 +682,55 @@ public class ProgramService : IProgramService
 
         var s3Key = $"{ThumbnailFolder}/{fileName}";
         return await _blobService.GetPreviewUrlAsync(s3Key);
+    }
+
+    private async Task<Guid?> ResolveFrameworkIdAsync(Guid? frameworkId)
+    {
+        if (!frameworkId.HasValue)
+        {
+            return null;
+        }
+
+        if (frameworkId.Value == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("FrameworkId cannot be an empty guid.");
+        }
+
+        var framework = await _unitOfWork.ProgramFrameworks.GetByIdAsync(frameworkId.Value);
+        if (framework == null || framework.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Program framework with id '{frameworkId.Value}' not found.");
+        }
+
+        return framework.Id;
+    }
+
+    private async Task<bool> ApplyFrameworkAssignmentAsync(Program program, UpdateProgramRequestDto request)
+    {
+        if (request.FrameworkId.HasValue)
+        {
+            var resolved = await ResolveFrameworkIdAsync(request.FrameworkId);
+            if (program.FrameworkId == resolved)
+            {
+                return false;
+            }
+
+            program.FrameworkId = resolved;
+            return true;
+        }
+
+        if (request.ClearFramework == true)
+        {
+            if (!program.FrameworkId.HasValue)
+            {
+                return false;
+            }
+
+            program.FrameworkId = null;
+            return true;
+        }
+
+        return false;
     }
 
     // =========================================================================

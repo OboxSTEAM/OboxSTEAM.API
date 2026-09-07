@@ -6,7 +6,33 @@ Short product terms for OboxSTEAM.API. Process vocabulary lives in
 ## Program
 
 Sellable STEAM track. Has `Price`, modules, classes, and enrollments.
-`ProgramStatus`: Draft, Active, Inactive.
+`ProgramStatus`: Draft, PendingReview, Approved, Active, Inactive.
+Optional `FrameworkId` links to an expert `ProgramFramework` blueprint.
+
+## ProgramFramework
+
+Expert-owned curriculum blueprint with opt-in constraints and a rubric
+scorecard (`FrameworkRubricCriterion`). Null or `false` rules are not
+enforced. `RequireFinalAssessment = true` requires ≥1 capstone research
+milestone. Attaching a framework always requires the owning expert to review
+(zero criteria still wait). No `FrameworkId` skips expert review (submit →
+`Approved`, then manager publish). CRUD: `/api/program-frameworks`.
+
+## CurriculumReview
+
+Expert audit round on a program (not student `ProgramReview`). Scores live on
+`ReviewCriterionScore`. Owner-only approve / request-changes; comment is
+required when requesting changes.
+
+## ClassSessionExpert
+
+Co-teach invitation on a class session (`Invited` / `Accepted` / `Declined`).
+One Invited or Accepted expert per session. Manager may withdraw while
+`Invited`. Accepted reschedules require expert approval of
+`ProposedStartTime` / `ProposedEndTime` before the committed window moves.
+Private mentor feedback is stored on the row after the session is Completed
+(`PUT /api/class-session-experts/{id}/feedback`; students must not see it).
+Routes: `/api/class-session-experts` including `GET /{id}` and `GET /mine`.
 
 ## Module
 

@@ -50,7 +50,8 @@ such as payment requests) so `{studentName}` still interpolates.
 ## Role templates and tokens
 
 Each catalog event supplies a default copy plus optional Student, Parent,
-Mentor, and Manager variants. Missing variants fall back to default. Copy may
+Mentor, and Manager variants. Missing variants fall back to default. `RoleType.Expert`
+has no dedicated variant yet and resolves to default. Copy may
 include `{token}` placeholders interpolated at publish time:
 
 | Token | Source |
@@ -64,6 +65,10 @@ include `{token}` placeholders interpolated at publish time:
 | `{assignmentTitle}` | Catalog token |
 | `{extraAttempts}` | Catalog token |
 | `{checkedInAt}` | Catalog token (`HH:mm` Asia/Ho_Chi_Minh) |
+| `{frameworkName}` | Catalog token (expert blueprint name) |
+| `{comment}` | Catalog token (expert request-changes feedback) |
+| `{sessionTitle}` | Catalog token (class session title) |
+| `{sessionStartTime}` | Catalog token (`dd/MM/yyyy HH:mm` Asia/Ho_Chi_Minh when set by co-teach / reminder publishers) |
 
 Student copy addresses the learner as "bạn" ("Bạn đã hoàn thành…"). Parent copy
 names the child as "con bạn {studentName}" ("Con bạn {studentName} đã hoàn
@@ -128,10 +133,10 @@ service emits it.
 | `ClassEnrolled`                  | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassTransferred`               | `ForStudentAndParents`                                       | `ClassEnrollmentService`                    |
 | `ClassSessionScheduled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`; Invited expert via `ForUser` when the committed window moves | `ClassSessionService`, `ClassSessionExpertService` (approve-reschedule) |
 | `ClassSessionStarted`            | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
 | `ClassSessionCompleted`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`; Invited/Accepted expert via `ForUser` | `ClassSessionService`                       |
 | `AttendanceMarkedPresent`        | `ForStudentAndParents` (staff mark); `ForParentsOfStudent` (first student check-in) | `SessionAttendanceService`                  |
 | `AttendanceMarkedLate`           | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
 | `AttendanceMarkedAbsent`         | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
@@ -153,6 +158,17 @@ service emits it.
 | `MaterialUpdated`                | `ForClassRoster`                                             | `MaterialService`                           |
 | `AssignmentEditedByMentor`       | `ForManagers`                                                | `AssignmentService`                         |
 | `ClassQuizSetEditedByMentor`     | `ForManagers`                                                | `ClassQuizQuestionSetService`               |
+| `CurriculumReviewSubmitted`      | Framework-owning expert via `ForUser`                        | `CurriculumReviewService`                   |
+| `CurriculumReviewApproved`       | `ForManagers`                                                | `CurriculumReviewService`                   |
+| `CurriculumReviewChangesRequested` | `ForManagers`                                              | `CurriculumReviewService`                   |
+| `ClassSessionExpertInvited`        | Expert via `ForUser`                                       | `ClassSessionExpertService`                 |
+| `ClassSessionExpertAccepted`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
+| `ClassSessionExpertDeclined`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
+| `ClassSessionExpertInvitationWithdrawn` | Expert via `ForUser`                                  | `ClassSessionExpertService`                 |
+| `ClassSessionExpertRescheduleRequested` | Accepted expert via `ForUser`                         | `ClassSessionService`                       |
+| `ClassSessionExpertRescheduleDeclined` | `ForManagers`                                          | `ClassSessionExpertService`                 |
+| `ClassSessionExpertFeedbackRequested`  | Accepted expert via `ForUser` when the session first becomes Completed | `ClassSessionService`        |
+| `ClassSessionExpertFeedbackSubmitted`  | Class mentor via `ForClassMentor`                      | `ClassSessionExpertService`                 |
 
 ## Parent Time-Support Policy
 

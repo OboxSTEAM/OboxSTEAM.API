@@ -506,6 +506,144 @@ public sealed class ProgramServiceTests
         Assert.Equal("Allowed", result.Name);
     }
 
+    [Fact]
+    public async Task Create_RejectsNonDraftStatus()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateProgramAsync(new CreateProgramRequestDto
+            {
+                Code = "PRG-ACTIVE",
+                Name = "Skip Lifecycle",
+                Category = ProgramCategory.Technology,
+                Status = ProgramStatus.Active,
+            }));
+    }
+
+    [Fact]
+    public async Task Create_OmitsStatus_PersistsDraft()
+    {
+        var sut = CreateSut();
+
+        var result = await sut.CreateProgramAsync(new CreateProgramRequestDto
+        {
+            Code = "PRG-DRAFT",
+            Name = "Draft Program",
+            Category = ProgramCategory.Technology,
+        });
+
+        Assert.Equal(ProgramStatus.Draft, result.Status);
+    }
+
+    [Fact]
+    public async Task Update_TogglesActiveToInactive()
+    {
+        SeedProgram();
+        var sut = CreateSut();
+
+        var result = await sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+        {
+            Status = ProgramStatus.Inactive,
+        });
+
+        Assert.Equal(ProgramStatus.Inactive, result.Status);
+    }
+
+    [Fact]
+    public async Task Update_RejectsDraftToActive()
+    {
+        SeedProgram();
+        _db.Programs.Items.Single().Status = ProgramStatus.Draft;
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+            {
+                Status = ProgramStatus.Active,
+            }));
+    }
+
+    [Fact]
+    public async Task Update_ThrowsConflict_WhenPendingReview()
+    {
+        SeedProgram();
+        _db.Programs.Items.Single().Status = ProgramStatus.PendingReview;
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Blocked" }));
+        Assert.Contains("pending expert review", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Update_ThrowsConflict_WhenApprovedWaitingPublish()
+    {
+        SeedProgram();
+        _db.Programs.Items.Single().Status = ProgramStatus.Approved;
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Blocked" }));
+        Assert.Contains("waiting to be published", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_WithFrameworkId_AssignsBlueprint()
+    {
+        _db.ProgramFrameworks.Seed(new ProgramFramework
+        {
+            Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            ExpertId = _expertId,
+            Name = "Robotics",
+            Category = ProgramCategory.Technology,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.CreateProgramAsync(new CreateProgramRequestDto
+        {
+            Code = "PRG-FW",
+            Name = "With Framework",
+            Category = ProgramCategory.Technology,
+            FrameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        });
+
+        Assert.Equal(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), result.FrameworkId);
+    }
+
+    [Fact]
+    public async Task Create_WithUnknownFrameworkId_NotFound()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => sut.CreateProgramAsync(new CreateProgramRequestDto
+            {
+                Code = "PRG-FW",
+                Name = "Missing Framework",
+                Category = ProgramCategory.Technology,
+                FrameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            }));
+    }
+
+    [Fact]
+    public async Task Update_ClearFramework_UnlinksBlueprint()
+    {
+        SeedProgram();
+        var program = _db.Programs.Items.Single();
+        program.FrameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var sut = CreateSut();
+
+        var result = await sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+        {
+            ClearFramework = true,
+        });
+
+        Assert.Null(result.FrameworkId);
+        Assert.Null(_db.Programs.Items.Single().FrameworkId);
+    }
+
     private Guid SeedClass(ClassStatus status)
     {
         var classId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");

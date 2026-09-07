@@ -5,9 +5,10 @@ using OboxSteam.Domain.Interfaces;
 namespace OboxSteam.Application.Validation;
 
 /// <summary>
-/// Guards program and curriculum mutations while delivery cohorts are live.
-/// Locked when any class is InProgress, or any Open class has Active enrollments —
-/// structural/metadata changes are meant to land between cohorts.
+/// Guards program and curriculum mutations while delivery cohorts are live
+/// or while the program is in expert review / waiting to publish.
+/// Locked when any class is InProgress, or any Open class has Active enrollments,
+/// or the program is PendingReview or Approved.
 /// </summary>
 public static class CurriculumEditGuard
 {
@@ -15,6 +16,10 @@ public static class CurriculumEditGuard
         => EnsureNotLockedAsync(
             unitOfWork,
             programId,
+            pendingReviewMessage:
+                "Program curriculum cannot be changed while the program is pending expert review.",
+            approvedMessage:
+                "Program curriculum cannot be changed while the program is approved and waiting to be published.",
             inProgressMessage:
                 "Program curriculum cannot be changed while a class is in progress. " +
                 "Wait for in-progress classes to complete — curriculum changes apply to new cohorts.",
@@ -22,12 +27,17 @@ public static class CurriculumEditGuard
                 "Program curriculum cannot be changed while an open class has enrolled students.");
 
     /// <summary>
-    /// Blocks program metadata update and soft-delete under the same cohort lock as curriculum.
+    /// Blocks program metadata update and soft-delete under the same cohort
+    /// and review lock as curriculum.
     /// </summary>
     public static Task EnsureProgramEditableAsync(IUnitOfWork unitOfWork, Guid programId)
         => EnsureNotLockedAsync(
             unitOfWork,
             programId,
+            pendingReviewMessage:
+                "Program cannot be updated or deleted while it is pending expert review.",
+            approvedMessage:
+                "Program cannot be updated or deleted while it is approved and waiting to be published.",
             inProgressMessage:
                 "Program cannot be updated or deleted while a class is in progress. " +
                 "Wait for in-progress classes to complete.",
@@ -37,9 +47,25 @@ public static class CurriculumEditGuard
     private static async Task EnsureNotLockedAsync(
         IUnitOfWork unitOfWork,
         Guid programId,
+        string pendingReviewMessage,
+        string approvedMessage,
         string inProgressMessage,
         string openEnrolledMessage)
     {
+        var program = await unitOfWork.Programs.GetByIdAsync(programId);
+        if (program != null && !program.IsDeleted)
+        {
+            if (program.Status == ProgramStatus.PendingReview)
+            {
+                throw ErrorHelper.Conflict(pendingReviewMessage);
+            }
+
+            if (program.Status == ProgramStatus.Approved)
+            {
+                throw ErrorHelper.Conflict(approvedMessage);
+            }
+        }
+
         var classes = await unitOfWork.Classes.GetAllAsync(
             c => c.ProgramId == programId
                  && !c.IsDeleted

@@ -11,8 +11,9 @@
 | Mentor | Delivers courses and mentors class cohorts |
 | Parent | Views and acts on behalf of linked students |
 | Student | Learns, enrolls, submits work |
+| Expert | Framework blueprints, curriculum review, Offline co-teach |
 
-JWT role claims must match enum names exactly (e.g. `"Student"`, `"Admin"`).
+JWT role claims must match enum names exactly (e.g. `"Student"`, `"Admin"`, `"Expert"`).
 
 ## Authorization Patterns
 
@@ -73,6 +74,36 @@ Create, update, delete for:
 - Mentor skill profile: freely create, update, delete, and set `IsPublic` on
   own `MentorSkill` rows and evidence (no manager verification). See
   `docs/product/mentor-skills.md`.
+
+### Expert
+
+- Dedicated login role (`"Expert"` JWT claim). Accounts are provisioned by
+  Manager/Admin via `POST /api/experts` (email and password required). The
+  expert can log in immediately (`IsEmailVerified = true`). Public
+  `POST /api/auth/register` does not allow Expert. Password reset uses the
+  existing `POST /api/auth/forgot-password` OTP flow — OTP is not sent at
+  provisioning.
+- Updating an expert does not change login credentials. Deleting an expert
+  locks the linked user (`AccountStatus.Locked`).
+- Intended surfaces: program framework blueprints, curriculum review queue,
+  and Offline co-teach invitations. Framework APIs are live at
+  `GET|POST|PUT|DELETE /api/program-frameworks` (Expert owns their blueprints;
+  Manager/Admin may list and override updates; create/delete stay Expert-only).
+  Curriculum review: `GET /api/programs/review-queue`,
+  `GET /api/programs/{id}/curriculum-reviews`,
+  `POST /api/programs/{id}/approve-review`,
+  `POST /api/programs/{id}/request-changes` (owning Expert only).
+  Manager/Admin submit, withdraw, and publish. Framework criteria:
+  `POST|PUT|DELETE /api/program-frameworks/{id}/criteria...` (Expert owner or
+  Manager/Admin override). Offline co-teach:
+  `POST|GET /api/class-session-experts`, `GET /{id}` (Manager/Admin or owning
+  Expert), Expert `GET /mine`,
+  `POST /{id}/accept|decline|approve-reschedule|decline-reschedule`,
+  Manager/Admin `POST /{id}/withdraw` (Invited only). Owning Expert
+  `PUT /{id}/feedback` after the session is Completed (Accepted only).
+  Mentor, Manager, and Admin read `coTeachFeedback` on
+  `GET /api/classes/{classId}/sessions/with-students/{sessionId}`. Students
+  receive the public `coTeach` card only — never feedback text or rating.
 
 ### Mentor skill visibility
 

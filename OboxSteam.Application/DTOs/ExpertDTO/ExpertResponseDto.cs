@@ -5,6 +5,7 @@ public class ExpertResponseDto
     public Guid Id { get; set; }
     public string Code { get; set; } = null!;
     public Guid? UserId { get; set; }
+    public string? Email { get; set; }
     public string FullName { get; set; } = null!;
     public string? Title { get; set; }
     public string? Organization { get; set; }

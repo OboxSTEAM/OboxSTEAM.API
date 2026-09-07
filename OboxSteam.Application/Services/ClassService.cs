@@ -197,17 +197,19 @@ public sealed class ClassService : IClassService
                 SessionKind = cs.SessionKind,
                 Title = cs.Title,
                 Description = cs.Description,
-                StartTime = cs.StartTime,
-                EndTime = cs.EndTime,
-                Location = cs.Location,
-                MeetingUrl = cs.MeetingUrl,
-                Latitude = cs.Latitude,
-                Longitude = cs.Longitude,
-                RequiresAttendance = cs.RequiresAttendance,
-                RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
-                Status = cs.Status,
-                CreatedAt = cs.CreatedAt,
-                UpdatedAt = cs.UpdatedAt,
+            StartTime = cs.StartTime,
+            EndTime = cs.EndTime,
+            Location = cs.Location,
+            MeetingUrl = cs.MeetingUrl,
+            Latitude = cs.Latitude,
+            Longitude = cs.Longitude,
+            RequiresAttendance = cs.RequiresAttendance,
+            RequiresMentorCheckIn = cs.RequiresMentorCheckIn,
+            Status = cs.Status,
+            CreatedAt = cs.CreatedAt,
+            UpdatedAt = cs.UpdatedAt,
+            ProposedStartTime = cs.ProposedStartTime,
+            ProposedEndTime = cs.ProposedEndTime,
             })
             .ToList();
 
@@ -358,6 +360,7 @@ public sealed class ClassService : IClassService
 
         var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId);
         ClassValidator.ValidateProgramExists(program, request.ProgramId);
+        ClassValidator.EnsureProgramIsActive(program!);
 
         if (request.MentorId.HasValue)
         {
@@ -451,6 +454,7 @@ public sealed class ClassService : IClassService
         {
             var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId.Value);
             ClassValidator.ValidateProgramExists(program, request.ProgramId.Value);
+            ClassValidator.EnsureProgramIsActive(program!);
             classEntity.ProgramId = request.ProgramId.Value;
             isUpdated = true;
         }
@@ -600,6 +604,7 @@ public sealed class ClassService : IClassService
         var entity = await _unitOfWork.Classes.GetByIdAsync(id);
         ClassValidator.ValidateTransitionToStatus(entity, id, ClassStatus.Open);
         var classEntity = entity!;
+        await RequireActiveProgramAsync(classEntity.ProgramId);
 
         var openActiveSessions = ClassScheduleCoverage.CountActiveSessions(_unitOfWork, id);
         var openSchedulableItems = await ClassScheduleCoverage.CountSchedulableItemsAsync(
@@ -634,6 +639,7 @@ public sealed class ClassService : IClassService
         var entity = await _unitOfWork.Classes.GetByIdAsync(id);
         ClassValidator.ValidateTransitionToStatus(entity, id, ClassStatus.InProgress);
         var classEntity = entity!;
+        await RequireActiveProgramAsync(classEntity.ProgramId);
 
         // Final gate: the curriculum may have changed while the class was open but still
         // empty — never let a class start on a schedule that no longer covers it.
@@ -674,6 +680,16 @@ public sealed class ClassService : IClassService
         var now = DateTime.UtcNow;
         if (!ClassValidator.IsReadyForAutoStart(entity, activeEnrollments.Count, now))
         {
+            return;
+        }
+
+        var program = await _unitOfWork.Programs.GetByIdAsync(entity.ProgramId);
+        if (program == null || program.IsDeleted || program.Status != ProgramStatus.Active)
+        {
+            _logger.LogWarning(
+                "[TryAutoStartClassIfReadyAsync] class {Id} skipped — program {ProgramId} is not Active.",
+                classId,
+                entity.ProgramId);
             return;
         }
 
@@ -747,9 +763,15 @@ public sealed class ClassService : IClassService
 
         var hasReadyToStart = false;
         DateTime? earliestFutureStartDate = null;
+        var activeProgramIds = GetActiveProgramIds(openClasses);
 
         foreach (var classEntity in openClasses)
         {
+            if (!activeProgramIds.Contains(classEntity.ProgramId))
+            {
+                continue;
+            }
+
             var activeCount = countByClassId.GetValueOrDefault(classEntity.Id, 0);
             if (activeCount < classEntity.MaxCapacity)
             {
@@ -852,6 +874,7 @@ public sealed class ClassService : IClassService
         var schedulableCountByProgram = new Dictionary<Guid, int>();
         var startedCount = 0;
         var startedClasses = new List<Class>();
+        var activeProgramIds = GetActiveProgramIds(openClasses);
 
         foreach (var classEntity in openClasses)
         {
@@ -859,6 +882,15 @@ public sealed class ClassService : IClassService
 
             if (!ClassValidator.IsReadyForAutoStart(classEntity, activeEnrollmentCount, now))
             {
+                continue;
+            }
+
+            if (!activeProgramIds.Contains(classEntity.ProgramId))
+            {
+                _logger.LogWarning(
+                    "[AutoStartEligibleOpenClassesAsync] class {Id} skipped — program {ProgramId} is not Active.",
+                    classEntity.Id,
+                    classEntity.ProgramId);
                 continue;
             }
 
@@ -966,6 +998,28 @@ public sealed class ClassService : IClassService
             "[DeleteClassAsync] Class Id {Id} soft-deleted successfully ({SessionCount} sessions soft-deleted).",
             id,
             sessions.Count);
+    }
+
+    private async Task RequireActiveProgramAsync(Guid programId)
+    {
+        var program = await _unitOfWork.Programs.GetByIdAsync(programId);
+        ClassValidator.ValidateProgramExists(program, programId);
+        ClassValidator.EnsureProgramIsActive(program!);
+    }
+
+    private HashSet<Guid> GetActiveProgramIds(IReadOnlyCollection<Class> classes)
+    {
+        var programIds = classes.Select(c => c.ProgramId).Distinct().ToList();
+        if (programIds.Count == 0)
+        {
+            return [];
+        }
+
+        return _unitOfWork.Programs
+            .GetQueryable()
+            .Where(p => programIds.Contains(p.Id) && !p.IsDeleted && p.Status == ProgramStatus.Active)
+            .Select(p => p.Id)
+            .ToHashSet();
     }
 
     private async Task<ClassResponseDto> MapToResponseDtoAsync(Class entity, int? seatsTaken = null)

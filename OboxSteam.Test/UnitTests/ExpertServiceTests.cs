@@ -5,6 +5,7 @@ using OboxSteam.Application.DTOs.ExpertDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -18,7 +19,6 @@ public sealed class ExpertServiceTests
     private readonly Guid _programId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly Guid _otherProgramId = Guid.Parse("23232323-2323-2323-2323-232323232323");
     private readonly Guid _userId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private readonly Guid _otherUserId = Guid.Parse("12121212-1212-1212-1212-121212121212");
     private readonly Guid _boardId = Guid.Parse("77777777-7777-7777-7777-777777777777");
 
     private readonly InMemoryUnitOfWork _db = new();
@@ -37,18 +37,40 @@ public sealed class ExpertServiceTests
         return file.Object;
     }
 
-    private void SeedUser(Guid? id = null, string code = "USR-001")
+    private void SeedUser(
+        Guid? id = null,
+        string code = "USR-001",
+        RoleType role = RoleType.Expert,
+        string? email = null)
     {
         _db.Users.Seed(new User
         {
             Id = id ?? _userId,
             Code = code,
-            Email = $"{code.ToLower()}@test.com",
+            Email = email ?? $"{code.ToLower()}@test.com",
             FullName = code,
-            Role = RoleType.Mentor,
+            Role = role,
+            Status = AccountStatus.Active,
+            IsEmailVerified = true,
+            PasswordHash = new PasswordHasher().HashPassword("Secret1"),
             IsDeleted = false,
         });
     }
+
+    private static CreateExpertRequest NewCreateDto(
+        string code = "EXP-NEW",
+        string fullName = "External Expert",
+        string email = "new.expert@test.com",
+        string password = "Secret1",
+        List<ExpertProgramAssignmentDto>? programs = null)
+        => new()
+        {
+            Code = code,
+            FullName = fullName,
+            Email = email,
+            Password = password,
+            Programs = programs,
+        };
 
     private Program SeedProgram(Guid? id = null, string code = "PRG-001", string name = "STEAM Program")
     {
@@ -137,6 +159,30 @@ public sealed class ExpertServiceTests
     }
 
     [Fact]
+    public async Task GetById_IncludesLinkedUserEmail()
+    {
+        SeedUser(email: "ada@test.com");
+        SeedProgram();
+        SeedExpert(userId: _userId, boards:
+        [
+            new ProgramBoard
+            {
+                Id = _boardId,
+                ExpertId = _expertId,
+                ProgramId = _programId,
+                RoleInBoard = "Advisor",
+                IsDeleted = false,
+            },
+        ]);
+        var sut = CreateSut();
+
+        var result = await sut.GetExpertByIdAsync(_expertId);
+
+        Assert.Equal("ada@test.com", result.Email);
+        Assert.Equal(_userId, result.UserId);
+    }
+
+    [Fact]
     public async Task GetById_Throws_WhenMissingOrDeleted()
     {
         SeedExpert(isDeleted: true);
@@ -196,37 +242,45 @@ public sealed class ExpertServiceTests
     // ── AddExpertAsync ────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Add_PersistsExternalExpertWithoutPrograms()
+    public async Task Add_ProvisionsExpertLoginWithoutPrograms()
     {
         var sut = CreateSut();
 
-        var result = await sut.AddExpertAsync(new ExpertCreateDto
+        var result = await sut.AddExpertAsync(new CreateExpertRequest
         {
             Code = "EXP-NEW",
             FullName = "External Expert",
             Title = "PhD",
-            UserId = Guid.Empty,
+            Email = "new.expert@test.com",
+            Password = "Secret1",
         });
 
         Assert.Equal("EXP-NEW", result.Code);
-        Assert.Null(result.UserId);
+        Assert.NotNull(result.UserId);
+        Assert.Equal("new.expert@test.com", result.Email);
         Assert.Empty(result.Programs);
         Assert.Single(_db.Experts.Items);
+        Assert.Single(_db.Users.Items);
+        var user = _db.Users.Items[0];
+        Assert.Equal(RoleType.Expert, user.Role);
+        Assert.True(user.IsEmailVerified);
+        Assert.Equal(AccountStatus.Active, user.Status);
+        Assert.True(new PasswordHasher().VerifyPassword("Secret1", user.PasswordHash));
     }
 
     [Fact]
-    public async Task Add_PersistsExpertWithProgramsAndLinkedUser()
+    public async Task Add_PersistsExpertWithProgramsAndProvisionedUser()
     {
-        SeedUser();
         SeedProgram();
         SeedProgram(_otherProgramId, "PRG-002", "Advanced");
         var sut = CreateSut();
 
-        var result = await sut.AddExpertAsync(new ExpertCreateDto
+        var result = await sut.AddExpertAsync(new CreateExpertRequest
         {
             Code = "EXP-LINKED",
             FullName = "Linked Expert",
-            UserId = _userId,
+            Email = "linked.expert@test.com",
+            Password = "Secret1",
             Programs =
             [
                 new ExpertProgramAssignmentDto { ProgramId = _programId, RoleInBoard = "Advisor" },
@@ -235,9 +289,11 @@ public sealed class ExpertServiceTests
             ],
         });
 
-        Assert.Equal(_userId, result.UserId);
+        Assert.NotNull(result.UserId);
+        Assert.Equal("linked.expert@test.com", result.Email);
         Assert.Equal(2, result.Programs.Count);
         Assert.Equal(2, _db.ProgramBoards.Items.Count);
+        Assert.Equal(RoleType.Expert, _db.Users.Items[0].Role);
     }
 
     [Fact]
@@ -247,34 +303,21 @@ public sealed class ExpertServiceTests
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.AddExpertAsync(new ExpertCreateDto
-            {
-                Code = "exp-001",
-                FullName = "Dup",
-            }));
+            sut.AddExpertAsync(NewCreateDto(code: "exp-001", fullName: "Dup")));
     }
 
     [Fact]
-    public async Task Add_Throws_WhenUserAlreadyLinkedOrMissing()
+    public async Task Add_Throws_WhenEmailTakenOrCredentialsMissing()
     {
-        SeedUser();
-        SeedExpert(userId: _userId);
+        SeedUser(email: "taken@test.com");
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.AddExpertAsync(new ExpertCreateDto
-            {
-                Code = "EXP-NEW",
-                FullName = "Another",
-                UserId = _userId,
-            }));
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.AddExpertAsync(new ExpertCreateDto
-            {
-                Code = "EXP-NEW2",
-                FullName = "Missing user",
-                UserId = _otherUserId,
-            }));
+            sut.AddExpertAsync(NewCreateDto(email: "taken@test.com")));
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.AddExpertAsync(NewCreateDto(email: " ")));
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.AddExpertAsync(NewCreateDto(password: "123")));
     }
 
     [Fact]
@@ -283,15 +326,12 @@ public sealed class ExpertServiceTests
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.AddExpertAsync(new ExpertCreateDto
-            {
-                Code = "EXP-NEW",
-                FullName = "Expert",
-                Programs =
+            sut.AddExpertAsync(NewCreateDto(
+                fullName: "Expert",
+                programs:
                 [
                     new ExpertProgramAssignmentDto { ProgramId = _programId, RoleInBoard = "Advisor" },
-                ],
-            }));
+                ])));
     }
 
     // ── AddProgramToExpertAsync ───────────────────────────────────────────────
@@ -334,10 +374,11 @@ public sealed class ExpertServiceTests
     [Fact]
     public async Task Update_AppliesProfileChanges()
     {
-        SeedExpert();
+        SeedUser();
+        SeedExpert(userId: _userId);
         var sut = CreateSut();
 
-        var result = await sut.UpdateExpertAsync(_expertId, new ExpertUpdateDto
+        var result = await sut.UpdateExpertAsync(_expertId, new UpdateExpertRequest
         {
             FullName = "Updated Ada",
             Title = "Director",
@@ -346,6 +387,7 @@ public sealed class ExpertServiceTests
 
         Assert.Equal("Updated Ada", result.FullName);
         Assert.Equal("Director", _db.Experts.Items[0].Title);
+        Assert.Equal("Updated Ada", _db.Users.Items[0].FullName);
     }
 
     [Fact]
@@ -355,7 +397,7 @@ public sealed class ExpertServiceTests
         var before = _db.SaveChangesCallCount;
         var sut = CreateSut();
 
-        var result = await sut.UpdateExpertAsync(_expertId, new ExpertUpdateDto());
+        var result = await sut.UpdateExpertAsync(_expertId, new UpdateExpertRequest());
 
         Assert.Equal("Dr. Ada", result.FullName);
         Assert.Equal(before, _db.SaveChangesCallCount);
@@ -379,7 +421,7 @@ public sealed class ExpertServiceTests
         ]);
         var sut = CreateSut();
 
-        var result = await sut.UpdateExpertAsync(_expertId, new ExpertUpdateDto
+        var result = await sut.UpdateExpertAsync(_expertId, new UpdateExpertRequest
         {
             Programs =
             [
@@ -414,7 +456,7 @@ public sealed class ExpertServiceTests
         ]);
         var sut = CreateSut();
 
-        var result = await sut.UpdateExpertAsync(_expertId, new ExpertUpdateDto
+        var result = await sut.UpdateExpertAsync(_expertId, new UpdateExpertRequest
         {
             Programs = [],
         });
@@ -424,22 +466,16 @@ public sealed class ExpertServiceTests
     }
 
     [Fact]
-    public async Task Update_Throws_WhenMissingDuplicateCodeOrBadUser()
+    public async Task Update_Throws_WhenMissingOrDuplicateCode()
     {
         SeedExpert();
         SeedExpert(id: _otherExpertId, code: "EXP-002", fullName: "Other");
-        SeedUser();
-        SeedExpert(id: Guid.Parse("68686868-6868-6868-6868-686868686868"), code: "EXP-003", fullName: "Linked", userId: _userId);
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.UpdateExpertAsync(Guid.NewGuid(), new ExpertUpdateDto { FullName = "X" }));
+            sut.UpdateExpertAsync(Guid.NewGuid(), new UpdateExpertRequest { FullName = "X" }));
         await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.UpdateExpertAsync(_expertId, new ExpertUpdateDto { Code = "EXP-002" }));
-        await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.UpdateExpertAsync(_expertId, new ExpertUpdateDto { UserId = _userId }));
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.UpdateExpertAsync(_expertId, new ExpertUpdateDto { UserId = _otherUserId }));
+            sut.UpdateExpertAsync(_expertId, new UpdateExpertRequest { Code = "EXP-002" }));
     }
 
     [Fact]
@@ -449,7 +485,7 @@ public sealed class ExpertServiceTests
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            sut.UpdateExpertAsync(_expertId, new ExpertUpdateDto
+            sut.UpdateExpertAsync(_expertId, new UpdateExpertRequest
             {
                 Programs =
                 [
@@ -459,18 +495,20 @@ public sealed class ExpertServiceTests
     }
 
     [Fact]
-    public async Task Update_LinksUser_WhenValid()
+    public async Task Update_DoesNotChangeLoginCredentials()
     {
-        SeedExpert();
         SeedUser();
+        SeedExpert(userId: _userId);
         var sut = CreateSut();
 
-        var result = await sut.UpdateExpertAsync(_expertId, new ExpertUpdateDto
+        var result = await sut.UpdateExpertAsync(_expertId, new UpdateExpertRequest
         {
-            UserId = _userId,
+            Title = "Director",
         });
 
         Assert.Equal(_userId, result.UserId);
+        Assert.Equal("usr-001@test.com", result.Email);
+        Assert.Equal(AccountStatus.Active, _db.Users.Items[0].Status);
     }
 
     // ── UpdateProgramOfExpertAsync ────────────────────────────────────────────
@@ -552,6 +590,20 @@ public sealed class ExpertServiceTests
     }
 
     [Fact]
+    public async Task Delete_LocksLinkedUser()
+    {
+        SeedUser();
+        SeedExpert(userId: _userId);
+        var sut = CreateSut();
+
+        await sut.DeleteExpertAsync(_expertId);
+
+        Assert.True(_db.Experts.Items[0].IsDeleted);
+        Assert.Equal(AccountStatus.Locked, _db.Users.Items[0].Status);
+        Assert.False(_db.Users.Items[0].IsDeleted);
+    }
+
+    [Fact]
     public async Task Delete_Throws_WhenMissing()
     {
         var sut = CreateSut();
@@ -564,10 +616,12 @@ public sealed class ExpertServiceTests
     {
         var sut = CreateSut();
 
-        var result = await sut.AddExpertAsync(new ExpertCreateDto
+        var result = await sut.AddExpertAsync(new CreateExpertRequest
         {
             Code = "EXP-SPEC",
             FullName = "Spec Expert",
+            Email = "spec.expert@test.com",
+            Password = "Secret1",
             Specialization = ["Robotics", "AI"],
         });
 

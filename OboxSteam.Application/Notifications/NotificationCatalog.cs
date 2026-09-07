@@ -1927,6 +1927,433 @@ public static class NotificationCatalog
                 className: className,
                 programName: programName));
 
+    // ── Curriculum review ─────────────────────────────────────────────────────
+
+    public static NotificationCommand CurriculumReviewSubmitted(
+        Guid expertUserId,
+        Guid programId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? frameworkName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumReviewSubmitted,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Có chương trình chờ duyệt",
+                BuildCurriculumReviewSubmittedBody(programName, frameworkName)),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                programName: programName,
+                frameworkName: frameworkName));
+
+    public static NotificationCommand CurriculumReviewApproved(
+        Guid programId,
+        Guid? reviewId = null,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumReviewApproved,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chương trình đã được duyệt",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã duyệt chương trình. Bạn có thể xuất bản."
+                    : "{actorName} đã duyệt chương trình \"{programName}\". Bạn có thể xuất bản."),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "CurriculumReview",
+            entityId: reviewId ?? programId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
+    public static NotificationCommand CurriculumReviewChangesRequested(
+        Guid programId,
+        string comment,
+        Guid? reviewId = null,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumReviewChangesRequested,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chương trình cần chỉnh sửa",
+                BuildCurriculumReviewChangesRequestedBody(programName)),
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                Extra = comment
+            }.WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "CurriculumReview",
+            entityId: reviewId ?? programId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                programName: programName,
+                comment: comment));
+
+    // ── Offline co-teach ──────────────────────────────────────────────────────
+
+    public static NotificationCommand ClassSessionExpertInvited(
+        Guid expertUserId,
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        Guid? actorUserId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null,
+        string? sessionStartTime = null,
+        string? actorName = null)
+        => new(
+            NotificationType.ClassSessionExpertInvited,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Lời mời đồng hành buổi học",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "Bạn được mời đồng hành một buổi học của lớp {className} lúc {sessionStartTime}."
+                    : "Bạn được mời đồng hành buổi \"{sessionTitle}\" của lớp {className} lúc {sessionStartTime}."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(actorName: actorName, className: className, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle,
+                sessionStartTime: sessionStartTime));
+
+    public static NotificationCommand ClassSessionExpertAccepted(
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        Guid? actorUserId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null,
+        string? actorName = null)
+        => new(
+            NotificationType.ClassSessionExpertAccepted,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chuyên gia đã nhận lời mời",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "{actorName} đã nhận lời mời đồng hành buổi học của lớp {className}."
+                    : "{actorName} đã nhận lời mời đồng hành buổi \"{sessionTitle}\" của lớp {className}."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(actorName: actorName, className: className, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle));
+
+    public static NotificationCommand ClassSessionExpertDeclined(
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        Guid? actorUserId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null,
+        string? actorName = null)
+        => new(
+            NotificationType.ClassSessionExpertDeclined,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chuyên gia từ chối lời mời",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "{actorName} đã từ chối lời mời đồng hành buổi học của lớp {className}."
+                    : "{actorName} đã từ chối lời mời đồng hành buổi \"{sessionTitle}\" của lớp {className}."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(actorName: actorName, className: className, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle));
+
+    public static NotificationCommand ClassSessionExpertInvitationWithdrawn(
+        Guid expertUserId,
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        Guid? actorUserId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null,
+        string? actorName = null)
+        => new(
+            NotificationType.ClassSessionExpertInvitationWithdrawn,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Lời mời đồng hành đã được thu hồi",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "Lời mời đồng hành buổi học của lớp {className} đã được thu hồi."
+                    : "Lời mời đồng hành buổi \"{sessionTitle}\" của lớp {className} đã được thu hồi."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(actorName: actorName, className: className, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle));
+
+    public static NotificationCommand ClassSessionExpertRescheduleRequested(
+        Guid expertUserId,
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        Guid? actorUserId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null,
+        string? sessionStartTime = null,
+        string? actorName = null)
+        => new(
+            NotificationType.ClassSessionExpertRescheduleRequested,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Yêu cầu đổi lịch buổi đồng hành",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "Quản lý đề xuất đổi lịch buổi học của lớp {className} sang {sessionStartTime}. Lịch mới chỉ được áp dụng khi bạn đồng ý."
+                    : "Quản lý đề xuất đổi buổi \"{sessionTitle}\" sang {sessionStartTime}. Lịch mới chỉ được áp dụng khi bạn đồng ý."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(actorName: actorName, className: className, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle,
+                sessionStartTime: sessionStartTime));
+
+    public static NotificationCommand ClassSessionExpertRescheduleDeclined(
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        Guid? actorUserId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null,
+        string? actorName = null)
+        => new(
+            NotificationType.ClassSessionExpertRescheduleDeclined,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chuyên gia từ chối đổi lịch",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "{actorName} đã từ chối đổi lịch buổi học của lớp {className}. Lịch hiện tại được giữ nguyên."
+                    : "{actorName} đã từ chối đổi lịch buổi \"{sessionTitle}\" của lớp {className}. Lịch hiện tại được giữ nguyên."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(actorName: actorName, className: className, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle));
+
+    public static NotificationCommand ClassSessionExpertFeedbackRequested(
+        Guid expertUserId,
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null)
+        => new(
+            NotificationType.ClassSessionExpertFeedbackRequested,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Nhắc gửi phản hồi buổi đồng hành",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "Buổi học của lớp {className} đã kết thúc. Hãy gửi nhận xét về cách mentor giảng dạy."
+                    : "Buổi \"{sessionTitle}\" của lớp {className} đã kết thúc. Hãy gửi nhận xét về cách mentor giảng dạy."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(className: className, programName: programName),
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle));
+
+    public static NotificationCommand ClassSessionExpertFeedbackSubmitted(
+        Guid invitationId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        Guid? actorUserId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null,
+        string? actorName = null)
+        => new(
+            NotificationType.ClassSessionExpertFeedbackSubmitted,
+            NotificationAudience.ForClassMentor(classId),
+            NotificationRoleTemplates.FromDefault(
+                "Chuyên gia đã gửi phản hồi",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "{actorName} đã gửi phản hồi về buổi học của lớp {className}."
+                    : "{actorName} đã gửi phản hồi về buổi \"{sessionTitle}\" của lớp {className}."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(actorName: actorName, className: className, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ClassSessionExpert",
+            entityId: invitationId,
+            tokens: NotificationTokenKeys.Create(
+                actorName: actorName,
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle));
+
+    public static NotificationCommand ClassSessionRescheduledForExpert(
+        Guid expertUserId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null,
+        string? sessionStartTime = null)
+        => new(
+            NotificationType.ClassSessionRescheduled,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Đã đổi lịch buổi đồng hành",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "Buổi học của lớp {className} đã được đổi lịch sang {sessionStartTime}."
+                    : "Buổi \"{sessionTitle}\" đã được đổi lịch sang {sessionStartTime}."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(className: className, programName: programName),
+            entityType: "ClassSession",
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle,
+                sessionStartTime: sessionStartTime));
+
+    public static NotificationCommand ClassSessionCancelledForExpert(
+        Guid expertUserId,
+        Guid classSessionId,
+        Guid classId,
+        Guid? programId = null,
+        string? className = null,
+        string? programName = null,
+        string? sessionTitle = null)
+        => new(
+            NotificationType.ClassSessionCancelled,
+            NotificationAudience.ForUser(expertUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Buổi đồng hành đã bị hủy",
+                string.IsNullOrWhiteSpace(sessionTitle)
+                    ? "Buổi học của lớp {className} đã bị hủy."
+                    : "Buổi \"{sessionTitle}\" của lớp {className} đã bị hủy."),
+            payload: new NotificationPayload
+            {
+                ClassId = classId,
+                ClassSessionId = classSessionId,
+                ProgramId = programId
+            }.WithNames(className: className, programName: programName),
+            entityType: "ClassSession",
+            entityId: classSessionId,
+            tokens: NotificationTokenKeys.Create(
+                className: className,
+                programName: programName,
+                sessionTitle: sessionTitle));
+
+    private static string BuildCurriculumReviewSubmittedBody(string? programName, string? frameworkName)
+    {
+        if (!string.IsNullOrWhiteSpace(programName) && !string.IsNullOrWhiteSpace(frameworkName))
+        {
+            return "{actorName} đã gửi chương trình \"{programName}\" dựa trên khung \"{frameworkName}\" của bạn.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(programName))
+        {
+            return "{actorName} đã gửi chương trình \"{programName}\" để bạn duyệt.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(frameworkName))
+        {
+            return "{actorName} đã gửi một chương trình dựa trên khung \"{frameworkName}\" của bạn.";
+        }
+
+        return "{actorName} đã gửi một chương trình để bạn duyệt.";
+    }
+
+    private static string BuildCurriculumReviewChangesRequestedBody(string? programName)
+        => string.IsNullOrWhiteSpace(programName)
+            ? "{actorName} không duyệt chương trình. Yêu cầu kiểm tra và sửa lại. {comment}"
+            : "{actorName} không duyệt chương trình \"{programName}\". Yêu cầu kiểm tra và sửa lại. {comment}";
+
     private static NotificationCommand StudentAndParent(
         NotificationType type,
         NotificationAudience audience,

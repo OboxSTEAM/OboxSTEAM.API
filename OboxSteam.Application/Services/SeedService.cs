@@ -44,9 +44,12 @@ public partial class SeedService : ISeedService
     {
         await SeedUsersAsync();
         await EnsureAdditionalMentorUsersAsync();
+        await EnsureExpertUsersAsync();
         await SeedMentorProfilesAsync();
         await SeedExpertsAsync();
+        await SeedExpertCredentialsAsync();
         await SeedProgramsAsync();
+        await SeedProgramFrameworksAsync();
         await SeedProgramBoardsAsync();
         await SeedSkillsAsync();
         await SeedModulesAsync();
@@ -74,6 +77,7 @@ public partial class SeedService : ISeedService
         await SeedResearchSubmissionsAsync();
         await SeedExtendedResearchDataAsync();
         await SeedDemoShowcaseProgramsAsync();
+        await SeedReviewDraftProgramsAsync();
         await SeedMaterialsAsync();
         await EnsureClassSessionCoverageAsync();
         await RealignSeedSessionWallClocksAsync();
@@ -102,6 +106,7 @@ public partial class SeedService : ISeedService
         await ApplyMakerSlice2JoinableSessionsAsync();
         // After ClearDemoProgramSubmissionsAsync so STD-010 theory quiz grade is not wiped.
         await ApplyMakerStudent10Module1CompleteAsync();
+        await SeedClassSessionExpertsAsync();
     }
 
     public async Task ClearAllDataAsync()

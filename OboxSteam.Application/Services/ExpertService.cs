@@ -6,6 +6,7 @@ using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
+using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
 
 namespace OboxSteam.Application.Services;
@@ -22,11 +23,6 @@ public class ExpertService : IExpertService
         _blobService = blobService;
         _logger = logger;
     }
-
-    /// <summary>Treats empty GUID as null — external experts do not require a system user link.</summary>
-    private static Guid? NormalizeOptionalUserId(Guid? userId) =>
-        userId is { } id && id != Guid.Empty ? id : null;
-
 
     public async Task<ExpertProgramSummaryDto> UpdateProgramOfExpertAsync(Guid expertId, Guid programId)
     {
@@ -98,12 +94,14 @@ public class ExpertService : IExpertService
             : new List<Program>();
 
         var programsById = programs.ToDictionary(p => p.Id, p => p);
+        var email = await ResolveEmailAsync(expert.UserId);
 
         var response = new ExpertResponseDto
         {
             Id = expert.Id,
             Code = expert.Code,
             UserId = expert.UserId,
+            Email = email,
             FullName = expert.FullName,
             Title = expert.Title,
             Organization = expert.Organization,
@@ -208,12 +206,16 @@ public class ExpertService : IExpertService
         var publicationsByExpert = publications
             .GroupBy(p => p.ExpertId)
             .ToDictionary(g => g.Key, g => g.ToList());
+        var emailsByUserId = await ResolveEmailsAsync(items.Select(e => e.UserId));
 
         var dtos = items.Select(expert => new ExpertResponseDto
         {
             Id = expert.Id,
             Code = expert.Code,
             UserId = expert.UserId,
+            Email = expert.UserId is Guid userId && emailsByUserId.TryGetValue(userId, out var email)
+                ? email
+                : null,
             FullName = expert.FullName,
             Title = expert.Title,
             Organization = expert.Organization,
@@ -249,42 +251,33 @@ public class ExpertService : IExpertService
         return new Pagination<ExpertResponseDto>(dtos, totalCount, page, pageSize);
     }
 
-    public async Task<ExpertResponseDto> AddExpertAsync(ExpertCreateDto expertCreateDto)
+    public async Task<ExpertResponseDto> AddExpertAsync(CreateExpertRequest request)
     {
-        var userId = NormalizeOptionalUserId(expertCreateDto.UserId);
+        ValidateCreateCredentials(request);
 
-        _logger.LogInformation("[AddExpertAsync] Start adding expert: {Name} (Code: {Code}, LinkedUser: {UserId})",
-            expertCreateDto.FullName, expertCreateDto.Code, userId);
+        var email = request.Email.Trim().ToLowerInvariant();
+
+        _logger.LogInformation("[AddExpertAsync] Start adding expert: {Name} (Code: {Code}, Email: {Email})",
+            request.FullName, request.Code, email);
 
         var existing = await _unitOfWork.Experts.FirstOrDefaultAsync(
-            e => e.Code.ToLower() == expertCreateDto.Code.ToLower() && !e.IsDeleted);
+            e => e.Code.ToLower() == request.Code.ToLower() && !e.IsDeleted);
 
         if (existing != null)
         {
-            _logger.LogWarning("[AddExpertAsync] Expert with code '{Code}' already exists.", expertCreateDto.Code);
-            throw ErrorHelper.Conflict($"Expert with code '{expertCreateDto.Code}' already exists.");
+            _logger.LogWarning("[AddExpertAsync] Expert with code '{Code}' already exists.", request.Code);
+            throw ErrorHelper.Conflict($"Expert with code '{request.Code}' already exists.");
         }
 
-        if (userId.HasValue)
+        var existingEmail = await _unitOfWork.Users.FirstOrDefaultAsync(
+            u => u.Email.ToLower() == email && !u.IsDeleted);
+        if (existingEmail != null)
         {
-            var existingUserExpert = await _unitOfWork.Experts.FirstOrDefaultAsync(
-                e => e.UserId == userId && !e.IsDeleted);
-
-            if (existingUserExpert != null)
-            {
-                _logger.LogWarning("[AddExpertAsync] User '{UserId}' already linked to an expert.", userId);
-                throw ErrorHelper.Conflict($"User '{userId}' is already linked to an expert.");
-            }
-
-            var userExists = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == userId);
-            if (userExists == null)
-            {
-                _logger.LogWarning("[AddExpertAsync] User '{UserId}' not found.", userId);
-                throw ErrorHelper.NotFound($"User with id '{userId}' not found.");
-            }
+            _logger.LogWarning("[AddExpertAsync] Email '{Email}' is already in use.", email);
+            throw ErrorHelper.Conflict("Email is already in use.");
         }
 
-        var distinctAssignments = (expertCreateDto.Programs ?? [])
+        var distinctAssignments = (request.Programs ?? [])
             .Where(a => a.ProgramId != Guid.Empty)
             .GroupBy(a => a.ProgramId)
             .Select(g => g.First())
@@ -304,23 +297,37 @@ public class ExpertService : IExpertService
             }
         }
 
+        var userId = Guid.NewGuid();
+        var user = new User
+        {
+            Id = userId,
+            Code = $"EXP-{Guid.NewGuid().ToString("N")[..6].ToUpper()}",
+            Email = email,
+            PasswordHash = new PasswordHasher().HashPassword(request.Password),
+            FullName = request.FullName.Trim(),
+            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
+            Role = RoleType.Expert,
+            Status = AccountStatus.Active,
+            IsEmailVerified = true,
+        };
+
         var expert = new Expert
         {
             Id = Guid.NewGuid(),
-            Code = expertCreateDto.Code,
+            Code = request.Code,
             UserId = userId,
-            FullName = expertCreateDto.FullName,
-            Title = expertCreateDto.Title,
-            Organization = expertCreateDto.Organization,
-            Bio = expertCreateDto.Bio,
-            AvatarUrl = expertCreateDto.AvatarUrl,
-            LinkedInUrl = expertCreateDto.LinkedInUrl,
-            Achievements = expertCreateDto.Achievements,
-            Specialization = expertCreateDto.Specialization ?? []
+            FullName = request.FullName.Trim(),
+            Title = request.Title,
+            Organization = request.Organization,
+            Bio = request.Bio,
+            AvatarUrl = request.AvatarUrl,
+            LinkedInUrl = request.LinkedInUrl,
+            Achievements = request.Achievements,
+            Specialization = request.Specialization ?? []
         };
 
+        await _unitOfWork.Users.AddAsync(user);
         await _unitOfWork.Experts.AddAsync(expert);
-        await _unitOfWork.SaveChangesAsync();
 
         if (distinctAssignments.Any())
         {
@@ -333,11 +340,12 @@ public class ExpertService : IExpertService
             }).ToList();
 
             await _unitOfWork.ProgramBoards.AddRangeAsync(programBoards);
-            await _unitOfWork.SaveChangesAsync();
         }
 
-        _logger.LogInformation("[AddExpertAsync] Expert '{Code}' added successfully with Id {Id}.",
-            expert.Code, expert.Id);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[AddExpertAsync] Expert '{Code}' added successfully with Id {Id} and login {Email}.",
+            expert.Code, expert.Id, email);
 
         return await GetExpertByIdAsync(expert.Id);
     }
@@ -433,7 +441,7 @@ public class ExpertService : IExpertService
         };
     }
 
-    public async Task<ExpertResponseDto> UpdateExpertAsync(Guid id, ExpertUpdateDto expertUpdateDto)
+    public async Task<ExpertResponseDto> UpdateExpertAsync(Guid id, UpdateExpertRequest request)
     {
         _logger.LogInformation("[UpdateExpertAsync] Attempting to update expert with Id: {Id}", id);
 
@@ -445,49 +453,27 @@ public class ExpertService : IExpertService
             throw ErrorHelper.NotFound($"Expert with id '{id}' not found.");
         }
 
-        if (!string.IsNullOrWhiteSpace(expertUpdateDto.Code) &&
-            !expert.Code.Equals(expertUpdateDto.Code, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(request.Code) &&
+            !expert.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase))
         {
             var duplicate = await _unitOfWork.Experts.FirstOrDefaultAsync(
-                e => e.Code.ToLower() == expertUpdateDto.Code.ToLower() &&
+                e => e.Code.ToLower() == request.Code.ToLower() &&
                      !e.IsDeleted &&
                      e.Id != id);
 
             if (duplicate != null)
             {
-                _logger.LogWarning("[UpdateExpertAsync] Code '{Code}' is already in use.", expertUpdateDto.Code);
-                throw ErrorHelper.Conflict($"Expert with code '{expertUpdateDto.Code}' already exists.");
+                _logger.LogWarning("[UpdateExpertAsync] Code '{Code}' is already in use.", request.Code);
+                throw ErrorHelper.Conflict($"Expert with code '{request.Code}' already exists.");
             }
         }
 
-        var normalizedUserId = NormalizeOptionalUserId(expertUpdateDto.UserId);
+        var previousFullName = expert.FullName;
+        var isUpdated = UpdateHelper.ApplyUpdates(expert, request);
 
-        if (normalizedUserId.HasValue && expert.UserId != normalizedUserId)
+        if (request.Programs != null)
         {
-            var existingUserExpert = await _unitOfWork.Experts.FirstOrDefaultAsync(
-                e => e.UserId == normalizedUserId && !e.IsDeleted);
-
-            if (existingUserExpert != null && existingUserExpert.Id != id)
-            {
-                _logger.LogWarning("[UpdateExpertAsync] User '{UserId}' already linked to an expert.", normalizedUserId);
-                throw ErrorHelper.Conflict($"User '{normalizedUserId}' is already linked to an expert.");
-            }
-
-            var userExists = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Id == normalizedUserId);
-            if (userExists == null)
-            {
-                _logger.LogWarning("[UpdateExpertAsync] User '{UserId}' not found.", normalizedUserId);
-                throw ErrorHelper.NotFound($"User with id '{normalizedUserId}' not found.");
-            }
-        }
-
-        expertUpdateDto.UserId = normalizedUserId;
-
-        var isUpdated = UpdateHelper.ApplyUpdates(expert, expertUpdateDto);
-
-        if (expertUpdateDto.Programs != null)
-        {
-            var distinctAssignments = expertUpdateDto.Programs
+            var distinctAssignments = request.Programs
                 .GroupBy(a => a.ProgramId)
                 .Select(g => g.First())
                 .ToList();
@@ -528,6 +514,19 @@ public class ExpertService : IExpertService
             }
 
             isUpdated = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expert.FullName)
+            && expert.FullName != previousFullName
+            && expert.UserId is Guid linkedUserId)
+        {
+            var linkedUser = await _unitOfWork.Users.GetByIdAsync(linkedUserId);
+            if (linkedUser != null && !linkedUser.IsDeleted)
+            {
+                linkedUser.FullName = expert.FullName;
+                await _unitOfWork.Users.Update(linkedUser);
+                isUpdated = true;
+            }
         }
 
         if (!isUpdated)
@@ -589,6 +588,16 @@ public class ExpertService : IExpertService
         {
             _logger.LogWarning("[DeleteExpertAsync] Expert with Id {Id} not found.", id);
             throw ErrorHelper.NotFound($"Expert with id '{id}' not found.");
+        }
+
+        if (expert.UserId is Guid userId)
+        {
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
+            if (user != null && !user.IsDeleted && user.Status != AccountStatus.Locked)
+            {
+                user.Status = AccountStatus.Locked;
+                await _unitOfWork.Users.Update(user);
+            }
         }
 
         await _unitOfWork.Experts.SoftRemove(expert);
@@ -722,6 +731,40 @@ public class ExpertService : IExpertService
         }
 
         return expert;
+    }
+
+    private static void ValidateCreateCredentials(CreateExpertRequest dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Code))
+            throw ErrorHelper.BadRequest("Code is required.");
+
+        if (string.IsNullOrWhiteSpace(dto.FullName) || dto.FullName.Trim().Length < 2)
+            throw ErrorHelper.BadRequest("Full name must be at least 2 characters long.");
+
+        if (string.IsNullOrWhiteSpace(dto.Email))
+            throw ErrorHelper.BadRequest("Email is required.");
+
+        if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < 6)
+            throw ErrorHelper.BadRequest("Password must be at least 6 characters long.");
+    }
+
+    private async Task<string?> ResolveEmailAsync(Guid? userId)
+    {
+        if (userId is not Guid id)
+            return null;
+
+        var user = await _unitOfWork.Users.GetByIdAsync(id);
+        return user is { IsDeleted: false } ? user.Email : null;
+    }
+
+    private async Task<Dictionary<Guid, string>> ResolveEmailsAsync(IEnumerable<Guid?> userIds)
+    {
+        var ids = userIds.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        if (ids.Count == 0)
+            return [];
+
+        var users = await _unitOfWork.Users.GetAllAsync(u => ids.Contains(u.Id) && !u.IsDeleted);
+        return users.ToDictionary(u => u.Id, u => u.Email);
     }
 
     private static ExpertDegreeResponseDto MapDegree(ExpertDegree degree) => new()

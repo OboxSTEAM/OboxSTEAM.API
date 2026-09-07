@@ -34,6 +34,31 @@ public static class ClassValidator
         }
     }
 
+    /// <summary>
+    /// Create, program reassignment, open, and start require an Active program.
+    /// </summary>
+    public static void EnsureProgramIsActive(Program program)
+    {
+        if (program.Status == ProgramStatus.Active)
+        {
+            return;
+        }
+
+        throw ErrorHelper.BadRequest(program.Status switch
+        {
+            ProgramStatus.Draft =>
+                $"Program '{program.Code}' is a draft. Publish it before creating, opening, or starting classes.",
+            ProgramStatus.PendingReview =>
+                $"Program '{program.Code}' is pending expert review. Classes can only be created, opened, or started when the program is Active.",
+            ProgramStatus.Approved =>
+                $"Program '{program.Code}' is approved but not published. Publish it before creating, opening, or starting classes.",
+            ProgramStatus.Inactive =>
+                $"Program '{program.Code}' is inactive. Classes cannot be created, opened, or started.",
+            _ =>
+                $"Program '{program.Code}' must be Active (current status: {program.Status}).",
+        });
+    }
+
     public static void ValidateMentorExists(User? mentor, Guid mentorId)
     {
         if (mentor == null || mentor.IsDeleted)

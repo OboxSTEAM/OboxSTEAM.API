@@ -112,7 +112,7 @@ operations own validation and side effects; queries return DTOs.
 | --- | --- | --- |
 | AuthController | `/api/auth` | Registration, login, OTP, tokens |
 | AccountController | `/api/account` | Profile and account settings |
-| ProgramController | `/api/programs` | Program catalog, admin, open-classes preview |
+| ProgramController | `/api/programs` | Program catalog, admin, submit-review / publish, expert review queue |
 | ModuleController | `/api/modules` | Module CRUD |
 | CourseController | `/api/courses` | Course CRUD |
 | ActivityController | `/api/activities` | Activity CRUD |
@@ -125,6 +125,8 @@ operations own validation and side effects; queries return DTOs.
 | ModuleEnrollmentController | `/api/module-enrollments` | Module enrollment |
 | ParentController | `/api/parent` | Parent–student linking |
 | ExpertController | `/api/experts` | Expert profiles |
+| ProgramFrameworkController | `/api/program-frameworks` | Expert curriculum blueprints and rubric criteria |
+| ClassSessionExpertController | `/api/class-session-experts` | Offline co-teach invite, reschedule, private feedback |
 | ProgramReviewController | `/api/programs/{id}/reviews` | Student reviews |
 | MediaController | `/api/media` | Media assets |
 | HighlightVideoController | `/api/highlight-video` | Class-scoped highlight stacks |

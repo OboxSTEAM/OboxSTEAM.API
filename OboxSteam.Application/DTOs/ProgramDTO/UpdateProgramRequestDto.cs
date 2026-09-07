@@ -13,6 +13,17 @@ public class UpdateProgramRequestDto
     public string? EstimatedDuration { get; set; }
     public string? SkillsGained { get; set; }
     public string? ThumbnailUrl { get; set; }
+
+    /// <summary>
+    /// Catalog toggle only: Active ↔ Inactive when already in one of those states.
+    /// PendingReview and Approved cannot be set here.
+    /// </summary>
     public ProgramStatus? Status { get; set; }
     public decimal? Price { get; set; }
+
+    /// <summary>Assign a blueprint. Null is skipped (partial update). Use <see cref="ClearFramework"/> to unlink.</summary>
+    public Guid? FrameworkId { get; set; }
+
+    /// <summary>When true, clears <c>Program.FrameworkId</c>. Ignored when <see cref="FrameworkId"/> is set.</summary>
+    public bool? ClearFramework { get; set; }
 }

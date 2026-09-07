@@ -13,6 +13,7 @@ mobile clients; this repository is the .NET backend only.
 | --- | --- |
 | Admin | Full platform administration |
 | Manager | Curriculum, classes, question banks, assignments |
+| Expert | Framework blueprints, curriculum review, Offline co-teach |
 | Mentor | Course delivery, class mentoring, student guidance |
 | Student | Enrollment, activities, assignments, quizzes, submissions |
 | Parent | Linked student visibility and approvals |
