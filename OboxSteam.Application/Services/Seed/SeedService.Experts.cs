@@ -107,6 +107,7 @@ public partial class SeedService
             foreach (var account in SeedExpertAccounts)
             {
                 var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == account.Email);
+                var profile = SeedExpertCredentialProfiles.FirstOrDefault(p => p.ExpertCode == account.ExpertCode);
                 experts.Add(new Expert
                 {
                     Id = Guid.NewGuid(),
@@ -118,7 +119,8 @@ public partial class SeedService
                     Bio = account.Bio,
                     AvatarUrl = account.AvatarUrl,
                     LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
-                    Achievements = account.Achievements,
+                    Achievements = profile?.Achievements ?? account.Achievements,
+                    Specialization = profile?.Specialization ?? [],
                     CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false

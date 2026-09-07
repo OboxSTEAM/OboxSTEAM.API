@@ -17,52 +17,203 @@ public partial class SeedService
     internal const string SeedFrameworkOpenProgramCode = "PRG-FW-OPEN";
     internal const string SeedFrameworkExp2PendingProgramCode = "PRG-FW-EXP2";
 
+    /// <summary>
+    /// Backfills specialization tags, degrees, and publications for every seed expert.
+    /// There is no ExpertCertificate entity — professional certs live in Achievements text.
+    /// Idempotent: only adds missing titles / empty specialization.
+    /// </summary>
     private async Task SeedExpertCredentialsAsync()
     {
-        var expert = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
-        if (expert == null)
-        {
-            _loggerService.LogWarning("EXP-001 missing. Skipping expert credential seed.");
-            return;
-        }
+        _loggerService.LogInformation("Starting seed expert credentials (specialization / degrees / publications)");
 
-        var hasDegree = await _unitOfWork.ExpertDegrees.FirstOrDefaultAsync(
-            d => d.ExpertId == expert.Id && d.Title == "PhD in Robotics Education" && !d.IsDeleted);
-        if (hasDegree == null)
+        foreach (var profile in SeedExpertCredentialProfiles)
         {
-            await _unitOfWork.ExpertDegrees.AddAsync(new ExpertDegree
+            var expert = await _unitOfWork.Experts.FirstOrDefaultAsync(
+                e => e.Code == profile.ExpertCode && !e.IsDeleted);
+            if (expert == null)
             {
-                Id = Guid.NewGuid(),
-                ExpertId = expert.Id,
-                Title = "PhD in Robotics Education",
-                Institution = "Hanoi University of Science and Technology",
-                Year = 2016,
-                CreatedAt = _seedNow,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
-        }
+                _loggerService.LogWarning(
+                    "{ExpertCode} missing. Skipping credential seed for that expert.",
+                    profile.ExpertCode);
+                continue;
+            }
 
-        var hasPublication = await _unitOfWork.ExpertPublications.FirstOrDefaultAsync(
-            p => p.ExpertId == expert.Id && p.Title == "Hands-on robotics for ages 6-8" && !p.IsDeleted);
-        if (hasPublication == null)
-        {
-            await _unitOfWork.ExpertPublications.AddAsync(new ExpertPublication
+            var changed = false;
+            if (expert.Specialization == null || expert.Specialization.Length == 0)
             {
-                Id = Guid.NewGuid(),
-                ExpertId = expert.Id,
-                Title = "Hands-on robotics for ages 6-8",
-                Venue = "STEAM Education Review",
-                Year = 2023,
-                Url = "https://example.com/oboxsteam/robotics-6-8",
-                CreatedAt = _seedNow,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
+                expert.Specialization = profile.Specialization;
+                changed = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(expert.Achievements)
+                || !expert.Achievements.Contains(profile.PrimaryCertLabel, StringComparison.Ordinal))
+            {
+                expert.Achievements = string.IsNullOrWhiteSpace(expert.Achievements)
+                    ? profile.Achievements
+                    : $"{expert.Achievements}; {profile.Achievements}";
+                changed = true;
+            }
+
+            if (changed)
+            {
+                await _unitOfWork.Experts.Update(expert);
+            }
+
+            foreach (var degree in profile.Degrees)
+            {
+                var exists = await _unitOfWork.ExpertDegrees.FirstOrDefaultAsync(
+                    d => d.ExpertId == expert.Id && d.Title == degree.Title && !d.IsDeleted);
+                if (exists != null)
+                {
+                    continue;
+                }
+
+                await _unitOfWork.ExpertDegrees.AddAsync(new ExpertDegree
+                {
+                    Id = Guid.NewGuid(),
+                    ExpertId = expert.Id,
+                    Title = degree.Title,
+                    Institution = degree.Institution,
+                    Year = degree.Year,
+                    CreatedAt = _seedNow,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
+            }
+
+            foreach (var publication in profile.Publications)
+            {
+                var exists = await _unitOfWork.ExpertPublications.FirstOrDefaultAsync(
+                    p => p.ExpertId == expert.Id && p.Title == publication.Title && !p.IsDeleted);
+                if (exists != null)
+                {
+                    continue;
+                }
+
+                await _unitOfWork.ExpertPublications.AddAsync(new ExpertPublication
+                {
+                    Id = Guid.NewGuid(),
+                    ExpertId = expert.Id,
+                    Title = publication.Title,
+                    Venue = publication.Venue,
+                    Year = publication.Year,
+                    Url = publication.Url,
+                    CreatedAt = _seedNow,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
+            }
         }
 
         await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation("Finished seed expert credentials");
     }
+
+    private static readonly SeedExpertCredentialProfile[] SeedExpertCredentialProfiles =
+    [
+        new(
+            "EXP-001",
+            ["Robotics", "Maker education", "Hands-on STEM", "Curriculum review"],
+            "Cert: Google for Education Certified Trainer; Cert: FIRST Robotics Mentor Coach",
+            "National STEM Educator Award; Cert: Google for Education Certified Trainer; Cert: FIRST Robotics Mentor Coach",
+            [
+                ("PhD in Robotics Education", "Hanoi University of Science and Technology", 2016),
+                ("MSc in Mechatronics", "Hanoi University of Science and Technology", 2012),
+                ("BEng in Mechanical Engineering", "Da Nang University of Technology", 2010),
+            ],
+            [
+                ("Hands-on robotics for ages 6-8", "STEAM Education Review", 2023,
+                    "https://example.com/oboxsteam/robotics-6-8"),
+                ("Maker lab safety scaffolds for primary cohorts", "Asia STEAM Journal", 2022,
+                    "https://example.com/oboxsteam/maker-lab-safety"),
+            ]),
+        new(
+            "EXP-002",
+            ["STEAM curriculum", "Experiential learning", "Program frameworks"],
+            "Cert: IB Educator Certificate (STEAM)",
+            "Published 20+ STEAM research papers; Cert: IB Educator Certificate (STEAM)",
+            [
+                ("PhD in Curriculum Studies", "Vietnam National University", 2014),
+                ("MA in Educational Leadership", "University of Education, HCMC", 2009),
+            ],
+            [
+                ("Designing experiential STEAM frameworks", "Curriculum Inquiry Asia", 2024,
+                    "https://example.com/oboxsteam/steam-frameworks"),
+            ]),
+        new(
+            "EXP-003",
+            ["Web development", "Full-stack", "Youth coding"],
+            "Cert: AWS Certified Developer – Associate",
+            "10+ years industry experience; Cert: AWS Certified Developer – Associate",
+            [
+                ("PhD in Computer Science", "Posts and Telecommunications Institute of Technology", 2018),
+                ("BSc in Software Engineering", "University of Information Technology", 2011),
+            ],
+            [
+                ("Teaching modern web stacks to young learners", "Tech Education Vietnam", 2023,
+                    "https://example.com/oboxsteam/web-youth"),
+            ]),
+        new(
+            "EXP-004",
+            ["AI education", "Machine learning", "Data science for students"],
+            "Cert: DeepLearning.AI TensorFlow Developer",
+            "Led 5 national AI education initiatives; Cert: DeepLearning.AI TensorFlow Developer",
+            [
+                ("PhD in Artificial Intelligence", "Vietnam AI Institute", 2019),
+                ("MSc in Applied Mathematics", "Hanoi University of Science", 2015),
+            ],
+            [
+                ("Introductory AI pathways for secondary students", "AI & Society Education", 2024,
+                    "https://example.com/oboxsteam/ai-pathways"),
+            ]),
+        new(
+            "EXP-005",
+            ["Mathematics education", "Problem solving", "Puzzle-based learning"],
+            "Cert: Cambridge IGCSE Mathematics Trainer",
+            "Author of 3 popular math textbooks; Cert: Cambridge IGCSE Mathematics Trainer",
+            [
+                ("PhD in Mathematics Education", "National University of Education", 2013),
+                ("BSc in Mathematics", "Hue University", 2007),
+            ],
+            [
+                ("Puzzle-first math for STEAM cohorts", "Math Teaching Today", 2021,
+                    "https://example.com/oboxsteam/puzzle-math"),
+            ]),
+        new(
+            "EXP-006",
+            ["Digital arts", "Illustration", "Creative expression"],
+            "Cert: Adobe Certified Professional (Illustrator)",
+            "Award-winning digital artist; Cert: Adobe Certified Professional (Illustrator)",
+            [
+                ("MFA in Digital Arts", "University of Fine Arts, HCMC", 2016),
+                ("BA in Graphic Design", "University of Fine Arts, Hanoi", 2012),
+            ],
+            [
+                ("Studio critique loops in youth digital art labs", "Creative Minds Review", 2022,
+                    "https://example.com/oboxsteam/digital-art-labs"),
+            ]),
+        new(
+            "EXP-007",
+            ["Environmental science", "Climate education", "Sustainability"],
+            "Cert: UNESCO Climate Change Education Facilitator",
+            "UN Youth Climate Ambassador 2023; Cert: UNESCO Climate Change Education Facilitator",
+            [
+                ("PhD in Environmental Science", "Can Tho University", 2017),
+                ("MSc in Ecology", "Hue University of Agriculture and Forestry", 2012),
+            ],
+            [
+                ("Field climate labs for STEAM middle school", "Green Earth Education", 2023,
+                    "https://example.com/oboxsteam/climate-labs"),
+            ]),
+    ];
+
+    private sealed record SeedExpertCredentialProfile(
+        string ExpertCode,
+        string[] Specialization,
+        string PrimaryCertLabel,
+        string Achievements,
+        (string Title, string Institution, int Year)[] Degrees,
+        (string Title, string Venue, int Year, string Url)[] Publications);
 
     private async Task SeedProgramFrameworksAsync()
     {
