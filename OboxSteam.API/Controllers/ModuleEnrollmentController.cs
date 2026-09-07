@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.EnrollmentDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -13,10 +14,14 @@ namespace OboxSteam.API.Controllers;
 public class ModuleEnrollmentController : ControllerBase
 {
     private readonly IModuleEnrollmentService _moduleEnrollmentService;
+    private readonly IRebuyClassCatalogService _rebuyClassCatalogService;
 
-    public ModuleEnrollmentController(IModuleEnrollmentService moduleEnrollmentService)
+    public ModuleEnrollmentController(
+        IModuleEnrollmentService moduleEnrollmentService,
+        IRebuyClassCatalogService rebuyClassCatalogService)
     {
         _moduleEnrollmentService = moduleEnrollmentService;
+        _rebuyClassCatalogService = rebuyClassCatalogService;
     }
 
     // =========================================================================
@@ -40,5 +45,27 @@ public class ModuleEnrollmentController : ControllerBase
             result,
             "200",
             "Module enrollment retrieved successfully."));
+    }
+
+    // =========================================================================
+    // CONTINUITY CLASSES  —  GET /api/module-enrollments/{id}/continuity-classes
+    // =========================================================================
+
+    [HttpGet("{id:guid}/continuity-classes")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Continuity class catalog for an Active module enrollment",
+        Description = "Same RebuyClassCatalogDto shape as rebuy-classes. Use while the program enrollment is still Active; after fail/drop use GET /api/programs/{id}/rebuy-classes.")]
+    [ProducesResponseType(typeof(ApiResult<RebuyClassCatalogDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetContinuityClasses([FromRoute] Guid id)
+    {
+        var result = await _rebuyClassCatalogService.GetContinuityClassesForModuleEnrollmentAsync(id);
+        return Ok(ApiResult<RebuyClassCatalogDto>.Success(
+            result,
+            "200",
+            "Continuity class catalog retrieved."));
     }
 }

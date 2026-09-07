@@ -942,9 +942,10 @@ public class PaymentService : IPaymentService
         var program = await _unitOfWork.Programs.GetByIdAsync(module.ProgramId)
             ?? throw ErrorHelper.NotFound($"Program '{module.ProgramId}' not found.");
 
-        if (program.Price == null || program.Price <= 0)
+        var amount = ClassContinuityCatalogBuilder.ResolveActiveContinuityAmount(program);
+        if (amount <= 0)
             throw ErrorHelper.BadRequest("This program cannot be purchased because it has no valid price.");
 
-        return program.Price.Value;
+        return amount;
     }
 }

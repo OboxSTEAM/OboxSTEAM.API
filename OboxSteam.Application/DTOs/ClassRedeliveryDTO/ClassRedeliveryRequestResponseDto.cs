@@ -10,6 +10,10 @@ public class ClassRedeliveryRequestResponseDto
     public Guid ModuleId { get; set; }
     public Guid SourceClassId { get; set; }
     public Guid RequestedByUserId { get; set; }
+    /// <summary>
+    /// Happy path: AwaitingClassSelection | MatchedPendingPayment | Completed | Withdrawn.
+    /// Legacy (ignore on FE): PendingAutoMatch, PendingManager, Approved, AwaitingIntensiveConsent.
+    /// </summary>
     public ClassRedeliveryRequestStatus Status { get; set; }
     public Guid? TargetClassId { get; set; }
     public Guid? PaymentId { get; set; }

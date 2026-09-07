@@ -126,6 +126,7 @@ operations own validation and side effects; queries return DTOs.
 | ParentController | `/api/parent` | Parent–student linking |
 | ExpertController | `/api/experts` | Expert profiles |
 | ProgramFrameworkController | `/api/program-frameworks` | Expert curriculum blueprints and rubric criteria |
+| ClassSessionExpertController | `/api/class-session-experts` | Offline co-teach invite and private mentor feedback |
 | ProgramReviewController | `/api/programs/{id}/reviews` | Student reviews |
 | MediaController | `/api/media` | Media assets |
 | HighlightVideoController | `/api/highlight-video` | Class-scoped highlight stacks |

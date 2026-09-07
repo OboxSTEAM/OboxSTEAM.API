@@ -11,6 +11,10 @@ namespace OboxSteam.API.Controllers;
 [ApiController]
 public class ManagerRedeliveryController : ControllerBase
 {
+    private const string GoneMessage =
+        "Manager waitlist / remedial intensive redelivery is no longer available. "
+        + "Students pick a Standard class via the continuity catalog.";
+
     private readonly IClassRedeliveryRequestService _service;
 
     public ManagerRedeliveryController(IClassRedeliveryRequestService service)
@@ -20,23 +24,21 @@ public class ManagerRedeliveryController : ControllerBase
 
     [HttpGet("waitlist")]
     [Authorize(Roles = "Manager,Admin")]
-    [SwaggerOperation(Summary = "Re-delivery waitlist grouped by program then module")]
-    [ProducesResponseType(typeof(ApiResult<List<RedeliveryWaitlistProgramGroupDto>>), 200)]
+    [SwaggerOperation(Summary = "Removed — redelivery waitlist is no longer available")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
     public async Task<IActionResult> GetWaitlist()
     {
-        var result = await _service.GetWaitlistGroupedAsync();
-        return Ok(ApiResult<List<RedeliveryWaitlistProgramGroupDto>>.Success(
-            result, "200", "Re-delivery waitlist retrieved."));
+        await _service.GetWaitlistGroupedAsync();
+        return StatusCode(410, ApiResult<object>.Failure("410", GoneMessage));
     }
 
     [HttpPost("open-remedial-class")]
     [Authorize(Roles = "Manager,Admin")]
-    [SwaggerOperation(Summary = "Open an intensive remedial class and offer it to the module waitlist")]
-    [ProducesResponseType(typeof(ApiResult<OpenRemedialClassResponseDto>), 201)]
+    [SwaggerOperation(Summary = "Removed — open remedial class is no longer available")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
     public async Task<IActionResult> OpenRemedialClass([FromBody] OpenRemedialClassRequestDto dto)
     {
-        var result = await _service.OpenRemedialClassAsync(dto);
-        return StatusCode(201, ApiResult<OpenRemedialClassResponseDto>.Success(
-            result, "201", "Remedial class opened."));
+        await _service.OpenRemedialClassAsync(dto);
+        return StatusCode(410, ApiResult<object>.Failure("410", GoneMessage));
     }
 }

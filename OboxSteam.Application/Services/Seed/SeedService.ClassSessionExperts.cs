@@ -5,15 +5,20 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Application.Services;
 
 /// <summary>
-/// EXP-001 co-teach fixture on Introduction to Robotics (current cohort):
-/// two Accepted Offline invitations — one Completed (empty feedback so the
-/// expert can submit), one Scheduled (accepted calendar). Idempotent for re-seed.
+/// EXP-001 co-teach fixture on Maker Lab Adventures (CLS-DEMO-MAKER-2026A):
+/// Accepted Offline invitations on the Slice-2 joinable Offline lab (leave status
+/// alone for student10 / mentor4 QR/check-in) plus the research Offline forced
+/// Completed with empty feedback so the expert can submit. Idempotent for re-seed.
 /// </summary>
 public partial class SeedService
 {
+    private const string MakerCoTeachClassCode = "CLS-DEMO-MAKER-2026A";
+    private const string MakerCoTeachProgramCode = "PRG-DEMO-MAKER";
+    private const string MakerJoinableOfflineActivityCode = "ACT-DEMO-MAKER-02-03";
+
     private async Task SeedClassSessionExpertsAsync()
     {
-        _loggerService.LogInformation("Starting seed class session experts");
+        _loggerService.LogInformation("Starting seed class session experts (Maker Lab Adventures)");
 
         var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
         if (expert001 == null)
@@ -22,22 +27,25 @@ public partial class SeedService
             return;
         }
 
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-ROBOTICS" && !p.IsDeleted);
+        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
+            p => p.Code == MakerCoTeachProgramCode && !p.IsDeleted);
         if (program == null)
         {
-            _loggerService.LogWarning("PRG-ROBOTICS missing. Skipping class session expert seed.");
+            _loggerService.LogWarning(
+                "{ProgramCode} missing. Skipping class session expert seed.",
+                MakerCoTeachProgramCode);
             return;
         }
 
-        await EnsureExpertOnProgramBoardAsync(expert001, program.Id, "Lead Robotics Advisor");
+        await EnsureExpertOnProgramBoardAsync(expert001, program.Id, "Maker Co-Teach Advisor");
 
         var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.Code == RoboticsCurrentClassCode && !c.IsDeleted);
+            c => c.Code == MakerCoTeachClassCode && !c.IsDeleted);
         if (classEntity == null)
         {
             _loggerService.LogWarning(
                 "{ClassCode} missing. Skipping class session expert seed.",
-                RoboticsCurrentClassCode);
+                MakerCoTeachClassCode);
             return;
         }
 
@@ -52,42 +60,53 @@ public partial class SeedService
         {
             _loggerService.LogWarning(
                 "No Offline sessions on {ClassCode}. Skipping class session expert seed.",
-                RoboticsCurrentClassCode);
+                MakerCoTeachClassCode);
             return;
         }
 
-        var completed = offlineSessions.FirstOrDefault(s => s.Status == ClassSessionStatus.Completed);
-        if (completed == null)
+        var joinableOfflineActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(
+            a => a.Code == MakerJoinableOfflineActivityCode && !a.IsDeleted);
+        var joinableOffline = joinableOfflineActivity == null
+            ? null
+            : offlineSessions.FirstOrDefault(s => s.ActivityId == joinableOfflineActivity.Id);
+
+        // Feedback fixture: prefer a non-joinable Offline (research lab). Never force
+        // Completed on the Slice-2 joinable Offline — that breaks QR / check-in tests.
+        var feedbackOffline = offlineSessions.FirstOrDefault(
+            s => joinableOffline == null || s.Id != joinableOffline.Id);
+        if (feedbackOffline == null)
         {
-            completed = offlineSessions[0];
-            completed.Status = ClassSessionStatus.Completed;
-            await _unitOfWork.ClassSessions.Update(completed);
-            _loggerService.LogInformation(
-                "Forced session {SessionId} to Completed so EXP-001 can test co-teach feedback.",
-                completed.Id);
+            feedbackOffline = offlineSessions[0];
         }
 
-        var scheduled = offlineSessions.FirstOrDefault(
-            s => s.Id != completed.Id && s.Status == ClassSessionStatus.Scheduled);
-        var second = scheduled
-            ?? offlineSessions.FirstOrDefault(s => s.Id != completed.Id);
+        if (feedbackOffline.Status != ClassSessionStatus.Completed
+            && (joinableOffline == null || feedbackOffline.Id != joinableOffline.Id))
+        {
+            feedbackOffline.Status = ClassSessionStatus.Completed;
+            await _unitOfWork.ClassSessions.Update(feedbackOffline);
+            _loggerService.LogInformation(
+                "Forced Maker research Offline {SessionId} to Completed so EXP-001 can test co-teach feedback.",
+                feedbackOffline.Id);
+        }
 
         var seeded = 0;
-        if (await TryEnsureAcceptedCoTeachAsync(completed, expert001.Id))
+        if (await TryEnsureAcceptedCoTeachAsync(feedbackOffline, expert001.Id))
         {
             seeded++;
         }
 
-        if (second != null && await TryEnsureAcceptedCoTeachAsync(second, expert001.Id))
+        if (joinableOffline != null
+            && joinableOffline.Id != feedbackOffline.Id
+            && await TryEnsureAcceptedCoTeachAsync(joinableOffline, expert001.Id))
         {
             seeded++;
         }
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Finished seed class session experts — {Count} Accepted co-teach row(s) for EXP-001 on {ClassCode}.",
+            "Finished seed class session experts — {Count} Accepted co-teach row(s) for EXP-001 on {ClassCode} (STD-010 / MNT-004).",
             seeded,
-            RoboticsCurrentClassCode);
+            MakerCoTeachClassCode);
     }
 
     private async Task EnsureExpertOnProgramBoardAsync(Expert expert, Guid programId, string roleInBoard)

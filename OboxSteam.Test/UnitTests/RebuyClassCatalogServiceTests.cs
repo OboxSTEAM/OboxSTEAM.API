@@ -50,6 +50,7 @@ public sealed class RebuyClassCatalogServiceTests
             _db,
             _claimsService.Object,
             lifecycle,
+            new ClassContinuityCatalogBuilder(_db),
             _currentTime.Object,
             NullLogger<RebuyClassCatalogService>.Instance);
     }
@@ -198,10 +199,11 @@ public sealed class RebuyClassCatalogServiceTests
         Assert.Equal(_sourcePeId, result.SourceProgramEnrollmentId);
         Assert.Equal(EnrollmentStatus.Failed, result.SourceStatus);
         Assert.True(result.IsRebuy);
+        Assert.Equal(ClassContinuityContext.Rebuy, result.Context);
         Assert.Equal(_labId, result.StopModuleId);
         Assert.Equal("MOD-LAB", result.StopModuleCode);
         Assert.True(result.WithinRebuyWindow);
-        Assert.Equal(600_000m, result.CheckoutAmount);
+        Assert.Equal(500_000m, result.CheckoutAmount);
         Assert.Equal(4, result.Classes.Count);
 
         var current = Assert.Single(result.Classes, c => c.ClassId == _currentId);
@@ -342,7 +344,7 @@ public sealed class RebuyClassCatalogServiceTests
         Assert.Equal(EnrollmentStatus.Completed, result.SourceStatus);
         Assert.Null(result.StopModuleId);
         Assert.True(result.WithinRebuyWindow);
-        Assert.Equal(600_000m, result.CheckoutAmount);
+        Assert.Equal(500_000m, result.CheckoutAmount);
         var item = Assert.Single(result.Classes);
         Assert.Equal(_blockedId, item.ClassId);
         Assert.True(item.IsEligible);

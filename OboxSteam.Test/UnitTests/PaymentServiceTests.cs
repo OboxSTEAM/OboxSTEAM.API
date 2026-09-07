@@ -63,6 +63,15 @@ public sealed class PaymentServiceTests
             NullLogger<ProgramPurchaseLifecycle>.Instance);
     }
 
+    private RebuyClassCatalogService CreateRebuyClassCatalogService()
+        => new(
+            _db,
+            _claimsService.Object,
+            CreateLifecycle(),
+            new ClassContinuityCatalogBuilder(_db),
+            _currentTime.Object,
+            NullLogger<RebuyClassCatalogService>.Instance);
+
     private ClassSeatHoldService CreateSeatHoldService()
         => new(
             _db,
@@ -156,6 +165,8 @@ public sealed class PaymentServiceTests
                 _db,
                 _claimsService.Object,
                 _notificationPublisher.Object,
+                CreateRebuyClassCatalogService(),
+                _currentTime.Object,
                 NullLogger<ClassRedeliveryRequestService>.Instance),
             CreateSeatHoldService(),
             CreateLifecycle());
@@ -625,19 +636,19 @@ public sealed class PaymentServiceTests
     // ── Rebuy checkout (fail/drop repurchase) ────────────────────────────────
 
     [Fact]
-    public async Task CreateDirectCheckout_RebuyWithinWindow_ChargesRetakeFee()
+    public async Task CreateDirectCheckout_RebuyWithinWindow_ChargesHalfPrice()
     {
         SeedStudent();
         SeedProgram(retakeFee: 200_000m);
         var openClass = SeedOpenEnrollmentClass();
-        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Failed, endedAt: DateTime.UtcNow.AddMonths(-1));
+        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Failed, endedAt: DateTime.UtcNow.AddDays(-15));
         var sut = CreateSut();
         await SelectClassAsync(openClass.Id, source.Id);
 
         await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);
 
         var payment = Assert.Single(_db.Payments.Items);
-        Assert.Equal(200_000m, payment.Amount);
+        Assert.Equal(250_000m, payment.Amount);
     }
 
     [Fact]
@@ -657,19 +668,19 @@ public sealed class PaymentServiceTests
     }
 
     [Fact]
-    public async Task CreateDirectCheckout_RebuyFromCompletedWithinWindow_ChargesRetakeFee()
+    public async Task CreateDirectCheckout_RebuyFromCompletedWithinWindow_ChargesHalfPrice()
     {
         SeedStudent();
         SeedProgram(retakeFee: 200_000m);
         var openClass = SeedOpenEnrollmentClass();
-        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Completed, completedAt: DateTime.UtcNow.AddMonths(-2));
+        var source = SeedClosedSourceEnrollment(EnrollmentStatus.Completed, completedAt: DateTime.UtcNow.AddDays(-10));
         var sut = CreateSut();
         await SelectClassAsync(openClass.Id, source.Id);
 
         await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe);
 
         var payment = Assert.Single(_db.Payments.Items);
-        Assert.Equal(200_000m, payment.Amount);
+        Assert.Equal(250_000m, payment.Amount);
     }
 
     [Fact]
@@ -724,7 +735,7 @@ public sealed class PaymentServiceTests
     }
 
     [Fact]
-    public async Task RequestParentPayment_RebuyWithinWindow_UsesRetakeFee()
+    public async Task RequestParentPayment_RebuyWithinWindow_UsesHalfPrice()
     {
         SeedStudent();
         SeedParent();
@@ -745,10 +756,10 @@ public sealed class PaymentServiceTests
         await sut.RequestParentPayment(_programId, openClass.Id, _parentId);
 
         var request = Assert.Single(_db.PaymentRequests.Items);
-        Assert.Equal(200_000m, request.Amount);
+        Assert.Equal(250_000m, request.Amount);
         _emailService.Verify(
             e => e.SendPaymentRequestToParentEmailAsync(
-                It.Is<PaymentRequestEmailDto>(dto => dto.Amount == 200_000m)),
+                It.Is<PaymentRequestEmailDto>(dto => dto.Amount == 250_000m)),
             Times.Once);
     }
 
@@ -767,6 +778,21 @@ public sealed class PaymentServiceTests
 
         Assert.Single(_db.Payments.Items);
         Assert.Equal(_moduleEnrollmentId, result.EnrollmentId);
+        Assert.Equal(250_000m, Assert.Single(_db.Payments.Items).Amount);
+    }
+
+    [Fact]
+    public async Task CreateModuleRetakeCheckout_ChargesHalfPrice()
+    {
+        SeedStudent();
+        SeedProgram(retakeFee: 200_000m);
+        var module = SeedModule();
+        SeedModuleEnrollment(module);
+        var sut = CreateSut();
+
+        await sut.CreateModuleRetakeCheckout(_moduleEnrollmentId, PaymentGateway.Stripe);
+
+        Assert.Equal(250_000m, Assert.Single(_db.Payments.Items).Amount);
     }
 
     [Fact]

@@ -173,4 +173,8 @@ Tradeoffs:
 - Execution plan: `docs/plans/completed/fail-rebuy-repurchase.md`.
 - Amended by `0012` (work-period windows, Theory window-elapsed fail,
   required-only AcademicFail, 50% absence, chuyen ca copy).
-- Later slice: legacy redelivery cleanup, FE wiring.
+- **2026-09-05 continuity pricing:** rebuy window is **1 calendar month**;
+  in-window / Active continuity fee is **50% of `Program.Price`** (not
+  `RetakeFee`). See `docs/product/enrollment.md` and
+  `docs/plans/active/continuity-catalog-fe-handoff.md`.
+- Later slice: drop unused `Program.RetakeFee` column if product confirms.

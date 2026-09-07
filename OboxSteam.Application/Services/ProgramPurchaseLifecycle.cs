@@ -17,8 +17,11 @@ namespace OboxSteam.Application.Services;
 /// </summary>
 public sealed class ProgramPurchaseLifecycle
 {
-    /// <summary>Months after a purchase closes during which a rebuy keeps retake pricing and progress credit.</summary>
-    public const int RebuyWindowMonths = 3;
+    /// <summary>Months after a purchase closes during which rebuy keeps continuity pricing and progress credit.</summary>
+    public const int RebuyWindowMonths = 1;
+
+    /// <summary>Continuity / in-window rebuy fee as a percent of <see cref="Program.Price"/> (always 50%).</summary>
+    public const int ContinuityFeePercent = 50;
 
     public const string RebuyClassIneligibleMessage =
         "This class has already started the module you stopped at or a later module. Choose a class that has not started it yet.";
@@ -306,7 +309,7 @@ public sealed class ProgramPurchaseLifecycle
             .FirstOrDefault();
 
     /// <summary>
-    /// Fail/drop rebuys inside the 3-month window may join Open or InProgress classes
+    /// Fail/drop rebuys inside the 1-month window may join Open or InProgress classes
     /// (stop-module gated). First purchase, Completed retakes, and fail/drop after the
     /// window only join Open classes (fresh start; credit copy is already off).
     /// </summary>
@@ -330,8 +333,9 @@ public sealed class ProgramPurchaseLifecycle
     }
 
     /// <summary>
-    /// Checkout amount for a (possibly rebuy) pending enrollment: <see cref="Program.RetakeFee"/>
-    /// (fallback <see cref="Program.Price"/>) inside the rebuy window, full Price otherwise.
+    /// Checkout amount for a (possibly rebuy) pending enrollment: 50% of
+    /// <see cref="Program.Price"/> inside the rebuy window; full Price otherwise
+    /// (and for first purchase). <see cref="Program.RetakeFee"/> is not used.
     /// </summary>
     public static decimal ResolveCheckoutAmount(Program program, ProgramEnrollment? source, DateTime now)
     {
@@ -341,7 +345,19 @@ public sealed class ProgramPurchaseLifecycle
             return price;
         }
 
-        return program.RetakeFee ?? price;
+        return ResolveContinuityFee(program);
+    }
+
+    /// <summary>50% of program price (Active continuity and in-window rebuy).</summary>
+    public static decimal ResolveContinuityFee(Program program)
+    {
+        var price = program.Price ?? 0m;
+        if (program.Price == null || program.Price <= 0)
+        {
+            return 0m;
+        }
+
+        return Math.Round(price * ContinuityFeePercent / 100m, MidpointRounding.AwayFromZero);
     }
 
     public async Task<decimal> ResolveCheckoutAmountAsync(Program program, ProgramEnrollment enrollment)

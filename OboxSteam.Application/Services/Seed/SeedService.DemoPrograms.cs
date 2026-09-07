@@ -64,8 +64,8 @@ public partial class SeedService
     }
 
     /// <summary>
-    /// Puts EXP-001 on demo program boards so Offline co-teach invites work there too.
-    /// CLS-ROBOTICS-CURRENT also seeds Accepted Offline co-teach rows for EXP-001.
+    /// Puts EXP-001 on demo program boards so Offline co-teach invites work.
+    /// Maker Lab (CLS-DEMO-MAKER-2026A) also seeds Accepted Offline co-teach rows for EXP-001.
     /// Idempotent for re-seed without clear.
     /// </summary>
     private async Task EnsureExpert001OnDemoProgramBoardsAsync()

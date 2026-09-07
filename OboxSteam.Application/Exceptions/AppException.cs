@@ -53,6 +53,12 @@ public class ConflictException : AppException
     public ConflictException(string message = "A conflict occurred.") : base(409, message) { }
 }
 
+/// <summary>410 — Resource or API surface permanently removed.</summary>
+public class GoneException : AppException
+{
+    public GoneException(string message = "This resource is no longer available.") : base(410, message) { }
+}
+
 /// <summary>500 — Unexpected system error.</summary>
 public class InternalException : AppException
 {
