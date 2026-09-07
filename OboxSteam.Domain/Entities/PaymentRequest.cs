@@ -27,6 +27,10 @@ public class PaymentRequest : BaseEntity
     public Guid? ModuleEnrollmentId { get; set; }
     public ModuleEnrollment? ModuleEnrollment { get; set; }
 
+    /// <summary>Non-null when the parent is asked to pay for a bundle purchase.</summary>
+    public Guid? BundleEnrollmentId { get; set; }
+    public BundleEnrollment? BundleEnrollment { get; set; }
+
     public decimal Amount { get; set; }
 
     [MaxLength(3)]

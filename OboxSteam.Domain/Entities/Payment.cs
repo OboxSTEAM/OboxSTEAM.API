@@ -19,6 +19,20 @@ public class Payment : BaseEntity
     public Guid? ModuleEnrollmentId { get; set; }
     public ModuleEnrollment? ModuleEnrollment { get; set; }
 
+    /// <summary>Non-null if this payment is for a program bundle pathway.</summary>
+    public Guid? BundleEnrollmentId { get; set; }
+    public BundleEnrollment? BundleEnrollment { get; set; }
+
+    /// <summary>
+    /// Combined ownership deduction plus voucher, applied before <see cref="Amount"/>.
+    /// Zero when the payment has no discount.
+    /// </summary>
+    public decimal DiscountAmount { get; set; }
+
+    /// <summary>At most one voucher per payment.</summary>
+    public Guid? VoucherId { get; set; }
+    public Voucher? Voucher { get; set; }
+
     public decimal Amount { get; set; }
 
     public PaymentGateway Gateway { get; set; }

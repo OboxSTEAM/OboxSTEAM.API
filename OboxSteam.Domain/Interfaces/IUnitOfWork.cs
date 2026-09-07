@@ -10,6 +10,10 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<User> Users { get; }
     IGenericRepository<OtpStorage> OtpStorages { get; }
     IGenericRepository<Program> Programs { get; }
+    IGenericRepository<ProgramBundle> ProgramBundles { get; }
+    IGenericRepository<ProgramBundleItem> ProgramBundleItems { get; }
+    IGenericRepository<BundleEnrollment> BundleEnrollments { get; }
+    IGenericRepository<Voucher> Vouchers { get; }
     IGenericRepository<ProgramEnrollment> ProgramEnrollments { get; }
     IGenericRepository<Course> Courses { get; }
     IGenericRepository<CourseEnrollment> CourseEnrollments { get; }

@@ -57,6 +57,7 @@ public class User : BaseEntity
     public ICollection<ModuleEnrollment> ModuleEnrollments { get; set; } = new List<ModuleEnrollment>();
     public ICollection<ActivityProgress> ActivityProgresses { get; set; } = new List<ActivityProgress>();
     public ICollection<ProgramEnrollment> ProgramEnrollments { get; set; } = new List<ProgramEnrollment>();
+    public ICollection<BundleEnrollment> BundleEnrollments { get; set; } = new List<BundleEnrollment>();
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<Payment> PaidPayments { get; set; } = new List<Payment>();
     public ICollection<PaymentRequest> SentPaymentRequests { get; set; } = new List<PaymentRequest>();
