@@ -43,6 +43,9 @@ public class OboxSteamDbContext : DbContext
 
     // ── 4. LMS Hierarchy ──
     public DbSet<Program> Programs { get; set; }
+    public DbSet<ProgramBundle> ProgramBundles { get; set; }
+    public DbSet<ProgramBundleItem> ProgramBundleItems { get; set; }
+    public DbSet<BundleEnrollment> BundleEnrollments { get; set; }
     public DbSet<ProgramBoard> ProgramBoards { get; set; }
     public DbSet<Module> Modules { get; set; }
     public DbSet<Course> Courses { get; set; }
@@ -104,6 +107,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<Payment> Payments { get; set; }
     public DbSet<PaymentRequest> PaymentRequests { get; set; }
     public DbSet<Invoice> Invoices { get; set; }
+    public DbSet<Voucher> Vouchers { get; set; }
 
     // ── 10. Reviews ──
     public DbSet<ProgramReview> ProgramReviews { get; set; }
@@ -149,6 +153,10 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<MentorSkillEvidence>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<StandardizedTest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Program>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramBundle>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramBundleItem>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<BundleEnrollment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Voucher>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Module>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Course>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Activity>().HasQueryFilter(e => !e.IsDeleted);
@@ -520,6 +528,116 @@ public class OboxSteamDbContext : DbContext
 
             entity.HasIndex(p => p.AdvisorExpertId)
                 .HasFilter("\"IsDeleted\" = false AND \"AdvisorExpertId\" IS NOT NULL");
+        });
+
+        // =============================================
+        // PROGRAM BUNDLE (catalog pathway)
+        // =============================================
+        modelBuilder.Entity<ProgramBundle>(entity =>
+        {
+            entity.HasIndex(b => b.Code).IsUnique();
+
+            entity.Property(b => b.Price).HasPrecision(18, 2);
+
+            entity.HasOne(b => b.Framework)
+                .WithMany(f => f.ProgramBundles)
+                .HasForeignKey(b => b.FrameworkId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .IsRequired(false);
+
+            entity.HasIndex(b => b.FrameworkId)
+                .HasFilter("\"IsDeleted\" = false AND \"FrameworkId\" IS NOT NULL");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_ProgramBundles_PriceNonNegative",
+                "\"Price\" >= 0"));
+        });
+
+        // =============================================
+        // PROGRAM BUNDLE ITEM (ordered membership)
+        // =============================================
+        modelBuilder.Entity<ProgramBundleItem>(entity =>
+        {
+            entity.Property(i => i.RequiresPreviousCompletion)
+                .HasDefaultValue(false);
+
+            entity.HasOne(i => i.Bundle)
+                .WithMany(b => b.Items)
+                .HasForeignKey(i => i.BundleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(i => i.Program)
+                .WithMany(p => p.BundleItems)
+                .HasForeignKey(i => i.ProgramId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(i => new { i.BundleId, i.ProgramId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(i => new { i.BundleId, i.SortOrder })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(i => i.ProgramId)
+                .HasFilter("\"IsDeleted\" = false");
+        });
+
+        // =============================================
+        // BUNDLE ENROLLMENT (one open purchase per student+bundle)
+        // =============================================
+        modelBuilder.Entity<BundleEnrollment>(entity =>
+        {
+            entity.Property(e => e.ProgressPercent).HasPrecision(18, 2);
+
+            entity.HasOne(e => e.Student)
+                .WithMany(u => u.BundleEnrollments)
+                .HasForeignKey(e => e.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Bundle)
+                .WithMany(b => b.Enrollments)
+                .HasForeignKey(e => e.BundleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.StudentId, e.BundleId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('PendingPayment', 'Active')");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_BundleEnrollments_ProgressPercentRange",
+                "\"ProgressPercent\" >= 0 AND \"ProgressPercent\" <= 100"));
+        });
+
+        // =============================================
+        // VOUCHER (exactly one of percent / amount off)
+        // =============================================
+        modelBuilder.Entity<Voucher>(entity =>
+        {
+            entity.HasIndex(v => v.Code).IsUnique();
+
+            entity.Property(v => v.PercentOff).HasPrecision(18, 2);
+            entity.Property(v => v.AmountOff).HasPrecision(18, 2);
+
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_Vouchers_ExactlyOneDiscount",
+                    "(\"PercentOff\" IS NOT NULL AND \"AmountOff\" IS NULL)"
+                    + " OR (\"PercentOff\" IS NULL AND \"AmountOff\" IS NOT NULL)");
+                t.HasCheckConstraint(
+                    "CK_Vouchers_PercentOffRange",
+                    "\"PercentOff\" IS NULL OR (\"PercentOff\" > 0 AND \"PercentOff\" <= 100)");
+                t.HasCheckConstraint(
+                    "CK_Vouchers_AmountOffPositive",
+                    "\"AmountOff\" IS NULL OR \"AmountOff\" > 0");
+                t.HasCheckConstraint(
+                    "CK_Vouchers_UsageLimitPositive",
+                    "\"UsageLimit\" IS NULL OR \"UsageLimit\" > 0");
+                t.HasCheckConstraint(
+                    "CK_Vouchers_MaxUsagePerStudentPositive",
+                    "\"MaxUsagePerStudent\" IS NULL OR \"MaxUsagePerStudent\" > 0");
+            });
         });
 
         // =============================================
@@ -916,6 +1034,16 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(c => new { c.StudentId, c.ProgramId })
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false AND \"ModuleId\" IS NULL AND \"ProgramId\" IS NOT NULL");
+
+            entity.HasOne(c => c.Bundle)
+                .WithMany(b => b.Certificates)
+                .HasForeignKey(c => c.BundleId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+
+            entity.HasIndex(c => new { c.StudentId, c.BundleId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"BundleId\" IS NOT NULL AND \"ProgramId\" IS NULL AND \"ModuleId\" IS NULL");
         });
 
         // =============================================
@@ -1217,6 +1345,26 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(u => u.Payments)
                 .HasForeignKey(p => p.StudentId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(p => p.BundleEnrollment)
+                .WithMany(e => e.Payments)
+                .HasForeignKey(p => p.BundleEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+
+            entity.HasOne(p => p.Voucher)
+                .WithMany(v => v.Payments)
+                .HasForeignKey(p => p.VoucherId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+
+            entity.Property(p => p.DiscountAmount)
+                .HasPrecision(18, 2)
+                .HasDefaultValue(0m);
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_Payments_DiscountAmountNonNegative",
+                "\"DiscountAmount\" >= 0"));
         });
 
         // =============================================
@@ -1255,6 +1403,12 @@ public class OboxSteamDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(pr => pr.ModuleEnrollmentId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(pr => pr.BundleEnrollment)
+                .WithMany(e => e.PaymentRequests)
+                .HasForeignKey(pr => pr.BundleEnrollmentId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
 
             entity.HasOne(pr => pr.Payment)
                 .WithMany()

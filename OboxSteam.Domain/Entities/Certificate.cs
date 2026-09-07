@@ -21,6 +21,10 @@ public class Certificate : BaseEntity
     public Guid? ModuleId { get; set; }
     public Module? Module { get; set; }
 
+    /// <summary>Set for a pathway certificate; program and module ids stay null.</summary>
+    public Guid? BundleId { get; set; }
+    public ProgramBundle? Bundle { get; set; }
+
     public DateTime? IssueDate { get; set; }
 
     public string? PdfUrl { get; set; } // AWS S3 Link

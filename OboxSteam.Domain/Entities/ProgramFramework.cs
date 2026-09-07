@@ -30,4 +30,5 @@ public class ProgramFramework : BaseEntity
     public ICollection<ProgramFrameworkVersion> Versions { get; set; } = new List<ProgramFrameworkVersion>();
     public ICollection<FrameworkRubricCriterion> LegacyRubricCriteria { get; set; } = [];
     public ICollection<Program> Programs { get; set; } = new List<Program>();
+    public ICollection<ProgramBundle> ProgramBundles { get; set; } = new List<ProgramBundle>();
 }

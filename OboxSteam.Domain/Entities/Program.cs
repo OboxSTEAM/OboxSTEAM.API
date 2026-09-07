@@ -63,4 +63,5 @@ public class Program : BaseEntity
     public ICollection<ProgramAdvisoryThread> AdvisoryThreads { get; set; } = [];
     public ICollection<Class> Classes { get; set; } = new List<Class>();
     public ICollection<PaymentRequest> PaymentRequests { get; set; } = new List<PaymentRequest>();
+    public ICollection<ProgramBundleItem> BundleItems { get; set; } = new List<ProgramBundleItem>();
 }
