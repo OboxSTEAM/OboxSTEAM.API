@@ -15,6 +15,10 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<User> Users { get; } = new();
     public InMemoryRepository<OtpStorage> OtpStorages { get; } = new();
     public InMemoryRepository<Program> Programs { get; } = new();
+    public InMemoryRepository<ProgramBundle> ProgramBundles { get; } = new();
+    public InMemoryRepository<ProgramBundleItem> ProgramBundleItems { get; } = new();
+    public InMemoryRepository<BundleEnrollment> BundleEnrollments { get; } = new();
+    public InMemoryRepository<Voucher> Vouchers { get; } = new();
     public InMemoryRepository<ProgramEnrollment> ProgramEnrollments { get; } = new();
     public InMemoryRepository<Course> Courses { get; } = new();
     public InMemoryRepository<CourseEnrollment> CourseEnrollments { get; } = new();
@@ -84,6 +88,10 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<User> IUnitOfWork.Users => Users;
     IGenericRepository<OtpStorage> IUnitOfWork.OtpStorages => OtpStorages;
     IGenericRepository<Program> IUnitOfWork.Programs => Programs;
+    IGenericRepository<ProgramBundle> IUnitOfWork.ProgramBundles => ProgramBundles;
+    IGenericRepository<ProgramBundleItem> IUnitOfWork.ProgramBundleItems => ProgramBundleItems;
+    IGenericRepository<BundleEnrollment> IUnitOfWork.BundleEnrollments => BundleEnrollments;
+    IGenericRepository<Voucher> IUnitOfWork.Vouchers => Vouchers;
     IGenericRepository<ProgramEnrollment> IUnitOfWork.ProgramEnrollments => ProgramEnrollments;
     IGenericRepository<Course> IUnitOfWork.Courses => Courses;
     IGenericRepository<CourseEnrollment> IUnitOfWork.CourseEnrollments => CourseEnrollments;
@@ -157,6 +165,10 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(User) => (object)Users,
             nameof(OtpStorage) => OtpStorages,
             nameof(Program) => Programs,
+            nameof(ProgramBundle) => ProgramBundles,
+            nameof(ProgramBundleItem) => ProgramBundleItems,
+            nameof(BundleEnrollment) => BundleEnrollments,
+            nameof(Voucher) => Vouchers,
             nameof(ProgramEnrollment) => ProgramEnrollments,
             nameof(Course) => Courses,
             nameof(CourseEnrollment) => CourseEnrollments,

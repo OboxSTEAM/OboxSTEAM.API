@@ -56,4 +56,5 @@ public class Program : BaseEntity
     public ICollection<CurriculumReview> CurriculumReviews { get; set; } = new List<CurriculumReview>();
     public ICollection<Class> Classes { get; set; } = new List<Class>();
     public ICollection<PaymentRequest> PaymentRequests { get; set; } = new List<PaymentRequest>();
+    public ICollection<ProgramBundleItem> BundleItems { get; set; } = new List<ProgramBundleItem>();
 }

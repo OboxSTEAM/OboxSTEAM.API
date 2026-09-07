@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260907034216_AddProgramBundleAndVoucher")]
+    partial class AddProgramBundleAndVoucher
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1216,67 +1219,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("ClassSessionId")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
-
-                    b.HasIndex("ClassSessionId", "ExpertId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
-
-                    b.HasIndex("ExpertId", "Status")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("ClassSessionExperts", t =>
-                        {
-                            t.HasCheckConstraint("CK_ClassSessionExperts_MentorFeedbackRatingRange", "\"MentorFeedbackRating\" IS NULL OR (\"MentorFeedbackRating\" BETWEEN 1 AND 5)");
-                        });
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSessionExpert", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ClassSessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ExpertId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("MentorFeedback")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("MentorFeedbackAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("MentorFeedbackRating")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
 
                     b.HasIndex("ClassSessionId", "ExpertId")
                         .IsUnique()

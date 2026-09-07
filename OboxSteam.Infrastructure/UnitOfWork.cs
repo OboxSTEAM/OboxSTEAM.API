@@ -36,6 +36,10 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<User> Users => Repository<User>();
     public IGenericRepository<OtpStorage> OtpStorages => Repository<OtpStorage>();
     public IGenericRepository<Program> Programs => Repository<Program>();
+    public IGenericRepository<ProgramBundle> ProgramBundles => Repository<ProgramBundle>();
+    public IGenericRepository<ProgramBundleItem> ProgramBundleItems => Repository<ProgramBundleItem>();
+    public IGenericRepository<BundleEnrollment> BundleEnrollments => Repository<BundleEnrollment>();
+    public IGenericRepository<Voucher> Vouchers => Repository<Voucher>();
     public IGenericRepository<ProgramEnrollment> ProgramEnrollments => Repository<ProgramEnrollment>();
     public IGenericRepository<Course> Courses => Repository<Course>();
     public IGenericRepository<CourseEnrollment> CourseEnrollments => Repository<CourseEnrollment>();

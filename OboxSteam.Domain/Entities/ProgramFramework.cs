@@ -30,4 +30,5 @@ public class ProgramFramework : BaseEntity
 
     public ICollection<FrameworkRubricCriterion> RubricCriteria { get; set; } = new List<FrameworkRubricCriterion>();
     public ICollection<Program> Programs { get; set; } = new List<Program>();
+    public ICollection<ProgramBundle> ProgramBundles { get; set; } = new List<ProgramBundle>();
 }
