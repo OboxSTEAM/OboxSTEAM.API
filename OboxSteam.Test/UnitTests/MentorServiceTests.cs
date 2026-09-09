@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.MentorDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
@@ -27,13 +28,18 @@ public sealed class MentorServiceTests
 
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
+    private readonly Mock<IEmailService> _emailService = new();
 
     private MentorService CreateSut(Guid? currentUserId = null)
     {
         _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _mentorId);
+        _emailService
+            .Setup(e => e.SendStaffAccountCredentialsEmailAsync(It.IsAny<StaffAccountCredentialsEmailDto>()))
+            .Returns(Task.CompletedTask);
         return new MentorService(
             _db,
             _claimsService.Object,
+            _emailService.Object,
             NullLogger<MentorService>.Instance);
     }
 
@@ -446,6 +452,80 @@ public sealed class MentorServiceTests
         var result = await sut.GetMentorsAsync(null, 1, 10);
 
         Assert.Equal(1, result.TotalCount);
+    }
+
+    // ── CreateMentorAsync ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateMentor_ProvisionsLoginAndSendsCredentialsEmail()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.CreateMentorAsync(new CreateMentorRequestDto
+        {
+            Email = "new.mentor@test.com",
+            FullName = "New Mentor",
+            Phone = "0901234567",
+        });
+
+        Assert.Equal("New Mentor", result.FullName);
+        Assert.Equal("new.mentor@test.com", result.Email);
+        Assert.Equal(RoleType.Mentor, result.Role);
+        Assert.Equal(AccountStatus.Active, result.Status);
+        Assert.StartsWith("MEN-", result.Code);
+        Assert.Single(_db.Users.Items, u => u.Email == "new.mentor@test.com");
+        var user = _db.Users.Items.Single(u => u.Email == "new.mentor@test.com");
+        Assert.True(user.IsEmailVerified);
+        Assert.False(string.IsNullOrWhiteSpace(user.PasswordHash));
+        _emailService.Verify(
+            e => e.SendStaffAccountCredentialsEmailAsync(It.Is<StaffAccountCredentialsEmailDto>(
+                d => d.To == "new.mentor@test.com"
+                     && d.RoleLabel == "Mentor"
+                     && d.AccountCode == user.Code
+                     && !string.IsNullOrWhiteSpace(d.Password))),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateMentor_RollsBack_WhenCredentialsEmailFails()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        var sut = CreateSut(_managerId);
+        _emailService
+            .Setup(e => e.SendStaffAccountCredentialsEmailAsync(It.IsAny<StaffAccountCredentialsEmailDto>()))
+            .ThrowsAsync(new InvalidOperationException("smtp down"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.CreateMentorAsync(new CreateMentorRequestDto
+            {
+                Email = "fail.mentor@test.com",
+                FullName = "Fail Mentor",
+            }));
+
+        Assert.DoesNotContain(_db.Users.Items, u => u.Email == "fail.mentor@test.com");
+    }
+
+    [Fact]
+    public async Task CreateMentor_Throws_WhenEmailInUseOrCallerForbidden()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001", email: "taken@test.com");
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateSut(_managerId).CreateMentorAsync(new CreateMentorRequestDto
+            {
+                Email = "taken@test.com",
+                FullName = "Dup Mentor",
+            }));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            CreateSut(_studentId).CreateMentorAsync(new CreateMentorRequestDto
+            {
+                Email = "other@test.com",
+                FullName = "Other Mentor",
+            }));
     }
 
     // ── GetMentorProfileAsync / GetMyProfileAsync ─────────────────────────────

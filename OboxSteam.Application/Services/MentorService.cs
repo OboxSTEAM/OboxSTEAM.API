@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.MentorDTO;
 using OboxSteam.Application.DTOs.SkillDTO;
 using OboxSteam.Application.Interfaces;
@@ -15,15 +16,18 @@ public sealed class MentorService : IMentorService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
+    private readonly IEmailService _emailService;
     private readonly ILogger<MentorService> _logger;
 
     public MentorService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
+        IEmailService emailService,
         ILogger<MentorService> logger)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
+        _emailService = emailService;
         _logger = logger;
     }
 
@@ -202,6 +206,79 @@ public sealed class MentorService : IMentorService
         }
 
         return new Pagination<MentorProfileDto>(dtos, totalCount, page, pageSize);
+    }
+
+    public async Task<MentorProfileDto> CreateMentorAsync(CreateMentorRequestDto request)
+    {
+        await EnsureManagerOrAdminAsync();
+        ValidateCreateMentorRequest(request);
+
+        var email = request.Email.Trim().ToLowerInvariant();
+        var fullName = request.FullName.Trim();
+
+        _logger.LogInformation(
+            "[CreateMentorAsync] Start creating mentor: {Name} (Email: {Email})",
+            fullName,
+            email);
+
+        var existingEmail = await _unitOfWork.Users.FirstOrDefaultAsync(
+            u => u.Email.ToLower() == email && !u.IsDeleted);
+        if (existingEmail != null)
+        {
+            _logger.LogWarning("[CreateMentorAsync] Email '{Email}' is already in use.", email);
+            throw ErrorHelper.Conflict("Email is already in use.");
+        }
+
+        var temporaryPassword = TemporaryPasswordGenerator.Generate();
+        var userId = Guid.NewGuid();
+        var userCode = $"MEN-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+        var user = new User
+        {
+            Id = userId,
+            Code = userCode,
+            Email = email,
+            PasswordHash = new PasswordHasher().HashPassword(temporaryPassword),
+            FullName = fullName,
+            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
+            Role = RoleType.Mentor,
+            Status = AccountStatus.Active,
+            IsEmailVerified = true,
+        };
+
+        await _unitOfWork.Users.AddAsync(user);
+        await _unitOfWork.SaveChangesAsync();
+
+        try
+        {
+            await _emailService.SendStaffAccountCredentialsEmailAsync(new StaffAccountCredentialsEmailDto
+            {
+                To = email,
+                UserName = fullName,
+                Email = email,
+                Password = temporaryPassword,
+                RoleLabel = "Mentor",
+                AccountCode = userCode,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[CreateMentorAsync] Credentials email failed for mentor {MentorId}; rolling back provisioning.",
+                userId);
+
+            await _unitOfWork.Users.HardRemove(u => u.Id == userId);
+            await _unitOfWork.SaveChangesAsync();
+            throw;
+        }
+
+        _logger.LogInformation(
+            "[CreateMentorAsync] Mentor '{Code}' created successfully with Id {Id} and login {Email}.",
+            userCode,
+            userId,
+            email);
+
+        return await BuildProfileAsync(user, publicSkillsOnly: false);
     }
 
     public async Task<MentorProfileDto> GetMentorProfileAsync(Guid mentorId)
@@ -468,6 +545,15 @@ public sealed class MentorService : IMentorService
 
     private static string? NormalizeOptionalText(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static void ValidateCreateMentorRequest(CreateMentorRequestDto request)
+    {
+        if (string.IsNullOrWhiteSpace(request.FullName) || request.FullName.Trim().Length < 2)
+            throw ErrorHelper.BadRequest("Full name must be at least 2 characters long.");
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+            throw ErrorHelper.BadRequest("Email is required.");
+    }
 
     private async Task<Guid> GetCurrentMentorIdAsync()
     {

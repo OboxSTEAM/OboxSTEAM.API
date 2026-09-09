@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.ExpertDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
@@ -19,19 +20,22 @@ public class ExpertService : IExpertService
     private readonly ILogger<ExpertService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly IClaimsService _claimsService;
+    private readonly IEmailService _emailService;
 
     public ExpertService(
         IUnitOfWork unitOfWork,
         IBlobService blobService,
         ILogger<ExpertService> logger,
         INotificationPublisher notificationPublisher,
-        IClaimsService claimsService)
+        IClaimsService claimsService,
+        IEmailService emailService)
     {
         _unitOfWork = unitOfWork;
         _blobService = blobService;
         _logger = logger;
         _notificationPublisher = notificationPublisher;
         _claimsService = claimsService;
+        _emailService = emailService;
     }
 
     public async Task<ExpertProgramSummaryDto> UpdateProgramOfExpertAsync(Guid expertId, Guid programId)
@@ -307,13 +311,15 @@ public class ExpertService : IExpertService
             }
         }
 
+        var temporaryPassword = TemporaryPasswordGenerator.Generate();
         var userId = Guid.NewGuid();
+        var userCode = $"EXP-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
         var user = new User
         {
             Id = userId,
-            Code = $"EXP-{Guid.NewGuid().ToString("N")[..6].ToUpper()}",
+            Code = userCode,
             Email = email,
-            PasswordHash = new PasswordHasher().HashPassword(request.Password),
+            PasswordHash = new PasswordHasher().HashPassword(temporaryPassword),
             FullName = request.FullName.Trim(),
             Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
             Role = RoleType.Expert,
@@ -324,7 +330,7 @@ public class ExpertService : IExpertService
         var expert = new Expert
         {
             Id = Guid.NewGuid(),
-            Code = request.Code,
+            Code = request.Code.Trim(),
             UserId = userId,
             FullName = request.FullName.Trim(),
             Title = request.Title,
@@ -353,6 +359,32 @@ public class ExpertService : IExpertService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        try
+        {
+            await _emailService.SendStaffAccountCredentialsEmailAsync(new StaffAccountCredentialsEmailDto
+            {
+                To = email,
+                UserName = user.FullName ?? email,
+                Email = email,
+                Password = temporaryPassword,
+                RoleLabel = "Chuyên gia",
+                AccountCode = expert.Code,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[AddExpertAsync] Credentials email failed for expert {ExpertId}; rolling back provisioning.",
+                expert.Id);
+
+            await _unitOfWork.ProgramBoards.HardRemove(pb => pb.ExpertId == expert.Id);
+            await _unitOfWork.Experts.HardRemove(e => e.Id == expert.Id);
+            await _unitOfWork.Users.HardRemove(u => u.Id == userId);
+            await _unitOfWork.SaveChangesAsync();
+            throw;
+        }
 
         _logger.LogInformation("[AddExpertAsync] Expert '{Code}' added successfully with Id {Id} and login {Email}.",
             expert.Code, expert.Id, email);
@@ -840,9 +872,6 @@ public class ExpertService : IExpertService
 
         if (string.IsNullOrWhiteSpace(dto.Email))
             throw ErrorHelper.BadRequest("Email is required.");
-
-        if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < 6)
-            throw ErrorHelper.BadRequest("Password must be at least 6 characters long.");
     }
 
     private async Task<string?> ResolveEmailAsync(Guid? userId)

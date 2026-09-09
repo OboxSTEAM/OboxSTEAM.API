@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.ExpertDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
@@ -26,6 +27,7 @@ public sealed class ExpertServiceTests
     private readonly Mock<IBlobService> _blobService = new();
     private readonly Mock<INotificationPublisher> _notifications = new();
     private readonly Mock<IClaimsService> _claimsService = new();
+    private readonly Mock<IEmailService> _emailService = new();
 
     private ExpertService CreateSut()
     {
@@ -33,12 +35,16 @@ public sealed class ExpertServiceTests
         _notifications
             .Setup(n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+        _emailService
+            .Setup(e => e.SendStaffAccountCredentialsEmailAsync(It.IsAny<StaffAccountCredentialsEmailDto>()))
+            .Returns(Task.CompletedTask);
         return new(
             _db,
             _blobService.Object,
             NullLogger<ExpertService>.Instance,
             _notifications.Object,
-            _claimsService.Object);
+            _claimsService.Object,
+            _emailService.Object);
     }
 
     private static IFormFile CreateAvatarFile(string fileName = "avatar.png", long length = 1024)
@@ -75,14 +81,12 @@ public sealed class ExpertServiceTests
         string code = "EXP-NEW",
         string fullName = "External Expert",
         string email = "new.expert@test.com",
-        string password = "Secret1",
         List<ExpertProgramAssignmentDto>? programs = null)
         => new()
         {
             Code = code,
             FullName = fullName,
             Email = email,
-            Password = password,
             Programs = programs,
         };
 
@@ -294,7 +298,6 @@ public sealed class ExpertServiceTests
             FullName = "External Expert",
             Title = "PhD",
             Email = "new.expert@test.com",
-            Password = "Secret1",
         });
 
         Assert.Equal("EXP-NEW", result.Code);
@@ -307,7 +310,16 @@ public sealed class ExpertServiceTests
         Assert.Equal(RoleType.Expert, user.Role);
         Assert.True(user.IsEmailVerified);
         Assert.Equal(AccountStatus.Active, user.Status);
-        Assert.True(new PasswordHasher().VerifyPassword("Secret1", user.PasswordHash));
+        Assert.False(string.IsNullOrWhiteSpace(user.PasswordHash));
+        Assert.StartsWith("EXP-", user.Code);
+        _emailService.Verify(
+            e => e.SendStaffAccountCredentialsEmailAsync(It.Is<StaffAccountCredentialsEmailDto>(
+                d => d.To == "new.expert@test.com"
+                     && d.Email == "new.expert@test.com"
+                     && d.RoleLabel == "Chuyên gia"
+                     && d.AccountCode == "EXP-NEW"
+                     && !string.IsNullOrWhiteSpace(d.Password))),
+            Times.Once);
     }
 
     [Fact]
@@ -322,7 +334,6 @@ public sealed class ExpertServiceTests
             Code = "EXP-LINKED",
             FullName = "Linked Expert",
             Email = "linked.expert@test.com",
-            Password = "Secret1",
             Programs =
             [
                 new ExpertProgramAssignmentDto { ProgramId = _programId, RoleInBoard = "Advisor" },
@@ -359,7 +370,7 @@ public sealed class ExpertServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() =>
             sut.AddExpertAsync(NewCreateDto(email: " ")));
         await Assert.ThrowsAsync<BadRequestException>(() =>
-            sut.AddExpertAsync(NewCreateDto(password: "123")));
+            sut.AddExpertAsync(NewCreateDto(fullName: "A")));
     }
 
     [Fact]
@@ -780,11 +791,25 @@ public sealed class ExpertServiceTests
             Code = "EXP-SPEC",
             FullName = "Spec Expert",
             Email = "spec.expert@test.com",
-            Password = "Secret1",
             Specialization = ["Robotics", "AI"],
         });
 
         Assert.Equal(["Robotics", "AI"], result.Specialization);
+    }
+
+    [Fact]
+    public async Task Add_RollsBack_WhenCredentialsEmailFails()
+    {
+        var sut = CreateSut();
+        _emailService
+            .Setup(e => e.SendStaffAccountCredentialsEmailAsync(It.IsAny<StaffAccountCredentialsEmailDto>()))
+            .ThrowsAsync(new InvalidOperationException("smtp down"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.AddExpertAsync(NewCreateDto(email: "rollback.expert@test.com")));
+
+        Assert.Empty(_db.Experts.Items);
+        Assert.Empty(_db.Users.Items);
     }
 
     [Fact]

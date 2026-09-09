@@ -120,6 +120,25 @@ public class MentorController : ControllerBase
             result, "200", "Mentors retrieved successfully."));
     }
 
+    [HttpPost]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Create a mentor account",
+        Description = "Creates a Mentor login with Email and FullName (optional Phone). A temporary password is auto-generated and emailed. Creation fails and rolls back if the credentials email cannot be sent. Profile details and skills are filled in later by the mentor. Requires Admin or Manager role.")]
+    [ProducesResponseType(typeof(ApiResult<MentorProfileDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> CreateMentor([FromBody] CreateMentorRequestDto dto)
+    {
+        var result = await _mentorService.CreateMentorAsync(dto);
+        return CreatedAtAction(
+            nameof(GetMentorProfile),
+            new { id = result.Id },
+            ApiResult<MentorProfileDto>.Success(result, "201", "Mentor created successfully."));
+    }
+
     [HttpGet("{id:guid}")]
     [Authorize(Roles = "Admin,Manager,Student")]
     [SwaggerOperation(

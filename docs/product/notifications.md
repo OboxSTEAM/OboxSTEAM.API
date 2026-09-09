@@ -15,7 +15,7 @@ inbox title and body. Email failure is logged and does not roll back the inbox.
 | Email | Types |
 | --- | --- |
 | Priority inbox email | `ProgramPendingPayment`, `ModuleRetakePendingPayment`, `PendingPaymentExpired`, `PaymentFailed`, `PaymentCancelled`, `ResearchReturnedForRevision`, `ResearchWorkSubmitted` |
-| Existing `IEmailService` templates (unchanged) | Parent payment request (checkout link), payment invoice, enrollment confirmation |
+| Existing `IEmailService` templates (Vietnamese) | Parent payment request (checkout link), payment invoice, enrollment confirmation, staff Mentor/Expert credentials |
 | Not emailed | All other catalog types, including `PaymentSucceeded` / `ProgramActivated` / `ParentPaymentRequested` (covered by the templates above) |
 
 `SessionStartingSoon` is a catalog event (also emailed via `NotificationEmailPriority`).

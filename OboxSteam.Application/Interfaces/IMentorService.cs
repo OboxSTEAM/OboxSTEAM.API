@@ -22,6 +22,8 @@ public interface IMentorService
         int page,
         int pageSize);
 
+    Task<MentorProfileDto> CreateMentorAsync(CreateMentorRequestDto request);
+
     Task<MentorProfileDto> GetMentorProfileAsync(Guid mentorId);
 
     Task<MentorProfileDto> GetMyProfileAsync();

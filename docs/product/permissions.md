@@ -74,15 +74,20 @@ Create, update, delete for:
 - Mentor skill profile: freely create, update, delete, and set `IsPublic` on
   own `MentorSkill` rows and evidence (no manager verification). See
   `docs/product/mentor-skills.md`.
+- Manager/Admin provision mentors via `POST /api/mentors` (email + full name;
+  optional phone). Temporary password is auto-generated and emailed; creation
+  rolls back if email delivery fails after retries. Mentors complete profile
+  and skills themselves after login.
 
 ### Expert
 
 - Dedicated login role (`"Expert"` JWT claim). Accounts are provisioned by
-  Manager/Admin via `POST /api/experts` (email and password required). The
-  expert can log in immediately (`IsEmailVerified = true`). Public
-  `POST /api/auth/register` does not allow Expert. Password reset uses the
-  existing `POST /api/auth/forgot-password` OTP flow — OTP is not sent at
-  provisioning.
+  Manager/Admin via `POST /api/experts` (email required; temporary password
+  auto-generated and emailed). Creation rolls back if the credentials email
+  fails after retries. The expert can log in immediately
+  (`IsEmailVerified = true`). Public `POST /api/auth/register` does not allow
+  Expert. Password reset uses the existing `POST /api/auth/forgot-password`
+  OTP flow — OTP is not sent at provisioning.
 - Updating an expert does not change login credentials. Deleting an expert
   locks the linked user (`AccountStatus.Locked`).
 - Intended surfaces: program framework blueprints, curriculum review queue,

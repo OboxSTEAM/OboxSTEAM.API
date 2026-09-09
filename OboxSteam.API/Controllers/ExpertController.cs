@@ -71,7 +71,7 @@ public class ExpertController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a new expert",
-        Description = "Creates an expert profile and a dedicated Expert login. Email and password are required; the expert can sign in immediately. Password reset uses the existing forgot-password OTP flow. Requires Admin or Manager role.")]
+        Description = "Creates an expert profile and a dedicated Expert login. Email is required; a temporary password is auto-generated and emailed to the expert. Creation fails (and rolls back) if the credentials email cannot be sent. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

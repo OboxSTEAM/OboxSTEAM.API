@@ -32,7 +32,11 @@
 
 ## Resend (Email)
 
-- `IEmailService` sends transactional email (OTP, password reset, notifications).
+- `IEmailService` sends transactional email (OTP, password reset, payment,
+  enrollment, inbox priority notices, and staff account credentials for
+  Mentor/Expert provisioning). Templates are Vietnamese. Staff credentials
+  sends retry up to 3 times; provisioning services roll back the new account
+  if delivery still fails.
 - Requires `RESEND_APITOKEN` configuration.
 
 ## SignalR
