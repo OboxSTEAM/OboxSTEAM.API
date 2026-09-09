@@ -20,6 +20,21 @@ public interface IProgramFrameworkService
 
     Task<bool> DeleteFrameworkAsync(Guid id);
 
+    Task<ProgramFrameworkResponseDto> ArchiveFrameworkAsync(Guid id);
+
+    Task<IReadOnlyList<ProgramFrameworkVersionResponseDto>> GetVersionsAsync(Guid frameworkId);
+
+    Task<ProgramFrameworkVersionResponseDto> GetVersionAsync(Guid frameworkId, Guid versionId);
+
+    Task<ProgramFrameworkVersionResponseDto> CreateDraftVersionAsync(Guid frameworkId);
+
+    Task<ProgramFrameworkVersionResponseDto> PublishDraftVersionAsync(Guid frameworkId, Guid versionId);
+
+    Task<ProgramFrameworkVersionResponseDto> SaveDraftRubricAsync(
+        Guid frameworkId,
+        Guid versionId,
+        SaveFrameworkRubricRequest request);
+
     Task<FrameworkRubricCriterionResponseDto> AddCriterionAsync(
         Guid frameworkId,
         FrameworkRubricCriterionRequest request);

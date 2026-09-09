@@ -10,6 +10,8 @@ public class UpdateProgramFrameworkRequest
 
     public string? Description { get; set; }
 
+    public string? AcademicGuidance { get; set; }
+
     public ProgramCategory? Category { get; set; }
 
     public int? MinModules { get; set; }

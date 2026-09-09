@@ -22,6 +22,8 @@ public sealed class CurriculumReviewServiceTests
     private readonly Guid _programId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly Guid _otherProgramId = Guid.Parse("23232323-2323-2323-2323-232323232323");
     private readonly Guid _frameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private readonly Guid _frameworkVersionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private readonly Guid _otherFrameworkVersionId = Guid.Parse("bcbcbcbc-bcbc-bcbc-bcbc-bcbcbcbcbcbc");
     private readonly Guid _otherFrameworkId = Guid.Parse("abababab-abab-abab-abab-abababababab");
     private readonly Guid _criterionId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
     private readonly DateTime _now = new(2026, 8, 31, 6, 0, 0, DateTimeKind.Utc);
@@ -98,6 +100,10 @@ public sealed class CurriculumReviewServiceTests
             Level = DifficultyLevel.Beginner,
             Status = status,
             FrameworkId = frameworkId,
+            FrameworkVersionId = frameworkId == _otherFrameworkId
+                ? _otherFrameworkVersionId
+                : frameworkId.HasValue ? _frameworkVersionId : null,
+            AdvisorExpertId = _expertId,
             IsDeleted = false,
         };
         _db.Programs.Seed(program);
@@ -115,10 +121,19 @@ public sealed class CurriculumReviewServiceTests
             ExpertId = expertId ?? _expertId,
             Name = "Robotics blueprint",
             Category = ProgramCategory.Technology,
-            MinModules = minModules,
             IsDeleted = false,
         };
         _db.ProgramFrameworks.Seed(framework);
+        _db.ProgramFrameworkVersions.Seed(new ProgramFrameworkVersion
+        {
+            Id = framework.Id == _otherFrameworkId ? _otherFrameworkVersionId : _frameworkVersionId,
+            FrameworkId = framework.Id,
+            VersionNumber = 1,
+            MinModules = minModules,
+            IsPublished = true,
+            PublishedAt = _now,
+            IsDeleted = false,
+        });
         return framework;
     }
 
@@ -161,10 +176,11 @@ public sealed class CurriculumReviewServiceTests
     }
 
     [Fact]
-    public async Task Submit_NoBoardExpertWithLogin_BadRequest()
+    public async Task Submit_MissingResponsibleExpert_BadRequest()
     {
         SeedStaffAndOwner();
-        SeedProgram();
+        var program = SeedProgram();
+        program.AdvisorExpertId = null;
         var sut = CreateSut(_managerId);
 
         await Assert.ThrowsAsync<BadRequestException>(() => sut.SubmitForReviewAsync(_programId));
@@ -312,6 +328,7 @@ public sealed class CurriculumReviewServiceTests
             status: ProgramStatus.PendingReview,
             frameworkId: _otherFrameworkId,
             code: "PRG-002");
+        _db.Programs.Items.Single(p => p.Id == _otherProgramId).AdvisorExpertId = _otherExpertId;
         SeedBoard(_programId, _expertId);
         SeedBoard(_otherProgramId, _otherExpertId);
         var sut = CreateSut(_expertUserId);
@@ -324,7 +341,7 @@ public sealed class CurriculumReviewServiceTests
     }
 
     [Fact]
-    public async Task Queue_FrameworkOwnerSeesPendingWhenNotOnBoard()
+    public async Task Queue_AssignedAdvisorSeesPendingWhenNotExplicitlyOnBoard()
     {
         SeedStaffAndOwner();
         SeedFramework();
@@ -338,7 +355,7 @@ public sealed class CurriculumReviewServiceTests
     }
 
     [Fact]
-    public async Task Queue_BoardMemberSeesFrameworkProgramTheyDoNotOwn()
+    public async Task Queue_OtherBoardMemberDoesNotSeeFormalAdvisorQueue()
     {
         SeedStaffAndOwner();
         SeedFramework();
@@ -348,9 +365,7 @@ public sealed class CurriculumReviewServiceTests
 
         var result = await sut.GetReviewQueueAsync(1, 10);
 
-        var item = Assert.Single(result.Items);
-        Assert.Equal(_programId, item.Id);
-        Assert.Equal(_expertId, item.ExpertId);
+        Assert.Empty(result.Items);
     }
 
     [Fact]
@@ -385,7 +400,7 @@ public sealed class CurriculumReviewServiceTests
         var item = Assert.Single(result.Items);
         Assert.Equal(_programId, item.Id);
         Assert.Null(item.FrameworkId);
-        Assert.Null(item.ExpertId);
+        Assert.Equal(_expertId, item.ExpertId);
     }
 
     [Fact]
@@ -433,6 +448,7 @@ public sealed class CurriculumReviewServiceTests
         {
             Id = _criterionId,
             FrameworkId = _frameworkId,
+            FrameworkVersionId = _frameworkVersionId,
             Name = "Outcomes",
             MaxScore = 10,
             DisplayOrder = 1,
@@ -454,6 +470,7 @@ public sealed class CurriculumReviewServiceTests
         {
             Id = _criterionId,
             FrameworkId = _frameworkId,
+            FrameworkVersionId = _frameworkVersionId,
             Name = "Outcomes",
             MaxScore = 10,
             DisplayOrder = 1,

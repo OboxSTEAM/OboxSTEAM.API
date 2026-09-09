@@ -13,372 +13,136 @@ namespace OboxSteam.Test.UnitTests;
 public sealed class ProgramFrameworkServiceTests
 {
     private readonly Guid _expertUserId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private readonly Guid _otherExpertUserId = Guid.Parse("12121212-1212-1212-1212-121212121212");
     private readonly Guid _managerId = Guid.Parse("13131313-1313-1313-1313-131313131313");
     private readonly Guid _expertId = Guid.Parse("66666666-6666-6666-6666-666666666666");
-    private readonly Guid _otherExpertId = Guid.Parse("67676767-6767-6767-6767-676767676767");
     private readonly Guid _frameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private readonly Guid _programId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-
     private readonly InMemoryUnitOfWork _db = new();
-    private readonly Mock<IClaimsService> _claimsService = new();
+    private readonly Mock<IClaimsService> _claims = new();
 
-    private ProgramFrameworkService CreateSut(Guid currentUserId)
+    private ProgramFrameworkService CreateSut(Guid userId)
     {
-        _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId);
-        return new ProgramFrameworkService(
-            _db,
-            _claimsService.Object,
-            NullLogger<ProgramFrameworkService>.Instance);
+        _claims.Setup(c => c.GetCurrentUserId).Returns(userId);
+        return new ProgramFrameworkService(_db, _claims.Object, NullLogger<ProgramFrameworkService>.Instance);
     }
 
     private void SeedUser(Guid id, RoleType role, string code)
     {
         _db.Users.Seed(new User
         {
-            Id = id,
-            Code = code,
-            Email = $"{code.ToLower()}@test.com",
-            FullName = code,
-            Role = role,
-            Status = AccountStatus.Active,
-            IsDeleted = false,
+            Id = id, Code = code, Email = $"{code}@test.local", FullName = code,
+            Role = role, Status = AccountStatus.Active,
         });
     }
 
-    private Expert SeedExpert(Guid expertId, Guid userId, string code = "EXP-001")
+    private void SeedExpert()
     {
-        var expert = new Expert
+        SeedUser(_expertUserId, RoleType.Expert, "EXP-U");
+        _db.Experts.Seed(new Expert
         {
-            Id = expertId,
-            Code = code,
-            FullName = code,
-            UserId = userId,
-            IsDeleted = false,
-        };
-        _db.Experts.Seed(expert);
-        return expert;
-    }
-
-    private ProgramFramework SeedFramework(
-        Guid? id = null,
-        Guid? expertId = null,
-        string name = "Robotics cơ bản",
-        bool requireFinal = false)
-    {
-        var framework = new ProgramFramework
-        {
-            Id = id ?? _frameworkId,
-            ExpertId = expertId ?? _expertId,
-            Name = name,
-            Description = "Guideline",
-            Category = ProgramCategory.Technology,
-            MinOfflineSessions = 1,
-            RequireCapstoneResearchMilestone = requireFinal ? true : null,
-            IsDeleted = false,
-        };
-        _db.ProgramFrameworks.Seed(framework);
-        return framework;
+            Id = _expertId, Code = "EXP-1", FullName = "Expert", UserId = _expertUserId,
+        });
     }
 
     [Fact]
-    public async Task Create_AsExpert_PersistsFrameworkAndOptionalCriteria()
+    public async Task Create_CreatesEditableDraftAndCompleteRubric()
     {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedExpert(_expertId, _expertUserId);
-        var sut = CreateSut(_expertUserId);
-
-        var result = await sut.CreateFrameworkAsync(new CreateProgramFrameworkRequest
+        SeedExpert();
+        var result = await CreateSut(_expertUserId).CreateFrameworkAsync(new CreateProgramFrameworkRequest
         {
-            Name = "Lập trình C#",
-            Category = ProgramCategory.Technology,
-            MinLiveSessions = 2,
-            RequireCapstoneResearchMilestone = true,
-            Criteria =
-            [
-                new FrameworkRubricCriterionRequest
-                {
-                    Name = "Learning outcomes",
-                    MaxScore = 10,
-                },
-            ],
+            Name = "Robotics", Category = ProgramCategory.Technology, MinModules = 2,
+            Criteria = [new FrameworkRubricCriterionRequest
+            {
+                Name = "Alignment", Description = "Outcome alignment", EvidenceGuidance = "Mapped evidence",
+                MaxScore = 10,
+            }],
         });
 
-        Assert.Equal("Lập trình C#", result.Name);
-        Assert.Equal(_expertId, result.ExpertId);
-        Assert.True(result.RequireCapstoneResearchMilestone);
-        Assert.True(result.RequiresExpertReview);
+        Assert.True(result.HasDraftVersion);
+        Assert.Equal(1, result.CurrentVersionNumber);
         Assert.Single(result.Criteria);
-        Assert.Single(_db.ProgramFrameworks.Items);
+        Assert.Single(_db.ProgramFrameworkVersions.Items);
+        Assert.Equal(result.CurrentVersionId, _db.FrameworkRubricCriteria.Items.Single().FrameworkVersionId);
     }
 
     [Fact]
-    public async Task Create_WithZeroCriteria_StillRequiresExpertReview()
+    public async Task PublishedVersion_IsImmutable_AndNewDraftCopiesIt()
     {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedExpert(_expertId, _expertUserId);
-        var sut = CreateSut(_expertUserId);
-
-        var result = await sut.CreateFrameworkAsync(new CreateProgramFrameworkRequest
+        SeedExpert();
+        var service = CreateSut(_expertUserId);
+        var framework = await service.CreateFrameworkAsync(new CreateProgramFrameworkRequest
         {
-            Name = "Open family",
-            Category = ProgramCategory.Technology,
+            Name = "Robotics", Category = ProgramCategory.Technology,
+            Criteria = [new FrameworkRubricCriterionRequest { Name = "Quality", MaxScore = 5 }],
         });
+        var published = await service.PublishDraftVersionAsync(framework.Id, framework.CurrentVersionId!.Value);
+        await Assert.ThrowsAsync<ConflictException>(() => service.SaveDraftRubricAsync(
+            framework.Id, published.Id, new SaveFrameworkRubricRequest()));
 
-        Assert.True(result.RequiresExpertReview);
-        Assert.Empty(result.Criteria);
+        var draft = await service.CreateDraftVersionAsync(framework.Id);
+        Assert.Equal(2, draft.VersionNumber);
+        Assert.False(draft.IsPublished);
+        Assert.Single(draft.Criteria);
+        Assert.Equal(published.Id, framework.CurrentVersionId);
     }
 
     [Fact]
-    public async Task Create_AsManager_Forbidden()
+    public async Task FullRubricSave_ReplacesDraftRowsInOneSaveBoundary()
     {
-        SeedUser(_managerId, RoleType.Manager, "USR-MGR");
-        var sut = CreateSut(_managerId);
-
-        await Assert.ThrowsAsync<ForbiddenException>(
-            () => sut.CreateFrameworkAsync(new CreateProgramFrameworkRequest
+        SeedExpert();
+        var service = CreateSut(_expertUserId);
+        var framework = await service.CreateFrameworkAsync(new CreateProgramFrameworkRequest
+        {
+            Name = "Robotics", Category = ProgramCategory.Technology,
+            Criteria = [new FrameworkRubricCriterionRequest { Name = "Old", MaxScore = 5 }],
+        });
+        var result = await service.SaveDraftRubricAsync(
+            framework.Id, framework.CurrentVersionId!.Value, new SaveFrameworkRubricRequest
             {
-                Name = "Hộ",
-                Category = ProgramCategory.Technology,
-            }));
+                Criteria =
+                [
+                    new FrameworkRubricCriterionRequest { Name = "A", MaxScore = 3 },
+                    new FrameworkRubricCriterionRequest { Name = "B", MaxScore = 7 },
+                ],
+            });
+        Assert.Equal(2, result.Criteria.Count);
+        Assert.Single(_db.FrameworkRubricCriteria.Items, c => c.IsDeleted);
     }
 
     [Fact]
-    public async Task Update_OwningExpert_ConflictWhileProgramPendingReview()
+    public async Task Archive_PreservesPublishedVersions()
     {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedExpert(_expertId, _expertUserId);
-        SeedFramework();
-        _db.Programs.Seed(new Program
+        SeedExpert();
+        var service = CreateSut(_expertUserId);
+        var framework = await service.CreateFrameworkAsync(new CreateProgramFrameworkRequest
         {
-            Id = _programId,
-            Code = "PRG-001",
-            Name = "Pending",
-            Category = ProgramCategory.Technology,
-            Status = ProgramStatus.PendingReview,
-            FrameworkId = _frameworkId,
-            IsDeleted = false,
+            Name = "Robotics", Category = ProgramCategory.Technology,
         });
-        var sut = CreateSut(_expertUserId);
-
-        await Assert.ThrowsAsync<ConflictException>(
-            () => sut.UpdateFrameworkAsync(_frameworkId, new UpdateProgramFrameworkRequest
-            {
-                MinOfflineSessions = 2,
-            }));
-    }
-
-    [Fact]
-    public async Task Update_OwningExpert_AllowedWhenAttachedProgramIsDraft()
-    {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedExpert(_expertId, _expertUserId);
-        SeedFramework();
-        _db.Programs.Seed(new Program
-        {
-            Id = _programId,
-            Code = "PRG-001",
-            Name = "Draft",
-            Category = ProgramCategory.Technology,
-            Status = ProgramStatus.Draft,
-            FrameworkId = _frameworkId,
-            IsDeleted = false,
-        });
-        var sut = CreateSut(_expertUserId);
-
-        var result = await sut.UpdateFrameworkAsync(_frameworkId, new UpdateProgramFrameworkRequest
-        {
-            MinOfflineSessions = 2,
-        });
-
-        Assert.Equal(2, result.MinOfflineSessions);
-    }
-
-    [Fact]
-    public async Task Update_OwningExpert_ConflictWhileProgramActive()
-    {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedExpert(_expertId, _expertUserId);
-        SeedFramework();
-        _db.Programs.Seed(new Program
-        {
-            Id = _programId,
-            Code = "PRG-001",
-            Name = "Live",
-            Category = ProgramCategory.Technology,
-            Status = ProgramStatus.Active,
-            FrameworkId = _frameworkId,
-            IsDeleted = false,
-        });
-        var sut = CreateSut(_expertUserId);
-
-        await Assert.ThrowsAsync<ConflictException>(
-            () => sut.UpdateFrameworkAsync(_frameworkId, new UpdateProgramFrameworkRequest
-            {
-                MinOfflineSessions = 2,
-            }));
-    }
-
-    [Fact]
-    public async Task Update_Manager_Forbidden()
-    {
-        SeedUser(_managerId, RoleType.Manager, "USR-MGR");
-        SeedExpert(_expertId, _expertUserId);
-        SeedFramework();
-        var sut = CreateSut(_managerId);
-
-        await Assert.ThrowsAsync<ForbiddenException>(
-            () => sut.UpdateFrameworkAsync(_frameworkId, new UpdateProgramFrameworkRequest
-            {
-                Description = "Manager override guideline",
-            }));
-    }
-
-    [Fact]
-    public async Task Delete_Manager_Forbidden()
-    {
-        SeedUser(_managerId, RoleType.Manager, "USR-MGR");
-        SeedExpert(_expertId, _expertUserId);
-        SeedFramework();
-        var sut = CreateSut(_managerId);
-
-        await Assert.ThrowsAsync<ForbiddenException>(
-            () => sut.DeleteFrameworkAsync(_frameworkId));
-    }
-
-    [Fact]
-    public async Task Delete_OwningExpert_UnlinksPrograms()
-    {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedExpert(_expertId, _expertUserId);
-        SeedFramework();
-        _db.Programs.Seed(new Program
-        {
-            Id = _programId,
-            Code = "PRG-001",
-            Name = "Linked",
-            Category = ProgramCategory.Technology,
-            FrameworkId = _frameworkId,
-            IsDeleted = false,
-        });
-        var sut = CreateSut(_expertUserId);
-
-        await sut.DeleteFrameworkAsync(_frameworkId);
-
-        Assert.True(_db.ProgramFrameworks.Items.Single().IsDeleted);
-        Assert.Null(_db.Programs.Items.Single().FrameworkId);
-    }
-
-    [Fact]
-    public async Task Delete_PendingReview_ConflictDoesNotUnlink()
-    {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedExpert(_expertId, _expertUserId);
-        SeedFramework();
-        _db.Programs.Seed(new Program
-        {
-            Id = _programId,
-            Code = "PRG-001",
-            Name = "Pending",
-            Category = ProgramCategory.Technology,
-            Status = ProgramStatus.PendingReview,
-            FrameworkId = _frameworkId,
-            IsDeleted = false,
-        });
-        var sut = CreateSut(_expertUserId);
-
-        await Assert.ThrowsAsync<ConflictException>(() => sut.DeleteFrameworkAsync(_frameworkId));
+        await service.PublishDraftVersionAsync(framework.Id, framework.CurrentVersionId!.Value);
+        var archived = await service.ArchiveFrameworkAsync(framework.Id);
+        Assert.True(archived.IsArchived);
         Assert.False(_db.ProgramFrameworks.Items.Single().IsDeleted);
-        Assert.Equal(_frameworkId, _db.Programs.Items.Single().FrameworkId);
-        Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
+        Assert.Single(_db.ProgramFrameworkVersions.Items);
     }
 
     [Fact]
-    public async Task GetById_OtherExpert_NotFound()
+    public async Task Manager_CannotMutateFramework()
     {
-        SeedUser(_otherExpertUserId, RoleType.Expert, "USR-EXP2");
-        SeedExpert(_expertId, _expertUserId);
-        SeedExpert(_otherExpertId, _otherExpertUserId, "EXP-002");
-        SeedFramework();
-        var sut = CreateSut(_otherExpertUserId);
-
-        await Assert.ThrowsAsync<NotFoundException>(
-            () => sut.GetFrameworkByIdAsync(_frameworkId));
-    }
-
-    [Fact]
-    public async Task List_ExpertSeesOnlyOwn_ManagerSeesAll()
-    {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedUser(_managerId, RoleType.Manager, "USR-MGR");
-        SeedExpert(_expertId, _expertUserId);
-        SeedExpert(_otherExpertId, _otherExpertUserId, "EXP-002");
-        SeedFramework();
-        SeedFramework(Guid.Parse("abababab-abab-abab-abab-abababababab"), _otherExpertId, "Other");
-
-        var expertList = await CreateSut(_expertUserId).GetFrameworksAsync(null, null, 1, 10);
-        Assert.Single(expertList.Items);
-
-        var managerList = await CreateSut(_managerId).GetFrameworksAsync(null, ProgramCategory.Technology, 1, 10);
-        Assert.Equal(2, managerList.Items.Count);
-    }
-
-    [Fact]
-    public async Task Criteria_ExpertCanAdd_ManagerCannotOverride()
-    {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedUser(_managerId, RoleType.Manager, "USR-MGR");
-        SeedExpert(_expertId, _expertUserId);
-        SeedFramework();
-
-        var created = await CreateSut(_expertUserId).AddCriterionAsync(
-            _frameworkId,
-            new FrameworkRubricCriterionRequest { Name = "Alignment", MaxScore = 5 });
-        Assert.Equal("Alignment", created.Name);
-
-        await Assert.ThrowsAsync<ForbiddenException>(
-            () => CreateSut(_managerId).UpdateCriterionAsync(
-                _frameworkId,
-                created.Id,
-                new FrameworkRubricCriterionRequest { Name = "Alignment (override)", MaxScore = 8 }));
-    }
-
-    [Fact]
-    public async Task Criteria_PendingReview_Conflict()
-    {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedExpert(_expertId, _expertUserId);
-        SeedFramework();
-        _db.Programs.Seed(new Program
+        SeedUser(_managerId, RoleType.Manager, "MGR");
+        _db.ProgramFrameworks.Seed(new ProgramFramework
         {
-            Id = _programId,
-            Code = "PRG-001",
-            Name = "Pending",
-            Category = ProgramCategory.Technology,
-            Status = ProgramStatus.PendingReview,
-            FrameworkId = _frameworkId,
-            IsDeleted = false,
+            Id = _frameworkId, ExpertId = _expertId, Name = "Robotics", Category = ProgramCategory.Technology,
         });
-
-        await Assert.ThrowsAsync<ConflictException>(
-            () => CreateSut(_expertUserId).AddCriterionAsync(
-                _frameworkId,
-                new FrameworkRubricCriterionRequest { Name = "Late change", MaxScore = 5 }));
+        await Assert.ThrowsAsync<ForbiddenException>(() => CreateSut(_managerId).ArchiveFrameworkAsync(_frameworkId));
     }
 
     [Fact]
-    public async Task Create_RejectsNonPositiveMinModules()
+    public async Task Create_RejectsZeroConfiguredMinimum()
     {
-        SeedUser(_expertUserId, RoleType.Expert, "USR-EXP");
-        SeedExpert(_expertId, _expertUserId);
-        var sut = CreateSut(_expertUserId);
-
-        await Assert.ThrowsAsync<BadRequestException>(
-            () => sut.CreateFrameworkAsync(new CreateProgramFrameworkRequest
+        SeedExpert();
+        await Assert.ThrowsAsync<BadRequestException>(() => CreateSut(_expertUserId).CreateFrameworkAsync(
+            new CreateProgramFrameworkRequest
             {
-                Name = "Bad",
-                Category = ProgramCategory.Technology,
-                MinModules = 0,
+                Name = "Bad", Category = ProgramCategory.Technology, MinModules = 0,
             }));
     }
 }

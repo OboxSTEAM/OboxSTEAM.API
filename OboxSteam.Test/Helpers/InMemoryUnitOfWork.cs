@@ -42,6 +42,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<ExpertDegree> ExpertDegrees { get; } = new();
     public InMemoryRepository<ExpertPublication> ExpertPublications { get; } = new();
     public InMemoryRepository<ProgramFramework> ProgramFrameworks { get; } = new();
+    public InMemoryRepository<ProgramFrameworkVersion> ProgramFrameworkVersions { get; } = new();
     public InMemoryRepository<FrameworkRubricCriterion> FrameworkRubricCriteria { get; } = new();
     public InMemoryRepository<CurriculumReview> CurriculumReviews { get; } = new();
     public InMemoryRepository<ReviewCriterionScore> ReviewCriterionScores { get; } = new();
@@ -111,6 +112,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<ExpertDegree> IUnitOfWork.ExpertDegrees => ExpertDegrees;
     IGenericRepository<ExpertPublication> IUnitOfWork.ExpertPublications => ExpertPublications;
     IGenericRepository<ProgramFramework> IUnitOfWork.ProgramFrameworks => ProgramFrameworks;
+    IGenericRepository<ProgramFrameworkVersion> IUnitOfWork.ProgramFrameworkVersions => ProgramFrameworkVersions;
     IGenericRepository<FrameworkRubricCriterion> IUnitOfWork.FrameworkRubricCriteria => FrameworkRubricCriteria;
     IGenericRepository<CurriculumReview> IUnitOfWork.CurriculumReviews => CurriculumReviews;
     IGenericRepository<ReviewCriterionScore> IUnitOfWork.ReviewCriterionScores => ReviewCriterionScores;
@@ -184,6 +186,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(ExpertDegree) => ExpertDegrees,
             nameof(ExpertPublication) => ExpertPublications,
             nameof(ProgramFramework) => ProgramFrameworks,
+            nameof(ProgramFrameworkVersion) => ProgramFrameworkVersions,
             nameof(FrameworkRubricCriterion) => FrameworkRubricCriteria,
             nameof(CurriculumReview) => CurriculumReviews,
             nameof(ReviewCriterionScore) => ReviewCriterionScores,

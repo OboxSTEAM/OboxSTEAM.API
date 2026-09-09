@@ -74,7 +74,7 @@ public class ProgramFrameworkController : ControllerBase
     [HttpPut("{id:guid}")]
     [SwaggerOperation(
         Summary = "Update a program framework",
-        Description = "Owning expert only. Allowed when the framework is unattached or the attached program is Draft. Blocked with 409 otherwise.")]
+        Description = "Owning expert only. Updates the current draft; published versions are immutable.")]
     [ProducesResponseType(typeof(ApiResult<ProgramFrameworkResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -102,6 +102,58 @@ public class ProgramFrameworkController : ControllerBase
     {
         var result = await _frameworkService.DeleteFrameworkAsync(id);
         return Ok(ApiResult<bool>.Success(result, "200", "Program framework deleted successfully."));
+    }
+
+    [HttpPost("{id:guid}/archive")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Archive a framework", Description = "Prevents new assignments while preserving existing pinned programs and history.")]
+    public async Task<IActionResult> ArchiveFramework([FromRoute] Guid id)
+    {
+        var result = await _frameworkService.ArchiveFrameworkAsync(id);
+        return Ok(ApiResult<ProgramFrameworkResponseDto>.Success(result, "200", "Program framework archived."));
+    }
+
+    [HttpGet("{id:guid}/versions")]
+    public async Task<IActionResult> GetVersions([FromRoute] Guid id)
+    {
+        var result = await _frameworkService.GetVersionsAsync(id);
+        return Ok(ApiResult<IReadOnlyList<ProgramFrameworkVersionResponseDto>>.Success(result, "200", "Framework versions retrieved."));
+    }
+
+    [HttpGet("{id:guid}/versions/{versionId:guid}")]
+    public async Task<IActionResult> GetVersion([FromRoute] Guid id, [FromRoute] Guid versionId)
+    {
+        var result = await _frameworkService.GetVersionAsync(id, versionId);
+        return Ok(ApiResult<ProgramFrameworkVersionResponseDto>.Success(result, "200", "Framework version retrieved."));
+    }
+
+    [HttpPost("{id:guid}/versions/draft")]
+    [Authorize(Roles = "Expert")]
+    public async Task<IActionResult> CreateDraftVersion([FromRoute] Guid id)
+    {
+        var result = await _frameworkService.CreateDraftVersionAsync(id);
+        return CreatedAtAction(nameof(GetVersion), new { id, versionId = result.Id },
+            ApiResult<ProgramFrameworkVersionResponseDto>.Success(result, "201", "Draft framework version created."));
+    }
+
+    [HttpPost("{id:guid}/versions/{versionId:guid}/publish")]
+    [Authorize(Roles = "Expert")]
+    public async Task<IActionResult> PublishVersion([FromRoute] Guid id, [FromRoute] Guid versionId)
+    {
+        var result = await _frameworkService.PublishDraftVersionAsync(id, versionId);
+        return Ok(ApiResult<ProgramFrameworkVersionResponseDto>.Success(result, "200", "Framework version published."));
+    }
+
+    [HttpPut("{id:guid}/versions/{versionId:guid}/rubric")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Replace a draft rubric atomically")]
+    public async Task<IActionResult> SaveDraftRubric(
+        [FromRoute] Guid id,
+        [FromRoute] Guid versionId,
+        [FromBody] SaveFrameworkRubricRequest request)
+    {
+        var result = await _frameworkService.SaveDraftRubricAsync(id, versionId, request);
+        return Ok(ApiResult<ProgramFrameworkVersionResponseDto>.Success(result, "200", "Draft rubric saved."));
     }
 
     [HttpPost("{id:guid}/criteria")]

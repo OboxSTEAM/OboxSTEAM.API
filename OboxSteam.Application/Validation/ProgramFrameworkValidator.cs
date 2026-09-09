@@ -91,19 +91,19 @@ public static class ProgramFrameworkValidator
             throw ErrorHelper.NotFound($"Program with id '{programId}' not found.");
         }
 
-        if (!program.FrameworkId.HasValue)
+        if (!program.FrameworkVersionId.HasValue)
         {
             return;
         }
 
-        var framework = await unitOfWork.ProgramFrameworks.GetByIdAsync(program.FrameworkId.Value);
-        if (framework == null || framework.IsDeleted)
+        var version = await unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value);
+        if (version == null || version.IsDeleted || !version.IsPublished)
         {
-            return;
+            throw ErrorHelper.Conflict("The assigned framework version is unavailable or not published.");
         }
 
         var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(unitOfWork, programId);
-        var errors = CollectRuleFailures(framework, snapshot);
+        var errors = CollectRuleFailures(version, snapshot);
 
         if (errors.Count > 0)
         {
@@ -112,7 +112,7 @@ public static class ProgramFrameworkValidator
     }
 
     public static List<string> CollectRuleFailures(
-        ProgramFramework framework,
+        ProgramFrameworkVersion framework,
         ProgramCurriculumTreeSnapshot snapshot)
     {
         var errors = new List<string>();
@@ -155,21 +155,17 @@ public static class ProgramFrameworkValidator
         return errors;
     }
 
-    /// <summary>
-    /// A framework belongs to at most one program. Edits and delete are allowed
-    /// only while unattached or while that program is Draft.
-    /// </summary>
+    /// <summary>Published versions are immutable; draft versions remain editable.</summary>
     public static async Task EnsureNotLockedByReviewAsync(IUnitOfWork unitOfWork, Guid frameworkId)
     {
-        var attached = await unitOfWork.Programs.FirstOrDefaultAsync(
-            p => p.FrameworkId == frameworkId && !p.IsDeleted);
-        if (attached == null || attached.Status == ProgramStatus.Draft)
+        var draft = await unitOfWork.ProgramFrameworkVersions.FirstOrDefaultAsync(
+            v => v.FrameworkId == frameworkId && !v.IsPublished && !v.IsDeleted);
+        if (draft != null)
         {
             return;
         }
 
         throw ErrorHelper.Conflict(
-            $"Framework can only be changed while the attached program is Draft. " +
-            $"Program '{attached.Code}' is {attached.Status}.");
+            "Create a draft framework version before editing; published versions are immutable.");
     }
 }

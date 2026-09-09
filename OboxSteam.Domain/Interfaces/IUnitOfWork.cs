@@ -37,6 +37,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<ExpertDegree> ExpertDegrees { get; }
     IGenericRepository<ExpertPublication> ExpertPublications { get; }
     IGenericRepository<ProgramFramework> ProgramFrameworks { get; }
+    IGenericRepository<ProgramFrameworkVersion> ProgramFrameworkVersions { get; }
     IGenericRepository<FrameworkRubricCriterion> FrameworkRubricCriteria { get; }
     IGenericRepository<CurriculumReview> CurriculumReviews { get; }
     IGenericRepository<ReviewCriterionScore> ReviewCriterionScores { get; }

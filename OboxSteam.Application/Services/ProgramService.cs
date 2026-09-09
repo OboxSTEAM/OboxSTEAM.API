@@ -55,6 +55,12 @@ public class ProgramService : IProgramService
             : new List<Expert>();
         var expertsById = experts.ToDictionary(e => e.Id, e => e);
 
+        var advisor = program.AdvisorExpertId.HasValue
+            ? await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value)
+            : null;
+        var frameworkVersion = program.FrameworkVersionId.HasValue
+            ? await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value)
+            : null;
         _logger.LogInformation("[GetProgramByIdAsync] Program with Id {Id} retrieved successfully.", id);
         return new ProgramsResponseDto
         {
@@ -73,6 +79,10 @@ public class ProgramService : IProgramService
             Status = program.Status,
             Price = program.Price,
             FrameworkId = program.FrameworkId,
+            FrameworkVersionId = program.FrameworkVersionId,
+            FrameworkVersionNumber = frameworkVersion?.VersionNumber,
+            AdvisorExpertId = program.AdvisorExpertId,
+            AdvisorExpertName = advisor?.FullName,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModulesResponseDto
@@ -147,6 +157,8 @@ public class ProgramService : IProgramService
             Status = program.Status,
             Price = program.Price,
             FrameworkId = program.FrameworkId,
+            FrameworkVersionId = program.FrameworkVersionId,
+            AdvisorExpertId = program.AdvisorExpertId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModulesResponseDto
@@ -278,6 +290,8 @@ public class ProgramService : IProgramService
             Status = program.Status,
             Price = program.Price,
             FrameworkId = program.FrameworkId,
+            FrameworkVersionId = program.FrameworkVersionId,
+            AdvisorExpertId = program.AdvisorExpertId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = modulesByProgramId.TryGetValue(program.Id, out var programModules)
@@ -399,7 +413,9 @@ public class ProgramService : IProgramService
         ThumbnailUrl = program.ThumbnailUrl,
         Status = program.Status,
         Price = program.Price,
-            FrameworkId = program.FrameworkId,
+        FrameworkId = program.FrameworkId,
+        FrameworkVersionId = program.FrameworkVersionId,
+        AdvisorExpertId = program.AdvisorExpertId,
         CreatedAt = program.CreatedAt,
         UpdatedAt = program.UpdatedAt,
     };
@@ -426,11 +442,14 @@ public class ProgramService : IProgramService
 
         ProgramCatalogStatusGuard.EnsureCreateIsDraft(request.Status);
 
-        var frameworkId = await ResolveFrameworkIdAsync(request.FrameworkId);
-        await EnsureFrameworkNotAssignedToOtherProgramAsync(frameworkId, currentProgramId: null);
+        var (frameworkId, frameworkVersionId) = await ResolveFrameworkAssignmentAsync(
+            request.FrameworkId,
+            request.FrameworkVersionId);
+        var advisorExpertId = await ResolveAdvisorIdAsync(request.AdvisorExpertId);
 
         var program = new Program
         {
+            Id = Guid.NewGuid(),
             Code = request.Code,
             Name = request.Name,
             SeriesName = request.SeriesName,
@@ -443,6 +462,8 @@ public class ProgramService : IProgramService
             Status = ProgramStatus.Draft,
             Price = request.Price,
             FrameworkId = frameworkId,
+            FrameworkVersionId = frameworkVersionId,
+            AdvisorExpertId = advisorExpertId,
         };
 
         if (thumbnailFile != null)
@@ -456,6 +477,14 @@ public class ProgramService : IProgramService
         }
 
         await _unitOfWork.Programs.AddAsync(program);
+        if (advisorExpertId.HasValue)
+        {
+            await _unitOfWork.ProgramBoards.AddAsync(new ProgramBoard
+            {
+                Id = Guid.NewGuid(), ProgramId = program.Id, ExpertId = advisorExpertId.Value,
+                RoleInBoard = "Responsible advisor",
+            });
+        }
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation("[CreateProgramAsync] Program '{Code}' added successfully with Id {Id}.",
@@ -478,6 +507,8 @@ public class ProgramService : IProgramService
             Status = program.Status,
             Price = program.Price,
             FrameworkId = program.FrameworkId,
+            FrameworkVersionId = program.FrameworkVersionId,
+            AdvisorExpertId = program.AdvisorExpertId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = new(),
@@ -543,7 +574,9 @@ public class ProgramService : IProgramService
                 ThumbnailUrl = program.ThumbnailUrl,
                 Status = program.Status,
                 Price = program.Price,
-            FrameworkId = program.FrameworkId,
+                FrameworkId = program.FrameworkId,
+                FrameworkVersionId = program.FrameworkVersionId,
+                AdvisorExpertId = program.AdvisorExpertId,
                 CreatedAt = program.CreatedAt,
                 UpdatedAt = program.UpdatedAt,
                 Modules = program.Modules?.Select(m => new ModulesResponseDto
@@ -584,6 +617,8 @@ public class ProgramService : IProgramService
             Status = program.Status,
             Price = program.Price,
             FrameworkId = program.FrameworkId,
+            FrameworkVersionId = program.FrameworkVersionId,
+            AdvisorExpertId = program.AdvisorExpertId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.Select(m => new ModulesResponseDto
@@ -646,6 +681,8 @@ public class ProgramService : IProgramService
             Status = program.Status,
             Price = program.Price,
             FrameworkId = program.FrameworkId,
+            FrameworkVersionId = program.FrameworkVersionId,
+            AdvisorExpertId = program.AdvisorExpertId,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.Select(m => new ModulesResponseDto
@@ -687,13 +724,28 @@ public class ProgramService : IProgramService
         return await _blobService.GetPreviewUrlAsync(s3Key);
     }
 
-    private async Task<Guid?> ResolveFrameworkIdAsync(Guid? frameworkId)
+    private async Task<(Guid? FrameworkId, Guid? VersionId)> ResolveFrameworkAssignmentAsync(
+        Guid? frameworkId,
+        Guid? frameworkVersionId)
     {
-        if (!frameworkId.HasValue)
+        if (frameworkVersionId.HasValue)
         {
-            return null;
+            if (frameworkVersionId.Value == Guid.Empty)
+                throw ErrorHelper.BadRequest("FrameworkVersionId cannot be an empty guid.");
+            var version = await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(frameworkVersionId.Value);
+            if (version == null || version.IsDeleted)
+                throw ErrorHelper.NotFound($"Program framework version with id '{frameworkVersionId.Value}' not found.");
+            if (!version.IsPublished)
+                throw ErrorHelper.Conflict("Programs can only adopt published framework versions.");
+            var versionFramework = await _unitOfWork.ProgramFrameworks.GetByIdAsync(version.FrameworkId);
+            if (versionFramework == null || versionFramework.IsDeleted || versionFramework.IsArchived)
+                throw ErrorHelper.Conflict("The selected framework is archived or unavailable for new assignments.");
+            if (frameworkId.HasValue && frameworkId.Value != version.FrameworkId)
+                throw ErrorHelper.BadRequest("FrameworkId does not match FrameworkVersionId.");
+            return (version.FrameworkId, version.Id);
         }
 
+        if (!frameworkId.HasValue) return (null, null);
         if (frameworkId.Value == Guid.Empty)
         {
             throw ErrorHelper.BadRequest("FrameworkId cannot be an empty guid.");
@@ -704,42 +756,29 @@ public class ProgramService : IProgramService
         {
             throw ErrorHelper.NotFound($"Program framework with id '{frameworkId.Value}' not found.");
         }
-
-        return framework.Id;
-    }
-
-    private async Task EnsureFrameworkNotAssignedToOtherProgramAsync(Guid? frameworkId, Guid? currentProgramId)
-    {
-        if (!frameworkId.HasValue)
-        {
-            return;
-        }
-
-        var owner = await _unitOfWork.Programs.FirstOrDefaultAsync(
-            p => p.FrameworkId == frameworkId
-                 && !p.IsDeleted
-                 && (!currentProgramId.HasValue || p.Id != currentProgramId.Value));
-        if (owner == null)
-        {
-            return;
-        }
-
-        throw ErrorHelper.Conflict(
-            $"Framework is already assigned to program '{owner.Code}'. Each framework can attach to only one program.");
+        if (framework.IsArchived)
+            throw ErrorHelper.Conflict("Archived frameworks cannot be assigned to new programs.");
+        var latest = (await _unitOfWork.ProgramFrameworkVersions.GetAllAsync(
+                v => v.FrameworkId == framework.Id && v.IsPublished && !v.IsDeleted))
+            .OrderByDescending(v => v.VersionNumber)
+            .FirstOrDefault();
+        if (latest == null)
+            throw ErrorHelper.Conflict("The framework has no published version available for assignment.");
+        return (framework.Id, latest.Id);
     }
 
     private async Task<bool> ApplyFrameworkAssignmentAsync(Program program, UpdateProgramRequestDto request)
     {
-        if (request.FrameworkId.HasValue)
+        if (request.FrameworkId.HasValue || request.FrameworkVersionId.HasValue)
         {
-            var resolved = await ResolveFrameworkIdAsync(request.FrameworkId);
-            if (program.FrameworkId == resolved)
+            var resolved = await ResolveFrameworkAssignmentAsync(request.FrameworkId, request.FrameworkVersionId);
+            if (program.FrameworkId == resolved.FrameworkId && program.FrameworkVersionId == resolved.VersionId)
             {
                 return false;
             }
 
-            await EnsureFrameworkNotAssignedToOtherProgramAsync(resolved, program.Id);
-            program.FrameworkId = resolved;
+            program.FrameworkId = resolved.FrameworkId;
+            program.FrameworkVersionId = resolved.VersionId;
             return true;
         }
 
@@ -751,10 +790,48 @@ public class ProgramService : IProgramService
             }
 
             program.FrameworkId = null;
+            program.FrameworkVersionId = null;
             return true;
         }
 
         return false;
+    }
+
+    private async Task<Guid?> ResolveAdvisorIdAsync(Guid? advisorExpertId)
+    {
+        if (!advisorExpertId.HasValue) return null;
+        if (advisorExpertId.Value == Guid.Empty) throw ErrorHelper.BadRequest("AdvisorExpertId cannot be empty.");
+        var expert = await _unitOfWork.Experts.GetByIdAsync(advisorExpertId.Value);
+        if (expert == null || expert.IsDeleted || !expert.UserId.HasValue)
+            throw ErrorHelper.BadRequest("Advisor must be an active expert with a linked login.");
+        var user = await _unitOfWork.Users.GetByIdAsync(expert.UserId.Value);
+        if (user == null || user.IsDeleted || user.Role != RoleType.Expert || user.Status != AccountStatus.Active)
+            throw ErrorHelper.BadRequest("Advisor must be an active expert with a linked login.");
+        return expert.Id;
+    }
+
+    public async Task<ProgramsResponseDto> AssignAdvisorAsync(Guid id, AssignProgramAdvisorRequest request)
+    {
+        var program = await _unitOfWork.Programs.GetByIdAsync(id);
+        if (program == null || program.IsDeleted) throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
+        if (program.Status is ProgramStatus.PendingReview or ProgramStatus.Approved)
+            throw ErrorHelper.Conflict("Withdraw the current review before reassigning the responsible expert.");
+        var advisorId = await ResolveAdvisorIdAsync(request.AdvisorExpertId)
+            ?? throw ErrorHelper.BadRequest("AdvisorExpertId is required.");
+        program.AdvisorExpertId = advisorId;
+        var board = await _unitOfWork.ProgramBoards.FirstOrDefaultAsync(
+            b => b.ProgramId == program.Id && b.ExpertId == advisorId && !b.IsDeleted);
+        if (board == null)
+        {
+            await _unitOfWork.ProgramBoards.AddAsync(new ProgramBoard
+            {
+                Id = Guid.NewGuid(), ProgramId = program.Id, ExpertId = advisorId,
+                RoleInBoard = "Responsible advisor",
+            });
+        }
+        await _unitOfWork.Programs.Update(program);
+        await _unitOfWork.SaveChangesAsync();
+        return await GetProgramByIdAsync(program.Id);
     }
 
     // =========================================================================

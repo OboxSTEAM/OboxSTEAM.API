@@ -34,26 +34,22 @@ creation, opening enrollment, and starting a class still require **Active**.
 
 Lifecycle endpoints (Manager/Admin unless noted):
 
-- `POST /api/programs/{id}/submit-review` — Draft only. With `FrameworkId`:
-  the framework owner must have a login; notifies that owner
-  (`CurriculumReviewSubmitted`). Without a framework: requires ≥1
-  `ProgramBoard` expert with a login and notifies those board experts.
-  Runs `ProgramFrameworkValidator.ValidateForSubmitAsync` when `FrameworkId`
-  is set. Always `PendingReview`. No framework is free-form board review
-  (comment; no scores).
+- `PUT /api/programs/{id}/advisor` — assign the one responsible active Expert
+  with a linked login. Assignment adds the expert to `ProgramBoard`.
+  `PendingReview` or `Approved` must be withdrawn before reassignment.
+- `POST /api/programs/{id}/submit-review` — Draft only and requires a responsible
+  advisor. Runs the pinned published framework-version checks when present,
+  notifies that advisor, and moves to `PendingReview`.
 - `POST /api/programs/{id}/withdraw-review` — `PendingReview` or `Approved`
   → `Draft`.
 - `POST /api/programs/{id}/publish` — `Approved` → `Active`. Notifies
   `ForManagers` (`CurriculumReviewPublished`).
-- `GET /api/programs/review-queue` — Expert sees `PendingReview` programs on
-  their `ProgramBoard` **or** whose attached framework they own;
-  Manager/Admin see all pending. Board members may view a framework program
-  without being able to decide it.
+- `GET /api/programs/review-queue` — Expert sees `PendingReview` programs for
+  which they are the responsible advisor; Manager/Admin see all pending.
 - `GET /api/programs/{id}/curriculum-reviews` — decision history (framework
   owner, board experts, and Manager/Admin).
-- `POST /api/programs/{id}/approve-review` — with a framework: only the
-  framework owner; without a framework: any one login Expert on
-  `ProgramBoard`. `PendingReview` → `Approved`. Notifies `ForManagers`
+- `POST /api/programs/{id}/approve-review` — only the assigned responsible
+  expert. `PendingReview` → `Approved`. Notifies `ForManagers`
   (`CurriculumReviewApproved`). Payload `programId` is the deeplink.
 - `POST /api/programs/{id}/request-changes` — same actor as approve;
   `PendingReview` → `Draft`. `comment` is required. Notifies
@@ -247,28 +243,28 @@ Public reads: `GET /api/experts/{id}` and `GET /api/experts/{id}/profile`.
 
 ### Program framework and curriculum review
 
-`ProgramFramework` is an expert-owned blueprint assigned to **at most one**
-program (opt-in rules: `MinModules`, `MinOfflineSessions`, `MinLiveSessions`,
-`RequireCapstoneResearchMilestone` — null or `false` means not enforced;
-`true` requires ≥1 `ResearchMilestone` with `IsCapstone`). `Category` is a
-hint/filter only. `Program.FrameworkId` is optional. Null is free-form board
-review (still `PendingReview`; no rubric scores). Attaching a framework adds
-pre-check rules and optional rubric scores; **only the framework owner**
-decides Approve / ChangesRequested. Board experts may view the queue and
-history and may be invited to co-teach. An expert may own many
-framework–program pairs.
-Each framework has `FrameworkRubricCriterion` rows (name, description, max
-score, display order). Zero criteria is allowed; on approve, scores are
-required only when at least one criterion exists (`0 ≤ score ≤ MaxScore` for
-every criterion). `ChangesRequested` requires a comment, not scores.
+`ProgramFramework` is a reusable expert-authored identity. Its immutable
+published `ProgramFrameworkVersion` rows hold description, academic guidance,
+optional positive structural rules (`MinModules`, activity-template counts for
+Offline and LiveOnline, and optional capstone requirement), plus the rubric.
+Blank rules are unrestricted; zero is invalid. A program pins one published
+version and many programs may pin the same version, even when they have
+different responsible advisors. Publishing a newer version never changes an
+existing program. Managers explicitly adopt a newer version while curriculum
+is editable. Framework `Category` is guidance only and never an eligibility
+gate.
+
+Each version has rubric criteria with name, explanation, evidence guidance,
+numeric maximum score, and display order. There are no weights or automatic
+pass thresholds. Published versions and referenced history are immutable.
 
 API: `/api/program-frameworks` — Expert CRUD on own blueprints; Manager/Admin
 may list and read all but cannot write another expert's blueprint.
-Create/delete stay Expert-only. Category query is a hint only. Update,
-criteria, and delete are allowed only while the framework is unattached or
-the attached program is **Draft**. `PendingReview`, `Approved`, `Active`, and
-`Inactive` lock the blueprint (`409`). Delete unlinks a Draft program; it
-does not change program status.
+Create/archive/version publishing stay Expert-author-only. Category query is a
+hint only. Authoring occurs on one draft version; the full draft rubric is saved
+in one API operation. Archive prevents new assignment while retaining existing
+pins and history. Version routes live under
+`/api/program-frameworks/{id}/versions`.
 
 `ProgramFrameworkValidator.ValidateForSubmitAsync` pre-checks a program against
 non-null rules and joins every failure into one 400 message. Submit-review
@@ -276,12 +272,10 @@ calls it; a failing pre-check does not change status.
 
 `CurriculumReview` is one expert decision round (`Approved` /
 `ChangesRequested`) with optional `ReviewCriterionScore` rows. Distinct from
-student `ProgramReview` star ratings. With a framework, only the owning
-expert may decide. Without a framework, any one login expert on
-`ProgramBoard` may decide (first decision wins the round). Board membership
-is who can view during review and who can be invited to co-teach. Leaving
-the board unlinks that expert's Invited and Accepted co-teach rows on the
-program.
+student `ProgramReview` star ratings. Only `Program.AdvisorExpertId` may make
+the formal decision; framework authorship does not grant that authority.
+Other board experts may advise and may be invited to co-teach. The responsible
+advisor cannot be removed from the board until the program is reassigned.
 
 ## Highlight Videos
 

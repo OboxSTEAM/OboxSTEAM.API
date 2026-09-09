@@ -40,12 +40,17 @@ public class Program : BaseEntity
     /// <summary>Retake fee when re-enrolling after a Failed/Dropped enrollment. Null = use Price.</summary>
     public decimal? RetakeFee { get; set; }
 
-    /// <summary>
-    /// Optional expert blueprint for pre-check and rubric. Null is free-form board review.
-    /// Each framework may attach to at most one program.
-    /// </summary>
+    /// <summary>Optional reusable framework identity. Kept for additive API compatibility.</summary>
     public Guid? FrameworkId { get; set; }
     public ProgramFramework? Framework { get; set; }
+
+    /// <summary>Published immutable framework version pinned by this program.</summary>
+    public Guid? FrameworkVersionId { get; set; }
+    public ProgramFrameworkVersion? FrameworkVersion { get; set; }
+
+    /// <summary>The single expert responsible for future academic decisions.</summary>
+    public Guid? AdvisorExpertId { get; set; }
+    public Expert? AdvisorExpert { get; set; }
 
     // Navigation
     public ICollection<ProgramBoard> ProgramBoards { get; set; } = new List<ProgramBoard>();

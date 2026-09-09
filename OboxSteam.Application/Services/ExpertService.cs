@@ -542,6 +542,14 @@ public class ExpertService : IExpertService
                 .Distinct()
                 .ToList();
 
+            var responsiblePrograms = await _unitOfWork.Programs.GetAllAsync(
+                p => removedProgramIds.Contains(p.Id) && p.AdvisorExpertId == expert.Id && !p.IsDeleted);
+            if (responsiblePrograms.Count > 0)
+            {
+                throw ErrorHelper.Conflict(
+                    $"Reassign the responsible expert for program '{responsiblePrograms[0].Code}' before removing this board membership.");
+            }
+
             withdrawnCommands.AddRange(await ClearCoTeachOnProgramsAsync(expert, removedProgramIds));
 
             if (existingBoards.Any())
@@ -626,6 +634,11 @@ public class ExpertService : IExpertService
             throw ErrorHelper.NotFound($"Program '{programId}' is not assigned to expert '{expertId}'.");
         }
 
+        if (program.AdvisorExpertId == expertId)
+        {
+            throw ErrorHelper.Conflict("Reassign the responsible expert before removing them from the program board.");
+        }
+
         await _unitOfWork.ProgramBoards.HardRemoveRange(new List<ProgramBoard> { programBoard });
         var withdrawnCommands = await ClearCoTeachOnProgramsAsync(expert, [programId]);
         await _unitOfWork.SaveChangesAsync();
@@ -650,6 +663,15 @@ public class ExpertService : IExpertService
         {
             _logger.LogWarning("[DeleteExpertAsync] Expert with Id {Id} not found.", id);
             throw ErrorHelper.NotFound($"Expert with id '{id}' not found.");
+        }
+
+
+        var advisedProgram = await _unitOfWork.Programs.FirstOrDefaultAsync(
+            p => p.AdvisorExpertId == expert.Id && !p.IsDeleted);
+        if (advisedProgram != null)
+        {
+            throw ErrorHelper.Conflict(
+                $"Reassign the responsible expert for program '{advisedProgram.Code}' before deleting this expert.");
         }
 
         if (expert.UserId is Guid userId)

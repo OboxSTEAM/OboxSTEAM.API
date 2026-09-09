@@ -21,6 +21,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ExpertDegree> ExpertDegrees { get; set; }
     public DbSet<ExpertPublication> ExpertPublications { get; set; }
     public DbSet<ProgramFramework> ProgramFrameworks { get; set; }
+    public DbSet<ProgramFrameworkVersion> ProgramFrameworkVersions { get; set; }
     public DbSet<FrameworkRubricCriterion> FrameworkRubricCriteria { get; set; }
     public DbSet<CurriculumReview> CurriculumReviews { get; set; }
     public DbSet<ReviewCriterionScore> ReviewCriterionScores { get; set; }
@@ -125,6 +126,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ExpertDegree>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ExpertPublication>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramFramework>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramFrameworkVersion>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<FrameworkRubricCriterion>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CurriculumReview>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ReviewCriterionScore>().HasQueryFilter(e => !e.IsDeleted);
@@ -390,7 +392,7 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
-        // PROGRAM FRAMEWORK (expert-owned blueprint)
+        // PROGRAM FRAMEWORK (reusable expert-authored identity)
         // =============================================
         modelBuilder.Entity<ProgramFramework>(entity =>
         {
@@ -405,16 +407,48 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(f => f.Category)
                 .HasFilter("\"IsDeleted\" = false");
 
+            entity.HasIndex(f => f.IsArchived)
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_ProgramFrameworks_MinModulesPositive", "\"MinModules\" IS NULL OR \"MinModules\" > 0");
+                t.HasCheckConstraint("CK_ProgramFrameworks_MinOfflineSessionsPositive", "\"MinOfflineSessions\" IS NULL OR \"MinOfflineSessions\" > 0");
+                t.HasCheckConstraint("CK_ProgramFrameworks_MinLiveSessionsPositive", "\"MinLiveSessions\" IS NULL OR \"MinLiveSessions\" > 0");
+            });
+        });
+
+        // =============================================
+        // PROGRAM FRAMEWORK VERSION (draft -> immutable published)
+        // =============================================
+        modelBuilder.Entity<ProgramFrameworkVersion>(entity =>
+        {
+            entity.HasOne(v => v.Framework)
+                .WithMany(f => f.Versions)
+                .HasForeignKey(v => v.FrameworkId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(v => new { v.FrameworkId, v.VersionNumber })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(v => v.FrameworkId)
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"IsPublished\" = false");
+
             entity.ToTable(t =>
             {
                 t.HasCheckConstraint(
-                    "CK_ProgramFrameworks_MinModulesPositive",
+                    "CK_ProgramFrameworkVersions_VersionPositive",
+                    "\"VersionNumber\" > 0");
+                t.HasCheckConstraint(
+                    "CK_ProgramFrameworkVersions_MinModulesPositive",
                     "\"MinModules\" IS NULL OR \"MinModules\" > 0");
                 t.HasCheckConstraint(
-                    "CK_ProgramFrameworks_MinOfflineSessionsPositive",
+                    "CK_ProgramFrameworkVersions_MinOfflineSessionsPositive",
                     "\"MinOfflineSessions\" IS NULL OR \"MinOfflineSessions\" > 0");
                 t.HasCheckConstraint(
-                    "CK_ProgramFrameworks_MinLiveSessionsPositive",
+                    "CK_ProgramFrameworkVersions_MinLiveSessionsPositive",
                     "\"MinLiveSessions\" IS NULL OR \"MinLiveSessions\" > 0");
             });
         });
@@ -425,11 +459,19 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<FrameworkRubricCriterion>(entity =>
         {
             entity.HasOne(c => c.Framework)
-                .WithMany(f => f.RubricCriteria)
+                .WithMany(f => f.LegacyRubricCriteria)
                 .HasForeignKey(c => c.FrameworkId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.FrameworkVersion)
+                .WithMany(v => v.RubricCriteria)
+                .HasForeignKey(c => c.FrameworkVersionId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(c => c.FrameworkId)
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(c => c.FrameworkVersionId)
                 .HasFilter("\"IsDeleted\" = false");
 
             entity.ToTable(t => t.HasCheckConstraint(
@@ -445,12 +487,29 @@ public class OboxSteamDbContext : DbContext
             entity.HasOne(p => p.Framework)
                 .WithMany(f => f.Programs)
                 .HasForeignKey(p => p.FrameworkId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired(false);
 
             entity.HasIndex(p => p.FrameworkId)
-                .IsUnique()
                 .HasFilter("\"IsDeleted\" = false AND \"FrameworkId\" IS NOT NULL");
+
+            entity.HasOne(p => p.FrameworkVersion)
+                .WithMany(v => v.Programs)
+                .HasForeignKey(p => p.FrameworkVersionId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+
+            entity.HasIndex(p => p.FrameworkVersionId)
+                .HasFilter("\"IsDeleted\" = false AND \"FrameworkVersionId\" IS NOT NULL");
+
+            entity.HasOne(p => p.AdvisorExpert)
+                .WithMany(e => e.AdvisedPrograms)
+                .HasForeignKey(p => p.AdvisorExpertId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+
+            entity.HasIndex(p => p.AdvisorExpertId)
+                .HasFilter("\"IsDeleted\" = false AND \"AdvisorExpertId\" IS NOT NULL");
         });
 
         // =============================================

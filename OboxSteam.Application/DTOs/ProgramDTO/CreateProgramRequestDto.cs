@@ -20,4 +20,9 @@ public class CreateProgramRequestDto
 
     /// <summary>Optional expert blueprint for pre-check and rubric. Null is free-form review.</summary>
     public Guid? FrameworkId { get; set; }
+
+    /// <summary>Published framework version to pin. Preferred over FrameworkId.</summary>
+    public Guid? FrameworkVersionId { get; set; }
+
+    public Guid? AdvisorExpertId { get; set; }
 }

@@ -339,6 +339,23 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program review withdrawn."));
     }
 
+    [HttpPut("{id:guid}/advisor")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Assign the responsible program expert",
+        Description = "The expert must have an active linked login and is added to the program board. Pending or approved review must be withdrawn before reassignment.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> AssignAdvisor(
+        [FromRoute] Guid id,
+        [FromBody] AssignProgramAdvisorRequest request)
+    {
+        var result = await _programService.AssignAdvisorAsync(id, request);
+        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Responsible expert assigned."));
+    }
+
     [HttpPost("{id:guid}/publish")]
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(

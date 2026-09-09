@@ -10,6 +10,8 @@ public class FrameworkRubricCriterionRequest
 
     public string? Description { get; set; }
 
+    public string? EvidenceGuidance { get; set; }
+
     [Range(1, int.MaxValue)]
     public int MaxScore { get; set; }
 

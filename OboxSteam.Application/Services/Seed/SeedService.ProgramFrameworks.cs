@@ -376,7 +376,9 @@ public partial class SeedService
             f => f.ExpertId == expertId && f.Name == name && !f.IsDeleted);
         if (existing != null)
         {
-            await EnsureFrameworkCriteriaAsync(existing.Id, criteria);
+            await EnsureFrameworkVersionAsync(
+                existing.Id, description, minModules, minOfflineSessions,
+                minLiveSessions, requireCapstoneResearchMilestone, criteria);
             return existing;
         }
 
@@ -385,34 +387,52 @@ public partial class SeedService
             Id = Guid.NewGuid(),
             ExpertId = expertId,
             Name = name,
-            Description = description,
             Category = category,
-            MinModules = minModules,
-            MinOfflineSessions = minOfflineSessions,
-            MinLiveSessions = minLiveSessions,
-            RequireCapstoneResearchMilestone = requireCapstoneResearchMilestone,
             CreatedAt = _seedNow,
             CreatedBy = Guid.Empty,
             IsDeleted = false,
         };
         await _unitOfWork.ProgramFrameworks.AddAsync(framework);
-        await EnsureFrameworkCriteriaAsync(framework.Id, criteria);
+        await EnsureFrameworkVersionAsync(
+            framework.Id, description, minModules, minOfflineSessions,
+            minLiveSessions, requireCapstoneResearchMilestone, criteria);
         return framework;
     }
 
-    private async Task EnsureFrameworkCriteriaAsync(
+    private async Task<ProgramFrameworkVersion> EnsureFrameworkVersionAsync(
         Guid frameworkId,
+        string description,
+        int? minModules,
+        int? minOfflineSessions,
+        int? minLiveSessions,
+        bool? requireCapstoneResearchMilestone,
         (string Name, string Description, int MaxScore, int DisplayOrder)[]? criteria)
     {
+        var version = await _unitOfWork.ProgramFrameworkVersions.FirstOrDefaultAsync(
+            v => v.FrameworkId == frameworkId && v.VersionNumber == 1 && !v.IsDeleted);
+        if (version == null)
+        {
+            version = new ProgramFrameworkVersion
+            {
+                Id = Guid.NewGuid(), FrameworkId = frameworkId, VersionNumber = 1,
+                Description = description, MinModules = minModules,
+                MinOfflineSessions = minOfflineSessions, MinLiveSessions = minLiveSessions,
+                RequireCapstoneResearchMilestone = requireCapstoneResearchMilestone,
+                IsPublished = true, PublishedAt = _seedNow,
+                CreatedAt = _seedNow, CreatedBy = Guid.Empty, IsDeleted = false,
+            };
+            await _unitOfWork.ProgramFrameworkVersions.AddAsync(version);
+        }
+
         if (criteria == null)
         {
-            return;
+            return version;
         }
 
         foreach (var item in criteria)
         {
             var existing = await _unitOfWork.FrameworkRubricCriteria.FirstOrDefaultAsync(
-                c => c.FrameworkId == frameworkId && c.Name == item.Name && !c.IsDeleted);
+                c => c.FrameworkVersionId == version.Id && c.Name == item.Name && !c.IsDeleted);
             if (existing != null)
             {
                 continue;
@@ -422,6 +442,7 @@ public partial class SeedService
             {
                 Id = Guid.NewGuid(),
                 FrameworkId = frameworkId,
+                FrameworkVersionId = version.Id,
                 Name = item.Name,
                 Description = item.Description,
                 MaxScore = item.MaxScore,
@@ -431,6 +452,8 @@ public partial class SeedService
                 IsDeleted = false,
             });
         }
+
+        return version;
     }
 
     private async Task AttachFrameworkIfUnsetAsync(string programCode, Guid frameworkId)
@@ -442,6 +465,11 @@ public partial class SeedService
         }
 
         program.FrameworkId = frameworkId;
+        var published = (await _unitOfWork.ProgramFrameworkVersions.GetAllAsync(
+                v => v.FrameworkId == frameworkId && v.IsPublished && !v.IsDeleted))
+            .OrderByDescending(v => v.VersionNumber)
+            .FirstOrDefault();
+        program.FrameworkVersionId = published?.Id;
         await _unitOfWork.Programs.Update(program);
     }
 

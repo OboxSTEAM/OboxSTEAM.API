@@ -63,6 +63,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ExpertDegree> ExpertDegrees => Repository<ExpertDegree>();
     public IGenericRepository<ExpertPublication> ExpertPublications => Repository<ExpertPublication>();
     public IGenericRepository<ProgramFramework> ProgramFrameworks => Repository<ProgramFramework>();
+    public IGenericRepository<ProgramFrameworkVersion> ProgramFrameworkVersions => Repository<ProgramFrameworkVersion>();
     public IGenericRepository<FrameworkRubricCriterion> FrameworkRubricCriteria => Repository<FrameworkRubricCriterion>();
     public IGenericRepository<CurriculumReview> CurriculumReviews => Repository<CurriculumReview>();
     public IGenericRepository<ReviewCriterionScore> ReviewCriterionScores => Repository<ReviewCriterionScore>();

@@ -41,6 +41,8 @@ public interface IProgramService
 
     Task<ProgramsResponseDto> UpdateProgramAsync(Guid id, UpdateProgramRequestDto request);
 
+    Task<ProgramsResponseDto> AssignAdvisorAsync(Guid id, AssignProgramAdvisorRequest request);
+
     Task<ProgramsResponseDto> UploadProgramThumbnailAsync(Guid id, IFormFile file);
 
     Task<bool> DeleteProgramAsync(Guid id);

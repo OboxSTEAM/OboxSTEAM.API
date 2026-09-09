@@ -4,8 +4,10 @@ public class FrameworkRubricCriterionResponseDto
 {
     public Guid Id { get; set; }
     public Guid FrameworkId { get; set; }
+    public Guid FrameworkVersionId { get; set; }
     public string Name { get; set; } = null!;
     public string? Description { get; set; }
+    public string? EvidenceGuidance { get; set; }
     public int MaxScore { get; set; }
     public int DisplayOrder { get; set; }
     public DateTime CreatedAt { get; set; }

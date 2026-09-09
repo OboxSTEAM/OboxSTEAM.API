@@ -19,6 +19,7 @@ public sealed class ProgramServiceTests
     private readonly Guid _courseId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private readonly Guid _activityId = Guid.Parse("55555555-5555-5555-5555-555555555555");
     private readonly Guid _expertId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+    private readonly Guid _expertUserId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IBlobService> _blobService = new();
@@ -591,6 +592,7 @@ public sealed class ProgramServiceTests
     [Fact]
     public async Task Create_WithFrameworkId_AssignsBlueprint()
     {
+        var versionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         _db.ProgramFrameworks.Seed(new ProgramFramework
         {
             Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
@@ -598,6 +600,11 @@ public sealed class ProgramServiceTests
             Name = "Robotics",
             Category = ProgramCategory.Technology,
             IsDeleted = false,
+        });
+        _db.ProgramFrameworkVersions.Seed(new ProgramFrameworkVersion
+        {
+            Id = versionId, FrameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            VersionNumber = 1, IsPublished = true,
         });
         var sut = CreateSut();
 
@@ -610,12 +617,14 @@ public sealed class ProgramServiceTests
         });
 
         Assert.Equal(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), result.FrameworkId);
+        Assert.Equal(versionId, result.FrameworkVersionId);
     }
 
     [Fact]
-    public async Task Create_WithFrameworkAlreadyAssigned_Conflict()
+    public async Task Create_WithFrameworkAlreadyAssigned_AllowsSharedPublishedVersion()
     {
         var frameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var versionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         _db.ProgramFrameworks.Seed(new ProgramFramework
         {
             Id = frameworkId,
@@ -624,18 +633,23 @@ public sealed class ProgramServiceTests
             Category = ProgramCategory.Technology,
             IsDeleted = false,
         });
+        _db.ProgramFrameworkVersions.Seed(new ProgramFrameworkVersion
+        {
+            Id = versionId, FrameworkId = frameworkId, VersionNumber = 1, IsPublished = true,
+        });
         SeedProgram();
         _db.Programs.Items.Single().FrameworkId = frameworkId;
+        _db.Programs.Items.Single().FrameworkVersionId = versionId;
         var sut = CreateSut();
 
-        await Assert.ThrowsAsync<ConflictException>(
-            () => sut.CreateProgramAsync(new CreateProgramRequestDto
-            {
-                Code = "PRG-FW-2",
-                Name = "Second",
-                Category = ProgramCategory.Technology,
-                FrameworkId = frameworkId,
-            }));
+        var second = await sut.CreateProgramAsync(new CreateProgramRequestDto
+        {
+            Code = "PRG-FW-2", Name = "Second", Category = ProgramCategory.Technology,
+            FrameworkId = frameworkId,
+        });
+
+        Assert.Equal(frameworkId, second.FrameworkId);
+        Assert.Equal(versionId, second.FrameworkVersionId);
     }
 
     [Fact]
@@ -668,6 +682,37 @@ public sealed class ProgramServiceTests
 
         Assert.Null(result.FrameworkId);
         Assert.Null(_db.Programs.Items.Single().FrameworkId);
+    }
+
+    [Fact]
+    public async Task AssignAdvisor_AddsResponsibleExpertToBoard()
+    {
+        SeedProgram();
+        _db.Users.Seed(new User
+        {
+            Id = _expertUserId, Code = "USR-EXP", Email = "expert@test.local",
+            Role = RoleType.Expert, Status = AccountStatus.Active,
+        });
+        _db.Experts.Seed(new Expert
+        {
+            Id = _expertId, Code = "EXP", FullName = "Expert", UserId = _expertUserId,
+        });
+
+        var result = await CreateSut().AssignAdvisorAsync(
+            _programId, new AssignProgramAdvisorRequest { AdvisorExpertId = _expertId });
+
+        Assert.Equal(_expertId, result.AdvisorExpertId);
+        Assert.Single(_db.ProgramBoards.Items, b => b.ProgramId == _programId && b.ExpertId == _expertId);
+    }
+
+    [Fact]
+    public async Task AssignAdvisor_PendingReviewRequiresWithdrawal()
+    {
+        SeedProgram();
+        _db.Programs.Items.Single().Status = ProgramStatus.PendingReview;
+
+        await Assert.ThrowsAsync<ConflictException>(() => CreateSut().AssignAdvisorAsync(
+            _programId, new AssignProgramAdvisorRequest { AdvisorExpertId = _expertId }));
     }
 
     private Guid SeedClass(ClassStatus status)

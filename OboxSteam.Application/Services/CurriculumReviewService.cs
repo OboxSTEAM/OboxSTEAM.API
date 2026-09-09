@@ -47,6 +47,11 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             throw ErrorHelper.Conflict("Only Draft programs can be submitted for review.");
         }
 
+        if (!program.AdvisorExpertId.HasValue)
+        {
+            throw ErrorHelper.BadRequest("Assign a responsible expert before submitting for review.");
+        }
+
         await ProgramFrameworkValidator.ValidateForSubmitAsync(_unitOfWork, programId);
 
         ProgramFramework? framework = null;
@@ -132,18 +137,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         if (actor.Role == RoleType.Expert)
         {
             var expert = await RequireCurrentExpertAsync(actor);
-            var boards = await _unitOfWork.ProgramBoards.GetAllAsync(
-                b => b.ExpertId == expert.Id && !b.IsDeleted);
-            var boardProgramIds = boards.Select(b => b.ProgramId).ToHashSet();
-            var ownedFrameworkIds = (await _unitOfWork.ProgramFrameworks.GetAllAsync(
-                    f => f.ExpertId == expert.Id && !f.IsDeleted))
-                .Select(f => f.Id)
-                .ToHashSet();
-            pending = pending
-                .Where(p =>
-                    boardProgramIds.Contains(p.Id)
-                    || (p.FrameworkId.HasValue && ownedFrameworkIds.Contains(p.FrameworkId.Value)))
-                .ToList();
+            pending = pending.Where(p => p.AdvisorExpertId == expert.Id).ToList();
         }
 
         var frameworkIds = pending
@@ -181,7 +175,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
                     Status = p.Status,
                     FrameworkId = p.FrameworkId,
                     FrameworkName = framework?.Name,
-                    ExpertId = framework?.ExpertId,
+                    ExpertId = p.AdvisorExpertId,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
                 };
@@ -355,22 +349,20 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var expert = await RequireCurrentExpertAsync(actor);
         ProgramFramework? framework = null;
         List<FrameworkRubricCriterion> criteria = [];
-        if (program.FrameworkId.HasValue)
+        if (program.AdvisorExpertId != expert.Id)
         {
-            framework = await RequireActiveFrameworkAsync(program.FrameworkId.Value);
-            if (framework.ExpertId != expert.Id)
-            {
-                throw ErrorHelper.Forbidden(
-                    "Only the assigned framework owner can approve or request changes on this program.");
-            }
-
-            var rows = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
-                c => c.FrameworkId == framework.Id && !c.IsDeleted);
-            criteria = rows.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList();
+            throw ErrorHelper.Forbidden("Only the assigned responsible expert can decide this program review.");
         }
-        else
+
+        if (program.FrameworkVersionId.HasValue)
         {
-            await EnsureExpertOnProgramBoardAsync(expert, program);
+            var version = await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value);
+            if (version == null || version.IsDeleted || !version.IsPublished)
+                throw ErrorHelper.Conflict("The pinned framework version is unavailable.");
+            framework = await RequireActiveFrameworkAsync(version.FrameworkId);
+            var rows = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
+                c => c.FrameworkVersionId == version.Id && !c.IsDeleted);
+            criteria = rows.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList();
         }
 
         return (program, expert, framework, criteria, actor);
@@ -439,29 +431,17 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
     private async Task<List<Expert>> ResolveSubmitReviewersAsync(Program program, ProgramFramework? framework)
     {
-        if (framework != null)
+        if (!program.AdvisorExpertId.HasValue)
+            throw ErrorHelper.BadRequest("Assign a responsible expert before submitting for review.");
+        var advisor = await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value);
+        if (advisor == null || advisor.IsDeleted || !advisor.UserId.HasValue || advisor.UserId == Guid.Empty)
         {
-            var owner = await _unitOfWork.Experts.GetByIdAsync(framework.ExpertId);
-            if (owner == null
-                || owner.IsDeleted
-                || !owner.UserId.HasValue
-                || owner.UserId.Value == Guid.Empty)
-            {
-                throw ErrorHelper.BadRequest(
-                    "The assigned framework owner must have a login before submitting for review.");
-            }
-
-            return [owner];
+            throw ErrorHelper.BadRequest("The responsible expert must have an active linked login before submission.");
         }
-
-        var reviewers = await GetBoardExpertsWithLoginAsync(program.Id);
-        if (reviewers.Count == 0)
-        {
-            throw ErrorHelper.BadRequest(
-                "Add at least one program-board expert with a login before submitting for review.");
-        }
-
-        return reviewers;
+        var user = await _unitOfWork.Users.GetByIdAsync(advisor.UserId.Value);
+        if (user == null || user.IsDeleted || user.Role != RoleType.Expert || user.Status != AccountStatus.Active)
+            throw ErrorHelper.BadRequest("The responsible expert must have an active linked login before submission.");
+        return [advisor];
     }
 
     private async Task<List<Expert>> GetBoardExpertsWithLoginAsync(Guid programId)

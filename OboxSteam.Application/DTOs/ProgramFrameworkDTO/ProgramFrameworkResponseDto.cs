@@ -24,8 +24,13 @@ public class ProgramFrameworkResponseDto
     /// attached; program-board experts when there is no framework).
     /// </summary>
     public bool RequiresExpertReview { get; set; }
+    public bool IsArchived { get; set; }
+    public Guid? CurrentVersionId { get; set; }
+    public int? CurrentVersionNumber { get; set; }
+    public bool HasDraftVersion { get; set; }
 
     public List<FrameworkRubricCriterionResponseDto> Criteria { get; set; } = [];
+    public List<ProgramFrameworkVersionResponseDto> Versions { get; set; } = [];
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

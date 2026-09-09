@@ -24,6 +24,9 @@ public class UpdateProgramRequestDto
     /// <summary>Assign a blueprint. Null is skipped (partial update). Use <see cref="ClearFramework"/> to unlink.</summary>
     public Guid? FrameworkId { get; set; }
 
+    /// <summary>Explicit published version adoption while the program is editable.</summary>
+    public Guid? FrameworkVersionId { get; set; }
+
     /// <summary>When true, clears <c>Program.FrameworkId</c>. Ignored when <see cref="FrameworkId"/> is set.</summary>
     public bool? ClearFramework { get; set; }
 }
