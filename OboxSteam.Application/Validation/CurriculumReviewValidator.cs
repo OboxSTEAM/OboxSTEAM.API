@@ -55,6 +55,39 @@ public static class CurriculumReviewValidator
             throw ErrorHelper.BadRequest("A score is required for every framework rubric criterion.");
         }
 
+        var rows = BuildScoreRows(reviewId, criteria, scores, requireAll: true);
+        if (rows.Count != criteria.Count)
+        {
+            throw ErrorHelper.BadRequest("A score is required for every framework rubric criterion.");
+        }
+
+        return rows;
+    }
+
+    public static IReadOnlyList<ReviewCriterionScore> BuildPartialScores(
+        Guid reviewId,
+        IReadOnlyList<FrameworkRubricCriterion> criteria,
+        IReadOnlyList<ReviewCriterionScoreRequest>? scores)
+    {
+        if (scores == null || scores.Count == 0)
+        {
+            return [];
+        }
+
+        if (criteria.Count == 0)
+        {
+            throw ErrorHelper.BadRequest("This framework has no rubric criteria; scores cannot be submitted.");
+        }
+
+        return BuildScoreRows(reviewId, criteria, scores, requireAll: false);
+    }
+
+    private static List<ReviewCriterionScore> BuildScoreRows(
+        Guid reviewId,
+        IReadOnlyList<FrameworkRubricCriterion> criteria,
+        IReadOnlyList<ReviewCriterionScoreRequest> scores,
+        bool requireAll)
+    {
         var criteriaById = criteria.ToDictionary(c => c.Id);
         var seen = new HashSet<Guid>();
         var rows = new List<ReviewCriterionScore>();
@@ -88,14 +121,14 @@ public static class CurriculumReviewValidator
                 FrameworkRubricCriterionId = criterion.Id,
                 Score = item.Score,
                 Comment = NormalizeOptionalComment(item.Comment),
+                CriterionNameSnapshot = criterion.Name,
+                CriterionDescriptionSnapshot = criterion.Description,
+                EvidenceGuidanceSnapshot = criterion.EvidenceGuidance,
+                MaxScoreSnapshot = criterion.MaxScore,
             });
         }
 
-        if (rows.Count != criteria.Count)
-        {
-            throw ErrorHelper.BadRequest("A score is required for every framework rubric criterion.");
-        }
-
+        _ = requireAll;
         return rows;
     }
 }

@@ -59,6 +59,8 @@ public class Program : BaseEntity
     public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
     public ICollection<ProgramReview> Reviews { get; set; } = new List<ProgramReview>();
     public ICollection<CurriculumReview> CurriculumReviews { get; set; } = new List<CurriculumReview>();
+    public ICollection<ProgramReviewSubmission> ReviewSubmissions { get; set; } = [];
+    public ICollection<ProgramAdvisoryThread> AdvisoryThreads { get; set; } = [];
     public ICollection<Class> Classes { get; set; } = new List<Class>();
     public ICollection<PaymentRequest> PaymentRequests { get; set; } = new List<PaymentRequest>();
 }

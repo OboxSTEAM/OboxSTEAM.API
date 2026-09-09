@@ -1,0 +1,34 @@
+using OboxSteam.Domain.Enums;
+
+namespace OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
+
+public sealed class AdvisoryThreadDto
+{
+    public Guid Id { get; set; }
+
+    public Guid ProgramId { get; set; }
+
+    public Guid? SubmissionId { get; set; }
+
+    public Guid AuthorUserId { get; set; }
+
+    public string? AuthorName { get; set; }
+
+    public ProgramAdvisoryTargetType TargetType { get; set; }
+
+    public Guid? TargetId { get; set; }
+
+    public string TargetLabel { get; set; } = null!;
+
+    public string? TargetContext { get; set; }
+
+    public ProgramAdvisoryThreadType Type { get; set; }
+
+    public ProgramAdvisoryThreadStatus Status { get; set; }
+
+    public DateTime LastMessageAt { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+
+    public int MessageCount { get; set; }
+}

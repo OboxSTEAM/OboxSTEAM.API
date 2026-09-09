@@ -5,6 +5,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
 using OboxSteam.Application.DTOs.CurriculumReviewDTO;
 using OboxSteam.Application.DTOs.PaymentDTO;
+using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -19,6 +20,7 @@ public class ProgramController : ControllerBase
 {
     private readonly IProgramService _programService;
     private readonly ICurriculumReviewService _curriculumReviewService;
+    private readonly IProgramAdvisoryService _programAdvisoryService;
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
     private readonly IClassService _classService;
     private readonly IClassSeatHoldService _classSeatHoldService;
@@ -27,6 +29,7 @@ public class ProgramController : ControllerBase
     public ProgramController(
         IProgramService programService,
         ICurriculumReviewService curriculumReviewService,
+        IProgramAdvisoryService programAdvisoryService,
         IEnrollmentCurriculumService enrollmentCurriculumService,
         IClassService classService,
         IClassSeatHoldService classSeatHoldService,
@@ -34,6 +37,7 @@ public class ProgramController : ControllerBase
     {
         _programService = programService;
         _curriculumReviewService = curriculumReviewService;
+        _programAdvisoryService = programAdvisoryService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
         _classService = classService;
         _classSeatHoldService = classSeatHoldService;
@@ -414,6 +418,192 @@ public class ProgramController : ControllerBase
         var result = await _curriculumReviewService.RequestChangesAsync(id, request);
         return Ok(ApiResult<CurriculumReviewResponseDto>.Success(
             result, "200", "Changes requested."));
+    }
+
+    // =========================================================================
+    // ADVISORY WORKSPACE
+    // =========================================================================
+
+    [HttpGet("advisory-mine")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Assigned advisory programs for the current user")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<AdvisoryMineItemDto>>), 200)]
+    public async Task<IActionResult> GetAdvisoryMine(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] ProgramStatus? status = null,
+        [FromQuery] bool unreadOnly = false)
+    {
+        if (page < 1 || pageSize < 1)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+        }
+
+        var result = await _programAdvisoryService.GetAdvisoryMineAsync(page, pageSize, status, unreadOnly);
+        return Ok(ApiResult<Pagination<AdvisoryMineItemDto>>.Success(
+            result, "200", "Advisory programs retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/advisory")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Advisory workspace summary for a program")]
+    [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
+    public async Task<IActionResult> GetAdvisoryWorkspace([FromRoute] Guid id)
+    {
+        var result = await _programAdvisoryService.GetAdvisoryWorkspaceAsync(id);
+        return Ok(ApiResult<ProgramAdvisoryWorkspaceDto>.Success(
+            result, "200", "Advisory workspace retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/framework-check")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Structured framework checks for a program")]
+    [ProducesResponseType(typeof(ApiResult<FrameworkCheckDto>), 200)]
+    public async Task<IActionResult> GetFrameworkCheck([FromRoute] Guid id)
+    {
+        var result = await _curriculumReviewService.GetFrameworkCheckAsync(id);
+        return Ok(ApiResult<FrameworkCheckDto>.Success(result, "200", "Framework check retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/advisory-threads")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "List advisory threads for a program")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryThreadDto>>), 200)]
+    public async Task<IActionResult> GetAdvisoryThreads([FromRoute] Guid id)
+    {
+        var result = await _programAdvisoryService.GetThreadsAsync(id);
+        return Ok(ApiResult<IReadOnlyList<AdvisoryThreadDto>>.Success(
+            result, "200", "Advisory threads retrieved successfully."));
+    }
+
+    [HttpPost("{id:guid}/advisory-threads")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Create an advisory thread")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
+    public async Task<IActionResult> CreateAdvisoryThread(
+        [FromRoute] Guid id,
+        [FromBody] CreateAdvisoryThreadRequest request)
+    {
+        var result = await _programAdvisoryService.CreateThreadAsync(id, request);
+        return Ok(ApiResult<AdvisoryThreadDto>.Success(result, "200", "Advisory thread created."));
+    }
+
+    [HttpGet("{id:guid}/advisory-threads/{threadId:guid}/messages")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "List messages in an advisory thread")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryMessageDto>>), 200)]
+    public async Task<IActionResult> GetAdvisoryMessages(
+        [FromRoute] Guid id,
+        [FromRoute] Guid threadId)
+    {
+        var result = await _programAdvisoryService.GetMessagesAsync(id, threadId);
+        return Ok(ApiResult<IReadOnlyList<AdvisoryMessageDto>>.Success(
+            result, "200", "Advisory messages retrieved successfully."));
+    }
+
+    [HttpPost("{id:guid}/advisory-threads/{threadId:guid}/messages")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Add a message to an advisory thread")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryMessageDto>), 200)]
+    public async Task<IActionResult> AddAdvisoryMessage(
+        [FromRoute] Guid id,
+        [FromRoute] Guid threadId,
+        [FromBody] AddAdvisoryMessageRequest request)
+    {
+        if (request == null)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Request body is required."));
+        }
+
+        var result = await _programAdvisoryService.AddMessageAsync(id, threadId, request.Message);
+        return Ok(ApiResult<AdvisoryMessageDto>.Success(result, "200", "Advisory message added."));
+    }
+
+    [HttpPatch("{id:guid}/advisory-threads/{threadId:guid}/status")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Update advisory thread status")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
+    public async Task<IActionResult> UpdateAdvisoryThreadStatus(
+        [FromRoute] Guid id,
+        [FromRoute] Guid threadId,
+        [FromBody] UpdateAdvisoryThreadStatusRequest request)
+    {
+        var result = await _programAdvisoryService.UpdateThreadStatusAsync(id, threadId, request);
+        return Ok(ApiResult<AdvisoryThreadDto>.Success(result, "200", "Advisory thread status updated."));
+    }
+
+    [HttpPost("{id:guid}/advisory-read")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Record advisory last-read position")]
+    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    public async Task<IActionResult> RecordAdvisoryRead(
+        [FromRoute] Guid id,
+        [FromBody] RecordAdvisoryReadRequest? request = null)
+    {
+        await _programAdvisoryService.RecordReadAsync(id, request);
+        return Ok(ApiResult<object>.Success(new { }, "200", "Advisory read position recorded."));
+    }
+
+    [HttpGet("{id:guid}/review-submissions")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "List formal review submissions")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<ProgramReviewSubmissionSummaryDto>>), 200)]
+    public async Task<IActionResult> GetReviewSubmissions([FromRoute] Guid id)
+    {
+        var result = await _curriculumReviewService.GetSubmissionsAsync(id);
+        return Ok(ApiResult<IReadOnlyList<ProgramReviewSubmissionSummaryDto>>.Success(
+            result, "200", "Review submissions retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/review-submissions/{submissionId:guid}")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Get a review submission snapshot")]
+    [ProducesResponseType(typeof(ApiResult<ProgramReviewSubmissionDetailDto>), 200)]
+    public async Task<IActionResult> GetReviewSubmission(
+        [FromRoute] Guid id,
+        [FromRoute] Guid submissionId)
+    {
+        var result = await _curriculumReviewService.GetSubmissionAsync(id, submissionId);
+        return Ok(ApiResult<ProgramReviewSubmissionDetailDto>.Success(
+            result, "200", "Review submission retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/review-submissions/{submissionId:guid}/changes")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Diff a submission against the previous one")]
+    [ProducesResponseType(typeof(ApiResult<SubmissionChangesDto>), 200)]
+    public async Task<IActionResult> GetReviewSubmissionChanges(
+        [FromRoute] Guid id,
+        [FromRoute] Guid submissionId)
+    {
+        var result = await _curriculumReviewService.GetSubmissionChangesAsync(id, submissionId);
+        return Ok(ApiResult<SubmissionChangesDto>.Success(
+            result, "200", "Submission changes retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/review-submissions/{submissionId:guid}/draft")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Get the advisor private review draft")]
+    [ProducesResponseType(typeof(ApiResult<ProgramReviewDraftDto>), 200)]
+    public async Task<IActionResult> GetReviewDraft(
+        [FromRoute] Guid id,
+        [FromRoute] Guid submissionId)
+    {
+        var result = await _curriculumReviewService.GetDraftAsync(id, submissionId);
+        return Ok(ApiResult<ProgramReviewDraftDto>.Success(result, "200", "Review draft retrieved successfully."));
+    }
+
+    [HttpPut("{id:guid}/review-submissions/{submissionId:guid}/draft")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Autosave the advisor private review draft")]
+    [ProducesResponseType(typeof(ApiResult<ProgramReviewDraftDto>), 200)]
+    public async Task<IActionResult> SaveReviewDraft(
+        [FromRoute] Guid id,
+        [FromRoute] Guid submissionId,
+        [FromBody] SaveProgramReviewDraftRequest request)
+    {
+        var result = await _curriculumReviewService.SaveDraftAsync(id, submissionId, request);
+        return Ok(ApiResult<ProgramReviewDraftDto>.Success(result, "200", "Review draft saved."));
     }
 
     // =========================================================================

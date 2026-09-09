@@ -126,5 +126,10 @@ public enum NotificationType
 
     CurriculumReviewPublished,
 
-    ClassSessionExpertClearedOnReschedule
+    ClassSessionExpertClearedOnReschedule,
+
+    // Program advisory workspace
+    AdvisoryFeedbackPublished,
+    AdvisoryReply,
+    AdvisoryCorrectionAddressed,
 }

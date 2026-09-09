@@ -15,6 +15,11 @@ public class ReviewCriterionScore : BaseEntity
 
     public int Score { get; set; }
 
+    [MaxLength(255)] public string CriterionNameSnapshot { get; set; } = null!;
+    public string? CriterionDescriptionSnapshot { get; set; }
+    public string? EvidenceGuidanceSnapshot { get; set; }
+    public int MaxScoreSnapshot { get; set; }
+
     [MaxLength(2000)]
     public string? Comment { get; set; }
 }

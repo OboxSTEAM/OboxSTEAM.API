@@ -14,6 +14,10 @@ public sealed class CurriculumReviewResponseDto
 
     public int Round { get; set; }
 
+    public Guid? SubmissionId { get; set; }
+
+    public bool SnapshotAvailable { get; set; }
+
     public CurriculumReviewDecision Decision { get; set; }
 
     public string? Comment { get; set; }

@@ -2019,6 +2019,82 @@ public static class NotificationCatalog
             entityId: programId,
             tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
 
+    public static NotificationCommand AdvisoryFeedbackPublished(
+        Guid recipientUserId,
+        Guid programId,
+        Guid threadId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null,
+        string? feedbackType = null)
+        => new(
+            NotificationType.AdvisoryFeedbackPublished,
+            recipientUserId == Guid.Empty
+                ? NotificationAudience.ForManagers()
+                : NotificationAudience.ForUser(recipientUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Có góp ý chương trình mới",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã gửi góp ý chương trình."
+                    : "{actorName} đã gửi góp ý trên chương trình \"{programName}\"."),
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                Extra = feedbackType
+            }.WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ProgramAdvisoryThread",
+            entityId: threadId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
+    public static NotificationCommand AdvisoryReply(
+        Guid recipientUserId,
+        Guid programId,
+        Guid threadId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.AdvisoryReply,
+            recipientUserId == Guid.Empty
+                ? NotificationAudience.ForManagers()
+                : NotificationAudience.ForUser(recipientUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Có phản hồi góp ý chương trình",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã trả lời một chuỗi góp ý."
+                    : "{actorName} đã trả lời góp ý trên chương trình \"{programName}\"."),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ProgramAdvisoryThread",
+            entityId: threadId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
+    public static NotificationCommand AdvisoryCorrectionAddressed(
+        Guid recipientUserId,
+        Guid programId,
+        Guid threadId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.AdvisoryCorrectionAddressed,
+            recipientUserId == Guid.Empty
+                ? NotificationAudience.ForManagers()
+                : NotificationAudience.ForUser(recipientUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Yêu cầu chỉnh sửa đã được xử lý",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã đánh dấu một yêu cầu chỉnh sửa là đã xử lý."
+                    : "{actorName} đã đánh dấu yêu cầu chỉnh sửa trên chương trình \"{programName}\" là đã xử lý."),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ProgramAdvisoryThread",
+            entityId: threadId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
     // ── Offline co-teach ──────────────────────────────────────────────────────
 
     public static NotificationCommand ClassSessionExpertInvited(

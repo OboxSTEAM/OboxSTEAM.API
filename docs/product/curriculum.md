@@ -39,22 +39,46 @@ Lifecycle endpoints (Manager/Admin unless noted):
   `PendingReview` or `Approved` must be withdrawn before reassignment.
 - `POST /api/programs/{id}/submit-review` — Draft only and requires a responsible
   advisor. Runs the pinned published framework-version checks when present,
-  notifies that advisor, and moves to `PendingReview`.
+  creates an immutable `ProgramReviewSubmission` snapshot, notifies that
+  advisor, and moves to `PendingReview`.
 - `POST /api/programs/{id}/withdraw-review` — `PendingReview` or `Approved`
-  → `Draft`.
+  → `Draft`. Pending submissions are closed as `Withdrawn` (draft autosave
+  blocked).
 - `POST /api/programs/{id}/publish` — `Approved` → `Active`. Notifies
   `ForManagers` (`CurriculumReviewPublished`).
 - `GET /api/programs/review-queue` — Expert sees `PendingReview` programs for
   which they are the responsible advisor; Manager/Admin see all pending.
+- `GET /api/programs/advisory-mine` — paginated assigned advisory programs
+  (advisor/board for Expert; all for Manager/Admin) with unread counts and
+  next actions.
+- `GET /api/programs/{id}/advisory` — workspace summary: participants,
+  permissions (`canAdvise` / `canDecide` / `canEditCurriculum` /
+  `canAssignAdvisor`), latest submission, feedback counts.
+- `GET /api/programs/{id}/framework-check` — structured expected/actual checks
+  against the pinned framework version.
+- `GET|POST /api/programs/{id}/advisory-threads` — contextual Suggestion /
+  RequiredChange threads. Only the advisor creates RequiredChange.
+- `GET|POST /api/programs/{id}/advisory-threads/{threadId}/messages`
+- `PATCH /api/programs/{id}/advisory-threads/{threadId}/status` — Manager marks
+  Addressed; advisor resolves/reopens RequiredChange.
+- `POST /api/programs/{id}/advisory-read` — record last-read for unread badges.
+- `GET /api/programs/{id}/review-submissions` (+ `/{submissionId}`,
+  `/{submissionId}/changes`, `/{submissionId}/draft` GET|PUT) — submission
+  snapshots, revision diffs, and private advisor draft autosave (`409` on
+  stale concurrency).
 - `GET /api/programs/{id}/curriculum-reviews` — decision history (framework
-  owner, board experts, and Manager/Admin).
+  owner, board experts, and Manager/Admin). Legacy rows report
+  `snapshotAvailable=false`.
 - `POST /api/programs/{id}/approve-review` — only the assigned responsible
-  expert. `PendingReview` → `Approved`. Notifies `ForManagers`
-  (`CurriculumReviewApproved`). Payload `programId` is the deeplink.
+  expert. Unresolved RequiredChange threads block approval. Full rubric
+  scores required when criteria exist. `PendingReview` → `Approved`. Notifies
+  `ForManagers` (`CurriculumReviewApproved`). Payload `programId` is the
+  deeplink.
 - `POST /api/programs/{id}/request-changes` — same actor as approve;
-  `PendingReview` → `Draft`. `comment` is required. Notifies
-  `ForManagers` (`CurriculumReviewChangesRequested`); inbox body includes the
-  expert comment; payload `programId` is the deeplink.
+  `PendingReview` → `Draft`. `comment` is required; partial scores allowed.
+  Creates an overall RequiredChange thread. Notifies `ForManagers`
+  (`CurriculumReviewChangesRequested`); inbox body includes the expert
+  comment; payload `programId` is the deeplink.
 
 Curriculum structure (and program metadata update/delete) is locked while
 `PendingReview` or `Approved`. After `ChangesRequested` the program is `Draft`
@@ -276,6 +300,9 @@ student `ProgramReview` star ratings. Only `Program.AdvisorExpertId` may make
 the formal decision; framework authorship does not grant that authority.
 Other board experts may advise and may be invited to co-teach. The responsible
 advisor cannot be removed from the board until the program is reassigned.
+Decisions attach to a `ProgramReviewSubmission` when present; criterion score
+rows retain name/max/guidance snapshots. Legacy history without a genuine
+curriculum snapshot reports `snapshotAvailable=false`.
 
 ## Highlight Videos
 

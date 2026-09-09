@@ -67,6 +67,11 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<FrameworkRubricCriterion> FrameworkRubricCriteria => Repository<FrameworkRubricCriterion>();
     public IGenericRepository<CurriculumReview> CurriculumReviews => Repository<CurriculumReview>();
     public IGenericRepository<ReviewCriterionScore> ReviewCriterionScores => Repository<ReviewCriterionScore>();
+    public IGenericRepository<ProgramReviewSubmission> ProgramReviewSubmissions => Repository<ProgramReviewSubmission>();
+    public IGenericRepository<ProgramReviewDraft> ProgramReviewDrafts => Repository<ProgramReviewDraft>();
+    public IGenericRepository<ProgramAdvisoryThread> ProgramAdvisoryThreads => Repository<ProgramAdvisoryThread>();
+    public IGenericRepository<ProgramAdvisoryMessage> ProgramAdvisoryMessages => Repository<ProgramAdvisoryMessage>();
+    public IGenericRepository<ProgramAdvisoryRead> ProgramAdvisoryReads => Repository<ProgramAdvisoryRead>();
     public IGenericRepository<ClassSessionExpert> ClassSessionExperts => Repository<ClassSessionExpert>();
     public IGenericRepository<Certificate> Certificates => Repository<Certificate>();
     public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();

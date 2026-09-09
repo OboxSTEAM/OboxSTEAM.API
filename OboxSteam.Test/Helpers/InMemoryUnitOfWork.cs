@@ -46,6 +46,11 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<FrameworkRubricCriterion> FrameworkRubricCriteria { get; } = new();
     public InMemoryRepository<CurriculumReview> CurriculumReviews { get; } = new();
     public InMemoryRepository<ReviewCriterionScore> ReviewCriterionScores { get; } = new();
+    public InMemoryRepository<ProgramReviewSubmission> ProgramReviewSubmissions { get; } = new();
+    public InMemoryRepository<ProgramReviewDraft> ProgramReviewDrafts { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryThread> ProgramAdvisoryThreads { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryMessage> ProgramAdvisoryMessages { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryRead> ProgramAdvisoryReads { get; } = new();
     public InMemoryRepository<ClassSessionExpert> ClassSessionExperts { get; } = new();
     public InMemoryRepository<Certificate> Certificates { get; } = new();
     public InMemoryRepository<MediaAsset> MediaAssets { get; } = new();
@@ -116,6 +121,11 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<FrameworkRubricCriterion> IUnitOfWork.FrameworkRubricCriteria => FrameworkRubricCriteria;
     IGenericRepository<CurriculumReview> IUnitOfWork.CurriculumReviews => CurriculumReviews;
     IGenericRepository<ReviewCriterionScore> IUnitOfWork.ReviewCriterionScores => ReviewCriterionScores;
+    IGenericRepository<ProgramReviewSubmission> IUnitOfWork.ProgramReviewSubmissions => ProgramReviewSubmissions;
+    IGenericRepository<ProgramReviewDraft> IUnitOfWork.ProgramReviewDrafts => ProgramReviewDrafts;
+    IGenericRepository<ProgramAdvisoryThread> IUnitOfWork.ProgramAdvisoryThreads => ProgramAdvisoryThreads;
+    IGenericRepository<ProgramAdvisoryMessage> IUnitOfWork.ProgramAdvisoryMessages => ProgramAdvisoryMessages;
+    IGenericRepository<ProgramAdvisoryRead> IUnitOfWork.ProgramAdvisoryReads => ProgramAdvisoryReads;
     IGenericRepository<ClassSessionExpert> IUnitOfWork.ClassSessionExperts => ClassSessionExperts;
     IGenericRepository<Certificate> IUnitOfWork.Certificates => Certificates;
     IGenericRepository<MediaAsset> IUnitOfWork.MediaAssets => MediaAssets;
@@ -190,6 +200,11 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(FrameworkRubricCriterion) => FrameworkRubricCriteria,
             nameof(CurriculumReview) => CurriculumReviews,
             nameof(ReviewCriterionScore) => ReviewCriterionScores,
+            nameof(ProgramReviewSubmission) => ProgramReviewSubmissions,
+            nameof(ProgramReviewDraft) => ProgramReviewDrafts,
+            nameof(ProgramAdvisoryThread) => ProgramAdvisoryThreads,
+            nameof(ProgramAdvisoryMessage) => ProgramAdvisoryMessages,
+            nameof(ProgramAdvisoryRead) => ProgramAdvisoryReads,
             nameof(ClassSessionExpert) => ClassSessionExperts,
             nameof(Certificate) => Certificates,
             nameof(MediaAsset) => MediaAssets,

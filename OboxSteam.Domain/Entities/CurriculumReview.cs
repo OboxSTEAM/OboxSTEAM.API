@@ -16,6 +16,12 @@ public class CurriculumReview : BaseEntity
 
     public int Round { get; set; }
 
+    public Guid? SubmissionId { get; set; }
+    public ProgramReviewSubmission? Submission { get; set; }
+
+    /// <summary>False for legacy decisions that predate genuine snapshots.</summary>
+    public bool SnapshotAvailable { get; set; }
+
     public CurriculumReviewDecision Decision { get; set; }
 
     public string? Comment { get; set; }

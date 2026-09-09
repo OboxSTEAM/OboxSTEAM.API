@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.CurriculumReviewDTO;
+using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
@@ -14,6 +16,12 @@ namespace OboxSteam.Application.Services;
 
 public sealed class CurriculumReviewService : ICurriculumReviewService
 {
+    private static readonly JsonSerializerOptions DraftJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly IProgramService _programService;
@@ -60,17 +68,46 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             framework = await RequireActiveFrameworkAsync(program.FrameworkId.Value);
         }
 
-        var reviewers = await ResolveSubmitReviewersAsync(program, framework);
+        var reviewers = await ResolveSubmitReviewersAsync(program);
+        var advisor = reviewers[0];
+        var now = _currentTime.GetCurrentTime();
+
+        var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
+        var criteria = await LoadVersionCriteriaAsync(program.FrameworkVersionId);
+        var curriculumJson = CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(tree);
+        var rubricJson = CurriculumReviewSnapshotBuilder.BuildRubricSnapshotJson(criteria);
+
+        var existing = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
+            s => s.ProgramId == program.Id && !s.IsDeleted);
+        var nextNumber = existing.Count == 0 ? 1 : existing.Max(s => s.SubmissionNumber) + 1;
+
+        var submission = new ProgramReviewSubmission
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = program.Id,
+            SubmissionNumber = nextNumber,
+            SubmittedByManagerId = actor.Id,
+            AssignedAdvisorExpertId = advisor.Id,
+            FrameworkVersionId = program.FrameworkVersionId,
+            CurriculumSnapshotJson = curriculumJson,
+            RubricSnapshotJson = rubricJson,
+            Status = ProgramReviewSubmissionStatus.Pending,
+            SubmittedAt = now,
+            ConcurrencyVersion = Guid.NewGuid(),
+            CreatedAt = now,
+            CreatedBy = actor.Id,
+        };
 
         program.Status = ProgramStatus.PendingReview;
+        await _unitOfWork.ProgramReviewSubmissions.AddAsync(submission);
         await _unitOfWork.Programs.Update(program);
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
-            "[SubmitForReview] Program {ProgramId} submitted by {UserId} to PendingReview (framework {FrameworkId}).",
+            "[SubmitForReview] Program {ProgramId} submission {SubmissionNumber} by {UserId}.",
             program.Id,
-            actor.Id,
-            framework?.Id);
+            submission.SubmissionNumber,
+            actor.Id);
 
         await PublishCurriculumReviewSubmittedAsync(program, framework, reviewers, actor);
         return await _programService.GetProgramByIdAsync(programId);
@@ -84,6 +121,24 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         if (program.Status is not (ProgramStatus.PendingReview or ProgramStatus.Approved))
         {
             throw ErrorHelper.Conflict("Only programs pending expert review or approved for publish can be withdrawn.");
+        }
+
+        var now = _currentTime.GetCurrentTime();
+        if (program.Status == ProgramStatus.PendingReview)
+        {
+            var pending = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
+                s => s.ProgramId == program.Id
+                     && s.Status == ProgramReviewSubmissionStatus.Pending
+                     && !s.IsDeleted);
+            foreach (var submission in pending)
+            {
+                submission.Status = ProgramReviewSubmissionStatus.Withdrawn;
+                submission.ClosedAt = now;
+                submission.ConcurrencyVersion = Guid.NewGuid();
+                submission.UpdatedAt = now;
+                submission.UpdatedBy = actor.Id;
+                await _unitOfWork.ProgramReviewSubmissions.Update(submission);
+            }
         }
 
         program.Status = ProgramStatus.Draft;
@@ -234,10 +289,25 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         Guid programId,
         ApproveCurriculumReviewRequest? request)
     {
-        var (program, expert, _, criteria, actor) = await RequirePendingDecisionAsync(programId);
+        var (program, expert, criteria, actor) = await RequirePendingDecisionAsync(programId);
+        var submission = await ResolvePendingSubmissionAsync(program.Id, request?.SubmissionId);
+        EnsureSubmissionConcurrency(submission, request?.ConcurrencyVersion);
+
+        var openRequired = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
+            t => t.ProgramId == program.Id
+                 && t.Type == ProgramAdvisoryThreadType.RequiredChange
+                 && t.Status != ProgramAdvisoryThreadStatus.Resolved
+                 && !t.IsDeleted);
+        if (openRequired.Count > 0)
+        {
+            throw ErrorHelper.Conflict(
+                "Resolve all required-change threads before approving this program.");
+        }
+
         var comment = CurriculumReviewValidator.NormalizeOptionalComment(request?.Comment);
         var reviewId = Guid.NewGuid();
         var scoreRows = CurriculumReviewValidator.BuildScores(reviewId, criteria, request?.Scores);
+        var now = _currentTime.GetCurrentTime();
 
         var review = await PersistDecisionAsync(
             program,
@@ -245,7 +315,16 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             CurriculumReviewDecision.Approved,
             comment,
             reviewId,
-            scoreRows);
+            scoreRows,
+            submission.Id,
+            snapshotAvailable: true);
+
+        submission.Status = ProgramReviewSubmissionStatus.Approved;
+        submission.ClosedAt = now;
+        submission.ConcurrencyVersion = Guid.NewGuid();
+        submission.UpdatedAt = now;
+        submission.UpdatedBy = actor.Id;
+        await _unitOfWork.ProgramReviewSubmissions.Update(submission);
 
         program.Status = ProgramStatus.Approved;
         await _unitOfWork.Programs.Update(program);
@@ -270,16 +349,59 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             throw ErrorHelper.BadRequest("Request body is required.");
         }
 
-        var (program, expert, _, _, actor) = await RequirePendingDecisionAsync(programId);
+        var (program, expert, criteria, actor) = await RequirePendingDecisionAsync(programId);
+        var submission = await ResolvePendingSubmissionAsync(program.Id, request.SubmissionId);
+        EnsureSubmissionConcurrency(submission, request.ConcurrencyVersion);
+
         var comment = CurriculumReviewValidator.RequireComment(request.Comment);
+        var reviewId = Guid.NewGuid();
+        var scoreRows = CurriculumReviewValidator.BuildPartialScores(reviewId, criteria, request.Scores);
+        var now = _currentTime.GetCurrentTime();
 
         var review = await PersistDecisionAsync(
             program,
             expert,
             CurriculumReviewDecision.ChangesRequested,
             comment,
-            Guid.NewGuid(),
-            []);
+            reviewId,
+            scoreRows,
+            submission.Id,
+            snapshotAvailable: true);
+
+        var thread = new ProgramAdvisoryThread
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = program.Id,
+            AuthorUserId = actor.Id,
+            SubmissionId = submission.Id,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            TargetId = program.Id,
+            TargetLabel = program.Name,
+            TargetContext = "Overall request-changes decision",
+            Type = ProgramAdvisoryThreadType.RequiredChange,
+            Status = ProgramAdvisoryThreadStatus.Open,
+            LastMessageAt = now,
+            CreatedAt = now,
+            CreatedBy = actor.Id,
+        };
+        var message = new ProgramAdvisoryMessage
+        {
+            Id = Guid.NewGuid(),
+            ThreadId = thread.Id,
+            AuthorUserId = actor.Id,
+            Message = comment,
+            CreatedAt = now,
+            CreatedBy = actor.Id,
+        };
+        await _unitOfWork.ProgramAdvisoryThreads.AddAsync(thread);
+        await _unitOfWork.ProgramAdvisoryMessages.AddAsync(message);
+
+        submission.Status = ProgramReviewSubmissionStatus.ChangesRequested;
+        submission.ClosedAt = now;
+        submission.ConcurrencyVersion = Guid.NewGuid();
+        submission.UpdatedAt = now;
+        submission.UpdatedBy = actor.Id;
+        await _unitOfWork.ProgramReviewSubmissions.Update(submission);
 
         program.Status = ProgramStatus.Draft;
         await _unitOfWork.Programs.Update(program);
@@ -295,13 +417,247 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         return await MapReviewAsync(review);
     }
 
+    public async Task<FrameworkCheckDto> GetFrameworkCheckAsync(Guid programId)
+    {
+        await ResolveReviewActorAsync();
+        var program = await GetActiveProgramAsync(programId);
+        var dto = new FrameworkCheckDto
+        {
+            ProgramId = program.Id,
+            FrameworkVersionId = program.FrameworkVersionId,
+            AllPassed = true,
+        };
+
+        if (!program.FrameworkVersionId.HasValue)
+        {
+            return dto;
+        }
+
+        var version = await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value);
+        if (version == null || version.IsDeleted || !version.IsPublished)
+        {
+            throw ErrorHelper.Conflict("The assigned framework version is unavailable or not published.");
+        }
+
+        var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
+        dto.Checks = BuildStructuredChecks(version, snapshot);
+        dto.AllPassed = dto.Checks.TrueForAll(c => c.Passed);
+        return dto;
+    }
+
+    public async Task<IReadOnlyList<ProgramReviewSubmissionSummaryDto>> GetSubmissionsAsync(Guid programId)
+    {
+        await EnsureCanAccessSubmissionsAsync(programId);
+        var rows = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
+            s => s.ProgramId == programId && !s.IsDeleted);
+        return rows
+            .OrderByDescending(s => s.SubmissionNumber)
+            .Select(MapSubmissionSummary)
+            .ToList();
+    }
+
+    public async Task<ProgramReviewSubmissionDetailDto> GetSubmissionAsync(Guid programId, Guid submissionId)
+    {
+        await EnsureCanAccessSubmissionsAsync(programId);
+        var submission = await RequireSubmissionAsync(programId, submissionId);
+        return MapSubmissionDetail(submission);
+    }
+
+    public async Task<SubmissionChangesDto> GetSubmissionChangesAsync(Guid programId, Guid submissionId)
+    {
+        await EnsureCanAccessSubmissionsAsync(programId);
+        var submission = await RequireSubmissionAsync(programId, submissionId);
+        var previous = (await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
+                s => s.ProgramId == programId
+                     && s.SubmissionNumber < submission.SubmissionNumber
+                     && !s.IsDeleted))
+            .OrderByDescending(s => s.SubmissionNumber)
+            .FirstOrDefault();
+
+        return CurriculumReviewSnapshotBuilder.Diff(
+            submission.Id,
+            previous?.Id,
+            previous?.CurriculumSnapshotJson,
+            submission.CurriculumSnapshotJson);
+    }
+
+    public async Task<ProgramReviewDraftDto> GetDraftAsync(Guid programId, Guid submissionId)
+    {
+        var (submission, expert) = await RequireAdvisorDraftAccessAsync(programId, submissionId);
+        var draft = await _unitOfWork.ProgramReviewDrafts.FirstOrDefaultAsync(
+            d => d.SubmissionId == submission.Id && d.AdvisorExpertId == expert.Id && !d.IsDeleted);
+
+        if (draft == null)
+        {
+            return new ProgramReviewDraftDto
+            {
+                SubmissionId = submission.Id,
+                Scores = [],
+                OverallComment = null,
+                ConcurrencyVersion = Guid.Empty,
+                LastSavedAt = null,
+            };
+        }
+
+        return MapDraft(draft);
+    }
+
+    public async Task<ProgramReviewDraftDto> SaveDraftAsync(
+        Guid programId,
+        Guid submissionId,
+        SaveProgramReviewDraftRequest request)
+    {
+        if (request == null)
+        {
+            throw ErrorHelper.BadRequest("Request body is required.");
+        }
+
+        var (submission, expert) = await RequireAdvisorDraftAccessAsync(programId, submissionId);
+        if (submission.Status != ProgramReviewSubmissionStatus.Pending)
+        {
+            throw ErrorHelper.Conflict("Drafts can only be saved for pending submissions.");
+        }
+
+        var now = _currentTime.GetCurrentTime();
+        var actor = await GetCurrentUserAsync();
+        var draft = await _unitOfWork.ProgramReviewDrafts.FirstOrDefaultAsync(
+            d => d.SubmissionId == submission.Id && d.AdvisorExpertId == expert.Id && !d.IsDeleted);
+
+        var scoresJson = JsonSerializer.Serialize(request.Scores ?? [], DraftJsonOptions);
+        var comment = CurriculumReviewValidator.NormalizeOptionalComment(request.OverallComment);
+
+        if (draft == null)
+        {
+            draft = new ProgramReviewDraft
+            {
+                Id = Guid.NewGuid(),
+                SubmissionId = submission.Id,
+                AdvisorExpertId = expert.Id,
+                ScoresJson = scoresJson,
+                OverallComment = comment,
+                ConcurrencyVersion = Guid.NewGuid(),
+                LastSavedAt = now,
+                CreatedAt = now,
+                CreatedBy = actor.Id,
+            };
+            await _unitOfWork.ProgramReviewDrafts.AddAsync(draft);
+        }
+        else
+        {
+            if (draft.ConcurrencyVersion != request.ConcurrencyVersion)
+            {
+                throw ErrorHelper.Conflict("Draft was updated elsewhere. Reload and try again.");
+            }
+
+            draft.ScoresJson = scoresJson;
+            draft.OverallComment = comment;
+            draft.ConcurrencyVersion = Guid.NewGuid();
+            draft.LastSavedAt = now;
+            draft.UpdatedAt = now;
+            draft.UpdatedBy = actor.Id;
+            await _unitOfWork.ProgramReviewDrafts.Update(draft);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        return MapDraft(draft);
+    }
+
+    private async Task EnsureCanAccessSubmissionsAsync(Guid programId)
+    {
+        var actor = await ResolveReviewActorAsync();
+        var program = await GetActiveProgramAsync(programId);
+        if (actor.Role == RoleType.Expert)
+        {
+            await EnsureExpertCanViewReviewAsync(actor, program);
+        }
+    }
+
+    private async Task<(ProgramReviewSubmission Submission, Expert Expert)> RequireAdvisorDraftAccessAsync(
+        Guid programId,
+        Guid submissionId)
+    {
+        var actor = await ResolveReviewActorAsync();
+        if (actor.Role != RoleType.Expert)
+        {
+            throw ErrorHelper.Forbidden("Only the assigned advisor can access review drafts.");
+        }
+
+        var program = await GetActiveProgramAsync(programId);
+        var expert = await RequireCurrentExpertAsync(actor);
+        if (program.AdvisorExpertId != expert.Id)
+        {
+            throw ErrorHelper.Forbidden("Only the assigned advisor can access review drafts.");
+        }
+
+        var submission = await RequireSubmissionAsync(programId, submissionId);
+        return (submission, expert);
+    }
+
+    private async Task<ProgramReviewSubmission> RequireSubmissionAsync(Guid programId, Guid submissionId)
+    {
+        var submission = await _unitOfWork.ProgramReviewSubmissions.GetByIdAsync(submissionId);
+        if (submission == null || submission.IsDeleted || submission.ProgramId != programId)
+        {
+            throw ErrorHelper.NotFound($"Review submission '{submissionId}' was not found.");
+        }
+
+        return submission;
+    }
+
+    private async Task<ProgramReviewSubmission> ResolvePendingSubmissionAsync(
+        Guid programId,
+        Guid? submissionId)
+    {
+        if (submissionId.HasValue)
+        {
+            var specific = await RequireSubmissionAsync(programId, submissionId.Value);
+            if (specific.Status != ProgramReviewSubmissionStatus.Pending)
+            {
+                throw ErrorHelper.Conflict("This submission is no longer pending a decision.");
+            }
+
+            return specific;
+        }
+
+        var pending = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
+            s => s.ProgramId == programId
+                 && s.Status == ProgramReviewSubmissionStatus.Pending
+                 && !s.IsDeleted);
+        if (pending.Count == 0)
+        {
+            throw ErrorHelper.Conflict("No pending review submission exists for this program.");
+        }
+
+        if (pending.Count > 1)
+        {
+            throw ErrorHelper.Conflict("Multiple pending submissions exist; specify submissionId.");
+        }
+
+        return pending[0];
+    }
+
+    private static void EnsureSubmissionConcurrency(ProgramReviewSubmission submission, Guid? concurrencyVersion)
+    {
+        if (submission.Status != ProgramReviewSubmissionStatus.Pending)
+        {
+            throw ErrorHelper.Conflict("This submission is no longer pending a decision.");
+        }
+
+        if (concurrencyVersion.HasValue && concurrencyVersion.Value != submission.ConcurrencyVersion)
+        {
+            throw ErrorHelper.Conflict("Submission was updated elsewhere. Reload and try again.");
+        }
+    }
+
     private async Task<CurriculumReview> PersistDecisionAsync(
         Program program,
         Expert expert,
         CurriculumReviewDecision decision,
         string? comment,
         Guid reviewId,
-        IReadOnlyList<ReviewCriterionScore> scores)
+        IReadOnlyList<ReviewCriterionScore> scores,
+        Guid submissionId,
+        bool snapshotAvailable)
     {
         var existing = await _unitOfWork.CurriculumReviews.GetAllAsync(
             r => r.ProgramId == program.Id && !r.IsDeleted);
@@ -313,6 +669,8 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             ProgramId = program.Id,
             ExpertId = expert.Id,
             Round = nextRound,
+            SubmissionId = submissionId,
+            SnapshotAvailable = snapshotAvailable,
             Decision = decision,
             Comment = comment,
             ReviewedAt = _currentTime.GetCurrentTime(),
@@ -330,7 +688,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     private async Task<(
         Program Program,
         Expert Expert,
-        ProgramFramework? Framework,
         List<FrameworkRubricCriterion> Criteria,
         User Actor)> RequirePendingDecisionAsync(Guid programId)
     {
@@ -347,25 +704,130 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         }
 
         var expert = await RequireCurrentExpertAsync(actor);
-        ProgramFramework? framework = null;
-        List<FrameworkRubricCriterion> criteria = [];
         if (program.AdvisorExpertId != expert.Id)
         {
             throw ErrorHelper.Forbidden("Only the assigned responsible expert can decide this program review.");
         }
 
-        if (program.FrameworkVersionId.HasValue)
+        var criteria = await LoadVersionCriteriaAsync(program.FrameworkVersionId);
+        return (program, expert, criteria, actor);
+    }
+
+    private async Task<List<FrameworkRubricCriterion>> LoadVersionCriteriaAsync(Guid? frameworkVersionId)
+    {
+        if (!frameworkVersionId.HasValue)
         {
-            var version = await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value);
-            if (version == null || version.IsDeleted || !version.IsPublished)
-                throw ErrorHelper.Conflict("The pinned framework version is unavailable.");
-            framework = await RequireActiveFrameworkAsync(version.FrameworkId);
-            var rows = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
-                c => c.FrameworkVersionId == version.Id && !c.IsDeleted);
-            criteria = rows.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList();
+            return [];
         }
 
-        return (program, expert, framework, criteria, actor);
+        var version = await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(frameworkVersionId.Value);
+        if (version == null || version.IsDeleted || !version.IsPublished)
+        {
+            throw ErrorHelper.Conflict("The pinned framework version is unavailable.");
+        }
+
+        var rows = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
+            c => c.FrameworkVersionId == version.Id && !c.IsDeleted);
+        return rows.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList();
+    }
+
+    private static List<FrameworkCheckItemDto> BuildStructuredChecks(
+        ProgramFrameworkVersion framework,
+        ProgramCurriculumTreeSnapshot snapshot)
+    {
+        var checks = new List<FrameworkCheckItemDto>();
+        var moduleCount = snapshot.Modules.Count;
+        if (framework.MinModules.HasValue)
+        {
+            checks.Add(new FrameworkCheckItemDto
+            {
+                Code = "MinModules",
+                Label = "Minimum modules",
+                Expected = framework.MinModules.Value.ToString(),
+                Actual = moduleCount.ToString(),
+                Passed = moduleCount >= framework.MinModules.Value,
+                AffectedCurriculumLinks = snapshot.Modules
+                    .Select(m => new AffectedCurriculumLinkDto
+                    {
+                        TargetType = ProgramAdvisoryTargetType.Module,
+                        Id = m.Id,
+                        Label = m.Name,
+                    })
+                    .ToList(),
+            });
+        }
+
+        var offline = snapshot.ActivitiesById.Values
+            .Where(a => a.ActivityType == ActivityType.Offline)
+            .ToList();
+        if (framework.MinOfflineSessions.HasValue)
+        {
+            checks.Add(new FrameworkCheckItemDto
+            {
+                Code = "MinOfflineSessions",
+                Label = "Minimum Offline sessions",
+                Expected = framework.MinOfflineSessions.Value.ToString(),
+                Actual = offline.Count.ToString(),
+                Passed = offline.Count >= framework.MinOfflineSessions.Value,
+                AffectedCurriculumLinks = offline
+                    .Select(a => new AffectedCurriculumLinkDto
+                    {
+                        TargetType = ProgramAdvisoryTargetType.Activity,
+                        Id = a.Id,
+                        Label = a.Name,
+                    })
+                    .ToList(),
+            });
+        }
+
+        var live = snapshot.ActivitiesById.Values
+            .Where(a => a.ActivityType == ActivityType.LiveOnline)
+            .ToList();
+        if (framework.MinLiveSessions.HasValue)
+        {
+            checks.Add(new FrameworkCheckItemDto
+            {
+                Code = "MinLiveSessions",
+                Label = "Minimum LiveOnline sessions",
+                Expected = framework.MinLiveSessions.Value.ToString(),
+                Actual = live.Count.ToString(),
+                Passed = live.Count >= framework.MinLiveSessions.Value,
+                AffectedCurriculumLinks = live
+                    .Select(a => new AffectedCurriculumLinkDto
+                    {
+                        TargetType = ProgramAdvisoryTargetType.Activity,
+                        Id = a.Id,
+                        Label = a.Name,
+                    })
+                    .ToList(),
+            });
+        }
+
+        if (framework.RequireCapstoneResearchMilestone == true)
+        {
+            var capstones = snapshot.MilestonesByModuleId.Values
+                .SelectMany(m => m)
+                .Where(m => m.IsCapstone && !m.IsDeleted)
+                .ToList();
+            checks.Add(new FrameworkCheckItemDto
+            {
+                Code = "RequireCapstoneResearchMilestone",
+                Label = "Capstone research milestone",
+                Expected = "At least 1",
+                Actual = capstones.Count.ToString(),
+                Passed = capstones.Count >= 1,
+                AffectedCurriculumLinks = capstones
+                    .Select(m => new AffectedCurriculumLinkDto
+                    {
+                        TargetType = ProgramAdvisoryTargetType.ResearchMilestone,
+                        Id = m.Id,
+                        Label = m.Title,
+                    })
+                    .ToList(),
+            });
+        }
+
+        return checks;
     }
 
     private async Task<Program> GetActiveProgramAsync(Guid programId)
@@ -394,7 +856,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     private async Task EnsureExpertCanViewReviewAsync(User actor, Program program)
     {
         var expert = await RequireCurrentExpertAsync(actor);
-        if (await IsBoardMemberAsync(program.Id, expert.Id))
+        if (program.AdvisorExpertId == expert.Id || await IsBoardMemberAsync(program.Id, expert.Id))
         {
             return;
         }
@@ -412,16 +874,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             "You can only view curriculum reviews for programs on your board or frameworks you own.");
     }
 
-    private async Task EnsureExpertOnProgramBoardAsync(Expert expert, Program program)
-    {
-        if (await IsBoardMemberAsync(program.Id, expert.Id))
-        {
-            return;
-        }
-
-        throw ErrorHelper.Forbidden("You can only review programs on your program board.");
-    }
-
     private async Task<bool> IsBoardMemberAsync(Guid programId, Guid expertId)
     {
         var board = await _unitOfWork.ProgramBoards.FirstOrDefaultAsync(
@@ -429,36 +881,26 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         return board != null;
     }
 
-    private async Task<List<Expert>> ResolveSubmitReviewersAsync(Program program, ProgramFramework? framework)
+    private async Task<List<Expert>> ResolveSubmitReviewersAsync(Program program)
     {
         if (!program.AdvisorExpertId.HasValue)
+        {
             throw ErrorHelper.BadRequest("Assign a responsible expert before submitting for review.");
+        }
+
         var advisor = await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value);
         if (advisor == null || advisor.IsDeleted || !advisor.UserId.HasValue || advisor.UserId == Guid.Empty)
         {
             throw ErrorHelper.BadRequest("The responsible expert must have an active linked login before submission.");
         }
+
         var user = await _unitOfWork.Users.GetByIdAsync(advisor.UserId.Value);
         if (user == null || user.IsDeleted || user.Role != RoleType.Expert || user.Status != AccountStatus.Active)
-            throw ErrorHelper.BadRequest("The responsible expert must have an active linked login before submission.");
-        return [advisor];
-    }
-
-    private async Task<List<Expert>> GetBoardExpertsWithLoginAsync(Guid programId)
-    {
-        var boards = await _unitOfWork.ProgramBoards.GetAllAsync(
-            b => b.ProgramId == programId && !b.IsDeleted);
-        var expertIds = boards.Select(b => b.ExpertId).Distinct().ToList();
-        if (expertIds.Count == 0)
         {
-            return [];
+            throw ErrorHelper.BadRequest("The responsible expert must have an active linked login before submission.");
         }
 
-        var experts = await _unitOfWork.Experts.GetAllAsync(
-            e => expertIds.Contains(e.Id) && !e.IsDeleted);
-        return experts
-            .Where(e => e.UserId.HasValue && e.UserId.Value != Guid.Empty)
-            .ToList();
+        return [advisor];
     }
 
     private async Task<User> RequireManagerOrAdminAsync()
@@ -594,6 +1036,8 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             ExpertId = review.ExpertId,
             ExpertName = expert?.FullName,
             Round = review.Round,
+            SubmissionId = review.SubmissionId,
+            SnapshotAvailable = review.SnapshotAvailable,
             Decision = review.Decision,
             Comment = review.Comment,
             ReviewedAt = review.ReviewedAt,
@@ -605,12 +1049,64 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
                     {
                         Id = s.Id,
                         CriterionId = s.FrameworkRubricCriterionId,
-                        CriterionName = criterion?.Name,
+                        CriterionName = !string.IsNullOrWhiteSpace(s.CriterionNameSnapshot)
+                            ? s.CriterionNameSnapshot
+                            : criterion?.Name,
                         Score = s.Score,
-                        MaxScore = criterion?.MaxScore ?? 0,
+                        MaxScore = s.MaxScoreSnapshot > 0
+                            ? s.MaxScoreSnapshot
+                            : criterion?.MaxScore ?? 0,
                         Comment = s.Comment,
                     };
                 })
                 .ToList(),
         };
+
+    private static ProgramReviewSubmissionSummaryDto MapSubmissionSummary(ProgramReviewSubmission s)
+        => new()
+        {
+            Id = s.Id,
+            SubmissionNumber = s.SubmissionNumber,
+            Status = s.Status,
+            AssignedAdvisorExpertId = s.AssignedAdvisorExpertId,
+            FrameworkVersionId = s.FrameworkVersionId,
+            SubmittedAt = s.SubmittedAt,
+            ClosedAt = s.ClosedAt,
+            ConcurrencyVersion = s.ConcurrencyVersion,
+        };
+
+    private static ProgramReviewSubmissionDetailDto MapSubmissionDetail(ProgramReviewSubmission s)
+        => new()
+        {
+            Id = s.Id,
+            ProgramId = s.ProgramId,
+            SubmissionNumber = s.SubmissionNumber,
+            Status = s.Status,
+            SubmittedByManagerId = s.SubmittedByManagerId,
+            AssignedAdvisorExpertId = s.AssignedAdvisorExpertId,
+            FrameworkVersionId = s.FrameworkVersionId,
+            CurriculumSnapshotJson = s.CurriculumSnapshotJson,
+            RubricSnapshotJson = s.RubricSnapshotJson,
+            SubmittedAt = s.SubmittedAt,
+            ClosedAt = s.ClosedAt,
+            ConcurrencyVersion = s.ConcurrencyVersion,
+        };
+
+    private static ProgramReviewDraftDto MapDraft(ProgramReviewDraft draft)
+    {
+        var scores = string.IsNullOrWhiteSpace(draft.ScoresJson)
+            ? []
+            : JsonSerializer.Deserialize<List<ReviewCriterionScoreRequest>>(draft.ScoresJson, DraftJsonOptions)
+              ?? [];
+
+        return new ProgramReviewDraftDto
+        {
+            Id = draft.Id,
+            SubmissionId = draft.SubmissionId,
+            Scores = scores,
+            OverallComment = draft.OverallComment,
+            ConcurrencyVersion = draft.ConcurrencyVersion,
+            LastSavedAt = draft.LastSavedAt,
+        };
+    }
 }

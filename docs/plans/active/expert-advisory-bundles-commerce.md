@@ -87,8 +87,8 @@ milestone until the current milestone has a successful commit.
 
 - [x] Milestone A — advisor assignment and shared framework versions; migration,
   tests, build, and commit.
-- [ ] Milestone B — advisory backend and review lifecycle; migration, tests,
-  build, and commit.
+- [x] Milestone B — advisory backend and review lifecycle; migration, tests,
+  build (commit pending explicit user request).
 - [ ] Milestone D — bundle catalog and enrollment foundation; migration, tests,
   build, and commit.
 - [ ] Milestone E — commerce and fulfillment; migration, tests, build, and commit.
@@ -107,11 +107,15 @@ milestone until the current milestone has a successful commit.
 - 2026-09-09: Preserve `Program.FrameworkId` only as a temporary migration/API
   compatibility concern; persisted program assignments pin
   `ProgramFrameworkVersion`.
-- 2026-09-09: Retain legacy framework payload columns and criterion identity FK
-  during this release so the EF migration is additive. Startup performs an
-  idempotent transaction that creates published version 1, pins programs and
-  criteria, and assigns only the framework author or sole eligible board expert.
-  This avoids manually editing generated migrations and preserves old rows.
+- 2026-09-09: Startup `MigrationExtensions` no longer backfills framework
+  versions or advisors. Seed creates published framework versions via
+  `EnsureFrameworkVersionAsync`. Existing production data must already have
+  been migrated by Milestone A EF migration / prior backfill before relying on
+  this path.
+- 2026-09-09: Milestone B adds advisory threads/messages/reads, immutable
+  review submissions with curriculum/rubric snapshots, private review drafts
+  (409 on stale concurrency), framework-check, revision diffs, and extended
+  decision bodies. Startup no longer runs framework/advisor SQL backfill.
 
 ## Validation
 
@@ -136,6 +140,18 @@ Milestone A evidence (2026-09-09):
   remains transactional/idempotent; a live existing-data run is retained as a
   final release gate rather than represented as passed.
 
+Milestone B evidence (2026-09-09):
+
+- Removed `MigrationExtensions` framework/advisor startup backfill (seed owns
+  version creation for reseeded environments).
+- Generated `20260909163926_AddProgramAdvisoryAndReviewSubmissions` with the
+  pinned EF 8.0.11 CLI; additive tables for submissions, drafts, advisory
+  threads/messages/reads, plus criterion/review snapshot columns.
+- `dotnet ef migrations has-pending-model-changes`: no pending model changes.
+- `dotnet test OboxSteam.Test/OboxSteam.Test.csproj`: 1,979 passed, 0 failed.
+- `dotnet build OboxSteam.API/OboxSteam.API.csproj`: succeeded (0 warnings).
+- Commit of Milestone B is deferred until explicitly requested.
+
 ## Result
 
-Pending implementation and requirement-by-requirement completion audit.
+Milestones A–B implemented on the backend; D–F and completion audit remain.

@@ -41,6 +41,11 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<FrameworkRubricCriterion> FrameworkRubricCriteria { get; }
     IGenericRepository<CurriculumReview> CurriculumReviews { get; }
     IGenericRepository<ReviewCriterionScore> ReviewCriterionScores { get; }
+    IGenericRepository<ProgramReviewSubmission> ProgramReviewSubmissions { get; }
+    IGenericRepository<ProgramReviewDraft> ProgramReviewDrafts { get; }
+    IGenericRepository<ProgramAdvisoryThread> ProgramAdvisoryThreads { get; }
+    IGenericRepository<ProgramAdvisoryMessage> ProgramAdvisoryMessages { get; }
+    IGenericRepository<ProgramAdvisoryRead> ProgramAdvisoryReads { get; }
     IGenericRepository<ClassSessionExpert> ClassSessionExperts { get; }
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }

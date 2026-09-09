@@ -137,6 +137,27 @@ public sealed class CurriculumReviewServiceTests
         return framework;
     }
 
+    private Guid SeedPendingSubmission(Guid? programId = null, Guid? advisorExpertId = null)
+    {
+        var submissionId = Guid.NewGuid();
+        _db.ProgramReviewSubmissions.Seed(new ProgramReviewSubmission
+        {
+            Id = submissionId,
+            ProgramId = programId ?? _programId,
+            SubmissionNumber = 1,
+            SubmittedByManagerId = _managerId,
+            AssignedAdvisorExpertId = advisorExpertId ?? _expertId,
+            FrameworkVersionId = _db.Programs.Items.FirstOrDefault(p => p.Id == (programId ?? _programId))?.FrameworkVersionId,
+            CurriculumSnapshotJson = """{"programId":"22222222-2222-2222-2222-222222222222","modules":[]}""",
+            RubricSnapshotJson = "[]",
+            Status = ProgramReviewSubmissionStatus.Pending,
+            SubmittedAt = _now,
+            ConcurrencyVersion = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+            IsDeleted = false,
+        });
+        return submissionId;
+    }
+
     private void SeedStaffAndOwner()
     {
         SeedUser(_managerId, RoleType.Manager, "USR-MGR");
@@ -170,6 +191,8 @@ public sealed class CurriculumReviewServiceTests
 
         Assert.Equal(ProgramStatus.PendingReview, result.Status);
         Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
+        Assert.Single(_db.ProgramReviewSubmissions.Items);
+        Assert.Equal(ProgramReviewSubmissionStatus.Pending, _db.ProgramReviewSubmissions.Items.Single().Status);
         var submitted = Assert.Single(_published);
         Assert.Equal(NotificationType.CurriculumReviewSubmitted, submitted.Type);
         Assert.Equal(_expertUserId, submitted.Audience.UserId);
@@ -260,12 +283,14 @@ public sealed class CurriculumReviewServiceTests
         SeedStaffAndOwner();
         SeedFramework();
         SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedPendingSubmission();
         var sut = CreateSut(_managerId);
 
         var result = await sut.WithdrawReviewAsync(_programId);
 
         Assert.Equal(ProgramStatus.Draft, result.Status);
         Assert.Empty(_db.CurriculumReviews.Items);
+        Assert.Equal(ProgramReviewSubmissionStatus.Withdrawn, _db.ProgramReviewSubmissions.Items.Single().Status);
     }
 
     [Fact]
@@ -409,11 +434,14 @@ public sealed class CurriculumReviewServiceTests
         SeedStaffAndOwner();
         SeedFramework();
         SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedPendingSubmission();
         var sut = CreateSut(_expertUserId);
 
         var result = await sut.ApproveAsync(_programId, null);
 
         Assert.Equal(CurriculumReviewDecision.Approved, result.Decision);
+        Assert.True(result.SnapshotAvailable);
+        Assert.NotNull(result.SubmissionId);
         Assert.Equal(1, result.Round);
         Assert.Equal(_now, result.ReviewedAt);
         Assert.Equal(ProgramStatus.Approved, _db.Programs.Items.Single().Status);
@@ -430,6 +458,7 @@ public sealed class CurriculumReviewServiceTests
         SeedStaffAndOwner();
         SeedProgram(status: ProgramStatus.PendingReview);
         SeedBoard(_programId, _expertId);
+        SeedPendingSubmission();
         var sut = CreateSut(_expertUserId);
 
         var result = await sut.ApproveAsync(_programId, null);
@@ -455,6 +484,7 @@ public sealed class CurriculumReviewServiceTests
             IsDeleted = false,
         });
         SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedPendingSubmission();
         var sut = CreateSut(_expertUserId);
 
         await Assert.ThrowsAsync<BadRequestException>(() => sut.ApproveAsync(_programId, null));
@@ -477,6 +507,7 @@ public sealed class CurriculumReviewServiceTests
             IsDeleted = false,
         });
         SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedPendingSubmission();
         var sut = CreateSut(_expertUserId);
 
         var result = await sut.ApproveAsync(_programId, new ApproveCurriculumReviewRequest
@@ -541,6 +572,7 @@ public sealed class CurriculumReviewServiceTests
         SeedStaffAndOwner();
         SeedFramework();
         SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedPendingSubmission();
         var sut = CreateSut(_expertUserId);
 
         await Assert.ThrowsAsync<BadRequestException>(
@@ -554,6 +586,9 @@ public sealed class CurriculumReviewServiceTests
         Assert.Equal(CurriculumReviewDecision.ChangesRequested, result.Decision);
         Assert.Equal("Chỗ A sai, điều chỉnh lại.", result.Comment);
         Assert.Equal(ProgramStatus.Draft, _db.Programs.Items.Single().Status);
+        Assert.Contains(
+            _db.ProgramAdvisoryThreads.Items,
+            t => t.Type == ProgramAdvisoryThreadType.RequiredChange && t.Status == ProgramAdvisoryThreadStatus.Open);
         var returned = Assert.Single(_published);
         Assert.Equal(NotificationType.CurriculumReviewChangesRequested, returned.Type);
         Assert.Equal(NotificationAudienceKind.Managers, returned.Audience.Kind);
@@ -570,12 +605,20 @@ public sealed class CurriculumReviewServiceTests
         SeedStaffAndOwner();
         SeedFramework();
         SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedPendingSubmission();
         var sut = CreateSut(_expertUserId);
 
         await sut.RequestChangesAsync(_programId, new RequestCurriculumChangesRequest
         {
             Comment = "Need another live session.",
         });
+
+        // Resolve required-change thread created by request-changes so approval can proceed.
+        foreach (var thread in _db.ProgramAdvisoryThreads.Items
+                     .Where(t => t.Type == ProgramAdvisoryThreadType.RequiredChange))
+        {
+            thread.Status = ProgramAdvisoryThreadStatus.Resolved;
+        }
 
         var managerSut = CreateSut(_managerId);
         await managerSut.SubmitForReviewAsync(_programId);
@@ -610,6 +653,8 @@ public sealed class CurriculumReviewServiceTests
 
         Assert.Single(result);
         Assert.Equal("Fix module 1", result[0].Comment);
+        Assert.False(result[0].SnapshotAvailable);
+        Assert.Null(result[0].SubmissionId);
     }
 
     [Fact]
