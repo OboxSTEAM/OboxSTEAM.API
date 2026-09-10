@@ -116,6 +116,9 @@ milestone until the current milestone has a successful commit.
   review submissions with curriculum/rubric snapshots, private review drafts
   (409 on stale concurrency), framework-check, revision diffs, and extended
   decision bodies. Startup no longer runs framework/advisor SQL backfill.
+- 2026-09-10: ADV seed series added (`SeedService.ExpertAdvisoryDemo.cs`) for
+  Milestone B FE fixtures: Maker Advisory Family + `PRG-ADV-*` scenarios A–H
+  and advisory inbox rows after robotics `SeedNotificationsAsync`.
 
 ## Validation
 

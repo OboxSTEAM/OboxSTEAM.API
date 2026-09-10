@@ -78,6 +78,7 @@ public partial class SeedService : ISeedService
         await SeedExtendedResearchDataAsync();
         await SeedDemoShowcaseProgramsAsync();
         await SeedReviewDraftProgramsAsync();
+        await SeedExpertAdvisoryDemoAsync();
         await SeedMaterialsAsync();
         await EnsureClassSessionCoverageAsync();
         await RealignSeedSessionWallClocksAsync();
@@ -97,6 +98,7 @@ public partial class SeedService : ISeedService
         await SeedPaymentsAsync();
         await SeedProgramReviewsAsync();
         await SeedNotificationsAsync();
+        await SeedExpertAdvisoryNotificationsAsync();
         await RestoreInProgressPurchasesClosedDuringSeedAsync();
         await SeedTaughtModuleAssessmentSafetyNetAsync();
         await SeedPassedSubmissionsForElapsedRequiredWindowsAsync();
