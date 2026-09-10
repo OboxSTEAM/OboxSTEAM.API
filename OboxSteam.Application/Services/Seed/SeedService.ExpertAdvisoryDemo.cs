@@ -1181,16 +1181,30 @@ public partial class SeedService
             s => s.ProgramId == program.Id && s.SubmissionNumber == submissionNumber);
         if (submission == null)
         {
+            // Insert only. GenericRepository.Update → DbSet.Update flips Added to
+            // Modified, so SaveChanges issues UPDATE ... WHERE ConcurrencyVersion
+            // and Postgres reports 0 rows (DbUpdateConcurrencyException).
             submission = new ProgramReviewSubmission
             {
                 Id = Guid.NewGuid(),
                 ProgramId = program.Id,
                 SubmissionNumber = submissionNumber,
+                SubmittedByManagerId = managerId,
+                AssignedAdvisorExpertId = advisorExpertId,
+                FrameworkVersionId = frameworkVersionId,
+                CurriculumSnapshotJson = curriculumJson,
+                RubricSnapshotJson = rubricJson,
+                Status = status,
+                SubmittedAt = submittedAt,
+                ClosedAt = closedAt,
+                ConcurrencyVersion = Guid.NewGuid(),
                 CreatedAt = submittedAt,
                 CreatedBy = managerId,
                 IsDeleted = false,
             };
             await _unitOfWork.ProgramReviewSubmissions.AddAsync(submission);
+            await _unitOfWork.SaveChangesAsync();
+            return submission;
         }
 
         submission.SubmittedByManagerId = managerId;
@@ -1201,9 +1215,11 @@ public partial class SeedService
         submission.Status = status;
         submission.SubmittedAt = submittedAt;
         submission.ClosedAt = closedAt;
-        submission.ConcurrencyVersion = Guid.NewGuid();
         submission.IsDeleted = false;
+        // Stamp UpdatedAt first while OriginalValues.ConcurrencyVersion still
+        // matches the row, then rotate the token so the WHERE clause can succeed.
         await _unitOfWork.ProgramReviewSubmissions.Update(submission);
+        submission.ConcurrencyVersion = Guid.NewGuid();
         await _unitOfWork.SaveChangesAsync();
         return submission;
     }
