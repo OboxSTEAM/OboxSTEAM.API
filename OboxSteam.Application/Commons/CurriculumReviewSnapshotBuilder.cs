@@ -47,9 +47,13 @@ public static class CurriculumReviewSnapshotBuilder
             var moduleSnap = new ModuleSnapshot
             {
                 Id = module.Id,
+                Code = module.Code,
                 Name = module.Name,
                 Order = module.ModuleOrder,
                 Type = module.ModuleType.ToString(),
+                ModuleType = module.ModuleType.ToString(),
+                PrerequisiteModuleId = module.PrerequisiteModuleId,
+                IsMandatory = module.IsMandatory,
                 LearningOutcomes = module.LearningOutcomes,
                 Courses = [],
                 Activities = [],
@@ -62,39 +66,27 @@ public static class CurriculumReviewSnapshotBuilder
             {
                 foreach (var course in courses)
                 {
-                    moduleSnap.Courses.Add(new CourseSnapshot
+                    var courseSnap = new CourseSnapshot
                     {
                         Id = course.Id,
+                        Code = course.Code,
                         Name = course.Name,
                         Order = course.CourseOrder,
                         Description = course.Description,
-                    });
+                        Activities = [],
+                    };
+                    moduleSnap.Courses.Add(courseSnap);
 
                     if (tree.ActivitiesByCourseId.TryGetValue(course.Id, out var activities))
                     {
                         foreach (var activity in activities)
                         {
-                            moduleSnap.Activities.Add(new ActivitySnapshot
+                            var activitySnap = MapActivity(activity, course.Id, null, activity.ActivityOrder, tree);
+                            courseSnap.Activities.Add(activitySnap);
+                            moduleSnap.Activities.Add(activitySnap);
+                            if (activitySnap.Material != null)
                             {
-                                Id = activity.Id,
-                                CourseId = course.Id,
-                                Name = activity.Name,
-                                Type = activity.ActivityType.ToString(),
-                                Order = activity.ActivityOrder,
-                                Description = activity.Description,
-                            });
-
-                            if (tree.MaterialsByActivityId.TryGetValue(activity.Id, out var material)
-                                && material is { IsDeleted: false })
-                            {
-                                moduleSnap.Materials.Add(new MaterialSnapshot
-                                {
-                                    Id = material.Id,
-                                    ActivityId = activity.Id,
-                                    Title = material.Title,
-                                    Type = material.MaterialType.ToString(),
-                                    Url = material.FileUrl,
-                                });
+                                moduleSnap.Materials.Add(activitySnap.Material);
                             }
                         }
                     }
@@ -121,17 +113,22 @@ public static class CurriculumReviewSnapshotBuilder
             {
                 foreach (var milestone in milestones)
                 {
-                    moduleSnap.Milestones.Add(new MilestoneSnapshot
+                    var milestoneSnap = new MilestoneSnapshot
                     {
                         Id = milestone.Id,
+                        Code = milestone.Code,
                         Title = milestone.Title,
                         Order = milestone.MilestoneOrder,
                         IsCapstone = milestone.IsCapstone,
                         Description = milestone.Description,
-                    });
+                        AssignmentId = milestone.AssignmentId,
+                        Activities = [],
+                    };
+                    moduleSnap.Milestones.Add(milestoneSnap);
 
                     if (tree.AssignmentsById.TryGetValue(milestone.AssignmentId, out var deliverable))
                     {
+                        milestoneSnap.Assignment = MapAssignment(deliverable, "ResearchMilestone");
                         moduleSnap.Assignments.Add(MapAssignment(deliverable, "ResearchMilestone"));
                     }
 
@@ -146,27 +143,13 @@ public static class CurriculumReviewSnapshotBuilder
                             }
 
                             order++;
-                            moduleSnap.Activities.Add(new ActivitySnapshot
+                            var activitySnap = MapActivity(activity, null, milestone.Id, order, tree);
+                            milestoneSnap.ActivityIds.Add(activity.Id);
+                            milestoneSnap.Activities.Add(activitySnap);
+                            moduleSnap.Activities.Add(activitySnap);
+                            if (activitySnap.Material != null)
                             {
-                                Id = activity.Id,
-                                MilestoneId = milestone.Id,
-                                Name = activity.Name,
-                                Type = activity.ActivityType.ToString(),
-                                Order = order,
-                                Description = activity.Description,
-                            });
-
-                            if (tree.MaterialsByActivityId.TryGetValue(activity.Id, out var material)
-                                && material is { IsDeleted: false })
-                            {
-                                moduleSnap.Materials.Add(new MaterialSnapshot
-                                {
-                                    Id = material.Id,
-                                    ActivityId = activity.Id,
-                                    Title = material.Title,
-                                    Type = material.MaterialType.ToString(),
-                                    Url = material.FileUrl,
-                                });
+                                moduleSnap.Materials.Add(activitySnap.Material);
                             }
                         }
                     }
@@ -180,8 +163,70 @@ public static class CurriculumReviewSnapshotBuilder
         {
             ProgramId = tree.Program.Id,
             ProgramName = tree.Program.Name,
+            Program = new ProgramSnapshot
+            {
+                Id = tree.Program.Id,
+                Name = tree.Program.Name,
+                Code = tree.Program.Code,
+                Description = tree.Program.Description,
+                SkillsGained = tree.Program.SkillsGained,
+                FrameworkVersionId = tree.Program.FrameworkVersionId,
+            },
             Modules = modules,
         };
+    }
+
+    private static ActivitySnapshot MapActivity(
+        Activity activity,
+        Guid? courseId,
+        Guid? milestoneId,
+        int order,
+        ProgramCurriculumTreeSnapshot tree)
+    {
+        MaterialSnapshot? materialSnapshot = null;
+        if (tree.MaterialsByActivityId.TryGetValue(activity.Id, out var material)
+            && material is { IsDeleted: false })
+        {
+            materialSnapshot = new MaterialSnapshot
+            {
+                Id = material.Id,
+                ActivityId = activity.Id,
+                Title = material.Title,
+                MaterialType = material.MaterialType.ToString(),
+                Type = material.MaterialType.ToString(),
+                FileName = GetFileName(material.FileUrl),
+                Url = material.FileUrl,
+                FileSizeBytes = material.FileSizeBytes,
+            };
+        }
+
+        return new ActivitySnapshot
+        {
+            Id = activity.Id,
+            CourseId = courseId,
+            MilestoneId = milestoneId,
+            Name = activity.Name,
+            Type = activity.ActivityType.ToString(),
+            ActivityType = activity.ActivityType.ToString(),
+            Order = order,
+            Description = activity.Description,
+            DurationMinutes = activity.DurationMinutes,
+            RequireQrCheckin = activity.RequireQrCheckin,
+            RequireMediaEvidence = activity.RequireMediaEvidence,
+            Material = materialSnapshot,
+        };
+    }
+
+    private static string? GetFileName(string? fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri)
+            ? Path.GetFileName(uri.LocalPath)
+            : Path.GetFileName(fileUrl);
     }
 
     public static SubmissionChangesDto Diff(
@@ -209,8 +254,12 @@ public static class CurriculumReviewSnapshotBuilder
 
         var previous = Deserialize(previousJson);
         var current = Deserialize(currentJson);
-        var prevItems = Flatten(previous).ToDictionary(i => (i.TargetType, i.Id));
-        var currItems = Flatten(current).ToDictionary(i => (i.TargetType, i.Id));
+        var prevItems = Flatten(previous)
+            .GroupBy(i => (i.TargetType, i.Id))
+            .ToDictionary(g => g.Key, g => g.First());
+        var currItems = Flatten(current)
+            .GroupBy(i => (i.TargetType, i.Id))
+            .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var (key, item) in currItems)
         {
@@ -232,15 +281,17 @@ public static class CurriculumReviewSnapshotBuilder
                 });
             }
 
-            foreach (var (field, detail) in DiffFields(prior, item))
+            foreach (var change in DiffFields(prior, item))
             {
                 result.Modified.Add(new SubmissionChangeItemDto
                 {
                     TargetType = item.TargetType,
                     Id = item.Id,
                     Label = item.Label,
-                    Field = field,
-                    Detail = detail,
+                    Field = change.Field,
+                    Before = change.Before,
+                    After = change.After,
+                    Detail = change.Detail,
                 });
             }
         }
@@ -274,10 +325,18 @@ public static class CurriculumReviewSnapshotBuilder
         => new()
         {
             Id = assignment.Id,
+            Code = assignment.Code,
+            ModuleId = assignment.ModuleId,
+            CourseId = assignment.CourseId,
             Title = assignment.Title,
             Scope = scope,
             Description = assignment.Description,
             AssignmentType = assignment.AssignmentType.ToString(),
+            MaxPoints = assignment.MaxPoints,
+            PassScore = assignment.PassScore,
+            IsRequiredForModulePass = assignment.IsRequiredForModulePass,
+            TimeLimitMinutes = assignment.TimeLimitMinutes,
+            MaxAttempts = assignment.MaxAttempts,
         };
 
     private static IEnumerable<FlatItem> Flatten(CurriculumSnapshotDocument doc)
@@ -289,9 +348,14 @@ public static class CurriculumReviewSnapshotBuilder
                 module.Id,
                 module.Name,
                 module.Order,
-                module.Type,
-                null,
-                string.Join("|", module.LearningOutcomes ?? []));
+                new Dictionary<string, string?>
+                {
+                    ["code"] = module.Code,
+                    ["type"] = string.IsNullOrWhiteSpace(module.ModuleType) ? module.Type : module.ModuleType,
+                    ["prerequisiteModuleId"] = module.PrerequisiteModuleId?.ToString(),
+                    ["isMandatory"] = module.IsMandatory.ToString(),
+                    ["learningOutcomes"] = string.Join("|", module.LearningOutcomes ?? []),
+                });
 
             foreach (var course in module.Courses)
             {
@@ -300,33 +364,36 @@ public static class CurriculumReviewSnapshotBuilder
                     course.Id,
                     course.Name,
                     course.Order,
-                    null,
-                    course.Description,
-                    null);
+                    new Dictionary<string, string?>
+                    {
+                        ["code"] = course.Code,
+                        ["description"] = course.Description,
+                    });
+
+                foreach (var activity in course.Activities)
+                {
+                    yield return ToActivityItem(activity);
+                    if (activity.Material != null)
+                    {
+                        yield return ToMaterialItem(activity.Material);
+                    }
+                }
             }
 
-            foreach (var activity in module.Activities)
+            if (module.Courses.All(c => c.Activities.Count == 0))
             {
-                yield return new FlatItem(
-                    ProgramAdvisoryTargetType.Activity,
-                    activity.Id,
-                    activity.Name,
-                    activity.Order,
-                    activity.Type,
-                    activity.Description,
-                    null);
+                foreach (var activity in module.Activities)
+                {
+                    yield return ToActivityItem(activity);
+                }
             }
 
-            foreach (var material in module.Materials)
+            if (module.Courses.All(c => c.Activities.All(a => a.Material == null)))
             {
-                yield return new FlatItem(
-                    ProgramAdvisoryTargetType.Material,
-                    material.Id,
-                    material.Title,
-                    0,
-                    material.Type,
-                    material.Url,
-                    null);
+                foreach (var material in module.Materials)
+                {
+                    yield return ToMaterialItem(material);
+                }
             }
 
             foreach (var assignment in module.Assignments)
@@ -336,9 +403,19 @@ public static class CurriculumReviewSnapshotBuilder
                     assignment.Id,
                     assignment.Title,
                     0,
-                    assignment.Scope,
-                    assignment.Description,
-                    assignment.AssignmentType);
+                    new Dictionary<string, string?>
+                    {
+                        ["code"] = assignment.Code,
+                        ["moduleId"] = assignment.ModuleId.ToString(),
+                        ["courseId"] = assignment.CourseId?.ToString(),
+                        ["scope"] = assignment.Scope,
+                        ["description"] = assignment.Description,
+                        ["assignmentType"] = assignment.AssignmentType,
+                        ["maxPoints"] = assignment.MaxPoints.ToString(),
+                        ["passScore"] = assignment.PassScore.ToString(),
+                        ["availableFrom"] = assignment.AvailableFrom?.ToString("O"),
+                        ["dueAt"] = assignment.DueAt?.ToString("O"),
+                    });
             }
 
             foreach (var milestone in module.Milestones)
@@ -348,33 +425,83 @@ public static class CurriculumReviewSnapshotBuilder
                     milestone.Id,
                     milestone.Title,
                     milestone.Order,
-                    milestone.IsCapstone ? "Capstone" : null,
-                    milestone.Description,
-                    null);
+                    new Dictionary<string, string?>
+                    {
+                        ["code"] = milestone.Code,
+                        ["isCapstone"] = milestone.IsCapstone.ToString(),
+                        ["description"] = milestone.Description,
+                        ["assignmentId"] = milestone.AssignmentId.ToString(),
+                        ["activityIds"] = string.Join("|", milestone.ActivityIds),
+                    });
+
+                foreach (var activity in milestone.Activities)
+                {
+                    yield return ToActivityItem(activity);
+                    if (activity.Material != null)
+                    {
+                        yield return ToMaterialItem(activity.Material);
+                    }
+                }
             }
         }
     }
 
-    private static IEnumerable<(string Field, string Detail)> DiffFields(FlatItem prior, FlatItem current)
+    private static FlatItem ToActivityItem(ActivitySnapshot activity)
+        => new(
+            ProgramAdvisoryTargetType.Activity,
+            activity.Id,
+            activity.Name,
+            activity.Order,
+            new Dictionary<string, string?>
+            {
+                ["type"] = string.IsNullOrWhiteSpace(activity.ActivityType) ? activity.Type : activity.ActivityType,
+                ["description"] = activity.Description,
+                ["durationMinutes"] = activity.DurationMinutes?.ToString(),
+                ["requireQrCheckin"] = activity.RequireQrCheckin.ToString(),
+                ["requireMediaEvidence"] = activity.RequireMediaEvidence.ToString(),
+            });
+
+    private static FlatItem ToMaterialItem(MaterialSnapshot material)
+        => new(
+            ProgramAdvisoryTargetType.Material,
+            material.Id,
+            material.Title,
+            0,
+            new Dictionary<string, string?>
+            {
+                ["materialType"] = string.IsNullOrWhiteSpace(material.MaterialType) ? material.Type : material.MaterialType,
+                ["fileName"] = material.FileName,
+                ["url"] = material.Url,
+            });
+
+    private static IEnumerable<FlatFieldChange> DiffFields(FlatItem prior, FlatItem current)
     {
-        if (!string.Equals(prior.TypeOrScope, current.TypeOrScope, StringComparison.Ordinal))
+        var fields = prior.Fields.Keys
+            .Concat(current.Fields.Keys)
+            .Distinct(StringComparer.Ordinal);
+        foreach (var field in fields)
         {
-            yield return ("type", $"{prior.TypeOrScope} → {current.TypeOrScope}");
-        }
+            prior.Fields.TryGetValue(field, out var before);
+            current.Fields.TryGetValue(field, out var after);
+            if (string.Equals(before, after, StringComparison.Ordinal))
+            {
+                continue;
+            }
 
-        if (!string.Equals(prior.Description, current.Description, StringComparison.Ordinal))
-        {
-            yield return ("description", "Changed");
-        }
-
-        if (!string.Equals(prior.Extra, current.Extra, StringComparison.Ordinal))
-        {
-            yield return ("detail", "Changed");
+            yield return new FlatFieldChange(
+                field,
+                before,
+                after,
+                $"{before ?? "(empty)"} → {after ?? "(empty)"}");
         }
 
         if (!string.Equals(prior.Label, current.Label, StringComparison.Ordinal))
         {
-            yield return ("label", $"{prior.Label} → {current.Label}");
+            yield return new FlatFieldChange(
+                "label",
+                prior.Label,
+                current.Label,
+                $"{prior.Label} → {current.Label}");
         }
     }
 
@@ -391,15 +518,17 @@ public static class CurriculumReviewSnapshotBuilder
         Guid Id,
         string Label,
         int Order,
-        string? TypeOrScope,
-        string? Description,
-        string? Extra);
+        IReadOnlyDictionary<string, string?> Fields);
+
+    private sealed record FlatFieldChange(string Field, string? Before, string? After, string Detail);
 
     public sealed class CurriculumSnapshotDocument
     {
         public Guid ProgramId { get; set; }
 
         public string? ProgramName { get; set; }
+
+        public ProgramSnapshot Program { get; set; } = new();
 
         public List<ModuleSnapshot> Modules { get; set; } = [];
     }
@@ -408,11 +537,19 @@ public static class CurriculumReviewSnapshotBuilder
     {
         public Guid Id { get; set; }
 
+        public string Code { get; set; } = null!;
+
         public string Name { get; set; } = null!;
 
         public int Order { get; set; }
 
         public string Type { get; set; } = null!;
+
+        public string ModuleType { get; set; } = null!;
+
+        public Guid? PrerequisiteModuleId { get; set; }
+
+        public bool IsMandatory { get; set; }
 
         public string[]? LearningOutcomes { get; set; }
 
@@ -431,11 +568,15 @@ public static class CurriculumReviewSnapshotBuilder
     {
         public Guid Id { get; set; }
 
+        public string Code { get; set; } = null!;
+
         public string Name { get; set; } = null!;
 
         public int Order { get; set; }
 
         public string? Description { get; set; }
+
+        public List<ActivitySnapshot> Activities { get; set; } = [];
     }
 
     public sealed class ActivitySnapshot
@@ -450,9 +591,19 @@ public static class CurriculumReviewSnapshotBuilder
 
         public string Type { get; set; } = null!;
 
+        public string ActivityType { get; set; } = null!;
+
         public int Order { get; set; }
 
         public string? Description { get; set; }
+
+        public int? DurationMinutes { get; set; }
+
+        public bool RequireQrCheckin { get; set; }
+
+        public bool RequireMediaEvidence { get; set; }
+
+        public MaterialSnapshot? Material { get; set; }
     }
 
     public sealed class MaterialSnapshot
@@ -465,12 +616,24 @@ public static class CurriculumReviewSnapshotBuilder
 
         public string Type { get; set; } = null!;
 
+        public string MaterialType { get; set; } = null!;
+
+        public string? FileName { get; set; }
+
         public string? Url { get; set; }
+
+        public long? FileSizeBytes { get; set; }
     }
 
     public sealed class AssignmentSnapshot
     {
         public Guid Id { get; set; }
+
+        public string Code { get; set; } = null!;
+
+        public Guid ModuleId { get; set; }
+
+        public Guid? CourseId { get; set; }
 
         public string Title { get; set; } = null!;
 
@@ -479,11 +642,27 @@ public static class CurriculumReviewSnapshotBuilder
         public string? Description { get; set; }
 
         public string? AssignmentType { get; set; }
+
+        public int MaxPoints { get; set; }
+
+        public decimal PassScore { get; set; }
+
+        public bool IsRequiredForModulePass { get; set; }
+
+        public int? TimeLimitMinutes { get; set; }
+
+        public int MaxAttempts { get; set; }
+
+        public DateTime? AvailableFrom { get; set; }
+
+        public DateTime? DueAt { get; set; }
     }
 
     public sealed class MilestoneSnapshot
     {
         public Guid Id { get; set; }
+
+        public string Code { get; set; } = null!;
 
         public string Title { get; set; } = null!;
 
@@ -492,6 +671,14 @@ public static class CurriculumReviewSnapshotBuilder
         public bool IsCapstone { get; set; }
 
         public string? Description { get; set; }
+
+        public Guid AssignmentId { get; set; }
+
+        public AssignmentSnapshot? Assignment { get; set; }
+
+        public List<ActivitySnapshot> Activities { get; set; } = [];
+
+        public List<Guid> ActivityIds { get; set; } = [];
     }
 
     public sealed class RubricCriterionSnapshot
@@ -507,5 +694,20 @@ public static class CurriculumReviewSnapshotBuilder
         public int MaxScore { get; set; }
 
         public int DisplayOrder { get; set; }
+    }
+
+    public sealed class ProgramSnapshot
+    {
+        public Guid Id { get; set; }
+
+        public string Name { get; set; } = null!;
+
+        public string Code { get; set; } = null!;
+
+        public string? Description { get; set; }
+
+        public string? SkillsGained { get; set; }
+
+        public Guid? FrameworkVersionId { get; set; }
     }
 }

@@ -13,4 +13,10 @@ public sealed class CreateAdvisoryThreadRequest
     public string Message { get; set; } = null!;
 
     public Guid? SubmissionId { get; set; }
+
+    public ProgramAdvisoryAnchorKind? AnchorKind { get; set; }
+
+    public string? AnchorField { get; set; }
+
+    public string? AnchorQuote { get; set; }
 }

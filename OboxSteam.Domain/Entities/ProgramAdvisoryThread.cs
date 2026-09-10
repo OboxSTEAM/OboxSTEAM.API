@@ -17,6 +17,9 @@ public sealed class ProgramAdvisoryThread : BaseEntity
     public string? TargetContext { get; set; }
     public ProgramAdvisoryThreadType Type { get; set; }
     public ProgramAdvisoryThreadStatus Status { get; set; }
+    public ProgramAdvisoryAnchorKind? AnchorKind { get; set; }
+    [MaxLength(100)] public string? AnchorField { get; set; }
+    [MaxLength(1000)] public string? AnchorQuote { get; set; }
     public DateTime LastMessageAt { get; set; }
     public ICollection<ProgramAdvisoryMessage> Messages { get; set; } = [];
 }

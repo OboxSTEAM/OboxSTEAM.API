@@ -623,6 +623,7 @@ public class OboxSteamDbContext : DbContext
                 .HasFilter("\"IsDeleted\" = false");
             entity.HasIndex(t => new { t.ProgramId, t.Type, t.Status })
                 .HasFilter("\"IsDeleted\" = false");
+            entity.Property(t => t.AnchorKind).HasConversion<string>();
         });
 
         modelBuilder.Entity<ProgramAdvisoryMessage>(entity =>

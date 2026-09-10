@@ -26,6 +26,14 @@ public sealed class AdvisoryThreadDto
 
     public ProgramAdvisoryThreadStatus Status { get; set; }
 
+    public ProgramAdvisoryAnchorKind? AnchorKind { get; set; }
+
+    public string? AnchorField { get; set; }
+
+    public string? AnchorQuote { get; set; }
+
+    public string? LatestMessagePreview { get; set; }
+
     public DateTime LastMessageAt { get; set; }
 
     public DateTime CreatedAt { get; set; }

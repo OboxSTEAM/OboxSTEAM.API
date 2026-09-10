@@ -15,6 +15,14 @@ public sealed class SubmissionChangesDto
     public List<SubmissionChangeItemDto> Reordered { get; set; } = [];
 
     public List<SubmissionChangeItemDto> Modified { get; set; } = [];
+
+    public int AddedCount => Added.Count;
+
+    public int RemovedCount => Removed.Count;
+
+    public int ReorderedCount => Reordered.Count;
+
+    public int ModifiedCount => Modified.Count;
 }
 
 public sealed class SubmissionChangeItemDto
@@ -26,6 +34,10 @@ public sealed class SubmissionChangeItemDto
     public string Label { get; set; } = null!;
 
     public string? Field { get; set; }
+
+    public string? Before { get; set; }
+
+    public string? After { get; set; }
 
     public string? Detail { get; set; }
 }

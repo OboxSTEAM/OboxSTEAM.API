@@ -14,7 +14,19 @@ public interface IProgramAdvisoryService
 
     Task<ProgramAdvisoryWorkspaceDto> GetAdvisoryWorkspaceAsync(Guid programId);
 
-    Task<IReadOnlyList<AdvisoryThreadDto>> GetThreadsAsync(Guid programId);
+    Task<IReadOnlyList<AdvisoryThreadDto>> GetThreadsAsync(
+        Guid programId,
+        Guid? submissionId = null,
+        ProgramAdvisoryTargetType? targetType = null,
+        Guid? targetId = null,
+        ProgramAdvisoryThreadStatus? status = null,
+        ProgramAdvisoryThreadType? type = null);
+
+    Task<AdvisoryBoardDto> GetBoardAsync(Guid programId, Guid submissionId);
+
+    Task<IReadOnlyList<AdvisoryThreadPinSummaryDto>> GetPinSummariesAsync(
+        Guid programId,
+        Guid submissionId);
 
     Task<AdvisoryThreadDto> CreateThreadAsync(Guid programId, CreateAdvisoryThreadRequest request);
 

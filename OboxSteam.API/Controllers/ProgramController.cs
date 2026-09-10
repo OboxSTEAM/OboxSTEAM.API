@@ -455,6 +455,26 @@ public class ProgramController : ControllerBase
             result, "200", "Advisory workspace retrieved successfully."));
     }
 
+    [HttpGet("{id:guid}/advisory/board")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "Get the submission-scoped hybrid advisory board",
+        Description = "Returns the frozen curriculum tree, submission pins, revision summary, and framework highlights.")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryBoardDto>), 200)]
+    public async Task<IActionResult> GetAdvisoryBoard(
+        [FromRoute] Guid id,
+        [FromQuery] Guid submissionId)
+    {
+        if (submissionId == Guid.Empty)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "submissionId is required."));
+        }
+
+        var result = await _programAdvisoryService.GetBoardAsync(id, submissionId);
+        return Ok(ApiResult<AdvisoryBoardDto>.Success(
+            result, "200", "Advisory board retrieved successfully."));
+    }
+
     [HttpGet("{id:guid}/framework-check")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "Structured framework checks for a program")]
@@ -469,11 +489,36 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "List advisory threads for a program")]
     [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryThreadDto>>), 200)]
-    public async Task<IActionResult> GetAdvisoryThreads([FromRoute] Guid id)
+    public async Task<IActionResult> GetAdvisoryThreads(
+        [FromRoute] Guid id,
+        [FromQuery] Guid? submissionId = null,
+        [FromQuery] ProgramAdvisoryTargetType? targetType = null,
+        [FromQuery] Guid? targetId = null,
+        [FromQuery] ProgramAdvisoryThreadStatus? status = null,
+        [FromQuery] ProgramAdvisoryThreadType? type = null)
     {
-        var result = await _programAdvisoryService.GetThreadsAsync(id);
+        var result = await _programAdvisoryService.GetThreadsAsync(
+            id, submissionId, targetType, targetId, status, type);
         return Ok(ApiResult<IReadOnlyList<AdvisoryThreadDto>>.Success(
             result, "200", "Advisory threads retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/advisory-threads/pins")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Get advisory pin counts grouped by curriculum node")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryThreadPinSummaryDto>>), 200)]
+    public async Task<IActionResult> GetAdvisoryThreadPins(
+        [FromRoute] Guid id,
+        [FromQuery] Guid submissionId)
+    {
+        if (submissionId == Guid.Empty)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "submissionId is required."));
+        }
+
+        var result = await _programAdvisoryService.GetPinSummariesAsync(id, submissionId);
+        return Ok(ApiResult<IReadOnlyList<AdvisoryThreadPinSummaryDto>>.Success(
+            result, "200", "Advisory pin summaries retrieved successfully."));
     }
 
     [HttpPost("{id:guid}/advisory-threads")]

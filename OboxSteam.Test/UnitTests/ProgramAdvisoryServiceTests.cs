@@ -202,9 +202,10 @@ public sealed class ProgramAdvisoryServiceTests
     public async Task RequiredChange_BlocksApproval_SuggestionDoesNot()
     {
         SeedBase();
-        SeedPendingSubmission();
+        var submissionId = SeedPendingSubmission();
         await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
         {
+            SubmissionId = submissionId,
             TargetType = ProgramAdvisoryTargetType.Program,
             Type = ProgramAdvisoryThreadType.RequiredChange,
             Message = "Fix module order.",
@@ -216,6 +217,7 @@ public sealed class ProgramAdvisoryServiceTests
         _db.ProgramAdvisoryThreads.Items.Single().Status = ProgramAdvisoryThreadStatus.Resolved;
         await CreateAdvisorySut(_otherExpertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
         {
+            SubmissionId = submissionId,
             TargetType = ProgramAdvisoryTargetType.Program,
             Type = ProgramAdvisoryThreadType.Suggestion,
             Message = "Optional polish.",
@@ -223,6 +225,82 @@ public sealed class ProgramAdvisoryServiceTests
 
         var approved = await CreateReviewSut(_expertUserId).ApproveAsync(_programId, null);
         Assert.Equal(CurriculumReviewDecision.Approved, approved.Decision);
+    }
+
+    [Fact]
+    public async Task ActiveReview_RequiresSubmissionIdForNewThreads()
+    {
+        SeedBase();
+        SeedPendingSubmission();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+            {
+                TargetType = ProgramAdvisoryTargetType.Program,
+                Type = ProgramAdvisoryThreadType.Suggestion,
+                Message = "Anchor this suggestion to the submitted review.",
+            }));
+    }
+
+    [Fact]
+    public async Task Manager_CannotCreateAdvisoryThread()
+    {
+        SeedBase();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            CreateAdvisorySut(_managerId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+            {
+                TargetType = ProgramAdvisoryTargetType.Program,
+                Type = ProgramAdvisoryThreadType.Suggestion,
+                Message = "Managers only address expert feedback.",
+            }));
+    }
+
+    [Fact]
+    public async Task FieldAnchor_AndLatestPreview_AreReturned()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+
+        var result = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = submissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.Suggestion,
+            AnchorKind = ProgramAdvisoryAnchorKind.Field,
+            AnchorField = "description",
+            Message = "Please make the program description more specific.",
+        });
+
+        Assert.Equal(ProgramAdvisoryAnchorKind.Field, result.AnchorKind);
+        Assert.Equal("description", result.AnchorField);
+        Assert.Equal("Please make the program description more specific.", result.LatestMessagePreview);
+        Assert.Equal(ProgramAdvisoryAnchorKind.Field, _db.ProgramAdvisoryThreads.Items.Single().AnchorKind);
+    }
+
+    [Fact]
+    public async Task Board_ReturnsSubmissionTreePinsAndChanges()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+        await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = submissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.Suggestion,
+            Message = "Use a stronger project brief.",
+        });
+
+        var board = await CreateAdvisorySut(_expertUserId).GetBoardAsync(_programId, submissionId);
+
+        Assert.Equal(submissionId, board.SubmissionId);
+        Assert.Equal(_programId, board.Program.Id);
+        Assert.Equal("Robotics", board.Program.Name);
+        Assert.Empty(board.Curriculum.Modules);
+        var pin = Assert.Single(board.ThreadPins);
+        Assert.Equal(submissionId, pin.SubmissionId);
+        Assert.Equal("Use a stronger project brief.", pin.LastMessagePreview);
+        Assert.Equal(1, pin.MessageCount);
     }
 
     [Fact]

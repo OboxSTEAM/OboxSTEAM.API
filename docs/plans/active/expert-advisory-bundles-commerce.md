@@ -119,6 +119,13 @@ milestone until the current milestone has a successful commit.
 - 2026-09-10: ADV seed series added (`SeedService.ExpertAdvisoryDemo.cs`) for
   Milestone B FE fixtures: Maker Advisory Family + `PRG-ADV-*` scenarios A–H
   and advisory inbox rows after robotics `SeedNotificationsAsync`.
+- 2026-09-10: Hybrid board follow-up enriches the immutable curriculum snapshot
+  with stable program/module/course/activity/material/assignment/milestone
+  fields and nesting; adds the submission-scoped board and pin aggregates,
+  advisory list filters/previews, field anchors, and structured change
+  before/after values. Material metadata remains embedded in the snapshot, so
+  a signed preview endpoint is deferred until a provider-backed preview
+  requirement is accepted.
 
 ## Validation
 
@@ -128,6 +135,15 @@ milestone until the current milestone has a successful commit.
 - Repository-required checks:
   `dotnet test OboxSteam.Test/OboxSteam.Test.csproj` and
   `dotnet build OboxSteam.API/OboxSteam.API.csproj` before each milestone commit.
+
+Hybrid board follow-up evidence (2026-09-10):
+
+- Generated `20260910165319_AddAdvisoryThreadAnchors`; migration adds nullable
+  anchor kind/field/quote columns only.
+- `dotnet test OboxSteam.Test/OboxSteam.Test.csproj --no-restore`: 1,984 passed,
+  0 failed.
+- `dotnet build OboxSteam.API/OboxSteam.API.csproj --no-restore`: succeeded;
+  only existing nullable warnings remain.
 
 Milestone A evidence (2026-09-09):
 

@@ -54,10 +54,18 @@ Lifecycle endpoints (Manager/Admin unless noted):
 - `GET /api/programs/{id}/advisory` — workspace summary: participants,
   permissions (`canAdvise` / `canDecide` / `canEditCurriculum` /
   `canAssignAdvisor`), latest submission, feedback counts.
+- `GET /api/programs/{id}/advisory/board?submissionId=${uuid}` — the
+  submission-scoped hybrid board aggregate: immutable curriculum tree, thread
+  pins, revision summary, and framework highlights.
 - `GET /api/programs/{id}/framework-check` — structured expected/actual checks
   against the pinned framework version.
 - `GET|POST /api/programs/{id}/advisory-threads` — contextual Suggestion /
-  RequiredChange threads. Only the advisor creates RequiredChange.
+  RequiredChange threads. Reads support `submissionId`, node/status/type
+  filters; review-time creates require `submissionId`. Field anchors are
+  persisted as Node, Field, or Quote metadata. Only the responsible advisor
+  creates RequiredChange.
+- `GET /api/programs/{id}/advisory-threads/pins?submissionId=${uuid}` —
+  submission-scoped open-required/open-suggestion counts by curriculum node.
 - `GET|POST /api/programs/{id}/advisory-threads/{threadId}/messages`
 - `PATCH /api/programs/{id}/advisory-threads/{threadId}/status` — Manager marks
   Addressed; advisor resolves/reopens RequiredChange.

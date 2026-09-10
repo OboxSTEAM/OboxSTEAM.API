@@ -114,6 +114,18 @@ Create, update, delete for:
   receive public `coTeach` / `coTeaches` cards only — never feedback text or
   rating.
 
+### Expert advisory board permissions
+
+- Expert board participants may read the submission-scoped board and frozen
+  snapshot nodes, and may create Suggestion threads.
+- The responsible advisor may additionally create RequiredChange threads and
+  decide the pending assessment.
+- Manager/Admin may read the board and address threads. They cannot decide an
+  expert assessment.
+- Advisory users never mutate curriculum through these endpoints. Curriculum
+  mutations remain Manager/Admin operations and are locked while a program is
+  PendingReview or Approved.
+
 ### Mentor skill visibility
 
 - Mentor (own): all skills.

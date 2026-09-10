@@ -731,7 +731,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         return rows.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList();
     }
 
-    private static List<FrameworkCheckItemDto> BuildStructuredChecks(
+    public static List<FrameworkCheckItemDto> BuildStructuredChecks(
         ProgramFrameworkVersion framework,
         ProgramCurriculumTreeSnapshot snapshot)
     {
@@ -828,6 +828,113 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         }
 
         return checks;
+    }
+
+    public static List<FrameworkCheckItemDto> BuildStructuredChecks(
+        ProgramFrameworkVersion framework,
+        CurriculumReviewSnapshotBuilder.CurriculumSnapshotDocument snapshot)
+    {
+        var checks = new List<FrameworkCheckItemDto>();
+        if (framework.MinModules.HasValue)
+        {
+            checks.Add(new FrameworkCheckItemDto
+            {
+                Code = "MinModules",
+                Label = "Minimum modules",
+                Expected = framework.MinModules.Value.ToString(),
+                Actual = snapshot.Modules.Count.ToString(),
+                Passed = snapshot.Modules.Count >= framework.MinModules.Value,
+                AffectedCurriculumLinks = snapshot.Modules
+                    .Select(m => new AffectedCurriculumLinkDto
+                    {
+                        TargetType = ProgramAdvisoryTargetType.Module,
+                        Id = m.Id,
+                        Label = m.Name,
+                    })
+                    .ToList(),
+            });
+        }
+
+        var activities = snapshot.Modules
+            .SelectMany(m => m.Courses.SelectMany(c => c.Activities)
+                .Concat(m.Milestones.SelectMany(ms => ms.Activities))
+                .Concat(m.Activities))
+            .GroupBy(a => a.Id)
+            .Select(g => g.First())
+            .ToList();
+
+        AddActivityCheck(
+            checks,
+            framework.MinOfflineSessions,
+            "MinOfflineSessions",
+            "Minimum Offline sessions",
+            ActivityType.Offline,
+            activities);
+        AddActivityCheck(
+            checks,
+            framework.MinLiveSessions,
+            "MinLiveSessions",
+            "Minimum LiveOnline sessions",
+            ActivityType.LiveOnline,
+            activities);
+
+        if (framework.RequireCapstoneResearchMilestone == true)
+        {
+            var capstones = snapshot.Modules
+                .SelectMany(m => m.Milestones)
+                .Where(m => m.IsCapstone)
+                .ToList();
+            checks.Add(new FrameworkCheckItemDto
+            {
+                Code = "RequireCapstoneResearchMilestone",
+                Label = "Capstone research milestone",
+                Expected = "At least 1",
+                Actual = capstones.Count.ToString(),
+                Passed = capstones.Count >= 1,
+                AffectedCurriculumLinks = capstones
+                    .Select(m => new AffectedCurriculumLinkDto
+                    {
+                        TargetType = ProgramAdvisoryTargetType.ResearchMilestone,
+                        Id = m.Id,
+                        Label = m.Title,
+                    })
+                    .ToList(),
+            });
+        }
+
+        return checks;
+    }
+
+    private static void AddActivityCheck(
+        ICollection<FrameworkCheckItemDto> checks,
+        int? minimum,
+        string code,
+        string label,
+        ActivityType type,
+        IReadOnlyList<CurriculumReviewSnapshotBuilder.ActivitySnapshot> activities)
+    {
+        if (!minimum.HasValue)
+        {
+            return;
+        }
+
+        var matching = activities.Where(a => string.Equals(a.Type, type.ToString(), StringComparison.Ordinal)).ToList();
+        checks.Add(new FrameworkCheckItemDto
+        {
+            Code = code,
+            Label = label,
+            Expected = minimum.Value.ToString(),
+            Actual = matching.Count.ToString(),
+            Passed = matching.Count >= minimum.Value,
+            AffectedCurriculumLinks = matching
+                .Select(a => new AffectedCurriculumLinkDto
+                {
+                    TargetType = ProgramAdvisoryTargetType.Activity,
+                    Id = a.Id,
+                    Label = a.Name,
+                })
+                .ToList(),
+        });
     }
 
     private async Task<Program> GetActiveProgramAsync(Guid programId)
