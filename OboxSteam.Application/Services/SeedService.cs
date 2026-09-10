@@ -32,7 +32,7 @@ public partial class SeedService : ISeedService
         _loggerService.LogInformation("Starting seed all data");
         _seedNow = DateTime.UtcNow;
 
-        using (SeedExecutionGuard.Begin())
+        using (await SeedExecutionGuard.BeginAsync())
         {
             await SeedAllDataCoreAsync();
         }

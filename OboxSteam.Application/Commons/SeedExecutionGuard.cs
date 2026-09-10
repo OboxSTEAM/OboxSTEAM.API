@@ -7,16 +7,43 @@ namespace OboxSteam.Application.Commons;
 /// </summary>
 public static class SeedExecutionGuard
 {
+    private static readonly SemaphoreSlim Gate = new(1, 1);
     private static int _depth;
 
     public static bool IsSeeding => Volatile.Read(ref _depth) > 0;
 
-    public static IDisposable Begin() => new Scope();
+    public static async Task<IDisposable> BeginAsync(CancellationToken cancellationToken = default)
+    {
+        await Gate.WaitAsync(cancellationToken);
+        Interlocked.Increment(ref _depth);
+        return new Scope();
+    }
+
+    /// <summary>
+    /// Synchronous compatibility entry point for tests and synchronous callers.
+    /// Production seed execution should use <see cref="BeginAsync"/>.
+    /// </summary>
+    public static IDisposable Begin()
+    {
+        Gate.Wait();
+        Interlocked.Increment(ref _depth);
+        return new Scope();
+    }
 
     private sealed class Scope : IDisposable
     {
-        public Scope() => Interlocked.Increment(ref _depth);
+        private bool _disposed;
 
-        public void Dispose() => Interlocked.Decrement(ref _depth);
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            Interlocked.Decrement(ref _depth);
+            Gate.Release();
+        }
     }
 }
