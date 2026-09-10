@@ -33,6 +33,12 @@ public interface IMaterialService
     Task<MaterialResponseDto?> GetMaterialByActivityAsync(Guid activityId);
 
     /// <summary>
+    /// Get material through the public curriculum surface. Only Active programs
+    /// may be resolved without enrollment or an advisor/manager role.
+    /// </summary>
+    Task<MaterialResponseDto?> GetMaterialByActivityForPublicAsync(Guid activityId);
+
+    /// <summary>
     /// Get material for an enrolled student with a fresh presigned file URL.
     /// </summary>
     Task<MaterialResponseDto?> GetMaterialByActivityForEnrollmentAsync(Guid activityId, Guid programEnrollmentId);

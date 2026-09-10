@@ -30,6 +30,7 @@ public sealed class ProgramAdvisoryServiceTests
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<ICurrentTime> _currentTime = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly Mock<IBlobService> _blobService = new();
     private readonly List<NotificationCommand> _published = [];
 
     private ProgramAdvisoryService CreateAdvisorySut(Guid currentUserId)
@@ -44,11 +45,15 @@ public sealed class ProgramAdvisoryServiceTests
             .Setup(n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()))
             .Callback<IReadOnlyList<NotificationCommand>, CancellationToken>((commands, _) => _published.AddRange(commands))
             .Returns(Task.CompletedTask);
+        _blobService
+            .Setup(b => b.GetFileUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string key, CancellationToken _) => $"https://signed.test/{key}");
         return new ProgramAdvisoryService(
             _db,
             _claimsService.Object,
             _currentTime.Object,
-            _notificationPublisher.Object);
+            _notificationPublisher.Object,
+            _blobService.Object);
     }
 
     private CurriculumReviewService CreateReviewSut(Guid currentUserId)

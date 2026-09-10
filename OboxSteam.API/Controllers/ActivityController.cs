@@ -15,13 +15,16 @@ public class ActivityController : ControllerBase
 {
     private readonly IActivityService _activityService;
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
+    private readonly IMaterialService _materialService;
 
     public ActivityController(
         IActivityService activityService,
-        IEnrollmentCurriculumService enrollmentCurriculumService)
+        IEnrollmentCurriculumService enrollmentCurriculumService,
+        IMaterialService materialService)
     {
         _activityService = activityService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
+        _materialService = materialService;
     }
 
     // =========================================================================
@@ -97,6 +100,13 @@ public class ActivityController : ControllerBase
         if (User.IsInRole("Student") && result.Material != null)
         {
             result.Material.FileUrl = null;
+        }
+        else if (result.Material != null)
+        {
+            result.Material = User.Identity?.IsAuthenticated == true
+                && (User.IsInRole("Expert") || User.IsInRole("Manager") || User.IsInRole("Admin"))
+                ? await _materialService.GetMaterialByActivityAsync(id)
+                : await _materialService.GetMaterialByActivityForPublicAsync(id);
         }
 
         if (programEnrollmentId.HasValue)

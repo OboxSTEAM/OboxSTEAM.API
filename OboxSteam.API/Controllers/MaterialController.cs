@@ -104,7 +104,7 @@ public class MaterialController : ControllerBase
     /// Get the material for a SelfPaced activity.
     /// </summary>
     [HttpGet("activity/{activityId:guid}")]
-    [Authorize(Roles = "Student,Parent,Admin,Manager")]
+    [AllowAnonymous]
     [SwaggerOperation(
         Summary = "Get material by activity",
         Description = "Returns the learning material for a SelfPaced activity. Students must pass programEnrollmentId for enrollment-scoped access.")]
@@ -137,9 +137,14 @@ public class MaterialController : ControllerBase
                 activityId,
                 programEnrollmentId.Value);
         }
-        else
+        else if (User.Identity?.IsAuthenticated == true
+                 && (User.IsInRole("Expert") || User.IsInRole("Manager") || User.IsInRole("Admin")))
         {
             result = await _materialService.GetMaterialByActivityAsync(activityId);
+        }
+        else
+        {
+            result = await _materialService.GetMaterialByActivityForPublicAsync(activityId);
         }
 
         if (result == null)

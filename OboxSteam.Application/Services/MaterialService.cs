@@ -128,7 +128,34 @@ public class MaterialService : IMaterialService
             "UploadMaterialAsync completed. MaterialId={MaterialId}, Type={Type}, Size={Size}B",
             material.Id, materialType, file.Length);
 
-        return MapToDto(material);
+        return await MapToPresignedDtoAsync(material);
+    }
+
+    /// <inheritdoc />
+    public async Task<MaterialResponseDto?> GetMaterialByActivityForPublicAsync(Guid activityId)
+    {
+        _logger.LogInformation("GetMaterialByActivityForPublicAsync: ActivityId={ActivityId}", activityId);
+
+        var activity = await _unitOfWork.Activities.GetByIdAsync(activityId);
+        MaterialValidator.ValidateActivityExists(activity, activityId);
+        MaterialValidator.ValidateSelfPacedOnly(activity!);
+
+        var course = await _unitOfWork.Courses.GetByIdAsync(activity!.CourseId);
+        var module = course == null
+            ? null
+            : await _unitOfWork.Modules.GetByIdAsync(course.ModuleId);
+        var program = module == null
+            ? null
+            : await _unitOfWork.Programs.GetByIdAsync(module.ProgramId);
+        if (program == null || program.IsDeleted || program.Status != ProgramStatus.Active)
+        {
+            throw ErrorHelper.Forbidden(
+                "Curriculum materials become publicly available only after the program is Active.");
+        }
+
+        var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
+            m => m.ActivityId == activityId);
+        return material == null ? null : await MapToPresignedDtoAsync(material);
     }
 
     // =========================================================================
@@ -250,7 +277,7 @@ public class MaterialService : IMaterialService
         var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
             m => m.ActivityId == activityId);
 
-        return material == null ? null : MapToDto(material);
+        return material == null ? null : await MapToPresignedDtoAsync(material);
     }
 
     /// <inheritdoc />
@@ -314,7 +341,7 @@ public class MaterialService : IMaterialService
         }
 
         _logger.LogInformation("UpdateMaterialAsync completed. MaterialId={MaterialId}", materialId);
-        return MapToDto(material);
+        return await MapToPresignedDtoAsync(material);
     }
 
     // =========================================================================
@@ -413,6 +440,13 @@ public class MaterialService : IMaterialService
         UploaderId    = m.CreatedBy,
         UploadedAt    = m.CreatedAt
     };
+
+    private async Task<MaterialResponseDto> MapToPresignedDtoAsync(Material material)
+    {
+        var dto = MapToDto(material);
+        dto.FileUrl = await ResolvePresignedFileUrlAsync(material.FileUrl);
+        return dto;
+    }
 
     private async Task<string?> ResolvePresignedFileUrlAsync(string? fileUrl)
     {

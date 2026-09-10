@@ -387,6 +387,30 @@ public sealed class MaterialServiceTests
     }
 
     [Fact]
+    public async Task PublicGetByActivity_RejectsDraftProgram()
+    {
+        SeedMaterial();
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.GetMaterialByActivityForPublicAsync(_activityId));
+    }
+
+    [Fact]
+    public async Task PublicGetByActivity_ReturnsPresignedUrl_WhenProgramIsActive()
+    {
+        var (program, _, _, _) = SeedCurriculum();
+        program.Status = ProgramStatus.Active;
+        SeedMaterial();
+        var sut = CreateSut();
+
+        var result = await sut.GetMaterialByActivityForPublicAsync(_activityId);
+
+        Assert.NotNull(result);
+        Assert.Equal("https://signed.example.com/materials/pdf/file.pdf", result!.FileUrl);
+    }
+
+    [Fact]
     public async Task GetByActivity_Throws_WhenActivityNotSelfPaced()
     {
         SeedCurriculum(_otherActivityId, ActivityType.Offline);

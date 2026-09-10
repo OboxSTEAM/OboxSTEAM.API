@@ -16,17 +16,20 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
     private readonly IClaimsService _claimsService;
     private readonly ICurrentTime _currentTime;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly IBlobService _blobService;
 
     public ProgramAdvisoryService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         ICurrentTime currentTime,
-        INotificationPublisher notificationPublisher)
+        INotificationPublisher notificationPublisher,
+        IBlobService blobService)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _currentTime = currentTime;
         _notificationPublisher = notificationPublisher;
+        _blobService = blobService;
     }
 
     public async Task<Pagination<AdvisoryMineItemDto>> GetAdvisoryMineAsync(
@@ -306,6 +309,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var submission = await RequireSubmissionAsync(programId, submissionId);
         var snapshot = CurriculumReviewSnapshotBuilder.TryDeserialize(submission.CurriculumSnapshotJson)
             ?? new CurriculumReviewSnapshotBuilder.CurriculumSnapshotDocument();
+        await HydrateMaterialPreviewUrlsAsync(snapshot);
 
         var previous = (await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
                 s => s.ProgramId == programId
@@ -885,6 +889,56 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                 Passed = check.Passed,
             }))
             .ToList();
+    }
+
+    private async Task HydrateMaterialPreviewUrlsAsync(
+        CurriculumReviewSnapshotBuilder.CurriculumSnapshotDocument snapshot)
+    {
+        var materialsById = snapshot.Modules
+            .SelectMany(module => module.Courses
+                .SelectMany(course => course.Activities)
+                .Concat(module.Milestones.SelectMany(milestone => milestone.Activities))
+                .Concat(module.Activities))
+            .Where(activity => activity.Material != null)
+            .Select(activity => activity.Material!)
+            .Where(material => material.Id != Guid.Empty && !string.IsNullOrWhiteSpace(material.Url))
+            .GroupBy(material => material.Id)
+            .ToList();
+
+        foreach (var materialGroup in materialsById)
+        {
+            var key = ExtractS3Key(materialGroup.First().Url!);
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            var previewUrl = await _blobService.GetFileUrlAsync(key);
+            if (!string.IsNullOrWhiteSpace(previewUrl))
+            {
+                foreach (var material in materialGroup)
+                {
+                    material.Url = previewUrl;
+                }
+            }
+        }
+    }
+
+    private static string? ExtractS3Key(string fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+        {
+            return fileUrl;
+        }
+
+        if (!fileUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            return fileUrl.TrimStart('/');
+        }
+
+        return Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri)
+            ? Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/'))
+            : fileUrl;
     }
 
     private static (string Label, string? Context) ResolveSnapshotTarget(

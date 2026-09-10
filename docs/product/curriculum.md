@@ -256,6 +256,13 @@ one material per activity. LiveOnline and Offline activities do not have materia
 
 Types via `MaterialType` enum. API: `/api/materials`.
 
+Material files are not public while a program is `Draft`, `PendingReview`, or
+`Approved`. Experts, Managers, and Admins can receive an authorized preview;
+students use enrollment-scoped access. Once a program is `Active`, the activity
+material endpoint may be called without enrollment and returns a time-limited
+preview URL. The S3 `materials/*` prefix is excluded from the bucket's anonymous
+read policy.
+
 ## Experts
 
 Experts associated with programs via `ProgramBoard` and the `Expert` entity.

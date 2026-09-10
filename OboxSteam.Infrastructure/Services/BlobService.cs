@@ -81,8 +81,9 @@ public class BlobService : IBlobService
     }
 
     /// <summary>
-    /// Sets a public-read policy on the bucket so that objects can be viewed/downloaded
-    /// via direct URL (e.g. https://{bucket}.s3.{region}.amazonaws.com/{key}).
+    /// Sets a public-read policy on the bucket so that non-curriculum objects can
+    /// be viewed/downloaded via direct URL. Curriculum materials are excluded and
+    /// must be served through an authorized or presigned request.
     /// Also disables S3 Block Public Access for the bucket.
     /// </summary>
     private async Task SetPublicReadPolicyAsync(CancellationToken cancellationToken = default)
@@ -111,7 +112,7 @@ public class BlobService : IBlobService
                         "Effect": "Allow",
                         "Principal": "*",
                         "Action": ["s3:GetObject"],
-                        "Resource": ["arn:aws:s3:::{{_bucketName}}/*"]
+                        "NotResource": ["arn:aws:s3:::{{_bucketName}}/materials/*"]
                     }
                 ]
             }
@@ -159,7 +160,9 @@ public class BlobService : IBlobService
     }
 
     /// <summary>
-    /// Builds a public HTTPS URL for an object already in S3.
+    /// Builds the canonical HTTPS URL for an object already in S3. Curriculum
+    /// material URLs are canonical storage references; callers must presign them
+    /// before returning them to a client.
     /// <paramref name="s3Key"/> is the bucket-relative key (e.g. <c>media/file_conv.mp4</c>).
     /// </summary>
     public Task<string> GetPreviewUrlAsync(string s3Key)
