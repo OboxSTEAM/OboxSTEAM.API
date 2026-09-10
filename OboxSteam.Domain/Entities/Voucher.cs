@@ -19,6 +19,9 @@ public class Voucher : BaseEntity
     /// <summary>Fixed amount off after ownership deduction. Null when using percent off.</summary>
     public decimal? AmountOff { get; set; }
 
+    /// <summary>Null means the code is effective immediately.</summary>
+    public DateTime? StartsAt { get; set; }
+
     /// <summary>Null means the code does not expire.</summary>
     public DateTime? ExpiryAt { get; set; }
 
@@ -29,6 +32,9 @@ public class Voucher : BaseEntity
     public int? MaxUsagePerStudent { get; set; }
 
     public VoucherScope Scope { get; set; }
+
+    /// <summary>Draft until <see cref="StartsAt"/>; then <see cref="VoucherStatus.Active"/>.</summary>
+    public VoucherStatus Status { get; set; } = VoucherStatus.Draft;
 
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
 }

@@ -615,6 +615,8 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<Voucher>(entity =>
         {
             entity.HasIndex(v => v.Code).IsUnique();
+            entity.HasIndex(v => v.Status);
+            entity.Property(v => v.Status).HasDefaultValue(VoucherStatus.Draft);
 
             entity.Property(v => v.PercentOff).HasPrecision(18, 2);
             entity.Property(v => v.AmountOff).HasPrecision(18, 2);
@@ -637,6 +639,9 @@ public class OboxSteamDbContext : DbContext
                 t.HasCheckConstraint(
                     "CK_Vouchers_MaxUsagePerStudentPositive",
                     "\"MaxUsagePerStudent\" IS NULL OR \"MaxUsagePerStudent\" > 0");
+                t.HasCheckConstraint(
+                    "CK_Vouchers_StartsAtBeforeExpiryAt",
+                    "\"StartsAt\" IS NULL OR \"ExpiryAt\" IS NULL OR \"StartsAt\" < \"ExpiryAt\"");
             });
         });
 
