@@ -1291,14 +1291,16 @@ public partial class SeedService
             return;
         }
 
-        var thread = await _unitOfWork.ProgramAdvisoryThreads.FirstOrDefaultAsync(
+        var existing = await _unitOfWork.ProgramAdvisoryThreads.FirstOrDefaultAsync(
             t => t.ProgramId == program.Id
                  && t.SubmissionId == submissionId
                  && t.TargetType == targetType
                  && t.TargetId == targetId
                  && t.Type == type
                  && !t.IsDeleted);
-        if (thread == null)
+        ProgramAdvisoryThread thread;
+        var isNew = existing == null;
+        if (existing == null)
         {
             thread = new ProgramAdvisoryThread
             {
@@ -1324,6 +1326,7 @@ public partial class SeedService
         }
         else
         {
+            thread = existing;
             thread.TargetLabel = targetLabel;
             thread.Type = type;
             thread.Status = status;
@@ -1331,7 +1334,6 @@ public partial class SeedService
             thread.AnchorField = anchorField;
             thread.AnchorQuote = anchorQuote;
             thread.IsDeleted = false;
-            await _unitOfWork.ProgramAdvisoryThreads.Update(thread);
         }
 
         var messages = await _unitOfWork.ProgramAdvisoryMessages.GetAllAsync(
@@ -1361,7 +1363,14 @@ public partial class SeedService
         }
 
         thread.LastMessageAt = _seedNow.AddHours(-1);
-        await _unitOfWork.ProgramAdvisoryThreads.Update(thread);
+        // DbSet.Update on an Added thread flips it to Modified. SaveChanges then
+        // INSERTs messages first and UPDATEs a thread row that does not exist,
+        // which trips FK_ProgramAdvisoryMessages_ProgramAdvisoryThreads_ThreadId.
+        if (!isNew)
+        {
+            await _unitOfWork.ProgramAdvisoryThreads.Update(thread);
+        }
+
         await _unitOfWork.SaveChangesAsync();
     }
 
