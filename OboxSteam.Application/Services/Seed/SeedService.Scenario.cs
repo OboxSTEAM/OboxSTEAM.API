@@ -17,8 +17,10 @@ public partial class SeedService
 
     /// <summary>
     /// In-progress Robotics purchase on CLS-ROBOTICS-CURRENT (theory done, sensors
-    /// underway / research opening). STD-001 is the hero student; STD-002 holds the
-    /// in-progress research design-brief draft once the cohort has started module 3.
+    /// underway / research opening). STD-001 is the hero student and the Slice 7
+    /// retail owner for bundle price-quote (already holds Active PRG-ROBOTICS).
+    /// STD-002 holds the in-progress research design-brief draft once the cohort
+    /// has started module 3.
     /// </summary>
     private static readonly string[] RoboticsCurrentStudentCodes =
     [
@@ -26,7 +28,11 @@ public partial class SeedService
         "STD-022", "STD-023", "STD-024", "STD-025",
     ];
 
-    /// <summary>Finished Robotics on CLS-ROBOTICS-PAST (certificate + capstone on STD-009).</summary>
+    /// <summary>
+    /// Finished Robotics on CLS-ROBOTICS-PAST (certificate + capstone on STD-009).
+    /// STD-011 also holds the Slice 7 Robotics bundle mid-path (intro Completed,
+    /// intermediate just unlocked).
+    /// </summary>
     private static readonly string[] RoboticsPastStudentCodes =
     [
         "STD-009", "STD-010", "STD-011", "STD-012",

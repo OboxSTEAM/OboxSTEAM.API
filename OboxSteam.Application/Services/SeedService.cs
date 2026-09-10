@@ -95,6 +95,7 @@ public partial class SeedService : ISeedService
         await SeedGradedCapstoneSubmissionForUiAsync();
         await SeedCompletedProgramCertificatesAsync();
         await SeedPaymentsAsync();
+        await SeedBundlesAndVouchersAsync();
         await SeedProgramReviewsAsync();
         await SeedNotificationsAsync();
         await RestoreInProgressPurchasesClosedDuringSeedAsync();

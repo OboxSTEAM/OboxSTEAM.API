@@ -268,34 +268,8 @@ public sealed class VoucherService : IVoucherService
 
     private async Task<decimal> ComputeBundleBaseAmount(Guid studentId, Guid bundleId)
     {
-        var bundle = await _unitOfWork.ProgramBundles.GetByIdAsync(bundleId);
-        if (bundle == null || bundle.IsDeleted)
-            throw ErrorHelper.NotFound($"Bundle '{bundleId}' not found.");
-
-        if (bundle.Status != ProgramBundleStatus.Active)
-            throw ErrorHelper.BadRequest("Bundle is not available for purchase.");
-
-        var items = await _unitOfWork.ProgramBundleItems.GetAllAsync(
-            i => i.BundleId == bundleId && !i.IsDeleted);
-        var programIds = items.Select(i => i.ProgramId).Distinct().ToList();
-        if (programIds.Count == 0)
-            return ClampNonNegative(bundle.Price);
-
-        var ownedEnrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
-            pe => pe.StudentId == studentId
-                  && !pe.IsDeleted
-                  && programIds.Contains(pe.ProgramId)
-                  && (pe.Status == EnrollmentStatus.Active || pe.Status == EnrollmentStatus.Completed));
-
-        var ownedProgramIds = ownedEnrollments.Select(pe => pe.ProgramId).Distinct().ToList();
-        decimal ownedRetail = 0;
-        foreach (var programId in ownedProgramIds)
-        {
-            var program = await _unitOfWork.Programs.GetByIdAsync(programId);
-            ownedRetail += program?.Price ?? 0;
-        }
-
-        return ClampNonNegative(bundle.Price - ownedRetail);
+        var quote = await BundlePricingHelper.ComputeOwnershipQuote(_unitOfWork, studentId, bundleId);
+        return quote.PriceAfterOwnership;
     }
 
     private async Task<decimal> ComputeProgramBaseAmount(Guid programId)
