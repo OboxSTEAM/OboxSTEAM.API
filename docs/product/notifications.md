@@ -18,7 +18,7 @@ inbox title and body. Email failure is logged and does not roll back the inbox.
 | Existing `IEmailService` templates (Vietnamese) | Parent payment request (checkout link), payment invoice, enrollment confirmation, staff Mentor/Expert credentials |
 | Not emailed | All other catalog types, including `PaymentSucceeded` / `ProgramActivated` / `ParentPaymentRequested` (covered by the templates above) |
 
-`SessionStartingSoon` is a catalog event (also emailed via `NotificationEmailPriority`).
+`SessionStartingSoon` is a catalog event (inbox + SignalR only; not emailed).
 Assignment due-soon reminders and overdue alerts are not catalog events yet.
 
 `NotificationService` provides inbox queries and read-state operations; it does

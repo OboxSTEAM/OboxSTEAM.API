@@ -6,8 +6,8 @@ namespace OboxSteam.Application.Notifications;
 /// Types that also send transactional email after inbox persist + SignalR.
 /// Rich payment emails (parent checkout link, invoice, enrollment confirmation)
 /// stay on <c>IEmailService</c> and are excluded here to avoid duplicate mail
-/// without a payment CTA. Session/assignment reminder types should be added
-/// when those catalog events exist.
+/// without a payment CTA. <c>SessionStartingSoon</c> stays inbox/SignalR only
+/// (high fan-out; not emailed on free-tier Resend).
 /// </summary>
 public static class NotificationEmailPriority
 {
@@ -19,8 +19,7 @@ public static class NotificationEmailPriority
         NotificationType.PaymentFailed,
         NotificationType.PaymentCancelled,
         NotificationType.ResearchReturnedForRevision,
-        NotificationType.ResearchWorkSubmitted,
-        NotificationType.SessionStartingSoon
+        NotificationType.ResearchWorkSubmitted
     ];
 
     public static bool ShouldEmail(NotificationType type) => Types.Contains(type);

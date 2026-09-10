@@ -762,6 +762,7 @@ public sealed class NotificationTemplateEngineTests
         Assert.False(NotificationEmailPriority.ShouldEmail(NotificationType.PaymentSucceeded));
         Assert.False(NotificationEmailPriority.ShouldEmail(NotificationType.ProgramActivated));
         Assert.False(NotificationEmailPriority.ShouldEmail(NotificationType.ModuleCompleted));
+        Assert.False(NotificationEmailPriority.ShouldEmail(NotificationType.SessionStartingSoon));
     }
 
     private static NotificationPublisher CreatePublisher(
