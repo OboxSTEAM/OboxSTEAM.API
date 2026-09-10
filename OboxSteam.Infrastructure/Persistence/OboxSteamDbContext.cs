@@ -646,6 +646,116 @@ public class OboxSteamDbContext : DbContext
         });
 
         // =============================================
+        // PROGRAM BUNDLE (catalog pathway)
+        // =============================================
+        modelBuilder.Entity<ProgramBundle>(entity =>
+        {
+            entity.HasIndex(b => b.Code).IsUnique();
+
+            entity.Property(b => b.Price).HasPrecision(18, 2);
+
+            entity.HasOne(b => b.Framework)
+                .WithMany(f => f.ProgramBundles)
+                .HasForeignKey(b => b.FrameworkId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .IsRequired(false);
+
+            entity.HasIndex(b => b.FrameworkId)
+                .HasFilter("\"IsDeleted\" = false AND \"FrameworkId\" IS NOT NULL");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_ProgramBundles_PriceNonNegative",
+                "\"Price\" >= 0"));
+        });
+
+        // =============================================
+        // PROGRAM BUNDLE ITEM (ordered membership)
+        // =============================================
+        modelBuilder.Entity<ProgramBundleItem>(entity =>
+        {
+            entity.Property(i => i.RequiresPreviousCompletion)
+                .HasDefaultValue(false);
+
+            entity.HasOne(i => i.Bundle)
+                .WithMany(b => b.Items)
+                .HasForeignKey(i => i.BundleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(i => i.Program)
+                .WithMany(p => p.BundleItems)
+                .HasForeignKey(i => i.ProgramId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(i => new { i.BundleId, i.ProgramId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(i => new { i.BundleId, i.SortOrder })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasIndex(i => i.ProgramId)
+                .HasFilter("\"IsDeleted\" = false");
+        });
+
+        // =============================================
+        // BUNDLE ENROLLMENT (one open purchase per student+bundle)
+        // =============================================
+        modelBuilder.Entity<BundleEnrollment>(entity =>
+        {
+            entity.Property(e => e.ProgressPercent).HasPrecision(18, 2);
+
+            entity.HasOne(e => e.Student)
+                .WithMany(u => u.BundleEnrollments)
+                .HasForeignKey(e => e.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Bundle)
+                .WithMany(b => b.Enrollments)
+                .HasForeignKey(e => e.BundleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.StudentId, e.BundleId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('PendingPayment', 'Active')");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_BundleEnrollments_ProgressPercentRange",
+                "\"ProgressPercent\" >= 0 AND \"ProgressPercent\" <= 100"));
+        });
+
+        // =============================================
+        // VOUCHER (exactly one of percent / amount off)
+        // =============================================
+        modelBuilder.Entity<Voucher>(entity =>
+        {
+            entity.HasIndex(v => v.Code).IsUnique();
+
+            entity.Property(v => v.PercentOff).HasPrecision(18, 2);
+            entity.Property(v => v.AmountOff).HasPrecision(18, 2);
+
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_Vouchers_ExactlyOneDiscount",
+                    "(\"PercentOff\" IS NOT NULL AND \"AmountOff\" IS NULL)"
+                    + " OR (\"PercentOff\" IS NULL AND \"AmountOff\" IS NOT NULL)");
+                t.HasCheckConstraint(
+                    "CK_Vouchers_PercentOffRange",
+                    "\"PercentOff\" IS NULL OR (\"PercentOff\" > 0 AND \"PercentOff\" <= 100)");
+                t.HasCheckConstraint(
+                    "CK_Vouchers_AmountOffPositive",
+                    "\"AmountOff\" IS NULL OR \"AmountOff\" > 0");
+                t.HasCheckConstraint(
+                    "CK_Vouchers_UsageLimitPositive",
+                    "\"UsageLimit\" IS NULL OR \"UsageLimit\" > 0");
+                t.HasCheckConstraint(
+                    "CK_Vouchers_MaxUsagePerStudentPositive",
+                    "\"MaxUsagePerStudent\" IS NULL OR \"MaxUsagePerStudent\" > 0");
+            });
+        });
+
+        // =============================================
         // CURRICULUM REVIEW (expert audit rounds)
         // =============================================
         modelBuilder.Entity<CurriculumReview>(entity =>
@@ -1696,6 +1806,33 @@ public class OboxSteamDbContext : DbContext
                 .WithMany(a => a.ClassSessions)
                 .HasForeignKey(cs => cs.AssignmentId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =============================================
+        // CLASS SESSION EXPERT (co-teach invite + private mentor feedback)
+        // =============================================
+        modelBuilder.Entity<ClassSessionExpert>(entity =>
+        {
+            entity.HasOne(e => e.ClassSession)
+                .WithMany(cs => cs.ClassSessionExperts)
+                .HasForeignKey(e => e.ClassSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Expert)
+                .WithMany(x => x.ClassSessionExperts)
+                .HasForeignKey(e => e.ExpertId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.ClassSessionId, e.ExpertId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
+
+            entity.HasIndex(e => new { e.ExpertId, e.Status })
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_ClassSessionExperts_MentorFeedbackRatingRange",
+                "\"MentorFeedbackRating\" IS NULL OR (\"MentorFeedbackRating\" BETWEEN 1 AND 5)"));
         });
 
         // =============================================

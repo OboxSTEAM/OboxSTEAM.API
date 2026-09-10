@@ -1204,6 +1204,71 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ClassSessionId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
+
+                    b.HasIndex("ClassSessionId", "ExpertId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
+
+                    b.HasIndex("ExpertId", "Status")
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("ClassSessionExperts", t =>
+                        {
+                            t.HasCheckConstraint("CK_ClassSessionExperts_MentorFeedbackRatingRange", "\"MentorFeedbackRating\" IS NULL OR (\"MentorFeedbackRating\" BETWEEN 1 AND 5)");
+                        });
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ClassSessionExpert", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ExpertId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("MentorFeedback")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("MentorFeedbackAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("MentorFeedbackRating")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
                     b.HasIndex("ClassSessionId", "ExpertId")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false AND \"Status\" IN ('Invited', 'Accepted')");
@@ -5210,15 +5275,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("StartsAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasDefaultValue("Draft");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -5233,8 +5289,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.HasIndex("Status");
-
                     b.ToTable("Vouchers", t =>
                         {
                             t.HasCheckConstraint("CK_Vouchers_AmountOffPositive", "\"AmountOff\" IS NULL OR \"AmountOff\" > 0");
@@ -5244,8 +5298,6 @@ namespace OboxSteam.Infrastructure.Migrations
                             t.HasCheckConstraint("CK_Vouchers_MaxUsagePerStudentPositive", "\"MaxUsagePerStudent\" IS NULL OR \"MaxUsagePerStudent\" > 0");
 
                             t.HasCheckConstraint("CK_Vouchers_PercentOffRange", "\"PercentOff\" IS NULL OR (\"PercentOff\" > 0 AND \"PercentOff\" <= 100)");
-
-                            t.HasCheckConstraint("CK_Vouchers_StartsAtBeforeExpiryAt", "\"StartsAt\" IS NULL OR \"ExpiryAt\" IS NULL OR \"StartsAt\" < \"ExpiryAt\"");
 
                             t.HasCheckConstraint("CK_Vouchers_UsageLimitPositive", "\"UsageLimit\" IS NULL OR \"UsageLimit\" > 0");
                         });
@@ -6416,6 +6468,35 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Program");
                 });
 
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramBundle", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.ProgramFramework", "Framework")
+                        .WithMany("ProgramBundles")
+                        .HasForeignKey("FrameworkId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Framework");
+                });
+
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramBundleItem", b =>
+                {
+                    b.HasOne("OboxSteam.Domain.Entities.ProgramBundle", "Bundle")
+                        .WithMany("Items")
+                        .HasForeignKey("BundleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
+                        .WithMany("BundleItems")
+                        .HasForeignKey("ProgramId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Bundle");
+
+                    b.Navigation("Program");
+                });
+
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramEnrollment", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.Module", "EndedModule")
@@ -7030,8 +7111,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Program", b =>
                 {
-                    b.Navigation("AdvisoryThreads");
-
                     b.Navigation("BundleItems");
 
                     b.Navigation("Certificates");
@@ -7078,8 +7157,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramFramework", b =>
                 {
-                    b.Navigation("LegacyRubricCriteria");
-
                     b.Navigation("ProgramBundles");
 
                     b.Navigation("Programs");
