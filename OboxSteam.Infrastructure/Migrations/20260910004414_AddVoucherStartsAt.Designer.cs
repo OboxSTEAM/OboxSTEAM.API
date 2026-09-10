@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910004414_AddVoucherStartsAt")]
+    partial class AddVoucherStartsAt
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1378,10 +1381,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("ClientOperationId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<string>("Comment")
                         .HasColumnType("text");
 
@@ -1437,10 +1436,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false AND \"SubmissionId\" IS NOT NULL");
 
-                    b.HasIndex("ProgramId", "ClientOperationId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"ClientOperationId\" IS NOT NULL");
-
                     b.HasIndex("ProgramId", "Round")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
@@ -1449,56 +1444,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_CurriculumReviews_RoundPositive", "\"Round\" > 0");
                         });
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.CurriculumReviewRequirement", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CurriculumReviewId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("ProgramId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ThreadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ThreadId");
-
-                    b.HasIndex("CurriculumReviewId", "ThreadId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("ProgramId", "ThreadId")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("CurriculumReviewRequirements");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Expert", b =>
@@ -3371,9 +3316,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<Guid?>("AdvisorExpertId")
                         .HasColumnType("uuid");
 
-                    b.Property<long>("AdvisoryDiscussionSequence")
-                        .HasColumnType("bigint");
-
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasColumnType("text");
@@ -3466,117 +3408,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.ToTable("Programs");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryDiscussionMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AuthorUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ClientMessageId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("ProgramId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("Sequence")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasMaxLength(10000)
-                        .HasColumnType("character varying(10000)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AuthorUserId");
-
-                    b.HasIndex("ProgramId", "Sequence")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("ProgramId", "AuthorUserId", "ClientMessageId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("ProgramAdvisoryDiscussionMessages");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryDiscussionMessageReference", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Ordinal")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ReferenceId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReferenceId");
-
-                    b.HasIndex("MessageId", "Ordinal")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("MessageId", "ReferenceId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("ProgramAdvisoryDiscussionMessageReferences");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3605,9 +3436,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<long>("StreamSequence")
-                        .HasColumnType("bigint");
-
                     b.Property<Guid>("ThreadId")
                         .HasColumnType("uuid");
 
@@ -3624,92 +3452,7 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("ThreadId", "CreatedAt")
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.HasIndex("ThreadId", "StreamSequence")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"StreamSequence\" > 0");
-
                     b.ToTable("ProgramAdvisoryMessages");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryNotificationIntent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("AttemptCount")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("EventId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("LastError")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<DateTime>("NextAttemptAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("NotificationType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("PayloadJson")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<DateTime?>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProgramId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("RecipientUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EventId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("ProgramId");
-
-                    b.HasIndex("Status", "NextAttemptAt")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("ProgramAdvisoryNotificationIntents");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryRead", b =>
@@ -3759,175 +3502,13 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.ToTable("ProgramAdvisoryReads");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryReference", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AnchorKind")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CapturedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CapturedExcerpt")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<string>("CapturedLabel")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("Context")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("FieldKey")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("ProgramId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Quote")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<string>("QuotePrefix")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("QuoteSuffix")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<Guid?>("SubmissionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TargetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("TargetType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SubmissionId");
-
-                    b.HasIndex("ProgramId", "SubmissionId");
-
-                    b.HasIndex("ProgramId", "Context", "SubmissionId", "TargetType", "TargetId");
-
-                    b.ToTable("ProgramAdvisoryReferences");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryStreamRead", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<long>("LastReadSequence")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("ProgramId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("StreamType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("ThreadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ThreadId");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("ProgramId", "UserId", "StreamType")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"ThreadId\" IS NULL");
-
-                    b.HasIndex("ProgramId", "UserId", "StreamType", "ThreadId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"ThreadId\" IS NOT NULL");
-
-                    b.ToTable("ProgramAdvisoryStreamReads");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryThread", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("AnchorField")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("AnchorKind")
-                        .HasColumnType("text");
-
-                    b.Property<string>("AnchorQuote")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
                     b.Property<Guid>("AuthorUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ConcurrencyVersion")
-                        .IsConcurrencyToken()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -3947,9 +3528,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<DateTime>("LastMessageAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("LatestActivitySequence")
-                        .HasColumnType("bigint");
 
                     b.Property<Guid>("ProgramId")
                         .HasColumnType("uuid");
@@ -3995,99 +3573,10 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.HasIndex("ProgramId", "LastMessageAt")
                         .HasFilter("\"IsDeleted\" = false");
 
-                    b.HasIndex("ProgramId", "SubmissionId", "LastMessageAt")
-                        .HasFilter("\"IsDeleted\" = false");
-
                     b.HasIndex("ProgramId", "Type", "Status")
                         .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("ProgramAdvisoryThreads");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryThreadEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ActorUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CorrectionReferenceIdsJson")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Message")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<string>("NewStatus")
-                        .HasColumnType("text");
-
-                    b.Property<string>("OperationId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("PriorStatus")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("ProgramId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ResolutionKind")
-                        .HasColumnType("text");
-
-                    b.Property<long>("Sequence")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("ThreadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("VerifiedAgainstSubmissionId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActorUserId");
-
-                    b.HasIndex("OperationId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"OperationId\" IS NOT NULL");
-
-                    b.HasIndex("ProgramId");
-
-                    b.HasIndex("VerifiedAgainstSubmissionId");
-
-                    b.HasIndex("ThreadId", "Sequence")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("ProgramAdvisoryThreadEvents");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramBoard", b =>
@@ -4659,9 +4148,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.Property<Guid>("ProgramId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("ReviewRoundIntent")
-                        .HasColumnType("text");
 
                     b.Property<string>("RubricSnapshotJson")
                         .IsRequired()
@@ -5730,12 +5216,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Property<DateTime?>("StartsAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasDefaultValue("Draft");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -5749,8 +5229,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("Code")
                         .IsUnique();
-
-                    b.HasIndex("Status");
 
                     b.ToTable("Vouchers", t =>
                         {
@@ -6257,33 +5735,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Program");
 
                     b.Navigation("Submission");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.CurriculumReviewRequirement", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.CurriculumReview", "CurriculumReview")
-                        .WithMany()
-                        .HasForeignKey("CurriculumReviewId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
-                        .WithMany()
-                        .HasForeignKey("ProgramId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramAdvisoryThread", "Thread")
-                        .WithMany()
-                        .HasForeignKey("ThreadId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CurriculumReview");
-
-                    b.Navigation("Program");
-
-                    b.Navigation("Thread");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Expert", b =>
@@ -6848,44 +6299,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("FrameworkVersion");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryDiscussionMessage", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.User", "AuthorUser")
-                        .WithMany()
-                        .HasForeignKey("AuthorUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
-                        .WithMany("AdvisoryDiscussionMessages")
-                        .HasForeignKey("ProgramId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("AuthorUser");
-
-                    b.Navigation("Program");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryDiscussionMessageReference", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramAdvisoryDiscussionMessage", "Message")
-                        .WithMany("References")
-                        .HasForeignKey("MessageId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramAdvisoryReference", "Reference")
-                        .WithMany()
-                        .HasForeignKey("ReferenceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Message");
-
-                    b.Navigation("Reference");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryMessage", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.User", "AuthorUser")
@@ -6905,17 +6318,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Thread");
                 });
 
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryNotificationIntent", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
-                        .WithMany()
-                        .HasForeignKey("ProgramId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Program");
-                });
-
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryRead", b =>
                 {
                     b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
@@ -6931,50 +6333,6 @@ namespace OboxSteam.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Program");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryReference", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
-                        .WithMany("AdvisoryReferences")
-                        .HasForeignKey("ProgramId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramReviewSubmission", "Submission")
-                        .WithMany()
-                        .HasForeignKey("SubmissionId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Program");
-
-                    b.Navigation("Submission");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryStreamRead", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
-                        .WithMany()
-                        .HasForeignKey("ProgramId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramAdvisoryThread", "Thread")
-                        .WithMany()
-                        .HasForeignKey("ThreadId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("OboxSteam.Domain.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Program");
-
-                    b.Navigation("Thread");
 
                     b.Navigation("User");
                 });
@@ -7003,40 +6361,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Program");
 
                     b.Navigation("Submission");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryThreadEvent", b =>
-                {
-                    b.HasOne("OboxSteam.Domain.Entities.User", "ActorUser")
-                        .WithMany()
-                        .HasForeignKey("ActorUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.Program", "Program")
-                        .WithMany()
-                        .HasForeignKey("ProgramId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramAdvisoryThread", "Thread")
-                        .WithMany("Events")
-                        .HasForeignKey("ThreadId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("OboxSteam.Domain.Entities.ProgramReviewSubmission", "VerifiedAgainstSubmission")
-                        .WithMany()
-                        .HasForeignKey("VerifiedAgainstSubmissionId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("ActorUser");
-
-                    b.Navigation("Program");
-
-                    b.Navigation("Thread");
-
-                    b.Navigation("VerifiedAgainstSubmission");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramBoard", b =>
@@ -7701,10 +7025,6 @@ namespace OboxSteam.Infrastructure.Migrations
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.Program", b =>
                 {
-                    b.Navigation("AdvisoryDiscussionMessages");
-
-                    b.Navigation("AdvisoryReferences");
-
                     b.Navigation("AdvisoryThreads");
 
                     b.Navigation("BundleItems");
@@ -7728,6 +7048,11 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Reviews");
                 });
 
+            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryThread", b =>
+                {
+                    b.Navigation("Messages");
+                });
+
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramBundle", b =>
                 {
                     b.Navigation("Certificates");
@@ -7735,11 +7060,6 @@ namespace OboxSteam.Infrastructure.Migrations
                     b.Navigation("Enrollments");
 
                     b.Navigation("Items");
-                });
-
-            modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramAdvisoryThread", b =>
-                {
-                    b.Navigation("Messages");
                 });
 
             modelBuilder.Entity("OboxSteam.Domain.Entities.ProgramEnrollment", b =>
