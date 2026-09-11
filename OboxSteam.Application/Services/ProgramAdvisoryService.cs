@@ -309,6 +309,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var submission = await RequireSubmissionAsync(programId, submissionId);
         var snapshot = CurriculumReviewSnapshotBuilder.TryDeserialize(submission.CurriculumSnapshotJson)
             ?? new CurriculumReviewSnapshotBuilder.CurriculumSnapshotDocument();
+        CurriculumReviewSnapshotBuilder.ApplyBoardPresentationTruncation(snapshot);
         await HydrateMaterialPreviewUrlsAsync(snapshot);
 
         var previous = (await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
@@ -347,7 +348,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                 Name = program.Name,
                 Code = program.Code,
                 Status = program.Status,
-                Description = program.Description,
+                Description = snapshot.Program.Description,
                 SkillsGained = program.SkillsGained,
                 FrameworkVersionId = submission.FrameworkVersionId,
             },
@@ -879,16 +880,36 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         }
 
         var checks = CurriculumReviewService.BuildStructuredChecks(version, snapshot);
-        return checks
-            .SelectMany(check => check.AffectedCurriculumLinks.Select(link => new FrameworkHighlightDto
+        var highlights = new List<FrameworkHighlightDto>();
+        foreach (var check in checks.Where(c => !c.Passed))
+        {
+            if (check.AffectedCurriculumLinks.Count == 0)
             {
-                TargetType = link.TargetType,
-                TargetId = link.Id,
-                CheckCode = check.Code,
-                Label = link.Label,
-                Passed = check.Passed,
-            }))
-            .ToList();
+                highlights.Add(new FrameworkHighlightDto
+                {
+                    TargetType = ProgramAdvisoryTargetType.Program,
+                    TargetId = snapshot.Program.Id != Guid.Empty ? snapshot.Program.Id : snapshot.ProgramId,
+                    CheckCode = check.Code,
+                    Label = check.Label,
+                    Passed = false,
+                });
+                continue;
+            }
+
+            foreach (var link in check.AffectedCurriculumLinks)
+            {
+                highlights.Add(new FrameworkHighlightDto
+                {
+                    TargetType = link.TargetType,
+                    TargetId = link.Id,
+                    CheckCode = check.Code,
+                    Label = link.Label,
+                    Passed = false,
+                });
+            }
+        }
+
+        return highlights;
     }
 
     private async Task HydrateMaterialPreviewUrlsAsync(

@@ -8,6 +8,9 @@ namespace OboxSteam.Application.Commons;
 
 public static class CurriculumReviewSnapshotBuilder
 {
+    public const int SnapshotDescriptionMaxLength = 500;
+    public const int DiffExcerptMaxLength = 120;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -176,6 +179,96 @@ public static class CurriculumReviewSnapshotBuilder
         };
     }
 
+    /// <summary>
+    /// Truncates long description text for board presentation. Stored submission JSON
+    /// keeps full text; call this on the deserialized document before returning the board.
+    /// </summary>
+    public static void ApplyBoardPresentationTruncation(CurriculumSnapshotDocument snapshot)
+    {
+        TruncateDescription(snapshot.Program.Description, out var programDescription, out var programTruncated);
+        snapshot.Program.Description = programDescription;
+        snapshot.Program.DescriptionIsTruncated = programTruncated;
+
+        foreach (var module in snapshot.Modules)
+        {
+            foreach (var course in module.Courses)
+            {
+                TruncateDescription(course.Description, out var courseDescription, out var courseTruncated);
+                course.Description = courseDescription;
+                course.DescriptionIsTruncated = courseTruncated;
+
+                foreach (var activity in course.Activities)
+                {
+                    TruncateActivityDescription(activity);
+                }
+            }
+
+            foreach (var activity in module.Activities)
+            {
+                TruncateActivityDescription(activity);
+            }
+
+            foreach (var assignment in module.Assignments)
+            {
+                TruncateAssignmentDescription(assignment);
+            }
+
+            foreach (var milestone in module.Milestones)
+            {
+                TruncateDescription(milestone.Description, out var milestoneDescription, out var milestoneTruncated);
+                milestone.Description = milestoneDescription;
+                milestone.DescriptionIsTruncated = milestoneTruncated;
+
+                if (milestone.Assignment != null)
+                {
+                    TruncateAssignmentDescription(milestone.Assignment);
+                }
+
+                foreach (var activity in milestone.Activities)
+                {
+                    TruncateActivityDescription(activity);
+                }
+            }
+        }
+    }
+
+    private static void TruncateActivityDescription(ActivitySnapshot activity)
+    {
+        TruncateDescription(activity.Description, out var description, out var truncated);
+        activity.Description = description;
+        activity.DescriptionIsTruncated = truncated;
+    }
+
+    private static void TruncateAssignmentDescription(AssignmentSnapshot assignment)
+    {
+        TruncateDescription(assignment.Description, out var description, out var truncated);
+        assignment.Description = description;
+        assignment.DescriptionIsTruncated = truncated;
+    }
+
+    private static void TruncateDescription(string? value, out string? truncated, out bool wasTruncated)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= SnapshotDescriptionMaxLength)
+        {
+            truncated = value;
+            wasTruncated = false;
+            return;
+        }
+
+        truncated = value[..SnapshotDescriptionMaxLength];
+        wasTruncated = true;
+    }
+
+    private static string? TruncateDiffExcerpt(string? value)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= DiffExcerptMaxLength)
+        {
+            return value;
+        }
+
+        return value[..DiffExcerptMaxLength];
+    }
+
     private static ActivitySnapshot MapActivity(
         Activity activity,
         Guid? courseId,
@@ -283,15 +376,17 @@ public static class CurriculumReviewSnapshotBuilder
 
             foreach (var change in DiffFields(prior, item))
             {
+                var before = TruncateDiffExcerpt(change.Before);
+                var after = TruncateDiffExcerpt(change.After);
                 result.Modified.Add(new SubmissionChangeItemDto
                 {
                     TargetType = item.TargetType,
                     Id = item.Id,
                     Label = item.Label,
                     Field = change.Field,
-                    Before = change.Before,
-                    After = change.After,
-                    Detail = change.Detail,
+                    Before = before,
+                    After = after,
+                    Detail = $"{before ?? "(empty)"} → {after ?? "(empty)"}",
                 });
             }
         }
@@ -337,6 +432,13 @@ public static class CurriculumReviewSnapshotBuilder
             IsRequiredForModulePass = assignment.IsRequiredForModulePass,
             TimeLimitMinutes = assignment.TimeLimitMinutes,
             MaxAttempts = assignment.MaxAttempts,
+            AllowShuffle = assignment.AllowShuffle,
+            QuestionBankId = assignment.QuestionBankId,
+            QuestionCount = assignment.QuestionCount,
+            ShuffleOptions = assignment.ShuffleOptions,
+            EasyPercent = assignment.EasyPercent,
+            MediumPercent = assignment.MediumPercent,
+            HardPercent = assignment.HardPercent,
         };
 
     private static IEnumerable<FlatItem> Flatten(CurriculumSnapshotDocument doc)
@@ -350,6 +452,7 @@ public static class CurriculumReviewSnapshotBuilder
                 module.Order,
                 new Dictionary<string, string?>
                 {
+                    ["name"] = module.Name,
                     ["code"] = module.Code,
                     ["type"] = string.IsNullOrWhiteSpace(module.ModuleType) ? module.Type : module.ModuleType,
                     ["prerequisiteModuleId"] = module.PrerequisiteModuleId?.ToString(),
@@ -366,6 +469,7 @@ public static class CurriculumReviewSnapshotBuilder
                     course.Order,
                     new Dictionary<string, string?>
                     {
+                        ["name"] = course.Name,
                         ["code"] = course.Code,
                         ["description"] = course.Description,
                     });
@@ -405,6 +509,7 @@ public static class CurriculumReviewSnapshotBuilder
                     0,
                     new Dictionary<string, string?>
                     {
+                        ["title"] = assignment.Title,
                         ["code"] = assignment.Code,
                         ["moduleId"] = assignment.ModuleId.ToString(),
                         ["courseId"] = assignment.CourseId?.ToString(),
@@ -413,8 +518,16 @@ public static class CurriculumReviewSnapshotBuilder
                         ["assignmentType"] = assignment.AssignmentType,
                         ["maxPoints"] = assignment.MaxPoints.ToString(),
                         ["passScore"] = assignment.PassScore.ToString(),
-                        ["availableFrom"] = assignment.AvailableFrom?.ToString("O"),
-                        ["dueAt"] = assignment.DueAt?.ToString("O"),
+                        ["isRequiredForModulePass"] = assignment.IsRequiredForModulePass.ToString(),
+                        ["timeLimitMinutes"] = assignment.TimeLimitMinutes?.ToString(),
+                        ["maxAttempts"] = assignment.MaxAttempts.ToString(),
+                        ["allowShuffle"] = assignment.AllowShuffle.ToString(),
+                        ["questionBankId"] = assignment.QuestionBankId?.ToString(),
+                        ["questionCount"] = assignment.QuestionCount?.ToString(),
+                        ["shuffleOptions"] = assignment.ShuffleOptions.ToString(),
+                        ["easyPercent"] = assignment.EasyPercent.ToString(),
+                        ["mediumPercent"] = assignment.MediumPercent.ToString(),
+                        ["hardPercent"] = assignment.HardPercent.ToString(),
                     });
             }
 
@@ -427,6 +540,7 @@ public static class CurriculumReviewSnapshotBuilder
                     milestone.Order,
                     new Dictionary<string, string?>
                     {
+                        ["title"] = milestone.Title,
                         ["code"] = milestone.Code,
                         ["isCapstone"] = milestone.IsCapstone.ToString(),
                         ["description"] = milestone.Description,
@@ -454,7 +568,10 @@ public static class CurriculumReviewSnapshotBuilder
             activity.Order,
             new Dictionary<string, string?>
             {
+                ["name"] = activity.Name,
                 ["type"] = string.IsNullOrWhiteSpace(activity.ActivityType) ? activity.Type : activity.ActivityType,
+                ["courseId"] = activity.CourseId?.ToString(),
+                ["milestoneId"] = activity.MilestoneId?.ToString(),
                 ["description"] = activity.Description,
                 ["durationMinutes"] = activity.DurationMinutes?.ToString(),
                 ["requireQrCheckin"] = activity.RequireQrCheckin.ToString(),
@@ -469,6 +586,7 @@ public static class CurriculumReviewSnapshotBuilder
             0,
             new Dictionary<string, string?>
             {
+                ["title"] = material.Title,
                 ["materialType"] = string.IsNullOrWhiteSpace(material.MaterialType) ? material.Type : material.MaterialType,
                 ["fileName"] = material.FileName,
                 ["url"] = material.Url,
@@ -488,20 +606,7 @@ public static class CurriculumReviewSnapshotBuilder
                 continue;
             }
 
-            yield return new FlatFieldChange(
-                field,
-                before,
-                after,
-                $"{before ?? "(empty)"} → {after ?? "(empty)"}");
-        }
-
-        if (!string.Equals(prior.Label, current.Label, StringComparison.Ordinal))
-        {
-            yield return new FlatFieldChange(
-                "label",
-                prior.Label,
-                current.Label,
-                $"{prior.Label} → {current.Label}");
+            yield return new FlatFieldChange(field, before, after);
         }
     }
 
@@ -520,7 +625,7 @@ public static class CurriculumReviewSnapshotBuilder
         int Order,
         IReadOnlyDictionary<string, string?> Fields);
 
-    private sealed record FlatFieldChange(string Field, string? Before, string? After, string Detail);
+    private sealed record FlatFieldChange(string Field, string? Before, string? After);
 
     public sealed class CurriculumSnapshotDocument
     {
@@ -576,6 +681,8 @@ public static class CurriculumReviewSnapshotBuilder
 
         public string? Description { get; set; }
 
+        public bool DescriptionIsTruncated { get; set; }
+
         public List<ActivitySnapshot> Activities { get; set; } = [];
     }
 
@@ -596,6 +703,8 @@ public static class CurriculumReviewSnapshotBuilder
         public int Order { get; set; }
 
         public string? Description { get; set; }
+
+        public bool DescriptionIsTruncated { get; set; }
 
         public int? DurationMinutes { get; set; }
 
@@ -641,6 +750,8 @@ public static class CurriculumReviewSnapshotBuilder
 
         public string? Description { get; set; }
 
+        public bool DescriptionIsTruncated { get; set; }
+
         public string? AssignmentType { get; set; }
 
         public int MaxPoints { get; set; }
@@ -653,9 +764,19 @@ public static class CurriculumReviewSnapshotBuilder
 
         public int MaxAttempts { get; set; }
 
-        public DateTime? AvailableFrom { get; set; }
+        public bool AllowShuffle { get; set; }
 
-        public DateTime? DueAt { get; set; }
+        public Guid? QuestionBankId { get; set; }
+
+        public int? QuestionCount { get; set; }
+
+        public bool ShuffleOptions { get; set; }
+
+        public int EasyPercent { get; set; }
+
+        public int MediumPercent { get; set; }
+
+        public int HardPercent { get; set; }
     }
 
     public sealed class MilestoneSnapshot
@@ -671,6 +792,8 @@ public static class CurriculumReviewSnapshotBuilder
         public bool IsCapstone { get; set; }
 
         public string? Description { get; set; }
+
+        public bool DescriptionIsTruncated { get; set; }
 
         public Guid AssignmentId { get; set; }
 
@@ -705,6 +828,8 @@ public static class CurriculumReviewSnapshotBuilder
         public string Code { get; set; } = null!;
 
         public string? Description { get; set; }
+
+        public bool DescriptionIsTruncated { get; set; }
 
         public string? SkillsGained { get; set; }
 

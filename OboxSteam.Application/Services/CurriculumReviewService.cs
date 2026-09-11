@@ -918,7 +918,12 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             return;
         }
 
-        var matching = activities.Where(a => string.Equals(a.Type, type.ToString(), StringComparison.Ordinal)).ToList();
+        var typeName = type.ToString();
+        var matching = activities
+            .Where(a =>
+                string.Equals(a.ActivityType, typeName, StringComparison.Ordinal)
+                || string.Equals(a.Type, typeName, StringComparison.Ordinal))
+            .ToList();
         checks.Add(new FrameworkCheckItemDto
         {
             Code = code,
