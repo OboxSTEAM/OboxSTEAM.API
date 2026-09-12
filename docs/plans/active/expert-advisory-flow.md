@@ -26,6 +26,7 @@ In scope:
 - Immutable persisted references and program Discussion with cursor pagination and idempotent sends.
 - Independent note/discussion read cursors.
 - Requirement links from formal decisions, notification intents, and EF persistence constraints.
+- Server-derived six-stage workflow timeline projection for shared manager/expert UI.
 - Focused unit tests and generated EF migration.
 
 Out of scope:
@@ -40,7 +41,8 @@ Out of scope:
 2. Add reference resolution and Discussion services with shared advisory authorization.
 3. Tighten note lifecycle and formal decision rules while retaining legacy endpoint compatibility.
 4. Add controller routes and generate the migration with EF CLI.
-5. Add focused positive/negative tests and run repository build/test checks.
+5. Persist review-round intent and add the advisory workflow timeline projection endpoint.
+6. Add focused positive/negative tests and run repository build/test checks.
 
 ## Risks And Recovery
 
@@ -61,6 +63,7 @@ Out of scope:
 
 - 2026-09-12: Keep legacy advisory endpoints and fields while adding the new contract so rollout remains additive.
 - 2026-09-12: Use the existing `IUnitOfWork`/`GenericRepository` boundary for application changes; introduce only the smallest transaction/locking abstraction needed by the database-backed review mutations.
+- 2026-09-12: Keep timeline state server-owned and separate from selected UI sections; persist review-round intent so revision verification remains distinguishable after requirements resolve.
 
 ## Validation
 
@@ -73,12 +76,14 @@ Out of scope:
 Backend implementation completed on 2026-09-12. The API now exposes capabilities,
 exact thread detail, immutable references, cursor-paginated Discussion, independent
 read cursors, lifecycle events, cross-round verification/waiver, requirement links,
-program-locked review mutations, and durable notification intents. Generated EF
+program-locked review mutations, durable notification intents, and a server-derived
+six-stage workflow timeline for the UI. Generated EF
 migrations are `20260912141326_AddExpertAdvisoryWorkspace` and
-`20260912142038_FixExpertAdvisoryWorkspaceIndexes`.
+`20260912142038_FixExpertAdvisoryWorkspaceIndexes`, plus
+`20260912151203_AddAdvisoryWorkflowTimeline`.
 
 Validation completed with `dotnet build OboxSteam.API/OboxSteam.API.csproj`,
-`dotnet test OboxSteam.Test/OboxSteam.Test.csproj` (1,993 passed),
+`dotnet test OboxSteam.Test/OboxSteam.Test.csproj` (1,995 passed),
 `git diff --check`, and EF `has-pending-model-changes` (none).
 
 Remaining release follow-ups are real PostgreSQL transaction-race/integration

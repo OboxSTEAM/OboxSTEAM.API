@@ -610,4 +610,63 @@ public sealed class ProgramAdvisoryServiceTests
         Assert.Equal("Persisted program description", reference.CapturedExcerpt);
         Assert.True(reference.IsAvailable);
     }
+
+    [Fact]
+    public async Task WorkflowTimeline_DirectApproval_SkipsConditionalStages()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+
+        await CreateReviewSut(_expertUserId).ApproveAsync(_programId, null);
+
+        var timeline = await CreateAdvisorySut(_managerId).GetWorkflowTimelineAsync(_programId);
+        var stages = timeline.Stages.ToDictionary(stage => stage.Key);
+
+        Assert.Equal(AdvisoryWorkflowStage.AwaitingPublication, timeline.CurrentStage);
+        Assert.Equal(submissionId, timeline.CurrentSubmissionId);
+        Assert.Equal(AdvisoryResponsibleRole.Manager, timeline.ResponsibleRole);
+        Assert.Equal(AdvisoryWorkflowStageState.Completed, stages[nameof(AdvisoryWorkflowStage.Review)].State);
+        Assert.Equal(AdvisoryWorkflowStageState.Skipped, stages[nameof(AdvisoryWorkflowStage.Revision)].State);
+        Assert.Equal(AdvisoryWorkflowStageState.Skipped, stages[nameof(AdvisoryWorkflowStage.Verification)].State);
+        Assert.Equal(AdvisoryWorkflowStageState.Current, stages[nameof(AdvisoryWorkflowStage.AwaitingPublication)].State);
+    }
+
+    [Fact]
+    public async Task WorkflowTimeline_PersistsRevisionVerificationIntent()
+    {
+        SeedBase();
+        var firstSubmissionId = SeedPendingSubmission();
+        var thread = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = firstSubmissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.RequiredChange,
+            Message = "Clarify the learning outcome.",
+        });
+
+        await CreateReviewSut(_expertUserId).RequestChangesAsync(
+            _programId,
+            new RequestCurriculumChangesRequest
+            {
+                SubmissionId = firstSubmissionId,
+                ConcurrencyVersion = _db.ProgramReviewSubmissions.Items.Single().ConcurrencyVersion,
+                Comment = "Please revise the learning outcome.",
+                RequiredChangeThreadIds = [thread.Id],
+            });
+
+        await CreateReviewSut(_managerId).SubmitForReviewAsync(_programId);
+
+        var secondSubmission = _db.ProgramReviewSubmissions.Items
+            .Single(submission => submission.SubmissionNumber == 2);
+        var timeline = await CreateAdvisorySut(_expertUserId).GetWorkflowTimelineAsync(_programId);
+        var stages = timeline.Stages.ToDictionary(stage => stage.Key);
+
+        Assert.Equal(ProgramReviewSubmissionIntent.RevisionVerification, secondSubmission.ReviewRoundIntent);
+        Assert.Equal(AdvisoryWorkflowStage.Verification, timeline.CurrentStage);
+        Assert.Equal(secondSubmission.Id, timeline.CurrentSubmissionId);
+        Assert.Equal(AdvisoryResponsibleRole.Advisor, timeline.ResponsibleRole);
+        Assert.Equal(1, timeline.OutstandingRequirementCount);
+        Assert.Equal(AdvisoryWorkflowStageState.Completed, stages[nameof(AdvisoryWorkflowStage.Revision)].State);
+        Assert.Equal(AdvisoryWorkflowStageState.Current, stages[nameof(AdvisoryWorkflowStage.Verification)].State);
+    }
 }

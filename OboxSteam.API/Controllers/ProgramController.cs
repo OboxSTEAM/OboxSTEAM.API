@@ -458,6 +458,19 @@ public class ProgramController : ControllerBase
             result, "200", "Advisory workspace retrieved successfully."));
     }
 
+    [HttpGet("{id:guid}/advisory/timeline")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "Get the current advisory workflow timeline",
+        Description = "Returns the server-derived six-stage advisory workflow. Viewing a stage does not change lifecycle state.")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryWorkflowTimelineDto>), 200)]
+    public async Task<IActionResult> GetAdvisoryTimeline([FromRoute] Guid id)
+    {
+        var result = await _programAdvisoryService.GetWorkflowTimelineAsync(id);
+        return Ok(ApiResult<AdvisoryWorkflowTimelineDto>.Success(
+            result, "200", "Advisory workflow timeline retrieved successfully."));
+    }
+
     [HttpGet("{id:guid}/advisory/board")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(

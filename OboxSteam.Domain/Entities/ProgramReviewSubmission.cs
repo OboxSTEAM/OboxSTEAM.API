@@ -16,6 +16,7 @@ public sealed class ProgramReviewSubmission : BaseEntity
     public ProgramFrameworkVersion? FrameworkVersion { get; set; }
     public string CurriculumSnapshotJson { get; set; } = null!;
     public string RubricSnapshotJson { get; set; } = "[]";
+    public ProgramReviewSubmissionIntent? ReviewRoundIntent { get; set; }
     public ProgramReviewSubmissionStatus Status { get; set; }
     public DateTime SubmittedAt { get; set; }
     public DateTime? ClosedAt { get; set; }

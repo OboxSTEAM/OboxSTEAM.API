@@ -10,6 +10,8 @@ public sealed class ProgramReviewSubmissionSummaryDto
 
     public ProgramReviewSubmissionStatus Status { get; set; }
 
+    public ProgramReviewSubmissionIntent? ReviewRoundIntent { get; set; }
+
     public Guid AssignedAdvisorExpertId { get; set; }
 
     public Guid? FrameworkVersionId { get; set; }
@@ -30,6 +32,8 @@ public sealed class ProgramReviewSubmissionDetailDto
     public int SubmissionNumber { get; set; }
 
     public ProgramReviewSubmissionStatus Status { get; set; }
+
+    public ProgramReviewSubmissionIntent? ReviewRoundIntent { get; set; }
 
     public Guid SubmittedByManagerId { get; set; }
 

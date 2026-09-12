@@ -32,6 +32,8 @@ public sealed class ProgramAdvisoryWorkspaceDto
 
     public AdvisoryCapabilitiesDto Capabilities { get; set; } = new();
 
+    public AdvisoryWorkflowTimelineDto Workflow { get; set; } = new();
+
     public int ApprovalBlockingCount { get; set; }
 
     public int OpenRequiredChangeCount { get; set; }

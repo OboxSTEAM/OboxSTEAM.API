@@ -77,6 +77,15 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var advisor = reviewers[0];
         var now = _currentTime.GetCurrentTime().ToUniversalTime();
 
+        var outstandingRequirements = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
+            t => t.ProgramId == program.Id
+                 && t.Type == ProgramAdvisoryThreadType.RequiredChange
+                 && t.Status != ProgramAdvisoryThreadStatus.Resolved
+                 && !t.IsDeleted);
+        var reviewRoundIntent = outstandingRequirements.Count > 0
+            ? ProgramReviewSubmissionIntent.RevisionVerification
+            : ProgramReviewSubmissionIntent.InitialReview;
+
         var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
         var criteria = await LoadVersionCriteriaAsync(program.FrameworkVersionId);
         var curriculumJson = CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(tree);
@@ -96,6 +105,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             FrameworkVersionId = program.FrameworkVersionId,
             CurriculumSnapshotJson = curriculumJson,
             RubricSnapshotJson = rubricJson,
+            ReviewRoundIntent = reviewRoundIntent,
             Status = ProgramReviewSubmissionStatus.Pending,
             SubmittedAt = now,
             ConcurrencyVersion = Guid.NewGuid(),
@@ -1323,6 +1333,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             Id = s.Id,
             SubmissionNumber = s.SubmissionNumber,
             Status = s.Status,
+            ReviewRoundIntent = s.ReviewRoundIntent,
             AssignedAdvisorExpertId = s.AssignedAdvisorExpertId,
             FrameworkVersionId = s.FrameworkVersionId,
             SubmittedAt = s.SubmittedAt,
@@ -1337,6 +1348,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             ProgramId = s.ProgramId,
             SubmissionNumber = s.SubmissionNumber,
             Status = s.Status,
+            ReviewRoundIntent = s.ReviewRoundIntent,
             SubmittedByManagerId = s.SubmittedByManagerId,
             AssignedAdvisorExpertId = s.AssignedAdvisorExpertId,
             FrameworkVersionId = s.FrameworkVersionId,

@@ -14,6 +14,8 @@ public interface IProgramAdvisoryService
 
     Task<ProgramAdvisoryWorkspaceDto> GetAdvisoryWorkspaceAsync(Guid programId);
 
+    Task<AdvisoryWorkflowTimelineDto> GetWorkflowTimelineAsync(Guid programId);
+
     Task<IReadOnlyList<AdvisoryThreadDto>> GetThreadsAsync(
         Guid programId,
         Guid? submissionId = null,

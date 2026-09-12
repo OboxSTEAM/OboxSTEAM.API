@@ -163,6 +163,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             .Where(s => s.Status == ProgramReviewSubmissionStatus.Pending)
             .OrderByDescending(s => s.SubmissionNumber)
             .FirstOrDefault();
+        var workflow = await BuildWorkflowTimelineAsync(program, allSubmissions, threads);
 
         var read = await _unitOfWork.ProgramAdvisoryReads.FirstOrDefaultAsync(
             r => r.ProgramId == program.Id && r.UserId == actor.Id && !r.IsDeleted);
@@ -225,6 +226,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             CanEditCurriculum = capabilities.CanEditCurriculum,
             CanAssignAdvisor = capabilities.CanAssignAdvisor,
             Capabilities = capabilities,
+            Workflow = workflow,
             ApprovalBlockingCount = openRequired,
             OpenRequiredChangeCount = threads.Count(t =>
                 t.Type == ProgramAdvisoryThreadType.RequiredChange
@@ -243,6 +245,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                     Id = latestSubmission.Id,
                     SubmissionNumber = latestSubmission.SubmissionNumber,
                     Status = latestSubmission.Status,
+                    ReviewRoundIntent = latestSubmission.ReviewRoundIntent,
                     AssignedAdvisorExpertId = latestSubmission.AssignedAdvisorExpertId,
                     FrameworkVersionId = latestSubmission.FrameworkVersionId,
                     SubmittedAt = latestSubmission.SubmittedAt,
@@ -1575,6 +1578,157 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         return result;
     }
 
+    private async Task<AdvisoryWorkflowTimelineDto> BuildWorkflowTimelineAsync(
+        Program program,
+        IReadOnlyList<ProgramReviewSubmission> submissions,
+        IReadOnlyList<ProgramAdvisoryThread> threads)
+    {
+        var orderedSubmissions = submissions
+            .OrderBy(s => s.SubmissionNumber)
+            .ThenBy(s => s.SubmittedAt)
+            .ToList();
+        var reviews = await _unitOfWork.CurriculumReviews.GetAllAsync(
+            r => r.ProgramId == program.Id && !r.IsDeleted);
+        var orderedReviews = reviews
+            .OrderBy(r => r.Round)
+            .ThenBy(r => r.ReviewedAt)
+            .ToList();
+
+        var pendingSubmission = orderedSubmissions
+            .Where(s => s.Status == ProgramReviewSubmissionStatus.Pending)
+            .LastOrDefault();
+        var latestSubmission = orderedSubmissions.LastOrDefault();
+        var initialSubmission = orderedSubmissions.FirstOrDefault(
+            s => s.ReviewRoundIntent == ProgramReviewSubmissionIntent.InitialReview)
+            ?? orderedSubmissions.FirstOrDefault(s => s.SubmissionNumber == 1)
+            ?? orderedSubmissions.FirstOrDefault();
+        var requestChangesSubmission = orderedSubmissions
+            .Where(s => s.Status == ProgramReviewSubmissionStatus.ChangesRequested)
+            .LastOrDefault();
+        var revisionSubmission = orderedSubmissions
+            .Where(s => s.ReviewRoundIntent == ProgramReviewSubmissionIntent.RevisionVerification)
+            .LastOrDefault();
+        var hasChangesRequested = orderedReviews.Any(
+            r => r.Decision == CurriculumReviewDecision.ChangesRequested)
+            || orderedSubmissions.Any(s => s.Status == ProgramReviewSubmissionStatus.ChangesRequested);
+        var hasRevisionIntent = orderedSubmissions.Any(
+            s => s.ReviewRoundIntent == ProgramReviewSubmissionIntent.RevisionVerification);
+
+        var currentStage = program.Status switch
+        {
+            ProgramStatus.PendingReview => pendingSubmission?.ReviewRoundIntent
+                == ProgramReviewSubmissionIntent.RevisionVerification
+                ? AdvisoryWorkflowStage.Verification
+                : AdvisoryWorkflowStage.Review,
+            ProgramStatus.Draft => hasChangesRequested || hasRevisionIntent
+                ? AdvisoryWorkflowStage.Revision
+                : AdvisoryWorkflowStage.Preparation,
+            ProgramStatus.Approved => AdvisoryWorkflowStage.AwaitingPublication,
+            ProgramStatus.Active or ProgramStatus.Inactive => AdvisoryWorkflowStage.Published,
+            _ => AdvisoryWorkflowStage.Preparation,
+        };
+
+        var outstandingRequirementCount = threads.Count(
+            t => t.Type == ProgramAdvisoryThreadType.RequiredChange
+                 && t.Status != ProgramAdvisoryThreadStatus.Resolved);
+        var responsibleRole = currentStage switch
+        {
+            AdvisoryWorkflowStage.Review or AdvisoryWorkflowStage.Verification
+                => AdvisoryResponsibleRole.Advisor,
+            AdvisoryWorkflowStage.Preparation
+                or AdvisoryWorkflowStage.Revision
+                or AdvisoryWorkflowStage.AwaitingPublication
+                => AdvisoryResponsibleRole.Manager,
+            _ => (AdvisoryResponsibleRole?)null,
+        };
+
+        Guid? responsibleUserId = null;
+        if (responsibleRole == AdvisoryResponsibleRole.Advisor
+            && program.AdvisorExpertId.HasValue)
+        {
+            var advisor = await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value);
+            responsibleUserId = advisor?.IsDeleted == false && advisor.UserId.HasValue
+                ? advisor.UserId.Value
+                : null;
+        }
+        else if (responsibleRole == AdvisoryResponsibleRole.Manager)
+        {
+            var managerSubmission = currentStage == AdvisoryWorkflowStage.Revision
+                ? requestChangesSubmission ?? revisionSubmission ?? latestSubmission
+                : latestSubmission;
+            responsibleUserId = managerSubmission?.SubmittedByManagerId
+                ?? (program.CreatedBy == Guid.Empty ? null : program.CreatedBy);
+        }
+
+        var currentSubmissionId = currentStage switch
+        {
+            AdvisoryWorkflowStage.Review or AdvisoryWorkflowStage.Verification => pendingSubmission?.Id,
+            AdvisoryWorkflowStage.Revision => requestChangesSubmission?.Id
+                ?? revisionSubmission?.Id
+                ?? latestSubmission?.Id,
+            AdvisoryWorkflowStage.AwaitingPublication or AdvisoryWorkflowStage.Published => latestSubmission?.Id,
+            _ => null,
+        };
+
+        var stageSubmissionIds = new Dictionary<AdvisoryWorkflowStage, Guid?>
+        {
+            [AdvisoryWorkflowStage.Preparation] = initialSubmission?.Id,
+            [AdvisoryWorkflowStage.Review] = initialSubmission?.Id,
+            [AdvisoryWorkflowStage.Revision] = requestChangesSubmission?.Id ?? revisionSubmission?.Id,
+            [AdvisoryWorkflowStage.Verification] = revisionSubmission?.Id
+                ?? (currentStage == AdvisoryWorkflowStage.Verification ? pendingSubmission?.Id : null),
+            [AdvisoryWorkflowStage.AwaitingPublication] = latestSubmission?.Id,
+            [AdvisoryWorkflowStage.Published] = latestSubmission?.Id,
+        };
+
+        var stages = Enum.GetValues<AdvisoryWorkflowStage>()
+            .Select(stage => new AdvisoryWorkflowStageDto
+            {
+                Key = stage.ToString(),
+                State = ResolveWorkflowStageState(
+                    stage,
+                    currentStage,
+                    hasChangesRequested,
+                    hasRevisionIntent),
+                SubmissionId = stageSubmissionIds[stage],
+            })
+            .ToList();
+
+        return new AdvisoryWorkflowTimelineDto
+        {
+            CurrentStage = currentStage,
+            CurrentSubmissionId = currentSubmissionId,
+            ResponsibleRole = responsibleRole,
+            ResponsibleUserId = responsibleUserId,
+            OutstandingRequirementCount = outstandingRequirementCount,
+            Stages = stages,
+        };
+    }
+
+    private static AdvisoryWorkflowStageState ResolveWorkflowStageState(
+        AdvisoryWorkflowStage stage,
+        AdvisoryWorkflowStage currentStage,
+        bool hasChangesRequested,
+        bool hasRevisionIntent)
+    {
+        if (stage == currentStage)
+        {
+            return AdvisoryWorkflowStageState.Current;
+        }
+
+        if (stage is (AdvisoryWorkflowStage.Revision or AdvisoryWorkflowStage.Verification)
+            && !hasChangesRequested
+            && !hasRevisionIntent
+            && currentStage > AdvisoryWorkflowStage.Verification)
+        {
+            return AdvisoryWorkflowStageState.Skipped;
+        }
+
+        return stage < currentStage
+            ? AdvisoryWorkflowStageState.Completed
+            : AdvisoryWorkflowStageState.Upcoming;
+    }
+
     private static AdvisoryFeedbackCountsDto BuildFeedbackCounts(IReadOnlyList<ProgramAdvisoryThread> threads)
     {
         return new AdvisoryFeedbackCountsDto
@@ -1795,12 +1949,23 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         };
     }
 
+    public async Task<AdvisoryWorkflowTimelineDto> GetWorkflowTimelineAsync(Guid programId)
+    {
+        var (program, _, _, _, _, _) = await RequireAdvisoryAccessAsync(programId);
+        var submissions = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
+            s => s.ProgramId == programId && !s.IsDeleted);
+        var threads = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
+            t => t.ProgramId == programId && !t.IsDeleted);
+        return await BuildWorkflowTimelineAsync(program, submissions, threads);
+    }
+
     private static ProgramReviewSubmissionSummaryDto MapSubmissionSummary(ProgramReviewSubmission submission)
         => new()
         {
             Id = submission.Id,
             SubmissionNumber = submission.SubmissionNumber,
             Status = submission.Status,
+            ReviewRoundIntent = submission.ReviewRoundIntent,
             AssignedAdvisorExpertId = submission.AssignedAdvisorExpertId,
             FrameworkVersionId = submission.FrameworkVersionId,
             SubmittedAt = submission.SubmittedAt,
