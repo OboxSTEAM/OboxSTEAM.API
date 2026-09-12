@@ -39,4 +39,18 @@ public sealed class AdvisoryThreadDto
     public DateTime CreatedAt { get; set; }
 
     public int MessageCount { get; set; }
+
+    public Guid ConcurrencyVersion { get; set; }
+
+    public long LatestActivitySequence { get; set; }
+
+    public bool CanAddress { get; set; }
+
+    public bool CanResolve { get; set; }
+
+    public bool CanReopen { get; set; }
+
+    public bool CanWaive { get; set; }
+
+    public List<AdvisoryThreadEventDto> Events { get; set; } = [];
 }

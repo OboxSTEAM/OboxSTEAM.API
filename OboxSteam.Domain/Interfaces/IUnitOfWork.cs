@@ -46,6 +46,13 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<ProgramAdvisoryThread> ProgramAdvisoryThreads { get; }
     IGenericRepository<ProgramAdvisoryMessage> ProgramAdvisoryMessages { get; }
     IGenericRepository<ProgramAdvisoryRead> ProgramAdvisoryReads { get; }
+    IGenericRepository<ProgramAdvisoryReference> ProgramAdvisoryReferences { get; }
+    IGenericRepository<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents { get; }
+    IGenericRepository<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages { get; }
+    IGenericRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences { get; }
+    IGenericRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads { get; }
+    IGenericRepository<CurriculumReviewRequirement> CurriculumReviewRequirements { get; }
+    IGenericRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents { get; }
     IGenericRepository<ClassSessionExpert> ClassSessionExperts { get; }
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }
@@ -83,6 +90,9 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Notification> Notifications { get; }
 
     Task<int> SaveChangesAsync();
+
+    /// <summary>Executes a review-sensitive mutation under the program transaction lock.</summary>
+    Task<TResult> ExecuteAdvisoryTransactionAsync<TResult>(Guid programId, Func<Task<TResult>> operation);
 
     /// <summary>Dev-only: truncate all application tables (keeps EF migration history).</summary>
     Task TruncateAllApplicationTablesAsync();

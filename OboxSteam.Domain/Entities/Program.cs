@@ -52,6 +52,9 @@ public class Program : BaseEntity
     public Guid? AdvisorExpertId { get; set; }
     public Expert? AdvisorExpert { get; set; }
 
+    /// <summary>Monotonic sequence allocated for program Discussion messages.</summary>
+    public long AdvisoryDiscussionSequence { get; set; }
+
     // Navigation
     public ICollection<ProgramBoard> ProgramBoards { get; set; } = new List<ProgramBoard>();
     public ICollection<Module> Modules { get; set; } = new List<Module>();
@@ -61,6 +64,8 @@ public class Program : BaseEntity
     public ICollection<CurriculumReview> CurriculumReviews { get; set; } = new List<CurriculumReview>();
     public ICollection<ProgramReviewSubmission> ReviewSubmissions { get; set; } = [];
     public ICollection<ProgramAdvisoryThread> AdvisoryThreads { get; set; } = [];
+    public ICollection<ProgramAdvisoryReference> AdvisoryReferences { get; set; } = [];
+    public ICollection<ProgramAdvisoryDiscussionMessage> AdvisoryDiscussionMessages { get; set; } = [];
     public ICollection<Class> Classes { get; set; } = new List<Class>();
     public ICollection<PaymentRequest> PaymentRequests { get; set; } = new List<PaymentRequest>();
 }

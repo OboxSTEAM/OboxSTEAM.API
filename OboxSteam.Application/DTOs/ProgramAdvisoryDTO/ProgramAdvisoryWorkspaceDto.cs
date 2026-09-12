@@ -30,6 +30,24 @@ public sealed class ProgramAdvisoryWorkspaceDto
 
     public bool CanAssignAdvisor { get; set; }
 
+    public AdvisoryCapabilitiesDto Capabilities { get; set; } = new();
+
+    public int ApprovalBlockingCount { get; set; }
+
+    public int OpenRequiredChangeCount { get; set; }
+
+    public int AddressedRequiredChangeCount { get; set; }
+
+    public int UnreadNoteCount { get; set; }
+
+    public int UnreadDiscussionCount { get; set; }
+
+    public ProgramReviewSubmissionSummaryDto? PendingSubmission { get; set; }
+
+    public bool ReviewActionsLocked { get; set; }
+
+    public string CollaborationContractVersion { get; set; } = "2";
+
     public ProgramReviewSubmissionSummaryDto? LatestSubmission { get; set; }
 
     public AdvisoryFeedbackCountsDto FeedbackCounts { get; set; } = new();

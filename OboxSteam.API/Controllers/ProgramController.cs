@@ -21,6 +21,7 @@ public class ProgramController : ControllerBase
     private readonly IProgramService _programService;
     private readonly ICurriculumReviewService _curriculumReviewService;
     private readonly IProgramAdvisoryService _programAdvisoryService;
+    private readonly IProgramAdvisoryDiscussionService _programAdvisoryDiscussionService;
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
     private readonly IClassService _classService;
     private readonly IClassSeatHoldService _classSeatHoldService;
@@ -30,6 +31,7 @@ public class ProgramController : ControllerBase
         IProgramService programService,
         ICurriculumReviewService curriculumReviewService,
         IProgramAdvisoryService programAdvisoryService,
+        IProgramAdvisoryDiscussionService programAdvisoryDiscussionService,
         IEnrollmentCurriculumService enrollmentCurriculumService,
         IClassService classService,
         IClassSeatHoldService classSeatHoldService,
@@ -38,6 +40,7 @@ public class ProgramController : ControllerBase
         _programService = programService;
         _curriculumReviewService = curriculumReviewService;
         _programAdvisoryService = programAdvisoryService;
+        _programAdvisoryDiscussionService = programAdvisoryDiscussionService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
         _classService = classService;
         _classSeatHoldService = classSeatHoldService;
@@ -495,12 +498,25 @@ public class ProgramController : ControllerBase
         [FromQuery] ProgramAdvisoryTargetType? targetType = null,
         [FromQuery] Guid? targetId = null,
         [FromQuery] ProgramAdvisoryThreadStatus? status = null,
-        [FromQuery] ProgramAdvisoryThreadType? type = null)
+        [FromQuery] ProgramAdvisoryThreadType? type = null,
+        [FromQuery] string? scope = null)
     {
         var result = await _programAdvisoryService.GetThreadsAsync(
-            id, submissionId, targetType, targetId, status, type);
+            id, submissionId, targetType, targetId, status, type, scope);
         return Ok(ApiResult<IReadOnlyList<AdvisoryThreadDto>>.Success(
             result, "200", "Advisory threads retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/advisory-threads/{threadId:guid}")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Get one advisory thread, including its event history")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
+    public async Task<IActionResult> GetAdvisoryThread(
+        [FromRoute] Guid id,
+        [FromRoute] Guid threadId)
+    {
+        var result = await _programAdvisoryService.GetThreadAsync(id, threadId);
+        return Ok(ApiResult<AdvisoryThreadDto>.Success(result, "200", "Advisory thread retrieved successfully."));
     }
 
     [HttpGet("{id:guid}/advisory-threads/pins")]
@@ -587,6 +603,93 @@ public class ProgramController : ControllerBase
     {
         await _programAdvisoryService.RecordReadAsync(id, request);
         return Ok(ApiResult<object>.Success(new { }, "200", "Advisory read position recorded."));
+    }
+
+    [HttpPost("{id:guid}/advisory-references")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Capture an immutable advisory curriculum reference")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryReferenceDto>), 200)]
+    public async Task<IActionResult> CreateAdvisoryReference(
+        [FromRoute] Guid id,
+        [FromBody] CreateAdvisoryReferenceRequest request)
+    {
+        var result = await _programAdvisoryService.CreateReferenceAsync(id, request);
+        return Ok(ApiResult<AdvisoryReferenceDto>.Success(result, "200", "Advisory reference captured."));
+    }
+
+    [HttpGet("{id:guid}/advisory-references/{referenceId:guid}")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Resolve an advisory reference")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryReferenceDto>), 200)]
+    public async Task<IActionResult> GetAdvisoryReference(
+        [FromRoute] Guid id,
+        [FromRoute] Guid referenceId)
+    {
+        var result = await _programAdvisoryService.GetReferenceAsync(id, referenceId);
+        return Ok(ApiResult<AdvisoryReferenceDto>.Success(result, "200", "Advisory reference resolved."));
+    }
+
+    [HttpGet("{id:guid}/advisory-discussion/messages")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "List paginated program Discussion messages")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionPageDto>), 200)]
+    public async Task<IActionResult> GetAdvisoryDiscussionMessages(
+        [FromRoute] Guid id,
+        [FromQuery] string? before = null,
+        [FromQuery] string? after = null,
+        [FromQuery] int pageSize = 30)
+    {
+        var result = await _programAdvisoryDiscussionService.GetMessagesAsync(id, before, after, pageSize);
+        return Ok(ApiResult<AdvisoryDiscussionPageDto>.Success(result, "200", "Discussion messages retrieved successfully."));
+    }
+
+    [HttpGet("{id:guid}/advisory-discussion/messages/{messageId:guid}")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Get one program Discussion message")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
+    public async Task<IActionResult> GetAdvisoryDiscussionMessage(
+        [FromRoute] Guid id,
+        [FromRoute] Guid messageId)
+    {
+        var result = await _programAdvisoryDiscussionService.GetMessageAsync(id, messageId);
+        return Ok(ApiResult<AdvisoryDiscussionMessageDto>.Success(result, "200", "Discussion message retrieved successfully."));
+    }
+
+    [HttpPost("{id:guid}/advisory-discussion/messages")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Add a program Discussion message")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
+    public async Task<IActionResult> AddAdvisoryDiscussionMessage(
+        [FromRoute] Guid id,
+        [FromBody] PostAdvisoryDiscussionMessageRequest request)
+    {
+        var result = await _programAdvisoryDiscussionService.AddMessageAsync(id, request);
+        return Ok(ApiResult<AdvisoryDiscussionMessageDto>.Success(result, "200", "Discussion message added."));
+    }
+
+    [HttpPost("{id:guid}/advisory-threads/{threadId:guid}/read")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Advance a single advisory thread read cursor")]
+    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    public async Task<IActionResult> RecordAdvisoryThreadRead(
+        [FromRoute] Guid id,
+        [FromRoute] Guid threadId,
+        [FromBody] RecordAdvisoryThreadReadRequest request)
+    {
+        await _programAdvisoryDiscussionService.RecordThreadReadAsync(id, threadId, request);
+        return Ok(ApiResult<object>.Success(new { }, "200", "Advisory thread read cursor recorded."));
+    }
+
+    [HttpPost("{id:guid}/advisory-discussion/read")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Advance the program Discussion read cursor")]
+    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    public async Task<IActionResult> RecordAdvisoryDiscussionRead(
+        [FromRoute] Guid id,
+        [FromBody] RecordAdvisoryDiscussionReadRequest request)
+    {
+        await _programAdvisoryDiscussionService.RecordDiscussionReadAsync(id, request);
+        return Ok(ApiResult<object>.Success(new { }, "200", "Discussion read cursor recorded."));
     }
 
     [HttpGet("{id:guid}/review-submissions")]

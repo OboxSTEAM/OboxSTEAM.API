@@ -46,6 +46,11 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     }
 
     public async Task<ProgramsResponseDto> SubmitForReviewAsync(Guid programId)
+        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+            programId,
+            () => SubmitForReviewCoreAsync(programId));
+
+    private async Task<ProgramsResponseDto> SubmitForReviewCoreAsync(Guid programId)
     {
         var actor = await RequireManagerOrAdminAsync();
         var program = await GetActiveProgramAsync(programId);
@@ -70,7 +75,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
         var reviewers = await ResolveSubmitReviewersAsync(program);
         var advisor = reviewers[0];
-        var now = _currentTime.GetCurrentTime();
+        var now = _currentTime.GetCurrentTime().ToUniversalTime();
 
         var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
         var criteria = await LoadVersionCriteriaAsync(program.FrameworkVersionId);
@@ -114,6 +119,11 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     }
 
     public async Task<ProgramsResponseDto> WithdrawReviewAsync(Guid programId)
+        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+            programId,
+            () => WithdrawReviewCoreAsync(programId));
+
+    private async Task<ProgramsResponseDto> WithdrawReviewCoreAsync(Guid programId)
     {
         var actor = await RequireManagerOrAdminAsync();
         var program = await GetActiveProgramAsync(programId);
@@ -123,7 +133,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             throw ErrorHelper.Conflict("Only programs pending expert review or approved for publish can be withdrawn.");
         }
 
-        var now = _currentTime.GetCurrentTime();
+        var now = _currentTime.GetCurrentTime().ToUniversalTime();
         if (program.Status == ProgramStatus.PendingReview)
         {
             var pending = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
@@ -154,6 +164,11 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     }
 
     public async Task<ProgramsResponseDto> PublishAsync(Guid programId)
+        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+            programId,
+            () => PublishCoreAsync(programId));
+
+    private async Task<ProgramsResponseDto> PublishCoreAsync(Guid programId)
     {
         var actor = await RequireManagerOrAdminAsync();
         var program = await GetActiveProgramAsync(programId);
@@ -288,6 +303,13 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     public async Task<CurriculumReviewResponseDto> ApproveAsync(
         Guid programId,
         ApproveCurriculumReviewRequest? request)
+        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+            programId,
+            () => ApproveCoreAsync(programId, request));
+
+    private async Task<CurriculumReviewResponseDto> ApproveCoreAsync(
+        Guid programId,
+        ApproveCurriculumReviewRequest? request)
     {
         var (program, expert, criteria, actor) = await RequirePendingDecisionAsync(programId);
         var submission = await ResolvePendingSubmissionAsync(program.Id, request?.SubmissionId);
@@ -307,7 +329,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var comment = CurriculumReviewValidator.NormalizeOptionalComment(request?.Comment);
         var reviewId = Guid.NewGuid();
         var scoreRows = CurriculumReviewValidator.BuildScores(reviewId, criteria, request?.Scores);
-        var now = _currentTime.GetCurrentTime();
+        var now = _currentTime.GetCurrentTime().ToUniversalTime();
 
         var review = await PersistDecisionAsync(
             program,
@@ -328,6 +350,14 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
         program.Status = ProgramStatus.Approved;
         await _unitOfWork.Programs.Update(program);
+        await AddNotificationIntentAsync(
+            program.Id,
+            review.Id,
+            "CurriculumReviewApproved",
+            NotificationType.CurriculumReviewApproved,
+            new { programId = program.Id, reviewId = review.Id, submissionId = submission.Id },
+            actor.Id,
+            now);
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -343,6 +373,13 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     public async Task<CurriculumReviewResponseDto> RequestChangesAsync(
         Guid programId,
         RequestCurriculumChangesRequest request)
+        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+            programId,
+            () => RequestChangesCoreAsync(programId, request));
+
+    private async Task<CurriculumReviewResponseDto> RequestChangesCoreAsync(
+        Guid programId,
+        RequestCurriculumChangesRequest request)
     {
         if (request == null)
         {
@@ -356,7 +393,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var comment = CurriculumReviewValidator.RequireComment(request.Comment);
         var reviewId = Guid.NewGuid();
         var scoreRows = CurriculumReviewValidator.BuildPartialScores(reviewId, criteria, request.Scores);
-        var now = _currentTime.GetCurrentTime();
+        var now = _currentTime.GetCurrentTime().ToUniversalTime();
 
         var review = await PersistDecisionAsync(
             program,
@@ -368,33 +405,105 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             submission.Id,
             snapshotAvailable: true);
 
-        var thread = new ProgramAdvisoryThread
+        var outstandingRequirements = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
+            t => t.ProgramId == program.Id
+                 && t.Type == ProgramAdvisoryThreadType.RequiredChange
+                 && t.Status != ProgramAdvisoryThreadStatus.Resolved
+                 && !t.IsDeleted);
+        var selectedRequirementIds = request.RequiredChangeThreadIds == null
+            ? outstandingRequirements.Select(t => t.Id).ToList()
+            : request.RequiredChangeThreadIds;
+        if (selectedRequirementIds.Count != selectedRequirementIds.Distinct().Count()
+            || selectedRequirementIds.Any(id => id == Guid.Empty))
         {
-            Id = Guid.NewGuid(),
-            ProgramId = program.Id,
-            AuthorUserId = actor.Id,
-            SubmissionId = submission.Id,
-            TargetType = ProgramAdvisoryTargetType.Program,
-            TargetId = program.Id,
-            TargetLabel = program.Name,
-            TargetContext = "Overall request-changes decision",
-            Type = ProgramAdvisoryThreadType.RequiredChange,
-            Status = ProgramAdvisoryThreadStatus.Open,
-            LastMessageAt = now,
-            CreatedAt = now,
-            CreatedBy = actor.Id,
-        };
-        var message = new ProgramAdvisoryMessage
+            throw ErrorHelper.BadRequest("Required-change thread ids must be unique and non-empty.");
+        }
+
+        if (outstandingRequirements.Count > 0 && selectedRequirementIds.Count == 0)
         {
-            Id = Guid.NewGuid(),
-            ThreadId = thread.Id,
-            AuthorUserId = actor.Id,
-            Message = comment,
-            CreatedAt = now,
-            CreatedBy = actor.Id,
-        };
-        await _unitOfWork.ProgramAdvisoryThreads.AddAsync(thread);
-        await _unitOfWork.ProgramAdvisoryMessages.AddAsync(message);
+            throw ErrorHelper.BadRequest("Select at least one outstanding required change.");
+        }
+
+        var outstandingById = outstandingRequirements.ToDictionary(t => t.Id);
+        if (selectedRequirementIds.Any(id => !outstandingById.ContainsKey(id)))
+        {
+            throw ErrorHelper.BadRequest("Every selected required change must be outstanding for this program.");
+        }
+
+        if (outstandingRequirements.Count == 0 && request.RequiredChangeThreadIds is { Count: > 0 })
+        {
+            throw ErrorHelper.BadRequest("The program has no outstanding required changes to reference.");
+        }
+
+        if (outstandingRequirements.Count == 0)
+        {
+            var thread = new ProgramAdvisoryThread
+            {
+                Id = Guid.NewGuid(),
+                ProgramId = program.Id,
+                AuthorUserId = actor.Id,
+                SubmissionId = submission.Id,
+                TargetType = ProgramAdvisoryTargetType.Program,
+                TargetId = program.Id,
+                TargetLabel = program.Name,
+                TargetContext = "Overall request-changes decision",
+                Type = ProgramAdvisoryThreadType.RequiredChange,
+                Status = ProgramAdvisoryThreadStatus.Open,
+                ConcurrencyVersion = Guid.NewGuid(),
+                LatestActivitySequence = 1,
+                LastMessageAt = now,
+                CreatedAt = now,
+                CreatedBy = actor.Id,
+            };
+            var message = new ProgramAdvisoryMessage
+            {
+                Id = Guid.NewGuid(),
+                ThreadId = thread.Id,
+                AuthorUserId = actor.Id,
+                StreamSequence = 1,
+                Message = comment,
+                CreatedAt = now,
+                CreatedBy = actor.Id,
+            };
+            await _unitOfWork.ProgramAdvisoryThreads.AddAsync(thread);
+            await _unitOfWork.ProgramAdvisoryMessages.AddAsync(message);
+            var createdEvent = new ProgramAdvisoryThreadEvent
+            {
+                Id = Guid.NewGuid(),
+                ProgramId = program.Id,
+                ThreadId = thread.Id,
+                Sequence = 1,
+                EventType = ProgramAdvisoryThreadEventType.Created,
+                ActorUserId = actor.Id,
+                NewStatus = thread.Status,
+                Message = comment,
+                CreatedAt = now,
+                CreatedBy = actor.Id,
+            };
+            await _unitOfWork.ProgramAdvisoryThreadEvents.AddAsync(createdEvent);
+            await AddNotificationIntentAsync(
+                program.Id,
+                createdEvent.Id,
+                "AdvisoryRequirementCreated",
+                NotificationType.AdvisoryFeedbackPublished,
+                new { programId = program.Id, threadId = thread.Id, reviewId = review.Id },
+                actor.Id,
+                now);
+            selectedRequirementIds.Add(thread.Id);
+        }
+
+        foreach (var requirementId in selectedRequirementIds)
+        {
+            await _unitOfWork.CurriculumReviewRequirements.AddAsync(new CurriculumReviewRequirement
+            {
+                Id = Guid.NewGuid(),
+                ProgramId = program.Id,
+                CurriculumReviewId = review.Id,
+                ThreadId = requirementId,
+                CreatedAt = now,
+                CreatedBy = actor.Id,
+            });
+        }
 
         submission.Status = ProgramReviewSubmissionStatus.ChangesRequested;
         submission.ClosedAt = now;
@@ -405,6 +514,14 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
         program.Status = ProgramStatus.Draft;
         await _unitOfWork.Programs.Update(program);
+        await AddNotificationIntentAsync(
+            program.Id,
+            review.Id,
+            "CurriculumReviewChangesRequested",
+            NotificationType.CurriculumReviewChangesRequested,
+            new { programId = program.Id, reviewId = review.Id, submissionId = submission.Id },
+            actor.Id,
+            now);
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -1118,6 +1235,32 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
     private static string DisplayName(User user)
         => string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName;
+
+    private async Task AddNotificationIntentAsync(
+        Guid programId,
+        Guid eventId,
+        string eventType,
+        NotificationType notificationType,
+        object payload,
+        Guid actorUserId,
+        DateTime now)
+    {
+        await _unitOfWork.ProgramAdvisoryNotificationIntents.AddAsync(
+            new ProgramAdvisoryNotificationIntent
+            {
+                Id = Guid.NewGuid(),
+                ProgramId = programId,
+                EventId = eventId,
+                EventType = eventType,
+                NotificationType = notificationType,
+                PayloadJson = JsonSerializer.Serialize(payload),
+                Status = AdvisoryNotificationIntentStatus.Pending,
+                AttemptCount = 0,
+                NextAttemptAt = now,
+                CreatedAt = now,
+                CreatedBy = actorUserId,
+            });
+    }
 
     private async Task<CurriculumReviewResponseDto> MapReviewAsync(CurriculumReview review)
     {

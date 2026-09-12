@@ -51,6 +51,13 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<ProgramAdvisoryThread> ProgramAdvisoryThreads { get; } = new();
     public InMemoryRepository<ProgramAdvisoryMessage> ProgramAdvisoryMessages { get; } = new();
     public InMemoryRepository<ProgramAdvisoryRead> ProgramAdvisoryReads { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryReference> ProgramAdvisoryReferences { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads { get; } = new();
+    public InMemoryRepository<CurriculumReviewRequirement> CurriculumReviewRequirements { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents { get; } = new();
     public InMemoryRepository<ClassSessionExpert> ClassSessionExperts { get; } = new();
     public InMemoryRepository<Certificate> Certificates { get; } = new();
     public InMemoryRepository<MediaAsset> MediaAssets { get; } = new();
@@ -126,6 +133,13 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<ProgramAdvisoryThread> IUnitOfWork.ProgramAdvisoryThreads => ProgramAdvisoryThreads;
     IGenericRepository<ProgramAdvisoryMessage> IUnitOfWork.ProgramAdvisoryMessages => ProgramAdvisoryMessages;
     IGenericRepository<ProgramAdvisoryRead> IUnitOfWork.ProgramAdvisoryReads => ProgramAdvisoryReads;
+    IGenericRepository<ProgramAdvisoryReference> IUnitOfWork.ProgramAdvisoryReferences => ProgramAdvisoryReferences;
+    IGenericRepository<ProgramAdvisoryThreadEvent> IUnitOfWork.ProgramAdvisoryThreadEvents => ProgramAdvisoryThreadEvents;
+    IGenericRepository<ProgramAdvisoryDiscussionMessage> IUnitOfWork.ProgramAdvisoryDiscussionMessages => ProgramAdvisoryDiscussionMessages;
+    IGenericRepository<ProgramAdvisoryDiscussionMessageReference> IUnitOfWork.ProgramAdvisoryDiscussionMessageReferences => ProgramAdvisoryDiscussionMessageReferences;
+    IGenericRepository<ProgramAdvisoryStreamRead> IUnitOfWork.ProgramAdvisoryStreamReads => ProgramAdvisoryStreamReads;
+    IGenericRepository<CurriculumReviewRequirement> IUnitOfWork.CurriculumReviewRequirements => CurriculumReviewRequirements;
+    IGenericRepository<ProgramAdvisoryNotificationIntent> IUnitOfWork.ProgramAdvisoryNotificationIntents => ProgramAdvisoryNotificationIntents;
     IGenericRepository<ClassSessionExpert> IUnitOfWork.ClassSessionExperts => ClassSessionExperts;
     IGenericRepository<Certificate> IUnitOfWork.Certificates => Certificates;
     IGenericRepository<MediaAsset> IUnitOfWork.MediaAssets => MediaAssets;
@@ -205,6 +219,13 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(ProgramAdvisoryThread) => ProgramAdvisoryThreads,
             nameof(ProgramAdvisoryMessage) => ProgramAdvisoryMessages,
             nameof(ProgramAdvisoryRead) => ProgramAdvisoryReads,
+            nameof(ProgramAdvisoryReference) => ProgramAdvisoryReferences,
+            nameof(ProgramAdvisoryThreadEvent) => ProgramAdvisoryThreadEvents,
+            nameof(ProgramAdvisoryDiscussionMessage) => ProgramAdvisoryDiscussionMessages,
+            nameof(ProgramAdvisoryDiscussionMessageReference) => ProgramAdvisoryDiscussionMessageReferences,
+            nameof(ProgramAdvisoryStreamRead) => ProgramAdvisoryStreamReads,
+            nameof(CurriculumReviewRequirement) => CurriculumReviewRequirements,
+            nameof(ProgramAdvisoryNotificationIntent) => ProgramAdvisoryNotificationIntents,
             nameof(ClassSessionExpert) => ClassSessionExperts,
             nameof(Certificate) => Certificates,
             nameof(MediaAsset) => MediaAssets,
@@ -255,6 +276,9 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
         SyncPortfolioItemSubmissions();
         return Task.FromResult(1);
     }
+
+    public Task<TResult> ExecuteAdvisoryTransactionAsync<TResult>(Guid programId, Func<Task<TResult>> operation)
+        => operation();
 
     /// <summary>
     /// Keeps <see cref="Expert.ProgramBoards"/> aligned with the ProgramBoards store after mutations,

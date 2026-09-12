@@ -30,6 +30,13 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ProgramAdvisoryThread> ProgramAdvisoryThreads { get; set; }
     public DbSet<ProgramAdvisoryMessage> ProgramAdvisoryMessages { get; set; }
     public DbSet<ProgramAdvisoryRead> ProgramAdvisoryReads { get; set; }
+    public DbSet<ProgramAdvisoryReference> ProgramAdvisoryReferences { get; set; }
+    public DbSet<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents { get; set; }
+    public DbSet<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages { get; set; }
+    public DbSet<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences { get; set; }
+    public DbSet<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads { get; set; }
+    public DbSet<CurriculumReviewRequirement> CurriculumReviewRequirements { get; set; }
+    public DbSet<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents { get; set; }
 
     // ── 3. Student Academic Profile ──
     public DbSet<StudentProfile> StudentProfiles { get; set; }
@@ -140,6 +147,13 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ProgramAdvisoryThread>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryMessage>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryRead>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramAdvisoryReference>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramAdvisoryThreadEvent>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramAdvisoryDiscussionMessage>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramAdvisoryDiscussionMessageReference>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramAdvisoryStreamRead>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CurriculumReviewRequirement>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramAdvisoryNotificationIntent>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassSessionExpert>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramBoard>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Skill>().HasQueryFilter(e => !e.IsDeleted);
@@ -623,6 +637,8 @@ public class OboxSteamDbContext : DbContext
                 .HasFilter("\"IsDeleted\" = false");
             entity.HasIndex(t => new { t.ProgramId, t.Type, t.Status })
                 .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(t => new { t.ProgramId, t.SubmissionId, t.LastMessageAt })
+                .HasFilter("\"IsDeleted\" = false");
             entity.Property(t => t.AnchorKind).HasConversion<string>();
         });
 
@@ -634,6 +650,9 @@ public class OboxSteamDbContext : DbContext
                 .HasForeignKey(m => m.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(m => new { m.ThreadId, m.CreatedAt })
                 .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(m => new { m.ThreadId, m.StreamSequence })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"StreamSequence\" > 0");
         });
 
         modelBuilder.Entity<ProgramAdvisoryRead>(entity =>
@@ -644,6 +663,101 @@ public class OboxSteamDbContext : DbContext
                 .HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(r => new { r.ProgramId, r.UserId }).IsUnique()
                 .HasFilter("\"IsDeleted\" = false");
+        });
+
+        modelBuilder.Entity<ProgramAdvisoryReference>(entity =>
+        {
+            entity.HasOne(r => r.Program).WithMany(p => p.AdvisoryReferences)
+                .HasForeignKey(r => r.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.Submission).WithMany()
+                .HasForeignKey(r => r.SubmissionId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
+            entity.HasIndex(r => new { r.ProgramId, r.Context, r.SubmissionId, r.TargetType, r.TargetId });
+            entity.HasIndex(r => new { r.ProgramId, r.SubmissionId });
+        });
+
+        modelBuilder.Entity<ProgramAdvisoryThreadEvent>(entity =>
+        {
+            entity.HasOne(e => e.Program).WithMany()
+                .HasForeignKey(e => e.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Thread).WithMany(t => t.Events)
+                .HasForeignKey(e => e.ThreadId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ActorUser).WithMany()
+                .HasForeignKey(e => e.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.VerifiedAgainstSubmission).WithMany()
+                .HasForeignKey(e => e.VerifiedAgainstSubmissionId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
+            entity.HasIndex(e => new { e.ThreadId, e.Sequence }).IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(e => e.OperationId).IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"OperationId\" IS NOT NULL");
+            entity.Property(e => e.PriorStatus).HasConversion<string>();
+            entity.Property(e => e.NewStatus).HasConversion<string>();
+            entity.Property(e => e.ResolutionKind).HasConversion<string>();
+            entity.Property(e => e.EventType).HasConversion<string>();
+        });
+
+        modelBuilder.Entity<ProgramAdvisoryDiscussionMessage>(entity =>
+        {
+            entity.HasOne(m => m.Program).WithMany(p => p.AdvisoryDiscussionMessages)
+                .HasForeignKey(m => m.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(m => m.AuthorUser).WithMany()
+                .HasForeignKey(m => m.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(m => new { m.ProgramId, m.Sequence }).IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(m => new { m.ProgramId, m.AuthorUserId, m.ClientMessageId }).IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+        });
+
+        modelBuilder.Entity<ProgramAdvisoryDiscussionMessageReference>(entity =>
+        {
+            entity.HasOne(r => r.Message).WithMany(m => m.References)
+                .HasForeignKey(r => r.MessageId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(r => r.Reference).WithMany()
+                .HasForeignKey(r => r.ReferenceId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(r => new { r.MessageId, r.ReferenceId }).IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(r => new { r.MessageId, r.Ordinal })
+                .HasFilter("\"IsDeleted\" = false");
+        });
+
+        modelBuilder.Entity<ProgramAdvisoryStreamRead>(entity =>
+        {
+            entity.HasOne(r => r.Program).WithMany()
+                .HasForeignKey(r => r.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.User).WithMany()
+                .HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.Thread).WithMany()
+                .HasForeignKey(r => r.ThreadId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
+            entity.HasIndex(r => new { r.ProgramId, r.UserId, r.StreamType, r.ThreadId }).IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"ThreadId\" IS NOT NULL");
+            entity.HasIndex(r => new { r.ProgramId, r.UserId, r.StreamType }).IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"ThreadId\" IS NULL");
+            entity.Property(r => r.StreamType).HasConversion<string>();
+        });
+
+        modelBuilder.Entity<CurriculumReviewRequirement>(entity =>
+        {
+            entity.HasOne(r => r.Program).WithMany()
+                .HasForeignKey(r => r.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.CurriculumReview).WithMany()
+                .HasForeignKey(r => r.CurriculumReviewId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(r => r.Thread).WithMany()
+                .HasForeignKey(r => r.ThreadId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(r => new { r.CurriculumReviewId, r.ThreadId }).IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(r => new { r.ProgramId, r.ThreadId })
+                .HasFilter("\"IsDeleted\" = false");
+        });
+
+        modelBuilder.Entity<ProgramAdvisoryNotificationIntent>(entity =>
+        {
+            entity.HasOne(i => i.Program).WithMany()
+                .HasForeignKey(i => i.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(i => i.EventId).IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(i => new { i.Status, i.NextAttemptAt })
+                .HasFilter("\"IsDeleted\" = false");
+            entity.Property(i => i.NotificationType).HasConversion<string>();
+            entity.Property(i => i.Status).HasConversion<string>();
         });
 
         // =============================================

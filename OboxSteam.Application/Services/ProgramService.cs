@@ -811,6 +811,11 @@ public class ProgramService : IProgramService
     }
 
     public async Task<ProgramsResponseDto> AssignAdvisorAsync(Guid id, AssignProgramAdvisorRequest request)
+        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+            id,
+            () => AssignAdvisorCoreAsync(id, request));
+
+    private async Task<ProgramsResponseDto> AssignAdvisorCoreAsync(Guid id, AssignProgramAdvisorRequest request)
     {
         var program = await _unitOfWork.Programs.GetByIdAsync(id);
         if (program == null || program.IsDeleted) throw ErrorHelper.NotFound($"Program with id '{id}' not found.");

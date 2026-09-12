@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OboxSteam.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OboxSteam.Infrastructure.Persistence;
 namespace OboxSteam.Infrastructure.Migrations
 {
     [DbContext(typeof(OboxSteamDbContext))]
-    partial class OboxSteamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260912141326_AddExpertAdvisoryWorkspace")]
+    partial class AddExpertAdvisoryWorkspace
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1424,6 +1427,7 @@ namespace OboxSteam.Infrastructure.Migrations
                         .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("ProgramId", "ThreadId")
+                        .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("CurriculumReviewRequirements");
@@ -3604,11 +3608,11 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EventId")
+                    b.HasIndex("ProgramId");
+
+                    b.HasIndex("EventId", "RecipientUserId")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("ProgramId");
 
                     b.HasIndex("Status", "NextAttemptAt")
                         .HasFilter("\"IsDeleted\" = false");
@@ -3799,13 +3803,9 @@ namespace OboxSteam.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.HasIndex("ProgramId", "UserId", "StreamType")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"ThreadId\" IS NULL");
-
                     b.HasIndex("ProgramId", "UserId", "StreamType", "ThreadId")
                         .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"ThreadId\" IS NOT NULL");
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("ProgramAdvisoryStreamReads");
                 });

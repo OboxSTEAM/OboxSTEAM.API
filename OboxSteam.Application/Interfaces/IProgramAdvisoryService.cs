@@ -20,7 +20,10 @@ public interface IProgramAdvisoryService
         ProgramAdvisoryTargetType? targetType = null,
         Guid? targetId = null,
         ProgramAdvisoryThreadStatus? status = null,
-        ProgramAdvisoryThreadType? type = null);
+        ProgramAdvisoryThreadType? type = null,
+        string? scope = null);
+
+    Task<AdvisoryThreadDto> GetThreadAsync(Guid programId, Guid threadId);
 
     Task<AdvisoryBoardDto> GetBoardAsync(Guid programId, Guid submissionId);
 
@@ -40,4 +43,11 @@ public interface IProgramAdvisoryService
         UpdateAdvisoryThreadStatusRequest request);
 
     Task RecordReadAsync(Guid programId, RecordAdvisoryReadRequest? request);
+
+    Task<AdvisoryReferenceDto> CreateReferenceAsync(
+        Guid programId,
+        CreateAdvisoryReferenceRequest request);
+
+    Task<AdvisoryReferenceDto> GetReferenceAsync(Guid programId, Guid referenceId);
+
 }

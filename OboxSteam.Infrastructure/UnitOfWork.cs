@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Interfaces;
@@ -72,6 +73,13 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ProgramAdvisoryThread> ProgramAdvisoryThreads => Repository<ProgramAdvisoryThread>();
     public IGenericRepository<ProgramAdvisoryMessage> ProgramAdvisoryMessages => Repository<ProgramAdvisoryMessage>();
     public IGenericRepository<ProgramAdvisoryRead> ProgramAdvisoryReads => Repository<ProgramAdvisoryRead>();
+    public IGenericRepository<ProgramAdvisoryReference> ProgramAdvisoryReferences => Repository<ProgramAdvisoryReference>();
+    public IGenericRepository<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents => Repository<ProgramAdvisoryThreadEvent>();
+    public IGenericRepository<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages => Repository<ProgramAdvisoryDiscussionMessage>();
+    public IGenericRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences => Repository<ProgramAdvisoryDiscussionMessageReference>();
+    public IGenericRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads => Repository<ProgramAdvisoryStreamRead>();
+    public IGenericRepository<CurriculumReviewRequirement> CurriculumReviewRequirements => Repository<CurriculumReviewRequirement>();
+    public IGenericRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents => Repository<ProgramAdvisoryNotificationIntent>();
     public IGenericRepository<ClassSessionExpert> ClassSessionExperts => Repository<ClassSessionExpert>();
     public IGenericRepository<Certificate> Certificates => Repository<Certificate>();
     public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();
@@ -110,6 +118,32 @@ public class UnitOfWork : IUnitOfWork
     public async Task<int> SaveChangesAsync()
     {
         return await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task<TResult> ExecuteAdvisoryTransactionAsync<TResult>(Guid programId, Func<Task<TResult>> operation)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        if (!_dbContext.Database.IsRelational())
+        {
+            return await operation();
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+        await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT \"Id\" FROM \"Programs\" WHERE \"Id\" = {programId} FOR UPDATE");
+
+        try
+        {
+            var result = await operation();
+            await transaction.CommitAsync();
+            return result;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task TruncateAllApplicationTablesAsync()

@@ -20,6 +20,9 @@ public sealed class ProgramAdvisoryThread : BaseEntity
     public ProgramAdvisoryAnchorKind? AnchorKind { get; set; }
     [MaxLength(100)] public string? AnchorField { get; set; }
     [MaxLength(1000)] public string? AnchorQuote { get; set; }
+    [ConcurrencyCheck] public Guid ConcurrencyVersion { get; set; } = Guid.NewGuid();
+    public long LatestActivitySequence { get; set; }
     public DateTime LastMessageAt { get; set; }
     public ICollection<ProgramAdvisoryMessage> Messages { get; set; } = [];
+    public ICollection<ProgramAdvisoryThreadEvent> Events { get; set; } = [];
 }

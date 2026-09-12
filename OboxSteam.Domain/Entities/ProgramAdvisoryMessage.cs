@@ -6,5 +6,6 @@ public sealed class ProgramAdvisoryMessage : BaseEntity
     public ProgramAdvisoryThread Thread { get; set; } = null!;
     public Guid AuthorUserId { get; set; }
     public User AuthorUser { get; set; } = null!;
+    public long StreamSequence { get; set; }
     public string Message { get; set; } = null!;
 }
