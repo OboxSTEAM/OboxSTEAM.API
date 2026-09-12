@@ -296,7 +296,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                  && (!status.HasValue || t.Status == status.Value)
                  && (!type.HasValue || t.Type == type.Value)
                  && !t.IsDeleted);
-        var ordered = threads.OrderByDescending(t => t.LastMessageAt).ToList();
+        var ordered = threads.OrderByDescending(t => t.LastMessageAt).ThenBy(t => t.Id).ToList();
         if (ordered.Count == 0)
         {
             return [];
@@ -314,13 +314,14 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             .Select(t => t.SubmissionId!.Value)
             .Distinct()
             .ToList();
-        var snapshotsBySubmissionId = submissionIds.Count == 0
-            ? new Dictionary<Guid, CurriculumReviewSnapshotBuilder.CurriculumSnapshotDocument?>()
+        var submissionsById = submissionIds.Count == 0
+            ? new Dictionary<Guid, ProgramReviewSubmission>()
             : (await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
                     s => submissionIds.Contains(s.Id) && s.ProgramId == programId && !s.IsDeleted))
-                .ToDictionary(
-                    s => s.Id,
-                    s => CurriculumReviewSnapshotBuilder.TryDeserialize(s.CurriculumSnapshotJson));
+                .ToDictionary(s => s.Id);
+        var snapshotsBySubmissionId = submissionsById.ToDictionary(
+            pair => pair.Key,
+            pair => CurriculumReviewSnapshotBuilder.TryDeserialize(pair.Value.CurriculumSnapshotJson));
 
         return ordered
             .Select(t =>
@@ -338,6 +339,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                     latest?.Message,
                     target.Label,
                     target.Context);
+                ApplyOriginRound(dto, t, submissionsById);
                 dto.Events = events
                     .Where(e => e.ThreadId == t.Id)
                     .OrderBy(e => e.Sequence)
@@ -396,10 +398,25 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             : null;
         var target = ResolveSnapshotTarget(snapshot, thread);
         var dto = MapThread(thread, author, messages.Count, latest?.Message, target.Label, target.Context);
+        if (thread.SubmissionId.HasValue)
+        {
+            var origin = await RequireSubmissionAsync(programId, thread.SubmissionId.Value);
+            ApplyOriginRound(dto, thread, new Dictionary<Guid, ProgramReviewSubmission> { [origin.Id] = origin });
+        }
+
         dto.Events = events.OrderBy(e => e.Sequence).Select(MapThreadEvent).ToList();
+        var messageAuthors = await LoadUsersAsync(messages.Select(m => m.AuthorUserId));
+        dto.Messages = messages
+            .OrderBy(m => m.StreamSequence)
+            .ThenBy(m => m.CreatedAt)
+            .Select(m => MapMessage(m, messageAuthors.GetValueOrDefault(m.AuthorUserId)))
+            .ToList();
         ApplyThreadCapabilities(dto, thread, actor, isAdvisor, isBoard, canStaff, program.Status);
         return dto;
     }
+
+    public Task<IReadOnlyList<AdvisoryAnchorFieldDto>> GetAnchorFieldsAsync()
+        => Task.FromResult(AdvisoryAnchorFieldRegistry.ListAll());
 
     public async Task<AdvisoryReferenceDto> CreateReferenceAsync(
         Guid programId,
@@ -752,7 +769,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var existingOperation = await FindThreadEventByOperationIdAsync(programId, threadId, request.ClientOperationId);
         if (existingOperation != null)
         {
-            return await MapThreadForCurrentActorAsync(program, actor, isAdvisor, isBoard, canStaff, thread);
+            return await GetThreadAsync(programId, threadId);
         }
 
         EnsureReviewNotesMutable(program);
@@ -778,6 +795,13 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                 if (!canStaff)
                 {
                     throw ErrorHelper.Forbidden("Only Manager or Admin can mark feedback as addressed.");
+                }
+
+                if (program.Status != ProgramStatus.Draft)
+                {
+                    throw ErrorHelper.Conflict(
+                        "Feedback can only be marked addressed while the curriculum is editable (Draft / Revision).",
+                        "ADVISORY_ADDRESS_NOT_EDITABLE");
                 }
 
                 if (priorStatus != ProgramAdvisoryThreadStatus.Open)
@@ -889,17 +913,8 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                     DisplayName(actor)));
         }
 
-        var count = (await _unitOfWork.ProgramAdvisoryMessages.GetAllAsync(
-            m => m.ThreadId == thread.Id && !m.IsDeleted)).Count;
-        var latest = (await _unitOfWork.ProgramAdvisoryMessages.GetAllAsync(
-                m => m.ThreadId == thread.Id && !m.IsDeleted))
-            .OrderByDescending(m => m.CreatedAt)
-            .FirstOrDefault();
-        var author = await _unitOfWork.Users.GetByIdAsync(thread.AuthorUserId);
-        var result = MapThread(thread, author, count, latest?.Message);
-        result.Events = [MapThreadEvent(statusEvent)];
-        ApplyThreadCapabilities(result, thread, actor, isAdvisor, isBoard, canStaff, program.Status);
-        return result;
+        // Contract: PATCH returns the full AdvisoryThreadDto (ordered events + messages + flags).
+        return await GetThreadAsync(programId, threadId);
     }
 
     public async Task RecordReadAsync(Guid programId, RecordAdvisoryReadRequest? request)
@@ -1345,28 +1360,9 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
 
         if (!string.IsNullOrWhiteSpace(request.AnchorField))
         {
-            if (!AllowedAnchorFields.TryGetValue(request.TargetType, out var fields)
-                || !fields.Contains(request.AnchorField, StringComparer.OrdinalIgnoreCase))
-            {
-                throw ErrorHelper.BadRequest("AnchorField is not supported for this target type.");
-            }
+            AdvisoryAnchorFieldRegistry.EnsureAllowed(request.TargetType, request.AnchorField);
         }
     }
-
-    private static readonly IReadOnlyDictionary<ProgramAdvisoryTargetType, string[]> AllowedAnchorFields =
-        new Dictionary<ProgramAdvisoryTargetType, string[]>
-        {
-            [ProgramAdvisoryTargetType.Program] = ["name", "code", "description", "skillsGained"],
-            [ProgramAdvisoryTargetType.Module] = ["name", "code", "type", "learningOutcomes"],
-            [ProgramAdvisoryTargetType.Course] = ["name", "code", "description"],
-            [ProgramAdvisoryTargetType.Activity] =
-                ["name", "type", "description", "durationMinutes", "requireQrCheckin", "requireMediaEvidence"],
-            [ProgramAdvisoryTargetType.Assignment] =
-                ["title", "code", "description", "assignmentType", "maxPoints", "passScore", "isRequiredForModulePass"],
-            [ProgramAdvisoryTargetType.ResearchMilestone] = ["title", "code", "description", "isCapstone"],
-            [ProgramAdvisoryTargetType.Material] = ["title", "materialType", "fileName"],
-            [ProgramAdvisoryTargetType.RubricCriterion] = ["name", "description", "evidenceGuidance", "maxScore"],
-        };
 
     private async Task<ProgramAdvisoryThread> RequireThreadAsync(Guid programId, Guid threadId)
     {
@@ -1888,25 +1884,44 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         bool canStaff,
         ProgramStatus programStatus)
     {
-        var mutable = programStatus is ProgramStatus.Draft or ProgramStatus.PendingReview;
-        dto.CanAddress = mutable
+        // Address only while curriculum is editable (Draft / Revision). Frozen PendingReview cannot Address.
+        var curriculumEditable = programStatus == ProgramStatus.Draft;
+        var notesMutable = programStatus is ProgramStatus.Draft or ProgramStatus.PendingReview;
+        dto.CanAddress = curriculumEditable
             && canStaff
             && thread.Status == ProgramAdvisoryThreadStatus.Open;
-        dto.CanResolve = mutable
+        dto.CanResolve = notesMutable
             && thread.Status is (ProgramAdvisoryThreadStatus.Open or ProgramAdvisoryThreadStatus.Addressed)
             && (thread.Type == ProgramAdvisoryThreadType.RequiredChange
                 ? isAdvisor
                 : isAdvisor || thread.AuthorUserId == actor.Id);
-        dto.CanReopen = mutable
+        dto.CanReopen = notesMutable
             && thread.Status != ProgramAdvisoryThreadStatus.Open
             && (thread.Type == ProgramAdvisoryThreadType.RequiredChange
                 ? isAdvisor
                 : isAdvisor || thread.AuthorUserId == actor.Id || canStaff);
-        dto.CanWaive = mutable
+        dto.CanWaive = notesMutable
             && thread.Type == ProgramAdvisoryThreadType.RequiredChange
             && isAdvisor
             && thread.Status != ProgramAdvisoryThreadStatus.Resolved;
         _ = isBoard;
+    }
+
+    private static void ApplyOriginRound(
+        AdvisoryThreadDto dto,
+        ProgramAdvisoryThread thread,
+        IReadOnlyDictionary<Guid, ProgramReviewSubmission> submissionsById)
+    {
+        if (!thread.SubmissionId.HasValue
+            || !submissionsById.TryGetValue(thread.SubmissionId.Value, out var submission))
+        {
+            return;
+        }
+
+        dto.OriginSubmissionNumber = submission.SubmissionNumber;
+        dto.OriginReviewRoundIntent = submission.ReviewRoundIntent;
+        var intentLabel = submission.ReviewRoundIntent?.ToString() ?? "Review";
+        dto.OriginRoundLabel = $"Round {submission.SubmissionNumber} · {intentLabel}";
     }
 
     private static AdvisoryThreadEventDto MapThreadEvent(ProgramAdvisoryThreadEvent row)
@@ -1936,16 +1951,19 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         bool isBoard,
         bool canStaff)
     {
-        var mutableNotes = program.Status is ProgramStatus.Draft or ProgramStatus.PendingReview;
+        var notesMutable = program.Status is ProgramStatus.Draft or ProgramStatus.PendingReview;
+        var reviewActionsLocked = program.Status is ProgramStatus.Approved or ProgramStatus.Active or ProgramStatus.Inactive;
         return new AdvisoryCapabilitiesDto
         {
-            CanCreateSuggestion = mutableNotes && actor.Role == RoleType.Expert && (isAdvisor || isBoard),
-            CanCreateRequiredChange = mutableNotes && actor.Role == RoleType.Expert && isAdvisor,
+            // Manager/Admin never create suggestions or required changes.
+            CanCreateSuggestion = notesMutable && actor.Role == RoleType.Expert && (isAdvisor || isBoard),
+            CanCreateRequiredChange = notesMutable && actor.Role == RoleType.Expert && isAdvisor,
+            // Discussion remains available when reviewActionsLocked is true.
             CanDiscuss = true,
-            CanReplyToNotes = mutableNotes && (canStaff || isAdvisor || isBoard),
+            CanReplyToNotes = notesMutable && (canStaff || isAdvisor || isBoard),
             CanEditCurriculum = canStaff && program.Status == ProgramStatus.Draft,
             CanAssignAdvisor = canStaff && program.Status == ProgramStatus.Draft,
-            CanDecide = isAdvisor && program.Status == ProgramStatus.PendingReview,
+            CanDecide = isAdvisor && program.Status == ProgramStatus.PendingReview && !reviewActionsLocked,
         };
     }
 

@@ -52,4 +52,5 @@ public interface IProgramAdvisoryService
 
     Task<AdvisoryReferenceDto> GetReferenceAsync(Guid programId, Guid referenceId);
 
+    Task<IReadOnlyList<AdvisoryAnchorFieldDto>> GetAnchorFieldsAsync();
 }

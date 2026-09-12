@@ -99,7 +99,9 @@ public static class ProgramFrameworkValidator
         var version = await unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value);
         if (version == null || version.IsDeleted || !version.IsPublished)
         {
-            throw ErrorHelper.Conflict("The assigned framework version is unavailable or not published.");
+            throw ErrorHelper.Conflict(
+                "The assigned framework version is unavailable or not published.",
+                "FRAMEWORK_UNAVAILABLE");
         }
 
         var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(unitOfWork, programId);
@@ -107,7 +109,7 @@ public static class ProgramFrameworkValidator
 
         if (errors.Count > 0)
         {
-            throw ErrorHelper.BadRequest(string.Join(" ", errors));
+            throw ErrorHelper.BadRequest(string.Join(" ", errors), "FRAMEWORK_CHECK_FAILED");
         }
     }
 

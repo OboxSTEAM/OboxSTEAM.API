@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Domain.Entities;
@@ -27,6 +28,10 @@ public class CurriculumReview : BaseEntity
     public string? Comment { get; set; }
 
     public DateTime ReviewedAt { get; set; }
+
+    /// <summary>Idempotency key for request-changes / approve clients (optional).</summary>
+    [MaxLength(100)]
+    public string? ClientOperationId { get; set; }
 
     public ICollection<ReviewCriterionScore> CriterionScores { get; set; } = new List<ReviewCriterionScore>();
 }

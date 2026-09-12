@@ -568,6 +568,11 @@ public class OboxSteamDbContext : DbContext
                 .IsUnique()
                 .HasFilter("\"IsDeleted\" = false AND \"SubmissionId\" IS NOT NULL");
 
+            entity.Property(r => r.ClientOperationId).HasMaxLength(100);
+            entity.HasIndex(r => new { r.ProgramId, r.ClientOperationId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"ClientOperationId\" IS NOT NULL");
+
             entity.ToTable(t => t.HasCheckConstraint(
                 "CK_CurriculumReviews_RoundPositive",
                 "\"Round\" > 0"));

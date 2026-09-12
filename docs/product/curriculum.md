@@ -38,9 +38,12 @@ Lifecycle endpoints (Manager/Admin unless noted):
   with a linked login. Assignment adds the expert to `ProgramBoard`.
   `PendingReview` or `Approved` must be withdrawn before reassignment.
 - `POST /api/programs/{id}/submit-review` — Draft only and requires a responsible
-  advisor. Runs the pinned published framework-version checks when present,
-  creates an immutable `ProgramReviewSubmission` snapshot, notifies that
-  advisor, and moves to `PendingReview`.
+  advisor with an active linked login (with or without a framework). Runs the
+  pinned published framework-version checks when present, requires at least one
+  module, creates an immutable `ProgramReviewSubmission` snapshot, notifies that
+  advisor, and moves to `PendingReview`. Machine-usable error codes include
+  `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED`, `MODULES_REQUIRED`,
+  `FRAMEWORK_UNAVAILABLE`, and `FRAMEWORK_CHECK_FAILED`.
 - `POST /api/programs/{id}/withdraw-review` — `PendingReview` or `Approved`
   → `Draft`. Pending submissions are closed as `Withdrawn` (draft autosave
   blocked).
@@ -51,42 +54,58 @@ Lifecycle endpoints (Manager/Admin unless noted):
 - `GET /api/programs/advisory-mine` — paginated assigned advisory programs
   (advisor/board for Expert; all for Manager/Admin) with unread counts and
   next actions.
-- `GET /api/programs/{id}/advisory` — workspace summary: participants,
-  permissions (`canAdvise` / `canDecide` / `canEditCurriculum` /
-  `canAssignAdvisor`), latest submission, feedback counts.
+- `GET /api/programs/{id}/advisory` — workspace summary: `collaborationContractVersion`
+  `2`, `capabilities`, server `workflow` timeline, `approvalBlockingCount`
+  (Open + Addressed RequiredChanges — the approve gate; matches `scope=outstanding`
+  and timeline `outstandingRequirementCount`), separate `unreadNoteCount` /
+  `unreadDiscussionCount`, `pendingSubmission` / `latestSubmission`, and
+  `reviewActionsLocked`. Discussion stays allowed when locked. Legacy flat
+  `canDecide` / `canEditCurriculum` mirror `capabilities.*`.
+- `GET /api/programs/advisory-anchor-fields` — published allowlist of
+  `targetType` + `fieldKey` (+ `label`) for note anchors and references.
 - `GET /api/programs/{id}/advisory/board?submissionId=${uuid}` — the
   submission-scoped hybrid board aggregate: immutable curriculum tree, thread
   pins, revision summary, and framework highlights.
 - `GET /api/programs/{id}/framework-check` — structured expected/actual checks
   against the pinned framework version.
 - `GET|POST /api/programs/{id}/advisory-threads` — contextual Suggestion /
-  RequiredChange threads. Reads support `submissionId`, node/status/type
-  filters; review-time creates require `submissionId`. Field anchors are
-  persisted as Node, Field, or Quote metadata. Only the responsible advisor
-  creates RequiredChange.
+  RequiredChange threads. Reads support `submissionId`, `scope=outstanding`
+  (all unresolved RequiredChanges across rounds with origin round labels),
+  node/status/type filters; review-time creates require `submissionId`. Field
+  anchors must use allowlisted keys. Only the responsible advisor creates
+  RequiredChange. Per-thread `canAddress` is true only while curriculum is
+  editable (`Draft`); resolve/waive/reopen remain available during `PendingReview`.
 - `GET /api/programs/{id}/advisory-threads/pins?submissionId=${uuid}` —
   submission-scoped open-required/open-suggestion counts by curriculum node.
 - `GET|POST /api/programs/{id}/advisory-threads/{threadId}/messages`
+- `GET /api/programs/{id}/advisory-threads/{threadId}` — full thread with ordered
+  `events` and `messages` (avoid double-rendering `MessageAdded` against a
+  separate message list).
 - `PATCH /api/programs/{id}/advisory-threads/{threadId}/status` — Manager marks
-  Addressed; advisor resolves/reopens RequiredChange.
-- `POST /api/programs/{id}/advisory-read` — record last-read for unread badges.
+  Addressed (Draft only); advisor resolves/reopens RequiredChange. Returns the
+  full `AdvisoryThreadDto` (events + messages + capability flags + concurrency).
+  Requires `concurrencyVersion`; `clientOperationId` is idempotent.
+- `POST /api/programs/{id}/advisory-read` — legacy program last-read (does not
+  clear independent note/discussion stream cursors).
 - `GET /api/programs/{id}/review-submissions` (+ `/{submissionId}`,
   `/{submissionId}/changes`, `/{submissionId}/draft` GET|PUT) — submission
   snapshots, revision diffs, and private advisor draft autosave (`409` on
-  stale concurrency).
+  stale concurrency; draft tokens are distinct from submission decide tokens).
 - `GET /api/programs/{id}/curriculum-reviews` — decision history (framework
   owner, board experts, and Manager/Admin). Legacy rows report
   `snapshotAvailable=false`.
 - `POST /api/programs/{id}/approve-review` — only the assigned responsible
-  expert. Unresolved RequiredChange threads block approval. Full rubric
-  scores required when criteria exist. `PendingReview` → `Approved`. Notifies
-  `ForManagers` (`CurriculumReviewApproved`). Payload `programId` is the
-  deeplink.
+  expert. Unresolved RequiredChange threads (Open + Addressed) block approval
+  (`APPROVAL_BLOCKED`). Full rubric scores required when criteria exist.
+  `PendingReview` → `Approved`. Notifies `ForManagers`
+  (`CurriculumReviewApproved`). Payload `programId` is the deeplink.
 - `POST /api/programs/{id}/request-changes` — same actor as approve;
   `PendingReview` → `Draft`. `comment` is required; partial scores allowed.
-  Creates an overall RequiredChange thread. Notifies `ForManagers`
-  (`CurriculumReviewChangesRequested`); inbox body includes the expert
-  comment; payload `programId` is the deeplink.
+  Honors `requiredChangeThreadIds` and idempotent `clientOperationId`. Creates
+  an overall RequiredChange thread when none are outstanding. Carried
+  RequiredChanges stay visible across the next submission. Notifies
+  `ForManagers` (`CurriculumReviewChangesRequested`); inbox body includes the
+  expert comment; payload `programId` is the deeplink.
 
 Curriculum structure (and program metadata update/delete) is locked while
 `PendingReview` or `Approved`. After `ChangesRequested` the program is `Draft`

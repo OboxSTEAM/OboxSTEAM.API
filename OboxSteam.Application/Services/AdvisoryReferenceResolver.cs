@@ -6,6 +6,7 @@ using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
@@ -254,6 +255,11 @@ public sealed class AdvisoryReferenceResolver : IAdvisoryReferenceResolver
             || request.QuoteSuffix?.Length > 1000)
         {
             throw ErrorHelper.BadRequest("Reference values exceed the allowed length.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.FieldKey))
+        {
+            AdvisoryAnchorFieldRegistry.EnsureAllowed(request.TargetType, request.FieldKey);
         }
     }
 

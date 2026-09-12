@@ -32,7 +32,10 @@ public static class ExceptionUtils
         var message    = statusCode >= 500
             ? "An unexpected error occurred. Please try again later."
             : ex.Message;
+        var errorCode = ex is AppException appEx && !string.IsNullOrWhiteSpace(appEx.ErrorCode)
+            ? appEx.ErrorCode
+            : statusCode.ToString();
 
-        return ApiResult<T>.Failure(statusCode.ToString(), message);
+        return ApiResult<T>.Failure(errorCode, message);
     }
 }

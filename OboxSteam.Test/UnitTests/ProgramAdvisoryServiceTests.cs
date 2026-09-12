@@ -171,6 +171,18 @@ public sealed class ProgramAdvisoryServiceTests
             RoleInBoard = "Reviewer",
             IsDeleted = false,
         });
+        _db.Modules.Seed(new Module
+        {
+            Id = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            ProgramId = _programId,
+            Code = "MOD-001",
+            Name = "Intro",
+            ModuleType = ModuleType.Theory,
+            ModuleOrder = 1,
+            IsMandatory = true,
+            LearningOutcomes = ["Understand basics"],
+            IsDeleted = false,
+        });
     }
 
     private Guid SeedPendingSubmission()
@@ -523,6 +535,8 @@ public sealed class ProgramAdvisoryServiceTests
                 Status = ProgramAdvisoryThreadStatus.Open,
             }));
 
+        // Address is only allowed while curriculum is editable (Draft / Revision).
+        _db.Programs.Items.Single().Status = ProgramStatus.Draft;
         var addressed = await CreateAdvisorySut(_managerId).UpdateThreadStatusAsync(
             _programId,
             thread.Id,
@@ -549,6 +563,7 @@ public sealed class ProgramAdvisoryServiceTests
             ConcurrencyVersion = Guid.NewGuid(),
             IsDeleted = false,
         });
+        _db.Programs.Items.Single().Status = ProgramStatus.PendingReview;
 
         var resolved = await CreateAdvisorySut(_expertUserId).UpdateThreadStatusAsync(
             _programId,
@@ -563,8 +578,10 @@ public sealed class ProgramAdvisoryServiceTests
             });
 
         Assert.Equal(ProgramAdvisoryThreadStatus.Resolved, resolved.Status);
-        Assert.Equal(AdvisoryResolutionKind.Verified, resolved.Events.Single().ResolutionKind);
-        Assert.Equal(secondSubmissionId, resolved.Events.Single().VerifiedAgainstSubmissionId);
+        var resolveEvent = resolved.Events.Last(e => e.NewStatus == ProgramAdvisoryThreadStatus.Resolved);
+        Assert.Equal(AdvisoryResolutionKind.Verified, resolveEvent.ResolutionKind);
+        Assert.Equal(secondSubmissionId, resolveEvent.VerifiedAgainstSubmissionId);
+        Assert.True(resolved.Messages.Count >= 1);
     }
 
     [Fact]
@@ -668,5 +685,248 @@ public sealed class ProgramAdvisoryServiceTests
         Assert.Equal(1, timeline.OutstandingRequirementCount);
         Assert.Equal(AdvisoryWorkflowStageState.Completed, stages[nameof(AdvisoryWorkflowStage.Revision)].State);
         Assert.Equal(AdvisoryWorkflowStageState.Current, stages[nameof(AdvisoryWorkflowStage.Verification)].State);
+    }
+
+    [Fact]
+    public async Task CapabilityMatrix_RoleAndStageAccurate()
+    {
+        SeedBase();
+
+        // Manager in Draft / Revision: no create suggestion/required; can edit; discuss always.
+        var managerDraft = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
+        Assert.False(managerDraft.Capabilities.CanCreateSuggestion);
+        Assert.False(managerDraft.Capabilities.CanCreateRequiredChange);
+        Assert.False(managerDraft.Capabilities.CanDecide);
+        Assert.True(managerDraft.Capabilities.CanEditCurriculum);
+        Assert.True(managerDraft.Capabilities.CanDiscuss);
+        Assert.False(managerDraft.ReviewActionsLocked);
+
+        var submissionId = SeedPendingSubmission();
+        var managerReview = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
+        Assert.False(managerReview.Capabilities.CanCreateSuggestion);
+        Assert.False(managerReview.Capabilities.CanEditCurriculum);
+        Assert.False(managerReview.Capabilities.CanDecide);
+        Assert.True(managerReview.Capabilities.CanDiscuss);
+
+        var boardReview = await CreateAdvisorySut(_otherExpertUserId).GetAdvisoryWorkspaceAsync(_programId);
+        Assert.True(boardReview.Capabilities.CanCreateSuggestion);
+        Assert.False(boardReview.Capabilities.CanCreateRequiredChange);
+        Assert.False(boardReview.Capabilities.CanDecide);
+
+        var advisorReview = await CreateAdvisorySut(_expertUserId).GetAdvisoryWorkspaceAsync(_programId);
+        Assert.True(advisorReview.Capabilities.CanCreateSuggestion);
+        Assert.True(advisorReview.Capabilities.CanCreateRequiredChange);
+        Assert.True(advisorReview.Capabilities.CanDecide);
+
+        var thread = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = submissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.RequiredChange,
+            Message = "Need clearer outcomes.",
+        });
+        var pendingThread = await CreateAdvisorySut(_managerId).GetThreadAsync(_programId, thread.Id);
+        Assert.False(pendingThread.CanAddress);
+        Assert.False(pendingThread.CanResolve);
+
+        await CreateReviewSut(_expertUserId).RequestChangesAsync(
+            _programId,
+            new RequestCurriculumChangesRequest
+            {
+                SubmissionId = submissionId,
+                ConcurrencyVersion = _db.ProgramReviewSubmissions.Items.Single().ConcurrencyVersion,
+                Comment = "Please revise.",
+                RequiredChangeThreadIds = [thread.Id],
+            });
+
+        var revisionWorkspace = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
+        Assert.Equal(ProgramStatus.Draft, revisionWorkspace.Status);
+        Assert.Equal(AdvisoryWorkflowStage.Revision, revisionWorkspace.Workflow.CurrentStage);
+        Assert.True(revisionWorkspace.Capabilities.CanEditCurriculum);
+        Assert.Equal(1, revisionWorkspace.ApprovalBlockingCount);
+
+        var revisionThread = await CreateAdvisorySut(_managerId).GetThreadAsync(_programId, thread.Id);
+        Assert.True(revisionThread.CanAddress);
+        Assert.Equal(1, revisionThread.OriginSubmissionNumber);
+        Assert.Contains("Round 1", revisionThread.OriginRoundLabel);
+
+        _db.Programs.Items.Single().Status = ProgramStatus.Approved;
+        var locked = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
+        Assert.True(locked.ReviewActionsLocked);
+        Assert.True(locked.Capabilities.CanDiscuss);
+        Assert.False(locked.Capabilities.CanDecide);
+        Assert.False(locked.Capabilities.CanCreateSuggestion);
+    }
+
+    [Fact]
+    public async Task Address_ForbiddenWhilePendingReview_AllowedInDraft()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+        var thread = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = submissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.RequiredChange,
+            Message = "Fix pass score.",
+        });
+
+        var conflict = await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateAdvisorySut(_managerId).UpdateThreadStatusAsync(
+                _programId,
+                thread.Id,
+                new UpdateAdvisoryThreadStatusRequest
+                {
+                    Status = ProgramAdvisoryThreadStatus.Addressed,
+                    Message = "Updated in curriculum.",
+                    ConcurrencyVersion = thread.ConcurrencyVersion,
+                }));
+        Assert.Equal("ADVISORY_ADDRESS_NOT_EDITABLE", conflict.ErrorCode);
+
+        _db.Programs.Items.Single().Status = ProgramStatus.Draft;
+        var addressed = await CreateAdvisorySut(_managerId).UpdateThreadStatusAsync(
+            _programId,
+            thread.Id,
+            new UpdateAdvisoryThreadStatusRequest
+            {
+                Status = ProgramAdvisoryThreadStatus.Addressed,
+                Message = "Updated in curriculum.",
+                ConcurrencyVersion = _db.ProgramAdvisoryThreads.Items.Single().ConcurrencyVersion,
+            });
+        Assert.Equal(ProgramAdvisoryThreadStatus.Addressed, addressed.Status);
+        Assert.NotEmpty(addressed.Events);
+        Assert.NotEmpty(addressed.Messages);
+    }
+
+    [Fact]
+    public async Task ApprovalBlockingCount_CountsOpenAndAddressed_NotResolved()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+        var advisory = CreateAdvisorySut(_expertUserId);
+        var open = await advisory.CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = submissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.RequiredChange,
+            Message = "Open blocker.",
+        });
+        var addressed = await advisory.CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = submissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.RequiredChange,
+            Message = "Addressed blocker.",
+        });
+        _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == addressed.Id).Status =
+            ProgramAdvisoryThreadStatus.Addressed;
+
+        var workspace = await CreateAdvisorySut(_expertUserId).GetAdvisoryWorkspaceAsync(_programId);
+        Assert.Equal(2, workspace.ApprovalBlockingCount);
+        Assert.Equal(1, workspace.OpenRequiredChangeCount);
+        Assert.Equal(1, workspace.AddressedRequiredChangeCount);
+
+        var outstanding = await CreateAdvisorySut(_expertUserId).GetThreadsAsync(
+            _programId, scope: "outstanding");
+        Assert.Equal(2, outstanding.Count);
+        Assert.All(outstanding, t => Assert.NotNull(t.OriginRoundLabel));
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateReviewSut(_expertUserId).ApproveAsync(_programId, null));
+
+        _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == open.Id).Status =
+            ProgramAdvisoryThreadStatus.Resolved;
+        _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == addressed.Id).Status =
+            ProgramAdvisoryThreadStatus.Resolved;
+        var approved = await CreateReviewSut(_expertUserId).ApproveAsync(_programId, null);
+        Assert.Equal(CurriculumReviewDecision.Approved, approved.Decision);
+    }
+
+    [Fact]
+    public async Task SubmitForReview_RequiresAdvisor_ReturnsMachineCode()
+    {
+        SeedBase();
+        _db.Programs.Items.Single().AdvisorExpertId = null;
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(
+            () => CreateReviewSut(_managerId).SubmitForReviewAsync(_programId));
+        Assert.Equal("ADVISOR_REQUIRED", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task RequestChanges_IsIdempotent_WithClientOperationId()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+        var request = new RequestCurriculumChangesRequest
+        {
+            SubmissionId = submissionId,
+            ConcurrencyVersion = _db.ProgramReviewSubmissions.Items.Single().ConcurrencyVersion,
+            Comment = "Please revise outcomes.",
+            ClientOperationId = "op-request-changes-1",
+        };
+
+        var first = await CreateReviewSut(_expertUserId).RequestChangesAsync(_programId, request);
+        var second = await CreateReviewSut(_expertUserId).RequestChangesAsync(_programId, request);
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.Single(_db.CurriculumReviews.Items);
+        Assert.Equal(ProgramStatus.Draft, _db.Programs.Items.Single().Status);
+    }
+
+    [Fact]
+    public async Task AnchorFieldRegistry_IsPublished_AndRejectsUnknownKeys()
+    {
+        SeedBase();
+        var fields = await CreateAdvisorySut(_managerId).GetAnchorFieldsAsync();
+        Assert.Contains(fields, f =>
+            f.TargetType == ProgramAdvisoryTargetType.Assignment && f.FieldKey == "maxPoints");
+        Assert.Contains(fields, f =>
+            f.TargetType == ProgramAdvisoryTargetType.Assignment && f.FieldKey == "passScore");
+
+        var submissionId = SeedPendingSubmission();
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+            {
+                SubmissionId = submissionId,
+                TargetType = ProgramAdvisoryTargetType.Assignment,
+                TargetId = Guid.NewGuid(),
+                Type = ProgramAdvisoryThreadType.Suggestion,
+                AnchorKind = ProgramAdvisoryAnchorKind.Field,
+                AnchorField = "notARealField",
+                Message = "Bad key",
+            }));
+        Assert.Equal("ADVISORY_ANCHOR_FIELD_INVALID", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task DiscussionRead_DoesNotClearNoteUnread()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+        await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = submissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.Suggestion,
+            Message = "Note activity",
+        });
+        await CreateDiscussionSut(_expertUserId).AddMessageAsync(_programId, new PostAdvisoryDiscussionMessageRequest
+        {
+            Text = "Discussion activity",
+            ClientMessageId = "disc-1",
+        });
+
+        var before = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
+        Assert.True(before.UnreadNoteCount > 0);
+        Assert.True(before.UnreadDiscussionCount > 0);
+
+        await CreateDiscussionSut(_managerId).RecordDiscussionReadAsync(
+            _programId,
+            new RecordAdvisoryDiscussionReadRequest { LastDisplayedSequence = 1 });
+
+        var after = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
+        Assert.True(after.UnreadNoteCount > 0);
+        Assert.Equal(0, after.UnreadDiscussionCount);
     }
 }

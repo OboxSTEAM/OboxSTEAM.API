@@ -107,6 +107,18 @@ public sealed class CurriculumReviewServiceTests
             IsDeleted = false,
         };
         _db.Programs.Seed(program);
+        _db.Modules.Seed(new Module
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = program.Id,
+            Code = $"MOD-{program.Code}",
+            Name = "Intro",
+            ModuleType = ModuleType.Theory,
+            ModuleOrder = 1,
+            IsMandatory = true,
+            LearningOutcomes = ["Understand basics"],
+            IsDeleted = false,
+        });
         return program;
     }
 

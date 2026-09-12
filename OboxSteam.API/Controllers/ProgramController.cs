@@ -317,7 +317,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Submit a draft program for review",
-        Description = "With a framework: the owner must have a login. Without a framework: at least one program-board expert with a login. Always PendingReview. Framework pre-check runs when FrameworkId is set; no framework is free-form board review.")]
+        Description = "Draft only. Always requires a responsible advisor with an active linked login (with or without a framework). Creates an immutable ProgramReviewSubmission, notifies the advisor, and moves to PendingReview. When a published FrameworkVersionId is pinned, framework pre-checks run; failures return machine codes ADVISOR_REQUIRED, ADVISOR_LOGIN_REQUIRED, MODULES_REQUIRED, FRAMEWORK_UNAVAILABLE, or FRAMEWORK_CHECK_FAILED.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -383,7 +383,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert")]
     [SwaggerOperation(
         Summary = "Approve a program as the deciding expert",
-        Description = "PendingReview → Approved. With a framework: only the framework owner. Without a framework: any one login expert on ProgramBoard. Scores are required when the attached framework has rubric criteria.")]
+        Description = "PendingReview → Approved. Only the assigned responsible advisor may approve. Unresolved RequiredChange threads (Open + Addressed) block approval (error code APPROVAL_BLOCKED). Submission concurrencyVersion is distinct from draft autosave tokens; stale tokens return 409. Scores are required when the attached framework has rubric criteria.")]
     [ProducesResponseType(typeof(ApiResult<CurriculumReviewResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -402,7 +402,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert")]
     [SwaggerOperation(
         Summary = "Request curriculum changes",
-        Description = "PendingReview → Draft. Same actor as approve-review. Comment is required so the manager knows what to fix.")]
+        Description = "PendingReview → Draft (program unlocked for edit; timeline moves to Revision). Honors requiredChangeThreadIds and idempotent clientOperationId. Submission concurrencyVersion is distinct from draft autosave tokens; stale tokens return 409 SUBMISSION_CONCURRENCY_STALE. Carried RequiredChanges remain visible across the next submission.")]
     [ProducesResponseType(typeof(ApiResult<CurriculumReviewResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -449,7 +449,9 @@ public class ProgramController : ControllerBase
 
     [HttpGet("{id:guid}/advisory")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Advisory workspace summary for a program")]
+    [SwaggerOperation(
+        Summary = "Advisory workspace summary for a program",
+        Description = "Includes collaborationContractVersion 2, capabilities, workflow timeline, approvalBlockingCount (Open+Addressed RequiredChanges), separate unreadNoteCount/unreadDiscussionCount, pendingSubmission/latestSubmission, and reviewActionsLocked. Discussion remains allowed when reviewActionsLocked is true.")]
     [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
     public async Task<IActionResult> GetAdvisoryWorkspace([FromRoute] Guid id)
     {
@@ -522,7 +524,9 @@ public class ProgramController : ControllerBase
 
     [HttpGet("{id:guid}/advisory-threads/{threadId:guid}")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Get one advisory thread, including its event history")]
+    [SwaggerOperation(
+        Summary = "Get one advisory thread, including its event history",
+        Description = "Returns the full AdvisoryThreadDto with ordered events and ordered messages so clients do not double-render MessageAdded events against a separate message list. Status PATCH also returns this full thread shape.")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
     public async Task<IActionResult> GetAdvisoryThread(
         [FromRoute] Guid id,
@@ -595,7 +599,9 @@ public class ProgramController : ControllerBase
 
     [HttpPatch("{id:guid}/advisory-threads/{threadId:guid}/status")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Update advisory thread status")]
+    [SwaggerOperation(
+        Summary = "Update advisory thread status",
+        Description = "Returns the full AdvisoryThreadDto (ordered events, updated capability flags, concurrencyVersion). Requires concurrencyVersion; clientOperationId is idempotent. canAddress is only true while the program is Draft (curriculum editable).")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
     public async Task<IActionResult> UpdateAdvisoryThreadStatus(
         [FromRoute] Guid id,
@@ -640,6 +646,19 @@ public class ProgramController : ControllerBase
     {
         var result = await _programAdvisoryService.GetReferenceAsync(id, referenceId);
         return Ok(ApiResult<AdvisoryReferenceDto>.Success(result, "200", "Advisory reference resolved."));
+    }
+
+    [HttpGet("advisory-anchor-fields")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "List allowed advisory anchor field keys",
+        Description = "Publishes the BE allowlist of targetType + fieldKey (+ label) values accepted for note anchors and advisory references. Unknown keys are rejected with 400 ADVISORY_ANCHOR_FIELD_INVALID.")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryAnchorFieldDto>>), 200)]
+    public async Task<IActionResult> GetAdvisoryAnchorFields()
+    {
+        var result = await _programAdvisoryService.GetAnchorFieldsAsync();
+        return Ok(ApiResult<IReadOnlyList<AdvisoryAnchorFieldDto>>.Success(
+            result, "200", "Advisory anchor fields retrieved."));
     }
 
     [HttpGet("{id:guid}/advisory-discussion/messages")]

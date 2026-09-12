@@ -4,6 +4,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.CurriculumReviewDTO;
 using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
+using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
@@ -62,10 +63,32 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
         if (!program.AdvisorExpertId.HasValue)
         {
-            throw ErrorHelper.BadRequest("Assign a responsible expert before submitting for review.");
+            throw ErrorHelper.BadRequest(
+                "Assign a responsible expert before submitting for review.",
+                "ADVISOR_REQUIRED");
         }
 
-        await ProgramFrameworkValidator.ValidateForSubmitAsync(_unitOfWork, programId);
+        var modules = await _unitOfWork.Modules.GetAllAsync(
+            m => m.ProgramId == programId && !m.IsDeleted);
+        if (modules.Count == 0)
+        {
+            throw ErrorHelper.BadRequest(
+                "Add at least one module before submitting for review.",
+                "MODULES_REQUIRED");
+        }
+
+        try
+        {
+            await ProgramFrameworkValidator.ValidateForSubmitAsync(_unitOfWork, programId);
+        }
+        catch (ConflictException ex)
+        {
+            throw ErrorHelper.Conflict(ex.Message, ex.ErrorCode ?? "FRAMEWORK_UNAVAILABLE");
+        }
+        catch (BadRequestException ex)
+        {
+            throw ErrorHelper.BadRequest(ex.Message, ex.ErrorCode ?? "FRAMEWORK_CHECK_FAILED");
+        }
 
         ProgramFramework? framework = null;
         if (program.FrameworkId.HasValue)
@@ -333,7 +356,8 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         if (openRequired.Count > 0)
         {
             throw ErrorHelper.Conflict(
-                "Resolve all required-change threads before approving this program.");
+                $"Resolve all required-change threads before approving this program ({openRequired.Count} outstanding Open or Addressed).",
+                "APPROVAL_BLOCKED");
         }
 
         var comment = CurriculumReviewValidator.NormalizeOptionalComment(request?.Comment);
@@ -396,6 +420,19 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             throw ErrorHelper.BadRequest("Request body is required.");
         }
 
+        var operationId = NormalizeClientOperationId(request.ClientOperationId);
+        if (operationId != null)
+        {
+            var existing = await _unitOfWork.CurriculumReviews.FirstOrDefaultAsync(
+                r => r.ProgramId == programId
+                     && r.ClientOperationId == operationId
+                     && !r.IsDeleted);
+            if (existing != null)
+            {
+                return await MapReviewAsync(existing);
+            }
+        }
+
         var (program, expert, criteria, actor) = await RequirePendingDecisionAsync(programId);
         var submission = await ResolvePendingSubmissionAsync(program.Id, request.SubmissionId);
         EnsureSubmissionConcurrency(submission, request.ConcurrencyVersion);
@@ -413,7 +450,8 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             reviewId,
             scoreRows,
             submission.Id,
-            snapshotAvailable: true);
+            snapshotAvailable: true,
+            clientOperationId: operationId);
 
         var outstandingRequirements = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
             t => t.ProgramId == program.Id
@@ -772,8 +810,26 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
 
         if (concurrencyVersion.HasValue && concurrencyVersion.Value != submission.ConcurrencyVersion)
         {
-            throw ErrorHelper.Conflict("Submission was updated elsewhere. Reload and try again.");
+            throw ErrorHelper.Conflict(
+                "Submission was updated elsewhere. Reload and try again.",
+                "SUBMISSION_CONCURRENCY_STALE");
         }
+    }
+
+    private static string? NormalizeClientOperationId(string? operationId)
+    {
+        if (string.IsNullOrWhiteSpace(operationId))
+        {
+            return null;
+        }
+
+        var normalized = operationId.Trim();
+        if (normalized.Length > 100)
+        {
+            throw ErrorHelper.BadRequest("ClientOperationId must be at most 100 characters.");
+        }
+
+        return normalized;
     }
 
     private async Task<CurriculumReview> PersistDecisionAsync(
@@ -784,7 +840,8 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         Guid reviewId,
         IReadOnlyList<ReviewCriterionScore> scores,
         Guid submissionId,
-        bool snapshotAvailable)
+        bool snapshotAvailable,
+        string? clientOperationId = null)
     {
         var existing = await _unitOfWork.CurriculumReviews.GetAllAsync(
             r => r.ProgramId == program.Id && !r.IsDeleted);
@@ -801,6 +858,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             Decision = decision,
             Comment = comment,
             ReviewedAt = _currentTime.GetCurrentTime(),
+            ClientOperationId = clientOperationId,
         };
 
         await _unitOfWork.CurriculumReviews.AddAsync(review);
@@ -1124,19 +1182,25 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     {
         if (!program.AdvisorExpertId.HasValue)
         {
-            throw ErrorHelper.BadRequest("Assign a responsible expert before submitting for review.");
+            throw ErrorHelper.BadRequest(
+                "Assign a responsible expert before submitting for review.",
+                "ADVISOR_REQUIRED");
         }
 
         var advisor = await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value);
         if (advisor == null || advisor.IsDeleted || !advisor.UserId.HasValue || advisor.UserId == Guid.Empty)
         {
-            throw ErrorHelper.BadRequest("The responsible expert must have an active linked login before submission.");
+            throw ErrorHelper.BadRequest(
+                "The responsible expert must have an active linked login before submission.",
+                "ADVISOR_LOGIN_REQUIRED");
         }
 
         var user = await _unitOfWork.Users.GetByIdAsync(advisor.UserId.Value);
         if (user == null || user.IsDeleted || user.Role != RoleType.Expert || user.Status != AccountStatus.Active)
         {
-            throw ErrorHelper.BadRequest("The responsible expert must have an active linked login before submission.");
+            throw ErrorHelper.BadRequest(
+                "The responsible expert must have an active linked login before submission.",
+                "ADVISOR_LOGIN_REQUIRED");
         }
 
         return [advisor];

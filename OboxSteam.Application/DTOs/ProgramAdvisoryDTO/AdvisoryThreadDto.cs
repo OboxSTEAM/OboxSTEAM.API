@@ -44,6 +44,15 @@ public sealed class AdvisoryThreadDto
 
     public long LatestActivitySequence { get; set; }
 
+    /// <summary>Submission number of the round that originally opened this thread (carried requirements).</summary>
+    public int? OriginSubmissionNumber { get; set; }
+
+    /// <summary>Review-round intent of the origin submission when known.</summary>
+    public ProgramReviewSubmissionIntent? OriginReviewRoundIntent { get; set; }
+
+    /// <summary>Short label such as <c>Round 1 · InitialReview</c> for carried outstanding requirements.</summary>
+    public string? OriginRoundLabel { get; set; }
+
     public bool CanAddress { get; set; }
 
     public bool CanResolve { get; set; }
@@ -52,5 +61,12 @@ public sealed class AdvisoryThreadDto
 
     public bool CanWaive { get; set; }
 
+    /// <summary>Ordered lifecycle events. Present on detail and list responses.</summary>
     public List<AdvisoryThreadEventDto> Events { get; set; } = [];
+
+    /// <summary>
+    /// Ordered note messages. Populated on thread detail GET so clients do not need to
+    /// merge <c>MessageAdded</c> events with a separate message list. Empty on list endpoints.
+    /// </summary>
+    public List<AdvisoryMessageDto> Messages { get; set; } = [];
 }

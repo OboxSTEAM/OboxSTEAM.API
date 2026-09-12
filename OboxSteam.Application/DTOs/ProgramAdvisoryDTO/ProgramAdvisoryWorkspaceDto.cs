@@ -34,6 +34,11 @@ public sealed class ProgramAdvisoryWorkspaceDto
 
     public AdvisoryWorkflowTimelineDto Workflow { get; set; } = new();
 
+    /// <summary>
+    /// Unresolved RequiredChange threads that still block approve
+    /// (<see cref="ProgramAdvisoryThreadStatus.Open"/> + <see cref="ProgramAdvisoryThreadStatus.Addressed"/>).
+    /// Matches <c>scope=outstanding</c> and timeline <c>outstandingRequirementCount</c>.
+    /// </summary>
     public int ApprovalBlockingCount { get; set; }
 
     public int OpenRequiredChangeCount { get; set; }

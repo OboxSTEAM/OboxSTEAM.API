@@ -62,8 +62,12 @@ public class GlobalExceptionMiddleware
 
         context.Response.StatusCode = statusCode;
 
+        var errorCode = exception is AppException appException && !string.IsNullOrWhiteSpace(appException.ErrorCode)
+            ? appException.ErrorCode
+            : statusCode.ToString();
+
         var response = ApiResult<object>.Failure(
-            statusCode.ToString(),
+            errorCode,
             statusCode == 500 ? "An unexpected error occurred." : exception.Message
         );
 
