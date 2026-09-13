@@ -129,21 +129,29 @@ public class UnitOfWork : IUnitOfWork
             return await operation();
         }
 
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted);
-        await _dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT \"Id\" FROM \"Programs\" WHERE \"Id\" = {programId} FOR UPDATE");
+        // NpgsqlRetryingExecutionStrategy (EnableRetryOnFailure) rejects user-initiated
+        // transactions unless the whole unit runs inside CreateExecutionStrategy().
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+            try
+            {
+                await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT \"Id\" FROM \"Programs\" WHERE \"Id\" = {programId} FOR UPDATE");
 
-        try
-        {
-            var result = await operation();
-            await transaction.CommitAsync();
-            return result;
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
+                var result = await operation();
+                await transaction.CommitAsync();
+                return result;
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                // Clear tracked entities so a transient retry does not reuse a half-built graph.
+                _dbContext.ChangeTracker.Clear();
+                throw;
+            }
+        });
     }
 
     public async Task TruncateAllApplicationTablesAsync()
