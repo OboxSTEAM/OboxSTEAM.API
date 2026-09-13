@@ -929,4 +929,76 @@ public sealed class ProgramAdvisoryServiceTests
         Assert.True(after.UnreadNoteCount > 0);
         Assert.Equal(0, after.UnreadDiscussionCount);
     }
+
+    [Fact]
+    public async Task AddMessage_WhenLatestActivitySequenceBehindExistingRows_AllocatesNextFreeSequence()
+    {
+        SeedBase();
+        var thread = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.Suggestion,
+            Message = "sửa tên",
+        });
+
+        // Simulate stale counter: messages/events already at 1..2 while LatestActivitySequence lags at 1.
+        var stored = _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == thread.Id);
+        stored.LatestActivitySequence = 1;
+        _db.ProgramAdvisoryMessages.Seed(new ProgramAdvisoryMessage
+        {
+            Id = Guid.NewGuid(),
+            ThreadId = thread.Id,
+            AuthorUserId = _managerId,
+            StreamSequence = 2,
+            Message = "hello",
+            CreatedAt = _now.AddMinutes(1),
+            CreatedBy = _managerId,
+            IsDeleted = false,
+        });
+        _db.ProgramAdvisoryThreadEvents.Seed(new ProgramAdvisoryThreadEvent
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = _programId,
+            ThreadId = thread.Id,
+            Sequence = 2,
+            EventType = ProgramAdvisoryThreadEventType.MessageAdded,
+            ActorUserId = _managerId,
+            Message = "hello",
+            CreatedAt = _now.AddMinutes(1),
+            CreatedBy = _managerId,
+            IsDeleted = false,
+        });
+
+        var reply = await CreateAdvisorySut(_managerId).AddMessageAsync(_programId, thread.Id, "ok");
+
+        Assert.NotEqual(Guid.Empty, reply.Id);
+        var inserted = _db.ProgramAdvisoryMessages.Items.Single(m => m.Id == reply.Id);
+        Assert.Equal(3, inserted.StreamSequence);
+        Assert.Equal(3, stored.LatestActivitySequence);
+        Assert.Contains(_db.ProgramAdvisoryThreadEvents.Items, e =>
+            e.ThreadId == thread.Id && e.Sequence == 3 && e.EventType == ProgramAdvisoryThreadEventType.MessageAdded);
+    }
+
+    [Fact]
+    public async Task AddMessage_WhenImmediateNotifyFails_StillPersistsReply()
+    {
+        SeedBase();
+        var thread = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.Suggestion,
+            Message = "initial",
+        });
+
+        _notificationPublisher
+            .Setup(n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("notification bus down"));
+
+        var reply = await CreateAdvisorySut(_managerId).AddMessageAsync(_programId, thread.Id, "still saved");
+
+        Assert.Equal("still saved", reply.Message);
+        Assert.Contains(_db.ProgramAdvisoryMessages.Items, m => m.Id == reply.Id && m.Message == "still saved");
+        Assert.Contains(_db.ProgramAdvisoryNotificationIntents.Items, i =>
+            i.ProgramId == _programId && i.EventType == "AdvisoryReply");
+    }
 }

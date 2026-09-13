@@ -528,11 +528,17 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
     }
 
     public async Task<AdvisoryThreadDto> CreateThreadAsync(Guid programId, CreateAdvisoryThreadRequest request)
-        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+    {
+        var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(
             programId,
             () => CreateThreadCoreAsync(programId, request));
+        await RunAfterCommitNotifyAsync(result.AfterCommitNotify);
+        return result.Value;
+    }
 
-    private async Task<AdvisoryThreadDto> CreateThreadCoreAsync(Guid programId, CreateAdvisoryThreadRequest request)
+    private async Task<AdvisoryMutationResult<AdvisoryThreadDto>> CreateThreadCoreAsync(
+        Guid programId,
+        CreateAdvisoryThreadRequest request)
     {
         if (request == null)
         {
@@ -643,23 +649,25 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             now);
         await _unitOfWork.SaveChangesAsync();
 
-        await NotifyAdvisoryAsync(
-            program,
-            actor.Id,
-            notifyManagers: actor.Role == RoleType.Expert,
-            userId => NotificationCatalog.AdvisoryFeedbackPublished(
-                userId,
-                program.Id,
-                thread.Id,
-                actor.Id,
-                program.Name,
-                DisplayName(actor),
-                thread.Type.ToString()));
-
         var result = MapThread(thread, actor, 1, messageText, label, context);
         result.Events = [MapThreadEvent(createdEvent)];
         ApplyThreadCapabilities(result, thread, actor, isAdvisor, isBoard, canStaff, program.Status);
-        return result;
+        return new AdvisoryMutationResult<AdvisoryThreadDto>
+        {
+            Value = result,
+            AfterCommitNotify = () => NotifyAdvisoryAsync(
+                program,
+                actor.Id,
+                notifyManagers: actor.Role == RoleType.Expert,
+                userId => NotificationCatalog.AdvisoryFeedbackPublished(
+                    userId,
+                    program.Id,
+                    thread.Id,
+                    actor.Id,
+                    program.Name,
+                    DisplayName(actor),
+                    thread.Type.ToString())),
+        };
     }
 
     public async Task<IReadOnlyList<AdvisoryMessageDto>> GetMessagesAsync(Guid programId, Guid threadId)
@@ -674,11 +682,18 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
     }
 
     public async Task<AdvisoryMessageDto> AddMessageAsync(Guid programId, Guid threadId, string message)
-        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+    {
+        var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(
             programId,
             () => AddMessageCoreAsync(programId, threadId, message));
+        await RunAfterCommitNotifyAsync(result.AfterCommitNotify);
+        return result.Value;
+    }
 
-    private async Task<AdvisoryMessageDto> AddMessageCoreAsync(Guid programId, Guid threadId, string message)
+    private async Task<AdvisoryMutationResult<AdvisoryMessageDto>> AddMessageCoreAsync(
+        Guid programId,
+        Guid threadId,
+        string message)
     {
         var (program, actor, _, isAdvisor, isBoard, canStaff) = await RequireAdvisoryAccessAsync(programId);
         EnsureReviewNotesMutable(program);
@@ -690,14 +705,14 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var thread = await RequireThreadAsync(programId, threadId);
         var text = CurriculumReviewValidator.RequireComment(message);
         var now = _currentTime.GetCurrentTime();
-        thread.LatestActivitySequence++;
+        var sequence = await AllocateNextActivitySequenceAsync(thread);
         thread.ConcurrencyVersion = Guid.NewGuid();
         var row = new ProgramAdvisoryMessage
         {
             Id = Guid.NewGuid(),
             ThreadId = thread.Id,
             AuthorUserId = actor.Id,
-            StreamSequence = thread.LatestActivitySequence,
+            StreamSequence = sequence,
             Message = text,
             CreatedAt = now,
             CreatedBy = actor.Id,
@@ -712,7 +727,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             Id = Guid.NewGuid(),
             ProgramId = program.Id,
             ThreadId = thread.Id,
-            Sequence = thread.LatestActivitySequence,
+            Sequence = sequence,
             EventType = ProgramAdvisoryThreadEventType.MessageAdded,
             ActorUserId = actor.Id,
             Message = text,
@@ -731,30 +746,36 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         await _unitOfWork.ProgramAdvisoryThreads.Update(thread);
         await _unitOfWork.SaveChangesAsync();
 
-        await NotifyAdvisoryAsync(
-            program,
-            actor.Id,
-            notifyManagers: actor.Role == RoleType.Expert,
-            userId => NotificationCatalog.AdvisoryReply(
-                userId,
-                program.Id,
-                thread.Id,
+        return new AdvisoryMutationResult<AdvisoryMessageDto>
+        {
+            Value = MapMessage(row, actor),
+            AfterCommitNotify = () => NotifyAdvisoryAsync(
+                program,
                 actor.Id,
-                program.Name,
-                DisplayName(actor)));
-
-        return MapMessage(row, actor);
+                notifyManagers: actor.Role == RoleType.Expert,
+                userId => NotificationCatalog.AdvisoryReply(
+                    userId,
+                    program.Id,
+                    thread.Id,
+                    actor.Id,
+                    program.Name,
+                    DisplayName(actor))),
+        };
     }
 
     public async Task<AdvisoryThreadDto> UpdateThreadStatusAsync(
         Guid programId,
         Guid threadId,
         UpdateAdvisoryThreadStatusRequest request)
-        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+    {
+        var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(
             programId,
             () => UpdateThreadStatusCoreAsync(programId, threadId, request));
+        await RunAfterCommitNotifyAsync(result.AfterCommitNotify);
+        return result.Value;
+    }
 
-    private async Task<AdvisoryThreadDto> UpdateThreadStatusCoreAsync(
+    private async Task<AdvisoryMutationResult<AdvisoryThreadDto>> UpdateThreadStatusCoreAsync(
         Guid programId,
         Guid threadId,
         UpdateAdvisoryThreadStatusRequest request)
@@ -769,7 +790,10 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var existingOperation = await FindThreadEventByOperationIdAsync(programId, threadId, request.ClientOperationId);
         if (existingOperation != null)
         {
-            return await GetThreadAsync(programId, threadId);
+            return new AdvisoryMutationResult<AdvisoryThreadDto>
+            {
+                Value = await GetThreadAsync(programId, threadId),
+            };
         }
 
         EnsureReviewNotesMutable(program);
@@ -833,7 +857,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var correctionReferenceIds = await ValidateCorrectionReferencesAsync(programId, request.CorrectionReferenceIds);
         var now = _currentTime.GetCurrentTime().ToUniversalTime();
         thread.Status = request.Status;
-        thread.LatestActivitySequence++;
+        var sequence = await AllocateNextActivitySequenceAsync(thread);
         thread.ConcurrencyVersion = Guid.NewGuid();
         thread.UpdatedAt = now;
         thread.UpdatedBy = actor.Id;
@@ -845,7 +869,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                 Id = Guid.NewGuid(),
                 ThreadId = thread.Id,
                 AuthorUserId = actor.Id,
-                StreamSequence = thread.LatestActivitySequence,
+                StreamSequence = sequence,
                 Message = text,
                 CreatedAt = now,
                 CreatedBy = actor.Id,
@@ -862,7 +886,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             Id = Guid.NewGuid(),
             ProgramId = programId,
             ThreadId = thread.Id,
-            Sequence = thread.LatestActivitySequence,
+            Sequence = sequence,
             EventType = resolutionKind == AdvisoryResolutionKind.Verified
                 ? ProgramAdvisoryThreadEventType.VerificationRecorded
                 : resolutionKind == AdvisoryResolutionKind.Waived
@@ -898,23 +922,25 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         await _unitOfWork.ProgramAdvisoryThreads.Update(thread);
         await _unitOfWork.SaveChangesAsync();
 
-        if (request.Status == ProgramAdvisoryThreadStatus.Addressed)
-        {
-            await NotifyAdvisoryAsync(
-                program,
-                actor.Id,
-                notifyManagers: false,
-                userId => NotificationCatalog.AdvisoryCorrectionAddressed(
-                    userId,
-                    program.Id,
-                    thread.Id,
-                    actor.Id,
-                    program.Name,
-                    DisplayName(actor)));
-        }
-
         // Contract: PATCH returns the full AdvisoryThreadDto (ordered events + messages + flags).
-        return await GetThreadAsync(programId, threadId);
+        var value = await GetThreadAsync(programId, threadId);
+        return new AdvisoryMutationResult<AdvisoryThreadDto>
+        {
+            Value = value,
+            AfterCommitNotify = request.Status == ProgramAdvisoryThreadStatus.Addressed
+                ? () => NotifyAdvisoryAsync(
+                    program,
+                    actor.Id,
+                    notifyManagers: false,
+                    userId => NotificationCatalog.AdvisoryCorrectionAddressed(
+                        userId,
+                        program.Id,
+                        thread.Id,
+                        actor.Id,
+                        program.Name,
+                        DisplayName(actor)))
+                : null,
+        };
     }
 
     public async Task RecordReadAsync(Guid programId, RecordAdvisoryReadRequest? request)
@@ -975,6 +1001,52 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                 CreatedAt = now,
                 CreatedBy = actorUserId,
             });
+    }
+
+    /// <summary>
+    /// Next stream/event sequence is max(thread counter, existing message/event sequences) + 1
+    /// so a stale <see cref="ProgramAdvisoryThread.LatestActivitySequence"/> cannot collide
+    /// with unique indexes on (ThreadId, StreamSequence) / (ThreadId, Sequence).
+    /// </summary>
+    private async Task<long> AllocateNextActivitySequenceAsync(ProgramAdvisoryThread thread)
+    {
+        var messageMax = (await _unitOfWork.ProgramAdvisoryMessages.GetAllAsync(
+                m => m.ThreadId == thread.Id && !m.IsDeleted))
+            .Select(m => m.StreamSequence)
+            .DefaultIfEmpty(0)
+            .Max();
+        var eventMax = (await _unitOfWork.ProgramAdvisoryThreadEvents.GetAllAsync(
+                e => e.ThreadId == thread.Id && !e.IsDeleted))
+            .Select(e => e.Sequence)
+            .DefaultIfEmpty(0)
+            .Max();
+        var next = Math.Max(thread.LatestActivitySequence, Math.Max(messageMax, eventMax)) + 1;
+        thread.LatestActivitySequence = next;
+        return next;
+    }
+
+    private static async Task RunAfterCommitNotifyAsync(Func<Task>? notify)
+    {
+        if (notify == null)
+        {
+            return;
+        }
+
+        // Best-effort: reply/status already committed; pending intents remain for retry.
+        try
+        {
+            await notify();
+        }
+        catch
+        {
+            // Intentionally swallowed — notification failure must not fail the advisory mutation.
+        }
+    }
+
+    private sealed class AdvisoryMutationResult<T>
+    {
+        public required T Value { get; init; }
+        public Func<Task>? AfterCommitNotify { get; init; }
     }
 
     private async Task NotifyAdvisoryAsync(
