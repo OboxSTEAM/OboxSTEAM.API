@@ -30,6 +30,7 @@ public sealed class ActivityProgressServiceTests
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<ICertificateService> _certificateService = new();
+    private readonly Mock<IBundleProgressService> _bundleProgressService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
 
     private ActivityProgressService CreateSut(Guid? currentUserId = null)
@@ -38,6 +39,9 @@ public sealed class ActivityProgressServiceTests
         _certificateService
             .Setup(c => c.EnsureProgramCertificateInternalAsync(It.IsAny<Guid>()))
             .ReturnsAsync((CertificateDetailDto?)null);
+        _bundleProgressService
+            .Setup(s => s.SyncAfterProgramProgressAsync(It.IsAny<Guid>(), It.IsAny<EnrollmentStatus>()))
+            .Returns(Task.CompletedTask);
         _notificationPublisher
             .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -51,6 +55,7 @@ public sealed class ActivityProgressServiceTests
             _db,
             _claimsService.Object,
             _certificateService.Object,
+            _bundleProgressService.Object,
             _notificationPublisher.Object,
             NullLogger<ActivityProgressService>.Instance);
     }

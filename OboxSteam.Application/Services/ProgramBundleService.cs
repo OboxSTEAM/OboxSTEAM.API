@@ -3,6 +3,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramBundleDTO;
 using OboxSteam.Application.DTOs.VoucherDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -117,6 +118,62 @@ public sealed class ProgramBundleService : IProgramBundleService
             await _unitOfWork.ProgramBundles.GetByIdAsync(bundleId),
             bundleId);
         return await MapToResponse(bundle);
+    }
+
+    public async Task<Pagination<MyBundlePathwayDto>> GetMyPathways(int page, int pageSize)
+    {
+        var currentUser = await EnrollmentAccessValidator.GetCurrentUserForGetAsync(
+            _unitOfWork,
+            _claimsService,
+            ViewPathwayForbiddenMessage);
+
+        var enrollments = (await LoadScopedPurchasedEnrollmentsAsync(currentUser))
+            .OrderBy(e => e.Status == BundleEnrollmentStatus.Active ? 0 : 1)
+            .ThenByDescending(e => e.CreatedAt)
+            .ToList();
+
+        var totalCount = enrollments.Count;
+        var pageRows = enrollments
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var dtos = await MapPathwaysAsync(pageRows);
+        _logger.LogInformation(
+            "[GetMyPathways] User {UserId} retrieved {Count}/{Total} pathways.",
+            currentUser.Id,
+            dtos.Count,
+            totalCount);
+        return new Pagination<MyBundlePathwayDto>(dtos, totalCount, page, pageSize);
+    }
+
+    public async Task<MyBundlePathwayDto> GetMyPathwayByEnrollmentId(Guid bundleEnrollmentId)
+    {
+        var currentUser = await EnrollmentAccessValidator.GetCurrentUserForGetAsync(
+            _unitOfWork,
+            _claimsService,
+            ViewPathwayForbiddenMessage);
+
+        var enrollment = await _unitOfWork.BundleEnrollments.GetByIdAsync(bundleEnrollmentId);
+        if (enrollment == null
+            || enrollment.IsDeleted
+            || enrollment.Status == BundleEnrollmentStatus.PendingPayment)
+        {
+            throw ErrorHelper.NotFound($"Bundle enrollment '{bundleEnrollmentId}' not found.");
+        }
+
+        await EnrollmentAccessValidator.EnsureCanViewEnrollmentAsync(
+            _unitOfWork,
+            _claimsService,
+            enrollment.StudentId,
+            ViewPathwayForbiddenMessage);
+
+        var dtos = await MapPathwaysAsync([enrollment]);
+        _logger.LogInformation(
+            "[GetMyPathwayByEnrollmentId] User {UserId} loaded bundle enrollment {EnrollmentId}.",
+            currentUser.Id,
+            bundleEnrollmentId);
+        return dtos[0];
     }
 
     public async Task<ProgramBundleResponseDto> CreateBundle(CreateProgramBundleRequestDto request)
@@ -419,4 +476,147 @@ public sealed class ProgramBundleService : IProgramBundleService
         => items.Count == 0 ? 1 : items.Max(i => i.SortOrder) + 1;
 
     private static bool HasId(Guid? id) => id.HasValue && id.Value != Guid.Empty;
+
+    private const string ViewPathwayForbiddenMessage = "You do not have permission to view bundle pathways.";
+
+    private async Task<List<BundleEnrollment>> LoadScopedPurchasedEnrollmentsAsync(User currentUser)
+    {
+        var query = _unitOfWork.BundleEnrollments
+            .GetQueryable()
+            .Where(e => !e.IsDeleted
+                        && (e.Status == BundleEnrollmentStatus.Active
+                            || e.Status == BundleEnrollmentStatus.Completed));
+
+        if (currentUser.Role == RoleType.Student)
+        {
+            query = query.Where(e => e.StudentId == currentUser.Id);
+        }
+        else if (currentUser.Role == RoleType.Parent)
+        {
+            var parentLinks = await _unitOfWork.ParentStudents.GetAllAsync(
+                ps => ps.ParentId == currentUser.Id && ps.IsVerified && !ps.IsDeleted);
+            var linkedStudentIds = parentLinks.Select(ps => ps.StudentId).Distinct().ToList();
+            query = linkedStudentIds.Count == 0
+                ? query.Where(e => false)
+                : query.Where(e => linkedStudentIds.Contains(e.StudentId));
+        }
+
+        return query.ToList();
+    }
+
+    private async Task<List<MyBundlePathwayDto>> MapPathwaysAsync(IReadOnlyList<BundleEnrollment> enrollments)
+    {
+        if (enrollments.Count == 0)
+            return [];
+
+        var bundleIds = enrollments.Select(e => e.BundleId).Distinct().ToList();
+        var studentIds = enrollments.Select(e => e.StudentId).Distinct().ToList();
+
+        var bundles = (await _unitOfWork.ProgramBundles.GetAllAsync(
+                b => bundleIds.Contains(b.Id) && !b.IsDeleted))
+            .ToDictionary(b => b.Id);
+
+        var items = (await _unitOfWork.ProgramBundleItems.GetAllAsync(
+                i => bundleIds.Contains(i.BundleId) && !i.IsDeleted))
+            .OrderBy(i => i.SortOrder)
+            .ToList();
+        var itemsByBundleId = items
+            .GroupBy(i => i.BundleId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(i => i.SortOrder).ToList());
+
+        var programIds = items.Select(i => i.ProgramId).Distinct().ToList();
+        var programs = programIds.Count == 0
+            ? []
+            : await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id) && !p.IsDeleted);
+        var programsById = programs.ToDictionary(p => p.Id);
+
+        var programEnrollments = programIds.Count == 0
+            ? []
+            : await _unitOfWork.ProgramEnrollments.GetAllAsync(
+                pe => studentIds.Contains(pe.StudentId)
+                      && programIds.Contains(pe.ProgramId)
+                      && !pe.IsDeleted);
+
+        var certificates = await _unitOfWork.Certificates.GetAllAsync(
+            c => studentIds.Contains(c.StudentId)
+                 && c.BundleId.HasValue
+                 && bundleIds.Contains(c.BundleId.Value)
+                 && c.ProgramId == null
+                 && c.ModuleId == null
+                 && !c.IsDeleted);
+        var certificateByStudentAndBundle = certificates
+            .GroupBy(c => (c.StudentId, c.BundleId!.Value))
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(c => c.IssueDate ?? c.CreatedAt).First());
+
+        var result = new List<MyBundlePathwayDto>(enrollments.Count);
+        foreach (var enrollment in enrollments)
+        {
+            bundles.TryGetValue(enrollment.BundleId, out var bundle);
+            var bundleItems = itemsByBundleId.GetValueOrDefault(enrollment.BundleId) ?? [];
+            var completedProgramIds = programEnrollments
+                .Where(pe => pe.StudentId == enrollment.StudentId
+                             && pe.Status == EnrollmentStatus.Completed)
+                .Select(pe => pe.ProgramId)
+                .ToHashSet();
+
+            var itemDtos = new List<MyBundlePathwayItemDto>(bundleItems.Count);
+            foreach (var item in bundleItems)
+            {
+                var current = BundleEnrollmentHelper.SelectCurrentProgramEnrollment(
+                    programEnrollments,
+                    enrollment.StudentId,
+                    item.ProgramId);
+                programsById.TryGetValue(item.ProgramId, out var program);
+                itemDtos.Add(new MyBundlePathwayItemDto
+                {
+                    ItemId = item.Id,
+                    ProgramId = item.ProgramId,
+                    ProgramEnrollmentId = current?.Id,
+                    ProgramName = program?.Name ?? string.Empty,
+                    ThumbnailUrl = program?.ThumbnailUrl,
+                    SortOrder = item.SortOrder,
+                    RequiresPreviousCompletion = item.RequiresPreviousCompletion,
+                    Status = BundleEnrollmentHelper.ResolvePathwayItemStatus(
+                        item,
+                        bundleItems,
+                        completedProgramIds,
+                        current),
+                    ProgressPercent = current?.ProgressPercent ?? 0m,
+                });
+            }
+
+            certificateByStudentAndBundle.TryGetValue(
+                (enrollment.StudentId, enrollment.BundleId),
+                out var certificate);
+
+            result.Add(new MyBundlePathwayDto
+            {
+                BundleEnrollmentId = enrollment.Id,
+                BundleId = enrollment.BundleId,
+                StudentId = enrollment.StudentId,
+                BundleCode = bundle?.Code ?? string.Empty,
+                BundleName = bundle?.Name ?? string.Empty,
+                Description = bundle?.Description,
+                ThumbnailUrl = bundle?.ThumbnailUrl,
+                Status = enrollment.Status,
+                ProgressPercent = enrollment.ProgressPercent,
+                Items = itemDtos,
+                Certificate = certificate == null
+                    ? null
+                    : new MyBundlePathwayCertificateDto
+                    {
+                        Id = certificate.Id,
+                        Code = certificate.Code,
+                        IssueDate = certificate.IssueDate,
+                        PdfUrl = certificate.PdfUrl,
+                        VerificationUrl = certificate.VerificationUrl,
+                    },
+                CreatedAt = enrollment.CreatedAt,
+            });
+        }
+
+        return result;
+    }
 }

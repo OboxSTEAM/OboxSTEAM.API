@@ -23,7 +23,11 @@ public sealed class CertificateDetailDto
 
     public CertificateStudentDto Student { get; set; } = null!;
 
-    public CertificateProgramDto Program { get; set; } = null!;
+    /// <summary>Set for a program certificate. Null for a pathway (bundle) certificate.</summary>
+    public CertificateProgramDto? Program { get; set; }
+
+    /// <summary>Set for a pathway certificate. Null for a program certificate.</summary>
+    public CertificateBundleDto? Bundle { get; set; }
 
     public List<CertificateModuleDto> Modules { get; set; } = [];
 
@@ -63,6 +67,17 @@ public sealed class CertificateModuleDto
     public int ModuleOrder { get; set; }
 }
 
+public sealed class CertificateBundleDto
+{
+    public Guid Id { get; set; }
+
+    public string Name { get; set; } = null!;
+
+    public string? Description { get; set; }
+
+    public string? ThumbnailUrl { get; set; }
+}
+
 /// <summary>Compact row for certificate list endpoints.</summary>
 public sealed class CertificateListItemDto
 {
@@ -70,7 +85,11 @@ public sealed class CertificateListItemDto
 
     public string Code { get; set; } = null!;
 
-    public Guid ProgramId { get; set; }
+    /// <summary>Set for a program certificate.</summary>
+    public Guid? ProgramId { get; set; }
+
+    /// <summary>Set for a pathway certificate.</summary>
+    public Guid? BundleId { get; set; }
 
     public string ProgramName { get; set; } = null!;
 

@@ -166,7 +166,7 @@ public sealed class NotificationCatalogCopyTests
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Count(m => m.ReturnType == typeof(NotificationCommand));
 
-        Assert.Equal(85, count);
+        Assert.Equal(88, count);
     }
 
     private static NotificationCommand InvokeFactory(MethodInfo method)

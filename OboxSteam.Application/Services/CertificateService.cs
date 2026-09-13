@@ -131,40 +131,14 @@ public sealed class CertificateService : ICertificateService
         var verificationUrl = BuildVerificationUrl(certificate.Code);
         certificate.VerificationUrl = verificationUrl;
 
-        try
-        {
-            var pdfBytes = _pdfGenerator.Generate(new CertificatePdfModel
-            {
-                Code = certificate.Code,
-                StudentFullName = string.IsNullOrWhiteSpace(student.FullName)
-                    ? student.Email
-                    : student.FullName!,
-                StudentAvatarUrl = student.AvatarUrl,
-                IssuerLogoUrl = CertificateBranding.IssuerLogoUrl,
-                ProgramName = program.Name,
-                ProgramDescription = program.Description,
-                ProgramThumbnailUrl = program.ThumbnailUrl,
-                IssueDate = certificate.IssueDate ?? DateTime.UtcNow,
-                VerificationUrl = verificationUrl,
-                ModuleNames = modules.Select(m => m.Name).ToList(),
-            });
-
-            var folder = $"{CertificatesRootFolder}/{program.Id}/{student.Id}";
-            var fileName = $"{certificate.Code}.pdf";
-            await using var stream = new MemoryStream(pdfBytes);
-            await _blobService.UploadFileAsync(fileName, stream, folder);
-
-            var s3Key = $"{folder}/{fileName}";
-            certificate.PdfUrl = await _blobService.GetPreviewUrlAsync(s3Key);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "[EnsureProgramCertificateAsync] PDF/S3 failed for enrollment {EnrollmentId}, certificate {Code}.",
-                programEnrollmentId,
-                certificate.Code);
-        }
+        await TryAttachPdfAsync(
+            certificate,
+            program.Name,
+            program.Description,
+            program.ThumbnailUrl,
+            modules.Select(m => m.Name).ToList(),
+            $"{CertificatesRootFolder}/{program.Id}/{student.Id}",
+            $"[EnsureProgramCertificateAsync] PDF/S3 failed for enrollment {programEnrollmentId}, certificate {certificate.Code}.");
 
         await _unitOfWork.Certificates.Update(certificate);
         await _unitOfWork.SaveChangesAsync();
@@ -173,6 +147,121 @@ public sealed class CertificateService : ICertificateService
             "[EnsureProgramCertificateAsync] Certificate {Code} ensured for enrollment {EnrollmentId}.",
             certificate.Code,
             programEnrollmentId);
+
+        return await MapDetailAsync(certificate);
+    }
+
+    public async Task<CertificateDetailDto?> EnsureBundleCertificateInternalAsync(Guid bundleEnrollmentId)
+    {
+        if (bundleEnrollmentId == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("Bundle enrollment id is required.");
+        }
+
+        var enrollment = await _unitOfWork.BundleEnrollments.GetByIdAsync(bundleEnrollmentId);
+        if (enrollment == null || enrollment.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Bundle enrollment '{bundleEnrollmentId}' not found.");
+        }
+
+        var items = (await _unitOfWork.ProgramBundleItems.GetAllAsync(
+                i => i.BundleId == enrollment.BundleId && !i.IsDeleted))
+            .OrderBy(i => i.SortOrder)
+            .ToList();
+        var completedProgramIds = await BundleEnrollmentHelper.GetCompletedProgramIdsAsync(
+            _unitOfWork,
+            enrollment.StudentId);
+        if (!BundleEnrollmentHelper.AreAllItemsCompleted(items, completedProgramIds))
+        {
+            _logger.LogInformation(
+                "[EnsureBundleCertificateInternalAsync] Bundle enrollment {EnrollmentId} not eligible — programs incomplete.",
+                bundleEnrollmentId);
+            return null;
+        }
+
+        var bundle = await _unitOfWork.ProgramBundles.GetByIdAsync(enrollment.BundleId);
+        if (bundle == null || bundle.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Bundle '{enrollment.BundleId}' not found.");
+        }
+
+        var student = await _unitOfWork.Users.GetByIdAsync(enrollment.StudentId);
+        if (student == null || student.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Student with id '{enrollment.StudentId}' not found.");
+        }
+
+        var existing = await _unitOfWork.Certificates.FirstOrDefaultAsync(
+            c => c.StudentId == enrollment.StudentId
+                 && c.BundleId == enrollment.BundleId
+                 && c.ProgramId == null
+                 && c.ModuleId == null
+                 && !c.IsDeleted);
+
+        var programNames = new List<string>();
+        var skillParts = new List<string>();
+        foreach (var item in items)
+        {
+            var program = await _unitOfWork.Programs.GetByIdAsync(item.ProgramId);
+            if (program == null || program.IsDeleted)
+            {
+                continue;
+            }
+
+            programNames.Add(program.Name);
+            if (!string.IsNullOrWhiteSpace(program.SkillsGained))
+            {
+                skillParts.Add(program.SkillsGained.Trim());
+            }
+        }
+
+        var skillsAcquired = skillParts.Count == 0
+            ? bundle.Description
+            : string.Join(", ", skillParts);
+
+        var certificate = existing;
+        if (certificate == null)
+        {
+            certificate = new Certificate
+            {
+                Code = await GenerateUniqueCodeAsync(),
+                StudentId = enrollment.StudentId,
+                ProgramId = null,
+                ModuleId = null,
+                BundleId = enrollment.BundleId,
+                IssueDate = DateTime.UtcNow,
+                SkillsAcquired = skillsAcquired,
+            };
+            await _unitOfWork.Certificates.AddAsync(certificate);
+            await _unitOfWork.SaveChangesAsync();
+        }
+        else
+        {
+            certificate.IssueDate ??= DateTime.UtcNow;
+            certificate.SkillsAcquired ??= skillsAcquired;
+            await _unitOfWork.Certificates.Update(certificate);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        var verificationUrl = BuildVerificationUrl(certificate.Code);
+        certificate.VerificationUrl = verificationUrl;
+
+        await TryAttachPdfAsync(
+            certificate,
+            bundle.Name,
+            bundle.Description,
+            bundle.ThumbnailUrl,
+            programNames,
+            $"{CertificatesRootFolder}/bundles/{bundle.Id}/{student.Id}",
+            $"[EnsureBundleCertificateInternalAsync] PDF/S3 failed for bundle enrollment {bundleEnrollmentId}, certificate {certificate.Code}.");
+
+        await _unitOfWork.Certificates.Update(certificate);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[EnsureBundleCertificateInternalAsync] Certificate {Code} ensured for bundle enrollment {EnrollmentId}.",
+            certificate.Code,
+            bundleEnrollmentId);
 
         return await MapDetailAsync(certificate);
     }
@@ -186,7 +275,7 @@ public sealed class CertificateService : ICertificateService
 
         IQueryable<Certificate> query = _unitOfWork.Certificates
             .GetQueryable()
-            .Where(c => !c.IsDeleted && c.ModuleId == null && c.ProgramId != null);
+            .Where(c => !c.IsDeleted && c.ModuleId == null && (c.ProgramId != null || c.BundleId != null));
 
         if (currentUser.Role == RoleType.Student)
         {
@@ -212,19 +301,42 @@ public sealed class CertificateService : ICertificateService
             .Select(c => c.ProgramId!.Value)
             .Distinct()
             .ToList();
+        var bundleIds = items
+            .Where(c => c.BundleId.HasValue)
+            .Select(c => c.BundleId!.Value)
+            .Distinct()
+            .ToList();
 
         var programs = await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id) && !p.IsDeleted);
         var programsById = programs.ToDictionary(p => p.Id);
+        var bundles = bundleIds.Count == 0
+            ? []
+            : await _unitOfWork.ProgramBundles.GetAllAsync(b => bundleIds.Contains(b.Id) && !b.IsDeleted);
+        var bundlesById = bundles.ToDictionary(b => b.Id);
 
         return items.Select(c =>
         {
-            programsById.TryGetValue(c.ProgramId!.Value, out var program);
+            string displayName;
+            if (c.BundleId.HasValue && bundlesById.TryGetValue(c.BundleId.Value, out var bundle))
+            {
+                displayName = bundle.Name;
+            }
+            else if (c.ProgramId.HasValue && programsById.TryGetValue(c.ProgramId.Value, out var program))
+            {
+                displayName = program.Name;
+            }
+            else
+            {
+                displayName = string.Empty;
+            }
+
             return new CertificateListItemDto
             {
                 Id = c.Id,
                 Code = c.Code,
-                ProgramId = c.ProgramId.Value,
-                ProgramName = program?.Name ?? string.Empty,
+                ProgramId = c.ProgramId,
+                BundleId = c.BundleId,
+                ProgramName = displayName,
                 IssueDate = c.IssueDate,
                 PdfUrl = c.PdfUrl,
                 VerificationUrl = c.VerificationUrl,
@@ -416,23 +528,74 @@ public sealed class CertificateService : ICertificateService
         return links.Select(ps => ps.StudentId).Distinct().ToList();
     }
 
+    private async Task TryAttachPdfAsync(
+        Certificate certificate,
+        string title,
+        string? description,
+        string? thumbnailUrl,
+        List<string> lineNames,
+        string folder,
+        string errorMessage)
+    {
+        var student = await _unitOfWork.Users.GetByIdAsync(certificate.StudentId);
+        if (student == null || student.IsDeleted)
+        {
+            return;
+        }
+
+        try
+        {
+            var pdfBytes = _pdfGenerator.Generate(new CertificatePdfModel
+            {
+                Code = certificate.Code,
+                StudentFullName = string.IsNullOrWhiteSpace(student.FullName)
+                    ? student.Email
+                    : student.FullName!,
+                StudentAvatarUrl = student.AvatarUrl,
+                IssuerLogoUrl = CertificateBranding.IssuerLogoUrl,
+                ProgramName = title,
+                ProgramDescription = description,
+                ProgramThumbnailUrl = thumbnailUrl,
+                IssueDate = certificate.IssueDate ?? DateTime.UtcNow,
+                VerificationUrl = certificate.VerificationUrl ?? string.Empty,
+                ModuleNames = lineNames,
+            });
+
+            var fileName = $"{certificate.Code}.pdf";
+            await using var stream = new MemoryStream(pdfBytes);
+            await _blobService.UploadFileAsync(fileName, stream, folder);
+
+            var s3Key = $"{folder}/{fileName}";
+            certificate.PdfUrl = await _blobService.GetPreviewUrlAsync(s3Key);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, errorMessage);
+        }
+    }
+
     private async Task<CertificateDetailDto> MapDetailAsync(Certificate certificate)
     {
+        var student = await _unitOfWork.Users.GetByIdAsync(certificate.StudentId);
+        if (student == null || student.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Student with id '{certificate.StudentId}' not found.");
+        }
+
+        if (certificate.BundleId.HasValue)
+        {
+            return await MapBundleDetailAsync(certificate, student);
+        }
+
         if (!certificate.ProgramId.HasValue)
         {
-            throw ErrorHelper.BadRequest("Certificate is not linked to a program.");
+            throw ErrorHelper.BadRequest("Certificate is not linked to a program or bundle.");
         }
 
         var program = await _unitOfWork.Programs.GetByIdAsync(certificate.ProgramId.Value);
         if (program == null || program.IsDeleted)
         {
             throw ErrorHelper.NotFound($"Program with id '{certificate.ProgramId}' not found.");
-        }
-
-        var student = await _unitOfWork.Users.GetByIdAsync(certificate.StudentId);
-        if (student == null || student.IsDeleted)
-        {
-            throw ErrorHelper.NotFound($"Student with id '{certificate.StudentId}' not found.");
         }
 
         var modules = (await _unitOfWork.Modules.GetAllAsync(
@@ -494,6 +657,87 @@ public sealed class CertificateService : ICertificateService
             }).ToList(),
             LearningOutcomes = learningOutcomes,
             SkillsGained = skillsGained,
+        };
+    }
+
+    private async Task<CertificateDetailDto> MapBundleDetailAsync(Certificate certificate, User student)
+    {
+        var bundle = await _unitOfWork.ProgramBundles.GetByIdAsync(certificate.BundleId!.Value);
+        if (bundle == null || bundle.IsDeleted)
+        {
+            throw ErrorHelper.NotFound($"Bundle with id '{certificate.BundleId}' not found.");
+        }
+
+        var items = (await _unitOfWork.ProgramBundleItems.GetAllAsync(
+                i => i.BundleId == bundle.Id && !i.IsDeleted))
+            .OrderBy(i => i.SortOrder)
+            .ToList();
+
+        var modules = new List<CertificateModuleDto>();
+        var learningOutcomes = new List<string>();
+        var seenOutcomes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var order = 1;
+        foreach (var item in items)
+        {
+            var program = await _unitOfWork.Programs.GetByIdAsync(item.ProgramId);
+            if (program == null || program.IsDeleted)
+            {
+                continue;
+            }
+
+            modules.Add(new CertificateModuleDto
+            {
+                ModuleId = program.Id,
+                Name = program.Name,
+                ModuleOrder = order++,
+            });
+
+            var programModules = await _unitOfWork.Modules.GetAllAsync(
+                m => m.ProgramId == program.Id && !m.IsDeleted);
+            foreach (var module in programModules)
+            {
+                foreach (var outcome in module.LearningOutcomes)
+                {
+                    if (string.IsNullOrWhiteSpace(outcome))
+                    {
+                        continue;
+                    }
+
+                    var trimmed = outcome.Trim();
+                    if (seenOutcomes.Add(trimmed))
+                    {
+                        learningOutcomes.Add(trimmed);
+                    }
+                }
+            }
+        }
+
+        return new CertificateDetailDto
+        {
+            Id = certificate.Id,
+            Code = certificate.Code,
+            IssueDate = certificate.IssueDate,
+            PdfUrl = certificate.PdfUrl,
+            VerificationUrl = certificate.VerificationUrl,
+            SkillsAcquired = certificate.SkillsAcquired,
+            IssuerName = CertificateBranding.IssuerName,
+            IssuerLogoUrl = CertificateBranding.IssuerLogoUrl,
+            Student = new CertificateStudentDto
+            {
+                Id = student.Id,
+                FullName = student.FullName,
+                AvatarUrl = student.AvatarUrl,
+            },
+            Bundle = new CertificateBundleDto
+            {
+                Id = bundle.Id,
+                Name = bundle.Name,
+                Description = bundle.Description,
+                ThumbnailUrl = bundle.ThumbnailUrl,
+            },
+            Modules = modules,
+            LearningOutcomes = learningOutcomes,
+            SkillsGained = ParseSkillsGained(certificate.SkillsAcquired),
         };
     }
 

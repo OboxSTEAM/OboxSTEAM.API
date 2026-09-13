@@ -297,3 +297,31 @@ class-selection rule, restricted to eligible classes (see above).
 
 Parents access linked student enrollment data through endpoints that accept
 Parent role alongside Student and admin roles.
+
+## Bundle pathway (Lộ trình của tôi)
+
+Purchased `BundleEnrollment` rows (Active or Completed) are the source of truth
+for the learner roadmap. `PendingPayment` is omitted until checkout succeeds.
+
+- `GET /api/bundles/me` — paginated pathways for the caller scope (Student:
+  own; Parent: verified linked students; Admin/Manager: all). Active rows
+  sort first, then newest `CreatedAt`.
+- `GET /api/bundles/me/{bundleEnrollmentId}` — the same payload for one
+  enrollment.
+
+Each pathway includes `progressPercent` (mean of child program enrollments,
+including programs owned before purchase), ordered `items` nodes, and
+`certificate` when a pathway certificate has been issued.
+
+Item `status`:
+
+| Status | Meaning |
+| --- | --- |
+| `Completed` | Current program enrollment is Completed |
+| `Locked` | `RequiresPreviousCompletion` and the previous item is not Completed |
+| `InProgress` | Unlocked, Active/Deferred, `progressPercent` &gt; 0 |
+| `Available` | Unlocked and not yet in progress |
+
+Sequential class enrollment is still blocked while a node is `Locked`
+(`Hoàn thành chương trình X trước.`). Gated items without a class seat do not
+count toward the 2 in-progress program cap.

@@ -100,6 +100,8 @@ service emits it.
 | `ProgramPendingPayment`          | `ForStudentAndParents`                                       | `ProgramEnrollmentService`                  |
 | `ProgramActivated`               | `ForStudentAndParents`                                       | `PaymentService`                            |
 | `ProgramWithdrawn`               | `ForStudentAndParents`                                       | `ProgramPurchaseLifecycle`                  |
+| `ProgramCompleted`               | `ForStudentAndParents`                                       | `BundleProgressService`                     |
+| `ProgramUnlocked`                | `ForStudentAndParents`                                       | `BundleProgressService`                     |
 | `ModuleCompleted`                | `ForStudentAndParents`                                       | `ActivityProgressService`                   |
 | `ModuleFailed`                   | `ForStudentAndParents`                                       | `ProgramPurchaseLifecycle` (academic fail or attendance close) |
 | `ModuleUnlocked`                 | `ForStudentAndParents`                                       | `ActivityProgressService`                   |
@@ -111,6 +113,9 @@ service emits it.
 | `PaymentFailed`                  | `ForStudentAndParents`                                       | `PaymentService`                            |
 | `PaymentCancelled`               | `ForStudentAndParents`                                       | `PaymentService`                            |
 | `ParentPaymentRequested`         | Parent via `ForUser`                                         | `PaymentService`                            |
+| `BundlePurchased`                | `ForStudentAndParents`                                       | `PaymentService`                            |
+| `BundleCompleted`                | `ForStudentAndParents`                                       | `BundleProgressService`                     |
+| `ParentBundlePaymentRequested`   | Parent via `ForUser`                                         | `PaymentService`                            |
 | `ParentModuleRetakeRequested`    | Parent via `ForUser`                                         | `PaymentService`                            |
 | `ClassCreated`                   | `ForManagers`                                                | `ClassService`                              |
 | `ClassUpdated`                   | `ForClassRosterAndParentsAndMentor`                          | `ClassService`                              |

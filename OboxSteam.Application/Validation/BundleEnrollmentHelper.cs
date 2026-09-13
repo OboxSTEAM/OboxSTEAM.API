@@ -191,6 +191,74 @@ public static class BundleEnrollmentHelper
         return completedProgramIds.Contains(previous.ProgramId);
     }
 
+    /// <summary>
+    /// Roadmap node: Completed first, then Locked when the sequential gate is closed,
+    /// InProgress when unlocked with percent &gt; 0, otherwise Available.
+    /// </summary>
+    public static BundlePathwayItemStatus ResolvePathwayItemStatus(
+        ProgramBundleItem item,
+        IReadOnlyList<ProgramBundleItem> orderedItems,
+        ISet<Guid> completedProgramIds,
+        ProgramEnrollment? current)
+    {
+        if (current?.Status == EnrollmentStatus.Completed)
+            return BundlePathwayItemStatus.Completed;
+
+        if (!IsItemUnlocked(item, orderedItems, completedProgramIds))
+            return BundlePathwayItemStatus.Locked;
+
+        if (current != null
+            && current.Status is EnrollmentStatus.Active or EnrollmentStatus.Deferred
+            && current.ProgressPercent > 0)
+        {
+            return BundlePathwayItemStatus.InProgress;
+        }
+
+        return BundlePathwayItemStatus.Available;
+    }
+
+    public static ProgramEnrollment? SelectCurrentProgramEnrollment(
+        IEnumerable<ProgramEnrollment> enrollments,
+        Guid studentId,
+        Guid programId)
+    {
+        return enrollments
+            .Where(pe => pe.StudentId == studentId
+                         && pe.ProgramId == programId
+                         && !pe.IsDeleted
+                         && pe.Status is EnrollmentStatus.Active
+                             or EnrollmentStatus.Completed
+                             or EnrollmentStatus.Deferred)
+            .OrderByDescending(pe => pe.EnrolledAt ?? pe.CreatedAt)
+            .FirstOrDefault();
+    }
+
+    public static IReadOnlyList<ProgramBundleItem> FindNewlyUnlockedItems(
+        IReadOnlyList<ProgramBundleItem> orderedItems,
+        ISet<Guid> completedBefore,
+        ISet<Guid> completedAfter)
+    {
+        return orderedItems
+            .Where(item =>
+                !IsItemUnlocked(item, orderedItems, completedBefore)
+                && IsItemUnlocked(item, orderedItems, completedAfter))
+            .ToList();
+    }
+
+    public static async Task<HashSet<Guid>> GetCompletedProgramIdsAsync(IUnitOfWork unitOfWork, Guid studentId)
+    {
+        var enrollments = await unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => pe.StudentId == studentId
+                  && !pe.IsDeleted
+                  && pe.Status == EnrollmentStatus.Completed);
+        return enrollments.Select(pe => pe.ProgramId).ToHashSet();
+    }
+
+    public static bool AreAllItemsCompleted(
+        IReadOnlyList<ProgramBundleItem> items,
+        ISet<Guid> completedProgramIds)
+        => items.Count > 0 && items.All(i => completedProgramIds.Contains(i.ProgramId));
+
     private static async Task<int> CountOccupyingProgramSlotsAsync(
         IUnitOfWork unitOfWork,
         Guid studentId,

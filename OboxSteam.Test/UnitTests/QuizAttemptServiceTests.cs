@@ -50,6 +50,9 @@ public sealed class QuizAttemptServiceTests
             _claimsService.Object,
             _db,
             _certificateService.Object,
+            Mock.Of<IBundleProgressService>(s =>
+                s.SyncAfterProgramProgressAsync(It.IsAny<Guid>(), It.IsAny<EnrollmentStatus>())
+                == Task.CompletedTask),
             _notificationPublisher.Object,
             NullLogger<QuizAttemptService>.Instance,
             lifecycle);

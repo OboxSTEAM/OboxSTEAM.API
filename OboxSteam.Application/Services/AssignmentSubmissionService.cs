@@ -31,6 +31,7 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
     private readonly ICertificateService _certificateService;
+    private readonly IBundleProgressService _bundleProgressService;
     private readonly ILogger<AssignmentSubmissionService> _logger;
     private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
@@ -39,6 +40,7 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         IUnitOfWork unitOfWork,
         IBlobService blobService,
         ICertificateService certificateService,
+        IBundleProgressService bundleProgressService,
         ILogger<AssignmentSubmissionService> logger,
         ProgramPurchaseLifecycle programPurchaseLifecycle)
     {
@@ -46,6 +48,7 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         _unitOfWork = unitOfWork;
         _blobService = blobService;
         _certificateService = certificateService;
+        _bundleProgressService = bundleProgressService;
         _logger = logger;
         _programPurchaseLifecycle = programPurchaseLifecycle;
     }
@@ -402,11 +405,22 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
 
         if (moduleEnrollment.ProgramEnrollmentId.HasValue)
         {
+            var previousStatus = EnrollmentStatus.Active;
+            var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                moduleEnrollment.ProgramEnrollmentId.Value);
+            if (programEnrollment != null)
+            {
+                previousStatus = programEnrollment.Status;
+            }
+
             await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
                 _unitOfWork,
                 moduleEnrollment.ProgramEnrollmentId.Value,
                 moduleEnrollment);
             await TryEnsureProgramCertificateAsync(moduleEnrollment.ProgramEnrollmentId.Value);
+            await _unitOfWork.SaveChangesAsync();
+            await TrySyncBundleProgressAsync(moduleEnrollment.ProgramEnrollmentId.Value, previousStatus);
+            return;
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -424,6 +438,23 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
             _logger.LogError(
                 ex,
                 "[TryEnsureProgramCertificateAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
+                programEnrollmentId);
+        }
+    }
+
+    private async Task TrySyncBundleProgressAsync(
+        Guid programEnrollmentId,
+        EnrollmentStatus previousStatus)
+    {
+        try
+        {
+            await _bundleProgressService.SyncAfterProgramProgressAsync(programEnrollmentId, previousStatus);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[TrySyncBundleProgressAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
                 programEnrollmentId);
         }
     }

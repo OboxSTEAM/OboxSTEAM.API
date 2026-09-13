@@ -36,17 +36,20 @@ public sealed class ProgramPurchaseLifecycle
     private readonly ICurrentTime _currentTime;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<ProgramPurchaseLifecycle> _logger;
+    private readonly IBundleProgressService? _bundleProgressService;
 
     public ProgramPurchaseLifecycle(
         IUnitOfWork unitOfWork,
         ICurrentTime currentTime,
         INotificationPublisher notificationPublisher,
-        ILogger<ProgramPurchaseLifecycle> logger)
+        ILogger<ProgramPurchaseLifecycle> logger,
+        IBundleProgressService? bundleProgressService = null)
     {
         _unitOfWork = unitOfWork;
         _currentTime = currentTime;
         _notificationPublisher = notificationPublisher;
         _logger = logger;
+        _bundleProgressService = bundleProgressService;
     }
 
     /// <summary>
@@ -794,10 +797,13 @@ public sealed class ProgramPurchaseLifecycle
 
         if (copiedRows.Count > 0)
         {
+            var previousStatus = enrollment.Status;
             await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
                 _unitOfWork,
                 enrollment.Id,
                 copiedRows[0].Copied);
+            await _unitOfWork.SaveChangesAsync();
+            await TrySyncBundleProgressAsync(enrollment.Id, previousStatus);
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -914,12 +920,14 @@ public sealed class ProgramPurchaseLifecycle
 
         await ReopenAsync(target.Value.Enrollment, target.Value.Module);
 
+        var previousStatus = target.Value.Enrollment.Status;
         await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, target.Value.Module);
         await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
             _unitOfWork,
             target.Value.Enrollment.Id,
             target.Value.Module);
         await _unitOfWork.SaveChangesAsync();
+        await TrySyncBundleProgressAsync(target.Value.Enrollment.Id, previousStatus);
         return true;
     }
 
@@ -1331,4 +1339,26 @@ public sealed class ProgramPurchaseLifecycle
 
     private static bool HasWaitingGrade(IEnumerable<Submission> submissions)
         => submissions.Any(s => s.Status == SubmissionStatus.TurnedIn);
+
+    private async Task TrySyncBundleProgressAsync(
+        Guid programEnrollmentId,
+        EnrollmentStatus previousStatus)
+    {
+        if (_bundleProgressService == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _bundleProgressService.SyncAfterProgramProgressAsync(programEnrollmentId, previousStatus);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[TrySyncBundleProgressAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
+                programEnrollmentId);
+        }
+    }
 }

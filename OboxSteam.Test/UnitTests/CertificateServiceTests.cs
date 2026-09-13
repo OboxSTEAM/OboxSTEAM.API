@@ -212,7 +212,7 @@ public sealed class CertificateServiceTests
         Assert.NotNull(result);
         Assert.StartsWith("OBOX-CERT-", result!.Code);
         Assert.Equal("Alice Student", result.Student.FullName);
-        Assert.Equal("STEAM Program", result.Program.Name);
+        Assert.Equal("STEAM Program", result.Program!.Name);
         Assert.Single(result.Modules);
         Assert.Contains("Build robots", result.LearningOutcomes);
         Assert.Equal(["Robotics", "Coding"], result.SkillsGained);
@@ -584,5 +584,117 @@ public sealed class CertificateServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() => sut.GetCertificateByCodeAsync("  "));
         await Assert.ThrowsAsync<NotFoundException>(() =>
             sut.GetCertificateByCodeAsync("OBOX-CERT-MISSING"));
+    }
+
+    [Fact]
+    public async Task EnsureBundle_IssuesPathwayCertificate_WhenAllProgramsCompleted()
+    {
+        SeedProgramCurriculum();
+        SeedEnrollmentChain();
+        _db.ProgramEnrollments.Items.Single(pe => pe.Id == _programEnrollmentId).Status =
+            EnrollmentStatus.Completed;
+        var otherProgramId = Guid.Parse("77777777-7777-7777-7777-777777777777");
+        var bundleId = Guid.Parse("88888888-8888-8888-8888-888888888888");
+        var bundleEnrollmentId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+        _db.Programs.Seed(new Program
+        {
+            Id = otherProgramId,
+            Code = "PRG-002",
+            Name = "Advanced STEAM",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Advanced,
+            SkillsGained = "Leadership",
+            IsDeleted = false,
+        });
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ProgramId = otherProgramId,
+            Status = EnrollmentStatus.Completed,
+            IsDeleted = false,
+        });
+        _db.ProgramBundles.Seed(new ProgramBundle
+        {
+            Id = bundleId,
+            Code = "BDL-001",
+            Name = "Full STEAM path",
+            Description = "Pathway",
+            Category = ProgramCategory.Technology,
+            Status = ProgramBundleStatus.Active,
+            IsDeleted = false,
+        });
+        _db.ProgramBundleItems.Seed(
+            new ProgramBundleItem
+            {
+                Id = Guid.NewGuid(),
+                BundleId = bundleId,
+                ProgramId = _programId,
+                SortOrder = 1,
+            },
+            new ProgramBundleItem
+            {
+                Id = Guid.NewGuid(),
+                BundleId = bundleId,
+                ProgramId = otherProgramId,
+                SortOrder = 2,
+                RequiresPreviousCompletion = true,
+            });
+        _db.BundleEnrollments.Seed(new BundleEnrollment
+        {
+            Id = bundleEnrollmentId,
+            StudentId = _studentId,
+            BundleId = bundleId,
+            Status = BundleEnrollmentStatus.Completed,
+            ProgressPercent = 100m,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.EnsureBundleCertificateInternalAsync(bundleEnrollmentId);
+
+        Assert.NotNull(result);
+        Assert.Null(result!.Program);
+        Assert.NotNull(result.Bundle);
+        Assert.Equal("Full STEAM path", result.Bundle!.Name);
+        Assert.Equal(bundleId, result.Bundle.Id);
+        Assert.Equal(2, result.Modules.Count);
+        Assert.Single(_db.Certificates.Items, c => c.BundleId == bundleId && c.ProgramId == null);
+        _pdfGenerator.Verify(p => p.Generate(It.Is<CertificatePdfModel>(m => m.ProgramName == "Full STEAM path")), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetMy_ReturnsProgramAndBundleCertificates()
+    {
+        SeedProgramCurriculum();
+        SeedEnrollmentChain();
+        SeedCertificate();
+        var bundleId = Guid.Parse("88888888-8888-8888-8888-888888888888");
+        _db.ProgramBundles.Seed(new ProgramBundle
+        {
+            Id = bundleId,
+            Code = "BDL-001",
+            Name = "Full STEAM path",
+            Category = ProgramCategory.Technology,
+            Status = ProgramBundleStatus.Active,
+            IsDeleted = false,
+        });
+        _db.Certificates.Seed(new Certificate
+        {
+            Id = Guid.NewGuid(),
+            Code = "OBOX-CERT-BUNDLE1",
+            StudentId = _studentId,
+            ProgramId = null,
+            ModuleId = null,
+            BundleId = bundleId,
+            IssueDate = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetMyCertificatesAsync();
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, c => c.ProgramId == _programId && c.BundleId == null);
+        Assert.Contains(result, c => c.BundleId == bundleId && c.ProgramId == null && c.ProgramName == "Full STEAM path");
     }
 }

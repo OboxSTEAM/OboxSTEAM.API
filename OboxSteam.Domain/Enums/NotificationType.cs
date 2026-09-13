@@ -20,6 +20,8 @@ public enum NotificationType
     ProgramPendingPayment,
     ProgramActivated,
     ProgramWithdrawn,
+    ProgramCompleted,
+    ProgramUnlocked,
     ModuleCompleted,
     ModuleFailed,
     ModuleUnlocked,
@@ -35,6 +37,7 @@ public enum NotificationType
     ParentPaymentRequested,
     ParentModuleRetakeRequested,
     BundlePurchased,
+    BundleCompleted,
     ParentBundlePaymentRequested,
 
     // Class lifecycle

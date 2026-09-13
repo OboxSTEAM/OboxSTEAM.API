@@ -81,6 +81,9 @@ public sealed class ResearchSubmissionServiceTests
             _blobService.Object,
             _mediaService.Object,
             _certificateService.Object,
+            Mock.Of<IBundleProgressService>(s =>
+                s.SyncAfterProgramProgressAsync(It.IsAny<Guid>(), It.IsAny<EnrollmentStatus>())
+                == Task.CompletedTask),
             _notificationPublisher.Object,
             NullLogger<ResearchSubmissionService>.Instance,
             lifecycle);

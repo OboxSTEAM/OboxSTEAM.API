@@ -67,6 +67,9 @@ public sealed class AssignmentSubmissionServiceTests
             _db,
             _blobService.Object,
             _certificateService.Object,
+            Mock.Of<IBundleProgressService>(s =>
+                s.SyncAfterProgramProgressAsync(It.IsAny<Guid>(), It.IsAny<EnrollmentStatus>())
+                == Task.CompletedTask),
             NullLogger<AssignmentSubmissionService>.Instance,
             lifecycle);
     }

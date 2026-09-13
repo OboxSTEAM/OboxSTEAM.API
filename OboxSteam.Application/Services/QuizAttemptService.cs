@@ -16,6 +16,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICertificateService _certificateService;
+    private readonly IBundleProgressService _bundleProgressService;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<QuizAttemptService> _logger;
     private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
@@ -24,6 +25,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
         IClaimsService claimsService,
         IUnitOfWork unitOfWork,
         ICertificateService certificateService,
+        IBundleProgressService bundleProgressService,
         INotificationPublisher notificationPublisher,
         ILogger<QuizAttemptService> logger,
         ProgramPurchaseLifecycle programPurchaseLifecycle)
@@ -31,6 +33,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
         _certificateService = certificateService;
+        _bundleProgressService = bundleProgressService;
         _notificationPublisher = notificationPublisher;
         _logger = logger;
         _programPurchaseLifecycle = programPurchaseLifecycle;
@@ -815,11 +818,22 @@ public sealed class QuizAttemptService : IQuizAttemptService
 
         if (moduleEnrollment.ProgramEnrollmentId.HasValue)
         {
+            var previousStatus = EnrollmentStatus.Active;
+            var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                moduleEnrollment.ProgramEnrollmentId.Value);
+            if (programEnrollment != null)
+            {
+                previousStatus = programEnrollment.Status;
+            }
+
             await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
                 _unitOfWork,
                 moduleEnrollment.ProgramEnrollmentId.Value,
                 moduleEnrollment);
             await TryEnsureProgramCertificateAsync(moduleEnrollment.ProgramEnrollmentId.Value);
+            await _unitOfWork.SaveChangesAsync();
+            await TrySyncBundleProgressAsync(moduleEnrollment.ProgramEnrollmentId.Value, previousStatus);
+            return;
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -836,6 +850,23 @@ public sealed class QuizAttemptService : IQuizAttemptService
             _logger.LogError(
                 ex,
                 "[TryEnsureProgramCertificateAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
+                programEnrollmentId);
+        }
+    }
+
+    private async Task TrySyncBundleProgressAsync(
+        Guid programEnrollmentId,
+        EnrollmentStatus previousStatus)
+    {
+        try
+        {
+            await _bundleProgressService.SyncAfterProgramProgressAsync(programEnrollmentId, previousStatus);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[TrySyncBundleProgressAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
                 programEnrollmentId);
         }
     }

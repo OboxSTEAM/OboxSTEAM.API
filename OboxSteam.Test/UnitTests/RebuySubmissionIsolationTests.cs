@@ -589,6 +589,7 @@ public sealed class RebuySubmissionIsolationTests
             _claimsService.Object,
             _db,
             Mock.Of<ICertificateService>(),
+            Mock.Of<IBundleProgressService>(),
             Mock.Of<INotificationPublisher>(n =>
                 n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>())
                 == Task.CompletedTask),

@@ -47,6 +47,44 @@ public sealed class BundleController : ControllerBase
             result, "200", "Bundles retrieved successfully."));
     }
 
+    [HttpGet("me")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "List my purchased pathways",
+        Description = "Students see their own Active/Completed bundle enrollments. Parents see linked students. "
+                      + "Admin and Manager see all. Each row is a roadmap: Locked / Available / InProgress / Completed nodes, "
+                      + "overall ProgressPercent, and the pathway certificate when issued. PendingPayment is omitted.")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<MyBundlePathwayDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    public async Task<IActionResult> GetMyPathways(
+        [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
+        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10)
+    {
+        if (page < 1 || pageSize < 1)
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+
+        var result = await _bundleService.GetMyPathways(page, pageSize);
+        return Ok(ApiResult<Pagination<MyBundlePathwayDto>>.Success(
+            result, "200", "Pathways retrieved successfully."));
+    }
+
+    [HttpGet("me/{bundleEnrollmentId:guid}")]
+    [Authorize(Roles = "Student,Parent,Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Get one purchased pathway",
+        Description = "Roadmap for a single BundleEnrollment. Same visibility as GET /api/bundles/me.")]
+    [ProducesResponseType(typeof(ApiResult<MyBundlePathwayDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetMyPathwayByEnrollmentId([FromRoute] Guid bundleEnrollmentId)
+    {
+        var result = await _bundleService.GetMyPathwayByEnrollmentId(bundleEnrollmentId);
+        return Ok(ApiResult<MyBundlePathwayDto>.Success(result, "200", "Pathway retrieved successfully."));
+    }
+
     [HttpGet("{id:guid}")]
     [AllowAnonymous]
     [SwaggerOperation(

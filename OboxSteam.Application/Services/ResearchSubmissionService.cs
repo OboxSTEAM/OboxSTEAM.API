@@ -21,6 +21,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
     private readonly IBlobService _blobService;
     private readonly IMediaService _mediaService;
     private readonly ICertificateService _certificateService;
+    private readonly IBundleProgressService _bundleProgressService;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<ResearchSubmissionService> _logger;
     private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
@@ -31,6 +32,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         IBlobService blobService,
         IMediaService mediaService,
         ICertificateService certificateService,
+        IBundleProgressService bundleProgressService,
         INotificationPublisher notificationPublisher,
         ILogger<ResearchSubmissionService> logger,
         ProgramPurchaseLifecycle programPurchaseLifecycle)
@@ -40,6 +42,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         _blobService = blobService;
         _mediaService = mediaService;
         _certificateService = certificateService;
+        _bundleProgressService = bundleProgressService;
         _notificationPublisher = notificationPublisher;
         _logger = logger;
         _programPurchaseLifecycle = programPurchaseLifecycle;
@@ -643,11 +646,22 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
 
         if (moduleEnrollment.ProgramEnrollmentId.HasValue)
         {
+            var previousStatus = EnrollmentStatus.Active;
+            var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                moduleEnrollment.ProgramEnrollmentId.Value);
+            if (programEnrollment != null)
+            {
+                previousStatus = programEnrollment.Status;
+            }
+
             await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
                 _unitOfWork,
                 moduleEnrollment.ProgramEnrollmentId.Value,
                 moduleEnrollment);
             await TryEnsureProgramCertificateAsync(moduleEnrollment.ProgramEnrollmentId.Value);
+            await _unitOfWork.SaveChangesAsync();
+            await TrySyncBundleProgressAsync(moduleEnrollment.ProgramEnrollmentId.Value, previousStatus);
+            return;
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -665,6 +679,23 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             _logger.LogError(
                 ex,
                 "[TryEnsureProgramCertificateAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
+                programEnrollmentId);
+        }
+    }
+
+    private async Task TrySyncBundleProgressAsync(
+        Guid programEnrollmentId,
+        EnrollmentStatus previousStatus)
+    {
+        try
+        {
+            await _bundleProgressService.SyncAfterProgramProgressAsync(programEnrollmentId, previousStatus);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[TrySyncBundleProgressAsync] Failed for enrollment {EnrollmentId}. Learning progress was not rolled back.",
                 programEnrollmentId);
         }
     }

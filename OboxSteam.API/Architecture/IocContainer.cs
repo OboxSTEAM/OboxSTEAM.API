@@ -256,6 +256,7 @@ public static class IocContainer
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IVoucherService, VoucherService>();
         services.AddScoped<IProgramBundleService, ProgramBundleService>();
+        services.AddScoped<IBundleProgressService, BundleProgressService>();
         services.AddScoped<IClassSeatHoldService, ClassSeatHoldService>();
         services.AddScoped<IInvoiceService, InvoiceService>();
         services.AddScoped<IDashboardService, DashboardService>();

@@ -17,7 +17,12 @@ public sealed class ProgramBundleServiceTests
     private readonly Guid _parentId = Guid.Parse("14141414-1414-1414-1414-141414141414");
     private readonly Guid _programAId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly Guid _programBId = Guid.Parse("23232323-2323-2323-2323-232323232323");
+    private readonly Guid _programCId = Guid.Parse("24242424-2424-2424-2424-242424242424");
     private readonly Guid _bundleId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private readonly Guid _bundleEnrollmentId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+    private readonly Guid _peAId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+    private readonly Guid _peBId = Guid.Parse("45454545-4545-4545-4545-454545454545");
+    private readonly Guid _peCId = Guid.Parse("46464646-4646-4646-4646-464646464646");
     private readonly DateTime _now = new(2026, 9, 10, 0, 0, 0, DateTimeKind.Utc);
 
     private readonly InMemoryUnitOfWork _db = new();
@@ -698,5 +703,260 @@ public sealed class ProgramBundleServiceTests
                 Status = ProgramBundleStatus.Draft,
                 CreatedAt = _now.AddDays(-1),
             });
+    }
+
+    private void SeedPurchasedPathway(BundleEnrollmentStatus status = BundleEnrollmentStatus.Active)
+    {
+        SeedStudent();
+        _db.Programs.Seed(
+            new Program
+            {
+                Id = _programAId,
+                Code = "PRG-A",
+                Name = "Robotics 1",
+                Category = ProgramCategory.Technology,
+                Status = ProgramStatus.Active,
+                Price = 1_000_000m,
+            },
+            new Program
+            {
+                Id = _programBId,
+                Code = "PRG-B",
+                Name = "Robotics 2",
+                Category = ProgramCategory.Technology,
+                Status = ProgramStatus.Active,
+                Price = 1_500_000m,
+            },
+            new Program
+            {
+                Id = _programCId,
+                Code = "PRG-C",
+                Name = "Robotics 3",
+                Category = ProgramCategory.Technology,
+                Status = ProgramStatus.Active,
+                Price = 1_800_000m,
+            });
+        _db.ProgramBundles.Seed(new ProgramBundle
+        {
+            Id = _bundleId,
+            Code = "BDL-ROB",
+            Name = "Robotics pathway",
+            ThumbnailUrl = "https://example.com/bundle.png",
+            Category = ProgramCategory.Technology,
+            Price = 3_000_000m,
+            Status = ProgramBundleStatus.Active,
+        });
+        _db.ProgramBundleItems.Seed(
+            new ProgramBundleItem
+            {
+                Id = Guid.NewGuid(),
+                BundleId = _bundleId,
+                ProgramId = _programAId,
+                SortOrder = 1,
+            },
+            new ProgramBundleItem
+            {
+                Id = Guid.NewGuid(),
+                BundleId = _bundleId,
+                ProgramId = _programBId,
+                SortOrder = 2,
+                RequiresPreviousCompletion = true,
+            },
+            new ProgramBundleItem
+            {
+                Id = Guid.NewGuid(),
+                BundleId = _bundleId,
+                ProgramId = _programCId,
+                SortOrder = 3,
+                RequiresPreviousCompletion = true,
+            });
+        _db.BundleEnrollments.Seed(new BundleEnrollment
+        {
+            Id = _bundleEnrollmentId,
+            StudentId = _studentId,
+            BundleId = _bundleId,
+            Status = status,
+            ProgressPercent = 46.67m,
+            CreatedAt = _now,
+        });
+        _db.ProgramEnrollments.Seed(
+            new ProgramEnrollment
+            {
+                Id = _peAId,
+                StudentId = _studentId,
+                ProgramId = _programAId,
+                Status = EnrollmentStatus.Completed,
+                ProgressPercent = 100m,
+            },
+            new ProgramEnrollment
+            {
+                Id = _peBId,
+                StudentId = _studentId,
+                ProgramId = _programBId,
+                Status = EnrollmentStatus.Active,
+                ProgressPercent = 40m,
+            },
+            new ProgramEnrollment
+            {
+                Id = _peCId,
+                StudentId = _studentId,
+                ProgramId = _programCId,
+                Status = EnrollmentStatus.Active,
+                ProgressPercent = 0m,
+            });
+    }
+
+    [Fact]
+    public async Task GetMyPathways_ReturnsRoadmapNodes_AndOmitsPendingPayment()
+    {
+        SeedPurchasedPathway();
+        _db.BundleEnrollments.Seed(new BundleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            BundleId = _bundleId,
+            Status = BundleEnrollmentStatus.PendingPayment,
+            ProgressPercent = 0m,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetMyPathways(1, 10);
+
+        var pathway = Assert.Single(result.Items);
+        Assert.Equal(_bundleEnrollmentId, pathway.BundleEnrollmentId);
+        Assert.Equal(_bundleId, pathway.BundleId);
+        Assert.Equal(_studentId, pathway.StudentId);
+        Assert.Equal("BDL-ROB", pathway.BundleCode);
+        Assert.Equal("Robotics pathway", pathway.BundleName);
+        Assert.Equal(BundleEnrollmentStatus.Active, pathway.Status);
+        Assert.Equal(46.67m, pathway.ProgressPercent);
+        Assert.Null(pathway.Certificate);
+        Assert.Equal(3, pathway.Items.Count);
+        Assert.Equal(BundlePathwayItemStatus.Completed, pathway.Items[0].Status);
+        Assert.Equal(100m, pathway.Items[0].ProgressPercent);
+        Assert.Equal(_peAId, pathway.Items[0].ProgramEnrollmentId);
+        Assert.Equal(BundlePathwayItemStatus.InProgress, pathway.Items[1].Status);
+        Assert.Equal(40m, pathway.Items[1].ProgressPercent);
+        Assert.True(pathway.Items[1].RequiresPreviousCompletion);
+        Assert.Equal(BundlePathwayItemStatus.Locked, pathway.Items[2].Status);
+        Assert.Equal(0m, pathway.Items[2].ProgressPercent);
+        Assert.Equal(_peCId, pathway.Items[2].ProgramEnrollmentId);
+    }
+
+    [Fact]
+    public async Task GetMyPathways_IncludesPathwayCertificate_WhenIssued()
+    {
+        SeedPurchasedPathway(BundleEnrollmentStatus.Completed);
+        _db.ProgramEnrollments.Items.Single(pe => pe.Id == _peBId).Status = EnrollmentStatus.Completed;
+        _db.ProgramEnrollments.Items.Single(pe => pe.Id == _peBId).ProgressPercent = 100m;
+        _db.ProgramEnrollments.Items.Single(pe => pe.Id == _peCId).Status = EnrollmentStatus.Completed;
+        _db.ProgramEnrollments.Items.Single(pe => pe.Id == _peCId).ProgressPercent = 100m;
+        _db.BundleEnrollments.Items.Single().ProgressPercent = 100m;
+        var certificateId = Guid.Parse("77777777-7777-7777-7777-777777777777");
+        _db.Certificates.Seed(new Certificate
+        {
+            Id = certificateId,
+            Code = "OBOX-CERT-BDL1",
+            StudentId = _studentId,
+            BundleId = _bundleId,
+            IssueDate = _now,
+            PdfUrl = "https://cdn.example/cert.pdf",
+            VerificationUrl = "https://obox.id/verify/OBOX-CERT-BDL1",
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetMyPathways(1, 10);
+
+        var pathway = Assert.Single(result.Items);
+        Assert.Equal(BundleEnrollmentStatus.Completed, pathway.Status);
+        Assert.All(pathway.Items, item => Assert.Equal(BundlePathwayItemStatus.Completed, item.Status));
+        Assert.NotNull(pathway.Certificate);
+        Assert.Equal(certificateId, pathway.Certificate!.Id);
+        Assert.Equal("OBOX-CERT-BDL1", pathway.Certificate.Code);
+        Assert.Equal("https://cdn.example/cert.pdf", pathway.Certificate.PdfUrl);
+    }
+
+    [Fact]
+    public async Task GetMyPathways_ParentSeesLinkedStudent()
+    {
+        SeedPurchasedPathway();
+        _db.Users.Seed(new User
+        {
+            Id = _parentId,
+            Code = "PAR-1",
+            Email = "parent@test.com",
+            Role = RoleType.Parent,
+        });
+        _db.ParentStudents.Seed(new ParentStudent
+        {
+            ParentId = _parentId,
+            StudentId = _studentId,
+            IsVerified = true,
+        });
+        var sut = CreateSut(_parentId);
+
+        var result = await sut.GetMyPathways(1, 10);
+
+        var pathway = Assert.Single(result.Items);
+        Assert.Equal(_studentId, pathway.StudentId);
+    }
+
+    [Fact]
+    public async Task GetMyPathways_UnlinkedParent_ReturnsEmpty()
+    {
+        SeedPurchasedPathway();
+        _db.Users.Seed(new User
+        {
+            Id = _parentId,
+            Code = "PAR-1",
+            Email = "parent@test.com",
+            Role = RoleType.Parent,
+        });
+        var sut = CreateSut(_parentId);
+
+        var result = await sut.GetMyPathways(1, 10);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetMyPathwayByEnrollmentId_ReturnsSameRoadmap()
+    {
+        SeedPurchasedPathway();
+        var sut = CreateSut();
+
+        var result = await sut.GetMyPathwayByEnrollmentId(_bundleEnrollmentId);
+
+        Assert.Equal(_bundleEnrollmentId, result.BundleEnrollmentId);
+        Assert.Equal(BundlePathwayItemStatus.Locked, result.Items[2].Status);
+    }
+
+    [Fact]
+    public async Task GetMyPathwayByEnrollmentId_OtherStudent_ThrowsForbidden()
+    {
+        SeedPurchasedPathway();
+        var otherStudentId = Guid.Parse("19191919-1919-1919-1919-191919191919");
+        _db.Users.Seed(new User
+        {
+            Id = otherStudentId,
+            Code = "STU-2",
+            Email = "other@test.com",
+            Role = RoleType.Student,
+        });
+        var sut = CreateSut(otherStudentId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.GetMyPathwayByEnrollmentId(_bundleEnrollmentId));
+    }
+
+    [Fact]
+    public async Task GetMyPathwayByEnrollmentId_PendingPayment_ThrowsNotFound()
+    {
+        SeedPurchasedPathway(BundleEnrollmentStatus.PendingPayment);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.GetMyPathwayByEnrollmentId(_bundleEnrollmentId));
     }
 }

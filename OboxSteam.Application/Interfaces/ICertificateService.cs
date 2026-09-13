@@ -23,6 +23,13 @@ public interface ICertificateService
     /// </summary>
     Task<CertificateDetailDto?> EnsureProgramCertificateForSeedAsync(Guid programEnrollmentId);
 
+    /// <summary>
+    /// Issues a pathway certificate when every bundle item program enrollment is Completed.
+    /// Idempotent. Skips caller auth (system/auto-issue after program completion).
+    /// Returns null when the bundle is not yet eligible.
+    /// </summary>
+    Task<CertificateDetailDto?> EnsureBundleCertificateInternalAsync(Guid bundleEnrollmentId);
+
     Task<List<CertificateListItemDto>> GetMyCertificatesAsync();
 
     Task<CertificateDetailDto> GetCertificateByIdAsync(Guid id);

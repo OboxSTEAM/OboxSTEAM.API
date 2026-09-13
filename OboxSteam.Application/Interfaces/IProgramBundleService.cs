@@ -28,6 +28,16 @@ public interface IProgramBundleService
     /// <summary>Detail including ordered items and retail total.</summary>
     Task<ProgramBundleResponseDto> GetBundleById(Guid bundleId);
 
+    /// <summary>
+    /// Purchased pathways for the caller scope (Student own, Parent linked, Admin/Manager all).
+    /// Active and Completed only; unpaid PendingPayment rows are omitted.
+    /// Each row includes ordered nodes and the pathway certificate when issued.
+    /// </summary>
+    Task<Pagination<MyBundlePathwayDto>> GetMyPathways(int page, int pageSize);
+
+    /// <summary>One purchased pathway by <see cref="BundleEnrollment"/> id, same visibility as the list.</summary>
+    Task<MyBundlePathwayDto> GetMyPathwayByEnrollmentId(Guid bundleEnrollmentId);
+
     /// <summary>Creates a Draft bundle. Catalog purchase requires <see cref="PublishBundle"/>.</summary>
     Task<ProgramBundleResponseDto> CreateBundle(CreateProgramBundleRequestDto request);
 

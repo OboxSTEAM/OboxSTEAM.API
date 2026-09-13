@@ -170,6 +170,59 @@ public static class NotificationCatalog
             entityId: programEnrollmentId,
             tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
+    public static NotificationCommand ProgramCompleted(
+        Guid studentId,
+        Guid programId,
+        Guid programEnrollmentId,
+        string? programName = null,
+        string? studentName = null)
+        => StudentAndParent(
+            NotificationType.ProgramCompleted,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Đã hoàn thành chương trình",
+            string.IsNullOrWhiteSpace(programName)
+                ? "Bạn đã hoàn thành chương trình."
+                : "Bạn đã hoàn thành chương trình \"{programName}\".",
+            string.IsNullOrWhiteSpace(programName)
+                ? "Con bạn {studentName} đã hoàn thành chương trình."
+                : "Con bạn {studentName} đã hoàn thành chương trình \"{programName}\".",
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId).WithNames(studentName: studentName, programName: programName),
+            entityType: "ProgramEnrollment",
+            entityId: programEnrollmentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
+
+    public static NotificationCommand ProgramUnlocked(
+        Guid studentId,
+        Guid programId,
+        Guid? bundleId = null,
+        Guid? bundleEnrollmentId = null,
+        string? programName = null,
+        string? studentName = null)
+        => StudentAndParent(
+            NotificationType.ProgramUnlocked,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Đã mở khóa chương trình",
+            string.IsNullOrWhiteSpace(programName)
+                ? "Một chương trình mới đã sẵn sàng."
+                : "Chương trình \"{programName}\" đã được mở khóa.",
+            string.IsNullOrWhiteSpace(programName)
+                ? "Một chương trình mới đã sẵn sàng cho con bạn {studentName}."
+                : "Chương trình \"{programName}\" đã được mở khóa cho con bạn {studentName}.",
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                StudentId = studentId,
+                BundleId = bundleId,
+                BundleEnrollmentId = bundleEnrollmentId
+            }.WithNames(studentName: studentName, programName: programName),
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
+
     public static NotificationCommand ModuleCompleted(
         Guid studentId,
         Guid moduleId,
@@ -538,6 +591,32 @@ public static class NotificationCatalog
             payload: new NotificationPayload
             {
                 PaymentId = paymentId,
+                BundleId = bundleId,
+                BundleEnrollmentId = bundleEnrollmentId,
+                StudentId = studentId
+            }.WithNames(studentName: studentName, programName: bundleName),
+            entityType: "BundleEnrollment",
+            entityId: bundleEnrollmentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: bundleName));
+
+    public static NotificationCommand BundleCompleted(
+        Guid studentId,
+        Guid bundleId,
+        Guid bundleEnrollmentId,
+        string? studentName = null,
+        string? bundleName = null)
+        => StudentAndParent(
+            NotificationType.BundleCompleted,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Đã hoàn thành lộ trình học",
+            string.IsNullOrWhiteSpace(bundleName)
+                ? "Bạn đã hoàn thành lộ trình học."
+                : "Bạn đã hoàn thành lộ trình \"{programName}\".",
+            string.IsNullOrWhiteSpace(bundleName)
+                ? "Con bạn {studentName} đã hoàn thành lộ trình học."
+                : "Con bạn {studentName} đã hoàn thành lộ trình \"{programName}\".",
+            payload: new NotificationPayload
+            {
                 BundleId = bundleId,
                 BundleEnrollmentId = bundleEnrollmentId,
                 StudentId = studentId
