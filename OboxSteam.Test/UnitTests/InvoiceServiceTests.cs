@@ -334,4 +334,67 @@ public sealed class InvoiceServiceTests
         Assert.Equal(moduleId, result[0].ModuleId);
         Assert.Contains("Module Retake", result[0].ItemDescription);
     }
+
+    [Fact]
+    public async Task GetMyInvoices_IncludesBundleInvoice_WithoutProgramEnrollment()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        var bundleId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var bundleEnrollmentId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var bundlePaymentId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        var bundleInvoiceId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+
+        var bundleEnrollment = new BundleEnrollment
+        {
+            Id = bundleEnrollmentId,
+            StudentId = _studentId,
+            BundleId = bundleId,
+            Status = BundleEnrollmentStatus.Active,
+        };
+        _db.BundleEnrollments.Seed(bundleEnrollment);
+
+        var payment = new Payment
+        {
+            Id = bundlePaymentId,
+            Code = "PAY-BUNDLE",
+            StudentId = _studentId,
+            PaidById = _studentId,
+            BundleEnrollmentId = bundleEnrollmentId,
+            BundleEnrollment = bundleEnrollment,
+            DiscountAmount = 1_000_000m,
+            Amount = 2_000_000m,
+            Gateway = PaymentGateway.Stripe,
+            Status = PaymentStatus.Success,
+            PaidAt = _now,
+            IsDeleted = false,
+        };
+        _db.Payments.Seed(payment);
+
+        _db.Invoices.Seed(new Invoice
+        {
+            Id = bundleInvoiceId,
+            InvoiceNumber = "INV-BUNDLE",
+            PaymentId = bundlePaymentId,
+            Payment = payment,
+            IssuedToId = _studentId,
+            BillingName = "Alice",
+            BillingEmail = "alice@test.com",
+            ItemDescription = "Robotics pathway tuition",
+            SubTotal = 3_000_000m,
+            TotalAmount = 2_000_000m,
+            Currency = "VND",
+            CreatedAt = _now,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().GetMyInvoices();
+
+        Assert.Single(result);
+        Assert.Equal(bundleInvoiceId, result[0].Id);
+        Assert.Null(result[0].ProgramId);
+        Assert.Equal(bundleId, result[0].BundleId);
+        Assert.Equal(1_000_000m, result[0].DiscountAmount);
+        Assert.Equal(3_000_000m, result[0].SubTotal);
+        Assert.Equal(2_000_000m, result[0].TotalAmount);
+    }
 }

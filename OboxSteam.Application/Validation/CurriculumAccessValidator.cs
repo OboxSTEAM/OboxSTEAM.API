@@ -58,6 +58,7 @@ public static class CurriculumAccessValidator
     {
         var enrollment = await GetOwnedEnrollmentAsync(unitOfWork, programEnrollmentId, studentId);
         ValidateProgramEnrollmentForCurriculumMutation(enrollment);
+        await BundleEnrollmentHelper.ValidateBundlePrerequisiteForEnrollmentAsync(unitOfWork, enrollment);
         return enrollment;
     }
 

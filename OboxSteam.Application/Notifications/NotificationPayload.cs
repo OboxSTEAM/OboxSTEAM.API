@@ -55,6 +55,8 @@ public sealed class NotificationPayload
     public Guid? ClassRedeliveryRequestId { get; set; }
     public Guid? PaymentId { get; set; }
     public Guid? PaymentRequestId { get; set; }
+    public Guid? BundleId { get; set; }
+    public Guid? BundleEnrollmentId { get; set; }
 
     [Description("Assignment node id for learn ?assignmentId= or manager assignment editor.")]
     public Guid? AssignmentId { get; set; }
@@ -144,6 +146,8 @@ public sealed class NotificationPayload
         ClassRedeliveryRequestId = ClassRedeliveryRequestId,
         PaymentId = PaymentId,
         PaymentRequestId = PaymentRequestId,
+        BundleId = BundleId,
+        BundleEnrollmentId = BundleEnrollmentId,
         AssignmentId = AssignmentId,
         SubmissionId = SubmissionId,
         MaterialId = MaterialId,

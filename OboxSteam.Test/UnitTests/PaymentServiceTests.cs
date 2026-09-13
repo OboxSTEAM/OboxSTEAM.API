@@ -169,7 +169,12 @@ public sealed class PaymentServiceTests
                 _currentTime.Object,
                 NullLogger<ClassRedeliveryRequestService>.Instance),
             CreateSeatHoldService(),
-            CreateLifecycle());
+            CreateLifecycle(),
+            new VoucherService(
+                _db,
+                _claimsService.Object,
+                _currentTime.Object,
+                NullLogger<VoucherService>.Instance));
     }
 
     private User SeedStudent(Guid? id = null)
@@ -363,6 +368,78 @@ public sealed class PaymentServiceTests
         Assert.True(
             _db.ClassEnrollments.Items.Single().HoldExpiresAt
             > DateTime.UtcNow.AddMinutes(ProgramCheckoutPolicy.StripeCheckoutHoldMinutes - 1));
+    }
+
+    [Fact]
+    public async Task CreateDirectCheckout_AppliesVoucherAfterListPrice()
+    {
+        SeedStudent();
+        SeedProgram();
+        _db.Vouchers.Seed(new Voucher
+        {
+            Id = Guid.NewGuid(),
+            Code = "OBX15",
+            PercentOff = 15m,
+            Scope = VoucherScope.Both,
+            Status = VoucherStatus.Active,
+        });
+        var openClass = SeedOpenEnrollmentClass();
+        await SelectClassAsync(openClass.Id);
+        var sut = CreateSut();
+
+        var result = await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe, "obx15");
+
+        var payment = Assert.Single(_db.Payments.Items);
+        Assert.Equal(425_000m, payment.Amount);
+        Assert.Equal(75_000m, payment.DiscountAmount);
+        Assert.NotNull(payment.VoucherId);
+        Assert.False(result.Activated);
+        _stripe.Verify(
+            s => s.CreateCheckoutSession(
+                It.Is<Payment>(p => p.Amount == 425_000m),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string>(),
+                It.IsAny<string>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateDirectCheckout_FullVoucher_ActivatesWithoutStripe()
+    {
+        SeedStudent();
+        SeedProgram();
+        _db.Vouchers.Seed(new Voucher
+        {
+            Id = Guid.NewGuid(),
+            Code = "FREE100",
+            PercentOff = 100m,
+            Scope = VoucherScope.Program,
+            Status = VoucherStatus.Active,
+        });
+        var openClass = SeedOpenEnrollmentClass();
+        await SelectClassAsync(openClass.Id);
+        var sut = CreateSut();
+
+        var result = await sut.CreateDirectCheckout(_programId, openClass.Id, PaymentGateway.Stripe, "FREE100");
+
+        Assert.True(result.Activated);
+        Assert.Equal(string.Empty, result.CheckoutUrl);
+        var payment = Assert.Single(_db.Payments.Items);
+        Assert.Equal(0m, payment.Amount);
+        Assert.Equal(500_000m, payment.DiscountAmount);
+        Assert.Equal(PaymentStatus.Success, payment.Status);
+        Assert.Equal(EnrollmentStatus.Active, _db.ProgramEnrollments.Items.Single(pe => pe.Id == _enrollmentId).Status);
+        _stripe.Verify(
+            s => s.CreateCheckoutSession(
+                It.IsAny<Payment>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string>(),
+                It.IsAny<string>()),
+            Times.Never);
     }
 
     [Fact]

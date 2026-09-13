@@ -54,6 +54,9 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             request.ProgramEnrollmentId);
         ClassEnrollmentValidator.ValidateProgramEnrollmentBelongsToStudent(programEnrollment, student.Id);
         ClassEnrollmentValidator.ValidateProgramEnrollmentActiveForEnroll(programEnrollment);
+        await BundleEnrollmentHelper.ValidateBundlePrerequisiteForEnrollmentAsync(
+            _unitOfWork,
+            programEnrollment);
 
         var classEntity = await _unitOfWork.Classes.GetByIdAsync(request.ClassId);
         var classToJoin = ClassEnrollmentValidator.ValidateClassExists(classEntity, request.ClassId);

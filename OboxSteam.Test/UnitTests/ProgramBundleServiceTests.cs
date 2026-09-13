@@ -245,6 +245,33 @@ public sealed class ProgramBundleServiceTests
     }
 
     [Fact]
+    public async Task GetPriceQuote_DeductsOwnedRetailFromPercentBasedBundlePrice()
+    {
+        SeedStudent();
+        SeedActiveBundleWithPrograms();
+        var bundle = _db.ProgramBundles.Items.Single();
+        bundle.PricePercent = 85m;
+        bundle.Price = 2_550_000m;
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ProgramId = _programAId,
+            Status = EnrollmentStatus.Completed,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetPriceQuote(_bundleId, _studentId, null);
+
+        var owned = Assert.Single(result.OwnedPrograms);
+        Assert.Equal(_programAId, owned.ProgramId);
+        Assert.Equal(1_000_000m, owned.DeductedPrice);
+        Assert.Equal(2_550_000m, result.BundlePrice);
+        Assert.Equal(1_550_000m, result.PriceAfterOwnership);
+        Assert.Equal(1_550_000m, result.FinalPrice);
+    }
+
+    [Fact]
     public async Task GetPriceQuote_InvalidVoucher_KeepsOwnershipPrice()
     {
         SeedStudent();
@@ -313,7 +340,7 @@ public sealed class ProgramBundleServiceTests
             Code = " bdl-new ",
             Name = "  New pathway  ",
             Category = ProgramCategory.Technology,
-            Price = 2_200_000m,
+            PricePercent = 85m,
             Items =
             [
                 new CreateProgramBundleItemRequestDto { ProgramId = _programAId },
@@ -328,7 +355,8 @@ public sealed class ProgramBundleServiceTests
         Assert.Equal("BDL-NEW", result.Code);
         Assert.Equal("New pathway", result.Name);
         Assert.Equal(ProgramBundleStatus.Draft, result.Status);
-        Assert.Equal(2_200_000m, result.Price);
+        Assert.Equal(85m, result.PricePercent);
+        Assert.Equal(2_550_000m, result.Price);
         Assert.Equal(3_000_000m, result.RetailTotal);
         Assert.Equal(2, result.Items.Count);
         Assert.Equal(1, result.Items[0].SortOrder);
@@ -349,12 +377,12 @@ public sealed class ProgramBundleServiceTests
             Code = "BDL-ROB",
             Name = "Copy",
             Category = ProgramCategory.Technology,
-            Price = 1m,
+            PricePercent = 85m,
         }));
     }
 
     [Fact]
-    public async Task CreateBundle_NegativePrice_ThrowsBadRequest()
+    public async Task CreateBundle_InvalidPricePercent_ThrowsBadRequest()
     {
         SeedManager();
         var sut = CreateSut(_managerId);
@@ -364,7 +392,7 @@ public sealed class ProgramBundleServiceTests
             Code = "BDL-BAD",
             Name = "Bad",
             Category = ProgramCategory.Technology,
-            Price = -1m,
+            PricePercent = 100m,
         }));
     }
 
@@ -388,10 +416,122 @@ public sealed class ProgramBundleServiceTests
         SeedManager();
         SeedActiveBundleWithPrograms();
         _db.ProgramBundles.Items.Single().Status = ProgramBundleStatus.Draft;
-        _db.ProgramBundles.Items.Single().Price = 3_000_000m;
+        _db.ProgramBundles.Items.Single().PricePercent = 100m;
         var sut = CreateSut(_managerId);
 
         await Assert.ThrowsAsync<BadRequestException>(() => sut.PublishBundle(_bundleId));
+    }
+
+    [Fact]
+    public async Task UpdateBundle_RecalculatesPriceFromNewPercent()
+    {
+        SeedManager();
+        SeedActiveBundleWithPrograms();
+        var bundle = _db.ProgramBundles.Items.Single();
+        bundle.Status = ProgramBundleStatus.Draft;
+        bundle.PricePercent = 85m;
+        bundle.Price = 2_550_000m;
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.UpdateBundle(_bundleId, new UpdateProgramBundleRequestDto
+        {
+            Name = "Robotics pathway",
+            Category = ProgramCategory.Technology,
+            PricePercent = 80m,
+        });
+
+        Assert.Equal(80m, result.PricePercent);
+        Assert.Equal(2_400_000m, result.Price);
+        Assert.Equal(3_000_000m, result.RetailTotal);
+        Assert.Equal(80m, bundle.PricePercent);
+        Assert.Equal(2_400_000m, bundle.Price);
+    }
+
+    [Fact]
+    public async Task AddBundleItem_RecalculatesPriceFromPercentTimesRetail()
+    {
+        SeedManager();
+        SeedActiveBundleWithPrograms();
+        var bundle = _db.ProgramBundles.Items.Single();
+        bundle.Status = ProgramBundleStatus.Draft;
+        bundle.PricePercent = 85m;
+        foreach (var item in _db.ProgramBundleItems.Items.Where(i => i.ProgramId == _programBId).ToList())
+            item.IsDeleted = true;
+        bundle.Price = 850_000m;
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.AddBundleItem(_bundleId, new CreateProgramBundleItemRequestDto
+        {
+            ProgramId = _programBId,
+            RequiresPreviousCompletion = true,
+        });
+
+        Assert.Equal(2, result.Items.Count);
+        Assert.Equal(3_000_000m, result.RetailTotal);
+        Assert.Equal(85m, result.PricePercent);
+        Assert.Equal(2_550_000m, result.Price);
+        Assert.True(result.Items.Single(i => i.ProgramId == _programBId).RequiresPreviousCompletion);
+    }
+
+    [Fact]
+    public async Task AddBundleItem_PublishedBundle_ThrowsConflict()
+    {
+        SeedManager();
+        SeedActiveBundleWithPrograms();
+        var extraProgramId = Guid.Parse("24242424-2424-2424-2424-242424242424");
+        _db.Programs.Seed(new Program
+        {
+            Id = extraProgramId,
+            Code = "PRG-C",
+            Name = "Robotics 3",
+            Category = ProgramCategory.Technology,
+            Status = ProgramStatus.Active,
+            Price = 500_000m,
+        });
+        var sut = CreateSut(_managerId);
+
+        await Assert.ThrowsAsync<ConflictException>(() => sut.AddBundleItem(
+            _bundleId,
+            new CreateProgramBundleItemRequestDto { ProgramId = extraProgramId }));
+    }
+
+    [Fact]
+    public async Task UpdateBundleItem_TogglesPrerequisite()
+    {
+        SeedManager();
+        SeedActiveBundleWithPrograms();
+        _db.ProgramBundles.Items.Single().Status = ProgramBundleStatus.Draft;
+        var secondItem = _db.ProgramBundleItems.Items.Single(i => i.ProgramId == _programBId);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.UpdateBundleItem(_bundleId, secondItem.Id, new UpdateProgramBundleItemRequestDto
+        {
+            RequiresPreviousCompletion = true,
+        });
+
+        Assert.True(result.Items.Single(i => i.Id == secondItem.Id).RequiresPreviousCompletion);
+        Assert.True(secondItem.RequiresPreviousCompletion);
+    }
+
+    [Fact]
+    public async Task DeleteBundleItem_RecalculatesPrice()
+    {
+        SeedManager();
+        SeedActiveBundleWithPrograms();
+        var bundle = _db.ProgramBundles.Items.Single();
+        bundle.Status = ProgramBundleStatus.Draft;
+        bundle.PricePercent = 85m;
+        bundle.Price = 2_550_000m;
+        var secondItem = _db.ProgramBundleItems.Items.Single(i => i.ProgramId == _programBId);
+        var sut = CreateSut(_managerId);
+
+        var result = await sut.DeleteBundleItem(_bundleId, secondItem.Id);
+
+        Assert.Single(result.Items);
+        Assert.Equal(_programAId, result.Items[0].ProgramId);
+        Assert.Equal(1_000_000m, result.RetailTotal);
+        Assert.Equal(850_000m, result.Price);
+        Assert.True(secondItem.IsDeleted);
     }
 
     [Fact]

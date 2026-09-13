@@ -38,8 +38,35 @@ public class PaymentController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> CreateDirectCheckout([FromBody] CheckoutRequestDto dto)
     {
-        var result = await _paymentService.CreateDirectCheckout(dto.ProgramId, dto.ClassId, dto.Gateway);
-        return Ok(ApiResult<CheckoutResponseDto>.Success(result, "200", "Checkout session created. Redirect to checkoutUrl to complete payment."));
+        var result = await _paymentService.CreateDirectCheckout(dto.ProgramId, dto.ClassId, dto.Gateway, dto.VoucherCode);
+        return Ok(ApiResult<CheckoutResponseDto>.Success(
+            result,
+            "200",
+            result.Activated
+                ? "Payment completed at no charge. Enrollment is active."
+                : "Checkout session created. Redirect to checkoutUrl to complete payment."));
+    }
+
+    [HttpPost("checkout/bundle")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Initiate bundle checkout (student pays)",
+        Description = "Student pays for a program bundle. Owned Active/Completed programs are deducted from the bundle price, then an optional voucher. Zero total activates without Stripe. Class selection happens after payment via the existing enroll-class flow.")]
+    [ProducesResponseType(typeof(ApiResult<CheckoutResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> CreateBundleCheckout([FromBody] BundleCheckoutRequestDto dto)
+    {
+        var result = await _paymentService.CreateBundleCheckout(dto.BundleId, dto.Gateway, dto.VoucherCode);
+        return Ok(ApiResult<CheckoutResponseDto>.Success(
+            result,
+            "200",
+            result.Activated
+                ? "Bundle activated at no charge."
+                : "Checkout session created. Redirect to checkoutUrl to complete payment."));
     }
 
     // =========================================================================
@@ -82,6 +109,23 @@ public class PaymentController : ControllerBase
         return Ok(ApiResult<object>.Success(null, "200", "Payment request sent to parent's email."));
     }
 
+    [HttpPost("request-parent/bundle")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Request parent to pay for a bundle",
+        Description = "Student sends a 24h payment request for a bundle. Vouchers are not applied on parent-pay; owned programs are deducted from the bundle price.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> RequestParentBundlePayment([FromBody] ParentBundlePaymentRequestDto dto)
+    {
+        await _paymentService.RequestParentBundlePayment(dto.BundleId, dto.ParentId);
+        return Ok(ApiResult<object>.Success(null, "200", "Payment request sent to parent's email."));
+    }
+
     // =========================================================================
     // POST /api/payments/request-parent/retake  [Student]
     // =========================================================================
@@ -117,7 +161,12 @@ public class PaymentController : ControllerBase
     public async Task<IActionResult> CreateParentCheckout([FromBody] ParentCheckoutRequestDto dto)
     {
         var result = await _paymentService.CreateParentCheckout(dto.Token, dto.Gateway);
-        return Ok(ApiResult<CheckoutResponseDto>.Success(result, "200", "Checkout session created. Redirect to checkoutUrl to complete payment."));
+        return Ok(ApiResult<CheckoutResponseDto>.Success(
+            result,
+            "200",
+            result.Activated
+                ? "Payment completed at no charge."
+                : "Checkout session created. Redirect to checkoutUrl to complete payment."));
     }
 
     // =========================================================================

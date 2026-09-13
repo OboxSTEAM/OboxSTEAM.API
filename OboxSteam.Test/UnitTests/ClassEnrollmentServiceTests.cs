@@ -217,6 +217,66 @@ public sealed class ClassEnrollmentServiceTests
     }
 
     [Fact]
+    public async Task Enroll_ThrowsBadRequest_WhenBundlePreviousProgramNotCompleted()
+    {
+        SeedStudent();
+        var previousProgramId = Guid.Parse("22222222-2222-2222-2222-222222222201");
+        var bundleId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+        _db.Programs.Seed(new Program
+        {
+            Id = previousProgramId,
+            Code = "PRG-PREV",
+            Name = "Robotics 1",
+            Category = ProgramCategory.Technology,
+            Status = ProgramStatus.Active,
+        });
+        SeedProgramEnrollment(id: Guid.Parse("33333333-3333-3333-3333-333333333310"), programId: previousProgramId);
+        SeedProgramEnrollment();
+        _db.ProgramBundles.Seed(new ProgramBundle
+        {
+            Id = bundleId,
+            Code = "BDL-1",
+            Name = "Pathway",
+            Category = ProgramCategory.Technology,
+            Price = 1m,
+            Status = ProgramBundleStatus.Active,
+        });
+        _db.ProgramBundleItems.Seed(
+            new ProgramBundleItem
+            {
+                Id = Guid.NewGuid(),
+                BundleId = bundleId,
+                ProgramId = previousProgramId,
+                SortOrder = 1,
+            },
+            new ProgramBundleItem
+            {
+                Id = Guid.NewGuid(),
+                BundleId = bundleId,
+                ProgramId = _programId,
+                SortOrder = 2,
+                RequiresPreviousCompletion = true,
+            });
+        _db.BundleEnrollments.Seed(new BundleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            BundleId = bundleId,
+            Status = BundleEnrollmentStatus.Active,
+        });
+        SeedClass();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.EnrollClassAsync(new CreateClassEnrollmentRequestDto
+            {
+                ProgramEnrollmentId = _programEnrollmentId,
+                ClassId = _classId
+            }));
+        Assert.Contains("Robotics 1", ex.Message);
+    }
+
+    [Fact]
     public async Task Enroll_ThrowsConflict_WhenActiveClassCapReached()
     {
         SeedStudent();

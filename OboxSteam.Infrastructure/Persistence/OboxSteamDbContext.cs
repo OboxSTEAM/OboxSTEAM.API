@@ -552,6 +552,9 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(b => b.Code).IsUnique();
 
             entity.Property(b => b.Price).HasPrecision(18, 2);
+            entity.Property(b => b.PricePercent)
+                .HasPrecision(18, 2)
+                .HasDefaultValue(85m);
 
             entity.HasOne(b => b.Framework)
                 .WithMany(f => f.ProgramBundles)
@@ -562,9 +565,15 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(b => b.FrameworkId)
                 .HasFilter("\"IsDeleted\" = false AND \"FrameworkId\" IS NOT NULL");
 
-            entity.ToTable(t => t.HasCheckConstraint(
-                "CK_ProgramBundles_PriceNonNegative",
-                "\"Price\" >= 0"));
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_ProgramBundles_PriceNonNegative",
+                    "\"Price\" >= 0");
+                t.HasCheckConstraint(
+                    "CK_ProgramBundles_PricePercentRange",
+                    "\"PricePercent\" > 0 AND \"PricePercent\" < 100");
+            });
         });
 
         // =============================================
@@ -667,6 +676,9 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(b => b.Code).IsUnique();
 
             entity.Property(b => b.Price).HasPrecision(18, 2);
+            entity.Property(b => b.PricePercent)
+                .HasPrecision(18, 2)
+                .HasDefaultValue(85m);
 
             entity.HasOne(b => b.Framework)
                 .WithMany(f => f.ProgramBundles)
@@ -677,9 +689,15 @@ public class OboxSteamDbContext : DbContext
             entity.HasIndex(b => b.FrameworkId)
                 .HasFilter("\"IsDeleted\" = false AND \"FrameworkId\" IS NOT NULL");
 
-            entity.ToTable(t => t.HasCheckConstraint(
-                "CK_ProgramBundles_PriceNonNegative",
-                "\"Price\" >= 0"));
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_ProgramBundles_PriceNonNegative",
+                    "\"Price\" >= 0");
+                t.HasCheckConstraint(
+                    "CK_ProgramBundles_PricePercentRange",
+                    "\"PricePercent\" > 0 AND \"PricePercent\" < 100");
+            });
         });
 
         // =============================================

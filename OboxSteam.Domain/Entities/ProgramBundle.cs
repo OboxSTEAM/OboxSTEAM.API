@@ -26,6 +26,13 @@ public class ProgramBundle : BaseEntity
     public Guid? FrameworkId { get; set; }
     public ProgramFramework? Framework { get; set; }
 
+    /// <summary>
+    /// Share of item retail total charged as <see cref="Price"/> (e.g. 85 = 85%).
+    /// Must be greater than 0 and less than 100 so the bundle stays cheaper than buying retail.
+    /// </summary>
+    public decimal PricePercent { get; set; } = 85m;
+
+    /// <summary>Persisted selling price: retail total × <see cref="PricePercent"/> / 100.</summary>
     public decimal Price { get; set; }
 
     public ProgramBundleStatus Status { get; set; } = ProgramBundleStatus.Draft;

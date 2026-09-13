@@ -31,6 +31,21 @@ public interface IProgramBundleService
     /// <summary>Creates a Draft bundle. Catalog purchase requires <see cref="PublishBundle"/>.</summary>
     Task<ProgramBundleResponseDto> CreateBundle(CreateProgramBundleRequestDto request);
 
+    /// <summary>Updates catalog fields and <c>PricePercent</c>; recalculates persisted <c>Price</c>.</summary>
+    Task<ProgramBundleResponseDto> UpdateBundle(Guid bundleId, UpdateProgramBundleRequestDto request);
+
+    /// <summary>Adds a program to a Draft or Inactive bundle and recalculates <c>Price</c>.</summary>
+    Task<ProgramBundleResponseDto> AddBundleItem(Guid bundleId, CreateProgramBundleItemRequestDto request);
+
+    /// <summary>Updates sort, gate, or program on a Draft or Inactive bundle item.</summary>
+    Task<ProgramBundleResponseDto> UpdateBundleItem(
+        Guid bundleId,
+        Guid itemId,
+        UpdateProgramBundleItemRequestDto request);
+
+    /// <summary>Soft-deletes an item and recalculates <c>Price</c>.</summary>
+    Task<ProgramBundleResponseDto> DeleteBundleItem(Guid bundleId, Guid itemId);
+
     /// <summary>
     /// Manager publication: Draft → Active after item count, Active programs,
     /// and bundle price &lt; retail sum checks.

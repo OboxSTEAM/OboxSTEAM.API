@@ -208,6 +208,67 @@ public sealed class ProgramEnrollmentServiceTests
     }
 
     [Fact]
+    public async Task GetOrCreatePending_AllowsNewProgram_WhenGatedBundleItemsDoNotOccupySlots()
+    {
+        SeedProgram();
+        SeedProgram(_programId2, name: "IoT");
+        var program3Id = Guid.Parse("24242424-2424-2424-2424-242424242424");
+        var program4Id = Guid.Parse("25252525-2525-2525-2525-252525252525");
+        SeedProgram(program3Id, name: "Web");
+        SeedProgram(program4Id, name: "Art");
+        var bundleId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+        SeedEnrollment(status: EnrollmentStatus.Active);
+        SeedEnrollment(
+            id: Guid.Parse("34343434-3434-3434-3434-343434343434"),
+            programId: _programId2,
+            status: EnrollmentStatus.Active);
+        SeedEnrollment(
+            id: Guid.Parse("35353535-3535-3535-3535-353535353535"),
+            programId: program3Id,
+            status: EnrollmentStatus.Active);
+        _db.ProgramBundles.Seed(new ProgramBundle
+        {
+            Id = bundleId,
+            Code = "BDL-LOAD",
+            Name = "Load",
+            Category = ProgramCategory.Technology,
+            Price = 1m,
+            Status = ProgramBundleStatus.Active,
+        });
+        _db.ProgramBundleItems.Seed(
+            new ProgramBundleItem { Id = Guid.NewGuid(), BundleId = bundleId, ProgramId = _programId, SortOrder = 1 },
+            new ProgramBundleItem
+            {
+                Id = Guid.NewGuid(),
+                BundleId = bundleId,
+                ProgramId = _programId2,
+                SortOrder = 2,
+                RequiresPreviousCompletion = true,
+            },
+            new ProgramBundleItem
+            {
+                Id = Guid.NewGuid(),
+                BundleId = bundleId,
+                ProgramId = program3Id,
+                SortOrder = 3,
+                RequiresPreviousCompletion = true,
+            });
+        _db.BundleEnrollments.Seed(new BundleEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            BundleId = bundleId,
+            Status = BundleEnrollmentStatus.Active,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetOrCreatePendingEnrollmentAsync(_studentId, program4Id);
+
+        Assert.Equal(program4Id, result.ProgramId);
+        Assert.Equal(EnrollmentStatus.PendingPayment, result.Status);
+    }
+
+    [Fact]
     public async Task GetOrCreatePending_ThrowsNotFound_WhenProgramMissing()
     {
         var sut = CreateSut();

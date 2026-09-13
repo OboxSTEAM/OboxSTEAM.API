@@ -11,6 +11,9 @@ public class PaymentResponseDto
     public Guid PaidById { get; set; }
     public Guid? ProgramEnrollmentId { get; set; }
     public Guid? ModuleEnrollmentId { get; set; }
+    public Guid? BundleEnrollmentId { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public Guid? VoucherId { get; set; }
     public decimal Amount { get; set; }
     public string Currency { get; set; } = null!;
     public PaymentGateway Gateway { get; set; }

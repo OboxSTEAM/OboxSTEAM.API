@@ -28,7 +28,8 @@ public class InvoiceService : IInvoiceService
             i => i.Payment,
             i => i.Payment.ProgramEnrollment!,
             i => i.Payment.ModuleEnrollment!,
-            i => i.Payment.ModuleEnrollment!.Module)
+            i => i.Payment.ModuleEnrollment!.Module,
+            i => i.Payment.BundleEnrollment!)
             ?? throw ErrorHelper.NotFound($"Invoice '{invoiceId}' not found.");
 
         EnsureCanView(currentUser, invoice.IssuedToId);
@@ -46,7 +47,8 @@ public class InvoiceService : IInvoiceService
             i => i.Payment,
             i => i.Payment.ProgramEnrollment!,
             i => i.Payment.ModuleEnrollment!,
-            i => i.Payment.ModuleEnrollment!.Module)
+            i => i.Payment.ModuleEnrollment!.Module,
+            i => i.Payment.BundleEnrollment!)
             ?? throw ErrorHelper.NotFound($"Invoice for payment '{paymentId}' not found.");
 
         EnsureCanView(currentUser, invoice.IssuedToId);
@@ -62,7 +64,8 @@ public class InvoiceService : IInvoiceService
             i => i.Payment,
             i => i.Payment.ProgramEnrollment!,
             i => i.Payment.ModuleEnrollment!,
-            i => i.Payment.ModuleEnrollment!.Module);
+            i => i.Payment.ModuleEnrollment!.Module,
+            i => i.Payment.BundleEnrollment!);
 
         var result = new List<InvoiceResponseDto>();
         foreach (var invoice in invoices.OrderByDescending(i => i.CreatedAt))
@@ -91,6 +94,13 @@ public class InvoiceService : IInvoiceService
         var payment = invoice.Payment;
         Guid? programId = payment?.ProgramEnrollment?.ProgramId;
         Guid? moduleId = payment?.ModuleEnrollment?.ModuleId;
+        Guid? bundleId = payment?.BundleEnrollment?.BundleId;
+        if (!bundleId.HasValue && payment?.BundleEnrollmentId.HasValue == true)
+        {
+            var bundleEnrollment = await _unitOfWork.BundleEnrollments.GetByIdAsync(
+                payment.BundleEnrollmentId.Value);
+            bundleId = bundleEnrollment?.BundleId;
+        }
 
         if (!programId.HasValue && payment?.ModuleEnrollment?.Module != null)
         {
@@ -119,7 +129,7 @@ public class InvoiceService : IInvoiceService
             }
         }
 
-        if (!programId.HasValue)
+        if (!programId.HasValue && !bundleId.HasValue)
         {
             throw ErrorHelper.NotFound(
                 $"Program for invoice '{invoice.Id}' could not be resolved from payment.");
@@ -131,8 +141,10 @@ public class InvoiceService : IInvoiceService
             InvoiceNumber = invoice.InvoiceNumber,
             PaymentId = invoice.PaymentId,
             PaymentCode = paymentCode ?? string.Empty,
-            ProgramId = programId.Value,
+            ProgramId = programId,
             ModuleId = moduleId,
+            BundleId = bundleId,
+            DiscountAmount = payment?.DiscountAmount ?? 0m,
             IssuedToId = invoice.IssuedToId,
             BillingName = invoice.BillingName,
             BillingEmail = invoice.BillingEmail,

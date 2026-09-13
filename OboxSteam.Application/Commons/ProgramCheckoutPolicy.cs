@@ -6,6 +6,9 @@ public static class ProgramCheckoutPolicy
     /// <summary>Soft hold while the student is picking a class or a parent has not opened checkout yet.</summary>
     public const int CheckoutWindowMinutes = 5;
 
+    /// <summary>Parent bundle payment token lifetime. No seat hold, same window as module retake.</summary>
+    public const int BundleParentPaymentHours = 24;
+
     /// <summary>
     /// Seat hold after a Stripe Checkout session exists. Matches Stripe's default session expiry (24 hours).
     /// </summary>

@@ -18,6 +18,9 @@ public sealed class ProgramBundleResponseDto
 
     public Guid? FrameworkId { get; set; }
 
+    /// <summary>Percent of <see cref="RetailTotal"/> charged as <see cref="Price"/> (e.g. 85).</summary>
+    public decimal PricePercent { get; set; }
+
     public decimal Price { get; set; }
 
     /// <summary>Sum of item retail prices. Hint for the catalog discount vs list price.</summary>

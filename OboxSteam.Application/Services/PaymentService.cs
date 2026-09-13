@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.EmailDTO;
 using OboxSteam.Application.DTOs.PaymentDTO;
+using OboxSteam.Application.DTOs.VoucherDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
@@ -26,6 +27,7 @@ public class PaymentService : IPaymentService
     private readonly IClassRedeliveryRequestService _classRedeliveryRequestService;
     private readonly IClassSeatHoldService _classSeatHoldService;
     private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
+    private readonly IVoucherService _voucherService;
 
     public PaymentService(
         IUnitOfWork unitOfWork,
@@ -38,7 +40,8 @@ public class PaymentService : IPaymentService
         INotificationPublisher notificationPublisher,
         IClassRedeliveryRequestService classRedeliveryRequestService,
         IClassSeatHoldService classSeatHoldService,
-        ProgramPurchaseLifecycle programPurchaseLifecycle)
+        ProgramPurchaseLifecycle programPurchaseLifecycle,
+        IVoucherService voucherService)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
@@ -51,13 +54,18 @@ public class PaymentService : IPaymentService
         _classRedeliveryRequestService = classRedeliveryRequestService;
         _classSeatHoldService = classSeatHoldService;
         _programPurchaseLifecycle = programPurchaseLifecycle;
+        _voucherService = voucherService;
     }
 
     // ══════════════════════════════════════════════════════════════════════
     // FLOW 1: Student pays directly
     // ══════════════════════════════════════════════════════════════════════
 
-    public async Task<CheckoutResponseDto> CreateDirectCheckout(Guid programId, Guid classId, PaymentGateway gateway)
+    public async Task<CheckoutResponseDto> CreateDirectCheckout(
+        Guid programId,
+        Guid classId,
+        PaymentGateway gateway,
+        string? voucherCode = null)
     {
         ClassEnrollmentValidator.ValidateClassIdRequired(classId);
 
@@ -83,7 +91,13 @@ public class PaymentService : IPaymentService
         var hold = await _classSeatHoldService.RequireValidHoldAsync(studentId, enrollment, classId);
         hold = await _classSeatHoldService.PinHoldForOpenCheckoutAsync(enrollment.Id);
 
-        var amount = await _programPurchaseLifecycle.ResolveCheckoutAmountAsync(program, enrollment);
+        var listPrice = await _programPurchaseLifecycle.ResolveCheckoutAmountAsync(program, enrollment);
+        var (amount, discountAmount, voucherId) = await ApplyCatalogVoucherAsync(
+            studentId,
+            listPrice,
+            listPrice,
+            voucherCode,
+            programId: programId);
 
         var payment = new Payment
         {
@@ -92,12 +106,25 @@ public class PaymentService : IPaymentService
             PaidById = studentId,
             ProgramEnrollmentId = enrollment.Id,
             Amount = amount,
+            DiscountAmount = discountAmount,
+            VoucherId = voucherId,
             Currency = "VND",
             Gateway = gateway,
             Status = PaymentStatus.Pending
         };
         await _unitOfWork.Payments.AddAsync(payment);
         await _unitOfWork.SaveChangesAsync();
+
+        if (amount == 0)
+        {
+            await HandlePaymentSuccess(payment, ZeroTransactionId(payment.Id));
+            return BuildCheckoutResponse(
+                payment,
+                enrollment.Id,
+                hold.ClassId,
+                hold.HoldExpiresAt,
+                activated: true);
+        }
 
         var description = BuildRichCheckoutDescription(program);
         var (checkoutUrl, sessionId) = await CreateGatewayCheckout(payment, program.Name, description, program.ThumbnailUrl, gateway);
@@ -108,14 +135,86 @@ public class PaymentService : IPaymentService
             "[CreateDirectCheckout] Student {StudentId} initiated checkout for program {ProgramId}, class {ClassId}. Payment={PaymentId}",
             studentId, programId, classId, payment.Id);
 
-        return new CheckoutResponseDto
+        return BuildCheckoutResponse(
+            payment,
+            enrollment.Id,
+            hold.ClassId,
+            hold.HoldExpiresAt,
+            checkoutUrl: checkoutUrl);
+    }
+
+    public async Task<CheckoutResponseDto> CreateBundleCheckout(
+        Guid bundleId,
+        PaymentGateway gateway,
+        string? voucherCode = null)
+    {
+        var studentId = _claimsService.GetCurrentUserId;
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId)
+            ?? throw ErrorHelper.NotFound("Student not found.");
+
+        if (student.Role != RoleType.Student)
+            throw ErrorHelper.Forbidden("Only students can initiate bundle checkout.");
+
+        var (bundle, items, quote) = await PrepareBundlePurchaseAsync(studentId, bundleId);
+        var (amount, discountAmount, voucherId) = await ApplyCatalogVoucherAsync(
+            studentId,
+            quote.PriceAfterOwnership,
+            quote.BundlePrice,
+            voucherCode,
+            bundleId: bundleId);
+
+        var enrollment = await BundleEnrollmentHelper.GetOrCreatePendingBundleEnrollmentAsync(
+            _unitOfWork,
+            studentId,
+            bundleId);
+
+        var payment = new Payment
         {
-            PaymentId = payment.Id,
-            EnrollmentId = enrollment.Id,
-            ClassId = hold.ClassId,
-            HoldExpiresAt = AppDateTime.ToUtcOffset(hold.HoldExpiresAt!.Value),
-            CheckoutUrl = checkoutUrl
+            Code = GeneratePaymentCode(),
+            StudentId = studentId,
+            PaidById = studentId,
+            BundleEnrollmentId = enrollment.Id,
+            Amount = amount,
+            DiscountAmount = discountAmount,
+            VoucherId = voucherId,
+            Currency = "VND",
+            Gateway = gateway,
+            Status = PaymentStatus.Pending
         };
+        await _unitOfWork.Payments.AddAsync(payment);
+        await _unitOfWork.SaveChangesAsync();
+
+        if (amount == 0)
+        {
+            await HandlePaymentSuccess(payment, ZeroTransactionId(payment.Id));
+            return BuildCheckoutResponse(
+                payment,
+                enrollment.Id,
+                activated: true,
+                bundleEnrollmentId: enrollment.Id);
+        }
+
+        var (checkoutUrl, sessionId) = await CreateGatewayCheckout(
+            payment,
+            bundle.Name,
+            bundle.Description,
+            bundle.ThumbnailUrl,
+            gateway);
+        payment.CheckoutSessionId = sessionId;
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "[CreateBundleCheckout] Student {StudentId} initiated checkout for bundle {BundleId}. Payment={PaymentId} Amount={Amount}",
+            studentId,
+            bundleId,
+            payment.Id,
+            amount);
+
+        return BuildCheckoutResponse(
+            payment,
+            enrollment.Id,
+            checkoutUrl: checkoutUrl,
+            bundleEnrollmentId: enrollment.Id);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -264,6 +363,101 @@ public class PaymentService : IPaymentService
             studentId, parentId, programId, classId);
     }
 
+    public async Task RequestParentBundlePayment(Guid bundleId, Guid parentId)
+    {
+        var studentId = _claimsService.GetCurrentUserId;
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId)
+            ?? throw ErrorHelper.NotFound("Student not found.");
+
+        if (student.Role != RoleType.Student)
+            throw ErrorHelper.Forbidden("Only students can send payment requests.");
+
+        var link = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(
+            ps => ps.ParentId == parentId && ps.StudentId == studentId && ps.IsVerified && !ps.IsDeleted)
+            ?? throw ErrorHelper.BadRequest("No verified parent-student link found with this parent.");
+
+        var parent = await _unitOfWork.Users.GetByIdAsync(parentId)
+            ?? throw ErrorHelper.NotFound("Parent not found.");
+
+        var (bundle, _, quote) = await PrepareBundlePurchaseAsync(studentId, bundleId);
+        var amount = quote.PriceAfterOwnership;
+        var discountAmount = quote.BundlePrice - amount;
+
+        var enrollment = await BundleEnrollmentHelper.GetOrCreatePendingBundleEnrollmentAsync(
+            _unitOfWork,
+            studentId,
+            bundleId);
+
+        if (amount == 0)
+        {
+            var zeroPayment = new Payment
+            {
+                Code = GeneratePaymentCode(),
+                StudentId = studentId,
+                PaidById = studentId,
+                BundleEnrollmentId = enrollment.Id,
+                Amount = 0,
+                DiscountAmount = discountAmount,
+                Currency = "VND",
+                Gateway = PaymentGateway.Stripe,
+                Status = PaymentStatus.Pending
+            };
+            await _unitOfWork.Payments.AddAsync(zeroPayment);
+            await _unitOfWork.SaveChangesAsync();
+            await HandlePaymentSuccess(zeroPayment, ZeroTransactionId(zeroPayment.Id));
+            _logger.LogInformation(
+                "[RequestParentBundlePayment] Bundle {BundleId} for student {StudentId} activated at zero; parent not billed.",
+                bundleId,
+                studentId);
+            return;
+        }
+
+        var token = Guid.NewGuid().ToString("N");
+        var paymentRequest = new PaymentRequest
+        {
+            StudentId = studentId,
+            ParentId = parentId,
+            BundleEnrollmentId = enrollment.Id,
+            Amount = amount,
+            Currency = "VND",
+            Token = token,
+            ExpiresAt = DateTime.UtcNow.AddHours(ProgramCheckoutPolicy.BundleParentPaymentHours),
+            Status = PaymentRequestStatus.Pending
+        };
+        await _unitOfWork.PaymentRequests.AddAsync(paymentRequest);
+        await _unitOfWork.SaveChangesAsync();
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ParentBundlePaymentRequested(
+                parentId,
+                studentId,
+                paymentRequest.Id,
+                bundleId,
+                enrollment.Id,
+                studentName: student.FullName,
+                bundleName: bundle.Name));
+
+        var frontendBaseUrl = (_configuration["APP_FRONTEND_URL"] ?? _configuration["APP_BASE_URL"] ?? "https://oboxsteam.website").TrimEnd('/');
+        var paymentLink = $"{frontendBaseUrl}/payment/parent-checkout?token={token}";
+
+        await _emailService.SendPaymentRequestToParentEmailAsync(new PaymentRequestEmailDto
+        {
+            To = parent.Email,
+            ParentName = parent.FullName ?? "Parent",
+            StudentName = student.FullName ?? "Student",
+            ProgramName = bundle.Name,
+            Amount = amount,
+            Currency = "VND",
+            PaymentLink = paymentLink
+        });
+
+        _logger.LogInformation(
+            "[RequestParentBundlePayment] Student {StudentId} sent bundle payment request to parent {ParentId} for bundle {BundleId}.",
+            studentId,
+            parentId,
+            bundleId);
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // FLOW 2a-retake: Student requests parent to pay for module retake
     // ══════════════════════════════════════════════════════════════════════
@@ -364,6 +558,8 @@ public class PaymentService : IPaymentService
         string? thumbnailUrl = null;
         Guid? programEnrollmentId = null;
         Guid? moduleEnrollmentId = null;
+        Guid? bundleEnrollmentId = null;
+        decimal discountAmount = 0;
         Guid? classId = null;
         DateTime? holdExpiresAt = null;
 
@@ -396,6 +592,22 @@ public class PaymentService : IPaymentService
             itemDescription = $"Retake Fee for Module: {module.Name}";
             moduleEnrollmentId = paymentRequest.ModuleEnrollmentId;
         }
+        else if (paymentRequest.BundleEnrollmentId.HasValue)
+        {
+            var bundleEnrollment = await _unitOfWork.BundleEnrollments.GetByIdAsync(
+                paymentRequest.BundleEnrollmentId.Value)
+                ?? throw ErrorHelper.NotFound("Bundle enrollment not found.");
+            var bundle = await _unitOfWork.ProgramBundles.GetByIdAsync(bundleEnrollment.BundleId)
+                ?? throw ErrorHelper.NotFound("Bundle not found.");
+            if (bundle.Status != ProgramBundleStatus.Active)
+                throw ErrorHelper.BadRequest("Bundle is not available for purchase.");
+
+            itemName = bundle.Name;
+            itemDescription = bundle.Description;
+            thumbnailUrl = bundle.ThumbnailUrl;
+            bundleEnrollmentId = paymentRequest.BundleEnrollmentId;
+            discountAmount = BundlePricingHelper.ClampNonNegative(bundle.Price - paymentRequest.Amount);
+        }
         else
         {
             throw ErrorHelper.BadRequest("Invalid payment request type.");
@@ -409,12 +621,37 @@ public class PaymentService : IPaymentService
             PaidById = paymentRequest.ParentId,
             ProgramEnrollmentId = programEnrollmentId,
             ModuleEnrollmentId = moduleEnrollmentId,
+            BundleEnrollmentId = bundleEnrollmentId,
             Amount = paymentRequest.Amount,
+            DiscountAmount = discountAmount,
             Currency = paymentRequest.Currency,
             Gateway = gateway,
             Status = PaymentStatus.Pending
         };
         await _unitOfWork.Payments.AddAsync(payment);
+
+        if (paymentRequest.Amount == 0)
+        {
+            paymentRequest.Status = PaymentRequestStatus.Accepted;
+            await _unitOfWork.SaveChangesAsync();
+            await HandlePaymentSuccess(payment, ZeroTransactionId(payment.Id));
+            var parentZero = await _unitOfWork.Users.GetByIdAsync(paymentRequest.ParentId)
+                ?? throw ErrorHelper.NotFound("Parent not found.");
+            var parentZeroToken = JwtUtils.GenerateJwtToken(
+                parentZero.Id,
+                parentZero.Email,
+                parentZero.Role.ToString(),
+                _configuration,
+                TimeSpan.FromMinutes(30));
+            return BuildCheckoutResponse(
+                payment,
+                programEnrollmentId ?? moduleEnrollmentId ?? bundleEnrollmentId ?? Guid.Empty,
+                classId,
+                holdExpiresAt,
+                activated: true,
+                bundleEnrollmentId: bundleEnrollmentId,
+                accessToken: parentZeroToken);
+        }
 
         // Create checkout URL
         var (checkoutUrl, sessionId) = await CreateGatewayCheckout(payment, itemName, itemDescription, thumbnailUrl, gateway);
@@ -437,17 +674,14 @@ public class PaymentService : IPaymentService
             "[CreateParentCheckout] Parent {ParentId} created checkout for student {StudentId}, payment request {RequestId}. Payment={PaymentId}",
             paymentRequest.ParentId, paymentRequest.StudentId, paymentRequest.Id, payment.Id);
 
-        return new CheckoutResponseDto
-        {
-            PaymentId = payment.Id,
-            EnrollmentId = programEnrollmentId ?? moduleEnrollmentId ?? Guid.Empty,
-            ClassId = classId ?? Guid.Empty,
-            HoldExpiresAt = holdExpiresAt.HasValue
-                ? AppDateTime.ToUtcOffset(holdExpiresAt.Value)
-                : default,
-            CheckoutUrl = checkoutUrl,
-            AccessToken = parentAccessToken
-        };
+        return BuildCheckoutResponse(
+            payment,
+            programEnrollmentId ?? moduleEnrollmentId ?? bundleEnrollmentId ?? Guid.Empty,
+            classId,
+            holdExpiresAt,
+            checkoutUrl: checkoutUrl,
+            bundleEnrollmentId: bundleEnrollmentId,
+            accessToken: parentAccessToken);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -529,6 +763,15 @@ public class PaymentService : IPaymentService
             paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
                 pr => pr.StudentId == payment.StudentId
                       && pr.ModuleEnrollmentId == payment.ModuleEnrollmentId
+                      && pr.Status == PaymentRequestStatus.Accepted
+                      && pr.ExpiresAt > DateTime.UtcNow
+                      && !pr.IsDeleted);
+        }
+        else if (payment.BundleEnrollmentId.HasValue)
+        {
+            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == payment.StudentId
+                      && pr.BundleEnrollmentId == payment.BundleEnrollmentId
                       && pr.Status == PaymentRequestStatus.Accepted
                       && pr.ExpiresAt > DateTime.UtcNow
                       && !pr.IsDeleted);
@@ -620,6 +863,15 @@ public class PaymentService : IPaymentService
                       && pr.ExpiresAt > DateTime.UtcNow
                       && !pr.IsDeleted);
         }
+        else if (payment.BundleEnrollmentId.HasValue)
+        {
+            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == payment.StudentId
+                      && pr.BundleEnrollmentId == payment.BundleEnrollmentId
+                      && pr.Status == PaymentRequestStatus.Accepted
+                      && pr.ExpiresAt > DateTime.UtcNow
+                      && !pr.IsDeleted);
+        }
 
         if (paymentRequest != null)
         {
@@ -668,6 +920,12 @@ public class PaymentService : IPaymentService
 
     private async Task HandlePaymentSuccess(Payment payment, string transactionId)
     {
+        if (payment.BundleEnrollmentId.HasValue)
+        {
+            await HandleBundlePaymentSuccess(payment, transactionId);
+            return;
+        }
+
         var alreadySucceeded = payment.Status == PaymentStatus.Success;
         var now = DateTime.UtcNow;
 
@@ -760,7 +1018,7 @@ public class PaymentService : IPaymentService
                 PaymentId = payment.Id,
                 IssuedToId = payment.PaidById,
                 Currency = payment.Currency,
-                SubTotal = payment.Amount,
+                SubTotal = payment.Amount + payment.DiscountAmount,
                 TotalAmount = payment.Amount,
                 BillingName = payer?.FullName ?? payer?.Email ?? string.Empty,
                 BillingEmail = payer?.Email ?? string.Empty,
@@ -916,6 +1174,9 @@ public class PaymentService : IPaymentService
         PaidById = p.PaidById,
         ProgramEnrollmentId = p.ProgramEnrollmentId,
         ModuleEnrollmentId = p.ModuleEnrollmentId,
+        BundleEnrollmentId = p.BundleEnrollmentId,
+        DiscountAmount = p.DiscountAmount,
+        VoucherId = p.VoucherId,
         Amount = p.Amount,
         Currency = p.Currency,
         Gateway = p.Gateway,
@@ -949,4 +1210,208 @@ public class PaymentService : IPaymentService
 
         return amount;
     }
+
+    private async Task HandleBundlePaymentSuccess(Payment payment, string transactionId)
+    {
+        var alreadySucceeded = payment.Status == PaymentStatus.Success;
+        var now = DateTime.UtcNow;
+        var bundleEnrollment = await _unitOfWork.BundleEnrollments.GetByIdAsync(payment.BundleEnrollmentId!.Value)
+            ?? throw ErrorHelper.NotFound($"Bundle enrollment '{payment.BundleEnrollmentId}' not found.");
+
+        var items = (await _unitOfWork.ProgramBundleItems.GetAllAsync(
+                i => i.BundleId == bundleEnrollment.BundleId && !i.IsDeleted))
+            .OrderBy(i => i.SortOrder)
+            .ToList();
+
+        var bundle = await _unitOfWork.ProgramBundles.GetByIdAsync(bundleEnrollment.BundleId);
+        Invoice? invoice = null;
+        User? payer = null;
+        User? student = null;
+        PaymentRequest? paymentRequest = null;
+
+        if (!alreadySucceeded)
+        {
+            payment.Status = PaymentStatus.Success;
+            payment.TransactionId = transactionId;
+            payment.PaidAt = now;
+            bundleEnrollment.Status = BundleEnrollmentStatus.Active;
+
+            paymentRequest = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
+                pr => pr.StudentId == payment.StudentId
+                      && pr.BundleEnrollmentId == payment.BundleEnrollmentId
+                      && pr.Status == PaymentRequestStatus.Accepted
+                      && !pr.IsDeleted);
+            if (paymentRequest != null)
+            {
+                paymentRequest.Status = PaymentRequestStatus.Paid;
+                paymentRequest.PaymentId = payment.Id;
+            }
+
+            payer = await _unitOfWork.Users.GetByIdAsync(payment.PaidById);
+            student = payment.PaidById != payment.StudentId
+                ? await _unitOfWork.Users.GetByIdAsync(payment.StudentId)
+                : payer;
+
+            await BundleEnrollmentHelper.EnsureActiveProgramEnrollmentsAsync(
+                _unitOfWork,
+                payment.StudentId,
+                items,
+                now);
+            bundleEnrollment.ProgressPercent = await BundleEnrollmentHelper.RecalculateProgressPercentAsync(
+                _unitOfWork,
+                payment.StudentId,
+                items);
+
+            invoice = new Invoice
+            {
+                InvoiceNumber = GenerateInvoiceNumber(),
+                PaymentId = payment.Id,
+                IssuedToId = payment.PaidById,
+                Currency = payment.Currency,
+                SubTotal = payment.Amount + payment.DiscountAmount,
+                TotalAmount = payment.Amount,
+                BillingName = payer?.FullName ?? payer?.Email ?? string.Empty,
+                BillingEmail = payer?.Email ?? string.Empty,
+                ItemDescription = bundle?.Name ?? "Bundle"
+            };
+            await _unitOfWork.Invoices.AddAsync(invoice);
+            await _unitOfWork.SaveChangesAsync();
+        }
+        else if (bundleEnrollment.Status == BundleEnrollmentStatus.PendingPayment)
+        {
+            bundleEnrollment.Status = BundleEnrollmentStatus.Active;
+            await BundleEnrollmentHelper.EnsureActiveProgramEnrollmentsAsync(
+                _unitOfWork,
+                payment.StudentId,
+                items,
+                now);
+            bundleEnrollment.ProgressPercent = await BundleEnrollmentHelper.RecalculateProgressPercentAsync(
+                _unitOfWork,
+                payment.StudentId,
+                items);
+            await _unitOfWork.SaveChangesAsync();
+        }
+        else
+        {
+            await BundleEnrollmentHelper.EnsureActiveProgramEnrollmentsAsync(
+                _unitOfWork,
+                payment.StudentId,
+                items,
+                now);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        if (alreadySucceeded)
+        {
+            _logger.LogInformation(
+                "[HandleBundlePaymentSuccess] Payment {PaymentId} already Success; ensured program enrollments.",
+                payment.Id);
+            return;
+        }
+
+        await _notificationPublisher.PublishManyAsync(
+        [
+            NotificationCatalog.PaymentSucceeded(
+                payment.StudentId,
+                payment.Id,
+                programName: bundle?.Name,
+                studentName: student?.FullName),
+            NotificationCatalog.BundlePurchased(
+                payment.StudentId,
+                payment.Id,
+                bundleEnrollment.BundleId,
+                bundleEnrollment.Id,
+                studentName: student?.FullName,
+                bundleName: bundle?.Name)
+        ]);
+
+        if (payer != null && invoice != null)
+        {
+            await _emailService.SendPaymentInvoiceEmailAsync(new InvoiceEmailDto
+            {
+                To = payer.Email,
+                PayerName = payer.FullName ?? payer.Email,
+                StudentName = student?.FullName ?? "Student",
+                ProgramName = bundle?.Name ?? "Bundle",
+                ThumbnailUrl = bundle?.ThumbnailUrl,
+                Amount = payment.Amount,
+                Currency = payment.Currency,
+                TransactionId = payment.TransactionId ?? payment.CheckoutSessionId ?? payment.Id.ToString(),
+                PaidAt = payment.PaidAt ?? now,
+                InvoiceCode = invoice.InvoiceNumber
+            });
+        }
+
+        _logger.LogInformation(
+            "[HandleBundlePaymentSuccess] Payment {PaymentId} confirmed. Invoice={InvoiceNumber}. Student={StudentId}",
+            payment.Id,
+            invoice!.InvoiceNumber,
+            payment.StudentId);
+    }
+
+    private async Task<(ProgramBundle Bundle, List<ProgramBundleItem> Items, BundleOwnershipQuote Quote)>
+        PrepareBundlePurchaseAsync(Guid studentId, Guid bundleId)
+    {
+        var quote = await BundlePricingHelper.ComputeOwnershipQuote(_unitOfWork, studentId, bundleId);
+        var bundle = await _unitOfWork.ProgramBundles.GetByIdAsync(bundleId)
+            ?? throw ErrorHelper.NotFound($"Bundle '{bundleId}' not found.");
+        var items = (await _unitOfWork.ProgramBundleItems.GetAllAsync(
+                i => i.BundleId == bundleId && !i.IsDeleted))
+            .OrderBy(i => i.SortOrder)
+            .ToList();
+        if (items.Count == 0)
+            throw ErrorHelper.BadRequest("Bundle has no programs to purchase.");
+
+        await BundleEnrollmentHelper.ValidateBundleCheckoutLoadAsync(_unitOfWork, studentId, items);
+        return (bundle, items, quote);
+    }
+
+    private async Task<(decimal Amount, decimal DiscountAmount, Guid? VoucherId)> ApplyCatalogVoucherAsync(
+        Guid studentId,
+        decimal baseAmount,
+        decimal listPrice,
+        string? voucherCode,
+        Guid? bundleId = null,
+        Guid? programId = null)
+    {
+        if (string.IsNullOrWhiteSpace(voucherCode))
+            return (baseAmount, BundlePricingHelper.ClampNonNegative(listPrice - baseAmount), null);
+
+        var voucher = await _voucherService.ValidateForCheckout(studentId, new PreviewVoucherRequestDto
+        {
+            Code = voucherCode,
+            BundleId = bundleId,
+            ProgramId = programId,
+        });
+
+        var amount = voucher.FinalAmount;
+        return (amount, BundlePricingHelper.ClampNonNegative(listPrice - amount), voucher.VoucherId);
+    }
+
+    private static string ZeroTransactionId(Guid paymentId) => $"ZERO-{paymentId:N}";
+
+    private static CheckoutResponseDto BuildCheckoutResponse(
+        Payment payment,
+        Guid enrollmentId,
+        Guid? classId = null,
+        DateTime? holdExpiresAt = null,
+        string? checkoutUrl = null,
+        bool activated = false,
+        Guid? bundleEnrollmentId = null,
+        string? accessToken = null)
+        => new()
+        {
+            PaymentId = payment.Id,
+            EnrollmentId = enrollmentId,
+            ClassId = classId ?? Guid.Empty,
+            HoldExpiresAt = holdExpiresAt.HasValue
+                ? AppDateTime.ToUtcOffset(holdExpiresAt.Value)
+                : default,
+            CheckoutUrl = checkoutUrl ?? string.Empty,
+            AccessToken = accessToken,
+            BundleEnrollmentId = bundleEnrollmentId,
+            Amount = payment.Amount,
+            DiscountAmount = payment.DiscountAmount,
+            Activated = activated
+        };
 }

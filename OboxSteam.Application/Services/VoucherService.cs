@@ -229,8 +229,8 @@ public sealed class VoucherService : IVoucherService
 
         var rejection = VoucherValidator.ValidateApply(
             voucher,
-            voucher == null ? 0 : CountSuccessfulUsages(voucher.Id),
-            voucher == null ? 0 : CountSuccessfulUsages(voucher.Id, studentId),
+            voucher == null ? 0 : CountBlockingUsages(voucher.Id),
+            voucher == null ? 0 : CountBlockingUsages(voucher.Id, studentId),
             request.BundleId,
             request.ProgramId,
             now);
@@ -263,7 +263,7 @@ public sealed class VoucherService : IVoucherService
         if (request.BundleId.HasValue && request.BundleId.Value != Guid.Empty)
             return await ComputeBundleBaseAmount(studentId, request.BundleId.Value);
 
-        return await ComputeProgramBaseAmount(request.ProgramId!.Value);
+        return await ComputeProgramBaseAmount(studentId, request.ProgramId!.Value);
     }
 
     private async Task<decimal> ComputeBundleBaseAmount(Guid studentId, Guid bundleId)
@@ -272,7 +272,7 @@ public sealed class VoucherService : IVoucherService
         return quote.PriceAfterOwnership;
     }
 
-    private async Task<decimal> ComputeProgramBaseAmount(Guid programId)
+    private async Task<decimal> ComputeProgramBaseAmount(Guid studentId, Guid programId)
     {
         var program = await _unitOfWork.Programs.GetByIdAsync(programId);
         if (program == null || program.IsDeleted)
@@ -281,7 +281,23 @@ public sealed class VoucherService : IVoucherService
         if (program.Status != ProgramStatus.Active)
             throw ErrorHelper.BadRequest("Program is not available for purchase.");
 
-        return ClampNonNegative(program.Price ?? 0);
+        var enrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
+            pe => pe.StudentId == studentId && pe.ProgramId == programId && !pe.IsDeleted);
+        var pending = enrollments.FirstOrDefault(pe => pe.Status == EnrollmentStatus.PendingPayment);
+        ProgramEnrollment? source = null;
+        if (pending?.SourceProgramEnrollmentId != null)
+        {
+            source = await _unitOfWork.ProgramEnrollments.GetByIdAsync(pending.SourceProgramEnrollmentId.Value);
+        }
+        else
+        {
+            source = ProgramPurchaseLifecycle.FindRebuySource(enrollments);
+        }
+
+        return ProgramPurchaseLifecycle.ResolveCheckoutAmount(
+            program,
+            source,
+            _currentTime.GetCurrentTime());
     }
 
     private async Task ActivateDueVouchers()
@@ -358,11 +374,18 @@ public sealed class VoucherService : IVoucherService
     }
 
     private int CountSuccessfulUsages(Guid voucherId, Guid? studentId = null)
+        => CountUsages(voucherId, studentId, pendingBlocks: false);
+
+    private int CountBlockingUsages(Guid voucherId, Guid? studentId = null)
+        => CountUsages(voucherId, studentId, pendingBlocks: true);
+
+    private int CountUsages(Guid voucherId, Guid? studentId, bool pendingBlocks)
     {
         var query = _unitOfWork.Payments.GetQueryable()
             .Where(p => !p.IsDeleted
                         && p.VoucherId == voucherId
-                        && p.Status == PaymentStatus.Success);
+                        && (p.Status == PaymentStatus.Success
+                            || (pendingBlocks && p.Status == PaymentStatus.Pending)));
 
         if (studentId.HasValue)
             query = query.Where(p => p.StudentId == studentId.Value);

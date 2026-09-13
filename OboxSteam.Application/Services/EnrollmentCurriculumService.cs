@@ -60,7 +60,14 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         CurriculumAccessValidator.ValidateProgramEnrollmentForCurriculum(enrollment);
 
         var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, enrollment.ProgramId);
-        var context = await BuildCurriculumContextAsync(enrollment, snapshot, provisionModuleEnrollments: true);
+        var previousName = await BundleEnrollmentHelper.GetBlockingPreviousProgramNameAsync(
+            _unitOfWork,
+            enrollment.StudentId,
+            enrollment.ProgramId);
+        var context = await BuildCurriculumContextAsync(
+            enrollment,
+            snapshot,
+            provisionModuleEnrollments: previousName == null);
 
         var currentActivityId = CurriculumStatusHelper.FindCurrentActivityId(
             snapshot,

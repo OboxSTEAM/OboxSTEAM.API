@@ -6,12 +6,47 @@ using OboxSteam.Domain.Interfaces;
 namespace OboxSteam.Application.Commons;
 
 /// <summary>
-/// Shared bundle list-price after ownership deduction.
-/// Effective price = clamp(bundle.Price − Σ retail of owned Active/Completed programs, 0).
-/// Voucher is applied by callers after this result.
+/// Bundle list price from manager <c>PricePercent</c>, then student ownership deduction.
+/// Student charge = clamp(bundle.Price − Σ retail of owned Active/Completed programs, 0).
+/// Voucher is applied by callers after that result.
 /// </summary>
 public static class BundlePricingHelper
 {
+    public static decimal ComputeRetailTotal(IEnumerable<decimal?> programPrices)
+    {
+        decimal total = 0;
+        foreach (var price in programPrices)
+            total += price ?? 0;
+        return total;
+    }
+
+    /// <summary>Selling price = retail × percent / 100, rounded to 2 decimals. Empty catalog is 0.</summary>
+    public static decimal ComputePriceFromPercent(decimal retailTotal, decimal pricePercent)
+    {
+        if (retailTotal <= 0 || pricePercent <= 0)
+            return 0;
+
+        return Math.Round(retailTotal * pricePercent / 100m, 2, MidpointRounding.AwayFromZero);
+    }
+
+    public static async Task<decimal> ComputeRetailTotalAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyList<ProgramBundleItem> items)
+    {
+        var prices = new List<decimal?>(items.Count);
+        foreach (var item in items)
+        {
+            var program = await unitOfWork.Programs.GetByIdAsync(item.ProgramId);
+            prices.Add(program?.IsDeleted == false ? program.Price : 0);
+        }
+
+        return ComputeRetailTotal(prices);
+    }
+
+    /// <summary>
+    /// Amount a student pays for the bundle after subtracting retail of programs they
+    /// already hold (Active or Completed). PendingPayment / Failed / Dropped do not deduct.
+    /// </summary>
     public static async Task<BundleOwnershipQuote> ComputeOwnershipQuote(
         IUnitOfWork unitOfWork,
         Guid studentId,

@@ -65,7 +65,8 @@ public sealed class BundleController : ControllerBase
     [SwaggerOperation(
         Summary = "Create a bundle",
         Description = "Creates a Draft pathway. It is not purchasable until POST /api/bundles/{id}/publish. "
-                      + "Items are optional on create; publish requires at least two Active programs and a bundle price below the retail sum.")]
+                      + "PricePercent (e.g. 85) is applied to the sum of item retail prices to persist Price. "
+                      + "Items are optional on create; use POST /api/bundles/{id}/items to add programs later.")]
     [ProducesResponseType(typeof(ApiResult<ProgramBundleResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -78,6 +79,83 @@ public sealed class BundleController : ControllerBase
             nameof(GetBundleById),
             new { id = result.Id },
             ApiResult<ProgramBundleResponseDto>.Success(result, "201", "Bundle created as Draft."));
+    }
+
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Update a bundle",
+        Description = "Updates name, description, category, framework, and PricePercent. "
+                      + "Price is recalculated as retailTotal × PricePercent / 100. Allowed on Draft, Inactive, and Active.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramBundleResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UpdateBundle(
+        [FromRoute] Guid id,
+        [FromBody] UpdateProgramBundleRequestDto request)
+    {
+        var result = await _bundleService.UpdateBundle(id, request);
+        return Ok(ApiResult<ProgramBundleResponseDto>.Success(result, "200", "Bundle updated successfully."));
+    }
+
+    [HttpPost("{id:guid}/items")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Add a program to a bundle",
+        Description = "Draft or Inactive only. Recalculates Price from PricePercent × new retail total.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramBundleResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> AddBundleItem(
+        [FromRoute] Guid id,
+        [FromBody] CreateProgramBundleItemRequestDto request)
+    {
+        var result = await _bundleService.AddBundleItem(id, request);
+        return Ok(ApiResult<ProgramBundleResponseDto>.Success(result, "200", "Bundle item added."));
+    }
+
+    [HttpPut("{id:guid}/items/{itemId:guid}")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Update a bundle item",
+        Description = "Draft or Inactive only. Change program, sort order, or RequiresPreviousCompletion. "
+                      + "Changing the program recalculates Price.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramBundleResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> UpdateBundleItem(
+        [FromRoute] Guid id,
+        [FromRoute] Guid itemId,
+        [FromBody] UpdateProgramBundleItemRequestDto request)
+    {
+        var result = await _bundleService.UpdateBundleItem(id, itemId, request);
+        return Ok(ApiResult<ProgramBundleResponseDto>.Success(result, "200", "Bundle item updated."));
+    }
+
+    [HttpDelete("{id:guid}/items/{itemId:guid}")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Remove a program from a bundle",
+        Description = "Draft or Inactive only. Soft-deletes the item and recalculates Price.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramBundleResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> DeleteBundleItem(
+        [FromRoute] Guid id,
+        [FromRoute] Guid itemId)
+    {
+        var result = await _bundleService.DeleteBundleItem(id, itemId);
+        return Ok(ApiResult<ProgramBundleResponseDto>.Success(result, "200", "Bundle item removed."));
     }
 
     [HttpPost("{id:guid}/publish")]
@@ -102,9 +180,10 @@ public sealed class BundleController : ControllerBase
     [Authorize(Roles = "Student,Parent,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Get a bundle price quote",
-        Description = "Returns bundle list price, owned programs with deducted retail prices, and the amount after ownership. "
-                      + "Optional voucherCode is applied after ownership; invalid codes return 200 with voucher.isValid=false. "
-                      + "Students quote for themselves. Parent, Admin, and Manager must pass studentId.")]
+        Description = "Returns bundle list price (retail × PricePercent), owned programs with deducted retail prices, "
+                      + "and the amount the student pays. Ownership is subtracted from bundle.Price, then optional voucherCode. "
+                      + "Invalid codes return 200 with voucher.isValid=false. Students quote for themselves. "
+                      + "Parent, Admin, and Manager must pass studentId.")]
     [ProducesResponseType(typeof(ApiResult<BundlePriceQuoteDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

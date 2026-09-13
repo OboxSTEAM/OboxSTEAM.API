@@ -11,6 +11,8 @@ public static class ProgramBundleValidator
 {
     public const int MaxCodeLength = 50;
     public const int MinItemsToPublish = 2;
+    public const decimal MinPricePercent = 0.01m;
+    public const decimal MaxPricePercent = 99.99m;
 
     public static string NormalizeCode(string? code)
     {
@@ -36,10 +38,15 @@ public static class ProgramBundleValidator
         return trimmed;
     }
 
-    public static void ValidatePrice(decimal price)
+    public static decimal ValidatePricePercent(decimal pricePercent)
     {
-        if (price < 0)
-            throw ErrorHelper.BadRequest("Price cannot be negative.");
+        if (pricePercent < MinPricePercent || pricePercent > MaxPricePercent)
+        {
+            throw ErrorHelper.BadRequest(
+                "PricePercent must be greater than 0 and less than 100.");
+        }
+
+        return pricePercent;
     }
 
     public static void ValidateCategory(ProgramCategory category)
@@ -61,6 +68,57 @@ public static class ProgramBundleValidator
             throw ErrorHelper.NotFound($"Bundle '{bundleId}' not found.");
 
         return bundle;
+    }
+
+    public static void EnsureItemsMutable(ProgramBundle bundle)
+    {
+        if (bundle.Status == ProgramBundleStatus.Active)
+        {
+            throw ErrorHelper.Conflict(
+                "Cannot add or change programs on a published bundle.");
+        }
+    }
+
+    public static ProgramBundleItem RequireItem(
+        ProgramBundleItem? item,
+        Guid bundleId,
+        Guid itemId)
+    {
+        if (item == null || item.IsDeleted || item.BundleId != bundleId)
+            throw ErrorHelper.NotFound($"Bundle item '{itemId}' not found.");
+
+        return item;
+    }
+
+    public static void EnsureProgramNotInBundle(
+        IReadOnlyList<ProgramBundleItem> items,
+        Guid programId,
+        Guid? excludeItemId = null)
+    {
+        if (items.Any(i => i.ProgramId == programId && i.Id != excludeItemId))
+            throw ErrorHelper.Conflict("Bundle already contains this program.");
+    }
+
+    public static void EnsureSortOrderAvailable(
+        IReadOnlyList<ProgramBundleItem> items,
+        int sortOrder,
+        Guid? excludeItemId = null)
+    {
+        if (items.Any(i => i.SortOrder == sortOrder && i.Id != excludeItemId))
+            throw ErrorHelper.BadRequest("SortOrder is already used by another item.");
+    }
+
+    public static void ValidateItemUpdate(UpdateProgramBundleItemRequestDto request)
+    {
+        if (!request.ProgramId.HasValue
+            && !request.SortOrder.HasValue
+            && !request.RequiresPreviousCompletion.HasValue)
+        {
+            throw ErrorHelper.BadRequest("No fields to update.");
+        }
+
+        if (request.ProgramId.HasValue && request.ProgramId.Value == Guid.Empty)
+            throw ErrorHelper.BadRequest("ProgramId is required.");
     }
 
     public static async Task EnsureFrameworkExists(IUnitOfWork unitOfWork, Guid frameworkId)

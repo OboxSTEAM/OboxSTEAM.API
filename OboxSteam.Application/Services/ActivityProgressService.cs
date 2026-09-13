@@ -50,6 +50,7 @@ public sealed class ActivityProgressService : IActivityProgressService
             request.ModuleEnrollmentId);
         ActivityProgressValidator.ValidateModuleEnrollmentBelongsToStudent(moduleEnrollment, student.Id);
         ActivityProgressValidator.ValidateModuleEnrollmentActive(moduleEnrollment);
+        await EnsureBundlePrerequisiteForModuleEnrollmentAsync(moduleEnrollment);
 
         var activityEntity = await _unitOfWork.Activities.GetByIdAsync(request.ActivityId);
         var activity = ActivityProgressValidator.ValidateActivityExists(activityEntity, request.ActivityId);
@@ -141,6 +142,7 @@ public sealed class ActivityProgressService : IActivityProgressService
             request.ModuleEnrollmentId);
         ActivityProgressValidator.ValidateModuleEnrollmentBelongsToStudent(moduleEnrollment, student.Id);
         ActivityProgressValidator.ValidateModuleEnrollmentActive(moduleEnrollment);
+        await EnsureBundlePrerequisiteForModuleEnrollmentAsync(moduleEnrollment);
 
         var progressEntity = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
             ap => ap.ModuleEnrollmentId == request.ModuleEnrollmentId
@@ -226,6 +228,7 @@ public sealed class ActivityProgressService : IActivityProgressService
             moduleEnrollmentId);
         ActivityProgressValidator.ValidateModuleEnrollmentBelongsToStudent(moduleEnrollment, studentId);
         ActivityProgressValidator.ValidateModuleEnrollmentActive(moduleEnrollment);
+        await EnsureBundlePrerequisiteForModuleEnrollmentAsync(moduleEnrollment);
 
         var activityEntity = await _unitOfWork.Activities.GetByIdAsync(activityId);
         var activity = ActivityProgressValidator.ValidateActivityExists(activityEntity, activityId);
@@ -361,6 +364,7 @@ public sealed class ActivityProgressService : IActivityProgressService
             moduleEnrollmentId);
         ActivityProgressValidator.ValidateModuleEnrollmentBelongsToStudent(moduleEnrollment, studentId);
         ActivityProgressValidator.ValidateModuleEnrollmentActive(moduleEnrollment);
+        await EnsureBundlePrerequisiteForModuleEnrollmentAsync(moduleEnrollment);
 
         var activityEntity = await _unitOfWork.Activities.GetByIdAsync(activityId);
         var activity = ActivityProgressValidator.ValidateActivityExists(activityEntity, activityId);
@@ -924,5 +928,20 @@ public sealed class ActivityProgressService : IActivityProgressService
                 programEnrollmentId,
                 firstActivityId ?? nextActivityId));
         }
+    }
+
+    private async Task EnsureBundlePrerequisiteForModuleEnrollmentAsync(ModuleEnrollment moduleEnrollment)
+    {
+        if (!moduleEnrollment.ProgramEnrollmentId.HasValue)
+            return;
+
+        var programEnrollment = await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+            moduleEnrollment.ProgramEnrollmentId.Value);
+        if (programEnrollment == null || programEnrollment.IsDeleted)
+            return;
+
+        await BundleEnrollmentHelper.ValidateBundlePrerequisiteForEnrollmentAsync(
+            _unitOfWork,
+            programEnrollment);
     }
 }

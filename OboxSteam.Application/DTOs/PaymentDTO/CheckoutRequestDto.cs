@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.PaymentDTO;
@@ -8,4 +9,8 @@ public class CheckoutRequestDto
     public Guid ProgramId { get; set; }
     public Guid ClassId { get; set; }
     public PaymentGateway Gateway { get; set; }
+
+    /// <summary>Optional catalog voucher. Not used on parent-pay or retake.</summary>
+    [MaxLength(50)]
+    public string? VoucherCode { get; set; }
 }

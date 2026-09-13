@@ -103,20 +103,10 @@ public static class ProgramEnrollmentValidator
         Guid studentId,
         Guid? excludeEnrollmentId = null)
     {
-        var inProgress = await unitOfWork.ProgramEnrollments.GetAllAsync(
-            pe => pe.StudentId == studentId
-                  && !pe.IsDeleted
-                  && (pe.Status == EnrollmentStatus.Active
-                      || pe.Status == EnrollmentStatus.PendingPayment)
-                  && (!excludeEnrollmentId.HasValue || pe.Id != excludeEnrollmentId.Value));
-
-        if (inProgress.Count >= MaxInProgressProgramsPerStudent)
-        {
-            throw ErrorHelper.Conflict(
-                $"Student has reached the maximum of {MaxInProgressProgramsPerStudent} " +
-                "in-progress programs (Active or PendingPayment). " +
-                "Complete or drop a program before starting another.");
-        }
+        await BundleEnrollmentHelper.ValidateUnderInProgressProgramLimitAsync(
+            unitOfWork,
+            studentId,
+            excludeEnrollmentId);
     }
 
     /// <summary>

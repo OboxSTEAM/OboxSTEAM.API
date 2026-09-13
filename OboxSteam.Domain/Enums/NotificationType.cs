@@ -34,6 +34,8 @@ public enum NotificationType
     PaymentCancelled,
     ParentPaymentRequested,
     ParentModuleRetakeRequested,
+    BundlePurchased,
+    ParentBundlePaymentRequested,
 
     // Class lifecycle
     ClassCreated,

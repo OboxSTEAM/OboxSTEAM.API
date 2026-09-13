@@ -26,7 +26,7 @@ public partial class SeedService
 
     private const decimal SeedRoboticsIntermediatePrice = 1_500_000m;
     private const decimal SeedRoboticsAdvancedPrice = 1_800_000m;
-    private const decimal SeedRoboticsBundlePrice = 3_825_000m;
+    private const decimal SeedBundlePricePercent = 85m;
     private const string SeedRoboticsBundleThumbnail =
         "https://images.unsplash.com/photo-1518314916381-77a37c2a49ae?q=80&w=1171&auto=format&fit=crop";
 
@@ -91,7 +91,7 @@ public partial class SeedService
         await EnsureObx15VoucherAsync();
         await _unitOfWork.SaveChangesAsync();
 
-        await EnsureMidPathBundleEnrollmentAsync(bundle, intro, intermediate);
+        await EnsureMidPathBundleEnrollmentAsync(bundle, intro, intermediate, advanced);
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
@@ -190,7 +190,7 @@ public partial class SeedService
         }
 
         var retailTotal = programs.Sum(p => p.Price ?? 0m);
-        var price = Math.Round(retailTotal * 0.85m, 0, MidpointRounding.AwayFromZero);
+        var price = BundlePricingHelper.ComputePriceFromPercent(retailTotal, SeedBundlePricePercent);
         var thumbnail = programs[0].ThumbnailUrl;
 
         var bundle = await _unitOfWork.ProgramBundles.FirstOrDefaultAsync(
@@ -205,6 +205,7 @@ public partial class SeedService
                 Description = description,
                 ThumbnailUrl = thumbnail,
                 Category = category,
+                PricePercent = SeedBundlePricePercent,
                 Price = price,
                 Status = status,
                 CreatedAt = createdAt,
@@ -237,6 +238,12 @@ public partial class SeedService
             if (bundle.Price != price)
             {
                 bundle.Price = price;
+                changed = true;
+            }
+
+            if (bundle.PricePercent != SeedBundlePricePercent)
+            {
+                bundle.PricePercent = SeedBundlePricePercent;
                 changed = true;
             }
 
@@ -343,6 +350,9 @@ public partial class SeedService
         Program advanced,
         Guid? frameworkId)
     {
+        var retailTotal = (intro.Price ?? 0m) + (intermediate.Price ?? 0m) + (advanced.Price ?? 0m);
+        var price = BundlePricingHelper.ComputePriceFromPercent(retailTotal, SeedBundlePricePercent);
+
         var bundle = await _unitOfWork.ProgramBundles.FirstOrDefaultAsync(
             b => b.Code == SeedRoboticsBundleCode && !b.IsDeleted);
         if (bundle == null)
@@ -358,7 +368,8 @@ public partial class SeedService
                 ThumbnailUrl = SeedRoboticsBundleThumbnail,
                 Category = ProgramCategory.Technology,
                 FrameworkId = frameworkId,
-                Price = SeedRoboticsBundlePrice,
+                PricePercent = SeedBundlePricePercent,
+                Price = price,
                 Status = ProgramBundleStatus.Active,
                 CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
@@ -375,9 +386,15 @@ public partial class SeedService
                 changed = true;
             }
 
-            if (bundle.Price != SeedRoboticsBundlePrice)
+            if (bundle.PricePercent != SeedBundlePricePercent)
             {
-                bundle.Price = SeedRoboticsBundlePrice;
+                bundle.PricePercent = SeedBundlePricePercent;
+                changed = true;
+            }
+
+            if (bundle.Price != price)
+            {
+                bundle.Price = price;
                 changed = true;
             }
 
@@ -473,7 +490,8 @@ public partial class SeedService
     private async Task EnsureMidPathBundleEnrollmentAsync(
         ProgramBundle bundle,
         Program intro,
-        Program intermediate)
+        Program intermediate,
+        Program advanced)
     {
         var student = await _unitOfWork.Users.FirstOrDefaultAsync(
             u => u.Code == SeedBundleMidPathStudentCode && !u.IsDeleted);
@@ -501,11 +519,13 @@ public partial class SeedService
         var purchasedAt = AtDays(-2);
         var intermediateEnrollment = await EnsureActiveProgramEnrollmentAsync(
             student.Id, intermediate.Id, purchasedAt);
+        var advancedEnrollment = await EnsureActiveProgramEnrollmentAsync(
+            student.Id, advanced.Id, purchasedAt);
 
         var progressPercent = Math.Round(
             (introEnrollment.ProgressPercent
              + intermediateEnrollment.ProgressPercent
-             + 0m) / 3m,
+             + advancedEnrollment.ProgressPercent) / 3m,
             2);
 
         var bundleEnrollment = await _unitOfWork.BundleEnrollments.FirstOrDefaultAsync(
@@ -544,7 +564,7 @@ public partial class SeedService
             purchasedAt);
 
         _loggerService.LogInformation(
-            "Mid-path bundle ready for {StudentCode}: intro Completed, intermediate Active (unlocked), advanced locked.",
+            "Mid-path bundle ready for {StudentCode}: intro Completed, intermediate Active (unlocked), advanced Active (locked until intermediate is completed).",
             SeedBundleMidPathStudentCode);
     }
 

@@ -123,7 +123,7 @@ public sealed class ProgramBundleService : IProgramBundleService
     {
         var code = ProgramBundleValidator.NormalizeCode(request.Code);
         var name = ProgramBundleValidator.ValidateName(request.Name);
-        ProgramBundleValidator.ValidatePrice(request.Price);
+        var pricePercent = ProgramBundleValidator.ValidatePricePercent(request.PricePercent);
         ProgramBundleValidator.ValidateCategory(request.Category);
         await ProgramBundleValidator.EnsureCodeIsUnique(_unitOfWork, code);
 
@@ -143,7 +143,8 @@ public sealed class ProgramBundleService : IProgramBundleService
             ThumbnailUrl = string.IsNullOrWhiteSpace(request.ThumbnailUrl) ? null : request.ThumbnailUrl.Trim(),
             Category = request.Category,
             FrameworkId = HasId(request.FrameworkId) ? request.FrameworkId : null,
-            Price = request.Price,
+            PricePercent = pricePercent,
+            Price = 0,
             Status = ProgramBundleStatus.Draft,
         };
 
@@ -163,8 +164,140 @@ public sealed class ProgramBundleService : IProgramBundleService
             order++;
         }
 
+        await RecalculatePersistedPrice(bundle);
         await _unitOfWork.SaveChangesAsync();
         _logger.LogInformation("[CreateBundle] Draft bundle {Code} ({BundleId}).", code, bundle.Id);
+        return await MapToResponse(bundle);
+    }
+
+    public async Task<ProgramBundleResponseDto> UpdateBundle(
+        Guid bundleId,
+        UpdateProgramBundleRequestDto request)
+    {
+        var bundle = ProgramBundleValidator.RequireExisting(
+            await _unitOfWork.ProgramBundles.GetByIdAsync(bundleId),
+            bundleId);
+
+        var name = ProgramBundleValidator.ValidateName(request.Name);
+        var pricePercent = ProgramBundleValidator.ValidatePricePercent(request.PricePercent);
+        ProgramBundleValidator.ValidateCategory(request.Category);
+
+        if (request.FrameworkId.HasValue && request.FrameworkId.Value != Guid.Empty)
+            await ProgramBundleValidator.EnsureFrameworkExists(_unitOfWork, request.FrameworkId.Value);
+
+        bundle.Name = name;
+        bundle.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        bundle.ThumbnailUrl = string.IsNullOrWhiteSpace(request.ThumbnailUrl) ? null : request.ThumbnailUrl.Trim();
+        bundle.Category = request.Category;
+        bundle.FrameworkId = HasId(request.FrameworkId) ? request.FrameworkId : null;
+        bundle.PricePercent = pricePercent;
+
+        await RecalculatePersistedPrice(bundle);
+        await _unitOfWork.SaveChangesAsync();
+        _logger.LogInformation("[UpdateBundle] Bundle {Code} ({BundleId}) updated.", bundle.Code, bundle.Id);
+        return await MapToResponse(bundle);
+    }
+
+    public async Task<ProgramBundleResponseDto> AddBundleItem(
+        Guid bundleId,
+        CreateProgramBundleItemRequestDto request)
+    {
+        var bundle = ProgramBundleValidator.RequireExisting(
+            await _unitOfWork.ProgramBundles.GetByIdAsync(bundleId),
+            bundleId);
+        ProgramBundleValidator.EnsureItemsMutable(bundle);
+
+        var payload = new List<CreateProgramBundleItemRequestDto> { request };
+        ProgramBundleValidator.ValidateItemPayload(payload);
+        await ProgramBundleValidator.LoadProgramsForItems(_unitOfWork, payload);
+
+        var items = await LoadItems(bundle.Id);
+        ProgramBundleValidator.EnsureProgramNotInBundle(items, request.ProgramId);
+
+        var sortOrder = request.SortOrder ?? NextSortOrder(items);
+        ProgramBundleValidator.EnsureSortOrderAvailable(items, sortOrder);
+
+        await _unitOfWork.ProgramBundleItems.AddAsync(new ProgramBundleItem
+        {
+            Id = Guid.NewGuid(),
+            BundleId = bundle.Id,
+            ProgramId = request.ProgramId,
+            SortOrder = sortOrder,
+            RequiresPreviousCompletion = request.RequiresPreviousCompletion,
+        });
+
+        await RecalculatePersistedPrice(bundle);
+        await _unitOfWork.SaveChangesAsync();
+        _logger.LogInformation(
+            "[AddBundleItem] Program {ProgramId} added to bundle {BundleId}.",
+            request.ProgramId,
+            bundle.Id);
+        return await MapToResponse(bundle);
+    }
+
+    public async Task<ProgramBundleResponseDto> UpdateBundleItem(
+        Guid bundleId,
+        Guid itemId,
+        UpdateProgramBundleItemRequestDto request)
+    {
+        ProgramBundleValidator.ValidateItemUpdate(request);
+
+        var bundle = ProgramBundleValidator.RequireExisting(
+            await _unitOfWork.ProgramBundles.GetByIdAsync(bundleId),
+            bundleId);
+        ProgramBundleValidator.EnsureItemsMutable(bundle);
+
+        var item = ProgramBundleValidator.RequireItem(
+            await _unitOfWork.ProgramBundleItems.GetByIdAsync(itemId),
+            bundleId,
+            itemId);
+        var items = await LoadItems(bundle.Id);
+
+        var programChanged = false;
+        if (request.ProgramId.HasValue)
+        {
+            await ProgramBundleValidator.LoadProgramsForItems(
+                _unitOfWork,
+                [new CreateProgramBundleItemRequestDto { ProgramId = request.ProgramId.Value }]);
+            ProgramBundleValidator.EnsureProgramNotInBundle(items, request.ProgramId.Value, item.Id);
+            item.ProgramId = request.ProgramId.Value;
+            programChanged = true;
+        }
+
+        if (request.SortOrder.HasValue)
+        {
+            ProgramBundleValidator.EnsureSortOrderAvailable(items, request.SortOrder.Value, item.Id);
+            item.SortOrder = request.SortOrder.Value;
+        }
+
+        if (request.RequiresPreviousCompletion.HasValue)
+            item.RequiresPreviousCompletion = request.RequiresPreviousCompletion.Value;
+
+        await _unitOfWork.ProgramBundleItems.Update(item);
+        if (programChanged)
+            await RecalculatePersistedPrice(bundle);
+
+        await _unitOfWork.SaveChangesAsync();
+        _logger.LogInformation("[UpdateBundleItem] Item {ItemId} on bundle {BundleId} updated.", itemId, bundle.Id);
+        return await MapToResponse(bundle);
+    }
+
+    public async Task<ProgramBundleResponseDto> DeleteBundleItem(Guid bundleId, Guid itemId)
+    {
+        var bundle = ProgramBundleValidator.RequireExisting(
+            await _unitOfWork.ProgramBundles.GetByIdAsync(bundleId),
+            bundleId);
+        ProgramBundleValidator.EnsureItemsMutable(bundle);
+
+        var item = ProgramBundleValidator.RequireItem(
+            await _unitOfWork.ProgramBundleItems.GetByIdAsync(itemId),
+            bundleId,
+            itemId);
+
+        await _unitOfWork.ProgramBundleItems.SoftRemove(item);
+        await RecalculatePersistedPrice(bundle);
+        await _unitOfWork.SaveChangesAsync();
+        _logger.LogInformation("[DeleteBundleItem] Item {ItemId} removed from bundle {BundleId}.", itemId, bundle.Id);
         return await MapToResponse(bundle);
     }
 
@@ -174,8 +307,8 @@ public sealed class ProgramBundleService : IProgramBundleService
             await _unitOfWork.ProgramBundles.GetByIdAsync(bundleId),
             bundleId);
 
-        var items = await _unitOfWork.ProgramBundleItems.GetAllAsync(
-            i => i.BundleId == bundle.Id && !i.IsDeleted);
+        var items = await LoadItems(bundle.Id);
+        await RecalculatePersistedPrice(bundle);
         var programsById = new Dictionary<Guid, Program>();
         foreach (var programId in items.Select(i => i.ProgramId).Distinct())
         {
@@ -213,6 +346,7 @@ public sealed class ProgramBundleService : IProgramBundleService
         ThumbnailUrl = bundle.ThumbnailUrl,
         Category = bundle.Category,
         FrameworkId = bundle.FrameworkId,
+        PricePercent = bundle.PricePercent,
         Price = bundle.Price,
         RetailTotal = 0,
         Status = bundle.Status,
@@ -255,6 +389,7 @@ public sealed class ProgramBundleService : IProgramBundleService
             ThumbnailUrl = bundle.ThumbnailUrl,
             Category = bundle.Category,
             FrameworkId = bundle.FrameworkId,
+            PricePercent = bundle.PricePercent,
             Price = bundle.Price,
             RetailTotal = retailTotal,
             Status = bundle.Status,
@@ -263,6 +398,25 @@ public sealed class ProgramBundleService : IProgramBundleService
             UpdatedAt = bundle.UpdatedAt,
         };
     }
+
+    private async Task RecalculatePersistedPrice(ProgramBundle bundle)
+    {
+        var items = await LoadItems(bundle.Id);
+        var retailTotal = await BundlePricingHelper.ComputeRetailTotalAsync(_unitOfWork, items);
+        bundle.Price = BundlePricingHelper.ComputePriceFromPercent(retailTotal, bundle.PricePercent);
+        await _unitOfWork.ProgramBundles.Update(bundle);
+    }
+
+    private async Task<List<ProgramBundleItem>> LoadItems(Guid bundleId)
+    {
+        return (await _unitOfWork.ProgramBundleItems.GetAllAsync(
+                i => i.BundleId == bundleId && !i.IsDeleted))
+            .OrderBy(i => i.SortOrder)
+            .ToList();
+    }
+
+    private static int NextSortOrder(IReadOnlyList<ProgramBundleItem> items)
+        => items.Count == 0 ? 1 : items.Max(i => i.SortOrder) + 1;
 
     private static bool HasId(Guid? id) => id.HasValue && id.Value != Guid.Empty;
 }

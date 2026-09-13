@@ -518,6 +518,60 @@ public static class NotificationCatalog
             entityId: paymentRequestId,
             tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
+    public static NotificationCommand BundlePurchased(
+        Guid studentId,
+        Guid paymentId,
+        Guid bundleId,
+        Guid bundleEnrollmentId,
+        string? studentName = null,
+        string? bundleName = null)
+        => StudentAndParent(
+            NotificationType.BundlePurchased,
+            NotificationAudience.ForStudentAndParents(studentId),
+            "Đã mua lộ trình học",
+            string.IsNullOrWhiteSpace(bundleName)
+                ? "Bạn đã mua một lộ trình học."
+                : "Bạn đã mua lộ trình \"{programName}\".",
+            string.IsNullOrWhiteSpace(bundleName)
+                ? "Con bạn {studentName} đã mua một lộ trình học."
+                : "Con bạn {studentName} đã mua lộ trình \"{programName}\".",
+            payload: new NotificationPayload
+            {
+                PaymentId = paymentId,
+                BundleId = bundleId,
+                BundleEnrollmentId = bundleEnrollmentId,
+                StudentId = studentId
+            }.WithNames(studentName: studentName, programName: bundleName),
+            entityType: "BundleEnrollment",
+            entityId: bundleEnrollmentId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: bundleName));
+
+    public static NotificationCommand ParentBundlePaymentRequested(
+        Guid parentId,
+        Guid studentId,
+        Guid paymentRequestId,
+        Guid bundleId,
+        Guid bundleEnrollmentId,
+        string? studentName = null,
+        string? bundleName = null)
+        => new(
+            NotificationType.ParentBundlePaymentRequested,
+            NotificationAudience.ForUser(parentId, studentId),
+            NotificationRoleTemplates.FromDefault(
+                "Yêu cầu thanh toán lộ trình",
+                "Con bạn {studentName} đề nghị bạn hoàn tất thanh toán lộ trình."),
+            payload: new NotificationPayload
+            {
+                PaymentRequestId = paymentRequestId,
+                StudentId = studentId,
+                BundleId = bundleId,
+                BundleEnrollmentId = bundleEnrollmentId
+            }.WithNames(studentName: studentName, programName: bundleName),
+            actorUserId: studentId,
+            entityType: "PaymentRequest",
+            entityId: paymentRequestId,
+            tokens: NotificationTokenKeys.Create(studentName: studentName, programName: bundleName));
+
     public static NotificationCommand ParentModuleRetakeRequested(
         Guid parentId,
         Guid studentId,
