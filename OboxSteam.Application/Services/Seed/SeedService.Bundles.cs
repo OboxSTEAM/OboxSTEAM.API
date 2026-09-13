@@ -7,6 +7,7 @@ namespace OboxSteam.Application.Services;
 
 /// <summary>
 /// Slice 7 demo catalog: Robotics pathway plus extra STEAM bundles, OBX15 voucher,
+/// STD-001 bundle-checkout fixtures (3 Active bundle-scope vouchers + 3 bundles),
 /// mid-path enrollment, and a retail owner for price-quote. Idempotent for re-seed without clear.
 /// </summary>
 public partial class SeedService
@@ -18,9 +19,15 @@ public partial class SeedService
     internal const string SeedMakerBundleCode = "BDL-MAKER";
     internal const string SeedDataAiBundleCode = "BDL-DATA-AI";
     internal const string SeedDraftMathBundleCode = "BDL-DRAFT-MATH";
+    internal const string SeedStd1OwnedBundleCode = "BDL-WEB-PYTHON";
+    internal const string SeedStd1CapBundleCode = "BDL-TECH-OVERFLOW";
+    internal const string SeedStd1PathBundleCode = "BDL-SCI-IOT";
     internal const string SeedRoboticsIntermediateProgramCode = "PRG-ROBOTICS-INT";
     internal const string SeedRoboticsAdvancedProgramCode = "PRG-ROBOTICS-ADV";
     internal const string SeedVoucherObx15Code = "OBX15";
+    internal const string SeedVoucherBdl10Code = "BDL10";
+    internal const string SeedVoucherBdl15Code = "BDL15";
+    internal const string SeedVoucherBdl20Code = "BDL20";
     internal const string SeedBundleMidPathStudentCode = "STD-011";
     internal const string SeedBundleRetailOwnerStudentCode = "STD-001";
 
@@ -89,15 +96,19 @@ public partial class SeedService
         var bundle = await EnsureRoboticsBundleAsync(intro, intermediate, advanced, frameworkId);
         await EnsureCatalogBundlesAsync();
         await EnsureObx15VoucherAsync();
+        await EnsureStd1BundleCheckoutVouchersAsync();
         await _unitOfWork.SaveChangesAsync();
 
         await EnsureMidPathBundleEnrollmentAsync(bundle, intro, intermediate, advanced);
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Finished seed robotics bundle {BundleCode} plus catalog bundles, voucher {VoucherCode}, mid-path {StudentCode}. Retail quote owner is {RetailOwner}.",
+            "Finished seed robotics bundle {BundleCode} plus catalog bundles, vouchers {VoucherCode}/{Bdl10}/{Bdl15}/{Bdl20}, mid-path {StudentCode}. Retail quote owner is {RetailOwner}.",
             SeedRoboticsBundleCode,
             SeedVoucherObx15Code,
+            SeedVoucherBdl10Code,
+            SeedVoucherBdl15Code,
+            SeedVoucherBdl20Code,
             SeedBundleMidPathStudentCode,
             SeedBundleRetailOwnerStudentCode);
     }
@@ -161,6 +172,38 @@ public partial class SeedService
             ProgramBundleStatus.Draft,
             ["PRG-MATHFUN", "PRG-DATAMATH"],
             createdAt: AtDays(-1));
+
+        // STD-001 checkout fixtures. Occupying slot today: Active PRG-ROBOTICS (cap 2).
+        // WEB-PYTHON: Completed PRG-WEBDEV + unlocked PRG-PYBASIC → +1 slot, ownership deduction.
+        // SCI-IOT: first item unlocked, second gated → +1 slot, checkout allowed.
+        // TECH-OVERFLOW: both items unlocked → +2 slots, load-cap conflict for STD-001.
+        await EnsureCatalogBundleAsync(
+            SeedStd1OwnedBundleCode,
+            "Lộ trình Web rồi Python",
+            "Web Development Bootcamp rồi Python for Beginners. STD-001 đã hoàn thành Web — giá tự trừ.",
+            ProgramCategory.Technology,
+            ProgramBundleStatus.Active,
+            ["PRG-WEBDEV", "PRG-PYBASIC"],
+            createdAt: AtDays(-2));
+
+        await EnsureCatalogBundleAsync(
+            SeedStd1PathBundleCode,
+            "Lộ trình sinh học rồi IoT",
+            "Biotechnology rồi Internet of Things. Item 2 khóa đến khi xong item 1 — STD-001 checkout được.",
+            ProgramCategory.Science,
+            ProgramBundleStatus.Active,
+            ["PRG-BIOTECH", "PRG-IOT"],
+            createdAt: AtDays(-2));
+
+        await EnsureCatalogBundleAsync(
+            SeedStd1CapBundleCode,
+            "Lộ trình Game và AI (song song)",
+            "Game Design và AI mở cùng lúc. STD-001 đang Active Robotics — checkout vượt cap 2 chương trình.",
+            ProgramCategory.Technology,
+            ProgramBundleStatus.Active,
+            ["PRG-GAMEDEV", "PRG-AIBASIC"],
+            createdAt: AtDays(-2),
+            gateSubsequentItems: false);
     }
 
     private async Task EnsureCatalogBundleAsync(
@@ -170,7 +213,8 @@ public partial class SeedService
         ProgramCategory category,
         ProgramBundleStatus status,
         IReadOnlyList<string> programCodes,
-        DateTime createdAt)
+        DateTime createdAt,
+        bool gateSubsequentItems = true)
     {
         var programs = new List<Program>(programCodes.Count);
         foreach (var programCode in programCodes)
@@ -269,7 +313,7 @@ public partial class SeedService
                 bundle.Id,
                 programs[i].Id,
                 sortOrder: i + 1,
-                requiresPreviousCompletion: i > 0);
+                requiresPreviousCompletion: gateSubsequentItems && i > 0);
         }
     }
 
@@ -450,18 +494,37 @@ public partial class SeedService
 
     private async Task EnsureObx15VoucherAsync()
     {
+        await EnsurePercentVoucherAsync(
+            SeedVoucherObx15Code,
+            percentOff: 15m,
+            VoucherScope.Both);
+    }
+
+    /// <summary>
+    /// Three Active bundle-scope codes STD-001 can apply on POST /api/payments/bundles/checkout.
+    /// Vouchers are catalog-wide (not student-locked); MaxUsagePerStudent = 1.
+    /// </summary>
+    private async Task EnsureStd1BundleCheckoutVouchersAsync()
+    {
+        await EnsurePercentVoucherAsync(SeedVoucherBdl10Code, percentOff: 10m, VoucherScope.Bundle);
+        await EnsurePercentVoucherAsync(SeedVoucherBdl15Code, percentOff: 15m, VoucherScope.Bundle);
+        await EnsurePercentVoucherAsync(SeedVoucherBdl20Code, percentOff: 20m, VoucherScope.Bundle);
+    }
+
+    private async Task EnsurePercentVoucherAsync(string code, decimal percentOff, VoucherScope scope)
+    {
         var existing = await _unitOfWork.Vouchers.FirstOrDefaultAsync(
-            v => v.Code == SeedVoucherObx15Code && !v.IsDeleted);
+            v => v.Code == code && !v.IsDeleted);
         if (existing != null)
         {
             if (existing.Status != VoucherStatus.Active
-                || existing.PercentOff != 15m
-                || existing.Scope != VoucherScope.Both)
+                || existing.PercentOff != percentOff
+                || existing.Scope != scope)
             {
                 existing.Status = VoucherStatus.Active;
-                existing.PercentOff = 15m;
+                existing.PercentOff = percentOff;
                 existing.AmountOff = null;
-                existing.Scope = VoucherScope.Both;
+                existing.Scope = scope;
                 existing.StartsAt = null;
                 await _unitOfWork.Vouchers.Update(existing);
             }
@@ -472,14 +535,14 @@ public partial class SeedService
         await _unitOfWork.Vouchers.AddAsync(new Voucher
         {
             Id = Guid.NewGuid(),
-            Code = SeedVoucherObx15Code,
-            PercentOff = 15m,
+            Code = code,
+            PercentOff = percentOff,
             AmountOff = null,
             StartsAt = null,
             ExpiryAt = AtMonths(12),
             UsageLimit = 100,
             MaxUsagePerStudent = 1,
-            Scope = VoucherScope.Both,
+            Scope = scope,
             Status = VoucherStatus.Active,
             CreatedAt = _seedNow,
             CreatedBy = Guid.Empty,
