@@ -535,4 +535,126 @@ public sealed class VoucherServiceTests
             _studentId,
             new PreviewVoucherRequestDto { Code = "OBX15", BundleId = _bundleId }));
     }
+
+    [Fact]
+    public async Task GetAvailableVouchersForStudent_ReturnsOnlyActiveInWindow()
+    {
+        SeedStudent();
+        SeedVoucher(code: "ACTIVE");
+        SeedVoucher(code: "DRAFT", startsAt: _now.AddDays(1));
+        SeedVoucher(code: "EXPIRED", expiryAt: _now.AddMinutes(-1));
+        SeedVoucher(code: "DELETED");
+        _db.Vouchers.Items.Single(v => v.Code == "DELETED").IsDeleted = true;
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.GetAvailableVouchersForStudent(_studentId, 1, 10);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("ACTIVE", item.Code);
+        Assert.Equal(15m, item.PercentOff);
+        Assert.Null(item.AmountOff);
+    }
+
+    [Fact]
+    public async Task GetAvailableVouchersForStudent_HidesWhenStudentReachedMaxUsage()
+    {
+        SeedStudent();
+        var otherStudentId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+        _db.Users.Seed(new User
+        {
+            Id = otherStudentId,
+            Code = "STU-2",
+            Email = "student2@test.com",
+            Role = RoleType.Student,
+        });
+        var voucher = SeedVoucher(code: "ONCE", maxUsagePerStudent: 1);
+        _db.Payments.Seed(new Payment
+        {
+            Id = Guid.NewGuid(),
+            Code = "INV-USED",
+            StudentId = _studentId,
+            PaidById = _studentId,
+            VoucherId = voucher.Id,
+            Amount = 1000m,
+            Status = PaymentStatus.Success,
+            Currency = "VND",
+        });
+        var sut = CreateSut(_studentId);
+
+        var forCaller = await sut.GetAvailableVouchersForStudent(_studentId, 1, 10);
+        var forOther = await sut.GetAvailableVouchersForStudent(otherStudentId, 1, 10);
+
+        Assert.Empty(forCaller.Items);
+        Assert.Equal("ONCE", Assert.Single(forOther.Items).Code);
+    }
+
+    [Fact]
+    public async Task GetAvailableVouchersForStudent_HidesWhenGlobalUsageLimitReached()
+    {
+        SeedStudent();
+        var otherStudentId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+        _db.Users.Seed(new User
+        {
+            Id = otherStudentId,
+            Code = "STU-2",
+            Email = "student2@test.com",
+            Role = RoleType.Student,
+        });
+        var voucher = SeedVoucher(code: "CAP1", usageLimit: 1);
+        _db.Payments.Seed(new Payment
+        {
+            Id = Guid.NewGuid(),
+            Code = "INV-CAP",
+            StudentId = otherStudentId,
+            PaidById = otherStudentId,
+            VoucherId = voucher.Id,
+            Amount = 1000m,
+            Status = PaymentStatus.Success,
+            Currency = "VND",
+        });
+        var sut = CreateSut(_studentId);
+
+        var forCaller = await sut.GetAvailableVouchersForStudent(_studentId, 1, 10);
+        var forOther = await sut.GetAvailableVouchersForStudent(otherStudentId, 1, 10);
+
+        Assert.Empty(forCaller.Items);
+        Assert.Empty(forOther.Items);
+    }
+
+    [Fact]
+    public async Task GetAvailableVoucherForStudent_UsedByStudent_ThrowsNotFound()
+    {
+        SeedStudent();
+        var voucher = SeedVoucher(maxUsagePerStudent: 1);
+        _db.Payments.Seed(new Payment
+        {
+            Id = Guid.NewGuid(),
+            Code = "INV-1",
+            StudentId = _studentId,
+            PaidById = _studentId,
+            VoucherId = voucher.Id,
+            Amount = 1000m,
+            Status = PaymentStatus.Pending,
+            Currency = "VND",
+        });
+        var sut = CreateSut(_studentId);
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.GetAvailableVoucherForStudent(_studentId, voucher.Id));
+    }
+
+    [Fact]
+    public async Task GetAvailableVoucherForStudent_ReturnsLeanDto()
+    {
+        SeedStudent();
+        var voucher = SeedVoucher(code: "BDL10", percentOff: 10m, scope: VoucherScope.Bundle);
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.GetAvailableVoucherForStudent(_studentId, voucher.Id);
+
+        Assert.Equal(voucher.Id, result.Id);
+        Assert.Equal("BDL10", result.Code);
+        Assert.Equal(10m, result.PercentOff);
+        Assert.Equal(VoucherScope.Bundle, result.Scope);
+    }
 }

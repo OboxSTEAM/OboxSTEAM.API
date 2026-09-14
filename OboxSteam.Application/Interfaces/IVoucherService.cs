@@ -38,6 +38,22 @@ public interface IVoucherService
     Task<bool> DeleteVoucher(Guid voucherId);
 
     /// <summary>
+    /// Student catalog: Active, in-window codes the learner can still apply.
+    /// Hides codes the student has exhausted (<c>MaxUsagePerStudent</c>) and codes at global
+    /// <c>UsageLimit</c>. Omits usage history and manager caps.
+    /// </summary>
+    Task<Pagination<VoucherAvailableDto>> GetAvailableVouchersForStudent(
+        Guid studentId,
+        int page,
+        int pageSize);
+
+    /// <summary>
+    /// Student detail for one catalog voucher. Same visibility rules as the list;
+    /// not found when the code is inactive, expired, or exhausted for this learner.
+    /// </summary>
+    Task<VoucherAvailableDto> GetAvailableVoucherForStudent(Guid studentId, Guid voucherId);
+
+    /// <summary>
     /// Payment-dialog preview for <paramref name="studentId"/>. Always returns a DTO;
     /// invalid codes set <see cref="VoucherPreviewDto.IsValid"/> to false instead of throwing.
     /// Does not persist usage. <paramref name="studentId"/> is the learner, not necessarily the JWT user

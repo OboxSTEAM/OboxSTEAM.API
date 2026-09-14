@@ -200,6 +200,49 @@ public sealed class VoucherService : IVoucherService
         return true;
     }
 
+    public async Task<Pagination<VoucherAvailableDto>> GetAvailableVouchersForStudent(
+        Guid studentId,
+        int page,
+        int pageSize)
+    {
+        await EnsureStudentExists(studentId);
+        await ActivateDueVouchers();
+
+        var now = _currentTime.GetCurrentTime();
+        var candidates = QueryActiveInWindow(now)
+            .OrderByDescending(v => v.CreatedAt)
+            .ToList();
+
+        var available = FilterVisibleToStudent(candidates, studentId);
+        var totalCount = available.Count;
+        var items = available
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(MapToAvailable)
+            .ToList();
+
+        return new Pagination<VoucherAvailableDto>(items, totalCount, page, pageSize);
+    }
+
+    public async Task<VoucherAvailableDto> GetAvailableVoucherForStudent(Guid studentId, Guid voucherId)
+    {
+        await EnsureStudentExists(studentId);
+        await ActivateDueVouchers();
+
+        var now = _currentTime.GetCurrentTime();
+        var voucher = QueryActiveInWindow(now)
+            .FirstOrDefault(v => v.Id == voucherId);
+
+        if (voucher == null)
+            throw ErrorHelper.NotFound($"Voucher '{voucherId}' not found.");
+
+        var visible = FilterVisibleToStudent([voucher], studentId);
+        if (visible.Count == 0)
+            throw ErrorHelper.NotFound($"Voucher '{voucherId}' not found.");
+
+        return MapToAvailable(voucher);
+    }
+
     public async Task<VoucherPreviewDto> PreviewVoucher(Guid studentId, PreviewVoucherRequestDto request)
     {
         await VoucherValidator.EnsureCallerCanActForStudent(_unitOfWork, _claimsService, studentId);
@@ -319,6 +362,50 @@ public sealed class VoucherService : IVoucherService
         await _unitOfWork.SaveChangesAsync();
     }
 
+    private IQueryable<Voucher> QueryActiveInWindow(DateTime now)
+        => _unitOfWork.Vouchers.GetQueryable()
+            .Where(v => !v.IsDeleted
+                        && v.Status == VoucherStatus.Active
+                        && (v.StartsAt == null || v.StartsAt <= now)
+                        && (v.ExpiryAt == null || v.ExpiryAt > now));
+
+    private List<Voucher> FilterVisibleToStudent(List<Voucher> vouchers, Guid studentId)
+    {
+        if (vouchers.Count == 0)
+            return [];
+
+        var voucherIds = vouchers.Select(v => v.Id).ToList();
+        var globalCounts = GetBlockingUsageCounts(voucherIds);
+        var studentCounts = GetBlockingUsageCounts(voucherIds, studentId);
+
+        return vouchers
+            .Where(v => IsVisibleToStudent(v, globalCounts, studentCounts))
+            .ToList();
+    }
+
+    private static bool IsVisibleToStudent(
+        Voucher voucher,
+        Dictionary<Guid, int> globalCounts,
+        Dictionary<Guid, int> studentCounts)
+    {
+        if (voucher.UsageLimit.HasValue
+            && globalCounts.GetValueOrDefault(voucher.Id) >= voucher.UsageLimit.Value)
+            return false;
+
+        if (voucher.MaxUsagePerStudent.HasValue
+            && studentCounts.GetValueOrDefault(voucher.Id) >= voucher.MaxUsagePerStudent.Value)
+            return false;
+
+        return true;
+    }
+
+    private async Task EnsureStudentExists(Guid studentId)
+    {
+        var student = await _unitOfWork.Users.GetByIdAsync(studentId);
+        if (student == null || student.IsDeleted || student.Role != RoleType.Student)
+            throw ErrorHelper.NotFound($"Student '{studentId}' not found.");
+    }
+
     private async Task PersistActivationIfDue(Voucher voucher, DateTime now)
     {
         if (!VoucherValidator.TryActivateIfDue(voucher, now))
@@ -393,6 +480,25 @@ public sealed class VoucherService : IVoucherService
         return query.Count();
     }
 
+    private Dictionary<Guid, int> GetBlockingUsageCounts(List<Guid> voucherIds, Guid? studentId = null)
+    {
+        if (voucherIds.Count == 0)
+            return [];
+
+        var query = _unitOfWork.Payments.GetQueryable()
+            .Where(p => !p.IsDeleted
+                        && p.VoucherId.HasValue
+                        && voucherIds.Contains(p.VoucherId.Value)
+                        && (p.Status == PaymentStatus.Success || p.Status == PaymentStatus.Pending));
+
+        if (studentId.HasValue)
+            query = query.Where(p => p.StudentId == studentId.Value);
+
+        return query
+            .GroupBy(p => p.VoucherId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
+    }
+
     private Dictionary<Guid, int> GetUsageCounts(List<Guid> voucherIds)
     {
         if (voucherIds.Count == 0)
@@ -433,6 +539,18 @@ public sealed class VoucherService : IVoucherService
             })
             .ToList();
     }
+
+    private static VoucherAvailableDto MapToAvailable(Voucher voucher)
+        => new()
+        {
+            Id = voucher.Id,
+            Code = voucher.Code,
+            PercentOff = voucher.PercentOff,
+            AmountOff = voucher.AmountOff,
+            StartsAt = voucher.StartsAt,
+            ExpiryAt = voucher.ExpiryAt,
+            Scope = voucher.Scope,
+        };
 
     private static VoucherResponseDto MapToResponse(
         Voucher voucher,

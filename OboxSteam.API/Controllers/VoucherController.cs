@@ -47,6 +47,45 @@ public sealed class VoucherController : ControllerBase
             result, "200", "Vouchers retrieved successfully."));
     }
 
+    [HttpGet("available")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "List available vouchers for the current student",
+        Description = "Paginated Active catalog for the learner. Hides codes the student has already used "
+                      + "(MaxUsagePerStudent) and codes that have reached UsageLimit. Omits usage history and manager caps.")]
+    [ProducesResponseType(typeof(ApiResult<Pagination<VoucherAvailableDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    public async Task<IActionResult> GetAvailableVouchers(
+        [FromQuery, SwaggerParameter(Description = "Page number, starting from 1")] int page = 1,
+        [FromQuery, SwaggerParameter(Description = "Number of items per page")] int pageSize = 10)
+    {
+        if (page < 1 || pageSize < 1)
+            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+
+        var result = await _voucherService.GetAvailableVouchersForStudent(
+            _claimsService.GetCurrentUserId, page, pageSize);
+        return Ok(ApiResult<Pagination<VoucherAvailableDto>>.Success(
+            result, "200", "Available vouchers retrieved successfully."));
+    }
+
+    [HttpGet("available/{voucherId:guid}")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Get an available voucher for the current student",
+        Description = "Student detail for one Active catalog voucher. Same visibility rules as the list.")]
+    [ProducesResponseType(typeof(ApiResult<VoucherAvailableDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetAvailableVoucher([FromRoute] Guid voucherId)
+    {
+        var result = await _voucherService.GetAvailableVoucherForStudent(
+            _claimsService.GetCurrentUserId, voucherId);
+        return Ok(ApiResult<VoucherAvailableDto>.Success(result, "200", "Voucher retrieved successfully."));
+    }
+
     [HttpGet("{voucherId:guid}")]
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
