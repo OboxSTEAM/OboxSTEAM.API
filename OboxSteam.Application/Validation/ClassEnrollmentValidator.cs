@@ -185,13 +185,31 @@ public static class ClassEnrollmentValidator
         }
     }
 
-    public static void ValidateNotAlreadyEnrolledInClass(ClassEnrollment? existingEnrollment, Guid currentEnrollmentId)
+    /// <summary>
+    /// Blocks only when another enrollment still occupies a seat (Active or non-expired Pending).
+    /// Withdrawn / Transferred / expired holds do not count — callers may reuse or soft-remove them.
+    /// </summary>
+    public static void ValidateNotAlreadyEnrolledInClass(
+        ClassEnrollment? existingEnrollment,
+        Guid currentEnrollmentId,
+        DateTime? utcNow = null)
     {
-        if (existingEnrollment != null && existingEnrollment.Id != currentEnrollmentId)
+        if (existingEnrollment == null || existingEnrollment.Id == currentEnrollmentId)
+        {
+            return;
+        }
+
+        if (OccupiesSeat(existingEnrollment, utcNow ?? DateTime.UtcNow))
         {
             throw ErrorHelper.Conflict("You are already enrolled in the target class.");
         }
     }
+
+    /// <summary>
+    /// True when the student already occupies a seat in the class (Active or live Pending hold).
+    /// </summary>
+    public static bool IsAlreadyOccupyingClass(ClassEnrollment? enrollment, DateTime? utcNow = null)
+        => enrollment != null && OccupiesSeat(enrollment, utcNow ?? DateTime.UtcNow);
 
     public static async Task<int> GetActiveSeatsTakenAsync(IUnitOfWork unitOfWork, Guid classId)
     {

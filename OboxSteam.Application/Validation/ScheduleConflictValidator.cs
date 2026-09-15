@@ -67,17 +67,24 @@ public static class ScheduleConflictValidator
         return null;
     }
 
+    /// <summary>
+    /// Sessions from classes the student currently occupies: Active seats and
+    /// non-expired Pending checkout holds. Expired / withdrawn history is ignored.
+    /// </summary>
     public static async Task<List<ClassSession>> GetStudentBusySessionsAsync(
         IUnitOfWork unitOfWork,
         Guid studentId,
         Guid? excludeClassId = null)
     {
+        var now = DateTime.UtcNow;
         var enrollments = await unitOfWork.ClassEnrollments.GetAllAsync(
             ce => ce.StudentId == studentId
-                  && ce.Status == ClassEnrollmentStatus.Active
-                  && !ce.IsDeleted);
+                  && !ce.IsDeleted
+                  && (ce.Status == ClassEnrollmentStatus.Active
+                      || ce.Status == ClassEnrollmentStatus.Pending));
 
         var classIds = enrollments
+            .Where(ce => ClassEnrollmentValidator.OccupiesSeat(ce, now))
             .Select(ce => ce.ClassId)
             .Where(id => !excludeClassId.HasValue || id != excludeClassId.Value)
             .Distinct()

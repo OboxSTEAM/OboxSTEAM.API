@@ -287,23 +287,80 @@ public sealed class ClassEnrollmentServiceTests
     }
 
     [Fact]
-    public async Task Enroll_ThrowsConflict_WhenAlreadyInSameClass()
+    public async Task Enroll_ReusesHistoricalEnrollment_WhenTransferredOrWithdrawn()
     {
         SeedStudent();
         SeedProgramEnrollment();
         var cls = SeedClass();
-        // Non-active historical enrollment in same class still blocks
-        SeedClassEnrollment(classEntity: cls, status: ClassEnrollmentStatus.Transferred);
-        // Clear active-for-program check by using Transferred - then existingInClass check fires
+        var historical = SeedClassEnrollment(classEntity: cls, status: ClassEnrollmentStatus.Transferred);
         var sut = CreateSut();
 
-        // First need no Active for program - Transferred is fine for ValidateNoActiveClassEnrollment
+        var result = await sut.EnrollClassAsync(new CreateClassEnrollmentRequestDto
+        {
+            ProgramEnrollmentId = _programEnrollmentId,
+            ClassId = _classId
+        });
+
+        Assert.Equal(historical.Id, result.Id);
+        Assert.Equal(ClassEnrollmentStatus.Active, result.Status);
+        Assert.Single(_db.ClassEnrollments.Items, ce => !ce.IsDeleted);
+    }
+
+    [Fact]
+    public async Task Enroll_ThrowsConflict_WhenNonExpiredPendingHoldOnSameClass()
+    {
+        SeedStudent();
+        SeedProgramEnrollment();
+        SeedClass();
+        var hold = SeedClassEnrollment(status: ClassEnrollmentStatus.Pending);
+        hold.HoldExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        var sut = CreateSut();
+
         await Assert.ThrowsAsync<ConflictException>(() =>
             sut.EnrollClassAsync(new CreateClassEnrollmentRequestDto
             {
                 ProgramEnrollmentId = _programEnrollmentId,
                 ClassId = _classId
             }));
+    }
+
+    [Fact]
+    public async Task Enroll_ThrowsConflict_WhenPendingHoldOnOtherClassOverlaps()
+    {
+        var start = DateTime.UtcNow.AddDays(10);
+        var end = start.AddHours(2);
+        var otherProgramId = Guid.Parse("26262626-2626-2626-2626-262626262626");
+        var otherPeId = Guid.Parse("36363636-3636-3636-3636-363636363636");
+        var otherClassId = Guid.Parse("46464646-4646-4646-4646-464646464646");
+        var holdPeId = Guid.Parse("37373737-3737-3737-3737-373737373737");
+        var holdClassId = Guid.Parse("47474747-4747-4747-4747-474747474747");
+
+        SeedStudent();
+        SeedProgramEnrollment(id: holdPeId, programId: otherProgramId, status: EnrollmentStatus.PendingPayment);
+        var heldClass = SeedClass(id: holdClassId, code: "CLS-HOLD", programId: otherProgramId);
+        var hold = SeedClassEnrollment(
+            id: Guid.NewGuid(),
+            classId: holdClassId,
+            classEntity: heldClass,
+            status: ClassEnrollmentStatus.Pending,
+            programEnrollmentId: holdPeId);
+        hold.HoldExpiresAt = DateTime.UtcNow.AddMinutes(10);
+        SeedSession(holdClassId, start, end, "Held Saturday");
+
+        SeedProgramEnrollment(id: otherPeId, programId: _programId);
+        SeedClass(id: otherClassId, code: "CLS-B", programId: _programId);
+        SeedSession(otherClassId, start.AddMinutes(30), end.AddMinutes(30), "Coding Saturday");
+
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.EnrollClassAsync(new CreateClassEnrollmentRequestDto
+            {
+                ProgramEnrollmentId = otherPeId,
+                ClassId = otherClassId,
+            }));
+
+        Assert.Contains("overlaps", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

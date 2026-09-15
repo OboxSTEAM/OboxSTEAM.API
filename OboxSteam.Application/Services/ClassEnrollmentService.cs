@@ -70,11 +70,12 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
             _unitOfWork,
             student.Id);
 
+        var now = DateTime.UtcNow;
         var existingInClass = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
             ce => ce.ClassId == request.ClassId
                   && ce.StudentId == student.Id
                   && !ce.IsDeleted);
-        if (existingInClass != null)
+        if (ClassEnrollmentValidator.IsAlreadyOccupyingClass(existingInClass, now))
         {
             throw ErrorHelper.Conflict("You are already enrolled in this class.");
         }
@@ -82,24 +83,39 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
         await ClassEnrollmentValidator.ValidateClassHasCapacityAsync(
             _unitOfWork,
             request.ClassId,
-            classToJoin.MaxCapacity);
+            classToJoin.MaxCapacity,
+            excludeEnrollmentId: existingInClass?.Id);
         await ClassEnrollmentValidator.ValidateLateJoinAllowedAsync(_unitOfWork, classToJoin);
         await ScheduleConflictValidator.ValidateStudentCanJoinClassAsync(
             _unitOfWork,
             student.Id,
             request.ClassId);
 
-        var now = DateTime.UtcNow;
-        var enrollment = new ClassEnrollment
+        ClassEnrollment enrollment;
+        if (existingInClass != null)
         {
-            ClassId = request.ClassId,
-            StudentId = student.Id,
-            ProgramEnrollmentId = request.ProgramEnrollmentId,
-            Status = ClassEnrollmentStatus.Active,
-            EnrolledAt = now,
-        };
+            // Reuse Withdrawn / Transferred / expired Pending (same as select-class hold path).
+            existingInClass.ProgramEnrollmentId = request.ProgramEnrollmentId;
+            existingInClass.Kind = ClassEnrollmentKind.Primary;
+            existingInClass.Status = ClassEnrollmentStatus.Active;
+            existingInClass.HoldExpiresAt = null;
+            existingInClass.EnrolledAt = now;
+            await _unitOfWork.ClassEnrollments.Update(existingInClass);
+            enrollment = existingInClass;
+        }
+        else
+        {
+            enrollment = new ClassEnrollment
+            {
+                ClassId = request.ClassId,
+                StudentId = student.Id,
+                ProgramEnrollmentId = request.ProgramEnrollmentId,
+                Status = ClassEnrollmentStatus.Active,
+                EnrolledAt = now,
+            };
+            await _unitOfWork.ClassEnrollments.AddAsync(enrollment);
+        }
 
-        await _unitOfWork.ClassEnrollments.AddAsync(enrollment);
         await _unitOfWork.SaveChangesAsync();
 
         var nextActivityId = await NotificationDeeplinkResolver.ResolveCurrentActivityIdAsync(
@@ -180,6 +196,11 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
                   && ce.StudentId == student.Id
                   && !ce.IsDeleted);
         ClassEnrollmentValidator.ValidateNotAlreadyEnrolledInClass(existingInTargetClass, enrollment.Id);
+        if (existingInTargetClass != null && existingInTargetClass.Id != enrollment.Id)
+        {
+            // Unique (ClassId, StudentId): clear historical Withdrawn/Transferred before move.
+            await _unitOfWork.ClassEnrollments.SoftRemove(existingInTargetClass);
+        }
 
         await ClassEnrollmentValidator.ValidateClassHasCapacityAsync(
             _unitOfWork,
@@ -278,9 +299,12 @@ public sealed class ClassEnrollmentService : IClassEnrollmentService
         var existingInTargetClass = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
             ce => ce.ClassId == request.ClassId
                   && ce.StudentId == student.Id
-                  && ce.Status == ClassEnrollmentStatus.Active
                   && !ce.IsDeleted);
         ClassEnrollmentValidator.ValidateNotAlreadyEnrolledInClass(existingInTargetClass, enrollment.Id);
+        if (existingInTargetClass != null && existingInTargetClass.Id != enrollment.Id)
+        {
+            await _unitOfWork.ClassEnrollments.SoftRemove(existingInTargetClass);
+        }
 
         await ClassEnrollmentValidator.ValidateUnderActiveClassLimitAsync(
             _unitOfWork,
