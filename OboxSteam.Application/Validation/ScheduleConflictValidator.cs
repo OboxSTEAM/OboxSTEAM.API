@@ -8,16 +8,36 @@ namespace OboxSteam.Application.Validation;
 /// <summary>
 /// Shared calendar overlap rules for student enroll/transfer (and later redelivery / co-teach).
 /// Two intervals overlap when <c>start1 &lt; end2 &amp;&amp; start2 &lt; end1</c>.
-/// Cancelled sessions never block. Sessions without a real window cannot be stored on
+/// Cancelled sessions never block. Only timed meeting slots (LiveOnline / Offline with a
+/// positive span of at most 24 hours) conflict; <see cref="SessionKind.AssignmentWindow"/>
+/// work periods do not. Sessions without a real window cannot be stored on
 /// <see cref="ClassSession"/> (SelfPaced activities have no session rows).
 /// </summary>
 public static class ScheduleConflictValidator
 {
+    private static readonly TimeSpan MaxTimedMeetingSpan = TimeSpan.FromHours(24);
+
     public static bool Overlaps(DateTime start1, DateTime end1, DateTime start2, DateTime end2)
         => start1 < end2 && start2 < end1;
 
     /// <summary>
-    /// Returns the first busy session that overlaps any candidate, or null when there is no conflict.
+    /// Whether a session counts as a timed meeting for enroll/transfer conflict checks.
+    /// Matches FE <c>isTimedMeetingSlot</c>: ignore AssignmentWindow and non-positive / multi-day spans.
+    /// </summary>
+    public static bool IsTimedMeetingSlot(ClassSession session)
+    {
+        if (session.SessionKind == SessionKind.AssignmentWindow)
+        {
+            return false;
+        }
+
+        var span = session.EndTime - session.StartTime;
+        return span > TimeSpan.Zero && span <= MaxTimedMeetingSpan;
+    }
+
+    /// <summary>
+    /// Returns the first busy timed-meeting session that overlaps any candidate timed meeting,
+    /// or null when there is no conflict.
     /// </summary>
     public static ClassSession? FindFirstOverlap(
         IReadOnlyList<ClassSession> busySessions,
@@ -25,14 +45,14 @@ public static class ScheduleConflictValidator
     {
         foreach (var candidate in candidateSessions)
         {
-            if (candidate.Status == ClassSessionStatus.Cancelled)
+            if (candidate.Status == ClassSessionStatus.Cancelled || !IsTimedMeetingSlot(candidate))
             {
                 continue;
             }
 
             foreach (var busy in busySessions)
             {
-                if (busy.Status == ClassSessionStatus.Cancelled)
+                if (busy.Status == ClassSessionStatus.Cancelled || !IsTimedMeetingSlot(busy))
                 {
                     continue;
                 }

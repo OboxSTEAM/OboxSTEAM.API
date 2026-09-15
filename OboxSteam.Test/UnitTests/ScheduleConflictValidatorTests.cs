@@ -80,4 +80,125 @@ public sealed class ScheduleConflictValidatorTests
 
         Assert.Same(busy, found);
     }
+
+    [Fact]
+    public void FindFirstOverlap_IgnoresAssignmentWindowBusySessions()
+    {
+        var start = new DateTime(2026, 9, 17, 8, 0, 0, DateTimeKind.Utc);
+        var busy = new List<ClassSession>
+        {
+            new()
+            {
+                Title = "Capstone Presentation Deliverable",
+                SessionKind = SessionKind.AssignmentWindow,
+                StartTime = start,
+                EndTime = new DateTime(2026, 10, 27, 23, 59, 59, DateTimeKind.Utc),
+                Status = ClassSessionStatus.Scheduled,
+            },
+        };
+        var candidates = new List<ClassSession>
+        {
+            new()
+            {
+                Title = "Game Dev Lecture",
+                SessionKind = SessionKind.LiveOnline,
+                StartTime = start.AddDays(1),
+                EndTime = start.AddDays(1).AddHours(2),
+                Status = ClassSessionStatus.Scheduled,
+            },
+        };
+
+        Assert.Null(ScheduleConflictValidator.FindFirstOverlap(busy, candidates));
+    }
+
+    [Fact]
+    public void FindFirstOverlap_IgnoresAssignmentWindowCandidates()
+    {
+        var start = new DateTime(2026, 8, 22, 9, 0, 0, DateTimeKind.Utc);
+        var busy = new List<ClassSession>
+        {
+            new()
+            {
+                Title = "Busy lecture",
+                SessionKind = SessionKind.LiveOnline,
+                StartTime = start,
+                EndTime = start.AddHours(2),
+                Status = ClassSessionStatus.Scheduled,
+            },
+        };
+        var candidates = new List<ClassSession>
+        {
+            new()
+            {
+                Title = "Quiz window",
+                SessionKind = SessionKind.AssignmentWindow,
+                StartTime = start.AddDays(-1),
+                EndTime = start.AddDays(5),
+                Status = ClassSessionStatus.Scheduled,
+            },
+        };
+
+        Assert.Null(ScheduleConflictValidator.FindFirstOverlap(busy, candidates));
+    }
+
+    [Fact]
+    public void FindFirstOverlap_IgnoresMultiDayNonAssignmentSpans()
+    {
+        var start = new DateTime(2026, 8, 22, 9, 0, 0, DateTimeKind.Utc);
+        var busy = new List<ClassSession>
+        {
+            new()
+            {
+                Title = "Long span",
+                SessionKind = SessionKind.Offline,
+                StartTime = start,
+                EndTime = start.AddHours(25),
+                Status = ClassSessionStatus.Scheduled,
+            },
+        };
+        var candidates = new List<ClassSession>
+        {
+            new()
+            {
+                Title = "Candidate",
+                SessionKind = SessionKind.LiveOnline,
+                StartTime = start.AddHours(1),
+                EndTime = start.AddHours(3),
+                Status = ClassSessionStatus.Scheduled,
+            },
+        };
+
+        Assert.Null(ScheduleConflictValidator.FindFirstOverlap(busy, candidates));
+    }
+
+    [Fact]
+    public void IsTimedMeetingSlot_IsFalse_ForAssignmentWindowAndInvalidSpans()
+    {
+        var start = new DateTime(2026, 8, 22, 9, 0, 0, DateTimeKind.Utc);
+
+        Assert.False(ScheduleConflictValidator.IsTimedMeetingSlot(new ClassSession
+        {
+            SessionKind = SessionKind.AssignmentWindow,
+            StartTime = start,
+            EndTime = start.AddHours(2),
+        }));
+        Assert.False(ScheduleConflictValidator.IsTimedMeetingSlot(new ClassSession
+        {
+            SessionKind = SessionKind.LiveOnline,
+            StartTime = start,
+            EndTime = start,
+        }));
+        Assert.False(ScheduleConflictValidator.IsTimedMeetingSlot(new ClassSession
+        {
+            SessionKind = SessionKind.LiveOnline,
+            StartTime = start,
+            EndTime = start.AddHours(25),
+        }));
+        Assert.True(ScheduleConflictValidator.IsTimedMeetingSlot(new ClassSession
+        {
+            SessionKind = SessionKind.Offline,
+            StartTime = start,
+            EndTime = start.AddHours(2),
+        }));
+    }
 }
