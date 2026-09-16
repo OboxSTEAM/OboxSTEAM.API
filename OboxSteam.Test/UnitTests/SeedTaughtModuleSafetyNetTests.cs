@@ -106,4 +106,50 @@ public sealed class SeedTaughtModuleSafetyNetTests
         Assert.Equal(milestoneId, submission.ResearchMilestoneId);
         Assert.Equal(existingMilestoneId, linked.ResearchMilestoneId);
     }
+
+    [Fact]
+    public void CreateSeededAssessmentHold_IgnoresEmptyResearchMilestoneId()
+    {
+        var assignment = new Assignment
+        {
+            Id = Guid.NewGuid(),
+            PassScore = 60m,
+            MaxPoints = 100,
+        };
+
+        var created = SeedService.CreateSeededAssessmentHold(
+            assignment,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            moduleFullyTaught: false,
+            DateTime.UtcNow,
+            Guid.Empty);
+
+        Assert.Null(created.ResearchMilestoneId);
+    }
+
+    [Fact]
+    public void ApplySeededAssessmentHold_IgnoresEmptyResearchMilestoneId()
+    {
+        var assignment = new Assignment
+        {
+            Id = Guid.NewGuid(),
+            PassScore = 60m,
+            MaxPoints = 100,
+        };
+        var submission = new Submission
+        {
+            ResearchMilestoneId = null,
+            Status = SubmissionStatus.Pending,
+        };
+
+        SeedService.ApplySeededAssessmentHold(
+            submission,
+            assignment,
+            moduleFullyTaught: true,
+            DateTime.UtcNow,
+            Guid.Empty);
+
+        Assert.Null(submission.ResearchMilestoneId);
+    }
 }

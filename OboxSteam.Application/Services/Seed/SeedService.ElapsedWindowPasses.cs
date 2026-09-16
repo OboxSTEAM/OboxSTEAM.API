@@ -164,7 +164,12 @@ public partial class SeedService
                     continue;
                 }
 
-                researchMilestoneIdByAssignmentId.TryGetValue(assignment.Id, out var researchMilestoneId);
+                Guid? researchMilestoneId = researchMilestoneIdByAssignmentId.TryGetValue(
+                        assignment.Id,
+                        out var milestoneId)
+                    && milestoneId != Guid.Empty
+                    ? milestoneId
+                    : null;
                 if (existing != null)
                 {
                     ApplySeededAssessmentHold(
@@ -292,7 +297,12 @@ public partial class SeedService
                 continue;
             }
 
-            researchMilestoneIdByAssignmentId.TryGetValue(assignment.Id, out var researchMilestoneId);
+            Guid? researchMilestoneId = researchMilestoneIdByAssignmentId.TryGetValue(
+                    assignment.Id,
+                    out var milestoneId)
+                && milestoneId != Guid.Empty
+                ? milestoneId
+                : null;
             var classSeats = seats.Where(s => s.ClassId == window.ClassId);
             foreach (var seat in classSeats)
             {
@@ -488,9 +498,11 @@ public partial class SeedService
         submission.StartedAt ??= at.AddDays(-2);
         submission.UpdatedAt = at;
         submission.ExpiresAt = null;
-        if (!submission.ResearchMilestoneId.HasValue && researchMilestoneId.HasValue)
+        if (!submission.ResearchMilestoneId.HasValue
+            && researchMilestoneId is { } milestoneId
+            && milestoneId != Guid.Empty)
         {
-            submission.ResearchMilestoneId = researchMilestoneId;
+            submission.ResearchMilestoneId = milestoneId;
         }
     }
 
@@ -508,7 +520,7 @@ public partial class SeedService
             AssignmentId = assignment.Id,
             StudentId = studentId,
             ModuleEnrollmentId = moduleEnrollmentId,
-            ResearchMilestoneId = researchMilestoneId,
+            ResearchMilestoneId = researchMilestoneId is { } mid && mid != Guid.Empty ? mid : null,
             AttemptNumber = 1,
             Status = moduleFullyTaught ? SubmissionStatus.Graded : SubmissionStatus.TurnedIn,
             AssignedGrade = moduleFullyTaught ? Math.Max(assignment.PassScore, 80m) : null,
