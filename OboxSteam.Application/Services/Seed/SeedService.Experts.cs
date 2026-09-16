@@ -1,10 +1,8 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
-using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
-using OboxSteam.Domain.Interfaces;
 
 namespace OboxSteam.Application.Services;
 
@@ -49,6 +47,15 @@ public partial class SeedService
             "UN Youth Climate Ambassador 2023")
     ];
 
+    /// <summary>
+    /// Hero demo experts: profile code on <see cref="Expert"/> and login code on <see cref="User"/>.
+    /// </summary>
+    internal static IReadOnlyList<(string ExpertCode, string UserCode)> HeroExpertAccounts { get; } =
+    [
+        ("EXP-001", "EXP-U001"),
+        ("EXP-002", "EXP-U002"),
+    ];
+
     private static List<User> CreateSeedExpertUsers(DateTime seedNow)
     {
         var users = new List<User>();
@@ -85,11 +92,15 @@ public partial class SeedService
             var exists = await _unitOfWork.Users.FirstOrDefaultAsync(
                 u => u.Code == user.Code || u.Email == user.Email);
             if (exists == null)
+            {
                 usersToAdd.Add(user);
+            }
         }
 
         if (usersToAdd.Count == 0)
+        {
             return;
+        }
 
         await _unitOfWork.Users.AddRangeAsync(usersToAdd);
         await _unitOfWork.SaveChangesAsync();
@@ -99,43 +110,49 @@ public partial class SeedService
     private async Task SeedExpertsAsync()
     {
         _loggerService.LogInformation("Starting seed experts");
-        var existingExperts = await _unitOfWork.Experts.GetAllAsync();
+        var existingExperts = await _unitOfWork.Experts.GetAllAsync(e => !e.IsDeleted);
+        var existingByCode = existingExperts
+            .ToDictionary(e => e.Code, e => e, StringComparer.OrdinalIgnoreCase);
 
-        if (!existingExperts.Any())
+        var toAdd = new List<Expert>();
+        foreach (var account in SeedExpertAccounts)
         {
-            var experts = new List<Expert>();
-            foreach (var account in SeedExpertAccounts)
+            if (existingByCode.ContainsKey(account.ExpertCode))
             {
-                var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == account.Email);
-                var profile = SeedExpertCredentialProfiles.FirstOrDefault(p => p.ExpertCode == account.ExpertCode);
-                experts.Add(new Expert
-                {
-                    Id = Guid.NewGuid(),
-                    Code = account.ExpertCode,
-                    UserId = user?.Id,
-                    FullName = account.FullName,
-                    Title = account.Title,
-                    Organization = account.Organization,
-                    Bio = account.Bio,
-                    AvatarUrl = account.AvatarUrl,
-                    LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
-                    Achievements = profile?.Achievements ?? account.Achievements,
-                    Specialization = profile?.Specialization ?? [],
-                    CreatedAt = _seedNow,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false
-                });
+                continue;
             }
 
-            await _unitOfWork.Experts.AddRangeAsync(experts);
-            await _unitOfWork.SaveChangesAsync();
-            _loggerService.LogInformation("Finished seed experts");
+            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == account.Email);
+            var profile = SeedExpertCredentialProfiles.FirstOrDefault(p => p.ExpertCode == account.ExpertCode);
+            toAdd.Add(new Expert
+            {
+                Id = Guid.NewGuid(),
+                Code = account.ExpertCode,
+                UserId = user?.Id,
+                FullName = account.FullName,
+                Title = account.Title,
+                Organization = account.Organization,
+                Bio = account.Bio,
+                AvatarUrl = account.AvatarUrl,
+                LinkedInUrl = "https://www.linkedin.com/company/anthropicresearch",
+                Achievements = profile?.Achievements ?? account.Achievements,
+                Specialization = profile?.Specialization ?? [],
+                CreatedAt = _seedNow,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            });
         }
-        else
+
+        if (toAdd.Count > 0)
         {
-            _loggerService.LogInformation("Experts already exist, aligning expert logins");
-            await AlignSeedExpertLoginsAsync(existingExperts);
+            await _unitOfWork.Experts.AddRangeAsync(toAdd);
+            await _unitOfWork.SaveChangesAsync();
+            existingExperts.AddRange(toAdd);
+            _loggerService.LogInformation("Created {Count} missing expert profile(s).", toAdd.Count);
         }
+
+        await AlignSeedExpertLoginsAsync(existingExperts);
+        _loggerService.LogInformation("Finished seed experts");
     }
 
     /// <summary>
@@ -148,14 +165,20 @@ public partial class SeedService
         {
             var expert = existingExperts.FirstOrDefault(e => e.Code == account.ExpertCode && !e.IsDeleted);
             if (expert == null)
+            {
                 continue;
+            }
 
             var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == account.Email);
             if (user == null || user.Role != RoleType.Expert)
+            {
                 continue;
+            }
 
             if (expert.UserId == user.Id)
+            {
                 continue;
+            }
 
             expert.UserId = user.Id;
             await _unitOfWork.Experts.Update(expert);
@@ -163,7 +186,9 @@ public partial class SeedService
         }
 
         if (!changed)
+        {
             return;
+        }
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation("Aligned seed expert profiles to Expert-role logins");

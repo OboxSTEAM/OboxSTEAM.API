@@ -50,7 +50,7 @@ public partial class SeedService
         var orphans = await _unitOfWork.Submissions.GetAllAsync(
             s => assignmentIds.Contains(s.AssignmentId)
                  && !s.IsDeleted
-                 && s.ResearchMilestoneId == null);
+                 && (s.ResearchMilestoneId == null || s.ResearchMilestoneId == Guid.Empty));
         if (orphans.Count > 0)
         {
             failures.Add(
@@ -146,6 +146,7 @@ public partial class SeedService
 
     private async Task CollectHeroFixtureFailuresAsync(List<string> failures)
     {
+        // Login Users use STD-/MNT-/MNG- codes.
         await RequireUserAsync("STD-001", failures);
         await RequireUserAsync("STD-002", failures);
         await RequireUserAsync("STD-009", failures);
@@ -153,8 +154,12 @@ public partial class SeedService
         await RequireUserAsync("MNT-001", failures);
         await RequireUserAsync("MNT-002", failures);
         await RequireUserAsync("MNG-001", failures);
-        await RequireUserAsync("EXP-001", failures);
-        await RequireUserAsync("EXP-002", failures);
+
+        // Expert profiles use EXP-001; linked login users use EXP-U001 (not EXP-001).
+        foreach (var (expertCode, userCode) in HeroExpertAccounts)
+        {
+            await RequireExpertWithLoginAsync(expertCode, userCode, failures);
+        }
 
         var designBrief = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.Code == DesignBriefSubmissionCode && !s.IsDeleted);
@@ -167,7 +172,8 @@ public partial class SeedService
             failures.Add(
                 $"{DesignBriefSubmissionCode} expected ReturnedForRevision, got {designBrief.Status}");
         }
-        else if (!designBrief.ResearchMilestoneId.HasValue)
+        else if (!designBrief.ResearchMilestoneId.HasValue
+                 || designBrief.ResearchMilestoneId == Guid.Empty)
         {
             failures.Add($"{DesignBriefSubmissionCode} missing ResearchMilestoneId");
         }
@@ -186,7 +192,8 @@ public partial class SeedService
         {
             failures.Add($"{GradedCapstoneSubmissionCode} expected Graded, got {capstone.Status}");
         }
-        else if (!capstone.ResearchMilestoneId.HasValue)
+        else if (!capstone.ResearchMilestoneId.HasValue
+                 || capstone.ResearchMilestoneId == Guid.Empty)
         {
             failures.Add($"{GradedCapstoneSubmissionCode} missing ResearchMilestoneId");
         }
@@ -290,6 +297,37 @@ public partial class SeedService
         }
     }
 
+    private async Task RequireExpertWithLoginAsync(
+        string expertCode,
+        string userCode,
+        List<string> failures)
+    {
+        var expert = await _unitOfWork.Experts.FirstOrDefaultAsync(
+            e => e.Code == expertCode && !e.IsDeleted);
+        if (expert == null)
+        {
+            failures.Add($"Missing hero expert profile {expertCode}");
+            return;
+        }
+
+        var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == userCode && !u.IsDeleted);
+        if (user == null)
+        {
+            failures.Add($"Missing hero expert login user {userCode} for {expertCode}");
+            return;
+        }
+
+        if (user.Role != RoleType.Expert)
+        {
+            failures.Add($"Hero expert login {userCode} has role {user.Role}, expected Expert");
+        }
+
+        if (expert.UserId != user.Id)
+        {
+            failures.Add($"Hero expert {expertCode} is not linked to login {userCode}");
+        }
+    }
+
     /// <summary>
     /// Pure helper for unit tests: CURRENT class must expose Completed plus an upcoming live.
     /// </summary>
@@ -308,4 +346,13 @@ public partial class SeedService
         return lives.Contains(ClassSessionStatus.Completed)
                && lives.Any(s => s is ClassSessionStatus.InProgress or ClassSessionStatus.Scheduled);
     }
+
+    /// <summary>
+    /// Maps seed expert profile codes to login user codes (EXP-001 → EXP-U001).
+    /// </summary>
+    internal static string? ResolveExpertLoginUserCode(string expertCode)
+        => SeedExpertAccounts
+            .Where(a => string.Equals(a.ExpertCode, expertCode, StringComparison.OrdinalIgnoreCase))
+            .Select(a => a.UserCode)
+            .FirstOrDefault();
 }
