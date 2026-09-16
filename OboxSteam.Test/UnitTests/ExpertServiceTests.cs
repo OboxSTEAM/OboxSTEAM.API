@@ -924,4 +924,201 @@ public sealed class ExpertServiceTests
         await Assert.ThrowsAsync<NotFoundException>(() =>
             sut.UploadAvatarAsync(Guid.NewGuid(), CreateAvatarFile()));
     }
+
+    // ── Self-service (/me) ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetMyExpert_ReturnsOwnFullProfile()
+    {
+        SeedUser();
+        SeedProgram();
+        var board = new ProgramBoard
+        {
+            Id = _boardId,
+            ExpertId = _expertId,
+            ProgramId = _programId,
+            RoleInBoard = "Advisor",
+            IsDeleted = false,
+        };
+        SeedExpert(userId: _userId, boards: [board]);
+        _db.ExpertDegrees.Seed(new ExpertDegree
+        {
+            Id = Guid.NewGuid(),
+            ExpertId = _expertId,
+            Title = "PhD",
+            Institution = "MIT",
+            Year = 2018,
+            IsDeleted = false,
+        });
+        _db.ExpertPublications.Seed(new ExpertPublication
+        {
+            Id = Guid.NewGuid(),
+            ExpertId = _expertId,
+            Title = "Paper",
+            Year = 2020,
+            IsDeleted = false,
+        });
+        var sut = CreateSut();
+
+        var result = await sut.GetMyExpertAsync();
+
+        Assert.Equal(_expertId, result.Id);
+        Assert.Equal(_userId, result.UserId);
+        Assert.Equal("usr-001@test.com", result.Email);
+        Assert.Single(result.Programs);
+        Assert.Single(result.Degrees);
+        Assert.Single(result.Publications);
+    }
+
+    [Fact]
+    public async Task GetMyExpert_Throws_WhenNoLinkedExpert()
+    {
+        SeedUser();
+        SeedExpert(userId: null);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<NotFoundException>(() => sut.GetMyExpertAsync());
+    }
+
+    [Fact]
+    public async Task GetMyExpert_Throws_WhenWrongRole()
+    {
+        SeedUser(role: RoleType.Manager);
+        SeedExpert(userId: _userId);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => sut.GetMyExpertAsync());
+    }
+
+    [Fact]
+    public async Task UpdateMyExpert_UpdatesProfileAndSyncsUserFullName()
+    {
+        SeedUser();
+        SeedExpert(userId: _userId, fullName: "Old Name");
+        var sut = CreateSut();
+
+        var result = await sut.UpdateMyExpertAsync(new UpdateMyExpertRequest
+        {
+            FullName = "Dr. New Name",
+            Title = "Professor",
+            Organization = "Lab",
+            Bio = "Bio text",
+            Achievements = "Awards",
+            LinkedInUrl = "https://linkedin.com/in/ada",
+            Specialization = ["Robotics", "AI"],
+        });
+
+        Assert.Equal("Dr. New Name", result.FullName);
+        Assert.Equal("Professor", result.Title);
+        Assert.Equal("Lab", result.Organization);
+        Assert.Equal("Bio text", result.Bio);
+        Assert.Equal(["Robotics", "AI"], result.Specialization);
+        Assert.Equal("Dr. New Name", _db.Users.Items[0].FullName);
+    }
+
+    [Fact]
+    public async Task UpdateMyExpert_CannotTouchOtherExpert()
+    {
+        SeedUser();
+        var otherUserId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+        SeedUser(id: otherUserId, code: "USR-OTHER", email: "other@test.com");
+        SeedExpert(id: _expertId, userId: otherUserId, fullName: "Other");
+        SeedExpert(id: _otherExpertId, code: "EXP-002", userId: _userId, fullName: "Mine");
+        var sut = CreateSut();
+
+        var result = await sut.UpdateMyExpertAsync(new UpdateMyExpertRequest
+        {
+            FullName = "Mine Updated",
+        });
+
+        Assert.Equal(_otherExpertId, result.Id);
+        Assert.Equal("Mine Updated", result.FullName);
+        Assert.Equal("Other", _db.Experts.Items.First(e => e.Id == _expertId).FullName);
+    }
+
+    [Fact]
+    public async Task UploadMyAvatar_SyncsUserAvatarUrl()
+    {
+        SeedUser();
+        SeedExpert(userId: _userId);
+        _blobService
+            .Setup(b => b.UploadFileAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _blobService
+            .Setup(b => b.GetPreviewUrlAsync(It.IsAny<string>()))
+            .ReturnsAsync("https://cdn.test/avatars/me.png");
+        var sut = CreateSut();
+
+        var result = await sut.UploadMyAvatarAsync(CreateAvatarFile());
+
+        Assert.Equal("https://cdn.test/avatars/me.png", result.AvatarUrl);
+        Assert.Equal("https://cdn.test/avatars/me.png", _db.Users.Items[0].AvatarUrl);
+    }
+
+    [Fact]
+    public async Task MyDegreeAndPublication_Crud_ScopedToCaller()
+    {
+        SeedUser();
+        SeedExpert(userId: _userId);
+        SeedExpert(id: _otherExpertId, code: "EXP-002", userId: Guid.NewGuid());
+        var sut = CreateSut();
+
+        var degree = await sut.AddMyDegreeAsync(new ExpertDegreeRequestDto
+        {
+            Title = "MSc",
+            Institution = "Uni",
+            Year = 2015,
+        });
+        Assert.Equal(_expertId, degree.ExpertId);
+
+        var publication = await sut.AddMyPublicationAsync(new ExpertPublicationRequestDto
+        {
+            Title = "Paper",
+            Year = 2019,
+        });
+        Assert.Equal(_expertId, publication.ExpertId);
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            sut.UpdateMyDegreeAsync(Guid.NewGuid(), new ExpertDegreeRequestDto
+            {
+                Title = "X",
+                Institution = "Y",
+                Year = 2015,
+            }));
+
+        var updated = await sut.UpdateMyDegreeAsync(degree.Id, new ExpertDegreeRequestDto
+        {
+            Title = "M.Sc.",
+            Institution = "Uni",
+            Year = 2016,
+        });
+        Assert.Equal("M.Sc.", updated.Title);
+
+        await sut.DeleteMyDegreeAsync(degree.Id);
+        await sut.DeleteMyPublicationAsync(publication.Id);
+
+        var profile = await sut.GetMyExpertAsync();
+        Assert.Empty(profile.Degrees);
+        Assert.Empty(profile.Publications);
+    }
+
+    [Fact]
+    public async Task UpdateMyExpert_Throws_WhenSpecializationTooLarge()
+    {
+        SeedUser();
+        SeedExpert(userId: _userId);
+        var sut = CreateSut();
+
+        var tags = Enumerable.Range(0, 21).Select(i => $"Tag{i}").ToArray();
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateMyExpertAsync(new UpdateMyExpertRequest
+            {
+                FullName = "Ada",
+                Specialization = tags,
+            }));
+    }
 }

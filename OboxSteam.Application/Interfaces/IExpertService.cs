@@ -27,4 +27,15 @@ public interface IExpertService
     Task<ExpertPublicationResponseDto> AddPublicationAsync(Guid expertId, ExpertPublicationRequestDto dto);
     Task<ExpertPublicationResponseDto> UpdatePublicationAsync(Guid expertId, Guid publicationId, ExpertPublicationRequestDto dto);
     Task<bool> DeletePublicationAsync(Guid expertId, Guid publicationId);
+
+    // Self-service (/me) — ownership scoped to Expert.UserId == current user
+    Task<ExpertResponseDto> GetMyExpertAsync();
+    Task<ExpertResponseDto> UpdateMyExpertAsync(UpdateMyExpertRequest request);
+    Task<ExpertResponseDto> UploadMyAvatarAsync(IFormFile file);
+    Task<ExpertDegreeResponseDto> AddMyDegreeAsync(ExpertDegreeRequestDto dto);
+    Task<ExpertDegreeResponseDto> UpdateMyDegreeAsync(Guid degreeId, ExpertDegreeRequestDto dto);
+    Task<bool> DeleteMyDegreeAsync(Guid degreeId);
+    Task<ExpertPublicationResponseDto> AddMyPublicationAsync(ExpertPublicationRequestDto dto);
+    Task<ExpertPublicationResponseDto> UpdateMyPublicationAsync(Guid publicationId, ExpertPublicationRequestDto dto);
+    Task<bool> DeleteMyPublicationAsync(Guid publicationId);
 }

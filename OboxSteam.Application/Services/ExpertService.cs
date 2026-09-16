@@ -426,6 +426,8 @@ public class ExpertService : IExpertService
         var avatarUrl = await _blobService.GetPreviewUrlAsync($"avatars/{fileName}");
         expert.AvatarUrl = avatarUrl;
 
+        await SyncLinkedUserAvatarAsync(expert, avatarUrl);
+
         await _unitOfWork.Experts.Update(expert);
         await _unitOfWork.SaveChangesAsync();
 
@@ -699,6 +701,109 @@ public class ExpertService : IExpertService
         return true;
     }
 
+    public async Task<ExpertResponseDto> GetMyExpertAsync()
+    {
+        var expert = await ResolveCurrentExpertAsync();
+        return await GetExpertByIdAsync(expert.Id);
+    }
+
+    public async Task<ExpertResponseDto> UpdateMyExpertAsync(UpdateMyExpertRequest request)
+    {
+        ExpertProfileValidator.ValidateSelfUpdateRequest(request);
+
+        var expert = await ResolveCurrentExpertAsync();
+        _logger.LogInformation("[UpdateMyExpertAsync] Updating own expert profile {ExpertId}.", expert.Id);
+
+        var previousFullName = expert.FullName;
+        var previousAvatarUrl = expert.AvatarUrl;
+
+        expert.FullName = request.FullName.Trim();
+        expert.Title = NormalizeOptionalText(request.Title);
+        expert.Organization = NormalizeOptionalText(request.Organization);
+        expert.Bio = NormalizeOptionalText(request.Bio);
+        expert.Achievements = NormalizeOptionalText(request.Achievements);
+        expert.LinkedInUrl = string.IsNullOrWhiteSpace(request.LinkedInUrl)
+            ? null
+            : request.LinkedInUrl.Trim();
+
+        if (request.Specialization != null)
+        {
+            expert.Specialization = ExpertProfileValidator.NormalizeSpecialization(request.Specialization);
+        }
+
+        if (request.AvatarUrl != null)
+        {
+            expert.AvatarUrl = string.IsNullOrWhiteSpace(request.AvatarUrl)
+                ? null
+                : request.AvatarUrl.Trim();
+        }
+
+        if (expert.FullName != previousFullName && expert.UserId is Guid linkedUserId)
+        {
+            var linkedUser = await _unitOfWork.Users.GetByIdAsync(linkedUserId);
+            if (linkedUser != null && !linkedUser.IsDeleted)
+            {
+                linkedUser.FullName = expert.FullName;
+                await _unitOfWork.Users.Update(linkedUser);
+            }
+        }
+
+        if (expert.AvatarUrl != previousAvatarUrl)
+        {
+            await SyncLinkedUserAvatarAsync(expert, expert.AvatarUrl);
+        }
+
+        await _unitOfWork.Experts.Update(expert);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[UpdateMyExpertAsync] Expert {ExpertId} self-updated successfully.", expert.Id);
+        return await GetExpertByIdAsync(expert.Id);
+    }
+
+    public async Task<ExpertResponseDto> UploadMyAvatarAsync(IFormFile file)
+    {
+        var expert = await ResolveCurrentExpertAsync();
+        return await UploadAvatarAsync(expert.Id, file);
+    }
+
+    public async Task<ExpertDegreeResponseDto> AddMyDegreeAsync(ExpertDegreeRequestDto dto)
+    {
+        var expert = await ResolveCurrentExpertAsync();
+        return await AddDegreeAsync(expert.Id, dto);
+    }
+
+    public async Task<ExpertDegreeResponseDto> UpdateMyDegreeAsync(Guid degreeId, ExpertDegreeRequestDto dto)
+    {
+        var expert = await ResolveCurrentExpertAsync();
+        return await UpdateDegreeAsync(expert.Id, degreeId, dto);
+    }
+
+    public async Task<bool> DeleteMyDegreeAsync(Guid degreeId)
+    {
+        var expert = await ResolveCurrentExpertAsync();
+        return await DeleteDegreeAsync(expert.Id, degreeId);
+    }
+
+    public async Task<ExpertPublicationResponseDto> AddMyPublicationAsync(ExpertPublicationRequestDto dto)
+    {
+        var expert = await ResolveCurrentExpertAsync();
+        return await AddPublicationAsync(expert.Id, dto);
+    }
+
+    public async Task<ExpertPublicationResponseDto> UpdateMyPublicationAsync(
+        Guid publicationId,
+        ExpertPublicationRequestDto dto)
+    {
+        var expert = await ResolveCurrentExpertAsync();
+        return await UpdatePublicationAsync(expert.Id, publicationId, dto);
+    }
+
+    public async Task<bool> DeleteMyPublicationAsync(Guid publicationId)
+    {
+        var expert = await ResolveCurrentExpertAsync();
+        return await DeletePublicationAsync(expert.Id, publicationId);
+    }
+
     public async Task<ExpertDegreeResponseDto> AddDegreeAsync(Guid expertId, ExpertDegreeRequestDto dto)
     {
         await RequireExpertAsync(expertId);
@@ -883,6 +988,57 @@ public class ExpertService : IExpertService
 
         return expert;
     }
+
+    /// <summary>
+    /// Resolves the Expert row for the authenticated user via <c>Expert.UserId</c> only.
+    /// </summary>
+    private async Task<Expert> ResolveCurrentExpertAsync()
+    {
+        var userId = _claimsService.GetCurrentUserId;
+        if (userId == Guid.Empty)
+        {
+            throw ErrorHelper.Unauthorized("Unauthorized access.");
+        }
+
+        var user = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null || user.IsDeleted)
+        {
+            throw ErrorHelper.NotFound("Current user not found.");
+        }
+
+        if (user.Role != RoleType.Expert)
+        {
+            throw ErrorHelper.Forbidden("Only experts can perform this action.");
+        }
+
+        var expert = await _unitOfWork.Experts.FirstOrDefaultAsync(
+            e => e.UserId == userId && !e.IsDeleted);
+        if (expert == null)
+        {
+            throw ErrorHelper.NotFound("Expert profile not found for the current user.");
+        }
+
+        return expert;
+    }
+
+    private async Task SyncLinkedUserAvatarAsync(Expert expert, string? avatarUrl)
+    {
+        if (expert.UserId is not Guid linkedUserId)
+            return;
+
+        var linkedUser = await _unitOfWork.Users.GetByIdAsync(linkedUserId);
+        if (linkedUser == null || linkedUser.IsDeleted)
+            return;
+
+        if (linkedUser.AvatarUrl == avatarUrl)
+            return;
+
+        linkedUser.AvatarUrl = avatarUrl;
+        await _unitOfWork.Users.Update(linkedUser);
+    }
+
+    private static string? NormalizeOptionalText(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static void ValidateCreateCredentials(CreateExpertRequest dto)
     {

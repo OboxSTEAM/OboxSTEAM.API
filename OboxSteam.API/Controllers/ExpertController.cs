@@ -20,6 +20,152 @@ public class ExpertController : ControllerBase
     }
 
     // =========================================================================
+    // SELF-SERVICE (/me) — Expert role only
+    // =========================================================================
+
+    [HttpGet("me")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(
+        Summary = "Get my expert profile",
+        Description = "Returns the full expert profile linked to the authenticated Expert user (degrees, publications, programs).")]
+    [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> GetMyExpert()
+    {
+        var result = await _expertService.GetMyExpertAsync();
+        return Ok(ApiResult<ExpertResponseDto>.Success(result, "200", "Expert profile retrieved successfully."));
+    }
+
+    [HttpPut("me")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(
+        Summary = "Update my expert profile",
+        Description = "Updates editable professional fields on the caller's own expert profile. Does not change code, email, userId, or program board membership.")]
+    [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UpdateMyExpert([FromBody] UpdateMyExpertRequest dto)
+    {
+        if (dto == null)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Expert update data is required."));
+        }
+
+        var result = await _expertService.UpdateMyExpertAsync(dto);
+        return Ok(ApiResult<ExpertResponseDto>.Success(result, "200", "Expert profile updated successfully."));
+    }
+
+    [HttpPost("me/avatar")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(
+        Summary = "Upload my expert avatar",
+        Description = "Uploads a new avatar for the caller's expert profile and syncs User.AvatarUrl. Image only (.jpg, .jpeg, .png, .gif), max 5 MB.")]
+    [ProducesResponseType(typeof(ApiResult<ExpertResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UploadMyAvatar(IFormFile file)
+    {
+        var result = await _expertService.UploadMyAvatarAsync(file);
+        return Ok(ApiResult<ExpertResponseDto>.Success(result, "200", "Avatar uploaded successfully."));
+    }
+
+    [HttpPost("me/degrees")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Add a degree to my expert profile")]
+    [ProducesResponseType(typeof(ApiResult<ExpertDegreeResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> AddMyDegree([FromBody] ExpertDegreeRequestDto dto)
+    {
+        var result = await _expertService.AddMyDegreeAsync(dto);
+        return CreatedAtAction(
+            nameof(GetMyExpert),
+            ApiResult<ExpertDegreeResponseDto>.Success(result, "201", "Degree added successfully."));
+    }
+
+    [HttpPut("me/degrees/{degreeId:guid}")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Update one of my degrees")]
+    [ProducesResponseType(typeof(ApiResult<ExpertDegreeResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UpdateMyDegree(
+        [FromRoute] Guid degreeId,
+        [FromBody] ExpertDegreeRequestDto dto)
+    {
+        var result = await _expertService.UpdateMyDegreeAsync(degreeId, dto);
+        return Ok(ApiResult<ExpertDegreeResponseDto>.Success(result, "200", "Degree updated successfully."));
+    }
+
+    [HttpDelete("me/degrees/{degreeId:guid}")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Delete one of my degrees")]
+    [ProducesResponseType(typeof(ApiResult<bool>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> DeleteMyDegree([FromRoute] Guid degreeId)
+    {
+        var result = await _expertService.DeleteMyDegreeAsync(degreeId);
+        return Ok(ApiResult<bool>.Success(result, "200", "Degree deleted successfully."));
+    }
+
+    [HttpPost("me/publications")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Add a publication to my expert profile")]
+    [ProducesResponseType(typeof(ApiResult<ExpertPublicationResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> AddMyPublication([FromBody] ExpertPublicationRequestDto dto)
+    {
+        var result = await _expertService.AddMyPublicationAsync(dto);
+        return CreatedAtAction(
+            nameof(GetMyExpert),
+            ApiResult<ExpertPublicationResponseDto>.Success(result, "201", "Publication added successfully."));
+    }
+
+    [HttpPut("me/publications/{publicationId:guid}")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Update one of my publications")]
+    [ProducesResponseType(typeof(ApiResult<ExpertPublicationResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UpdateMyPublication(
+        [FromRoute] Guid publicationId,
+        [FromBody] ExpertPublicationRequestDto dto)
+    {
+        var result = await _expertService.UpdateMyPublicationAsync(publicationId, dto);
+        return Ok(ApiResult<ExpertPublicationResponseDto>.Success(result, "200", "Publication updated successfully."));
+    }
+
+    [HttpDelete("me/publications/{publicationId:guid}")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(Summary = "Delete one of my publications")]
+    [ProducesResponseType(typeof(ApiResult<bool>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> DeleteMyPublication([FromRoute] Guid publicationId)
+    {
+        var result = await _expertService.DeleteMyPublicationAsync(publicationId);
+        return Ok(ApiResult<bool>.Success(result, "200", "Publication deleted successfully."));
+    }
+
+    // =========================================================================
     // GET ALL  —  GET /api/experts
     // =========================================================================
 
