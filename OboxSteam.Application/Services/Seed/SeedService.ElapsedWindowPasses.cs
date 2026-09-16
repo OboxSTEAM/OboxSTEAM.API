@@ -31,7 +31,7 @@ public partial class SeedService
             return;
         }
 
-        var demoProgramIds = await GetDemoProgramIdsAsync();
+        var demoProgramIds = await GetGlobalAssessmentExcludedProgramIdsAsync();
         var classIds = seats.Select(s => s.ClassId).Distinct().ToList();
         var classById = (await _unitOfWork.Classes.GetAllAsync(
                 c => classIds.Contains(c.Id) && !c.IsDeleted && c.Status == ClassStatus.InProgress))
@@ -80,6 +80,8 @@ public partial class SeedService
             a => courseIds.Contains(a.CourseId) && !a.IsDeleted);
         var assignments = await _unitOfWork.Assignments.GetAllAsync(
             a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted && a.IsRequiredForModulePass);
+        var researchMilestoneIdByAssignmentId = await LoadResearchMilestoneIdsByAssignmentAsync(
+            assignments.Select(a => a.Id).ToList());
 
         var livesByModule = activities
             .Where(a => a.ActivityType is ActivityType.LiveOnline or ActivityType.Offline)
@@ -162,9 +164,15 @@ public partial class SeedService
                     continue;
                 }
 
+                researchMilestoneIdByAssignmentId.TryGetValue(assignment.Id, out var researchMilestoneId);
                 if (existing != null)
                 {
-                    ApplySeededAssessmentHold(existing, assignment, moduleFullyTaught, _seedNow);
+                    ApplySeededAssessmentHold(
+                        existing,
+                        assignment,
+                        moduleFullyTaught,
+                        _seedNow,
+                        researchMilestoneId);
                     await _unitOfWork.Submissions.Update(existing);
                     upgraded++;
                     continue;
@@ -175,7 +183,8 @@ public partial class SeedService
                     seat.StudentId,
                     moduleEnrollment.Id,
                     moduleFullyTaught,
-                    _seedNow);
+                    _seedNow,
+                    researchMilestoneId);
                 toAdd.Add(created);
                 existingSubmissions.Add(created);
             }
@@ -230,7 +239,10 @@ public partial class SeedService
             return;
         }
 
-        var demoProgramIds = await GetDemoProgramIdsAsync();
+        var researchMilestoneIdByAssignmentId = await LoadResearchMilestoneIdsByAssignmentAsync(
+            assignments.Keys.ToList());
+
+        var demoProgramIds = await GetGlobalAssessmentExcludedProgramIdsAsync();
         var classIds = windows.Select(w => w.ClassId).Distinct().ToList();
         var classById = (await _unitOfWork.Classes.GetAllAsync(
                 c => classIds.Contains(c.Id) && !c.IsDeleted))
@@ -280,6 +292,7 @@ public partial class SeedService
                 continue;
             }
 
+            researchMilestoneIdByAssignmentId.TryGetValue(assignment.Id, out var researchMilestoneId);
             var classSeats = seats.Where(s => s.ClassId == window.ClassId);
             foreach (var seat in classSeats)
             {
@@ -308,7 +321,12 @@ public partial class SeedService
                     assignment.Id);
                 if (existing != null)
                 {
-                    ApplySeededAssessmentHold(existing, assignment, moduleFullyTaught: true, now);
+                    ApplySeededAssessmentHold(
+                        existing,
+                        assignment,
+                        moduleFullyTaught: true,
+                        now,
+                        researchMilestoneId);
                     existing.SubmittedAt = window.EndTime;
                     existing.GradedAt = window.EndTime;
                     existing.StartedAt = window.StartTime;
@@ -323,7 +341,8 @@ public partial class SeedService
                     seat.StudentId,
                     moduleEnrollment.Id,
                     moduleFullyTaught: true,
-                    window.EndTime);
+                    window.EndTime,
+                    researchMilestoneId);
                 created.SubmittedAt = window.EndTime;
                 created.StartedAt = window.StartTime;
                 created.ContentText = "Seeded pass for elapsed class work window.";
@@ -452,11 +471,12 @@ public partial class SeedService
            && submission.Status == SubmissionStatus.TurnedIn
            && submission.ContentText == TaughtModuleSafetyNetDraftContent;
 
-    private static void ApplySeededAssessmentHold(
+    internal static void ApplySeededAssessmentHold(
         Submission submission,
         Assignment assignment,
         bool moduleFullyTaught,
-        DateTime at)
+        DateTime at,
+        Guid? researchMilestoneId = null)
     {
         submission.Status = moduleFullyTaught ? SubmissionStatus.Graded : SubmissionStatus.TurnedIn;
         submission.AssignedGrade = moduleFullyTaught ? Math.Max(assignment.PassScore, 80m) : null;
@@ -468,14 +488,19 @@ public partial class SeedService
         submission.StartedAt ??= at.AddDays(-2);
         submission.UpdatedAt = at;
         submission.ExpiresAt = null;
+        if (!submission.ResearchMilestoneId.HasValue && researchMilestoneId.HasValue)
+        {
+            submission.ResearchMilestoneId = researchMilestoneId;
+        }
     }
 
-    private static Submission CreateSeededAssessmentHold(
+    internal static Submission CreateSeededAssessmentHold(
         Assignment assignment,
         Guid studentId,
         Guid moduleEnrollmentId,
         bool moduleFullyTaught,
-        DateTime at)
+        DateTime at,
+        Guid? researchMilestoneId = null)
         => new()
         {
             Id = Guid.NewGuid(),
@@ -483,6 +508,7 @@ public partial class SeedService
             AssignmentId = assignment.Id,
             StudentId = studentId,
             ModuleEnrollmentId = moduleEnrollmentId,
+            ResearchMilestoneId = researchMilestoneId,
             AttemptNumber = 1,
             Status = moduleFullyTaught ? SubmissionStatus.Graded : SubmissionStatus.TurnedIn,
             AssignedGrade = moduleFullyTaught ? Math.Max(assignment.PassScore, 80m) : null,
@@ -496,4 +522,19 @@ public partial class SeedService
             CreatedBy = Guid.Empty,
             IsDeleted = false,
         };
+
+    private async Task<Dictionary<Guid, Guid>> LoadResearchMilestoneIdsByAssignmentAsync(
+        IReadOnlyCollection<Guid> assignmentIds)
+    {
+        if (assignmentIds.Count == 0)
+        {
+            return new Dictionary<Guid, Guid>();
+        }
+
+        var milestones = await _unitOfWork.ResearchMilestones.GetAllAsync(
+            rm => assignmentIds.Contains(rm.AssignmentId) && !rm.IsDeleted);
+        return milestones
+            .GroupBy(rm => rm.AssignmentId)
+            .ToDictionary(g => g.Key, g => g.First().Id);
+    }
 }

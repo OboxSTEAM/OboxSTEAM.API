@@ -658,13 +658,14 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                 moduleLocked,
                 researchMilestone,
                 previousResearchMilestone),
-            LatestSubmissionId = ResolveLatestSubmissionId(assignment, context),
+            LatestSubmissionId = ResolveLatestSubmissionId(assignment, context, researchMilestone),
         };
     }
 
     private static Guid? ResolveLatestSubmissionId(
         Assignment assignment,
-        EnrollmentCurriculumContext context)
+        EnrollmentCurriculumContext context,
+        ResearchMilestone? researchMilestone = null)
     {
         if (!context.SubmissionsByAssignmentId.TryGetValue(assignment.Id, out var submissions)
             || submissions.Count == 0)
@@ -672,7 +673,14 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
             return null;
         }
 
-        return submissions
+        IEnumerable<Submission> candidates = submissions;
+        if (researchMilestone != null)
+        {
+            // Research GetSubmission requires ResearchMilestoneId; never expose unlinked rows.
+            candidates = submissions.Where(s => s.ResearchMilestoneId == researchMilestone.Id);
+        }
+
+        return candidates
             .OrderByDescending(s => s.AttemptNumber)
             .ThenByDescending(s => s.SubmittedAt ?? s.CreatedAt)
             .Select(s => (Guid?)s.Id)
@@ -696,22 +704,29 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
         if (context.SubmissionsByAssignmentId.TryGetValue(assignment.Id, out var submissions)
             && submissions.Count > 0)
         {
-            var passed = submissions.Any(s =>
-                s.Status == SubmissionStatus.Graded
-                && s.AssignedGrade.HasValue
-                && s.AssignedGrade.Value >= assignment.PassScore);
+            var scoped = researchMilestone == null
+                ? submissions
+                : submissions.Where(s => s.ResearchMilestoneId == researchMilestone.Id).ToList();
 
-            if (passed)
+            if (scoped.Count > 0)
             {
-                return CurriculumStatusHelper.StatusCompleted;
-            }
+                var passed = scoped.Any(s =>
+                    s.Status == SubmissionStatus.Graded
+                    && s.AssignedGrade.HasValue
+                    && s.AssignedGrade.Value >= assignment.PassScore);
 
-            var inProgress = submissions.Any(s =>
-                s.Status is SubmissionStatus.Pending or SubmissionStatus.ReturnedForRevision);
+                if (passed)
+                {
+                    return CurriculumStatusHelper.StatusCompleted;
+                }
 
-            if (!inProgress)
-            {
-                return CurriculumStatusHelper.StatusSubmitted;
+                var inProgress = scoped.Any(s =>
+                    s.Status is SubmissionStatus.Pending or SubmissionStatus.ReturnedForRevision);
+
+                if (!inProgress)
+                {
+                    return CurriculumStatusHelper.StatusSubmitted;
+                }
             }
         }
 
@@ -728,6 +743,13 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
 
         context.AssignmentWindowsByAssignmentId.TryGetValue(assignment.Id, out var window);
         context.SubmissionsByAssignmentId.TryGetValue(assignment.Id, out var submissionsForCalendar);
+        if (researchMilestone != null && submissionsForCalendar != null)
+        {
+            submissionsForCalendar = submissionsForCalendar
+                .Where(s => s.ResearchMilestoneId == researchMilestone.Id)
+                .ToList();
+        }
+
         return AssignmentWindowPolicy.ApplyCalendarToStudentNavStatus(
             CurriculumStatusHelper.StatusAvailable,
             window,
@@ -1203,7 +1225,7 @@ public sealed class EnrollmentCurriculumService : IEnrollmentCurriculumService
                         : calendarLock
                           ?? "Complete required activities before this assignment unlocks.")
                     : null,
-                LatestSubmissionId = ResolveLatestSubmissionId(assignment, context),
+                LatestSubmissionId = ResolveLatestSubmissionId(assignment, context, researchMilestone),
             },
             Navigation = BuildMindMapNavigation(NodeTypeAssignment, assignment.Id, moduleEnrollmentId),
         };

@@ -329,7 +329,8 @@ public partial class SeedService
         {
             if (existing.Status != SubmissionStatus.Graded
                 || existing.StudentId != student.Id
-                || existing.ModuleEnrollmentId != moduleEnrollment.Id)
+                || existing.ModuleEnrollmentId != moduleEnrollment.Id
+                || existing.ResearchMilestoneId != milestone.Id)
             {
                 existing.StudentId = student.Id;
                 existing.ModuleEnrollmentId = moduleEnrollment.Id;

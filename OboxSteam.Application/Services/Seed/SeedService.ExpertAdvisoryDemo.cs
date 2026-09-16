@@ -491,13 +491,13 @@ public partial class SeedService
 
         var advIds = advPrograms.Select(p => p.Id).ToHashSet();
         var existingAdvNotifs = await _unitOfWork.Notifications.GetAllAsync(
-            n => n.EntityType == "Program" && n.EntityId != null && advIds.Contains(n.EntityId.Value));
-        if (existingAdvNotifs.Count > 0)
-        {
-            _loggerService.LogInformation(
-                "Advisory notifications already present for ADV programs. Skipping.");
-            return;
-        }
+            n => n.EntityType == "Program"
+                 && n.EntityId != null
+                 && advIds.Contains(n.EntityId.Value)
+                 && !n.IsDeleted);
+        var existingKeys = existingAdvNotifs
+            .Select(n => (n.RecipientUserId, n.Type, n.EntityId))
+            .ToHashSet();
 
         var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
         var manager = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNG-001" && !u.IsDeleted);
@@ -666,10 +666,16 @@ public partial class SeedService
             return;
         }
 
-        var notifications = new List<Notification>(samples.Count);
+        var notifications = new List<Notification>();
         for (var i = 0; i < samples.Count; i++)
         {
             var (command, recipientId, role, readAt) = samples[i];
+            var key = (recipientId, command.Type, command.EntityId);
+            if (existingKeys.Contains(key))
+            {
+                continue;
+            }
+
             notifications.Add(ToSeedNotification(
                 command,
                 recipientId,
@@ -677,6 +683,14 @@ public partial class SeedService
                 studentNamePlaceholder,
                 readAt,
                 now.AddMinutes(-(samples.Count - i) * 11)));
+            existingKeys.Add(key);
+        }
+
+        if (notifications.Count == 0)
+        {
+            _loggerService.LogInformation(
+                "Advisory notifications already present for ADV programs.");
+            return;
         }
 
         await _unitOfWork.Notifications.AddRangeAsync(notifications);
@@ -687,7 +701,7 @@ public partial class SeedService
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Finished seed expert advisory notifications — {Count} inbox row(s).",
+            "Finished seed expert advisory notifications — backfilled {Count} inbox row(s).",
             notifications.Count);
     }
 

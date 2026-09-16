@@ -16,13 +16,6 @@ public partial class SeedService
     {
         _loggerService.LogInformation("Starting seed notifications");
 
-        var existing = await _unitOfWork.Notifications.GetAllAsync();
-        if (existing.Count > 0)
-        {
-            _loggerService.LogInformation("Notifications already exist, skipping seeding");
-            return;
-        }
-
         var manager = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNG-001");
         var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001");
         var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "PRT-001");
@@ -433,10 +426,23 @@ public partial class SeedService
             RoleType.Student,
             now.AddDays(-5)));
 
-        var notifications = new List<Notification>(samples.Count);
+        var heroRecipientIds = new HashSet<Guid> { manager.Id, mentor.Id, parent.Id, student.Id };
+        var existing = await _unitOfWork.Notifications.GetAllAsync(
+            n => heroRecipientIds.Contains(n.RecipientUserId) && !n.IsDeleted);
+        var existingKeys = existing
+            .Select(n => (n.RecipientUserId, n.Type, n.EntityId))
+            .ToHashSet();
+
+        var notifications = new List<Notification>();
         for (var i = 0; i < samples.Count; i++)
         {
             var (command, recipientId, role, readAt) = samples[i];
+            var key = (recipientId, command.Type, command.EntityId);
+            if (existingKeys.Contains(key))
+            {
+                continue;
+            }
+
             notifications.Add(ToSeedNotification(
                 command,
                 recipientId,
@@ -444,6 +450,14 @@ public partial class SeedService
                 studentName,
                 readAt,
                 now.AddMinutes(-(samples.Count - i) * 17)));
+            existingKeys.Add(key);
+        }
+
+        if (notifications.Count == 0)
+        {
+            _loggerService.LogInformation(
+                "Hero-role seed notifications already present for MNG-001, MNT-001, PRT-001, STD-001.");
+            return;
         }
 
         await _unitOfWork.Notifications.AddRangeAsync(notifications);
@@ -456,7 +470,7 @@ public partial class SeedService
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Finished seed notifications — {Count} inbox row(s) for MNG-001, MNT-001, PRT-001, STD-001.",
+            "Finished seed notifications — backfilled {Count} inbox row(s) for MNG-001, MNT-001, PRT-001, STD-001.",
             notifications.Count);
     }
 

@@ -49,10 +49,10 @@ public partial class SeedService
         await SoftDeleteLegacyWeeklyScheduleFixturesAsync(classEntity.Id);
 
         var vietnam = SeedTimeline.ResolveVietnamTimeZone();
-        var monday = ResolveCurrentMonday(vietnam);
+        var monday = ResolveCurrentMonday(vietnam, _seedNow);
         var weekStartUtc = SeedTimeline.ToUtc(monday, TimeOnly.MinValue, vietnam);
         var weekEndExclusiveUtc = SeedTimeline.ToUtc(monday.AddDays(7), TimeOnly.MinValue, vietnam);
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
         var nowUtc = DateTime.SpecifyKind(seedTime, DateTimeKind.Utc);
 
         var slots = GetWeeklyScheduleSlots();
@@ -275,7 +275,7 @@ public partial class SeedService
         foreach (var session in legacy)
         {
             session.IsDeleted = true;
-            session.UpdatedAt = DateTime.UtcNow;
+            session.UpdatedAt = _seedNow;
             session.UpdatedBy = Guid.Empty;
             await _unitOfWork.ClassSessions.Update(session);
         }
@@ -432,9 +432,11 @@ public partial class SeedService
         new(3, new TimeOnly(9, 0), "P.012", "thu-am"),
     ];
 
-    private static DateOnly ResolveCurrentMonday(TimeZoneInfo vietnam)
+    internal static DateOnly ResolveCurrentMonday(TimeZoneInfo vietnam, DateTime seedNowUtc)
     {
-        var nowVietnam = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, vietnam);
+        var nowVietnam = TimeZoneInfo.ConvertTimeFromUtc(
+            DateTime.SpecifyKind(seedNowUtc, DateTimeKind.Utc),
+            vietnam);
         var today = DateOnly.FromDateTime(nowVietnam);
         var daysFromMonday = ((int)today.DayOfWeek + 6) % 7;
         return today.AddDays(-daysFromMonday);

@@ -394,7 +394,10 @@ public sealed class ClassStudentProgressService : IClassStudentProgressService
             .GroupBy(s => s.StudentId)
             .ToDictionary(
                 g => g.Key,
-                g => g.OrderByDescending(s => s.AttemptNumber)
+                g => g
+                    // Prefer research-linked rows when both linked and orphan holds exist.
+                    .OrderByDescending(s => s.ResearchMilestoneId.HasValue)
+                    .ThenByDescending(s => s.AttemptNumber)
                     .ThenByDescending(s => s.SubmittedAt ?? s.UpdatedAt ?? s.CreatedAt)
                     .First());
     }

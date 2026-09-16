@@ -445,7 +445,7 @@ public partial class SeedService
                 continue;
             }
 
-            session.UpdatedAt = DateTime.UtcNow;
+            session.UpdatedAt = _seedNow;
             session.UpdatedBy = Guid.Empty;
             await _unitOfWork.ClassSessions.Update(session);
             updated++;
@@ -540,7 +540,7 @@ public partial class SeedService
 
         var defaultDuration = weeklySlots.Length > 0 ? weeklySlots[0].DurationMinutes : 120;
         var updated = 0;
-        var seedTime = DateTime.UtcNow;
+        var seedTime = _seedNow;
 
         for (var i = 0; i < ordered.Count; i++)
         {

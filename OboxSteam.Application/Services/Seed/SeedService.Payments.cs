@@ -9,13 +9,6 @@ public partial class SeedService
     private async Task SeedPaymentsAsync()
     {
         _loggerService.LogInformation("Starting seed payments from program enrollments");
-        var existingPayments = await _unitOfWork.Payments.GetAllAsync();
-        if (existingPayments.Any())
-        {
-            _loggerService.LogInformation("Payments already exist, skipping seeding");
-            await SeedPendingPaymentRequestsAsync();
-            return;
-        }
 
         var enrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
             pe => !pe.IsDeleted,
@@ -24,26 +17,36 @@ public partial class SeedService
         if (enrollments.Count == 0)
         {
             _loggerService.LogWarning("No program enrollments found. Skipping payment seeding.");
+            await SeedPendingPaymentRequestsAsync();
             return;
         }
 
+        var existingPayments = await _unitOfWork.Payments.GetAllAsync(p => !p.IsDeleted);
+        var paidEnrollmentIds = existingPayments
+            .Where(p => p.ProgramEnrollmentId.HasValue)
+            .Select(p => p.ProgramEnrollmentId!.Value)
+            .ToHashSet();
+        var existingInvoices = await _unitOfWork.Invoices.GetAllAsync(i => !i.IsDeleted);
+        var invoicePaymentIds = existingInvoices.Select(i => i.PaymentId).ToHashSet();
+
         var payments = new List<Payment>();
         var invoices = new List<Invoice>();
-        var paymentIndex = 1;
+        var paymentIndex = existingPayments.Count + 1;
         var gateways = new[] { PaymentGateway.VnPay, PaymentGateway.Stripe, PaymentGateway.BankTransfer };
 
         foreach (var enrollment in enrollments)
         {
+            if (enrollment.Status == EnrollmentStatus.PendingPayment
+                || paidEnrollmentIds.Contains(enrollment.Id))
+            {
+                continue;
+            }
+
             var student = enrollment.Student
                 ?? await _unitOfWork.Users.GetByIdAsync(enrollment.StudentId);
             var program = enrollment.Program
                 ?? await _unitOfWork.Programs.GetByIdAsync(enrollment.ProgramId);
             if (student == null || program == null)
-            {
-                continue;
-            }
-
-            if (enrollment.Status == EnrollmentStatus.PendingPayment)
             {
                 continue;
             }
@@ -59,7 +62,6 @@ public partial class SeedService
             var amount = ProgramPurchaseLifecycle.ResolveCheckoutAmount(program, source, _seedNow);
             var isRebuy = source != null;
             var paidAt = (enrollment.EnrolledAt ?? _seedNow).AddDays(-1);
-            var status = PaymentStatus.Success;
             var payment = new Payment
             {
                 Id = Guid.NewGuid(),
@@ -70,36 +72,76 @@ public partial class SeedService
                 Amount = amount,
                 Gateway = gateways[paymentIndex % gateways.Length],
                 TransactionId = $"SEED-TXN-{paymentIndex:D4}",
-                Status = status,
+                Status = PaymentStatus.Success,
                 PaidAt = paidAt,
                 CreatedAt = paidAt,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
             };
             payments.Add(payment);
+            paidEnrollmentIds.Add(enrollment.Id);
 
-            if (status == PaymentStatus.Success)
+            invoices.Add(new Invoice
             {
-                invoices.Add(new Invoice
-                {
-                    Id = Guid.NewGuid(),
-                    InvoiceNumber = $"INV-SEED-{paymentIndex:D3}",
-                    PaymentId = payment.Id,
-                    IssuedToId = student.Id,
-                    BillingName = student.FullName ?? student.Email,
-                    BillingEmail = student.Email,
-                    ItemDescription = isRebuy
-                        ? $"{program.Name} chuyen ca"
-                        : $"{program.Name} tuition",
-                    SubTotal = payment.Amount,
-                    TotalAmount = payment.Amount,
-                    Currency = "VND",
-                    CreatedAt = paidAt,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false,
-                });
+                Id = Guid.NewGuid(),
+                InvoiceNumber = $"INV-SEED-{paymentIndex:D3}",
+                PaymentId = payment.Id,
+                IssuedToId = student.Id,
+                BillingName = student.FullName ?? student.Email,
+                BillingEmail = student.Email,
+                ItemDescription = isRebuy
+                    ? $"{program.Name} chuyen ca"
+                    : $"{program.Name} tuition",
+                SubTotal = payment.Amount,
+                TotalAmount = payment.Amount,
+                Currency = "VND",
+                CreatedAt = paidAt,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+            invoicePaymentIds.Add(payment.Id);
+            paymentIndex++;
+        }
+
+        // Backfill invoices for existing successful payments that never got one.
+        foreach (var payment in existingPayments
+                     .Where(p => p.Status == PaymentStatus.Success && !invoicePaymentIds.Contains(p.Id)))
+        {
+            var student = await _unitOfWork.Users.GetByIdAsync(payment.StudentId);
+            if (student == null)
+            {
+                continue;
             }
 
+            string itemDescription = "Program tuition";
+            if (payment.ProgramEnrollmentId.HasValue)
+            {
+                var enrollment = enrollments.FirstOrDefault(e => e.Id == payment.ProgramEnrollmentId.Value)
+                    ?? await _unitOfWork.ProgramEnrollments.GetByIdAsync(
+                        payment.ProgramEnrollmentId.Value,
+                        pe => pe.Program);
+                if (enrollment?.Program != null)
+                {
+                    itemDescription = $"{enrollment.Program.Name} tuition";
+                }
+            }
+
+            invoices.Add(new Invoice
+            {
+                Id = Guid.NewGuid(),
+                InvoiceNumber = $"INV-SEED-{paymentIndex:D3}",
+                PaymentId = payment.Id,
+                IssuedToId = student.Id,
+                BillingName = student.FullName ?? student.Email,
+                BillingEmail = student.Email,
+                ItemDescription = itemDescription,
+                SubTotal = payment.Amount,
+                TotalAmount = payment.Amount,
+                Currency = "VND",
+                CreatedAt = payment.PaidAt ?? payment.CreatedAt,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
             paymentIndex++;
         }
 
@@ -119,7 +161,7 @@ public partial class SeedService
         }
 
         _loggerService.LogInformation(
-            "Finished seed payments — {PaymentCount} payment(s), {InvoiceCount} invoice(s).",
+            "Finished seed payments — backfilled {PaymentCount} payment(s), {InvoiceCount} invoice(s).",
             payments.Count,
             invoices.Count);
 
@@ -128,14 +170,6 @@ public partial class SeedService
 
     private async Task SeedPendingPaymentRequestsAsync()
     {
-        var existing = await _unitOfWork.PaymentRequests.FirstOrDefaultAsync(
-            pr => pr.Token == "SEED-PENDING-PAYREQ-001" && !pr.IsDeleted);
-        if (existing != null)
-        {
-            _loggerService.LogInformation("Pending payment requests already seeded, skipping");
-            return;
-        }
-
         var parent = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "PRT-001" && !u.IsDeleted);
         var program = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-GAMEDEV" && !p.IsDeleted);
         if (parent == null || program == null)
@@ -152,10 +186,24 @@ public partial class SeedService
             ps => ps.ParentId == parent.Id && ps.IsVerified && !ps.IsDeleted);
         var linkedStudentIds = parentLinks.Select(ps => ps.StudentId).ToHashSet();
 
+        var existingRequests = await _unitOfWork.PaymentRequests.GetAllAsync(
+            pr => !pr.IsDeleted
+                  && pr.ProgramId == program.Id
+                  && pr.ParentId == parent.Id);
+        var coveredEnrollmentIds = existingRequests
+            .Where(pr => pr.ProgramEnrollmentId.HasValue)
+            .Select(pr => pr.ProgramEnrollmentId!.Value)
+            .ToHashSet();
+
         var requests = new List<PaymentRequest>();
-        var requestIndex = 1;
+        var requestIndex = existingRequests.Count + 1;
         foreach (var enrollment in pendingEnrollments.Where(pe => linkedStudentIds.Contains(pe.StudentId)))
         {
+            if (coveredEnrollmentIds.Contains(enrollment.Id))
+            {
+                continue;
+            }
+
             var createdAt = enrollment.EnrolledAt ?? AtDays(-12);
             requests.Add(new PaymentRequest
             {
@@ -173,18 +221,39 @@ public partial class SeedService
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
             });
+            coveredEnrollmentIds.Add(enrollment.Id);
             requestIndex++;
         }
 
-        if (requests.Count == 0)
+        // Refresh expiry on existing pending tokens so re-seed keeps them usable.
+        var refreshed = 0;
+        foreach (var request in existingRequests.Where(pr => pr.Status == PaymentRequestStatus.Pending))
         {
-            return;
+            if (request.ExpiresAt > _seedNow.AddDays(1))
+            {
+                continue;
+            }
+
+            request.ExpiresAt = _seedNow.AddDays(7);
+            request.UpdatedAt = _seedNow;
+            request.UpdatedBy = Guid.Empty;
+            await _unitOfWork.PaymentRequests.Update(request);
+            refreshed++;
         }
 
-        await _unitOfWork.PaymentRequests.AddRangeAsync(requests);
-        await _unitOfWork.SaveChangesAsync();
+        if (requests.Count > 0)
+        {
+            await _unitOfWork.PaymentRequests.AddRangeAsync(requests);
+        }
+
+        if (requests.Count > 0 || refreshed > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
         _loggerService.LogInformation(
-            "Finished seed pending payment requests — {Count} request(s).",
-            requests.Count);
+            "Finished seed pending payment requests — added {Count}, refreshed {Refreshed}.",
+            requests.Count,
+            refreshed);
     }
 }

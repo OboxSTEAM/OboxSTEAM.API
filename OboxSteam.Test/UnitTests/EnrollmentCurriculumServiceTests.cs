@@ -620,6 +620,58 @@ public sealed class EnrollmentCurriculumServiceTests
     }
 
     [Fact]
+    public async Task GetCurriculum_ResearchLatestSubmissionId_IgnoresUnlinkedRows()
+    {
+        SeedStudent();
+        SeedCurriculum(researchUnlocked: true);
+        SeedProgramEnrollment();
+        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
+            _db,
+            _classId,
+            _programId,
+            _studentId,
+            _programEnrollmentId);
+        ClassAssignmentWindowSeed.Open(_db, _classId, _researchModuleId, _milestoneAssignmentId);
+
+        var orphanId = Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1");
+        var linkedId = Guid.Parse("c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2");
+        _db.Submissions.Seed(new Submission
+        {
+            Id = orphanId,
+            Code = "SUB-ORPHAN",
+            AssignmentId = _milestoneAssignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _researchModuleEnrollmentId,
+            ResearchMilestoneId = null,
+            AttemptNumber = 2,
+            Status = SubmissionStatus.Graded,
+            AssignedGrade = 90m,
+            SubmittedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+        _db.Submissions.Seed(new Submission
+        {
+            Id = linkedId,
+            Code = "SUB-LINKED",
+            AssignmentId = _milestoneAssignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _researchModuleEnrollmentId,
+            ResearchMilestoneId = _milestoneId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.ReturnedForRevision,
+            SubmittedAt = DateTime.UtcNow.AddDays(-1),
+            IsDeleted = false,
+        });
+
+        var sut = CreateSut();
+        var result = await sut.GetEnrollmentCurriculumAsync(_programEnrollmentId);
+        var researchAssignment = result.Modules[1].Milestones[0].Assignment!;
+
+        Assert.Equal(linkedId, researchAssignment.LatestSubmissionId);
+        Assert.NotEqual(CurriculumStatusHelper.StatusCompleted, researchAssignment.Status);
+    }
+
+    [Fact]
     public async Task GetCurriculum_ProvisionsModuleEnrollment_WhenActiveUnlocked()
     {
         SeedStudent();

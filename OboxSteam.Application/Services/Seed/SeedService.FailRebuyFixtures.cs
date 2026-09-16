@@ -969,6 +969,15 @@ public partial class SeedService
                      && !s.IsDeleted);
             if (existing != null)
             {
+                if (researchMilestoneId.HasValue
+                    && existing.ResearchMilestoneId != researchMilestoneId)
+                {
+                    existing.ResearchMilestoneId = researchMilestoneId;
+                    existing.UpdatedAt = seedTime;
+                    await _unitOfWork.Submissions.Update(existing);
+                    await _unitOfWork.SaveChangesAsync();
+                }
+
                 return;
             }
 

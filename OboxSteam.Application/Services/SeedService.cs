@@ -40,6 +40,17 @@ public partial class SeedService : ISeedService
         _loggerService.LogInformation("Finished seed all data");
     }
 
+    /// <summary>
+    /// Single ordered seed pass. Order invariants:
+    /// <list type="bullet">
+    /// <item>Materials after FailRebuy so new activities get reading assets.</item>
+    /// <item>Safety-net before AssignmentWindows so leftover-fail cannot AcademicFail mid-seed.</item>
+    /// <item>Demo clear before Maker STD-010 so the theory quiz grade is not wiped.</item>
+    /// <item>Research UI fixtures after the final elapsed-window pass so FileUpload rows keep ResearchMilestoneId.</item>
+    /// <item>Maker joinable sessions after wall-clock realign / weekly grid so Sat/Sun does not overwrite them.</item>
+    /// <item>Session experts once after Maker tail fixtures so joinable sessions get co-teach rows.</item>
+    /// </list>
+    /// </summary>
     private async Task SeedAllDataCoreAsync()
     {
         await SeedUsersAsync();
@@ -79,37 +90,40 @@ public partial class SeedService : ISeedService
         await SeedDemoShowcaseProgramsAsync();
         await SeedReviewDraftProgramsAsync();
         await SeedExpertAdvisoryDemoAsync();
-        await SeedMaterialsAsync();
         await EnsureClassSessionCoverageAsync();
         await RealignSeedSessionWallClocksAsync();
         await SeedWeeklyScheduleFixtureAsync();
         await EnsureSeedSessionVenuesAsync();
         await SeedPortfolioDataAsync();
+        // Demo clear must run before Maker STD-010 fixtures (quiz grade would be wiped).
         await ClearDemoProgramSubmissionsAsync();
         await SeedFailRebuyFixturesAsync();
+        // After FailRebuy so newly created self-paced activities get materials.
         await SeedMaterialsAsync();
+        // Safety-net before windows so leftover-fail cannot AcademicFail mid-seed.
         await SeedTaughtModuleAssessmentSafetyNetAsync();
         await EnsureAssignmentWorkWindowsAsync();
         await SeedPassedSubmissionsForElapsedRequiredWindowsAsync();
         await AlignInProgressCurriculumToClassTimetableAsync();
         await SeedCertTestProgressAsync();
-        await SeedGradedCapstoneSubmissionForUiAsync();
         await SeedCompletedProgramCertificatesAsync();
         await SeedPaymentsAsync();
         await SeedProgramReviewsAsync();
         await SeedNotificationsAsync();
         await SeedExpertAdvisoryNotificationsAsync();
         await RestoreInProgressPurchasesClosedDuringSeedAsync();
+        // Restore-repair only: remove holds on not-yet-open windows and cover reopened seats.
         await SeedTaughtModuleAssessmentSafetyNetAsync();
         await SeedPassedSubmissionsForElapsedRequiredWindowsAsync();
-        await AlignInProgressCurriculumToClassTimetableAsync();
-        await SeedClassSessionExpertsAsync();
-        // After RealignSeedSessionWallClocksAsync so Sat/Sun grid does not overwrite
-        // the Maker Slice-2 join/check-in pair used by student10 FE testing.
+        // After final elapsed-related state: research FileUpload fixtures need ResearchMilestoneId.
+        await SeedGradedCapstoneSubmissionForUiAsync();
+        // After RealignSeedSessionWallClocksAsync / weekly grid so Sat/Sun does not overwrite Maker Slice-2.
         await ApplyMakerSlice2JoinableSessionsAsync();
         // After ClearDemoProgramSubmissionsAsync so STD-010 theory quiz grade is not wiped.
         await ApplyMakerStudent10Module1CompleteAsync();
+        // Once after Maker tail fixtures so joinable sessions get co-teach expert rows.
         await SeedClassSessionExpertsAsync();
+        await VerifySeedDemoIntegrityAsync();
     }
 
     public async Task ClearAllDataAsync()
@@ -125,24 +139,28 @@ public partial class SeedService : ISeedService
 
     private async Task VerifyDatabaseIsEmptyAsync()
     {
-        if (await _unitOfWork.Users.AnyIncludingDeletedAsync())
-        {
-            throw ErrorHelper.Internal("Clear incomplete: Users table still has rows.");
-        }
+        await EnsureTableEmptyAsync(_unitOfWork.Users, "Users");
+        await EnsureTableEmptyAsync(_unitOfWork.Programs, "Programs");
+        await EnsureTableEmptyAsync(_unitOfWork.Activities, "Activities");
+        await EnsureTableEmptyAsync(_unitOfWork.ResearchMilestones, "ResearchMilestones");
+        await EnsureTableEmptyAsync(_unitOfWork.Submissions, "Submissions");
+        await EnsureTableEmptyAsync(_unitOfWork.ProgramEnrollments, "ProgramEnrollments");
+        await EnsureTableEmptyAsync(_unitOfWork.ClassEnrollments, "ClassEnrollments");
+        await EnsureTableEmptyAsync(_unitOfWork.ClassSessions, "ClassSessions");
+        await EnsureTableEmptyAsync(_unitOfWork.Payments, "Payments");
+        await EnsureTableEmptyAsync(_unitOfWork.Certificates, "Certificates");
+        await EnsureTableEmptyAsync(_unitOfWork.Portfolios, "Portfolios");
+        await EnsureTableEmptyAsync(_unitOfWork.Notifications, "Notifications");
+    }
 
-        if (await _unitOfWork.Programs.AnyIncludingDeletedAsync())
+    private static async Task EnsureTableEmptyAsync<TEntity>(
+        IGenericRepository<TEntity> repository,
+        string tableName)
+        where TEntity : Domain.Entities.BaseEntity
+    {
+        if (await repository.AnyIncludingDeletedAsync())
         {
-            throw ErrorHelper.Internal("Clear incomplete: Programs table still has rows.");
-        }
-
-        if (await _unitOfWork.Activities.AnyIncludingDeletedAsync())
-        {
-            throw ErrorHelper.Internal("Clear incomplete: Activities table still has rows.");
-        }
-
-        if (await _unitOfWork.ResearchMilestones.AnyIncludingDeletedAsync())
-        {
-            throw ErrorHelper.Internal("Clear incomplete: ResearchMilestones table still has rows.");
+            throw ErrorHelper.Internal($"Clear incomplete: {tableName} table still has rows.");
         }
     }
 }

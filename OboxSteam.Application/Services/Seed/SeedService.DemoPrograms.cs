@@ -117,7 +117,8 @@ public partial class SeedService
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Program ids for demo showcase tracks. Used to keep dashboard/global seeds off live-demo data.
+    /// Program ids for demo showcase tracks. Used to keep dashboard/global seeds off live-demo data
+    /// and to clear showcase submissions before Maker fixtures.
     /// </summary>
     private async Task<HashSet<Guid>> GetDemoProgramIdsAsync()
     {
@@ -125,6 +126,31 @@ public partial class SeedService
         var demoPrograms = await _unitOfWork.Programs.GetAllAsync(
             p => demoProgramCodes.Contains(p.Code) && !p.IsDeleted);
         return demoPrograms.Select(p => p.Id).ToHashSet();
+    }
+
+    /// <summary>
+    /// Programs excluded from taught-module safety-net and elapsed-window passes:
+    /// showcase demos, ADV advisory, review drafts, and fail/rebuy QA.
+    /// </summary>
+    private async Task<HashSet<Guid>> GetGlobalAssessmentExcludedProgramIdsAsync()
+    {
+        var codes = GetDemoProgramCodeSet();
+        codes.Add(SeedReviewDraftIotProgramCode);
+        codes.Add(SeedReviewDraftCodeProgramCode);
+        codes.Add(FailRebuyProgramCode);
+        codes.Add(SeedAdvDraftAdviceCode);
+        codes.Add(SeedAdvDraftFixCode);
+        codes.Add(SeedAdvPendingCode);
+        codes.Add(SeedAdvResubmitCode);
+        codes.Add(SeedAdvApprovedCode);
+        codes.Add(SeedAdvActiveCode);
+        codes.Add(SeedAdvPinV1Code);
+        codes.Add(SeedAdvShareACode);
+        codes.Add(SeedAdvShareBCode);
+
+        var programs = await _unitOfWork.Programs.GetAllAsync(
+            p => codes.Contains(p.Code) && !p.IsDeleted);
+        return programs.Select(p => p.Id).ToHashSet();
     }
 
     /// <summary>
@@ -1916,18 +1942,14 @@ public partial class SeedService
         if (string.IsNullOrWhiteSpace(fileUrl)
             || !fileUrl.Contains("Seed/Submission/", StringComparison.OrdinalIgnoreCase))
         {
-            try
-            {
-                fileUrl = await UploadSeedSubmissionPdfAsync(
-                    "ASG-DEMO-MAKER-MS01-std010-prototype.pdf",
-                    "OboxSTEAM Maker MS01 Seed Deliverable");
-            }
-            catch (Exception ex)
+            fileUrl = await UploadSeedSubmissionPdfAsync(
+                "ASG-DEMO-MAKER-MS01-std010-prototype.pdf",
+                "OboxSTEAM Maker MS01 Seed Deliverable",
+                existing?.FileUrl);
+            if (string.IsNullOrWhiteSpace(fileUrl))
             {
                 _loggerService.LogWarning(
-                    ex,
-                    "Maker STD-010 research file upload failed; using placeholder FileUrl.");
-                fileUrl = "https://cdn.example.com/seed/ASG-DEMO-MAKER-MS01-std010-prototype.pdf";
+                    "Maker STD-010 research file upload failed with no fallback FileUrl.");
             }
         }
 

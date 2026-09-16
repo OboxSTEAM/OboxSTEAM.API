@@ -23,7 +23,7 @@ public partial class SeedService
             return;
         }
 
-        var demoProgramIds = await GetDemoProgramIdsAsync();
+        var demoProgramIds = await GetGlobalAssessmentExcludedProgramIdsAsync();
         var classIds = seats.Select(s => s.ClassId).Distinct().ToList();
         var classes = (await _unitOfWork.Classes.GetAllAsync(
                 c => classIds.Contains(c.Id) && !c.IsDeleted && c.Status == ClassStatus.InProgress))

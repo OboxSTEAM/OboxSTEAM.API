@@ -43,4 +43,67 @@ public sealed class SeedTaughtModuleSafetyNetTests
         Assert.False(SeedService.IsTaughtModuleSafetyNetDraft(fixture));
         Assert.False(SeedService.IsTaughtModuleSafetyNetDraft(pass));
     }
+
+    [Fact]
+    public void CreateSeededAssessmentHold_SetsResearchMilestoneId_WhenProvided()
+    {
+        var assignment = new Assignment
+        {
+            Id = Guid.NewGuid(),
+            PassScore = 60m,
+            MaxPoints = 100,
+        };
+        var milestoneId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        var created = SeedService.CreateSeededAssessmentHold(
+            assignment,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            moduleFullyTaught: true,
+            now,
+            milestoneId);
+
+        Assert.Equal(milestoneId, created.ResearchMilestoneId);
+        Assert.Equal(SubmissionStatus.Graded, created.Status);
+    }
+
+    [Fact]
+    public void ApplySeededAssessmentHold_BackfillsResearchMilestoneId_WhenMissing()
+    {
+        var assignment = new Assignment
+        {
+            Id = Guid.NewGuid(),
+            PassScore = 60m,
+            MaxPoints = 100,
+        };
+        var milestoneId = Guid.NewGuid();
+        var existingMilestoneId = Guid.NewGuid();
+        var submission = new Submission
+        {
+            ResearchMilestoneId = null,
+            Status = SubmissionStatus.Pending,
+        };
+        var linked = new Submission
+        {
+            ResearchMilestoneId = existingMilestoneId,
+            Status = SubmissionStatus.ReturnedForRevision,
+        };
+
+        SeedService.ApplySeededAssessmentHold(
+            submission,
+            assignment,
+            moduleFullyTaught: true,
+            DateTime.UtcNow,
+            milestoneId);
+        SeedService.ApplySeededAssessmentHold(
+            linked,
+            assignment,
+            moduleFullyTaught: true,
+            DateTime.UtcNow,
+            milestoneId);
+
+        Assert.Equal(milestoneId, submission.ResearchMilestoneId);
+        Assert.Equal(existingMilestoneId, linked.ResearchMilestoneId);
+    }
 }

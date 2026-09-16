@@ -19,15 +19,70 @@ public partial class SeedService
     /// <summary>
     /// Ensures research FileUpload seeds have real S3 files under <c>Seed/Submission/</c>:
     /// Capstone Graded (<c>SUB-RML0303B</c>) for STD-009 and Design Brief PDF (<c>SUB-RML0301B</c>).
+    /// Backfills <c>ResearchMilestoneId</c> on every research-assignment submission so cohort
+    /// safety-net / elapsed-window rows do not break research GetSubmission (HTTP 400).
     /// </summary>
     private async Task SeedGradedCapstoneSubmissionForUiAsync()
     {
         _loggerService.LogInformation("Starting seed research FileUpload submissions with S3 files");
 
+        await BackfillResearchMilestoneIdsOnSubmissionsAsync();
+        await SoftRemoveOrphanSubmissionsOnAllResearchAssignmentsAsync();
         await SeedGradedCapstoneWithFileAsync();
-        await EnsureDesignBriefHasOpenableFileAsync();
+        await EnsureDesignBriefReturnedForRevisionAsync();
 
         _loggerService.LogInformation("Finished seed research FileUpload submissions with S3 files");
+    }
+
+    /// <summary>
+    /// Links any live submission on a research milestone assignment that is missing
+    /// <see cref="Submission.ResearchMilestoneId"/> (safety-net / elapsed-window leftovers).
+    /// </summary>
+    private async Task BackfillResearchMilestoneIdsOnSubmissionsAsync()
+    {
+        var milestones = await _unitOfWork.ResearchMilestones.GetAllAsync(rm => !rm.IsDeleted);
+        if (milestones.Count == 0)
+        {
+            return;
+        }
+
+        var milestoneIdByAssignmentId = milestones
+            .GroupBy(rm => rm.AssignmentId)
+            .ToDictionary(g => g.Key, g => g.First().Id);
+        var assignmentIds = milestoneIdByAssignmentId.Keys.ToList();
+        var submissions = await _unitOfWork.Submissions.GetAllAsync(
+            s => assignmentIds.Contains(s.AssignmentId)
+                 && !s.IsDeleted
+                 && s.ResearchMilestoneId == null);
+        if (submissions.Count == 0)
+        {
+            _loggerService.LogInformation("No research submissions needed ResearchMilestoneId backfill.");
+            return;
+        }
+
+        var updated = 0;
+        foreach (var submission in submissions)
+        {
+            if (!milestoneIdByAssignmentId.TryGetValue(submission.AssignmentId, out var milestoneId))
+            {
+                continue;
+            }
+
+            submission.ResearchMilestoneId = milestoneId;
+            submission.UpdatedAt = _seedNow;
+            submission.UpdatedBy = Guid.Empty;
+            await _unitOfWork.Submissions.Update(submission);
+            updated++;
+        }
+
+        if (updated > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        _loggerService.LogInformation(
+            "Backfilled ResearchMilestoneId on {Count} research submission(s).",
+            updated);
     }
 
     private async Task SeedGradedCapstoneWithFileAsync()
@@ -85,6 +140,13 @@ public partial class SeedService
         var fileUrl = await UploadSeedSubmissionPdfAsync(
             GradedCapstoneSeedFileName,
             "OboxSTEAM Seed Capstone Deliverable");
+        if (string.IsNullOrWhiteSpace(fileUrl))
+        {
+            _loggerService.LogWarning(
+                "Skipping graded Capstone seed — Seed/Submission PDF upload failed with no fallback.");
+            return;
+        }
+
         var seedTime = AtDays(-95);
 
         await _unitOfWork.Submissions.AddAsync(new Submission
@@ -117,6 +179,20 @@ public partial class SeedService
             GradedCapstoneSubmissionCode);
     }
 
+    private async Task SoftRemoveOrphanSubmissionsOnAllResearchAssignmentsAsync()
+    {
+        var milestones = await _unitOfWork.ResearchMilestones.GetAllAsync(rm => !rm.IsDeleted);
+        if (milestones.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var assignmentId in milestones.Select(m => m.AssignmentId).Distinct())
+        {
+            await SoftRemoveOrphanDashboardSubmissionsOnAssignmentAsync(assignmentId);
+        }
+    }
+
     private async Task SoftRemoveOrphanDashboardSubmissionsOnAssignmentAsync(Guid assignmentId)
     {
         var orphans = await _unitOfWork.Submissions.GetAllAsync(
@@ -140,31 +216,133 @@ public partial class SeedService
     }
 
     /// <summary>
-    /// Upgrades existing Design Brief <c>SUB-RML0301B</c> fake URL to a real Seed/Submission PDF.
+    /// Ensures Design Brief <c>SUB-RML0301B</c> exists as ReturnedForRevision for STD-002
+    /// with an openable Seed/Submission PDF (after safety-net may have wiped unlinked rows).
     /// </summary>
-    private async Task EnsureDesignBriefHasOpenableFileAsync()
+    private async Task EnsureDesignBriefReturnedForRevisionAsync()
     {
         var milestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
             rm => rm.Code == "RML-ROBOTICS-03-01" && !rm.IsDeleted);
-        if (milestone != null)
+        if (milestone == null)
         {
-            await SoftRemoveOrphanDashboardSubmissionsOnAssignmentAsync(milestone.AssignmentId);
+            _loggerService.LogWarning("Design Brief milestone not found; skipping STD-002 fixture.");
+            return;
         }
 
-        var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
+        var student = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "STD-002" && !u.IsDeleted);
+        var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNT-001" && !u.IsDeleted);
+        var moduleRobotics3 = await _unitOfWork.Modules.FirstOrDefaultAsync(
+            m => m.Code == "MOD-ROBOTICS-03" && !m.IsDeleted);
+        if (student == null || mentor == null || moduleRobotics3 == null)
+        {
+            _loggerService.LogWarning("STD-002 / MNT-001 / MOD-ROBOTICS-03 missing; skipping Design Brief fixture.");
+            return;
+        }
+
+        if (!await StudentClassHasStartedModuleAsync(student.Id, moduleRobotics3.Id))
+        {
+            _loggerService.LogInformation(
+                "STD-002 has not started MOD-ROBOTICS-03 with their class. Skipping Design Brief fixture.");
+            return;
+        }
+
+        var enrollment = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
+            me => me.StudentId == student.Id
+                  && me.ModuleId == moduleRobotics3.Id
+                  && !me.IsDeleted);
+        if (enrollment == null)
+        {
+            _loggerService.LogWarning("STD-002 has no MOD-ROBOTICS-03 enrollment. Skipping Design Brief fixture.");
+            return;
+        }
+
+        var assignment = await _unitOfWork.Assignments.GetByIdAsync(milestone.AssignmentId);
+        if (assignment == null || assignment.IsDeleted)
+        {
+            _loggerService.LogWarning("Design Brief assignment missing. Skipping STD-002 fixture.");
+            return;
+        }
+
+        var existingSubmission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
             s => s.Code == DesignBriefSubmissionCode && !s.IsDeleted);
+        var fileUrl = await UploadSeedSubmissionPdfAsync(
+            DesignBriefSeedFileName,
+            "OboxSTEAM Seed Design Brief",
+            existingSubmission?.FileUrl);
+        var seedTime = _seedNow;
+
+        var submission = existingSubmission;
         if (submission == null)
         {
-            _loggerService.LogWarning(
-                "Design Brief submission {Code} not found; skipping file backfill.",
+            if (string.IsNullOrWhiteSpace(fileUrl))
+            {
+                _loggerService.LogWarning(
+                    "Skipping Design Brief fixture — Seed/Submission PDF upload failed with no fallback.");
+                return;
+            }
+
+            // Soft-remove any other leftover on this student+assignment so the fixture is unique.
+            var leftovers = await _unitOfWork.Submissions.GetAllAsync(
+                s => s.StudentId == student.Id
+                     && s.AssignmentId == assignment.Id
+                     && !s.IsDeleted);
+            foreach (var leftover in leftovers)
+            {
+                await _unitOfWork.Submissions.SoftRemove(leftover);
+            }
+
+            await _unitOfWork.Submissions.AddAsync(new Submission
+            {
+                Id = Guid.NewGuid(),
+                Code = DesignBriefSubmissionCode,
+                AssignmentId = assignment.Id,
+                StudentId = student.Id,
+                ModuleEnrollmentId = enrollment.Id,
+                ResearchMilestoneId = milestone.Id,
+                AttemptNumber = 1,
+                Status = SubmissionStatus.ReturnedForRevision,
+                ContentText = "Initial design draft with motor placement notes.",
+                FileUrl = fileUrl,
+                MentorFeedback = "Please add sensor placement diagrams and a parts list before resubmitting.",
+                SubmittedAt = seedTime.AddDays(-3),
+                ExpiresAt = seedTime.AddDays(14),
+                CreatedAt = seedTime.AddDays(-5),
+                CreatedBy = mentor.Id,
+                UpdatedAt = seedTime.AddDays(-2),
+                UpdatedBy = mentor.Id,
+                IsDeleted = false,
+            });
+            await _unitOfWork.SaveChangesAsync();
+            _loggerService.LogInformation(
+                "Recreated Design Brief submission {Code} for STD-002 as ReturnedForRevision.",
                 DesignBriefSubmissionCode);
             return;
         }
 
-        await EnsureSubmissionHasSeedFileAsync(
-            DesignBriefSubmissionCode,
-            DesignBriefSeedFileName,
-            "OboxSTEAM Seed Design Brief");
+        submission.ResearchMilestoneId ??= milestone.Id;
+        submission.ModuleEnrollmentId ??= enrollment.Id;
+        submission.Status = SubmissionStatus.ReturnedForRevision;
+        submission.AssignedGrade = null;
+        submission.MentorFeedback =
+            "Please add sensor placement diagrams and a parts list before resubmitting.";
+        submission.ContentText ??= "Initial design draft with motor placement notes.";
+        submission.ExpiresAt = seedTime.AddDays(14);
+        submission.UpdatedAt = seedTime;
+        submission.UpdatedBy = mentor.Id;
+        if (!string.IsNullOrWhiteSpace(fileUrl)
+            && (string.IsNullOrWhiteSpace(submission.FileUrl)
+                || !submission.FileUrl.Contains(
+                    $"{SeedS3Folder}/Submission/{DesignBriefSeedFileName}",
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            submission.FileUrl = fileUrl;
+        }
+
+        await _unitOfWork.Submissions.Update(submission);
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Ensured Design Brief submission {Code} is ReturnedForRevision with ResearchMilestoneId.",
+            DesignBriefSubmissionCode);
     }
 
     private async Task EnsureSubmissionHasSeedFileAsync(
@@ -186,7 +364,14 @@ public partial class SeedService
             return;
         }
 
-        submission.FileUrl = await UploadSeedSubmissionPdfAsync(fileName, pdfTitle);
+        var previousUrl = submission.FileUrl;
+        var fileUrl = await UploadSeedSubmissionPdfAsync(fileName, pdfTitle, previousUrl);
+        if (string.IsNullOrWhiteSpace(fileUrl))
+        {
+            return;
+        }
+
+        submission.FileUrl = fileUrl;
         submission.UpdatedAt = _seedNow;
         submission.UpdatedBy = Guid.Empty;
         await _unitOfWork.Submissions.Update(submission);
@@ -197,16 +382,43 @@ public partial class SeedService
             submissionCode);
     }
 
-    private async Task<string> UploadSeedSubmissionPdfAsync(string fileName, string pdfTitle)
+    /// <summary>
+    /// Uploads a seed PDF under <c>Seed/Submission/</c>. On failure, keeps
+    /// <paramref name="fallbackFileUrl"/> when present so the UI does not get a 404 placeholder.
+    /// </summary>
+    private async Task<string?> UploadSeedSubmissionPdfAsync(
+        string fileName,
+        string pdfTitle,
+        string? fallbackFileUrl = null)
     {
         var folder = $"{SeedS3Folder}/Submission";
         var s3Key = $"{folder}/{fileName}";
-        await using (var pdfStream = new MemoryStream(BuildSeedSubmissionPdfBytes(pdfTitle)))
+        try
         {
-            await _blobService.UploadFileAsync(fileName, pdfStream, folder);
-        }
+            await using (var pdfStream = new MemoryStream(BuildSeedSubmissionPdfBytes(pdfTitle)))
+            {
+                await _blobService.UploadFileAsync(fileName, pdfStream, folder);
+            }
 
-        return await _blobService.GetPreviewUrlAsync(s3Key);
+            return await _blobService.GetPreviewUrlAsync(s3Key);
+        }
+        catch (Exception ex)
+        {
+            if (!string.IsNullOrWhiteSpace(fallbackFileUrl))
+            {
+                _loggerService.LogWarning(
+                    ex,
+                    "Seed PDF upload failed for {FileName}; keeping existing FileUrl.",
+                    fileName);
+                return fallbackFileUrl;
+            }
+
+            _loggerService.LogWarning(
+                ex,
+                "Seed PDF upload failed for {FileName}; no fallback FileUrl available.",
+                fileName);
+            return null;
+        }
     }
 
     /// <summary>Minimal one-page PDF so seed does not depend on QuestPDF in Application.</summary>
