@@ -278,7 +278,7 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         var expiresAt = now.AddSeconds(ClassSessionCheckInValidator.TokenTtlSeconds);
 
         classSession!.CheckInToken = Guid.NewGuid();
-        classSession.CheckInCode = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        classSession.CheckInCode = await GenerateUniqueLiveCheckInCodeAsync(classSessionId, now);
         classSession.CheckInTokenExpiresAt = expiresAt;
 
         await _unitOfWork.ClassSessions.Update(classSession);
@@ -296,6 +296,24 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             Code = classSession.CheckInCode,
             ExpiresAt = expiresAt,
         };
+    }
+
+    public async Task<SessionAttendanceResponseDto> CheckInByTokenAsync(ClassSessionCheckInRequestDto request)
+    {
+        _logger.LogInformation("[CheckInByTokenAsync] Start — resolving live check-in credential.");
+
+        var currentUser = await SessionAttendanceValidator.GetCurrentUserAsync(_unitOfWork, _claimsService);
+        if (currentUser.Role != RoleType.Student)
+        {
+            throw ErrorHelper.Forbidden("Only students can check in to a class session.");
+        }
+
+        ClassSessionCheckInValidator.ValidateExactlyOneCredential(request.Token, request.Code);
+
+        var now = _currentTime.GetCurrentTime();
+        var classSession = await ResolveSessionFromCheckInCredentialAsync(request, now);
+
+        return await CheckInAsync(classSession.Id, request);
     }
 
     public async Task<SessionAttendanceResponseDto> CheckInAsync(
@@ -397,6 +415,74 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
             classSessionId);
 
         return MapToDto(attendance);
+    }
+
+    private async Task<ClassSession> ResolveSessionFromCheckInCredentialAsync(
+        ClassSessionCheckInRequestDto request,
+        DateTime now)
+    {
+        if (request.Token.HasValue)
+        {
+            var byToken = await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
+                cs => cs.CheckInToken == request.Token.Value && !cs.IsDeleted);
+
+            if (byToken is null)
+            {
+                throw ErrorHelper.BadRequest(ClassSessionCheckInValidator.TokenInvalidMessage);
+            }
+
+            if (byToken.CheckInTokenExpiresAt is null || now > byToken.CheckInTokenExpiresAt.Value)
+            {
+                throw ErrorHelper.BadRequest(ClassSessionCheckInValidator.TokenExpiredMessage);
+            }
+
+            return byToken;
+        }
+
+        var code = request.Code!.Trim();
+        var liveMatches = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => !cs.IsDeleted
+                  && cs.CheckInToken != null
+                  && cs.CheckInTokenExpiresAt != null
+                  && cs.CheckInTokenExpiresAt >= now
+                  && cs.CheckInCode == code);
+
+        if (liveMatches.Count == 0)
+        {
+            throw ErrorHelper.BadRequest(ClassSessionCheckInValidator.TokenInvalidMessage);
+        }
+
+        if (liveMatches.Count > 1)
+        {
+            throw ErrorHelper.BadRequest(ClassSessionCheckInValidator.AmbiguousCodeMessage);
+        }
+
+        return liveMatches[0];
+    }
+
+    private async Task<string> GenerateUniqueLiveCheckInCodeAsync(Guid classSessionId, DateTime now)
+    {
+        const int maxAttempts = 32;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+            var collision = await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
+                cs => !cs.IsDeleted
+                      && cs.Id != classSessionId
+                      && cs.CheckInToken != null
+                      && cs.CheckInTokenExpiresAt != null
+                      && cs.CheckInTokenExpiresAt >= now
+                      && cs.CheckInCode == code);
+
+            if (collision is null)
+            {
+                return code;
+            }
+        }
+
+        throw ErrorHelper.BadRequest(
+            "Unable to generate a unique check-in code. Please try again.");
     }
 
     private async Task TryFailModuleForExcessAbsencesAsync(ModuleEnrollment moduleEnrollment)

@@ -172,6 +172,14 @@ If sessions are deleted or cancelled so coverage no longer matches the curriculu
 curriculum item: **LiveOnline**, **Offline**, or **AssignmentWindow**. LiveOnline
 join links live on `MeetingUrl` (separate from free-text `Location`).
 `SessionAttendance` records attendance status per student.
+Student QR/code check-in for Offline sessions:
+
+| Endpoint | Who | Notes |
+| --- | --- | --- |
+| `POST /api/class-sessions/{id}/checkin-token` | Mentor / Manager / Admin | Rotate QR UUID + 6-digit code (~60s TTL). Live 6-digit codes are unique across non-expired tokens. |
+| `POST /api/class-sessions/{id}/checkin` | Student | Web / session-scoped. Body: exactly one of `{ "token" }` or `{ "code" }`. |
+| `POST /api/class-sessions/checkin-by-token` | Student | Mobile scan-first. Same body; resolves live token/code → session (no `sessionId` in path). Code must match exactly one non-expired live token (0 or >1 → fail closed). |
+
 `ClassSessionExpert` stores a co-teach invitation (`Invited` / `Accepted` /
 `Declined`) and private mentor feedback after the session is completed.
 Students must not see feedback fields. Multiple Invited or Accepted experts

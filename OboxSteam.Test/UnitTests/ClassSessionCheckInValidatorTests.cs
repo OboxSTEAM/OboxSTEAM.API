@@ -103,4 +103,34 @@ public sealed class ClassSessionCheckInValidatorTests
     {
         ClassSessionCheckInValidator.ValidateTokenOrCode(OpenSession(), null, " 123456 ", Now);
     }
+
+    [Fact]
+    public void ValidateExactlyOneCredential_RejectsNeither()
+    {
+        var ex = Assert.Throws<BadRequestException>(() =>
+            ClassSessionCheckInValidator.ValidateExactlyOneCredential(null, null));
+
+        Assert.Equal(ClassSessionCheckInValidator.CredentialRequiredMessage, ex.Message);
+    }
+
+    [Fact]
+    public void ValidateExactlyOneCredential_RejectsBoth()
+    {
+        var ex = Assert.Throws<BadRequestException>(() =>
+            ClassSessionCheckInValidator.ValidateExactlyOneCredential(Token, "123456"));
+
+        Assert.Equal(ClassSessionCheckInValidator.CredentialRequiredMessage, ex.Message);
+    }
+
+    [Fact]
+    public void ValidateExactlyOneCredential_AcceptsTokenOnly()
+    {
+        ClassSessionCheckInValidator.ValidateExactlyOneCredential(Token, null);
+    }
+
+    [Fact]
+    public void ValidateExactlyOneCredential_AcceptsCodeOnly()
+    {
+        ClassSessionCheckInValidator.ValidateExactlyOneCredential(null, "123456");
+    }
 }

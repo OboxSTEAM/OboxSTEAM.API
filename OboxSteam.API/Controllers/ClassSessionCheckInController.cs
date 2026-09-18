@@ -52,6 +52,41 @@ public class ClassSessionCheckInController : ControllerBase
     }
 
     // =========================================================================
+    // STUDENT CHECK-IN (SCAN-FIRST)  —  POST /api/class-sessions/checkin-by-token
+    // =========================================================================
+
+    [HttpPost("checkin-by-token")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Check in by QR token or live code (scan-first)",
+        Description = "Student self check-in without a session id in the path. "
+            + "Body must contain exactly one of token (QR UUID) or code (6-digit). "
+            + "Resolves a live non-expired credential to the class session, then "
+            + "records attendance as Present. A 6-digit code must match exactly one "
+            + "live session — zero or multiple hits fail closed.")]
+    [ProducesResponseType(typeof(ApiResult<SessionAttendanceResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> CheckInByToken(
+        [FromBody, SwaggerParameter("QR token or 6-digit fallback code (exactly one)")]
+        ClassSessionCheckInRequestDto dto)
+    {
+        if (dto == null)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Check-in data is required."));
+        }
+
+        var result = await _sessionAttendanceService.CheckInByTokenAsync(dto);
+
+        return Ok(ApiResult<SessionAttendanceResponseDto>.Success(
+            result,
+            "200",
+            "Checked in successfully."));
+    }
+
+    // =========================================================================
     // STUDENT CHECK-IN  —  POST /api/class-sessions/{id}/checkin
     // =========================================================================
 

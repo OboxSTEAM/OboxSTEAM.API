@@ -26,11 +26,32 @@ public static class ClassSessionCheckInValidator
     public const string TokenInvalidMessage =
         "Invalid check-in token or code.";
 
+    public const string CredentialRequiredMessage =
+        "Provide either a check-in token or a 6-digit code, not both.";
+
+    public const string AmbiguousCodeMessage =
+        "This check-in code matches multiple active sessions. Ask your mentor for a fresh QR code.";
+
     public static void ValidateSessionOpenForCheckIn(ClassSession session)
     {
         if (session.Status is not (ClassSessionStatus.Scheduled or ClassSessionStatus.InProgress))
         {
             throw ErrorHelper.BadRequest(SessionNotOpenMessage);
+        }
+    }
+
+    /// <summary>
+    /// Scan-first check-in requires exactly one credential:
+    /// either <paramref name="token"/> or <paramref name="code"/>, never both or neither.
+    /// </summary>
+    public static void ValidateExactlyOneCredential(Guid? token, string? code)
+    {
+        var hasToken = token.HasValue;
+        var hasCode = !string.IsNullOrWhiteSpace(code);
+
+        if (hasToken == hasCode)
+        {
+            throw ErrorHelper.BadRequest(CredentialRequiredMessage);
         }
     }
 

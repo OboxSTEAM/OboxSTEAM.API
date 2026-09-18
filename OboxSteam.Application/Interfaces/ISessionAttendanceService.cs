@@ -46,4 +46,11 @@ public interface ISessionAttendanceService
     /// with <c>RecordedBy</c> set to the student themself.
     /// </summary>
     Task<SessionAttendanceResponseDto> CheckInAsync(Guid classSessionId, ClassSessionCheckInRequestDto request);
+
+    /// <summary>
+    /// Scan-first student check-in: resolves a live QR token or uniquely live 6-digit code
+    /// to a class session, then records attendance as Present (same path as
+    /// <see cref="CheckInAsync"/>).
+    /// </summary>
+    Task<SessionAttendanceResponseDto> CheckInByTokenAsync(ClassSessionCheckInRequestDto request);
 }

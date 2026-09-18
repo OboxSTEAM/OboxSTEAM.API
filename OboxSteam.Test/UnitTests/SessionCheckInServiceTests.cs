@@ -350,4 +350,146 @@ public sealed class SessionCheckInServiceTests
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             sut.CheckInAsync(_sessionId, new ClassSessionCheckInRequestDto { Code = "123456" }));
     }
+
+    // ── CheckInByTokenAsync ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CheckInByToken_CreatesPresentAttendance_WithValidToken()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedClass(mentorId: _mentorId);
+        SeedSession();
+        SeedStudentRoster();
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.CheckInByTokenAsync(
+            new ClassSessionCheckInRequestDto
+            {
+                Token = Guid.Parse("99999999-9999-9999-9999-999999999999"),
+            });
+
+        Assert.Equal(AttendanceStatus.Present, result.Status);
+        Assert.Equal(_sessionId, result.ClassSessionId);
+        Assert.Equal(_studentId, result.StudentId);
+        Assert.Equal(_studentId, result.RecordedBy);
+        Assert.Equal(_now, result.CheckedInAt);
+    }
+
+    [Fact]
+    public async Task CheckInByToken_CreatesPresentAttendance_WithUniqueLiveCode()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedClass(mentorId: _mentorId);
+        SeedSession();
+        SeedStudentRoster();
+        var sut = CreateSut(_studentId);
+
+        var result = await sut.CheckInByTokenAsync(
+            new ClassSessionCheckInRequestDto { Code = "123456" });
+
+        Assert.Equal(AttendanceStatus.Present, result.Status);
+        Assert.Equal(_sessionId, result.ClassSessionId);
+    }
+
+    [Fact]
+    public async Task CheckInByToken_ThrowsBadRequest_WhenTokenExpired()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedClass(mentorId: _mentorId);
+        var session = SeedSession();
+        session.CheckInTokenExpiresAt = _now.AddSeconds(-1);
+        SeedStudentRoster();
+        var sut = CreateSut(_studentId);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CheckInByTokenAsync(
+                new ClassSessionCheckInRequestDto
+                {
+                    Token = Guid.Parse("99999999-9999-9999-9999-999999999999"),
+                }));
+
+        Assert.Equal(ClassSessionCheckInValidator.TokenExpiredMessage, ex.Message);
+    }
+
+    [Fact]
+    public async Task CheckInByToken_ThrowsForbidden_WhenCallerIsNotStudent()
+    {
+        SeedUser(_mentorId, RoleType.Mentor, "MNT-001");
+        SeedClass(mentorId: _mentorId);
+        SeedSession();
+        var sut = CreateSut(_mentorId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.CheckInByTokenAsync(
+                new ClassSessionCheckInRequestDto
+                {
+                    Token = Guid.Parse("99999999-9999-9999-9999-999999999999"),
+                }));
+    }
+
+    [Fact]
+    public async Task CheckInByToken_ThrowsBadRequest_WhenCodeIsAmbiguousAcrossLiveSessions()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedClass(mentorId: _mentorId);
+        SeedSession();
+        _db.ClassSessions.Seed(new ClassSession
+        {
+            Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            ClassId = _classId,
+            ModuleId = _moduleId,
+            Title = "Other field trip",
+            SessionKind = SessionKind.Offline,
+            StartTime = _now.AddHours(-1),
+            EndTime = _now.AddHours(1),
+            Status = ClassSessionStatus.InProgress,
+            CheckInToken = Guid.NewGuid(),
+            CheckInCode = "123456",
+            CheckInTokenExpiresAt = _now.AddSeconds(30),
+            IsDeleted = false,
+        });
+        SeedStudentRoster();
+        var sut = CreateSut(_studentId);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CheckInByTokenAsync(new ClassSessionCheckInRequestDto { Code = "123456" }));
+
+        Assert.Equal(ClassSessionCheckInValidator.AmbiguousCodeMessage, ex.Message);
+    }
+
+    [Fact]
+    public async Task CheckInByToken_ThrowsBadRequest_WhenStudentNotEnrolled()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedClass(mentorId: _mentorId);
+        SeedSession();
+        var sut = CreateSut(_studentId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CheckInByTokenAsync(
+                new ClassSessionCheckInRequestDto
+                {
+                    Token = Guid.Parse("99999999-9999-9999-9999-999999999999"),
+                }));
+    }
+
+    [Fact]
+    public async Task CheckInByToken_ThrowsBadRequest_WhenBothTokenAndCodeProvided()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedClass(mentorId: _mentorId);
+        SeedSession();
+        SeedStudentRoster();
+        var sut = CreateSut(_studentId);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CheckInByTokenAsync(
+                new ClassSessionCheckInRequestDto
+                {
+                    Token = Guid.Parse("99999999-9999-9999-9999-999999999999"),
+                    Code = "123456",
+                }));
+
+        Assert.Equal(ClassSessionCheckInValidator.CredentialRequiredMessage, ex.Message);
+    }
 }
