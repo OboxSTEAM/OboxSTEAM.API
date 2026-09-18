@@ -436,7 +436,16 @@ public sealed class DashboardServiceTests
 
     private void SeedOperationsData(Program program, ProgramEnrollment programEnrollment, Module module)
     {
-        SeedUser(_mentorId, RoleType.Mentor, "MNT-001", maxConcurrent: 5);
+        var mentor = SeedUser(_mentorId, RoleType.Mentor, "MNT-001", maxConcurrent: 5);
+        mentor.AvatarUrl = "https://cdn.example.com/avatars/mnt-001.webp";
+        mentor.MentorProfile = new MentorProfile
+        {
+            MentorId = _mentorId,
+            Mentor = mentor,
+            Title = "Robotics",
+            IsDeleted = false,
+        };
+        _db.MentorProfiles.Seed(mentor.MentorProfile);
 
         var classEnrollment = new ClassEnrollment
         {
@@ -760,6 +769,8 @@ public sealed class DashboardServiceTests
 
         var mentor = Assert.Single(result.MentorUtilization.Items);
         Assert.Equal(_mentorId, mentor.MentorId);
+        Assert.Equal("https://cdn.example.com/avatars/mnt-001.webp", mentor.AvatarUrl);
+        Assert.Equal("Robotics", mentor.Title);
         Assert.Equal(2, mentor.Assigned);
         Assert.Equal(1, mentor.Pending);
         Assert.Equal(5, mentor.Max);

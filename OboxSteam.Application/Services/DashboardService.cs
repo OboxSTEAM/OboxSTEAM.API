@@ -618,7 +618,16 @@ public sealed class DashboardService : IDashboardService
         var mentors = _unitOfWork.Users
             .GetQueryable()
             .Where(u => !u.IsDeleted && u.Role == RoleType.Mentor)
-            .Select(u => new { u.Id, Name = u.FullName ?? u.Email, u.MaxConcurrentClasses })
+            .Select(u => new
+            {
+                u.Id,
+                Name = u.FullName ?? u.Email,
+                u.AvatarUrl,
+                Title = u.MentorProfile != null && !u.MentorProfile.IsDeleted
+                    ? u.MentorProfile.Title
+                    : null,
+                u.MaxConcurrentClasses
+            })
             .ToList();
 
         var utilization = new List<MentorUtilizationDto>();
@@ -632,6 +641,8 @@ public sealed class DashboardService : IDashboardService
             {
                 MentorId = mentor.Id,
                 MentorName = mentor.Name,
+                AvatarUrl = mentor.AvatarUrl,
+                Title = mentor.Title,
                 Assigned = assigned,
                 Pending = pending,
                 Max = mentor.MaxConcurrentClasses
