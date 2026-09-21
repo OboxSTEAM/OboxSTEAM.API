@@ -9,7 +9,9 @@ public interface IMediaService
 {
     /// <summary>
     /// Uploads an image or video to S3 and creates a <c>MediaAsset</c> record.
-    /// Images are face-tagged synchronously via Rekognition SearchFaces.
+    /// Images are face-tagged synchronously via Rekognition SearchFaces when a
+    /// registered face matches an Active student in the class. Images with no face
+    /// or no match are stored with an empty tag list. A face is not required.
     /// Videos upload raw to S3, then <see cref="StartVideoTranscodeAsync"/> is invoked in the
     /// same request (MediaConvert submit only — AWS runs transcode asynchronously).
     /// Returns immediately with <c>VideoStatus = Transcoding</c> until AWS webhooks (or manual

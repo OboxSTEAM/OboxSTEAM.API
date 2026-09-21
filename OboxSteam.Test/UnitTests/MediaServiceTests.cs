@@ -425,6 +425,35 @@ public sealed class MediaServiceTests
     }
 
     [Fact]
+    public async Task UploadMediaAsync_Image_NoFaceMatches_AcceptsWithZeroTags()
+    {
+        SeedBase();
+        _blobService
+            .Setup(b => b.UploadFileAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _blobService
+            .Setup(b => b.GetPreviewUrlAsync(It.IsAny<string>()))
+            .ReturnsAsync("https://cdn.example.com/photo.jpg");
+        _faceRecognition
+            .Setup(f => f.SearchFacesAsync("obox-bucket", It.IsAny<string>(), It.IsAny<float>()))
+            .ReturnsAsync([]);
+
+        var sut = CreateSut(_mentorId);
+        var result = await sut.UploadMediaAsync(CreateImageFile().Object, _classId);
+
+        Assert.Equal("image", result.FileType);
+        Assert.Empty(result.Tags);
+        Assert.Single(_db.MediaAssets.Items, m => !m.IsDeleted && m.FileType == "image");
+        _blobService.Verify(
+            b => b.DeleteByKeyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task TryProcessVideoTagsAsync_SkipsStudentsNotActiveInClass()
     {
         SeedBase();

@@ -122,21 +122,34 @@ public class FaceRecognitionService : IFaceRecognitionService
         _logger.LogInformation("SearchFacesAsync started. Bucket={Bucket}, Key={Key}, MinConfidence={MinConfidence}",
             s3Bucket, s3Key, minConfidence);
 
-        var response = await _rekognition.SearchFacesByImageAsync(new SearchFacesByImageRequest
+        SearchFacesByImageResponse response;
+        try
         {
-            CollectionId = CollectionId,
-            Image = new Image
+            response = await _rekognition.SearchFacesByImageAsync(new SearchFacesByImageRequest
             {
-                S3Object = new Amazon.Rekognition.Model.S3Object
+                CollectionId = CollectionId,
+                Image = new Image
                 {
-                    Bucket = s3Bucket,
-                    Name = s3Key
-                }
-            },
-            FaceMatchThreshold = minConfidence,
-            QualityFilter = QualityFilter.AUTO,
-            MaxFaces = 10
-        });
+                    S3Object = new Amazon.Rekognition.Model.S3Object
+                    {
+                        Bucket = s3Bucket,
+                        Name = s3Key
+                    }
+                },
+                FaceMatchThreshold = minConfidence,
+                QualityFilter = QualityFilter.AUTO,
+                MaxFaces = 10
+            });
+        }
+        catch (InvalidParameterException ex) when (IsNoFaceInImage(ex))
+        {
+            // Rekognition throws when the image contains no detectable face.
+            // Callers treat that the same as a search that matched nobody.
+            _logger.LogInformation(
+                "SearchFacesAsync found no face in the image. Bucket={Bucket}, Key={Key}",
+                s3Bucket, s3Key);
+            return new List<FaceMatchResult>();
+        }
 
         if (response.FaceMatches == null || !response.FaceMatches.Any())
         {
@@ -157,6 +170,11 @@ public class FaceRecognitionService : IFaceRecognitionService
 
         _logger.LogInformation("SearchFacesAsync completed with {MatchCount} match(es)", results.Count);
         return results;
+    }
+
+    private static bool IsNoFaceInImage(InvalidParameterException ex)
+    {
+        return ex.Message.Contains("no face", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />

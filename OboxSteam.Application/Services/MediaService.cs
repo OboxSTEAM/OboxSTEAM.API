@@ -93,16 +93,8 @@ public class MediaService : IMediaService
             await _blobService.UploadFileAsync(fileName, uploadStream, MediaFolder);
             fileUrl = await _blobService.GetPreviewUrlAsync(path);
 
+            // Empty when the image has no face or no registered match. The asset is still stored.
             prevalidatedMatches = await _faceRecognitionService.SearchFacesAsync(_blobService.BucketName, path);
-
-            if (prevalidatedMatches.Count == 0)
-            {
-                _logger.LogWarning("No recognizable face found in uploaded image. Removing S3 object: {Path}", path);
-                await _blobService.DeleteByKeyAsync(path);
-                throw ErrorHelper.BadRequest(
-                    "No recognizable face found in the uploaded image. " +
-                    "Please upload a clear photo where a registered student's face is visible.");
-            }
         }
         else
         {
@@ -1682,8 +1674,9 @@ public class MediaService : IMediaService
     /// <summary>
     /// Persists <see cref="MediaTag"/> rows from already-fetched Rekognition matches,
     /// limited to students Active-enrolled in <paramref name="classId"/>.
-    /// Called for images after face pre-validation in <see cref="UploadMediaAsync"/>.
-    /// May return an empty list when no in-class students matched (upload still succeeds).
+    /// Called for images after SearchFaces in <see cref="UploadMediaAsync"/>.
+    /// Returns an empty list when Rekognition finds no face, no registered match,
+    /// or only students who are not Active in the class. The upload still succeeds.
     /// </summary>
     private async Task<List<MediaTag>> SaveFaceTagsAsync(
         Guid mediaId,

@@ -22,8 +22,8 @@ public class MediaController : ControllerBase
     }
 
     /// <summary>
-    /// Upload an image or video to a class. Auto face-tagging is applied.
-    /// Images are tagged synchronously. Videos upload raw to S3, submit MediaConvert in this
+    /// Upload an image or video to a class. A face is not required.
+    /// Images are tagged synchronously when a registered face matches. Videos upload raw to S3, submit MediaConvert in this
     /// request, then AWS webhooks drive transcode and face search. Poll
     /// POST /api/media/{mediaId}/process-tags if tags are not ready yet.
     /// </summary>
@@ -34,7 +34,8 @@ public class MediaController : ControllerBase
         Summary = "Upload media to class",
         Description = "Uploads an image (.jpg, .jpeg, .png) or video (.mp4, .mov) for a class. " +
                       "classId is required; classSessionId is optional and must belong to that class. " +
-                      "Images are auto face-tagged immediately. Videos: raw upload + MediaConvert submit " +
+                      "A face is not required. Images are auto face-tagged when a registered face matches; " +
+                      "otherwise the image is stored with no tags. Videos: raw upload + MediaConvert submit " +
                       "in one request; AWS SNS webhooks complete transcode and start Rekognition. " +
                       "Call POST /api/media/{mediaId}/process-tags to poll face tags if webhooks are delayed."
     )]
