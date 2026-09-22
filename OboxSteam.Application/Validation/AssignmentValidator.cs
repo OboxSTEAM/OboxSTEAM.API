@@ -25,6 +25,12 @@ public static class AssignmentValidator
         int maxAttempts,
         int? timeLimitMinutes)
     {
+        ValidateScoreAndAttemptLimits(maxPoints, passScore, maxAttempts);
+        ValidateTimeLimitRequired(timeLimitMinutes);
+    }
+
+    public static void ValidateScoreAndAttemptLimits(int maxPoints, decimal passScore, int maxAttempts)
+    {
         if (maxPoints <= 0)
             throw ErrorHelper.BadRequest("MaxPoints must be greater than 0.");
 
@@ -36,12 +42,30 @@ public static class AssignmentValidator
 
         if (maxAttempts < 1)
             throw ErrorHelper.BadRequest("MaxAttempts must be at least 1.");
-
-        ValidateTimeLimitRequired(timeLimitMinutes);
     }
+
+    public const string TimeLimitMinimumMessage = "TimeLimitMinutes must be at least 1.";
 
     public const string TimeLimitRequiredMessage =
         "TimeLimitMinutes is required and must be greater than 0.";
+
+    /// <summary>
+    /// Quiz assignments need a start clock. File and retrospective deliverables
+    /// may omit it; a present value must still be at least 1 minute.
+    /// </summary>
+    public static void ValidateTimeLimitForAssignmentType(AssignmentType assignmentType, int? timeLimitMinutes)
+    {
+        if (assignmentType == AssignmentType.Quiz)
+        {
+            if (timeLimitMinutes is null or < 1)
+                throw ErrorHelper.BadRequest(TimeLimitMinimumMessage);
+
+            return;
+        }
+
+        if (timeLimitMinutes is < 1)
+            throw ErrorHelper.BadRequest(TimeLimitMinimumMessage);
+    }
 
     public static void ValidateTimeLimitRequired(int? timeLimitMinutes)
     {
@@ -55,6 +79,18 @@ public static class AssignmentValidator
     {
         ValidateTimeLimitRequired(timeLimitMinutes);
         return utcNow.AddMinutes(timeLimitMinutes!.Value);
+    }
+
+    /// <summary>
+    /// Returns the quiz-clock expiry when a positive limit is set, otherwise null
+    /// so file and journal drafts follow the class session window.
+    /// </summary>
+    public static DateTime? TryResolveAttemptExpiresAt(int? timeLimitMinutes, DateTime utcNow)
+    {
+        if (timeLimitMinutes is null or <= 0)
+            return null;
+
+        return utcNow.AddMinutes(timeLimitMinutes.Value);
     }
 
     public static Module ValidateModuleExists(Module? module)

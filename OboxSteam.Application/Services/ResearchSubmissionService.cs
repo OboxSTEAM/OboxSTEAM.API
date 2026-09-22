@@ -368,7 +368,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
 
         if (proposedStatus == SubmissionStatus.ReturnedForRevision)
         {
-            submission.ExpiresAt = AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now);
+            submission.ExpiresAt = ResolveResearchAttemptExpiresAt(assignment, now);
         }
 
         await _unitOfWork.Submissions.Update(submission);
@@ -570,6 +570,14 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             window);
     }
 
+    private static DateTime? ResolveResearchAttemptExpiresAt(Assignment assignment, DateTime now)
+    {
+        if (assignment.AssignmentType == AssignmentType.Quiz)
+            return AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now);
+
+        return AssignmentValidator.TryResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now);
+    }
+
     private async Task<Submission> EnsurePendingDraftAsync(
         Guid studentId,
         ModuleEnrollment enrollment,
@@ -604,7 +612,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             AttemptNumber = 0,
             Status = SubmissionStatus.Pending,
             StartedAt = now,
-            ExpiresAt = AssignmentValidator.ResolveAttemptExpiresAt(assignment.TimeLimitMinutes, now),
+            ExpiresAt = ResolveResearchAttemptExpiresAt(assignment, now),
             CreatedAt = now,
             CreatedBy = studentId,
             IsDeleted = false

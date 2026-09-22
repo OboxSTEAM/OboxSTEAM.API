@@ -42,10 +42,12 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
 
         AssignmentValidator.ValidateRequiredFields(request.Code, request.Title);
         AssignmentValidator.ValidateRequiredFields(request.AssignmentCode, request.AssignmentTitle);
-        AssignmentValidator.ValidateCommonFields(
+        AssignmentValidator.ValidateScoreAndAttemptLimits(
             request.MaxPoints,
             request.PassScore,
-            request.MaxAttempts,
+            request.MaxAttempts);
+        AssignmentValidator.ValidateTimeLimitForAssignmentType(
+            request.AssignmentType,
             request.TimeLimitMinutes);
 
         var duplicateMilestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
@@ -390,7 +392,8 @@ public sealed class ResearchMilestoneService : IResearchMilestoneService
             assignment.TimeLimitMinutes = request.TimeLimitMinutes;
         }
 
-        AssignmentValidator.ValidateCommonFields(maxPoints, passScore, assignment.MaxAttempts, assignment.TimeLimitMinutes);
+        AssignmentValidator.ValidateScoreAndAttemptLimits(maxPoints, passScore, assignment.MaxAttempts);
+        AssignmentValidator.ValidateTimeLimitForAssignmentType(assignment.AssignmentType, assignment.TimeLimitMinutes);
 
         if (!string.IsNullOrWhiteSpace(request.AssignmentTitle))
         {

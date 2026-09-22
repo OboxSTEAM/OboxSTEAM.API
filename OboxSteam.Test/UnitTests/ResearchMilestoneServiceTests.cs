@@ -4,6 +4,7 @@ using OboxSteam.Application.DTOs.ResearchMilestoneDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
@@ -225,7 +226,9 @@ public sealed class ResearchMilestoneServiceTests
         int order = 1,
         string code = "MLS-NEW",
         string assignmentCode = "ASG-NEW",
-        bool isCapstone = false)
+        bool isCapstone = false,
+        AssignmentType assignmentType = AssignmentType.FileUpload,
+        int? timeLimitMinutes = 60)
     {
         return new CreateResearchMilestoneRequestDto
         {
@@ -237,11 +240,11 @@ public sealed class ResearchMilestoneServiceTests
             AssignmentCode = assignmentCode,
             AssignmentTitle = "  Deliverable  ",
             AssignmentDescription = "Submit work",
-            AssignmentType = AssignmentType.FileUpload,
+            AssignmentType = assignmentType,
             MaxPoints = 100,
             PassScore = 70m,
             MaxAttempts = 2,
-            TimeLimitMinutes = 60,
+            TimeLimitMinutes = timeLimitMinutes,
         };
     }
 
@@ -266,6 +269,70 @@ public sealed class ResearchMilestoneServiceTests
         Assert.Single(_db.ResearchMilestones.Items);
         Assert.Single(_db.Assignments.Items);
         Assert.Equal(1, _db.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Create_AllowsMissingTimeLimit_WhenFileUploadOrRetrospective()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedResearchCurriculum();
+        var sut = CreateSut();
+
+        var fileResult = await sut.CreateMilestone(
+            _researchModuleId,
+            BuildCreateRequest(timeLimitMinutes: null));
+        var journalResult = await sut.CreateMilestone(
+            _researchModuleId,
+            BuildCreateRequest(
+                order: 2,
+                code: "MLS-JRN",
+                assignmentCode: "ASG-JRN",
+                assignmentType: AssignmentType.Retrospective,
+                timeLimitMinutes: null));
+
+        Assert.Null(fileResult.Assignment.TimeLimitMinutes);
+        Assert.Equal(AssignmentType.FileUpload, fileResult.Assignment.AssignmentType);
+        Assert.Null(journalResult.Assignment.TimeLimitMinutes);
+        Assert.Equal(AssignmentType.Retrospective, journalResult.Assignment.AssignmentType);
+    }
+
+    [Fact]
+    public async Task Create_RequiresTimeLimit_WhenQuiz()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedResearchCurriculum();
+        var sut = CreateSut();
+
+        var missing = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateMilestone(
+                _researchModuleId,
+                BuildCreateRequest(assignmentType: AssignmentType.Quiz, timeLimitMinutes: null)));
+        Assert.Equal(AssignmentValidator.TimeLimitMinimumMessage, missing.Message);
+
+        var zero = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateMilestone(
+                _researchModuleId,
+                BuildCreateRequest(assignmentType: AssignmentType.Quiz, timeLimitMinutes: 0)));
+        Assert.Equal(AssignmentValidator.TimeLimitMinimumMessage, zero.Message);
+
+        var created = await sut.CreateMilestone(
+            _researchModuleId,
+            BuildCreateRequest(assignmentType: AssignmentType.Quiz, timeLimitMinutes: 30));
+        Assert.Equal(30, created.Assignment.TimeLimitMinutes);
+    }
+
+    [Fact]
+    public async Task Create_RejectsNonPositiveTimeLimit_WhenNotQuiz()
+    {
+        SeedUser(_managerId, RoleType.Manager, "MGR-001");
+        SeedResearchCurriculum();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateMilestone(
+                _researchModuleId,
+                BuildCreateRequest(timeLimitMinutes: 0)));
+        Assert.Equal(AssignmentValidator.TimeLimitMinimumMessage, ex.Message);
     }
 
     [Fact]

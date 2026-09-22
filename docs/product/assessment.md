@@ -13,9 +13,15 @@ Hands-on session evidence is captured through activities and media upload (see
 
 Assignments belong to a `Module` and optionally a `Course`. Catalog fields
 include `MaxPoints`, `PassScore`, `IsRequiredForModulePass`,
-`TimeLimitMinutes`, and `MaxAttempts`. Every assignment type must have
-`TimeLimitMinutes` greater than 0 (application validation; the column stays
-nullable). Starting an attempt sets `Submission.ExpiresAt`. Calendar open/close
+`TimeLimitMinutes`, and `MaxAttempts`. Catalog assignment create still requires
+`TimeLimitMinutes` greater than 0 for every type (application validation; the
+column stays nullable). Research milestone create
+(`POST /api/modules/{moduleId}/research-milestones`) requires an integer of at
+least 1 only when `assignmentType` is `Quiz`. FileUpload and Retrospective
+milestones accept a missing or null `timeLimitMinutes`; a present value must
+still be at least 1. Starting an attempt sets `Submission.ExpiresAt` from that
+clock when it is set. A file or journal draft with no clock has no
+`ExpiresAt` and follows the class session window. Calendar open/close
 is **not** on the assignment: each class has one `ClassSession` with
 `SessionKind = AssignmentWindow` (`StartTime` opens new attempts, `EndTime`
 hard-closes new attempts). An attempt already in progress (`Pending` or

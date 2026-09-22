@@ -41,6 +41,11 @@ public class CreateResearchMilestoneRequestDto
 
     public int MaxAttempts { get; set; } = 1;
 
+    /// <summary>
+    /// Quiz clock in minutes after the student starts. Required only when
+    /// <see cref="AssignmentType"/> is <see cref="AssignmentType.Quiz"/>.
+    /// File and retrospective deliverables use the class session window instead.
+    /// </summary>
     [Range(1, int.MaxValue, ErrorMessage = "TimeLimitMinutes must be at least 1.")]
-    public int TimeLimitMinutes { get; set; }
+    public int? TimeLimitMinutes { get; set; }
 }

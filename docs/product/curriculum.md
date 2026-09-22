@@ -249,6 +249,8 @@ AssignmentWindow rows do not count as mentor calendar busy time and do not
 require attendance. SelfPaced activities are never scheduled. Research
 milestone create/update/delete uses the same curriculum edit lock as
 assignment CRUD (no InProgress class; no Open class with Active students).
+Milestone create accepts a missing `timeLimitMinutes` unless the deliverable
+is a Quiz; that field is the quiz clock, not the class window.
 
 Mentor rollup: `GET /api/classes/{classId}/curriculum-progress` aggregates
 activity and assignment progress for active class enrollments (assigned mentor

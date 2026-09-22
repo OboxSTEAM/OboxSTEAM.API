@@ -633,6 +633,14 @@ public sealed class ValidatorAndUtilsTests
         Assert.Throws<BadRequestException>(() => AssignmentValidator.ValidateRequiredFields("", "title"));
         Assert.Throws<BadRequestException>(() =>
             AssignmentValidator.ValidateCommonFields(0, 0, 0, -1));
+        AssignmentValidator.ValidateTimeLimitForAssignmentType(AssignmentType.FileUpload, null);
+        AssignmentValidator.ValidateTimeLimitForAssignmentType(AssignmentType.Retrospective, null);
+        Assert.Throws<BadRequestException>(() =>
+            AssignmentValidator.ValidateTimeLimitForAssignmentType(AssignmentType.Quiz, null));
+        Assert.Null(AssignmentValidator.TryResolveAttemptExpiresAt(null, FixedNow));
+        Assert.Equal(
+            FixedNow.AddMinutes(15),
+            AssignmentValidator.TryResolveAttemptExpiresAt(15, FixedNow));
         Assert.Throws<NotFoundException>(() => AssignmentValidator.ValidateModuleExists(null));
         Assert.Throws<ConflictException>(() => AssignmentValidator.ValidateCanDelete(1));
         Assert.Throws<BadRequestException>(() =>
