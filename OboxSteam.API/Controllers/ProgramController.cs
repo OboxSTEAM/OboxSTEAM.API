@@ -54,7 +54,9 @@ public class ProgramController : ControllerBase
     [HttpGet]
     [SwaggerOperation(
         Summary = "Get all programs",
-        Description = "Retrieve a paginated list of program information without modules. Supports search, filter, and sort options.")]
+        Description = "Retrieve a paginated list of program information without modules. Supports search, filter, and sort options. "
+            + "When status=Active (student catalog), only programs with at least one Standard Open class that still has seats "
+            + "are returned — same enrollability rule as open-classes and tuition checkout.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ProgramListItemDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
@@ -68,7 +70,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, PendingReview, Approved, Active, Inactive (optional)")] ProgramStatus? status = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, PendingReview, Approved, Active, Inactive (optional). Active also requires an enrollable Open Standard class with seats.")] ProgramStatus? status = null,
         [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)
@@ -88,7 +90,8 @@ public class ProgramController : ControllerBase
     [HttpGet("with-modules")]
     [SwaggerOperation(
         Summary = "Get all programs with modules",
-        Description = "Retrieve a paginated list of programs including their modules. Supports search, filter, and sort options.")]
+        Description = "Retrieve a paginated list of programs including their modules. Supports search, filter, and sort options. "
+            + "When status=Active, only programs with at least one Standard Open class that still has seats are returned.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ProgramsResponseDto>>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 500)]
@@ -102,7 +105,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, PendingReview, Approved, Active, Inactive (optional)")] ProgramStatus? status = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, PendingReview, Approved, Active, Inactive (optional). Active also requires an enrollable Open Standard class with seats.")] ProgramStatus? status = null,
         [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)

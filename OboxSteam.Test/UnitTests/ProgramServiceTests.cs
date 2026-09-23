@@ -107,6 +107,48 @@ public sealed class ProgramServiceTests
         });
     }
 
+    private Class SeedOpenClass(
+        Guid? programId = null,
+        Guid? classId = null,
+        string code = "CLS-OPEN",
+        int maxCapacity = 20,
+        ClassStatus status = ClassStatus.Open,
+        ClassKind kind = ClassKind.Standard)
+    {
+        var entity = new Class
+        {
+            Id = classId ?? Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            Code = code,
+            Name = "Open Cohort",
+            ProgramId = programId ?? _programId,
+            StartDate = DateTime.UtcNow.Date.AddDays(14),
+            EndDate = DateTime.UtcNow.Date.AddDays(90),
+            MaxCapacity = maxCapacity,
+            Status = status,
+            Kind = kind,
+            IsDeleted = false,
+        };
+        _db.Classes.Seed(entity);
+        return entity;
+    }
+
+    private void SeedOccupiedSeats(Guid classId, int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            _db.ClassEnrollments.Seed(new ClassEnrollment
+            {
+                Id = Guid.NewGuid(),
+                ClassId = classId,
+                StudentId = Guid.NewGuid(),
+                ProgramEnrollmentId = Guid.NewGuid(),
+                Status = ClassEnrollmentStatus.Active,
+                EnrolledAt = DateTime.UtcNow,
+                IsDeleted = false,
+            });
+        }
+    }
+
     // ── GetProgramByIdAsync ───────────────────────────────────────────────────
 
     [Fact]
@@ -207,6 +249,7 @@ public sealed class ProgramServiceTests
     public async Task GetAll_ReturnsFilteredSortedPageWithExperts()
     {
         SeedProgram();
+        SeedOpenClass();
         SeedProgram(
             id: _otherProgramId,
             name: "Advanced Program",
@@ -224,6 +267,39 @@ public sealed class ProgramServiceTests
         Assert.Equal(1, result.TotalCount);
         Assert.Equal("STEAM Program", result.Items[0].Name);
         Assert.Single(result.Items[0].Experts);
+    }
+
+    [Fact]
+    public async Task GetAll_WhenStatusActive_ExcludesProgramsWithoutOpenClassCapacity()
+    {
+        SeedProgram();
+        SeedOpenClass(status: ClassStatus.ReadyForMentor);
+
+        var enrollableId = _otherProgramId;
+        SeedProgram(id: enrollableId, name: "Enrollable Program", code: "PRG-OPEN");
+        SeedOpenClass(
+            programId: enrollableId,
+            classId: Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            code: "CLS-ENROLL");
+
+        var fullProgramId = Guid.Parse("24242424-2424-2424-2424-242424242424");
+        SeedProgram(id: fullProgramId, name: "Full Program", code: "PRG-FULL");
+        var fullClass = SeedOpenClass(
+            programId: fullProgramId,
+            classId: Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            code: "CLS-FULL",
+            maxCapacity: 1);
+        SeedOccupiedSeats(fullClass.Id, 1);
+
+        var sut = CreateSut();
+
+        var activeCatalog = await sut.GetAllProgramsAsync(
+            null, "name", false, 1, 10, status: ProgramStatus.Active);
+        var unfiltered = await sut.GetAllProgramsAsync(null, "name", false, 1, 10);
+
+        Assert.Equal(1, activeCatalog.TotalCount);
+        Assert.Equal("Enrollable Program", activeCatalog.Items[0].Name);
+        Assert.Equal(3, unfiltered.TotalCount);
     }
 
     [Fact]

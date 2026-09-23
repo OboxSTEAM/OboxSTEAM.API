@@ -13,7 +13,12 @@ Status fields use `EnrollmentStatus` or `ClassEnrollmentStatus` enums.
 
 ## Student Flow
 
-1. Browse programs (public catalog).
+1. Browse programs (public catalog): `GET /api/programs?status=Active` returns only
+   programs that already have at least one Standard **Open** class with seats
+   remaining (same enrollability rule as open-classes / tuition checkout). Publishing
+   a program to Active is not enough by itself — class schedule, mentor assignment,
+   and opening enrollment must complete first. Omitting `status` (or using other
+   statuses) does not apply this enrollability filter (manager/admin browse).
 2. Preview recruiting cohorts via `GET /api/programs/{programId}/open-classes`
    (public; Standard + **Open** + seats remaining > 0, with schedule sessions and seat
    counts). Logged-in students picking a class for checkout use

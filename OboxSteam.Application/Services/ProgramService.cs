@@ -360,6 +360,11 @@ public class ProgramService : IProgramService
         if (status.HasValue)
             query = query.Where(p => p.Status == status.Value);
 
+        // Public student catalog (status=Active) must match open-classes / checkout:
+        // at least one Standard Open class with remaining seats.
+        if (status == ProgramStatus.Active)
+            query = ApplyActiveCatalogEnrollabilityFilter(query);
+
         if (category.HasValue)
             query = query.Where(p => p.Category == category.Value);
 
@@ -373,6 +378,30 @@ public class ProgramService : IProgramService
             "createdat" => isDescending ? query.OrderByDescending(p => p.CreatedAt) : query.OrderBy(p => p.CreatedAt),
             _ => isDescending ? query.OrderByDescending(p => p.CreatedAt) : query.OrderBy(p => p.CreatedAt),
         };
+    }
+
+    /// <summary>
+    /// Keeps Active programs that have at least one Standard Open class with capacity
+    /// (same join rule as <c>GET .../open-classes</c> and tuition checkout).
+    /// </summary>
+    private IQueryable<Program> ApplyActiveCatalogEnrollabilityFilter(IQueryable<Program> query)
+    {
+        var now = DateTime.UtcNow;
+        var classes = _unitOfWork.Classes.GetQueryable();
+        var enrollments = _unitOfWork.ClassEnrollments.GetQueryable();
+
+        return query.Where(program => classes.Any(openClass =>
+            openClass.ProgramId == program.Id
+            && openClass.Status == ClassStatus.Open
+            && openClass.Kind == ClassKind.Standard
+            && !openClass.IsDeleted
+            && openClass.MaxCapacity > enrollments.Count(enrollment =>
+                enrollment.ClassId == openClass.Id
+                && !enrollment.IsDeleted
+                && (enrollment.Status == ClassEnrollmentStatus.Active
+                    || (enrollment.Status == ClassEnrollmentStatus.Pending
+                        && enrollment.HoldExpiresAt != null
+                        && enrollment.HoldExpiresAt > now)))));
     }
 
     private static List<ProgramExpertSummaryDto> MapExpertsForProgram(

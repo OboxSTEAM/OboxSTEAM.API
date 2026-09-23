@@ -24,8 +24,14 @@ Represents a sellable STEAM track (e.g. robotics, coding). Key fields: `Code`,
 
 `ProgramStatus`: **Draft** (manager is authoring; not open for registration),
 **PendingReview** (submitted to the deciding expert), **Approved** (ready for
-manager publish), **Active** (catalog + purchase/enroll allowed),
-**Inactive** (stopped; no new payment or pending enrollment).
+manager publish), **Active** (published; class creation and purchase/enroll
+allowed when a recruiting cohort exists), **Inactive** (stopped; no new payment
+or pending enrollment).
+
+Student catalog list `GET /api/programs?status=Active` further requires at least
+one Standard class in **Open** with remaining seats (aligned with
+`GET .../open-classes` and checkout). Active programs that are still waiting on
+class setup / mentor / open enrollment do not appear in that list.
 
 Create via API is always **Draft** (omitted or explicit). `PUT` cannot set
 `PendingReview` or `Approved`. `Active` ↔ `Inactive` is allowed only when the
