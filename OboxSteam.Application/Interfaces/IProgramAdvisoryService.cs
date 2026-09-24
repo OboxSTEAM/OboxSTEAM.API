@@ -44,6 +44,11 @@ public interface IProgramAdvisoryService
         Guid threadId,
         UpdateAdvisoryThreadStatusRequest request);
 
+    Task<AdvisoryThreadDto> PerformThreadActionAsync(
+        Guid programId,
+        Guid threadId,
+        AdvisoryThreadActionRequest request);
+
     Task RecordReadAsync(Guid programId, RecordAdvisoryReadRequest? request);
 
     Task<AdvisoryReferenceDto> CreateReferenceAsync(

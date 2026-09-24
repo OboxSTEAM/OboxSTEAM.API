@@ -120,7 +120,8 @@ Create, update, delete for:
   snapshot nodes, and may create Suggestion threads.
 - The responsible advisor may additionally create RequiredChange threads and
   decide the pending assessment.
-- Manager/Admin may read the board and address threads. They cannot decide an
+- Manager/Admin may read the board, mark required changes fixed, and
+  acknowledge suggestions. They cannot accept a required change or decide an
   expert assessment.
 - Advisory users never mutate curriculum through these endpoints. Curriculum
   mutations remain Manager/Admin operations and are locked while a program is

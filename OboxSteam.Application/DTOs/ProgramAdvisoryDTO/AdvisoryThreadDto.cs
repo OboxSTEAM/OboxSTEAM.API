@@ -53,13 +53,13 @@ public sealed class AdvisoryThreadDto
     /// <summary>Short label such as <c>Round 1 · InitialReview</c> for carried outstanding requirements.</summary>
     public string? OriginRoundLabel { get; set; }
 
-    public bool CanAddress { get; set; }
+    /// <summary>Actions the current user may perform: MarkFixed, Acknowledge, or Accept.</summary>
+    public List<string> AvailableActions { get; set; } = [];
 
-    public bool CanResolve { get; set; }
+    public AdvisoryTargetPathDto TargetPath { get; set; } = new();
 
-    public bool CanReopen { get; set; }
-
-    public bool CanWaive { get; set; }
+    /// <summary>False when the curriculum node was deleted or cannot be resolved.</summary>
+    public bool TargetExists { get; set; }
 
     /// <summary>Ordered lifecycle events. Present on detail and list responses.</summary>
     public List<AdvisoryThreadEventDto> Events { get; set; } = [];

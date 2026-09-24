@@ -49,7 +49,8 @@ Lifecycle endpoints (Manager/Admin unless noted):
   module, creates an immutable `ProgramReviewSubmission` snapshot, notifies that
   advisor, and moves to `PendingReview`. Machine-usable error codes include
   `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED`, `MODULES_REQUIRED`,
-  `FRAMEWORK_UNAVAILABLE`, and `FRAMEWORK_CHECK_FAILED`.
+  `FRAMEWORK_UNAVAILABLE`, `FRAMEWORK_CHECK_FAILED`, and
+  `REQUIRED_CHANGES_NOT_FIXED` when any RequiredChange is still `Open`.
 - `POST /api/programs/{id}/withdraw-review` — `PendingReview` or `Approved`
   → `Draft`. Pending submissions are closed as `Withdrawn` (draft autosave
   blocked).
@@ -61,12 +62,12 @@ Lifecycle endpoints (Manager/Admin unless noted):
   (advisor/board for Expert; all for Manager/Admin) with unread counts and
   next actions.
 - `GET /api/programs/{id}/advisory` — workspace summary: `collaborationContractVersion`
-  `2`, `capabilities`, server `workflow` timeline, `approvalBlockingCount`
-  (Open + Addressed RequiredChanges — the approve gate; matches `scope=outstanding`
-  and timeline `outstandingRequirementCount`), separate `unreadNoteCount` /
-  `unreadDiscussionCount`, `pendingSubmission` / `latestSubmission`, and
-  `reviewActionsLocked`. Discussion stays allowed when locked. Legacy flat
-  `canDecide` / `canEditCurriculum` mirror `capabilities.*`.
+  `3`, `capabilities`, a 5-stage server `workflow` timeline (`Preparation`,
+  `Review`, `Revision`, `AwaitingPublication`, `Published`) with `round` and
+  per-user `nextAction`, `outstandingRequiredCount` (Open + Addressed
+  RequiredChanges; matches `scope=outstanding`), `fixedRequiredCount`
+  (Addressed only), `unreadNoteCount` (notes and the general thread),
+  `pendingSubmission` / `latestSubmission`, and `reviewActionsLocked`.
 - `GET /api/programs/advisory-anchor-fields` — published allowlist of
   `targetType` + `fieldKey` (+ `label`) for note anchors and references.
 - `GET /api/programs/{id}/advisory/board?submissionId=${uuid}` — the
@@ -74,23 +75,31 @@ Lifecycle endpoints (Manager/Admin unless noted):
   pins, revision summary, and framework highlights.
 - `GET /api/programs/{id}/framework-check` — structured expected/actual checks
   against the pinned framework version.
-- `GET|POST /api/programs/{id}/advisory-threads` — contextual Suggestion /
-  RequiredChange threads. Reads support `submissionId`, `scope=outstanding`
-  (all unresolved RequiredChanges across rounds with origin round labels),
-  node/status/type filters; review-time creates require `submissionId`. Field
-  anchors must use allowlisted keys. Only the responsible advisor creates
-  RequiredChange. Per-thread `canAddress` is true only while curriculum is
-  editable (`Draft`); resolve/waive/reopen remain available during `PendingReview`.
+- `GET|POST /api/programs/{id}/advisory-threads` — Suggestion, RequiredChange,
+  and one get-or-create `General` thread pinned on unfiltered reads. Reads
+  support `submissionId`, `scope=outstanding` (unresolved RequiredChanges
+  across rounds with origin round labels), and node/status/type filters.
+  Review-time creates require `submissionId`. Field anchors must use
+  allowlisted keys. Only the responsible advisor creates RequiredChange.
+  Each thread returns `availableActions` and a live `targetPath`
+  (`moduleId` / `courseId` / `activityId` / `assignmentId`) plus `targetExists`.
+  Material targets resolve to the owning activity. `MarkFixed` is offered only
+  while the program is `Draft`.
 - `GET /api/programs/{id}/advisory-threads/pins?submissionId=${uuid}` —
   submission-scoped open-required/open-suggestion counts by curriculum node.
 - `GET|POST /api/programs/{id}/advisory-threads/{threadId}/messages`
 - `GET /api/programs/{id}/advisory-threads/{threadId}` — full thread with ordered
   `events` and `messages` (avoid double-rendering `MessageAdded` against a
   separate message list).
-- `PATCH /api/programs/{id}/advisory-threads/{threadId}/status` — Manager marks
-  Addressed (Draft only); advisor resolves/reopens RequiredChange. Returns the
-  full `AdvisoryThreadDto` (events + messages + capability flags + concurrency).
+- `POST /api/programs/{id}/advisory-threads/{threadId}/actions` — `MarkFixed`
+  (Manager/Admin, open RequiredChange, Draft only), `Acknowledge` (Manager/Admin
+  or the author, open Suggestion), `Accept` (responsible advisor, open or
+  Addressed RequiredChange). Message is optional. Returns the full thread.
   Requires `concurrencyVersion`; `clientOperationId` is idempotent.
+- `PATCH /api/programs/{id}/advisory-threads/{threadId}/status` — obsolete.
+  Waive is rejected (`ADVISORY_WAIVE_REMOVED`).
+- `GET|POST /api/programs/{id}/advisory-discussion/*` — obsolete. Discussion
+  is the program `General` thread.
 - `POST /api/programs/{id}/advisory-read` — legacy program last-read (does not
   clear independent note/discussion stream cursors).
 - `GET /api/programs/{id}/review-submissions` (+ `/{submissionId}`,
@@ -101,15 +110,16 @@ Lifecycle endpoints (Manager/Admin unless noted):
   owner, board experts, and Manager/Admin). Legacy rows report
   `snapshotAvailable=false`.
 - `POST /api/programs/{id}/approve-review` — only the assigned responsible
-  expert. Unresolved RequiredChange threads (Open + Addressed) block approval
-  (`APPROVAL_BLOCKED`). Full rubric scores required when criteria exist.
-  `PendingReview` → `Approved`. Notifies `ForManagers`
+  expert. Outstanding RequiredChange threads are accepted in the same
+  transaction (`Accepted on approval`). Full rubric scores required when
+  criteria exist. `PendingReview` → `Approved`. Notifies `ForManagers`
   (`CurriculumReviewApproved`). Payload `programId` is the deeplink.
 - `POST /api/programs/{id}/request-changes` — same actor as approve;
-  `PendingReview` → `Draft`. `comment` is required; partial scores allowed.
-  Honors `requiredChangeThreadIds` and idempotent `clientOperationId`. Creates
-  an overall RequiredChange thread when none are outstanding. Carried
-  RequiredChanges stay visible across the next submission. Notifies
+  `PendingReview` → `Draft`. `comment` is optional when RequiredChanges are
+  already outstanding and required when none are (the comment becomes a new
+  program-level RequiredChange). Every Addressed RequiredChange returns to
+  Open with a `Chưa đạt ở lần N` event. Idempotent `clientOperationId`.
+  Notifies
   `ForManagers` (`CurriculumReviewChangesRequested`); inbox body includes the
   expert comment; payload `programId` is the deeplink.
 

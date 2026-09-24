@@ -2084,10 +2084,10 @@ public static class NotificationCatalog
                 ? NotificationAudience.ForManagers()
                 : NotificationAudience.ForUser(recipientUserId),
             NotificationRoleTemplates.FromDefault(
-                "Yêu cầu chỉnh sửa đã được xử lý",
+                "Yêu cầu bắt buộc sửa đã được đánh dấu Đã sửa",
                 string.IsNullOrWhiteSpace(programName)
-                    ? "{actorName} đã đánh dấu một yêu cầu chỉnh sửa là đã xử lý."
-                    : "{actorName} đã đánh dấu yêu cầu chỉnh sửa trên chương trình \"{programName}\" là đã xử lý."),
+                    ? "{actorName} đã đánh dấu một yêu cầu bắt buộc sửa là Đã sửa."
+                    : "{actorName} đã đánh dấu yêu cầu bắt buộc sửa trên chương trình \"{programName}\" là Đã sửa."),
             payload: new NotificationPayload { ProgramId = programId }
                 .WithNames(actorName: actorName, programName: programName),
             actorUserId: actorUserId,

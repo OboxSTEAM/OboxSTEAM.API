@@ -644,6 +644,10 @@ public class OboxSteamDbContext : DbContext
                 .HasFilter("\"IsDeleted\" = false");
             entity.HasIndex(t => new { t.ProgramId, t.SubmissionId, t.LastMessageAt })
                 .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(t => t.ProgramId)
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"Type\" = 'General'")
+                .HasDatabaseName("IX_ProgramAdvisoryThreads_OneGeneralPerProgram");
             entity.Property(t => t.AnchorKind).HasConversion<string>();
         });
 

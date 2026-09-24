@@ -16,6 +16,11 @@ public sealed class AdvisoryWorkflowTimelineDto
 
     public int OutstandingRequirementCount { get; set; }
 
+    /// <summary>Submission number of the current or latest review round. Zero before the first submission.</summary>
+    public int Round { get; set; }
+
+    public AdvisoryNextActionDto NextAction { get; set; } = new();
+
     public List<AdvisoryWorkflowStageDto> Stages { get; set; } = [];
 }
 
@@ -34,7 +39,6 @@ public enum AdvisoryWorkflowStage
     Preparation,
     Review,
     Revision,
-    Verification,
     AwaitingPublication,
     Published,
 }

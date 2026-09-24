@@ -124,16 +124,17 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                 : programThreads.Max(t => t.LastMessageAt);
 
             var isAdvisor = expert != null && program.AdvisorExpertId == expert.Id;
+            var canStaff = actor.Role is RoleType.Manager or RoleType.Admin;
             items.Add(new AdvisoryMineItemDto
             {
                 ProgramId = program.Id,
                 Code = program.Code,
                 Name = program.Name,
-                IsAdvisor = isAdvisor || actor.Role is RoleType.Manager or RoleType.Admin,
+                IsAdvisor = isAdvisor || canStaff,
                 FrameworkVersionNumber = versionNumber,
                 Status = program.Status,
                 LatestActivityAt = latestActivity,
-                NextAction = ResolveNextAction(program, isAdvisor, programThreads, pendingByProgram),
+                NextAction = ResolveNextAction(program, isAdvisor, canStaff, programThreads, pendingByProgram).Code,
                 UnreadFeedbackCount = unreadCount,
             });
         }
@@ -148,7 +149,8 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
 
     public async Task<ProgramAdvisoryWorkspaceDto> GetAdvisoryWorkspaceAsync(Guid programId)
     {
-        var (program, actor, expert, isAdvisor, isBoard, canStaff) = await RequireAdvisoryAccessAsync(programId);
+        var (program, actor, _, isAdvisor, isBoard, canStaff) = await RequireAdvisoryAccessAsync(programId);
+        await EnsureGeneralThreadAsync(program, actor);
         var participants = await BuildParticipantsAsync(program);
         var threads = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
             t => t.ProgramId == program.Id && !t.IsDeleted);
@@ -163,7 +165,8 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             .Where(s => s.Status == ProgramReviewSubmissionStatus.Pending)
             .OrderByDescending(s => s.SubmissionNumber)
             .FirstOrDefault();
-        var workflow = await BuildWorkflowTimelineAsync(program, allSubmissions, threads);
+        var workflow = await BuildWorkflowTimelineAsync(
+            program, isAdvisor, canStaff, allSubmissions, threads);
 
         var read = await _unitOfWork.ProgramAdvisoryReads.FirstOrDefaultAsync(
             r => r.ProgramId == program.Id && r.UserId == actor.Id && !r.IsDeleted);
@@ -172,27 +175,26 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                  && r.UserId == actor.Id
                  && r.StreamType == AdvisoryStreamType.Thread
                  && !r.IsDeleted);
-        var discussionMessages = await _unitOfWork.ProgramAdvisoryDiscussionMessages.GetAllAsync(
-            m => m.ProgramId == program.Id && !m.IsDeleted);
-        var discussionRead = await _unitOfWork.ProgramAdvisoryStreamReads.FirstOrDefaultAsync(
-            r => r.ProgramId == program.Id
-                 && r.UserId == actor.Id
-                 && r.StreamType == AdvisoryStreamType.Discussion
-                 && !r.IsDeleted);
         var openRequired = threads.Count(t =>
             t.Type == ProgramAdvisoryThreadType.RequiredChange
             && t.Status != ProgramAdvisoryThreadStatus.Resolved);
+        var fixedRequired = threads.Count(t =>
+            t.Type == ProgramAdvisoryThreadType.RequiredChange
+            && t.Status == ProgramAdvisoryThreadStatus.Addressed);
         var capabilities = BuildCapabilities(program, actor, isAdvisor, isBoard, canStaff);
         var reviewActionsLocked = program.Status is ProgramStatus.Approved or ProgramStatus.Active or ProgramStatus.Inactive;
         var unreadNoteCount = threads.Count(t =>
         {
+            if (t.Type == ProgramAdvisoryThreadType.General && t.LatestActivitySequence == 0)
+            {
+                return false;
+            }
+
             var threadRead = threadReads.FirstOrDefault(r => r.ThreadId == t.Id)?.LastReadSequence;
             return t.LatestActivitySequence > 0
                 ? (!threadRead.HasValue || threadRead.Value < t.LatestActivitySequence)
                 : (read == null || t.LastMessageAt > read.LastReadAt);
         });
-        var unreadDiscussionCount = discussionMessages.Count(
-            message => message.Sequence > (discussionRead?.LastReadSequence ?? 0));
 
         int? versionNumber = null;
         if (program.FrameworkVersionId.HasValue)
@@ -221,13 +223,10 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             FrameworkVersionId = program.FrameworkVersionId,
             FrameworkVersionNumber = versionNumber,
             Participants = participants,
-            CanAdvise = canStaff || isAdvisor || isBoard,
-            CanDecide = capabilities.CanDecide,
-            CanEditCurriculum = capabilities.CanEditCurriculum,
-            CanAssignAdvisor = capabilities.CanAssignAdvisor,
             Capabilities = capabilities,
             Workflow = workflow,
-            ApprovalBlockingCount = openRequired,
+            OutstandingRequiredCount = openRequired,
+            FixedRequiredCount = fixedRequired,
             OpenRequiredChangeCount = threads.Count(t =>
                 t.Type == ProgramAdvisoryThreadType.RequiredChange
                 && t.Status == ProgramAdvisoryThreadStatus.Open),
@@ -235,7 +234,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                 t.Type == ProgramAdvisoryThreadType.RequiredChange
                 && t.Status == ProgramAdvisoryThreadStatus.Addressed),
             UnreadNoteCount = unreadNoteCount,
-            UnreadDiscussionCount = unreadDiscussionCount,
             PendingSubmission = pendingSubmission == null ? null : MapSubmissionSummary(pendingSubmission),
             ReviewActionsLocked = reviewActionsLocked,
             LatestSubmission = latestSubmission == null
@@ -267,6 +265,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         string? scope = null)
     {
         var (program, actor, _, isAdvisor, isBoard, canStaff) = await RequireAdvisoryAccessAsync(programId);
+        var generalThread = await EnsureGeneralThreadAsync(program, actor);
         var normalizedScope = scope?.Trim().ToLowerInvariant();
         if (normalizedScope is not (null or "round" or "outstanding" or "program"))
         {
@@ -296,7 +295,21 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                  && (!status.HasValue || t.Status == status.Value)
                  && (!type.HasValue || t.Type == type.Value)
                  && !t.IsDeleted);
-        var ordered = threads.OrderByDescending(t => t.LastMessageAt).ThenBy(t => t.Id).ToList();
+        var includeGeneral = (type is null || type == ProgramAdvisoryThreadType.General)
+            && (status is null || status == ProgramAdvisoryThreadStatus.Open)
+            && (targetType is null || targetType == ProgramAdvisoryTargetType.Program)
+            && (!targetId.HasValue || targetId == program.Id)
+            && normalizedScope is null or "program";
+        if (includeGeneral && threads.All(t => t.Id != generalThread.Id))
+        {
+            threads.Add(generalThread);
+        }
+
+        var ordered = threads
+            .OrderByDescending(t => t.Type == ProgramAdvisoryThreadType.General)
+            .ThenByDescending(t => t.LastMessageAt)
+            .ThenBy(t => t.Id)
+            .ToList();
         if (ordered.Count == 0)
         {
             return [];
@@ -322,6 +335,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var snapshotsBySubmissionId = submissionsById.ToDictionary(
             pair => pair.Key,
             pair => CurriculumReviewSnapshotBuilder.TryDeserialize(pair.Value.CurriculumSnapshotJson));
+        var liveTargets = await LoadLiveTargetIndexAsync(program);
 
         return ordered
             .Select(t =>
@@ -340,6 +354,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                     target.Label,
                     target.Context);
                 ApplyOriginRound(dto, t, submissionsById);
+                ApplyLiveTarget(dto, t, liveTargets);
                 dto.Events = events
                     .Where(e => e.ThreadId == t.Id)
                     .OrderBy(e => e.Sequence)
@@ -398,6 +413,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             : null;
         var target = ResolveSnapshotTarget(snapshot, thread);
         var dto = MapThread(thread, author, messages.Count, latest?.Message, target.Label, target.Context);
+        ApplyLiveTarget(dto, thread, await LoadLiveTargetIndexAsync(program));
         if (thread.SubmissionId.HasValue)
         {
             var origin = await RequireSubmissionAsync(programId, thread.SubmissionId.Value);
@@ -557,6 +573,11 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             throw ErrorHelper.Forbidden("You cannot advise on this program.");
         }
 
+        if (request.Type == ProgramAdvisoryThreadType.General)
+        {
+            throw ErrorHelper.BadRequest("The general discussion thread is created automatically.");
+        }
+
         if (request.Type == ProgramAdvisoryThreadType.RequiredChange && !isAdvisor)
         {
             throw ErrorHelper.Forbidden("Only the responsible advisor can create required-change threads.");
@@ -651,6 +672,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
 
         var result = MapThread(thread, actor, 1, messageText, label, context);
         result.Events = [MapThreadEvent(createdEvent)];
+        ApplyLiveTarget(result, thread, await LoadLiveTargetIndexAsync(program));
         ApplyThreadCapabilities(result, thread, actor, isAdvisor, isBoard, canStaff, program.Status);
         return new AdvisoryMutationResult<AdvisoryThreadDto>
         {
@@ -775,6 +797,225 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         return result.Value;
     }
 
+    public async Task<AdvisoryThreadDto> PerformThreadActionAsync(
+        Guid programId,
+        Guid threadId,
+        AdvisoryThreadActionRequest request)
+    {
+        var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+            programId,
+            () => PerformThreadActionCoreAsync(programId, threadId, request));
+        await RunAfterCommitNotifyAsync(result.AfterCommitNotify);
+        return result.Value;
+    }
+
+    private async Task<AdvisoryMutationResult<AdvisoryThreadDto>> PerformThreadActionCoreAsync(
+        Guid programId,
+        Guid threadId,
+        AdvisoryThreadActionRequest request)
+    {
+        if (request == null)
+        {
+            throw ErrorHelper.BadRequest("Request body is required.");
+        }
+
+        var (program, actor, _, isAdvisor, isBoard, canStaff) = await RequireAdvisoryAccessAsync(programId);
+        var thread = await RequireThreadAsync(programId, threadId);
+        var existingOperation = await FindThreadEventByOperationIdAsync(programId, threadId, request.ClientOperationId);
+        if (existingOperation != null)
+        {
+            return new AdvisoryMutationResult<AdvisoryThreadDto>
+            {
+                Value = await GetThreadAsync(programId, threadId),
+            };
+        }
+
+        EnsureReviewNotesMutable(program);
+        if (!request.ConcurrencyVersion.HasValue
+            || request.ConcurrencyVersion.Value != thread.ConcurrencyVersion)
+        {
+            throw ErrorHelper.Conflict("Advisory thread was updated elsewhere. Reload and try again.");
+        }
+
+        if (thread.Type == ProgramAdvisoryThreadType.General)
+        {
+            throw ErrorHelper.BadRequest("The general discussion thread has no status actions.");
+        }
+
+        var priorStatus = thread.Status;
+        var text = CurriculumReviewValidator.NormalizeOptionalComment(request.Message);
+        var newStatus = thread.Status;
+        ProgramAdvisoryThreadEventType eventType;
+        AdvisoryResolutionKind? resolutionKind = null;
+        Guid? verifiedAgainstSubmissionId = null;
+        string? notificationEventType = null;
+        NotificationType? notificationType = null;
+
+        switch (request.Action)
+        {
+            case AdvisoryThreadAction.MarkFixed:
+                if (!canStaff)
+                {
+                    throw ErrorHelper.Forbidden("Only Manager or Admin can mark a required change as fixed.");
+                }
+
+                if (thread.Type != ProgramAdvisoryThreadType.RequiredChange)
+                {
+                    throw ErrorHelper.BadRequest("MarkFixed applies only to required changes.");
+                }
+
+                if (program.Status != ProgramStatus.Draft)
+                {
+                    throw ErrorHelper.Conflict(
+                        "Feedback can only be marked fixed while the curriculum is editable (Draft).",
+                        "ADVISORY_ADDRESS_NOT_EDITABLE");
+                }
+
+                if (priorStatus != ProgramAdvisoryThreadStatus.Open)
+                {
+                    throw ErrorHelper.Conflict("Only open required changes can be marked fixed.");
+                }
+
+                newStatus = ProgramAdvisoryThreadStatus.Addressed;
+                eventType = ProgramAdvisoryThreadEventType.CorrectionSubmitted;
+                notificationEventType = "AdvisoryCorrectionAddressed";
+                notificationType = NotificationType.AdvisoryCorrectionAddressed;
+                break;
+            case AdvisoryThreadAction.Acknowledge:
+                if (thread.Type != ProgramAdvisoryThreadType.Suggestion)
+                {
+                    throw ErrorHelper.BadRequest("Acknowledge applies only to suggestions.");
+                }
+
+                if (!(canStaff || thread.AuthorUserId == actor.Id))
+                {
+                    throw ErrorHelper.Forbidden("Only the manager or the author can acknowledge a suggestion.");
+                }
+
+                if (priorStatus != ProgramAdvisoryThreadStatus.Open)
+                {
+                    throw ErrorHelper.Conflict("Only open suggestions can be acknowledged.");
+                }
+
+                newStatus = ProgramAdvisoryThreadStatus.Resolved;
+                eventType = ProgramAdvisoryThreadEventType.StatusChanged;
+                notificationEventType = "AdvisoryThreadAcknowledged";
+                notificationType = NotificationType.AdvisoryFeedbackPublished;
+                break;
+            case AdvisoryThreadAction.Accept:
+                if (!isAdvisor)
+                {
+                    throw ErrorHelper.Forbidden("Only the responsible advisor can accept a required change.");
+                }
+
+                if (thread.Type != ProgramAdvisoryThreadType.RequiredChange)
+                {
+                    throw ErrorHelper.BadRequest("Accept applies only to required changes.");
+                }
+
+                if (priorStatus is not (ProgramAdvisoryThreadStatus.Open or ProgramAdvisoryThreadStatus.Addressed))
+                {
+                    throw ErrorHelper.Conflict("Only open or fixed required changes can be accepted.");
+                }
+
+                newStatus = ProgramAdvisoryThreadStatus.Resolved;
+                eventType = ProgramAdvisoryThreadEventType.VerificationRecorded;
+                resolutionKind = AdvisoryResolutionKind.Verified;
+                verifiedAgainstSubmissionId = await ResolveCurrentSubmissionIdAsync(program.Id);
+                notificationEventType = "AdvisoryRequirementAccepted";
+                notificationType = NotificationType.AdvisoryFeedbackPublished;
+                break;
+            default:
+                throw ErrorHelper.BadRequest("Unsupported advisory thread action.");
+        }
+
+        _ = isBoard;
+        var now = _currentTime.GetCurrentTime().ToUniversalTime();
+        thread.Status = newStatus;
+        var sequence = await AllocateNextActivitySequenceAsync(thread);
+        thread.ConcurrencyVersion = Guid.NewGuid();
+        thread.UpdatedAt = now;
+        thread.UpdatedBy = actor.Id;
+
+        if (text != null)
+        {
+            var followUp = new ProgramAdvisoryMessage
+            {
+                Id = Guid.NewGuid(),
+                ThreadId = thread.Id,
+                AuthorUserId = actor.Id,
+                StreamSequence = sequence,
+                Message = text,
+                CreatedAt = now,
+                CreatedBy = actor.Id,
+            };
+            thread.LastMessageAt = now;
+            await _unitOfWork.ProgramAdvisoryMessages.AddAsync(followUp);
+        }
+
+        var statusEvent = new ProgramAdvisoryThreadEvent
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = programId,
+            ThreadId = thread.Id,
+            Sequence = sequence,
+            EventType = eventType,
+            ActorUserId = actor.Id,
+            PriorStatus = priorStatus,
+            NewStatus = newStatus,
+            Message = text,
+            ResolutionKind = resolutionKind,
+            VerifiedAgainstSubmissionId = verifiedAgainstSubmissionId,
+            CorrectionReferenceIdsJson = "[]",
+            OperationId = NormalizeOperationId(request.ClientOperationId),
+            CreatedAt = now,
+            CreatedBy = actor.Id,
+        };
+        await _unitOfWork.ProgramAdvisoryThreadEvents.AddAsync(statusEvent);
+        await AddNotificationIntentAsync(
+            program.Id,
+            statusEvent.Id,
+            notificationEventType!,
+            notificationType!.Value,
+            new { programId = program.Id, threadId = thread.Id, action = request.Action.ToString() },
+            actor.Id,
+            now);
+
+        await _unitOfWork.ProgramAdvisoryThreads.Update(thread);
+        await _unitOfWork.SaveChangesAsync();
+
+        var value = await GetThreadAsync(programId, threadId);
+        return new AdvisoryMutationResult<AdvisoryThreadDto>
+        {
+            Value = value,
+            AfterCommitNotify = request.Action == AdvisoryThreadAction.MarkFixed
+                ? () => NotifyAdvisoryAsync(
+                    program,
+                    actor.Id,
+                    notifyManagers: false,
+                    userId => NotificationCatalog.AdvisoryCorrectionAddressed(
+                        userId,
+                        program.Id,
+                        thread.Id,
+                        actor.Id,
+                        program.Name,
+                        DisplayName(actor)))
+                : null,
+        };
+    }
+
+    private async Task<Guid?> ResolveCurrentSubmissionIdAsync(Guid programId)
+    {
+        var pending = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
+            s => s.ProgramId == programId
+                 && s.Status == ProgramReviewSubmissionStatus.Pending
+                 && !s.IsDeleted);
+        return pending
+            .OrderByDescending(s => s.SubmissionNumber)
+            .Select(s => (Guid?)s.Id)
+            .FirstOrDefault();
+    }
+
     private async Task<AdvisoryMutationResult<AdvisoryThreadDto>> UpdateThreadStatusCoreAsync(
         Guid programId,
         Guid threadId,
@@ -835,6 +1076,13 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
 
                 break;
             case ProgramAdvisoryThreadStatus.Resolved:
+                if (request.ResolutionKind == AdvisoryResolutionKind.Waived)
+                {
+                    throw ErrorHelper.BadRequest(
+                        "Waive is no longer supported. Accept the required change or return the round.",
+                        "ADVISORY_WAIVE_REMOVED");
+                }
+
                 await ValidateResolutionAsync(program, thread, isAdvisor, actor, request);
                 break;
             case ProgramAdvisoryThreadStatus.Open:
@@ -1460,6 +1708,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var latest = messages.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
         var author = await _unitOfWork.Users.GetByIdAsync(thread.AuthorUserId);
         var result = MapThread(thread, author, messages.Count, latest?.Message);
+        ApplyLiveTarget(result, thread, await LoadLiveTargetIndexAsync(program));
         ApplyThreadCapabilities(result, thread, actor, isAdvisor, isBoard, canStaff, program.Status);
         return result;
     }
@@ -1648,6 +1897,8 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
 
     private async Task<AdvisoryWorkflowTimelineDto> BuildWorkflowTimelineAsync(
         Program program,
+        bool isAdvisor,
+        bool canStaff,
         IReadOnlyList<ProgramReviewSubmission> submissions,
         IReadOnlyList<ProgramAdvisoryThread> threads)
     {
@@ -1684,10 +1935,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
 
         var currentStage = program.Status switch
         {
-            ProgramStatus.PendingReview => pendingSubmission?.ReviewRoundIntent
-                == ProgramReviewSubmissionIntent.RevisionVerification
-                ? AdvisoryWorkflowStage.Verification
-                : AdvisoryWorkflowStage.Review,
+            ProgramStatus.PendingReview => AdvisoryWorkflowStage.Review,
             ProgramStatus.Draft => hasChangesRequested || hasRevisionIntent
                 ? AdvisoryWorkflowStage.Revision
                 : AdvisoryWorkflowStage.Preparation,
@@ -1701,8 +1949,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                  && t.Status != ProgramAdvisoryThreadStatus.Resolved);
         var responsibleRole = currentStage switch
         {
-            AdvisoryWorkflowStage.Review or AdvisoryWorkflowStage.Verification
-                => AdvisoryResponsibleRole.Advisor,
+            AdvisoryWorkflowStage.Review => AdvisoryResponsibleRole.Advisor,
             AdvisoryWorkflowStage.Preparation
                 or AdvisoryWorkflowStage.Revision
                 or AdvisoryWorkflowStage.AwaitingPublication
@@ -1730,7 +1977,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
 
         var currentSubmissionId = currentStage switch
         {
-            AdvisoryWorkflowStage.Review or AdvisoryWorkflowStage.Verification => pendingSubmission?.Id,
+            AdvisoryWorkflowStage.Review => pendingSubmission?.Id,
             AdvisoryWorkflowStage.Revision => requestChangesSubmission?.Id
                 ?? revisionSubmission?.Id
                 ?? latestSubmission?.Id,
@@ -1741,10 +1988,10 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var stageSubmissionIds = new Dictionary<AdvisoryWorkflowStage, Guid?>
         {
             [AdvisoryWorkflowStage.Preparation] = initialSubmission?.Id,
-            [AdvisoryWorkflowStage.Review] = initialSubmission?.Id,
+            [AdvisoryWorkflowStage.Review] = currentStage == AdvisoryWorkflowStage.Review
+                ? pendingSubmission?.Id ?? initialSubmission?.Id
+                : initialSubmission?.Id,
             [AdvisoryWorkflowStage.Revision] = requestChangesSubmission?.Id ?? revisionSubmission?.Id,
-            [AdvisoryWorkflowStage.Verification] = revisionSubmission?.Id
-                ?? (currentStage == AdvisoryWorkflowStage.Verification ? pendingSubmission?.Id : null),
             [AdvisoryWorkflowStage.AwaitingPublication] = latestSubmission?.Id,
             [AdvisoryWorkflowStage.Published] = latestSubmission?.Id,
         };
@@ -1769,6 +2016,13 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             ResponsibleRole = responsibleRole,
             ResponsibleUserId = responsibleUserId,
             OutstandingRequirementCount = outstandingRequirementCount,
+            Round = pendingSubmission?.SubmissionNumber
+                ?? latestSubmission?.SubmissionNumber
+                ?? 0,
+            NextAction = ResolveNextAction(program, isAdvisor, canStaff, threads, submissions
+                .Where(s => s.Status == ProgramReviewSubmissionStatus.Pending)
+                .GroupBy(s => s.ProgramId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(s => s.SubmissionNumber).First())),
             Stages = stages,
         };
     }
@@ -1784,12 +2038,19 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             return AdvisoryWorkflowStageState.Current;
         }
 
-        if (stage is (AdvisoryWorkflowStage.Revision or AdvisoryWorkflowStage.Verification)
+        if (stage == AdvisoryWorkflowStage.Revision
             && !hasChangesRequested
             && !hasRevisionIntent
-            && currentStage > AdvisoryWorkflowStage.Verification)
+            && currentStage > AdvisoryWorkflowStage.Revision)
         {
             return AdvisoryWorkflowStageState.Skipped;
+        }
+
+        if (stage == AdvisoryWorkflowStage.Revision
+            && currentStage == AdvisoryWorkflowStage.Review
+            && (hasChangesRequested || hasRevisionIntent))
+        {
+            return AdvisoryWorkflowStageState.Completed;
         }
 
         return stage < currentStage
@@ -1816,31 +2077,50 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         };
     }
 
-    private static string ResolveNextAction(
+    private static AdvisoryNextActionDto ResolveNextAction(
         Program program,
         bool isAdvisor,
+        bool canStaff,
         IReadOnlyList<ProgramAdvisoryThread> threads,
         IReadOnlyDictionary<Guid, ProgramReviewSubmission> pendingByProgram)
     {
-        if (isAdvisor && program.Status == ProgramStatus.PendingReview && pendingByProgram.ContainsKey(program.Id))
+        var openRequired = threads.Any(t =>
+            t.Type == ProgramAdvisoryThreadType.RequiredChange
+            && t.Status == ProgramAdvisoryThreadStatus.Open);
+        var fixedRequired = threads.Any(t =>
+            t.Type == ProgramAdvisoryThreadType.RequiredChange
+            && t.Status == ProgramAdvisoryThreadStatus.Addressed);
+
+        if (canStaff && program.Status == ProgramStatus.Approved)
         {
-            return "ReviewSubmission";
+            return new AdvisoryNextActionDto { Code = "Publish", ForRole = "Manager" };
         }
 
-        if (isAdvisor
-            && threads.Any(t =>
-                t.Type == ProgramAdvisoryThreadType.RequiredChange
-                && t.Status == ProgramAdvisoryThreadStatus.Addressed))
+        if (canStaff && program.Status == ProgramStatus.Draft && openRequired)
         {
-            return "VerifyAddressed";
+            return new AdvisoryNextActionDto { Code = "FixRequiredChanges", ForRole = "Manager" };
+        }
+
+        if (canStaff && program.Status == ProgramStatus.Draft && fixedRequired)
+        {
+            return new AdvisoryNextActionDto { Code = "ResubmitReady", ForRole = "Manager" };
+        }
+
+        if (isAdvisor && program.Status == ProgramStatus.PendingReview && pendingByProgram.ContainsKey(program.Id))
+        {
+            return new AdvisoryNextActionDto { Code = "ReviewSubmission", ForRole = "Advisor" };
         }
 
         if (program.Status == ProgramStatus.Draft)
         {
-            return "AdviseOptional";
+            return new AdvisoryNextActionDto
+            {
+                Code = "AdviseOptional",
+                ForRole = isAdvisor ? "Advisor" : "Manager",
+            };
         }
 
-        return "None";
+        return new AdvisoryNextActionDto();
     }
 
     private async Task<Dictionary<Guid, User>> LoadUsersAsync(IEnumerable<Guid> userIds)
@@ -1916,6 +2196,214 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
     private static string DisplayName(User user)
         => string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName;
 
+    private async Task<ProgramAdvisoryThread> EnsureGeneralThreadAsync(Program program, User actor)
+    {
+        var existing = await _unitOfWork.ProgramAdvisoryThreads.FirstOrDefaultAsync(
+            t => t.ProgramId == program.Id
+                 && t.Type == ProgramAdvisoryThreadType.General
+                 && !t.IsDeleted);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        var now = _currentTime.GetCurrentTime().ToUniversalTime();
+        var thread = new ProgramAdvisoryThread
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = program.Id,
+            AuthorUserId = actor.Id,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            TargetId = program.Id,
+            TargetLabel = program.Name,
+            TargetContext = "General discussion",
+            Type = ProgramAdvisoryThreadType.General,
+            Status = ProgramAdvisoryThreadStatus.Open,
+            ConcurrencyVersion = Guid.NewGuid(),
+            LatestActivitySequence = 0,
+            LastMessageAt = now,
+            CreatedAt = now,
+            CreatedBy = actor.Id,
+        };
+        await _unitOfWork.ProgramAdvisoryThreads.AddAsync(thread);
+        await _unitOfWork.SaveChangesAsync();
+        return thread;
+    }
+
+    private async Task<LiveTargetIndex> LoadLiveTargetIndexAsync(Program program)
+    {
+        var index = new LiveTargetIndex();
+        var modules = await _unitOfWork.Modules.GetAllAsync(
+            m => m.ProgramId == program.Id && !m.IsDeleted);
+        foreach (var module in modules)
+        {
+            index.Modules[module.Id] = module.Id;
+        }
+
+        var moduleIds = modules.Select(m => m.Id).ToList();
+        if (moduleIds.Count == 0)
+        {
+            await LoadCriteriaAsync(program, index);
+            return index;
+        }
+
+        var courses = await _unitOfWork.Courses.GetAllAsync(
+            c => moduleIds.Contains(c.ModuleId) && !c.IsDeleted);
+        foreach (var course in courses)
+        {
+            index.Courses[course.Id] = (course.ModuleId, course.Id);
+        }
+
+        var courseIds = courses.Select(c => c.Id).ToList();
+        var activities = courseIds.Count == 0
+            ? []
+            : await _unitOfWork.Activities.GetAllAsync(
+                a => courseIds.Contains(a.CourseId) && !a.IsDeleted);
+        foreach (var activity in activities)
+        {
+            if (!index.Courses.TryGetValue(activity.CourseId, out var course))
+            {
+                continue;
+            }
+
+            index.Activities[activity.Id] = (course.ModuleId, activity.CourseId, activity.Id);
+        }
+
+        var activityIds = activities.Select(a => a.Id).ToList();
+        if (activityIds.Count > 0)
+        {
+            var materials = await _unitOfWork.Materials.GetAllAsync(
+                m => activityIds.Contains(m.ActivityId) && !m.IsDeleted);
+            foreach (var material in materials)
+            {
+                if (index.Activities.TryGetValue(material.ActivityId, out var activity))
+                {
+                    index.Materials[material.Id] = activity;
+                }
+            }
+        }
+
+        var assignments = await _unitOfWork.Assignments.GetAllAsync(
+            a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted);
+        foreach (var assignment in assignments)
+        {
+            index.Assignments[assignment.Id] = (assignment.ModuleId, assignment.CourseId, assignment.Id);
+        }
+
+        var milestones = await _unitOfWork.ResearchMilestones.GetAllAsync(
+            m => moduleIds.Contains(m.ModuleId) && !m.IsDeleted);
+        foreach (var milestone in milestones)
+        {
+            index.Milestones[milestone.Id] = (milestone.ModuleId, milestone.AssignmentId);
+        }
+
+        await LoadCriteriaAsync(program, index);
+        return index;
+    }
+
+    private async Task LoadCriteriaAsync(Program program, LiveTargetIndex index)
+    {
+        if (!program.FrameworkVersionId.HasValue)
+        {
+            return;
+        }
+
+        var criteria = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
+            c => c.FrameworkVersionId == program.FrameworkVersionId && !c.IsDeleted);
+        foreach (var criterion in criteria)
+        {
+            index.Criteria.Add(criterion.Id);
+        }
+    }
+
+    private static void ApplyLiveTarget(
+        AdvisoryThreadDto dto,
+        ProgramAdvisoryThread thread,
+        LiveTargetIndex index)
+    {
+        if (thread.Type == ProgramAdvisoryThreadType.General
+            || thread.TargetType == ProgramAdvisoryTargetType.Program)
+        {
+            dto.TargetExists = true;
+            dto.TargetPath = new AdvisoryTargetPathDto();
+            return;
+        }
+
+        if (!thread.TargetId.HasValue)
+        {
+            dto.TargetExists = false;
+            dto.TargetPath = new AdvisoryTargetPathDto();
+            return;
+        }
+
+        var id = thread.TargetId.Value;
+        switch (thread.TargetType)
+        {
+            case ProgramAdvisoryTargetType.Module when index.Modules.ContainsKey(id):
+                dto.TargetExists = true;
+                dto.TargetPath = new AdvisoryTargetPathDto { ModuleId = id };
+                return;
+            case ProgramAdvisoryTargetType.Course when index.Courses.TryGetValue(id, out var course):
+                dto.TargetExists = true;
+                dto.TargetPath = new AdvisoryTargetPathDto { ModuleId = course.ModuleId, CourseId = course.CourseId };
+                return;
+            case ProgramAdvisoryTargetType.Activity when index.Activities.TryGetValue(id, out var activity):
+                dto.TargetExists = true;
+                dto.TargetPath = new AdvisoryTargetPathDto
+                {
+                    ModuleId = activity.ModuleId,
+                    CourseId = activity.CourseId,
+                    ActivityId = activity.ActivityId,
+                };
+                return;
+            case ProgramAdvisoryTargetType.Material when index.Materials.TryGetValue(id, out var material):
+                dto.TargetExists = true;
+                dto.TargetPath = new AdvisoryTargetPathDto
+                {
+                    ModuleId = material.ModuleId,
+                    CourseId = material.CourseId,
+                    ActivityId = material.ActivityId,
+                };
+                return;
+            case ProgramAdvisoryTargetType.Assignment when index.Assignments.TryGetValue(id, out var assignment):
+                dto.TargetExists = true;
+                dto.TargetPath = new AdvisoryTargetPathDto
+                {
+                    ModuleId = assignment.ModuleId,
+                    CourseId = assignment.CourseId,
+                    AssignmentId = assignment.AssignmentId,
+                };
+                return;
+            case ProgramAdvisoryTargetType.ResearchMilestone when index.Milestones.TryGetValue(id, out var milestone):
+                dto.TargetExists = true;
+                dto.TargetPath = new AdvisoryTargetPathDto
+                {
+                    ModuleId = milestone.ModuleId,
+                    AssignmentId = milestone.AssignmentId,
+                };
+                return;
+            case ProgramAdvisoryTargetType.RubricCriterion:
+                dto.TargetExists = index.Criteria.Contains(id);
+                dto.TargetPath = new AdvisoryTargetPathDto();
+                return;
+            default:
+                dto.TargetExists = false;
+                dto.TargetPath = new AdvisoryTargetPathDto();
+                return;
+        }
+    }
+
+    private sealed class LiveTargetIndex
+    {
+        public Dictionary<Guid, Guid> Modules { get; } = [];
+        public Dictionary<Guid, (Guid ModuleId, Guid CourseId)> Courses { get; } = [];
+        public Dictionary<Guid, (Guid ModuleId, Guid CourseId, Guid ActivityId)> Activities { get; } = [];
+        public Dictionary<Guid, (Guid ModuleId, Guid CourseId, Guid ActivityId)> Materials { get; } = [];
+        public Dictionary<Guid, (Guid ModuleId, Guid? CourseId, Guid AssignmentId)> Assignments { get; } = [];
+        public Dictionary<Guid, (Guid ModuleId, Guid AssignmentId)> Milestones { get; } = [];
+        public HashSet<Guid> Criteria { get; } = [];
+    }
+
     private static AdvisoryThreadDto MapThread(
         ProgramAdvisoryThread thread,
         User? author,
@@ -1959,23 +2447,32 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         // Address only while curriculum is editable (Draft / Revision). Frozen PendingReview cannot Address.
         var curriculumEditable = programStatus == ProgramStatus.Draft;
         var notesMutable = programStatus is ProgramStatus.Draft or ProgramStatus.PendingReview;
-        dto.CanAddress = curriculumEditable
-            && canStaff
-            && thread.Status == ProgramAdvisoryThreadStatus.Open;
-        dto.CanResolve = notesMutable
+        var actions = new List<string>();
+        if (thread.Type == ProgramAdvisoryThreadType.RequiredChange
+            && thread.Status == ProgramAdvisoryThreadStatus.Open
+            && curriculumEditable
+            && canStaff)
+        {
+            actions.Add(nameof(AdvisoryThreadAction.MarkFixed));
+        }
+
+        if (thread.Type == ProgramAdvisoryThreadType.Suggestion
+            && thread.Status == ProgramAdvisoryThreadStatus.Open
+            && notesMutable
+            && (canStaff || thread.AuthorUserId == actor.Id))
+        {
+            actions.Add(nameof(AdvisoryThreadAction.Acknowledge));
+        }
+
+        if (thread.Type == ProgramAdvisoryThreadType.RequiredChange
             && thread.Status is (ProgramAdvisoryThreadStatus.Open or ProgramAdvisoryThreadStatus.Addressed)
-            && (thread.Type == ProgramAdvisoryThreadType.RequiredChange
-                ? isAdvisor
-                : isAdvisor || thread.AuthorUserId == actor.Id);
-        dto.CanReopen = notesMutable
-            && thread.Status != ProgramAdvisoryThreadStatus.Open
-            && (thread.Type == ProgramAdvisoryThreadType.RequiredChange
-                ? isAdvisor
-                : isAdvisor || thread.AuthorUserId == actor.Id || canStaff);
-        dto.CanWaive = notesMutable
-            && thread.Type == ProgramAdvisoryThreadType.RequiredChange
-            && isAdvisor
-            && thread.Status != ProgramAdvisoryThreadStatus.Resolved;
+            && notesMutable
+            && isAdvisor)
+        {
+            actions.Add(nameof(AdvisoryThreadAction.Accept));
+        }
+
+        dto.AvailableActions = actions;
         _ = isBoard;
     }
 
@@ -2030,9 +2527,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             // Manager/Admin never create suggestions or required changes.
             CanCreateSuggestion = notesMutable && actor.Role == RoleType.Expert && (isAdvisor || isBoard),
             CanCreateRequiredChange = notesMutable && actor.Role == RoleType.Expert && isAdvisor,
-            // Discussion remains available when reviewActionsLocked is true.
-            CanDiscuss = true,
-            CanReplyToNotes = notesMutable && (canStaff || isAdvisor || isBoard),
+            CanReply = notesMutable && (canStaff || isAdvisor || isBoard),
             CanEditCurriculum = canStaff && program.Status == ProgramStatus.Draft,
             CanAssignAdvisor = canStaff && program.Status == ProgramStatus.Draft,
             CanDecide = isAdvisor && program.Status == ProgramStatus.PendingReview && !reviewActionsLocked,
@@ -2041,12 +2536,12 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
 
     public async Task<AdvisoryWorkflowTimelineDto> GetWorkflowTimelineAsync(Guid programId)
     {
-        var (program, _, _, _, _, _) = await RequireAdvisoryAccessAsync(programId);
+        var (program, _, _, isAdvisor, _, canStaff) = await RequireAdvisoryAccessAsync(programId);
         var submissions = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
             s => s.ProgramId == programId && !s.IsDeleted);
         var threads = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
             t => t.ProgramId == programId && !t.IsDeleted);
-        return await BuildWorkflowTimelineAsync(program, submissions, threads);
+        return await BuildWorkflowTimelineAsync(program, isAdvisor, canStaff, submissions, threads);
     }
 
     private static ProgramReviewSubmissionSummaryDto MapSubmissionSummary(ProgramReviewSubmission submission)

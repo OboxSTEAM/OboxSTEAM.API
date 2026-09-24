@@ -10,7 +10,5 @@ public sealed class RequestCurriculumChangesRequest
 
     public List<ReviewCriterionScoreRequest>? Scores { get; set; }
 
-    public List<Guid>? RequiredChangeThreadIds { get; set; }
-
     public string? ClientOperationId { get; set; }
 }

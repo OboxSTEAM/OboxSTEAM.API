@@ -92,6 +92,10 @@ public partial class SeedService
             currA.TheoryModule.Name,
             "Theory module outcomes",
             "Optional: add a short checkpoint quiz after the SelfPaced reading.");
+        await EnsureAdvGeneralThreadAsync(
+            progA,
+            expert001.UserId ?? manager.Id,
+            "General discussion for the draft-advice fixture.");
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvDraftAdviceCode);
 
         // B — Draft with addressed RequiredChange
@@ -111,6 +115,17 @@ public partial class SeedService
             expert001.UserId ?? Guid.Empty,
             manager.Id);
         _ = threadB;
+        var subB = await SeedAdvSubmissionAsync(
+            progB,
+            manager.Id,
+            expert001.Id,
+            publishedV1.Id,
+            publishedCriteria,
+            submissionNumber: 1,
+            ProgramReviewSubmissionStatus.ChangesRequested,
+            closedAt: _seedNow.AddDays(-1));
+        subB.ReviewRoundIntent = ProgramReviewSubmissionIntent.InitialReview;
+        await _unitOfWork.ProgramReviewSubmissions.Update(subB);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvDraftFixCode);
 
         // C — PendingReview + draft scores
@@ -461,6 +476,39 @@ public partial class SeedService
             expert001.UserId ?? Guid.Empty,
             manager.Id);
         await _unitOfWork.SaveChangesAsync();
+        var draftAdvice = await _unitOfWork.Programs.FirstOrDefaultAsync(
+            p => p.Code == SeedAdvDraftAdviceCode && !p.IsDeleted);
+        if (draftAdvice != null)
+        {
+            await EnsureAdvGeneralThreadAsync(
+                draftAdvice,
+                expert001.UserId ?? manager.Id,
+                "General discussion for the draft-advice fixture.");
+        }
+
+        var draftFix = await _unitOfWork.Programs.FirstOrDefaultAsync(
+            p => p.Code == SeedAdvDraftFixCode && !p.IsDeleted);
+        if (draftFix != null)
+        {
+            var existingRound = await _unitOfWork.ProgramReviewSubmissions.FirstOrDefaultAsync(
+                s => s.ProgramId == draftFix.Id && !s.IsDeleted);
+            if (existingRound == null)
+            {
+                var revisionRound = await SeedAdvSubmissionAsync(
+                    draftFix,
+                    manager.Id,
+                    expert001.Id,
+                    publishedV1.Id,
+                    criteria,
+                    submissionNumber: 1,
+                    ProgramReviewSubmissionStatus.ChangesRequested,
+                    closedAt: _seedNow.AddDays(-1));
+                revisionRound.ReviewRoundIntent = ProgramReviewSubmissionIntent.InitialReview;
+                await _unitOfWork.ProgramReviewSubmissions.Update(revisionRound);
+                await _unitOfWork.SaveChangesAsync();
+            }
+        }
+
         _loggerService.LogInformation("Upgraded advisory board flow for {Code}", SeedAdvResubmitCode);
     }
 
@@ -1556,6 +1604,50 @@ public partial class SeedService
             AuthorUserId = authorUserId,
             Message = messageText,
             CreatedAt = _seedNow.AddHours(-6),
+            CreatedBy = authorUserId,
+            IsDeleted = false,
+        });
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task EnsureAdvGeneralThreadAsync(Program program, Guid authorUserId, string messageText)
+    {
+        var existing = await _unitOfWork.ProgramAdvisoryThreads.FirstOrDefaultAsync(
+            t => t.ProgramId == program.Id
+                 && t.Type == ProgramAdvisoryThreadType.General
+                 && !t.IsDeleted);
+        if (existing != null)
+        {
+            return;
+        }
+
+        var thread = new ProgramAdvisoryThread
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = program.Id,
+            AuthorUserId = authorUserId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            TargetId = program.Id,
+            TargetLabel = program.Name,
+            TargetContext = "General discussion",
+            Type = ProgramAdvisoryThreadType.General,
+            Status = ProgramAdvisoryThreadStatus.Open,
+            LatestActivitySequence = 1,
+            LastMessageAt = _seedNow.AddHours(-5),
+            ConcurrencyVersion = Guid.NewGuid(),
+            CreatedAt = _seedNow.AddHours(-5),
+            CreatedBy = authorUserId,
+            IsDeleted = false,
+        };
+        await _unitOfWork.ProgramAdvisoryThreads.AddAsync(thread);
+        await _unitOfWork.ProgramAdvisoryMessages.AddAsync(new ProgramAdvisoryMessage
+        {
+            Id = Guid.NewGuid(),
+            ThreadId = thread.Id,
+            AuthorUserId = authorUserId,
+            StreamSequence = 1,
+            Message = messageText,
+            CreatedAt = _seedNow.AddHours(-5),
             CreatedBy = authorUserId,
             IsDeleted = false,
         });

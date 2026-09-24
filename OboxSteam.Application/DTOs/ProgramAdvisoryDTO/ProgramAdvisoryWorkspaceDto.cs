@@ -22,38 +22,32 @@ public sealed class ProgramAdvisoryWorkspaceDto
 
     public List<AdvisoryParticipantDto> Participants { get; set; } = [];
 
-    public bool CanAdvise { get; set; }
-
-    public bool CanDecide { get; set; }
-
-    public bool CanEditCurriculum { get; set; }
-
-    public bool CanAssignAdvisor { get; set; }
-
     public AdvisoryCapabilitiesDto Capabilities { get; set; } = new();
 
     public AdvisoryWorkflowTimelineDto Workflow { get; set; } = new();
 
     /// <summary>
-    /// Unresolved RequiredChange threads that still block approve
+    /// RequiredChange threads that are not yet accepted
     /// (<see cref="ProgramAdvisoryThreadStatus.Open"/> + <see cref="ProgramAdvisoryThreadStatus.Addressed"/>).
     /// Matches <c>scope=outstanding</c> and timeline <c>outstandingRequirementCount</c>.
     /// </summary>
-    public int ApprovalBlockingCount { get; set; }
+    public int OutstandingRequiredCount { get; set; }
+
+    /// <summary>RequiredChange threads the manager has marked fixed (Addressed) and the advisor has not accepted.</summary>
+    public int FixedRequiredCount { get; set; }
 
     public int OpenRequiredChangeCount { get; set; }
 
     public int AddressedRequiredChangeCount { get; set; }
 
+    /// <summary>Unread note threads, including the general discussion thread.</summary>
     public int UnreadNoteCount { get; set; }
-
-    public int UnreadDiscussionCount { get; set; }
 
     public ProgramReviewSubmissionSummaryDto? PendingSubmission { get; set; }
 
     public bool ReviewActionsLocked { get; set; }
 
-    public string CollaborationContractVersion { get; set; } = "2";
+    public string CollaborationContractVersion { get; set; } = "3";
 
     public ProgramReviewSubmissionSummaryDto? LatestSubmission { get; set; }
 

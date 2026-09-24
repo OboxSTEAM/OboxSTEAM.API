@@ -454,7 +454,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Advisory workspace summary for a program",
-        Description = "Includes collaborationContractVersion 2, capabilities, workflow timeline, approvalBlockingCount (Open+Addressed RequiredChanges), separate unreadNoteCount/unreadDiscussionCount, pendingSubmission/latestSubmission, and reviewActionsLocked. Discussion remains allowed when reviewActionsLocked is true.")]
+        Description = "Includes collaborationContractVersion 3, capabilities, a 5-stage workflow timeline with round and nextAction, outstandingRequiredCount, fixedRequiredCount, and unreadNoteCount (notes plus the general thread).")]
     [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
     public async Task<IActionResult> GetAdvisoryWorkspace([FromRoute] Guid id)
     {
@@ -600,11 +600,27 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<AdvisoryMessageDto>.Success(result, "200", "Advisory message added."));
     }
 
+    [HttpPost("{id:guid}/advisory-threads/{threadId:guid}/actions")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "Perform one advisory thread action",
+        Description = "MarkFixed (manager, open required change, Draft), Acknowledge (manager or author, open suggestion), or Accept (responsible advisor, open or fixed required change). Returns the full thread. clientOperationId is idempotent. Waive is not an action.")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
+    public async Task<IActionResult> PerformAdvisoryThreadAction(
+        [FromRoute] Guid id,
+        [FromRoute] Guid threadId,
+        [FromBody] AdvisoryThreadActionRequest request)
+    {
+        var result = await _programAdvisoryService.PerformThreadActionAsync(id, threadId, request);
+        return Ok(ApiResult<AdvisoryThreadDto>.Success(result, "200", "Advisory thread action applied."));
+    }
+
+    [Obsolete("Use POST /api/programs/{id}/advisory-threads/{threadId}/actions.")]
     [HttpPatch("{id:guid}/advisory-threads/{threadId:guid}/status")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Update advisory thread status",
-        Description = "Returns the full AdvisoryThreadDto (ordered events, updated capability flags, concurrencyVersion). Requires concurrencyVersion; clientOperationId is idempotent. canAddress is only true while the program is Draft (curriculum editable).")]
+        Description = "Obsolete. Use POST .../actions. Waive is rejected. Returns the full AdvisoryThreadDto.")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
     public async Task<IActionResult> UpdateAdvisoryThreadStatus(
         [FromRoute] Guid id,
@@ -664,6 +680,7 @@ public class ProgramController : ControllerBase
             result, "200", "Advisory anchor fields retrieved."));
     }
 
+    [Obsolete("Discussion lives on the program General advisory thread.")]
     [HttpGet("{id:guid}/advisory-discussion/messages")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "List paginated program Discussion messages")]
@@ -678,6 +695,7 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<AdvisoryDiscussionPageDto>.Success(result, "200", "Discussion messages retrieved successfully."));
     }
 
+    [Obsolete("Discussion lives on the program General advisory thread.")]
     [HttpGet("{id:guid}/advisory-discussion/messages/{messageId:guid}")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "Get one program Discussion message")]
@@ -690,6 +708,7 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<AdvisoryDiscussionMessageDto>.Success(result, "200", "Discussion message retrieved successfully."));
     }
 
+    [Obsolete("Discussion lives on the program General advisory thread.")]
     [HttpPost("{id:guid}/advisory-discussion/messages")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "Add a program Discussion message")]
@@ -715,6 +734,7 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<object>.Success(new { }, "200", "Advisory thread read cursor recorded."));
     }
 
+    [Obsolete("Discussion lives on the program General advisory thread.")]
     [HttpPost("{id:guid}/advisory-discussion/read")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "Advance the program Discussion read cursor")]
