@@ -604,7 +604,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Perform one advisory thread action",
-        Description = "MarkFixed (manager, open required change, Draft), Acknowledge (manager or author, open suggestion), or Accept (responsible advisor, open or fixed required change). Returns the full thread. clientOperationId is idempotent. Waive is not an action.")]
+        Description = "MarkFixed (manager, open required change, Draft), Acknowledge (manager or author, open suggestion), or Accept (responsible advisor, Addressed required change while the program is PendingReview). Returns the full thread. clientOperationId is idempotent. Waive is not an action.")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
     public async Task<IActionResult> PerformAdvisoryThreadAction(
         [FromRoute] Guid id,

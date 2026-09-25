@@ -241,7 +241,7 @@ public sealed class ProgramAdvisoryServiceTests
     }
 
     [Fact]
-    public async Task Approve_AcceptsOutstandingRequiredChanges_LeavesSuggestionsOpen()
+    public async Task Approve_WithOpenRequiredChange_ReturnsApprovalBlocked()
     {
         SeedBase();
         var submissionId = SeedPendingSubmission();
@@ -260,14 +260,16 @@ public sealed class ProgramAdvisoryServiceTests
             Message = "Optional polish.",
         });
 
-        var approved = await CreateReviewSut(_expertUserId).ApproveAsync(_programId, null);
-        Assert.Equal(CurriculumReviewDecision.Approved, approved.Decision);
+        var blocked = await Assert.ThrowsAsync<ConflictException>(
+            () => CreateReviewSut(_expertUserId).ApproveAsync(_programId, null));
+        Assert.Equal("APPROVAL_BLOCKED", blocked.ErrorCode);
         Assert.Equal(
-            ProgramAdvisoryThreadStatus.Resolved,
+            ProgramAdvisoryThreadStatus.Open,
             _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == required.Id).Status);
         Assert.Equal(
             ProgramAdvisoryThreadStatus.Open,
             _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == suggestion.Id).Status);
+        Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
     }
 
     [Fact]
@@ -739,7 +741,7 @@ public sealed class ProgramAdvisoryServiceTests
         });
         var pendingThread = await CreateAdvisorySut(_managerId).GetThreadAsync(_programId, thread.Id);
         Assert.DoesNotContain("MarkFixed", pendingThread.AvailableActions);
-        Assert.Contains("Accept", (await CreateAdvisorySut(_expertUserId).GetThreadAsync(_programId, thread.Id)).AvailableActions);
+        Assert.DoesNotContain("Accept", (await CreateAdvisorySut(_expertUserId).GetThreadAsync(_programId, thread.Id)).AvailableActions);
 
         await CreateReviewSut(_expertUserId).RequestChangesAsync(
             _programId,
@@ -844,17 +846,143 @@ public sealed class ProgramAdvisoryServiceTests
         Assert.Equal(2, outstanding.Count);
         Assert.All(outstanding, t => Assert.NotNull(t.OriginRoundLabel));
 
-        var approved = await CreateReviewSut(_expertUserId).ApproveAsync(_programId, null);
-        Assert.Equal(CurriculumReviewDecision.Approved, approved.Decision);
+        var blocked = await Assert.ThrowsAsync<ConflictException>(
+            () => CreateReviewSut(_expertUserId).ApproveAsync(_programId, null));
+        Assert.Equal("APPROVAL_BLOCKED", blocked.ErrorCode);
         Assert.Equal(
-            ProgramAdvisoryThreadStatus.Resolved,
+            ProgramAdvisoryThreadStatus.Open,
             _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == open.Id).Status);
         Assert.Equal(
-            ProgramAdvisoryThreadStatus.Resolved,
+            ProgramAdvisoryThreadStatus.Addressed,
             _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == addressed.Id).Status);
-        Assert.Contains(
-            _db.ProgramAdvisoryThreadEvents.Items,
-            e => e.ThreadId == open.Id && e.Message == "Accepted on approval");
+        Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
+    }
+
+    [Fact]
+    public async Task Accept_OpenRequiredChange_ReturnsAcceptRequiresFixed()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+        var thread = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = submissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.RequiredChange,
+            Message = "Must fix outcomes.",
+        });
+
+        var conflict = await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateAdvisorySut(_expertUserId).PerformThreadActionAsync(
+                _programId,
+                thread.Id,
+                new AdvisoryThreadActionRequest
+                {
+                    Action = AdvisoryThreadAction.Accept,
+                    ConcurrencyVersion = thread.ConcurrencyVersion,
+                }));
+        Assert.Equal("ACCEPT_REQUIRES_FIXED", conflict.ErrorCode);
+        Assert.Equal(
+            ProgramAdvisoryThreadStatus.Open,
+            _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == thread.Id).Status);
+    }
+
+    [Fact]
+    public async Task Accept_AddressedWhileDraft_ReturnsAcceptRequiresResubmit()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+        var thread = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = submissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.RequiredChange,
+            Message = "Must fix outcomes.",
+        });
+
+        await CreateReviewSut(_expertUserId).RequestChangesAsync(
+            _programId,
+            new RequestCurriculumChangesRequest
+            {
+                SubmissionId = submissionId,
+                ConcurrencyVersion = _db.ProgramReviewSubmissions.Items.Single().ConcurrencyVersion,
+                Comment = "Please revise.",
+            });
+
+        var fixedThread = await CreateAdvisorySut(_managerId).PerformThreadActionAsync(
+            _programId,
+            thread.Id,
+            new AdvisoryThreadActionRequest
+            {
+                Action = AdvisoryThreadAction.MarkFixed,
+                ConcurrencyVersion = _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == thread.Id).ConcurrencyVersion,
+            });
+        Assert.Equal(ProgramAdvisoryThreadStatus.Addressed, fixedThread.Status);
+        Assert.Equal(ProgramStatus.Draft, _db.Programs.Items.Single().Status);
+
+        var conflict = await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateAdvisorySut(_expertUserId).PerformThreadActionAsync(
+                _programId,
+                thread.Id,
+                new AdvisoryThreadActionRequest
+                {
+                    Action = AdvisoryThreadAction.Accept,
+                    ConcurrencyVersion = fixedThread.ConcurrencyVersion,
+                }));
+        Assert.Equal("ACCEPT_REQUIRES_RESUBMIT", conflict.ErrorCode);
+        Assert.Equal(
+            ProgramAdvisoryThreadStatus.Addressed,
+            _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == thread.Id).Status);
+    }
+
+    [Fact]
+    public async Task Accept_AddressedWhilePendingReview_ResolvesThread()
+    {
+        SeedBase();
+        var firstSubmissionId = SeedPendingSubmission();
+        var thread = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+        {
+            SubmissionId = firstSubmissionId,
+            TargetType = ProgramAdvisoryTargetType.Program,
+            Type = ProgramAdvisoryThreadType.RequiredChange,
+            Message = "Must fix outcomes.",
+        });
+
+        await CreateReviewSut(_expertUserId).RequestChangesAsync(
+            _programId,
+            new RequestCurriculumChangesRequest
+            {
+                SubmissionId = firstSubmissionId,
+                ConcurrencyVersion = _db.ProgramReviewSubmissions.Items.Single().ConcurrencyVersion,
+                Comment = "Please revise.",
+            });
+
+        await CreateAdvisorySut(_managerId).PerformThreadActionAsync(
+            _programId,
+            thread.Id,
+            new AdvisoryThreadActionRequest
+            {
+                Action = AdvisoryThreadAction.MarkFixed,
+                ConcurrencyVersion = _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == thread.Id).ConcurrencyVersion,
+            });
+
+        await CreateReviewSut(_managerId).SubmitForReviewAsync(_programId);
+        Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
+
+        var advisorView = await CreateAdvisorySut(_expertUserId).GetThreadAsync(_programId, thread.Id);
+        Assert.Contains("Accept", advisorView.AvailableActions);
+
+        var accepted = await CreateAdvisorySut(_expertUserId).PerformThreadActionAsync(
+            _programId,
+            thread.Id,
+            new AdvisoryThreadActionRequest
+            {
+                Action = AdvisoryThreadAction.Accept,
+                ConcurrencyVersion = advisorView.ConcurrencyVersion,
+            });
+        Assert.Equal(ProgramAdvisoryThreadStatus.Resolved, accepted.Status);
+        Assert.Equal(
+            ProgramAdvisoryThreadStatus.Resolved,
+            _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == thread.Id).Status);
     }
 
     [Fact]

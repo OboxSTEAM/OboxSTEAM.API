@@ -543,6 +543,118 @@ public sealed class CurriculumReviewServiceTests
     }
 
     [Fact]
+    public async Task Approve_ScoreBelowHalf_ReturnsRubricScoreBelowHalf()
+    {
+        SeedStaffAndOwner();
+        SeedFramework();
+        _db.FrameworkRubricCriteria.Seed(new FrameworkRubricCriterion
+        {
+            Id = _criterionId,
+            FrameworkId = _frameworkId,
+            FrameworkVersionId = _frameworkVersionId,
+            Name = "Outcomes",
+            MaxScore = 10,
+            DisplayOrder = 1,
+            IsDeleted = false,
+        });
+        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedPendingSubmission();
+        var sut = CreateSut(_expertUserId);
+
+        var conflict = await Assert.ThrowsAsync<ConflictException>(() => sut.ApproveAsync(
+            _programId,
+            new ApproveCurriculumReviewRequest
+            {
+                Scores =
+                [
+                    new ReviewCriterionScoreRequest
+                    {
+                        CriterionId = _criterionId,
+                        Score = 3,
+                    },
+                ],
+            }));
+
+        Assert.Equal("RUBRIC_SCORE_BELOW_HALF", conflict.ErrorCode);
+        Assert.Contains("Outcomes", conflict.Message, StringComparison.Ordinal);
+        Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
+        Assert.Empty(_db.CurriculumReviews.Items);
+    }
+
+    [Fact]
+    public async Task Approve_ScoreAtHalf_Succeeds()
+    {
+        SeedStaffAndOwner();
+        SeedFramework();
+        _db.FrameworkRubricCriteria.Seed(new FrameworkRubricCriterion
+        {
+            Id = _criterionId,
+            FrameworkId = _frameworkId,
+            FrameworkVersionId = _frameworkVersionId,
+            Name = "Outcomes",
+            MaxScore = 10,
+            DisplayOrder = 1,
+            IsDeleted = false,
+        });
+        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedPendingSubmission();
+        var sut = CreateSut(_expertUserId);
+
+        var result = await sut.ApproveAsync(_programId, new ApproveCurriculumReviewRequest
+        {
+            Scores =
+            [
+                new ReviewCriterionScoreRequest
+                {
+                    CriterionId = _criterionId,
+                    Score = 5,
+                },
+            ],
+        });
+
+        Assert.Equal(CurriculumReviewDecision.Approved, result.Decision);
+        Assert.Equal(ProgramStatus.Approved, _db.Programs.Items.Single().Status);
+        Assert.Equal(5, Assert.Single(result.Scores).Score);
+    }
+
+    [Fact]
+    public async Task RequestChanges_ScoreBelowHalf_StillSucceeds()
+    {
+        SeedStaffAndOwner();
+        SeedFramework();
+        _db.FrameworkRubricCriteria.Seed(new FrameworkRubricCriterion
+        {
+            Id = _criterionId,
+            FrameworkId = _frameworkId,
+            FrameworkVersionId = _frameworkVersionId,
+            Name = "Outcomes",
+            MaxScore = 10,
+            DisplayOrder = 1,
+            IsDeleted = false,
+        });
+        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
+        SeedPendingSubmission();
+        var sut = CreateSut(_expertUserId);
+
+        var result = await sut.RequestChangesAsync(_programId, new RequestCurriculumChangesRequest
+        {
+            Comment = "Outcomes need work.",
+            Scores =
+            [
+                new ReviewCriterionScoreRequest
+                {
+                    CriterionId = _criterionId,
+                    Score = 3,
+                },
+            ],
+        });
+
+        Assert.Equal(CurriculumReviewDecision.ChangesRequested, result.Decision);
+        Assert.Equal(ProgramStatus.Draft, _db.Programs.Items.Single().Status);
+        Assert.Equal(3, Assert.Single(result.Scores).Score);
+    }
+
+    [Fact]
     public async Task Approve_OtherExpert_Forbidden()
     {
         SeedStaffAndOwner();

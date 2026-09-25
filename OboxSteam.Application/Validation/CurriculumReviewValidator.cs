@@ -91,6 +91,7 @@ public static class CurriculumReviewValidator
         var criteriaById = criteria.ToDictionary(c => c.Id);
         var seen = new HashSet<Guid>();
         var rows = new List<ReviewCriterionScore>();
+        var belowHalf = new List<string>();
 
         foreach (var item in scores)
         {
@@ -115,6 +116,12 @@ public static class CurriculumReviewValidator
                     $"Score for '{criterion.Name}' must be between 0 and {criterion.MaxScore}.");
             }
 
+            if (requireAll && item.Score * 2 < criterion.MaxScore)
+            {
+                belowHalf.Add(
+                    $"Score for '{criterion.Name}' is below half of {criterion.MaxScore}. Return the program and add a required change.");
+            }
+
             rows.Add(new ReviewCriterionScore
             {
                 CurriculumReviewId = reviewId,
@@ -128,7 +135,11 @@ public static class CurriculumReviewValidator
             });
         }
 
-        _ = requireAll;
+        if (belowHalf.Count > 0)
+        {
+            throw ErrorHelper.Conflict(string.Join(" ", belowHalf), "RUBRIC_SCORE_BELOW_HALF");
+        }
+
         return rows;
     }
 }

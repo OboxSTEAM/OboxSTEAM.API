@@ -913,9 +913,18 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                     throw ErrorHelper.BadRequest("Accept applies only to required changes.");
                 }
 
-                if (priorStatus is not (ProgramAdvisoryThreadStatus.Open or ProgramAdvisoryThreadStatus.Addressed))
+                if (priorStatus != ProgramAdvisoryThreadStatus.Addressed)
                 {
-                    throw ErrorHelper.Conflict("Only open or fixed required changes can be accepted.");
+                    throw ErrorHelper.Conflict(
+                        "Only a required change the manager has marked fixed can be accepted.",
+                        "ACCEPT_REQUIRES_FIXED");
+                }
+
+                if (program.Status != ProgramStatus.PendingReview)
+                {
+                    throw ErrorHelper.Conflict(
+                        "Accept is available only after the manager sends the program back for review.",
+                        "ACCEPT_REQUIRES_RESUBMIT");
                 }
 
                 newStatus = ProgramAdvisoryThreadStatus.Resolved;
@@ -2465,8 +2474,8 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         }
 
         if (thread.Type == ProgramAdvisoryThreadType.RequiredChange
-            && thread.Status is (ProgramAdvisoryThreadStatus.Open or ProgramAdvisoryThreadStatus.Addressed)
-            && notesMutable
+            && thread.Status == ProgramAdvisoryThreadStatus.Addressed
+            && programStatus == ProgramStatus.PendingReview
             && isAdvisor)
         {
             actions.Add(nameof(AdvisoryThreadAction.Accept));

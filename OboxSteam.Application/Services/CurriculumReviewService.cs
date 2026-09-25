@@ -363,6 +363,18 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var scoreRows = CurriculumReviewValidator.BuildScores(reviewId, criteria, request?.Scores);
         var now = _currentTime.GetCurrentTime().ToUniversalTime();
 
+        var unresolvedRequired = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
+            t => t.ProgramId == program.Id
+                 && t.Type == ProgramAdvisoryThreadType.RequiredChange
+                 && t.Status != ProgramAdvisoryThreadStatus.Resolved
+                 && !t.IsDeleted);
+        if (unresolvedRequired.Count > 0)
+        {
+            throw ErrorHelper.Conflict(
+                "Unresolved required changes must be accepted before approval.",
+                "APPROVAL_BLOCKED");
+        }
+
         var review = await PersistDecisionAsync(
             program,
             expert,
