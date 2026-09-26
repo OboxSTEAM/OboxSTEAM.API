@@ -82,6 +82,17 @@ public partial class SeedService
             capstoneSubmission,
             seedTime);
         await SeedPortfolioSectionsAsync(portfolio, seedTime);
+        await SeedStudent1PortfolioSkillsAsync(portfolio, programWebDev, seedTime);
+
+        var programDigArt = await _unitOfWork.Programs.FirstOrDefaultAsync(p => p.Code == "PRG-DIGART");
+        if (programDigArt != null)
+        {
+            await SeedStudent1PortfolioSkillsAsync(portfolio, programDigArt, seedTime);
+        }
+        else
+        {
+            _loggerService.LogWarning("PRG-DIGART missing — DigArt portfolio skill curation skipped.");
+        }
 
         _loggerService.LogInformation(
             "Finished seed portfolio data for STD-001 — portfolio {PortfolioCode}, {CertCount} certificate(s).",
@@ -635,9 +646,32 @@ public partial class SeedService
             s => s.PortfolioId == portfolio.Id && !s.IsDeleted);
         if (existing.Count > 0)
         {
-            _loggerService.LogInformation(
-                "Portfolio sections already exist for {PortfolioCode}, skipping section seeding.",
-                portfolio.Code);
+            if (existing.All(s => s.Kind != PortfolioSectionKind.SkillsGroup))
+            {
+                await _unitOfWork.PortfolioSections.AddAsync(new PortfolioSection
+                {
+                    Id = Guid.NewGuid(),
+                    PortfolioId = portfolio.Id,
+                    Kind = PortfolioSectionKind.SkillsGroup,
+                    Title = "Skills",
+                    DisplayOrder = existing.Max(s => s.DisplayOrder) + 1,
+                    IsVisible = true,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
+                await _unitOfWork.SaveChangesAsync();
+                _loggerService.LogInformation(
+                    "Backfilled SkillsGroup section for portfolio {PortfolioCode}.",
+                    portfolio.Code);
+            }
+            else
+            {
+                _loggerService.LogInformation(
+                    "Portfolio sections already exist for {PortfolioCode}, skipping section seeding.",
+                    portfolio.Code);
+            }
+
             return;
         }
 
@@ -709,5 +743,138 @@ public partial class SeedService
 
         await _unitOfWork.PortfolioSections.AddRangeAsync(sections);
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Seeds curated portfolio skills for STD-001 from a program's catalog links
+    /// (WEBDEV + DIGART). Pins a few FE-friendly chips, leaves one hidden so curation UI has both states.
+    /// Pin budget is shared across calls (max 6 pinned).
+    /// </summary>
+    private async Task SeedStudent1PortfolioSkillsAsync(
+        Portfolio portfolio,
+        Program program,
+        DateTime seedTime)
+    {
+        var links = await _unitOfWork.ProgramSkills.GetAllAsync(
+            ps => ps.ProgramId == program.Id && !ps.IsDeleted);
+        if (links.Count == 0)
+        {
+            _loggerService.LogWarning(
+                "No ProgramSkills on {ProgramCode} — portfolio skill curation skipped.",
+                program.Code);
+            return;
+        }
+
+        var skillIds = links.Select(l => l.SkillId).Distinct().ToList();
+        var skills = (await _unitOfWork.Skills.GetAllAsync(
+                s => skillIds.Contains(s.Id) && !s.IsDeleted))
+            .OrderBy(s => s.Name)
+            .ThenBy(s => s.Code)
+            .ToList();
+
+        if (skills.Count == 0)
+        {
+            return;
+        }
+
+        var existing = await _unitOfWork.PortfolioSkills.GetAllAsync(
+            ps => ps.PortfolioId == portfolio.Id && !ps.IsDeleted);
+        var existingBySkillId = existing.ToDictionary(ps => ps.SkillId);
+        var alreadyPinned = existing.Count(ps => ps.IsPinned);
+
+        // Stable FE demo: pin JS / UX / Communication / Creative / Visual / Aesthetic (≤6).
+        var pinCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "SKL-TECH-PROG-JS",
+            "SKL-ART-UXUI",
+            "SKL-SOFT-COMM",
+            "SKL-SOFT-CREATIVE",
+            "SKL-ART-VISUAL",
+            "SKL-ART-AESTHETIC",
+        };
+        var hideCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "SKL-TECH-DIGITAL-LIT",
+        };
+
+        var toAdd = new List<PortfolioSkill>();
+        var toUpdate = new List<PortfolioSkill>();
+        var displayOrder = existing.Count == 0
+            ? 0
+            : existing.Max(ps => ps.DisplayOrder) + 1;
+        var pinnedBudget = Math.Max(0, 6 - alreadyPinned);
+
+        foreach (var skill in skills)
+        {
+            var alreadyPinnedRow = existingBySkillId.TryGetValue(skill.Id, out var existingRow)
+                && existingRow.IsPinned;
+            var wantPinned = pinCodes.Contains(skill.Code);
+            var isPinned = alreadyPinnedRow
+                || (wantPinned && pinnedBudget > 0);
+            if (isPinned && !alreadyPinnedRow)
+            {
+                pinnedBudget--;
+            }
+
+            var isVisible = !hideCodes.Contains(skill.Code);
+
+            if (existingBySkillId.TryGetValue(skill.Id, out var row))
+            {
+                var changed = false;
+                if (row.IsPinned != isPinned)
+                {
+                    row.IsPinned = isPinned;
+                    changed = true;
+                }
+
+                if (row.IsVisible != isVisible)
+                {
+                    row.IsVisible = isVisible;
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    toUpdate.Add(row);
+                }
+            }
+            else
+            {
+                toAdd.Add(new PortfolioSkill
+                {
+                    Id = Guid.NewGuid(),
+                    PortfolioId = portfolio.Id,
+                    SkillId = skill.Id,
+                    IsVisible = isVisible,
+                    IsPinned = isPinned,
+                    DisplayOrder = displayOrder,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
+                displayOrder++;
+            }
+        }
+
+        if (toAdd.Count > 0)
+        {
+            await _unitOfWork.PortfolioSkills.AddRangeAsync(toAdd);
+        }
+
+        if (toUpdate.Count > 0)
+        {
+            await _unitOfWork.PortfolioSkills.UpdateRange(toUpdate);
+        }
+
+        if (toAdd.Count > 0 || toUpdate.Count > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        _loggerService.LogInformation(
+            "Seeded portfolio skills for {PortfolioCode} from {ProgramCode} — {Total} skill(s).",
+            portfolio.Code,
+            program.Code,
+            skills.Count);
     }
 }

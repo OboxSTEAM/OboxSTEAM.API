@@ -257,6 +257,12 @@ public partial class SeedService
             existing.RetakeFee ??= CatalogRetakeFee(existing.Price);
             existing.Name = "STEAM Foundations";
             existing.SeriesName = "Core Track";
+            if (string.IsNullOrWhiteSpace(existing.ThumbnailUrl))
+            {
+                existing.ThumbnailUrl =
+                    "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1232&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D";
+            }
+
             await _unitOfWork.Programs.Update(existing);
             await _unitOfWork.SaveChangesAsync();
             return existing;
@@ -278,6 +284,8 @@ public partial class SeedService
             Status = ProgramStatus.Active,
             Price = 1_000_000m,
             RetakeFee = CatalogRetakeFee(1_000_000m),
+            ThumbnailUrl =
+                "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1232&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
             CreatedAt = seedTime,
             CreatedBy = Guid.Empty,
             IsDeleted = false,

@@ -73,7 +73,7 @@ public partial class SeedService
                     SkillsGained = "Electronics, MQTT, sensor integration, prototyping",
                     Rating = 4.3m,
                     TotalReviews = 76,
-                    ThumbnailUrl = "https://images.unsplash.com/photo-1596658591534-591d75e2f2f7?q=80&w=1171&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1558346490-a72e53ae2d4f?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = ProgramStatus.Active,
                     Price = 1_950_000m,
                     CreatedAt = publishedAt,
@@ -114,7 +114,7 @@ public partial class SeedService
                     SkillsGained = "Algebra, geometry, logical reasoning, mental math",
                     Rating = 4.6m,
                     TotalReviews = 189,
-                    ThumbnailUrl = "https://images.unsplash.com/photo-1635372722656-389f87a941b7?q=80&w=1331&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1509228468518-180dd4864904?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = ProgramStatus.Active,
                     Price = 1_100_000m,
                     CreatedAt = publishedAt,
@@ -134,7 +134,7 @@ public partial class SeedService
                     SkillsGained = "Digital drawing, color theory, composition, character design",
                     Rating = 4.7m,
                     TotalReviews = 143,
-                    ThumbnailUrl = "https://images.unsplash.com/photo-1588876315093-ce09afb34028?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1561070791-2526d30994b5?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = ProgramStatus.Active,
                     Price = 1_800_000m,
                     CreatedAt = publishedAt,
@@ -154,7 +154,7 @@ public partial class SeedService
                     SkillsGained = "Cell biology, genetics, lab techniques, scientific analysis",
                     Rating = 4.4m,
                     TotalReviews = 88,
-                    ThumbnailUrl = "https://plus.unsplash.com/premium_photo-1661380732508-93beb2601f24?q=80&w=1169&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = ProgramStatus.Active,
                     Price = 2_050_000m,
                     CreatedAt = publishedAt,
@@ -234,7 +234,7 @@ public partial class SeedService
                     SkillsGained = "Game logic, level design, sprite animation, basic programming",
                     Rating = 4.9m,
                     TotalReviews = 378,
-                    ThumbnailUrl = "https://plus.unsplash.com/premium_photo-1721080251127-76315300cc5c?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=1171&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = ProgramStatus.Active,
                     Price = 2_700_000m,
                     CreatedAt = publishedAt,
@@ -254,7 +254,7 @@ public partial class SeedService
                     SkillsGained = "DAW skills, music theory, sound design, audio mixing",
                     Rating = 4.5m,
                     TotalReviews = 91,
-                    ThumbnailUrl = "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = ProgramStatus.Active,
                     Price = 1_600_000m,
                     CreatedAt = publishedAt,
@@ -274,7 +274,7 @@ public partial class SeedService
                     SkillsGained = "Statistics, probability, data visualization, spreadsheet analysis",
                     Rating = 4.4m,
                     TotalReviews = 67,
-                    ThumbnailUrl = "https://images.unsplash.com/photo-1666875753105-c63a6f3bdc86?q=80&w=1173&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
                     Status = ProgramStatus.Active,
                     Price = 1_950_000m,
                     CreatedAt = publishedAt,
@@ -317,6 +317,96 @@ public partial class SeedService
         {
             await BackfillCatalogRetakeFeesAsync(existingPrograms);
         }
+
+        await BackfillCatalogThumbnailsAsync();
+    }
+
+    /// <summary>
+    /// Canonical catalog thumbnails. Used on first seed and to repair missing/stale Unsplash URLs.
+    /// </summary>
+    private static readonly Dictionary<string, string> CatalogThumbnailByCode = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["PRG-ROBOTICS"] =
+            "https://images.unsplash.com/photo-1518314916381-77a37c2a49ae?q=80&w=1171&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-WEBDEV"] =
+            "https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=1172&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-IOT"] =
+            "https://images.unsplash.com/photo-1558346490-a72e53ae2d4f?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-PYBASIC"] =
+            "https://images.unsplash.com/photo-1649180556628-9ba704115795?q=80&w=1162&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-MATHFUN"] =
+            "https://images.unsplash.com/photo-1509228468518-180dd4864904?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-DIGART"] =
+            "https://images.unsplash.com/photo-1561070791-2526d30994b5?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-BIOTECH"] =
+            "https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-3DDESIGN"] =
+            "https://images.unsplash.com/photo-1547194936-28214bd75193?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-AIBASIC"] =
+            "https://images.unsplash.com/photo-1526378722484-bd91ca387e72?q=80&w=1334&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-ENVSCI"] =
+            "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?q=80&w=1313&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-GAMEDEV"] =
+            "https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=1171&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-MUSICTECH"] =
+            "https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-DATAMATH"] =
+            "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+        ["PRG-CERT-TEST"] =
+            "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    };
+
+    /// <summary>
+    /// Known-dead Unsplash photo ids (404). Any catalog row still pointing here gets refreshed.
+    /// </summary>
+    private static readonly string[] StaleThumbnailPhotoIds =
+    [
+        "photo-1569163139394-de460e9b8570",
+        "premium_photo-1721080251127-76315300cc5c",
+        "premium_photo-1661380732508-93beb2601f24",
+        "photo-1588876315093-ce09afb34028",
+        "photo-1635372722656-389f87a941b7",
+        "photo-1666875753105-c63a6f3bdc86",
+        "photo-1596658591534-591d75e2f2f7",
+        "photo-1598488035139-bdbb2231ce04",
+    ];
+
+    private async Task BackfillCatalogThumbnailsAsync()
+    {
+        var programs = await _unitOfWork.Programs.GetAllAsync(p => !p.IsDeleted);
+        var updated = 0;
+
+        foreach (var program in programs)
+        {
+            if (!CatalogThumbnailByCode.TryGetValue(program.Code, out var canonical))
+            {
+                continue;
+            }
+
+            var missing = string.IsNullOrWhiteSpace(program.ThumbnailUrl);
+            var stale = !missing
+                        && StaleThumbnailPhotoIds.Any(id =>
+                            program.ThumbnailUrl!.Contains(id, StringComparison.OrdinalIgnoreCase));
+            var outdated = !string.Equals(program.ThumbnailUrl, canonical, StringComparison.Ordinal);
+
+            if (!missing && !stale && !outdated)
+            {
+                continue;
+            }
+
+            program.ThumbnailUrl = canonical;
+            await _unitOfWork.Programs.Update(program);
+            updated++;
+        }
+
+        if (updated > 0)
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        _loggerService.LogInformation(
+            "Backfilled catalog ThumbnailUrl on {Count} program(s).",
+            updated);
     }
 
     /// <summary>

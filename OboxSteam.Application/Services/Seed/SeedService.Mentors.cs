@@ -25,6 +25,7 @@ public partial class SeedService
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
+                MaxConcurrentClasses = 5,
                 CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
@@ -40,6 +41,7 @@ public partial class SeedService
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
+                MaxConcurrentClasses = 5,
                 CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
@@ -55,6 +57,7 @@ public partial class SeedService
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
+                MaxConcurrentClasses = 5,
                 CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
@@ -70,11 +73,12 @@ public partial class SeedService
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
+                MaxConcurrentClasses = 5,
                 CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
             },
-            // Available mentor with profile/skills but no assigned class yet.
+            // MNT-007 carries fail/rebuy Open cohorts (load 3). MNT-008/009 stay spare for assign board.
             new()
             {
                 Id = Guid.NewGuid(),
@@ -82,10 +86,43 @@ public partial class SeedService
                 Email = "mentor7@oboxsteam.com",
                 PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
                 FullName = "Alex Mentor",
-                Phone = "0123456775",
+                Phone = "0123456768",
                 Role = RoleType.Mentor,
                 Status = AccountStatus.Active,
                 IsEmailVerified = true,
+                MaxConcurrentClasses = 5,
+                CreatedAt = _seedNow,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                Code = "MNT-008",
+                Email = "mentor8@oboxsteam.com",
+                PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                FullName = "Jordan Mentor",
+                Phone = "0123456767",
+                Role = RoleType.Mentor,
+                Status = AccountStatus.Active,
+                IsEmailVerified = true,
+                MaxConcurrentClasses = 5,
+                CreatedAt = _seedNow,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                Code = "MNT-009",
+                Email = "mentor9@oboxsteam.com",
+                PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                FullName = "Taylor Mentor",
+                Phone = "0123456766",
+                Role = RoleType.Mentor,
+                Status = AccountStatus.Active,
+                IsEmailVerified = true,
+                MaxConcurrentClasses = 5,
                 CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
@@ -100,18 +137,37 @@ public partial class SeedService
             {
                 mentorsToAdd.Add(mentor);
             }
+            else if (exists.MaxConcurrentClasses == null || exists.MaxConcurrentClasses < 5)
+            {
+                exists.MaxConcurrentClasses = 5;
+                await _unitOfWork.Users.Update(exists);
+            }
         }
 
-        if (mentorsToAdd.Count == 0)
+        // Primary mentors live in SeedUsersAsync; still raise their concurrent cap on re-seed.
+        foreach (var code in new[] { "MNT-001", "MNT-002" })
         {
-            return;
+            var mentor = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == code && !u.IsDeleted);
+            if (mentor != null
+                && (mentor.MaxConcurrentClasses == null || mentor.MaxConcurrentClasses < 5))
+            {
+                mentor.MaxConcurrentClasses = 5;
+                await _unitOfWork.Users.Update(mentor);
+            }
         }
 
-        await _unitOfWork.Users.AddRangeAsync(mentorsToAdd);
+        if (mentorsToAdd.Count > 0)
+        {
+            await _unitOfWork.Users.AddRangeAsync(mentorsToAdd);
+        }
+
         await _unitOfWork.SaveChangesAsync();
-        _loggerService.LogInformation(
-            "Backfilled {Count} additional mentor user(s).",
-            mentorsToAdd.Count);
+        if (mentorsToAdd.Count > 0)
+        {
+            _loggerService.LogInformation(
+                "Backfilled {Count} additional mentor user(s).",
+                mentorsToAdd.Count);
+        }
     }
 
     private async Task SeedMentorProfilesAsync()
@@ -179,8 +235,24 @@ public partial class SeedService
                 "STEAM Generalist Mentor",
                 "OboxSTEAM Talent Pool",
                 "Cross-disciplinary mentor ready for upcoming cohorts across coding, prototyping, and soft skills.",
-                "Former industry engineer transitioning to full-time STEAM mentoring; awaiting first class assignment.",
+                "Former industry engineer transitioning to full-time STEAM mentoring; fail/rebuy Open cohorts.",
                 "https://www.linkedin.com/in/alex-mentor-oboxsteam"
+            ),
+            (
+                "MNT-008",
+                "Assign-Board Ready Mentor",
+                "OboxSTEAM Talent Pool",
+                "Spare mentor with open concurrent capacity for ReadyForMentor / assign-board demos.",
+                "No seed class load — available for manager assignment to waiting cohorts.",
+                "https://www.linkedin.com/in/jordan-mentor-oboxsteam"
+            ),
+            (
+                "MNT-009",
+                "Assign-Board Ready Mentor",
+                "OboxSTEAM Talent Pool",
+                "Second spare mentor with open concurrent capacity for class assignment flows.",
+                "No seed class load — available for manager assignment to waiting cohorts.",
+                "https://www.linkedin.com/in/taylor-mentor-oboxsteam"
             ),
         };
 
@@ -373,16 +445,21 @@ public partial class SeedService
         };
 
         var skills = await _unitOfWork.Skills.GetAllAsync(s => !s.IsDeleted);
-        foreach (var skill in skills.OrderBy(s => s.Code, StringComparer.OrdinalIgnoreCase))
+        foreach (var spareMentorCode in new[] { "MNT-007", "MNT-008", "MNT-009" })
         {
-            skillDefinitions.Add((
-                "MNT-007",
-                skill.Code,
-                SkillProficiencyLevel.Advanced,
-                6,
-                $"Can mentor {skill.Name} across STEAM cohorts.",
-                "Available mentor — full catalog coverage for class requests.",
-                true));
+            foreach (var skill in skills.OrderBy(s => s.Code, StringComparer.OrdinalIgnoreCase))
+            {
+                skillDefinitions.Add((
+                    spareMentorCode,
+                    skill.Code,
+                    SkillProficiencyLevel.Advanced,
+                    6,
+                    $"Can mentor {skill.Name} across STEAM cohorts.",
+                    spareMentorCode == "MNT-007"
+                        ? "Fail/rebuy mentor — full catalog coverage."
+                        : "Spare assign-board mentor — full catalog coverage for class requests.",
+                    true));
+            }
         }
         var skillsByCode = skills.ToDictionary(s => s.Code, StringComparer.OrdinalIgnoreCase);
 

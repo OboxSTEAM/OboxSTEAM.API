@@ -108,6 +108,54 @@ public partial class SeedService
                 AtDays(-32));
         }
 
+        if (programs.TryGetValue("PRG-DIGART", out var digArt))
+        {
+            foreach (var studentCode in DigArtPastStudentCodes)
+            {
+                Add(
+                    studentCode,
+                    digArt,
+                    EnrollmentStatus.Completed,
+                    100m,
+                    AtMonths(-6),
+                    AtMonths(-6).AddDays(5),
+                    AtDays(-45));
+            }
+
+            foreach (var studentCode in DigArtCurrentStudentCodes)
+            {
+                Add(studentCode, digArt, EnrollmentStatus.Active, 40m, AtDays(-40), AtDays(-35), null);
+            }
+        }
+        else
+        {
+            _loggerService.LogWarning("PRG-DIGART missing. Skipping DigArt enrollment seed.");
+        }
+
+        if (programs.TryGetValue("PRG-MATHFUN", out var mathFunActive))
+        {
+            foreach (var studentCode in MathFunCurrentStudentCodes)
+            {
+                Add(studentCode, mathFunActive, EnrollmentStatus.Active, 35m, AtDays(-32), AtDays(-28), null);
+            }
+        }
+
+        if (programs.TryGetValue("PRG-MUSICTECH", out var musicTech))
+        {
+            foreach (var studentCode in MusicTechCurrentStudentCodes)
+            {
+                Add(studentCode, musicTech, EnrollmentStatus.Active, 30m, AtDays(-25), AtDays(-21), null);
+            }
+        }
+
+        if (programs.TryGetValue("PRG-DATAMATH", out var dataMath))
+        {
+            foreach (var studentCode in DataMathCurrentStudentCodes)
+            {
+                Add(studentCode, dataMath, EnrollmentStatus.Active, 25m, AtDays(-18), AtDays(-14), null);
+            }
+        }
+
         foreach (var studentCode in GameDevPendingStudentCodes)
         {
             Add(studentCode, gameDev, EnrollmentStatus.PendingPayment, 0m, AtDays(-12), null, null);

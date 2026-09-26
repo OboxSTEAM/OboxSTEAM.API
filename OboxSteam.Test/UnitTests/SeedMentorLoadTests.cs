@@ -6,6 +6,25 @@ namespace OboxSteam.Test.UnitTests;
 
 public sealed class SeedMentorLoadTests
 {
+    /// <summary>
+    /// Mentors who carry Art/Math expansion plus demos/board pending / fail-rebuy load.
+    /// Seed sets <c>MaxConcurrentClasses = 5</c> for these accounts.
+    /// </summary>
+    private static readonly HashSet<string> RaisedConcurrentMentors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "MNT-001",
+        "MNT-002",
+        "MNT-003",
+        "MNT-004",
+        "MNT-005",
+        "MNT-006",
+        "MNT-007",
+        "MNT-008",
+        "MNT-009",
+    };
+
+    private const int RaisedMaxConcurrentClasses = 5;
+
     [Fact]
     public void SeedRoster_StaysWithinDefaultConcurrentClassLimit()
     {
@@ -14,13 +33,28 @@ public sealed class SeedMentorLoadTests
         Assert.NotEmpty(usage);
         Assert.All(
             usage,
-            pair => Assert.True(
-                pair.Value <= MentorRequestConstants.DefaultMaxConcurrentClasses,
-                $"{pair.Key} concurrent load {pair.Value} exceeds the default cap of {MentorRequestConstants.DefaultMaxConcurrentClasses}."));
+            pair =>
+            {
+                var limit = RaisedConcurrentMentors.Contains(pair.Key)
+                    ? RaisedMaxConcurrentClasses
+                    : MentorRequestConstants.DefaultMaxConcurrentClasses;
+                Assert.True(
+                    pair.Value <= limit,
+                    $"{pair.Key} concurrent load {pair.Value} exceeds the cap of {limit}.");
+            });
         // Maker Open (MNT-006) + current fail/rebuy cohort.
         Assert.Equal(2, usage.GetValueOrDefault("MNT-006"));
         // Three Open rebuy classes (eligible / blocked / fresh).
         Assert.Equal(3, usage.GetValueOrDefault("MNT-007"));
+        // Art/Math expansion + Scratch demo + board pending.
+        Assert.Equal(5, usage.GetValueOrDefault("MNT-001"));
+        Assert.Equal(4, usage.GetValueOrDefault("MNT-002"));
+        Assert.Equal(3, usage.GetValueOrDefault("MNT-003"));
+        Assert.Equal(4, usage.GetValueOrDefault("MNT-004"));
+        Assert.Equal(3, usage.GetValueOrDefault("MNT-005"));
+        // Spare assign-board mentors (MNT-008/009) carry no seed concurrent load.
+        Assert.Equal(0, usage.GetValueOrDefault("MNT-008"));
+        Assert.Equal(0, usage.GetValueOrDefault("MNT-009"));
     }
 
     [Fact]
@@ -47,6 +81,7 @@ public sealed class SeedMentorLoadTests
                 $"{pair.Key} in-progress programs {pair.Value} exceeds cap of {SeedService.MaxInProgressProgramsPerStudent}."));
 
         // Hero students already on Robotics must not also hold demo programs.
+        // DigArt for STD-001 is Completed (second achieved program), not in-progress.
         Assert.Equal(1, usage.GetValueOrDefault("STD-001"));
         Assert.Equal(1, usage.GetValueOrDefault("STD-002"));
         // Robotics Active + CERT-TEST Active.

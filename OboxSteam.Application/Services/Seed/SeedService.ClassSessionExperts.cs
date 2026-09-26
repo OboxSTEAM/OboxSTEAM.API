@@ -5,10 +5,12 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Application.Services;
 
 /// <summary>
-/// EXP-001 co-teach fixture on Maker Lab Adventures (CLS-DEMO-MAKER-2026A):
-/// Accepted Offline invitations on the Slice-2 joinable Offline lab (leave status
-/// alone for student10 / mentor4 QR/check-in) plus the research Offline forced
-/// Completed with empty feedback so the expert can submit. Idempotent for re-seed.
+/// EXP co-teach fixtures:
+/// <list type="bullet">
+/// <item>Maker Lab Adventures (CLS-DEMO-MAKER-2026A) — Slice-2 QR/check-in + feedback Offline.</item>
+/// <item>Active Art/Math cohorts — Accepted Offline co-teach so catalog programs show expert presence.</item>
+/// </list>
+/// Idempotent for re-seed.
 /// </summary>
 public partial class SeedService
 {
@@ -16,15 +18,39 @@ public partial class SeedService
     private const string MakerCoTeachProgramCode = "PRG-DEMO-MAKER";
     private const string MakerJoinableOfflineActivityCode = "ACT-DEMO-MAKER-02-03";
 
+    /// <summary>
+    /// InProgress Art/Math cohorts that should show at least one Accepted Offline co-teach.
+    /// </summary>
+    private static readonly (string ClassCode, string ProgramCode, string ExpertCode, string BoardRole)[]
+        ArtMathCoTeachTargets =
+        [
+            ("CLS-DIGART-CURRENT", "PRG-DIGART", "EXP-001", "Digital Art Studio Advisor"),
+            ("CLS-MATHFUN-CURRENT", "PRG-MATHFUN", "EXP-002", "Math Fun Workshop Advisor"),
+            ("CLS-MUSICTECH-CURRENT", "PRG-MUSICTECH", "EXP-003", "Music Production Coach"),
+            ("CLS-DATAMATH-CURRENT", "PRG-DATAMATH", "EXP-004", "Data Math Lab Advisor"),
+        ];
+
     private async Task SeedClassSessionExpertsAsync()
     {
-        _loggerService.LogInformation("Starting seed class session experts (Maker Lab Adventures)");
+        _loggerService.LogInformation("Starting seed class session experts (Maker + Art/Math Offline)");
 
+        var makerSeeded = await SeedMakerLabCoTeachAsync();
+        var artMathSeeded = await SeedArtMathOfflineCoTeachAsync();
+
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Finished seed class session experts — Maker={MakerCount}, Art/Math Offline={ArtMathCount}.",
+            makerSeeded,
+            artMathSeeded);
+    }
+
+    private async Task<int> SeedMakerLabCoTeachAsync()
+    {
         var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
         if (expert001 == null)
         {
-            _loggerService.LogWarning("EXP-001 missing. Skipping class session expert seed.");
-            return;
+            _loggerService.LogWarning("EXP-001 missing. Skipping Maker class session expert seed.");
+            return 0;
         }
 
         var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
@@ -32,9 +58,9 @@ public partial class SeedService
         if (program == null)
         {
             _loggerService.LogWarning(
-                "{ProgramCode} missing. Skipping class session expert seed.",
+                "{ProgramCode} missing. Skipping Maker class session expert seed.",
                 MakerCoTeachProgramCode);
-            return;
+            return 0;
         }
 
         await EnsureExpertOnProgramBoardAsync(expert001, program.Id, "Maker Co-Teach Advisor");
@@ -44,9 +70,9 @@ public partial class SeedService
         if (classEntity == null)
         {
             _loggerService.LogWarning(
-                "{ClassCode} missing. Skipping class session expert seed.",
+                "{ClassCode} missing. Skipping Maker class session expert seed.",
                 MakerCoTeachClassCode);
-            return;
+            return 0;
         }
 
         var offlineSessions = (await _unitOfWork.ClassSessions.GetAllAsync(
@@ -59,9 +85,9 @@ public partial class SeedService
         if (offlineSessions.Count == 0)
         {
             _loggerService.LogWarning(
-                "No Offline sessions on {ClassCode}. Skipping class session expert seed.",
+                "No Offline sessions on {ClassCode}. Skipping Maker class session expert seed.",
                 MakerCoTeachClassCode);
-            return;
+            return 0;
         }
 
         var joinableOfflineActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(
@@ -102,11 +128,76 @@ public partial class SeedService
             seeded++;
         }
 
-        await _unitOfWork.SaveChangesAsync();
-        _loggerService.LogInformation(
-            "Finished seed class session experts — {Count} Accepted co-teach row(s) for EXP-001 on {ClassCode} (STD-010 / MNT-004).",
-            seeded,
-            MakerCoTeachClassCode);
+        return seeded;
+    }
+
+    private async Task<int> SeedArtMathOfflineCoTeachAsync()
+    {
+        var seeded = 0;
+
+        foreach (var target in ArtMathCoTeachTargets)
+        {
+            var expert = await _unitOfWork.Experts.FirstOrDefaultAsync(
+                e => e.Code == target.ExpertCode && !e.IsDeleted);
+            if (expert == null)
+            {
+                _loggerService.LogWarning(
+                    "{ExpertCode} missing. Skipping co-teach on {ClassCode}.",
+                    target.ExpertCode,
+                    target.ClassCode);
+                continue;
+            }
+
+            var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
+                p => p.Code == target.ProgramCode && !p.IsDeleted);
+            if (program == null)
+            {
+                _loggerService.LogWarning(
+                    "{ProgramCode} missing. Skipping co-teach on {ClassCode}.",
+                    target.ProgramCode,
+                    target.ClassCode);
+                continue;
+            }
+
+            await EnsureExpertOnProgramBoardAsync(expert, program.Id, target.BoardRole);
+
+            var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
+                c => c.Code == target.ClassCode && !c.IsDeleted);
+            if (classEntity == null)
+            {
+                _loggerService.LogWarning(
+                    "{ClassCode} missing. Skipping Art/Math Offline co-teach.",
+                    target.ClassCode);
+                continue;
+            }
+
+            var offlineSessions = (await _unitOfWork.ClassSessions.GetAllAsync(
+                    s => s.ClassId == classEntity.Id
+                         && s.SessionKind == SessionKind.Offline
+                         && s.Status != ClassSessionStatus.Cancelled
+                         && !s.IsDeleted))
+                .OrderBy(s => s.StartTime)
+                .ToList();
+            if (offlineSessions.Count == 0)
+            {
+                _loggerService.LogWarning(
+                    "No Offline sessions on {ClassCode}. Skipping Art/Math Offline co-teach.",
+                    target.ClassCode);
+                continue;
+            }
+
+            // Attach expert to the first two Offline studios when available (theory + experiential).
+            var sessionsToAttach = offlineSessions.Take(2).ToList();
+            foreach (var session in sessionsToAttach)
+            {
+                if (await TryEnsureAcceptedCoTeachAsync(session, expert.Id))
+                {
+                    seeded++;
+                }
+            }
+        }
+
+        return seeded;
     }
 
     private async Task EnsureExpertOnProgramBoardAsync(Expert expert, Guid programId, string roleInBoard)

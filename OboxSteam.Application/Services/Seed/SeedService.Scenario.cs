@@ -14,6 +14,15 @@ public partial class SeedService
     private const string WebDevUnassignedClassCode = "CLS-WEBDEV-OPEN";
     private const string IotUnassignedClassCode = "CLS-IOT-OPEN";
     private const string PythonUnassignedClassCode = "CLS-PYBASIC-OPEN";
+    private const string DigArtPastClassCode = "CLS-DIGART-PAST";
+    private const string DigArtCurrentClassCode = "CLS-DIGART-CURRENT";
+    private const string DigArtOpenClassCode = "CLS-DIGART-OPEN";
+    private const string MathFunCurrentClassCode = "CLS-MATHFUN-CURRENT";
+    private const string MathFunOpenClassCode = "CLS-MATHFUN-OPEN";
+    private const string MusicTechCurrentClassCode = "CLS-MUSICTECH-CURRENT";
+    private const string MusicTechOpenClassCode = "CLS-MUSICTECH-OPEN";
+    private const string DataMathCurrentClassCode = "CLS-DATAMATH-CURRENT";
+    private const string DataMathOpenClassCode = "CLS-DATAMATH-OPEN";
 
     /// <summary>
     /// In-progress Robotics purchase on CLS-ROBOTICS-CURRENT (theory done, sensors
@@ -49,6 +58,34 @@ public partial class SeedService
     private static readonly string[] WebDevPastStudentCodes =
     [
         "STD-001", "STD-003", "STD-016", "STD-017",
+    ];
+
+    /// <summary>
+    /// Completed DigArt purchase used as STD-001's second achieved portfolio program (Art).
+    /// </summary>
+    private static readonly string[] DigArtPastStudentCodes =
+    [
+        "STD-001", "STD-003", "STD-009", "STD-011",
+    ];
+
+    private static readonly string[] DigArtCurrentStudentCodes =
+    [
+        "STD-013", "STD-014",
+    ];
+
+    private static readonly string[] MathFunCurrentStudentCodes =
+    [
+        "STD-016", "STD-017",
+    ];
+
+    private static readonly string[] MusicTechCurrentStudentCodes =
+    [
+        "STD-022", "STD-023",
+    ];
+
+    private static readonly string[] DataMathCurrentStudentCodes =
+    [
+        "STD-008", "STD-024",
     ];
 
     private static readonly string[] GameDevPendingStudentCodes =
@@ -172,6 +209,42 @@ public partial class SeedService
     [
         new(DayOfWeek.Tuesday, 18, 0, 150),
         new(DayOfWeek.Thursday, 18, 0, 150),
+    ];
+
+    private static readonly SeedTimeline.WeekdaySlot[] DigArtMonWedAfternoon =
+    [
+        new(DayOfWeek.Monday, 14, 0, 150),
+        new(DayOfWeek.Wednesday, 14, 0, 150),
+    ];
+
+    private static readonly SeedTimeline.WeekdaySlot[] DigArtSatSunMorning =
+    [
+        new(DayOfWeek.Saturday, 9, 0, 150),
+        new(DayOfWeek.Sunday, 9, 0, 150),
+    ];
+
+    private static readonly SeedTimeline.WeekdaySlot[] MathFunTueThuAfternoon =
+    [
+        new(DayOfWeek.Tuesday, 15, 0, 120),
+        new(DayOfWeek.Thursday, 15, 0, 120),
+    ];
+
+    private static readonly SeedTimeline.WeekdaySlot[] MathFunSatMorning =
+    [
+        new(DayOfWeek.Saturday, 8, 0, 150),
+        new(DayOfWeek.Sunday, 8, 0, 150),
+    ];
+
+    private static readonly SeedTimeline.WeekdaySlot[] MusicTechWedFriEvening =
+    [
+        new(DayOfWeek.Wednesday, 18, 0, 150),
+        new(DayOfWeek.Friday, 18, 0, 150),
+    ];
+
+    private static readonly SeedTimeline.WeekdaySlot[] DataMathMonWedMorning =
+    [
+        new(DayOfWeek.Monday, 9, 0, 120),
+        new(DayOfWeek.Wednesday, 9, 0, 120),
     ];
 
     private static readonly SeedTimeline.WeekdaySlot[] DemoSatSunMorning =
@@ -303,6 +376,114 @@ public partial class SeedService
             "Tuesday & Thursday 18:00-20:30",
             PythonTueThuEvening,
             ["SKL-TECH-PROG-PYTHON", "SKL-TECH-COMP-THINK"]),
+        new(
+            DigArtPastClassCode,
+            "Digital Art — Completed Cohort",
+            "PRG-DIGART",
+            "MNT-005",
+            ClassStatus.Completed,
+            -180,
+            -40,
+            10,
+            "Monday & Wednesday 14:00-16:30",
+            DigArtMonWedAfternoon,
+            ["SKL-ART-VISUAL", "SKL-ART-UXUI"]),
+        new(
+            DigArtCurrentClassCode,
+            "Digital Art — Current Cohort",
+            "PRG-DIGART",
+            "MNT-005",
+            ClassStatus.InProgress,
+            -35,
+            49,
+            12,
+            "Saturday & Sunday 09:00-11:30",
+            DigArtSatSunMorning,
+            ["SKL-ART-VISUAL", "SKL-SOFT-CREATIVE"]),
+        new(
+            DigArtOpenClassCode,
+            "Digital Art — Upcoming Cohort",
+            "PRG-DIGART",
+            "MNT-005",
+            ClassStatus.Open,
+            14,
+            98,
+            14,
+            "Monday & Wednesday 14:00-16:30",
+            DigArtMonWedAfternoon,
+            ["SKL-ART-VISUAL", "SKL-ART-AESTHETIC"]),
+        new(
+            MathFunCurrentClassCode,
+            "Fun with Mathematics — Current Cohort",
+            "PRG-MATHFUN",
+            "MNT-001",
+            ClassStatus.InProgress,
+            -28,
+            56,
+            12,
+            "Tuesday & Thursday 15:00-17:00",
+            MathFunTueThuAfternoon,
+            ["SKL-MATH-LOGIC", "SKL-MATH-PROBLEM"]),
+        new(
+            MathFunOpenClassCode,
+            "Fun with Mathematics — Upcoming Cohort",
+            "PRG-MATHFUN",
+            "MNT-002",
+            ClassStatus.Open,
+            21,
+            105,
+            14,
+            "Saturday & Sunday 08:00-10:30",
+            MathFunSatMorning,
+            ["SKL-MATH-LOGIC", "SKL-SOFT-CRITICAL"]),
+        new(
+            MusicTechCurrentClassCode,
+            "Music Production — Current Cohort",
+            "PRG-MUSICTECH",
+            "MNT-003",
+            ClassStatus.InProgress,
+            -21,
+            63,
+            10,
+            "Wednesday & Friday 18:00-20:30",
+            MusicTechWedFriEvening,
+            ["SKL-ART-MUSIC", "SKL-TECH-SOFTWARE"]),
+        new(
+            MusicTechOpenClassCode,
+            "Music Production — Upcoming Cohort",
+            "PRG-MUSICTECH",
+            "MNT-004",
+            ClassStatus.Open,
+            14,
+            98,
+            12,
+            "Wednesday & Friday 18:00-20:30",
+            MusicTechWedFriEvening,
+            ["SKL-ART-MUSIC", "SKL-SOFT-CREATIVE"]),
+        new(
+            DataMathCurrentClassCode,
+            "Statistics & Data — Current Cohort",
+            "PRG-DATAMATH",
+            "MNT-001",
+            ClassStatus.InProgress,
+            -14,
+            70,
+            10,
+            "Monday & Wednesday 09:00-11:00",
+            DataMathMonWedMorning,
+            ["SKL-MATH-STATS", "SKL-MATH-MODEL"]),
+        new(
+            DataMathOpenClassCode,
+            "Statistics & Data — Upcoming Cohort",
+            "PRG-DATAMATH",
+            "MNT-002",
+            ClassStatus.Open,
+            28,
+            112,
+            12,
+            "Monday & Wednesday 09:00-11:00",
+            DataMathMonWedMorning,
+            ["SKL-MATH-STATS", "SKL-SOFT-CRITICAL"]),
     ];
 
     private static readonly (string ClassCode, string[] StudentCodes, ClassEnrollmentStatus Status)[]
@@ -312,8 +493,14 @@ public partial class SeedService
             (RoboticsPastClassCode, RoboticsPastStudentCodes, ClassEnrollmentStatus.Completed),
             (IotCurrentClassCode, IotCurrentStudentCodes, ClassEnrollmentStatus.Active),
             (WebDevPastClassCode, WebDevPastStudentCodes, ClassEnrollmentStatus.Completed),
+            (DigArtPastClassCode, DigArtPastStudentCodes, ClassEnrollmentStatus.Completed),
+            (DigArtCurrentClassCode, DigArtCurrentStudentCodes, ClassEnrollmentStatus.Active),
+            (MathFunCurrentClassCode, MathFunCurrentStudentCodes, ClassEnrollmentStatus.Active),
+            (MusicTechCurrentClassCode, MusicTechCurrentStudentCodes, ClassEnrollmentStatus.Active),
+            (DataMathCurrentClassCode, DataMathCurrentStudentCodes, ClassEnrollmentStatus.Active),
             (GameDevOpenClassCode, GameDevPendingStudentCodes, ClassEnrollmentStatus.Pending),
             (GameDevOpenClassCode, GameDevJustEnrolledStudentCodes, ClassEnrollmentStatus.Active),
+            // Open Art/Math cohorts stay empty for first-time catalog checkout.
             // CLS-ROBOTICS-OPEN stays empty for first-time purchase (STD-019 / STD-020).
             // Unassigned ReadyForMentor (no mentor): CLS-WEBDEV-OPEN, CLS-IOT-OPEN, CLS-PYBASIC-OPEN.
         ];
@@ -400,6 +587,26 @@ public partial class SeedService
         }
 
         foreach (var code in IotCurrentStudentCodes)
+        {
+            Add(code);
+        }
+
+        foreach (var code in DigArtCurrentStudentCodes)
+        {
+            Add(code);
+        }
+
+        foreach (var code in MathFunCurrentStudentCodes)
+        {
+            Add(code);
+        }
+
+        foreach (var code in MusicTechCurrentStudentCodes)
+        {
+            Add(code);
+        }
+
+        foreach (var code in DataMathCurrentStudentCodes)
         {
             Add(code);
         }

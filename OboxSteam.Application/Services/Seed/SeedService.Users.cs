@@ -61,6 +61,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
+                    MaxConcurrentClasses = 5,
                     CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -466,6 +467,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
+                    MaxConcurrentClasses = 5,
                     CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -481,6 +483,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
+                    MaxConcurrentClasses = 5,
                     CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -496,6 +499,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
+                    MaxConcurrentClasses = 5,
                     CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -511,6 +515,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
+                    MaxConcurrentClasses = 5,
                     CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false
@@ -526,6 +531,7 @@ public partial class SeedService
                     Role = RoleType.Mentor,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true,
+                    MaxConcurrentClasses = 5,
                     CreatedAt = _seedNow,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false

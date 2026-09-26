@@ -63,6 +63,7 @@ public partial class SeedService : ISeedService
         await SeedProgramFrameworksAsync();
         await SeedProgramBoardsAsync();
         await SeedSkillsAsync();
+        await SeedProgramSkillsAsync();
         await SeedModulesAsync();
         await SeedCoursesAsync();
         await SeedActivitiesAsync();
@@ -150,6 +151,8 @@ public partial class SeedService : ISeedService
         await EnsureTableEmptyAsync(_unitOfWork.Payments, "Payments");
         await EnsureTableEmptyAsync(_unitOfWork.Certificates, "Certificates");
         await EnsureTableEmptyAsync(_unitOfWork.Portfolios, "Portfolios");
+        await EnsureTableEmptyAsync(_unitOfWork.ProgramSkills, "ProgramSkills");
+        await EnsureTableEmptyAsync(_unitOfWork.PortfolioSkills, "PortfolioSkills");
         await EnsureTableEmptyAsync(_unitOfWork.Notifications, "Notifications");
     }
 

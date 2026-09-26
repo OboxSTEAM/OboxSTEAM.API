@@ -257,6 +257,45 @@ public partial class SeedService
                     $"Live cohort session for {item.Name}.", 90, false, false),
             });
         }
+
+        // Art / Math tracks need Offline studio labs so academic-year classes get
+        // SessionKind.Offline rows and EXP co-teach fixtures have something to attach to.
+        AddArtMathOfflineStudioLabs(addActivities);
+    }
+
+    private static void AddArtMathOfflineStudioLabs(Action<string, IEnumerable<Activity>> addActivities)
+    {
+        (string CourseCode, string OfflineCode, string Name)[] studios =
+        [
+            ("CRS-MATHFUN-01", "ACT-MATHFUN-01-03", "Number Sense studio"),
+            ("CRS-MATHFUN-02", "ACT-MATHFUN-02-03", "Puzzle board workshop"),
+            ("CRS-MATHFUN-03", "ACT-MATHFUN-03-03", "Math challenge gallery"),
+            ("CRS-DIGART-01", "ACT-DIGART-01-03", "Drawing tablet studio"),
+            ("CRS-DIGART-02", "ACT-DIGART-02-03", "Character critique salon"),
+            ("CRS-DIGART-03", "ACT-DIGART-03-03", "Illustration showcase night"),
+            ("CRS-MUSICTECH-01", "ACT-MUSICTECH-01-03", "DAW booth lab"),
+            ("CRS-MUSICTECH-02", "ACT-MUSICTECH-02-03", "Sound design booth"),
+            ("CRS-MUSICTECH-03", "ACT-MUSICTECH-03-03", "Track mix listening room"),
+            ("CRS-DATAMATH-01", "ACT-DATAMATH-01-03", "Statistics whiteboard lab"),
+            ("CRS-DATAMATH-02", "ACT-DATAMATH-02-03", "Probability dice lab"),
+            ("CRS-DATAMATH-03", "ACT-DATAMATH-03-03", "Data story poster night"),
+        ];
+
+        foreach (var studio in studios)
+        {
+            addActivities(studio.CourseCode, new[]
+            {
+                NewActivity(
+                    studio.OfflineCode,
+                    studio.Name,
+                    ActivityType.Offline,
+                    3,
+                    $"In-person {studio.Name} with mentor facilitation and visiting expert co-teach.",
+                    120,
+                    true,
+                    false),
+            });
+        }
     }
 
     private static Activity NewActivity(

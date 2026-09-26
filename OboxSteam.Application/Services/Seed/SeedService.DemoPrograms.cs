@@ -285,7 +285,7 @@ public partial class SeedService
             SkillsGained: "Climate literacy, observation, data notes, evidence sharing",
             Price: 850_000m,
             ThumbnailUrl:
-                "https://images.unsplash.com/photo-1569163139394-de460e9b8570?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+                "https://images.unsplash.com/photo-1611273426858-450d8e3c9fce?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
             ClassCode: "CLS-DEMO-CLIMATE-2026A",
             ClassName: "Climate Detectives Cohort A",
             ScheduleSummary: "Saturday & Sunday 09:00-11:00",
@@ -653,14 +653,27 @@ public partial class SeedService
             p => p.Code == definition.ProgramCode && !p.IsDeleted);
         if (existing != null)
         {
+            var changed = false;
             if (existing.RetakeFee == null)
             {
                 existing.RetakeFee = CatalogRetakeFee(existing.Price);
-                if (existing.RetakeFee != null)
-                {
-                    await _unitOfWork.Programs.Update(existing);
-                    await _unitOfWork.SaveChangesAsync();
-                }
+                changed = existing.RetakeFee != null;
+            }
+
+            // Refresh missing or known-stale Unsplash thumbs (Climate 404 photo was retired).
+            if (string.IsNullOrWhiteSpace(existing.ThumbnailUrl)
+                || existing.ThumbnailUrl.Contains(
+                    "photo-1569163139394-de460e9b8570",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                existing.ThumbnailUrl = definition.ThumbnailUrl;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                await _unitOfWork.Programs.Update(existing);
+                await _unitOfWork.SaveChangesAsync();
             }
 
             return existing;
