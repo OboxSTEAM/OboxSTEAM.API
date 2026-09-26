@@ -683,9 +683,21 @@ public partial class SeedService
             {
                 Id = Guid.NewGuid(),
                 PortfolioId = portfolio.Id,
+                Kind = PortfolioSectionKind.SkillsGroup,
+                Title = "Skills",
+                DisplayOrder = 3,
+                IsVisible = true,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                PortfolioId = portfolio.Id,
                 Kind = PortfolioSectionKind.RichText,
                 Title = "About my journey",
-                DisplayOrder = 3,
+                DisplayOrder = 4,
                 IsVisible = true,
                 ContentHtml =
                     "<p>I build STEAM projects that mix <strong>code</strong> and <em>design</em>.</p>",

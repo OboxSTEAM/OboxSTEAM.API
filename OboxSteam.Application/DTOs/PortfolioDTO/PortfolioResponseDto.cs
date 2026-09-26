@@ -42,6 +42,8 @@ public class PortfolioResponseDto
 
     public List<PortfolioSectionResponseDto> Sections { get; set; } = [];
 
+    public List<PortfolioSkillDto> Skills { get; set; } = [];
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }

@@ -32,6 +32,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<ClassSession> ClassSessions { get; } = new();
     public InMemoryRepository<SessionAttendance> SessionAttendances { get; } = new();
     public InMemoryRepository<ClassSkill> ClassSkills { get; } = new();
+    public InMemoryRepository<ProgramSkill> ProgramSkills { get; } = new();
     public InMemoryRepository<ClassMentorRequest> ClassMentorRequests { get; } = new();
     public InMemoryRepository<AssessmentRecoveryRequest> AssessmentRecoveryRequests { get; } = new();
     public InMemoryRepository<ClassRedeliveryRequest> ClassRedeliveryRequests { get; } = new();
@@ -71,6 +72,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<PortfolioSection> PortfolioSections { get; } = new();
     public InMemoryRepository<PortfolioMediaAsset> PortfolioMediaAssets { get; } = new();
     public InMemoryRepository<PortfolioMediaPlacement> PortfolioMediaPlacements { get; } = new();
+    public InMemoryRepository<PortfolioSkill> PortfolioSkills { get; } = new();
     public InMemoryRepository<ResearchMilestone> ResearchMilestones { get; } = new();
     public InMemoryRepository<ResearchMilestoneActivity> ResearchMilestoneActivities { get; } = new();
     public InMemoryRepository<Skill> Skills { get; } = new();
@@ -114,6 +116,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<ClassSession> IUnitOfWork.ClassSessions => ClassSessions;
     IGenericRepository<SessionAttendance> IUnitOfWork.SessionAttendances => SessionAttendances;
     IGenericRepository<ClassSkill> IUnitOfWork.ClassSkills => ClassSkills;
+    IGenericRepository<ProgramSkill> IUnitOfWork.ProgramSkills => ProgramSkills;
     IGenericRepository<ClassMentorRequest> IUnitOfWork.ClassMentorRequests => ClassMentorRequests;
     IGenericRepository<AssessmentRecoveryRequest> IUnitOfWork.AssessmentRecoveryRequests => AssessmentRecoveryRequests;
     IGenericRepository<ClassRedeliveryRequest> IUnitOfWork.ClassRedeliveryRequests => ClassRedeliveryRequests;
@@ -153,6 +156,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<PortfolioSection> IUnitOfWork.PortfolioSections => PortfolioSections;
     IGenericRepository<PortfolioMediaAsset> IUnitOfWork.PortfolioMediaAssets => PortfolioMediaAssets;
     IGenericRepository<PortfolioMediaPlacement> IUnitOfWork.PortfolioMediaPlacements => PortfolioMediaPlacements;
+    IGenericRepository<PortfolioSkill> IUnitOfWork.PortfolioSkills => PortfolioSkills;
     IGenericRepository<ResearchMilestone> IUnitOfWork.ResearchMilestones => ResearchMilestones;
     IGenericRepository<ResearchMilestoneActivity> IUnitOfWork.ResearchMilestoneActivities => ResearchMilestoneActivities;
     IGenericRepository<Skill> IUnitOfWork.Skills => Skills;
@@ -200,6 +204,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(ClassSession) => ClassSessions,
             nameof(SessionAttendance) => SessionAttendances,
             nameof(ClassSkill) => ClassSkills,
+            nameof(ProgramSkill) => ProgramSkills,
             nameof(ClassMentorRequest) => ClassMentorRequests,
             nameof(AssessmentRecoveryRequest) => AssessmentRecoveryRequests,
             nameof(ClassRedeliveryRequest) => ClassRedeliveryRequests,
@@ -239,6 +244,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(PortfolioSection) => PortfolioSections,
             nameof(PortfolioMediaAsset) => PortfolioMediaAssets,
             nameof(PortfolioMediaPlacement) => PortfolioMediaPlacements,
+            nameof(PortfolioSkill) => PortfolioSkills,
             nameof(ResearchMilestone) => ResearchMilestones,
             nameof(ResearchMilestoneActivity) => ResearchMilestoneActivities,
             nameof(Skill) => Skills,

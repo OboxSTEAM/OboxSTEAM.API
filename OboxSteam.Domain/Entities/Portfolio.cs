@@ -68,4 +68,5 @@ public class Portfolio : BaseEntity
     public ICollection<PortfolioCustomItem> CustomItems { get; set; } = new List<PortfolioCustomItem>();
     public ICollection<PortfolioSection> Sections { get; set; } = new List<PortfolioSection>();
     public ICollection<PortfolioMediaAsset> MediaAssets { get; set; } = new List<PortfolioMediaAsset>();
+    public ICollection<PortfolioSkill> Skills { get; set; } = new List<PortfolioSkill>();
 }

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using OboxSteam.Application.DTOs.SkillDTO;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Enums;
 
@@ -58,6 +59,21 @@ public class PortfolioCustomItemResponseDto
     public Guid? SubmissionId { get; set; }
 
     public List<PortfolioAppendixItemDto> AppendixSections { get; set; } = [];
+
+    public Guid? CertificateId { get; set; }
+
+    public string? CertificateCode { get; set; }
+
+    public string? VerificationUrl { get; set; }
+
+    public string? PdfUrl { get; set; }
+
+    public DateTime? IssuedAt { get; set; }
+
+    public decimal? FinalGrade { get; set; }
+
+    /// <summary>Catalog skills this auto-imported item evidences. Null for manually created items.</summary>
+    public List<SkillSummaryDto>? Skills { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

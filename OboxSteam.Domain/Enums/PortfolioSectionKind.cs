@@ -12,4 +12,5 @@ public enum PortfolioSectionKind
     RichText,
     Gallery,
     Embed,
+    SkillsGroup,
 }

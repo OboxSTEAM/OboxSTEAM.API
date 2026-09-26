@@ -69,6 +69,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ClassSessionExpert> ClassSessionExperts { get; set; }
     public DbSet<SessionAttendance> SessionAttendances { get; set; }
     public DbSet<ClassSkill> ClassSkills { get; set; }
+    public DbSet<ProgramSkill> ProgramSkills { get; set; }
     public DbSet<ClassMentorRequest> ClassMentorRequests { get; set; }
     public DbSet<AssessmentRecoveryRequest> AssessmentRecoveryRequests { get; set; }
     public DbSet<ClassRedeliveryRequest> ClassRedeliveryRequests { get; set; }
@@ -95,6 +96,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<PortfolioSection> PortfolioSections { get; set; }
     public DbSet<PortfolioMediaAsset> PortfolioMediaAssets { get; set; }
     public DbSet<PortfolioMediaPlacement> PortfolioMediaPlacements { get; set; }
+    public DbSet<PortfolioSkill> PortfolioSkills { get; set; }
 
     // ── 7b. Research Milestones ──
     public DbSet<ResearchMilestone> ResearchMilestones { get; set; }
@@ -175,6 +177,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ClassSession>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<SessionAttendance>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassSkill>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramSkill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassMentorRequest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<AssessmentRecoveryRequest>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ClassRedeliveryRequest>().HasQueryFilter(e => !e.IsDeleted);
@@ -196,6 +199,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<PortfolioSection>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<PortfolioMediaAsset>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<PortfolioMediaPlacement>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<PortfolioSkill>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ResearchMilestone>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ResearchMilestoneActivity>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<FaceEmbedding>().HasQueryFilter(e => !e.IsDeleted);
@@ -1436,6 +1440,46 @@ public class OboxSteamDbContext : DbContext
             entity.HasOne(cs => cs.Skill)
                 .WithMany(s => s.ClassSkills)
                 .HasForeignKey(cs => cs.SkillId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProgramSkill>(entity =>
+        {
+            entity.HasIndex(ps => new { ps.ProgramId, ps.SkillId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(ps => ps.Program)
+                .WithMany(p => p.ProgramSkills)
+                .HasForeignKey(ps => ps.ProgramId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ps => ps.Skill)
+                .WithMany(s => s.ProgramSkills)
+                .HasForeignKey(ps => ps.SkillId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ps => ps.Module)
+                .WithMany()
+                .HasForeignKey(ps => ps.ModuleId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+        });
+
+        modelBuilder.Entity<PortfolioSkill>(entity =>
+        {
+            entity.HasIndex(ps => new { ps.PortfolioId, ps.SkillId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
+
+            entity.HasOne(ps => ps.Portfolio)
+                .WithMany(p => p.Skills)
+                .HasForeignKey(ps => ps.PortfolioId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ps => ps.Skill)
+                .WithMany()
+                .HasForeignKey(ps => ps.SkillId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

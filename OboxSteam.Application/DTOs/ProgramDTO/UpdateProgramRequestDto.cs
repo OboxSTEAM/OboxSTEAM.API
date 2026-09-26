@@ -12,6 +12,9 @@ public class UpdateProgramRequestDto
     public ProgramCategory? Category { get; set; }
     public string? EstimatedDuration { get; set; }
     public string? SkillsGained { get; set; }
+
+    /// <summary>Replaces catalog skills when set. Null leaves the current links unchanged. Empty clears them.</summary>
+    public List<Guid>? SkillIds { get; set; }
     public string? ThumbnailUrl { get; set; }
 
     /// <summary>

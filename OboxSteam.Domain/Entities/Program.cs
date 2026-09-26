@@ -68,4 +68,5 @@ public class Program : BaseEntity
     public ICollection<ProgramAdvisoryDiscussionMessage> AdvisoryDiscussionMessages { get; set; } = [];
     public ICollection<Class> Classes { get; set; } = new List<Class>();
     public ICollection<PaymentRequest> PaymentRequests { get; set; } = new List<PaymentRequest>();
+    public ICollection<ProgramSkill> ProgramSkills { get; set; } = new List<ProgramSkill>();
 }

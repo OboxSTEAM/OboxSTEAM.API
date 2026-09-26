@@ -54,6 +54,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ClassSession> ClassSessions => Repository<ClassSession>();
     public IGenericRepository<SessionAttendance> SessionAttendances => Repository<SessionAttendance>();
     public IGenericRepository<ClassSkill> ClassSkills => Repository<ClassSkill>();
+    public IGenericRepository<ProgramSkill> ProgramSkills => Repository<ProgramSkill>();
     public IGenericRepository<ClassMentorRequest> ClassMentorRequests => Repository<ClassMentorRequest>();
     public IGenericRepository<AssessmentRecoveryRequest> AssessmentRecoveryRequests => Repository<AssessmentRecoveryRequest>();
     public IGenericRepository<ClassRedeliveryRequest> ClassRedeliveryRequests => Repository<ClassRedeliveryRequest>();
@@ -93,6 +94,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<PortfolioSection> PortfolioSections => Repository<PortfolioSection>();
     public IGenericRepository<PortfolioMediaAsset> PortfolioMediaAssets => Repository<PortfolioMediaAsset>();
     public IGenericRepository<PortfolioMediaPlacement> PortfolioMediaPlacements => Repository<PortfolioMediaPlacement>();
+    public IGenericRepository<PortfolioSkill> PortfolioSkills => Repository<PortfolioSkill>();
     public IGenericRepository<ResearchMilestone> ResearchMilestones => Repository<ResearchMilestone>();
     public IGenericRepository<ResearchMilestoneActivity> ResearchMilestoneActivities => Repository<ResearchMilestoneActivity>();
     public IGenericRepository<Skill> Skills => Repository<Skill>();

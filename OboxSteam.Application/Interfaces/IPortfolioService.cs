@@ -27,6 +27,8 @@ public interface IPortfolioService
 
     Task<PortfolioResponseDto> SyncMyPortfolioAsync();
 
+    Task<List<PortfolioSkillDto>> UpdateMySkillsAsync(UpdatePortfolioSkillsRequestDto dto);
+
     Task<PublicPortfolioResponseDto> GetPublicPortfolioBySubdomainAsync(string subdomain);
 
     Task<PortfolioMediaUploadResponseDto> UploadMediaAsync(IFormFile file);

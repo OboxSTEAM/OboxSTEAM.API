@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.DTOs.PortfolioDTO;
+using OboxSteam.Application.DTOs.SkillDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
@@ -39,6 +40,7 @@ public sealed class PortfolioService : IPortfolioService
         PortfolioSectionKind.ProjectsGroup,
         PortfolioSectionKind.ActivitiesGroup,
         PortfolioSectionKind.LinksGroup,
+        PortfolioSectionKind.SkillsGroup,
     ];
 
     private static readonly HashSet<PortfolioSectionKind> CustomSectionKinds =
@@ -75,6 +77,7 @@ public sealed class PortfolioService : IPortfolioService
     private readonly IBlobService _blobService;
     private readonly IPortfolioHtmlSanitizer _htmlSanitizer;
     private readonly ILogger<PortfolioService> _logger;
+    private readonly PortfolioSkillCoordinator _portfolioSkills;
 
     public PortfolioService(
         IUnitOfWork unitOfWork,
@@ -88,6 +91,7 @@ public sealed class PortfolioService : IPortfolioService
         _blobService = blobService;
         _htmlSanitizer = htmlSanitizer;
         _logger = logger;
+        _portfolioSkills = new PortfolioSkillCoordinator(unitOfWork);
     }
 
     public async Task<PortfolioResponseDto> GetMyPortfolioAsync()
@@ -531,6 +535,7 @@ public sealed class PortfolioService : IPortfolioService
     {
         var student = await GetCurrentStudentAsync();
         var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+        await EnsureBuiltInSectionsAsync(portfolio);
         var items = await GetPortfolioItemsAsync(portfolio.Id);
 
         await SyncCertificatesAsync(portfolio, items);
@@ -546,6 +551,18 @@ public sealed class PortfolioService : IPortfolioService
             student.Id);
 
         return await MapPortfolioResponseAsync(portfolio);
+    }
+
+    public async Task<List<PortfolioSkillDto>> UpdateMySkillsAsync(UpdatePortfolioSkillsRequestDto dto)
+    {
+        var student = await GetCurrentStudentAsync();
+        var portfolio = await GetRootPortfolioForStudentOrThrowAsync(student.Id);
+        var items = await GetPortfolioItemsAsync(portfolio.Id);
+        var skills = await _portfolioSkills.ReplaceCurationAsync(portfolio, items, dto);
+        MarkDraftDirty(portfolio);
+        await _unitOfWork.Portfolios.Update(portfolio);
+        await _unitOfWork.SaveChangesAsync();
+        return skills;
     }
 
     public async Task<PublicPortfolioResponseDto> GetPublicPortfolioBySubdomainAsync(string subdomain)
@@ -1828,6 +1845,8 @@ public sealed class PortfolioService : IPortfolioService
         var appendixByItemId = await LoadAppendixByItemIdAsync(items.Select(i => i.Id).ToList());
         var itemMediaById = await LoadItemMediaPlacementsAsync(items.Select(i => i.Id).ToList());
         var sectionMediaById = await LoadSectionMediaPlacementsAsync(sections.Select(s => s.Id).ToList());
+        var skillContext = await _portfolioSkills.SyncAndMapAsync(portfolio, items, forPublic: false);
+        var enrichment = await LoadItemEnrichmentAsync(items);
 
         return new PortfolioResponseDto
         {
@@ -1852,11 +1871,14 @@ public sealed class PortfolioService : IPortfolioService
                 .Select(i => MapItemResponse(
                     i,
                     appendixByItemId.GetValueOrDefault(i.Id),
-                    itemMediaById.GetValueOrDefault(i.Id)))
+                    itemMediaById.GetValueOrDefault(i.Id),
+                    enrichment,
+                    skillContext.SkillsByItemId))
                 .ToList(),
             Sections = sections
                 .Select(s => MapSectionResponse(s, sectionMediaById.GetValueOrDefault(s.Id)))
                 .ToList(),
+            Skills = skillContext.Skills,
             CreatedAt = portfolio.CreatedAt,
             UpdatedAt = portfolio.UpdatedAt,
         };
@@ -1867,9 +1889,8 @@ public sealed class PortfolioService : IPortfolioService
         var student = portfolio.Student
             ?? await _unitOfWork.Users.GetByIdAsync(portfolio.StudentId);
 
-        var items = (await GetPortfolioItemsAsync(portfolio.Id))
-            .Where(i => i.IsVisible)
-            .ToList();
+        var allItems = await GetPortfolioItemsAsync(portfolio.Id);
+        var items = allItems.Where(i => i.IsVisible).ToList();
         var sections = (await GetPortfolioSectionsAsync(portfolio.Id))
             .Where(s => s.IsVisible)
             .ToList();
@@ -1877,6 +1898,8 @@ public sealed class PortfolioService : IPortfolioService
         var appendixByItemId = await LoadAppendixByItemIdAsync(items.Select(i => i.Id).ToList());
         var itemMediaById = await LoadItemMediaPlacementsAsync(items.Select(i => i.Id).ToList());
         var sectionMediaById = await LoadSectionMediaPlacementsAsync(sections.Select(s => s.Id).ToList());
+        var skillContext = await _portfolioSkills.SyncAndMapAsync(portfolio, allItems, forPublic: true);
+        var enrichment = await LoadItemEnrichmentAsync(items);
 
         return new PublicPortfolioResponseDto
         {
@@ -1894,19 +1917,90 @@ public sealed class PortfolioService : IPortfolioService
                 .Select(i => MapItemResponse(
                     i,
                     appendixByItemId.GetValueOrDefault(i.Id),
-                    itemMediaById.GetValueOrDefault(i.Id)))
+                    itemMediaById.GetValueOrDefault(i.Id),
+                    enrichment,
+                    skillContext.SkillsByItemId))
                 .ToList(),
             Sections = sections
                 .Select(s => MapSectionResponse(s, sectionMediaById.GetValueOrDefault(s.Id)))
                 .ToList(),
+            Skills = skillContext.Skills,
         };
+    }
+
+    private async Task<ItemEnrichment> LoadItemEnrichmentAsync(List<PortfolioCustomItem> items)
+    {
+        var certificateIds = items
+            .Where(i => i.ItemType == PortfolioItemType.InternalCertificate && i.ReferenceId.HasValue)
+            .Select(i => i.ReferenceId!.Value)
+            .Distinct()
+            .ToList();
+        var certificates = certificateIds.Count == 0
+            ? new Dictionary<Guid, Certificate>()
+            : (await _unitOfWork.Certificates.GetAllAsync(
+                    c => certificateIds.Contains(c.Id) && !c.IsDeleted))
+                .ToDictionary(c => c.Id);
+
+        var moduleEnrollmentIds = items
+            .Where(i => i.ItemType == PortfolioItemType.CapstoneProject && i.ModuleEnrollmentId.HasValue)
+            .Select(i => i.ModuleEnrollmentId!.Value)
+            .Distinct()
+            .ToList();
+        var grades = moduleEnrollmentIds.Count == 0
+            ? new Dictionary<Guid, decimal?>()
+            : (await _unitOfWork.ModuleEnrollments.GetAllAsync(
+                    me => moduleEnrollmentIds.Contains(me.Id) && !me.IsDeleted))
+                .ToDictionary(me => me.Id, me => me.FinalGrade);
+
+        return new ItemEnrichment(certificates, grades);
+    }
+
+    private sealed class ItemEnrichment
+    {
+        public ItemEnrichment(
+            Dictionary<Guid, Certificate> certificatesById,
+            Dictionary<Guid, decimal?> finalGradeByModuleEnrollmentId)
+        {
+            CertificatesById = certificatesById;
+            FinalGradeByModuleEnrollmentId = finalGradeByModuleEnrollmentId;
+        }
+
+        public Dictionary<Guid, Certificate> CertificatesById { get; }
+
+        public Dictionary<Guid, decimal?> FinalGradeByModuleEnrollmentId { get; }
     }
 
     private static PortfolioCustomItemResponseDto MapItemResponse(
         PortfolioCustomItem item,
         List<PortfolioAppendixItemDto>? appendixSections = null,
-        List<PortfolioMediaPlacement>? mediaPlacements = null)
+        List<PortfolioMediaPlacement>? mediaPlacements = null,
+        ItemEnrichment? enrichment = null,
+        IReadOnlyDictionary<Guid, List<SkillSummaryDto>>? skillsByItemId = null)
     {
+        Certificate? certificate = null;
+        if (item.ItemType == PortfolioItemType.InternalCertificate
+            && item.ReferenceId.HasValue
+            && enrichment != null)
+        {
+            enrichment.CertificatesById.TryGetValue(item.ReferenceId.Value, out certificate);
+        }
+
+        decimal? finalGrade = null;
+        if (item.ItemType == PortfolioItemType.CapstoneProject
+            && item.ModuleEnrollmentId.HasValue
+            && enrichment != null)
+        {
+            enrichment.FinalGradeByModuleEnrollmentId.TryGetValue(item.ModuleEnrollmentId.Value, out finalGrade);
+        }
+
+        List<SkillSummaryDto>? skills = null;
+        if (AutoImportedTypes.Contains(item.ItemType))
+        {
+            skills = skillsByItemId != null && skillsByItemId.TryGetValue(item.Id, out var itemSkills)
+                ? itemSkills
+                : [];
+        }
+
         return new PortfolioCustomItemResponseDto
         {
             Id = item.Id,
@@ -1939,6 +2033,13 @@ public sealed class PortfolioService : IPortfolioService
             ModuleEnrollmentId = item.ModuleEnrollmentId,
             SubmissionId = item.SubmissionId,
             AppendixSections = appendixSections ?? [],
+            CertificateId = certificate?.Id,
+            CertificateCode = certificate?.Code,
+            VerificationUrl = certificate?.VerificationUrl,
+            PdfUrl = certificate?.PdfUrl,
+            IssuedAt = certificate?.IssueDate,
+            FinalGrade = finalGrade,
+            Skills = skills,
             CreatedAt = item.CreatedAt,
             UpdatedAt = item.UpdatedAt,
         };
@@ -2148,6 +2249,7 @@ public sealed class PortfolioService : IPortfolioService
             PortfolioSectionKind.ProjectsGroup => "Projects",
             PortfolioSectionKind.ActivitiesGroup => "Activities",
             PortfolioSectionKind.LinksGroup => "Links",
+            PortfolioSectionKind.SkillsGroup => "Skills",
             _ => kind.ToString(),
         };
     }
@@ -2168,12 +2270,14 @@ public sealed class PortfolioService : IPortfolioService
         const int defaultProjects = 0;
         const int defaultActivities = 1;
         const int defaultLinks = 2;
+        const int defaultSkills = 3;
 
         var defaultOrder = kind switch
         {
             PortfolioSectionKind.ProjectsGroup => defaultProjects,
             PortfolioSectionKind.ActivitiesGroup => defaultActivities,
             PortfolioSectionKind.LinksGroup => defaultLinks,
+            PortfolioSectionKind.SkillsGroup => defaultSkills,
             _ => 0,
         };
 

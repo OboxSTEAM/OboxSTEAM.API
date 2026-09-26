@@ -1,3 +1,4 @@
+using OboxSteam.Application.DTOs.SkillDTO;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ProgramDTO;
@@ -13,6 +14,7 @@ public class ProgramListItemDto
     public ProgramCategory Category { get; set; }
     public string? EstimatedDuration { get; set; }
     public string? SkillsGained { get; set; }
+    public List<SkillSummaryDto> Skills { get; set; } = new();
     public decimal? Rating { get; set; }
     public int TotalReviews { get; set; }
     public string? ThumbnailUrl { get; set; }

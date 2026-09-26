@@ -25,4 +25,5 @@ public class Skill : BaseEntity
     public ICollection<StudentSkill> StudentSkills { get; set; } = new List<StudentSkill>();
     public ICollection<MentorSkill> MentorSkills { get; set; } = new List<MentorSkill>();
     public ICollection<ClassSkill> ClassSkills { get; set; } = new List<ClassSkill>();
+    public ICollection<ProgramSkill> ProgramSkills { get; set; } = new List<ProgramSkill>();
 }

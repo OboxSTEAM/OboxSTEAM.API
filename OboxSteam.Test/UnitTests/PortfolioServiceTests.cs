@@ -176,10 +176,11 @@ public sealed class PortfolioServiceTests
         Assert.StartsWith("OBOX-PF-", result.Code);
         Assert.Equal(_studentId, result.StudentId);
         Assert.False(result.IsPublic);
-        Assert.Equal(3, result.Sections.Count);
+        Assert.Equal(4, result.Sections.Count);
         Assert.Contains(result.Sections, s => s.Kind == PortfolioSectionKind.ProjectsGroup);
         Assert.Contains(result.Sections, s => s.Kind == PortfolioSectionKind.ActivitiesGroup);
         Assert.Contains(result.Sections, s => s.Kind == PortfolioSectionKind.LinksGroup);
+        Assert.Contains(result.Sections, s => s.Kind == PortfolioSectionKind.SkillsGroup);
     }
 
     [Fact]
@@ -204,7 +205,8 @@ public sealed class PortfolioServiceTests
 
         Assert.Equal(_portfolioId, result.Id);
         Assert.Equal("Test Student", result.StudentName);
-        Assert.Equal(3, result.Sections.Count);
+        Assert.Equal(4, result.Sections.Count);
+        Assert.Contains(result.Sections, s => s.Kind == PortfolioSectionKind.SkillsGroup);
     }
 
     [Fact]
@@ -845,8 +847,8 @@ public sealed class PortfolioServiceTests
 
         var created = await sut.EnsureBuiltInSectionsForAllPortfoliosAsync();
 
-        Assert.Equal(6, created);
-        Assert.Equal(6, _db.PortfolioSections.Items.Count(s => !s.IsDeleted));
+        Assert.Equal(8, created);
+        Assert.Equal(8, _db.PortfolioSections.Items.Count(s => !s.IsDeleted));
     }
 
     // ── SyncMyPortfolioAsync ─────────────────────────────────────────────────────
@@ -1500,7 +1502,7 @@ public sealed class PortfolioServiceTests
 
         var result = await sut.GetMyPortfolioAsync();
 
-        Assert.Equal(3, result.Sections.Count);
+        Assert.Equal(4, result.Sections.Count);
         Assert.Equal(PortfolioSectionKind.LinksGroup, result.Sections[0].Kind);
         Assert.Equal(PortfolioSectionKind.ProjectsGroup, result.Sections[1].Kind);
     }
@@ -2429,5 +2431,212 @@ public sealed class PortfolioServiceTests
                 HighlightVideoItemId = highlightItemId,
                 PortfolioSectionId = gallerySectionId,
             }));
+    }
+
+    [Fact]
+    public async Task GetMyPortfolioAsync_ReturnsAchievedProgramSkills()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+        SeedBuiltInSections(_portfolioId);
+        var programId = Guid.Parse("81818181-8181-8181-8181-818181818181");
+        var skillId = Guid.Parse("82828282-8282-8282-8282-828282828282");
+        var achievedAt = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-SKILL",
+            Name = "Robotics Track",
+            Category = ProgramCategory.Technology,
+            IsDeleted = false,
+        });
+        _db.Skills.Seed(new Skill
+        {
+            Id = skillId,
+            Code = "SK-ROBOT",
+            Name = "Robotics",
+            Category = SkillCategory.Technology,
+            IsDeleted = false,
+        });
+        _db.ProgramSkills.Seed(new ProgramSkill
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = programId,
+            SkillId = skillId,
+            IsDeleted = false,
+        });
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ProgramId = programId,
+            Status = EnrollmentStatus.Completed,
+            CompletedAt = achievedAt,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().GetMyPortfolioAsync();
+
+        var skill = Assert.Single(result.Skills);
+        Assert.Equal(skillId, skill.SkillId);
+        Assert.True(skill.IsVisible);
+        Assert.False(skill.IsPinned);
+        Assert.Equal(achievedAt, skill.FirstAchievedAt);
+        var evidence = Assert.Single(skill.Evidences);
+        Assert.Equal(SkillEvidenceType.Program, evidence.Type);
+        Assert.Equal(programId, evidence.ProgramId);
+        Assert.Equal("Robotics Track", evidence.ProgramName);
+    }
+
+    [Fact]
+    public async Task UpdateMySkillsAsync_RejectsUnachievedSkill_AndPinLimit()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.UpdateMySkillsAsync(
+            new UpdatePortfolioSkillsRequestDto
+            {
+                Skills =
+                [
+                    new UpdatePortfolioSkillEntryDto
+                    {
+                        SkillId = Guid.Parse("83838383-8383-8383-8383-838383838383"),
+                        IsVisible = true,
+                        DisplayOrder = 0,
+                    },
+                ],
+            }));
+
+        var programId = Guid.Parse("84848484-8484-8484-8484-848484848484");
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-PINS",
+            Name = "Pin Program",
+            Category = ProgramCategory.Technology,
+            IsDeleted = false,
+        });
+        var entries = new List<UpdatePortfolioSkillEntryDto>();
+        for (var index = 0; index < 7; index++)
+        {
+            var skillId = Guid.Parse($"85000000-0000-0000-0000-00000000000{index}");
+            _db.Skills.Seed(new Skill
+            {
+                Id = skillId,
+                Code = $"SK-{index}",
+                Name = $"Skill {index}",
+                Category = SkillCategory.Science,
+                IsDeleted = false,
+            });
+            _db.ProgramSkills.Seed(new ProgramSkill
+            {
+                Id = Guid.NewGuid(),
+                ProgramId = programId,
+                SkillId = skillId,
+                IsDeleted = false,
+            });
+            entries.Add(new UpdatePortfolioSkillEntryDto
+            {
+                SkillId = skillId,
+                IsVisible = true,
+                IsPinned = true,
+                DisplayOrder = index,
+            });
+        }
+
+        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        {
+            Id = Guid.NewGuid(),
+            StudentId = _studentId,
+            ProgramId = programId,
+            Status = EnrollmentStatus.Completed,
+            CompletedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        });
+
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.UpdateMySkillsAsync(
+            new UpdatePortfolioSkillsRequestDto { Skills = entries }));
+    }
+
+    [Fact]
+    public async Task SyncMyPortfolioAsync_BackfillsSkillsSection_AndCertificateFields()
+    {
+        var student = SeedStudent();
+        SeedPortfolio(student: student);
+        var programId = Guid.Parse("86868686-8686-8686-8686-868686868686");
+        var skillId = Guid.Parse("87878787-8787-8787-8787-878787878787");
+        var certificateId = Guid.Parse("88888888-8888-8888-8888-888888888888");
+
+        _db.Programs.Seed(new Program
+        {
+            Id = programId,
+            Code = "PRG-CERT",
+            Name = "Certificate Program",
+            Category = ProgramCategory.Technology,
+            IsDeleted = false,
+        });
+        _db.Skills.Seed(new Skill
+        {
+            Id = skillId,
+            Code = "SK-CERT",
+            Name = "Documentation",
+            Category = SkillCategory.Arts,
+            IsDeleted = false,
+        });
+        _db.ProgramSkills.Seed(new ProgramSkill
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = programId,
+            SkillId = skillId,
+            IsDeleted = false,
+        });
+        _db.Certificates.Seed(new Certificate
+        {
+            Id = certificateId,
+            Code = "OBOX-CERT-TEST",
+            StudentId = _studentId,
+            ProgramId = programId,
+            IssueDate = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+            PdfUrl = "https://cdn.example.com/cert.pdf",
+            VerificationUrl = "https://obox.example/verify/OBOX-CERT-TEST",
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().SyncMyPortfolioAsync();
+
+        Assert.Contains(result.Sections, section => section.Kind == PortfolioSectionKind.SkillsGroup);
+        var certificate = Assert.Single(result.Items, item => item.ItemType == PortfolioItemType.InternalCertificate);
+        Assert.Equal(certificateId, certificate.CertificateId);
+        Assert.Equal("OBOX-CERT-TEST", certificate.CertificateCode);
+        Assert.Equal("https://obox.example/verify/OBOX-CERT-TEST", certificate.VerificationUrl);
+        Assert.Equal("https://cdn.example.com/cert.pdf", certificate.PdfUrl);
+        var itemSkill = Assert.Single(certificate.Skills!);
+        Assert.Equal(skillId, itemSkill.Id);
+
+        var portfolioSkill = Assert.Single(result.Skills);
+        Assert.Contains(portfolioSkill.Evidences, evidence => evidence.Type == SkillEvidenceType.Certificate);
+
+        var curated = await CreateSut().UpdateMySkillsAsync(new UpdatePortfolioSkillsRequestDto
+        {
+            Skills =
+            [
+                new UpdatePortfolioSkillEntryDto
+                {
+                    SkillId = skillId,
+                    IsVisible = false,
+                    IsPinned = false,
+                    DisplayOrder = 4,
+                },
+            ],
+        });
+        Assert.False(Assert.Single(curated).IsVisible);
+
+        var again = await CreateSut().SyncMyPortfolioAsync();
+        var synced = Assert.Single(again.Skills);
+        Assert.False(synced.IsVisible);
+        Assert.Equal(4, synced.DisplayOrder);
     }
 }

@@ -27,6 +27,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<ClassSession> ClassSessions { get; }
     IGenericRepository<SessionAttendance> SessionAttendances { get; }
     IGenericRepository<ClassSkill> ClassSkills { get; }
+    IGenericRepository<ProgramSkill> ProgramSkills { get; }
     IGenericRepository<ClassMentorRequest> ClassMentorRequests { get; }
     IGenericRepository<AssessmentRecoveryRequest> AssessmentRecoveryRequests { get; }
     IGenericRepository<ClassRedeliveryRequest> ClassRedeliveryRequests { get; }
@@ -66,6 +67,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<PortfolioSection> PortfolioSections { get; }
     IGenericRepository<PortfolioMediaAsset> PortfolioMediaAssets { get; }
     IGenericRepository<PortfolioMediaPlacement> PortfolioMediaPlacements { get; }
+    IGenericRepository<PortfolioSkill> PortfolioSkills { get; }
     IGenericRepository<ResearchMilestone> ResearchMilestones { get; }
     IGenericRepository<ResearchMilestoneActivity> ResearchMilestoneActivities { get; }
     IGenericRepository<Skill> Skills { get; }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ModuleDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
+using OboxSteam.Application.DTOs.SkillDTO;
 
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
@@ -62,6 +63,7 @@ public class ProgramService : IProgramService
             ? await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value)
             : null;
         _logger.LogInformation("[GetProgramByIdAsync] Program with Id {Id} retrieved successfully.", id);
+        var skills = await LoadSkillSummariesAsync(program.Id);
         return new ProgramsResponseDto
         {
             Id = program.Id,
@@ -83,6 +85,7 @@ public class ProgramService : IProgramService
             FrameworkVersionNumber = frameworkVersion?.VersionNumber,
             AdvisorExpertId = program.AdvisorExpertId,
             AdvisorExpertName = advisor?.FullName,
+            Skills = skills,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModulesResponseDto
@@ -118,7 +121,9 @@ public class ProgramService : IProgramService
             id,
             snapshot.Modules.Count);
 
-        return ProgramCurriculumTreeMapper.ToProgramCurriculumDto(snapshot);
+        var curriculum = ProgramCurriculumTreeMapper.ToProgramCurriculumDto(snapshot);
+        curriculum.Skills = await LoadSkillSummariesAsync(id);
+        return curriculum;
     }
 
     // =========================================================================
@@ -140,6 +145,7 @@ public class ProgramService : IProgramService
         }
 
         _logger.LogInformation("[GetProgramByNameAsync] Program '{Name}' retrieved successfully.", name);
+        var skills = await LoadSkillSummariesAsync(program.Id);
         return new ProgramsResponseDto
         {
             Id = program.Id,
@@ -151,6 +157,7 @@ public class ProgramService : IProgramService
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
+            Skills = skills,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
             ThumbnailUrl = program.ThumbnailUrl,
@@ -224,12 +231,14 @@ public class ProgramService : IProgramService
             .GroupBy(pb => pb.ProgramId)
             .ToDictionary(group => group.Key, group => group.ToList());
 
+        var skillsByProgramId = await LoadSkillSummariesByProgramIdsAsync(programIds);
         var dtos = items.Select(program =>
         {
             var dto = MapToProgramListItemDto(program);
             dto.Experts = programBoardsByProgramId.TryGetValue(program.Id, out var boards)
                 ? MapExpertsForProgram(boards, expertsById)
                 : new();
+            dto.Skills = skillsByProgramId.GetValueOrDefault(program.Id) ?? [];
             return dto;
         }).ToList();
 
@@ -273,6 +282,7 @@ public class ProgramService : IProgramService
             .GroupBy(module => module.ProgramId)
             .ToDictionary(group => group.Key, group => group.OrderBy(m => m.ModuleOrder).ToList());
 
+        var skillsByProgramId = await LoadSkillSummariesByProgramIdsAsync(programIds);
         var dtos = items.Select(program => new ProgramsResponseDto
         {
             Id = program.Id,
@@ -284,6 +294,7 @@ public class ProgramService : IProgramService
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
+            Skills = skillsByProgramId.GetValueOrDefault(program.Id) ?? [],
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
             ThumbnailUrl = program.ThumbnailUrl,
@@ -470,6 +481,10 @@ public class ProgramService : IProgramService
         }
 
         ProgramCatalogStatusGuard.EnsureCreateIsDraft(request.Status);
+        if (request.SkillIds != null)
+        {
+            await ValidateSkillIdsAsync(request.SkillIds);
+        }
 
         var (frameworkId, frameworkVersionId) = await ResolveFrameworkAssignmentAsync(
             request.FrameworkId,
@@ -515,10 +530,15 @@ public class ProgramService : IProgramService
             });
         }
         await _unitOfWork.SaveChangesAsync();
+        if (request.SkillIds != null)
+        {
+            await ReplaceProgramSkillsAsync(program.Id, request.SkillIds);
+        }
 
         _logger.LogInformation("[CreateProgramAsync] Program '{Code}' added successfully with Id {Id}.",
             program.Code, program.Id);
 
+        var skills = await LoadSkillSummariesAsync(program.Id);
         return new ProgramsResponseDto
         {
             Id = program.Id,
@@ -530,6 +550,7 @@ public class ProgramService : IProgramService
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
+            Skills = skills,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
             ThumbnailUrl = program.ThumbnailUrl,
@@ -580,13 +601,26 @@ public class ProgramService : IProgramService
 
         var requestedStatus = request.Status;
         request.Status = null;
+        var skillIds = request.SkillIds;
+        request.SkillIds = null;
         var statusChanged = ProgramCatalogStatusGuard.ApplyUpdate(program, requestedStatus);
         var frameworkChanged = await ApplyFrameworkAssignmentAsync(program, request);
+        if (skillIds != null)
+        {
+            await ValidateSkillIdsAsync(skillIds);
+        }
+
+        var skillsChanged = skillIds != null && await ReplaceProgramSkillsAsync(id, skillIds);
         var isUpdated = UpdateHelper.ApplyUpdates(program, request) || frameworkChanged || statusChanged;
 
         if (!isUpdated)
         {
-            _logger.LogWarning("[UpdateProgramAsync] No changes detected for program Id: {Id}", id);
+            if (!skillsChanged)
+            {
+                _logger.LogWarning("[UpdateProgramAsync] No changes detected for program Id: {Id}", id);
+            }
+
+            var unchangedSkills = await LoadSkillSummariesAsync(program.Id);
             return new ProgramsResponseDto
             {
                 Id = program.Id,
@@ -598,6 +632,7 @@ public class ProgramService : IProgramService
                 Category = program.Category,
                 EstimatedDuration = program.EstimatedDuration,
                 SkillsGained = program.SkillsGained,
+                Skills = unchangedSkills,
                 Rating = program.Rating,
                 TotalReviews = program.TotalReviews,
                 ThumbnailUrl = program.ThumbnailUrl,
@@ -629,6 +664,7 @@ public class ProgramService : IProgramService
 
         _logger.LogInformation("[UpdateProgramAsync] Program Id {Id} updated successfully.", id);
 
+        var updatedSkills = await LoadSkillSummariesAsync(program.Id);
         return new ProgramsResponseDto
         {
             Id = program.Id,
@@ -640,6 +676,7 @@ public class ProgramService : IProgramService
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
+            Skills = updatedSkills,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
             ThumbnailUrl = program.ThumbnailUrl,
@@ -693,6 +730,7 @@ public class ProgramService : IProgramService
             id,
             previewUrl);
 
+        var thumbnailSkills = await LoadSkillSummariesAsync(program.Id);
         return new ProgramsResponseDto
         {
             Id = program.Id,
@@ -704,6 +742,7 @@ public class ProgramService : IProgramService
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
             SkillsGained = program.SkillsGained,
+            Skills = thumbnailSkills,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
             ThumbnailUrl = program.ThumbnailUrl,
@@ -893,5 +932,118 @@ public class ProgramService : IProgramService
 
         return true;
     }
+
+    private async Task<List<SkillSummaryDto>> LoadSkillSummariesAsync(Guid programId)
+    {
+        var skills = await LoadSkillSummariesByProgramIdsAsync([programId]);
+        return skills.GetValueOrDefault(programId) ?? [];
+    }
+
+    private async Task<Dictionary<Guid, List<SkillSummaryDto>>> LoadSkillSummariesByProgramIdsAsync(
+        IReadOnlyCollection<Guid> programIds)
+    {
+        if (programIds.Count == 0)
+        {
+            return new Dictionary<Guid, List<SkillSummaryDto>>();
+        }
+
+        var links = await _unitOfWork.ProgramSkills.GetAllAsync(
+            ps => programIds.Contains(ps.ProgramId) && !ps.IsDeleted);
+        if (links.Count == 0)
+        {
+            return new Dictionary<Guid, List<SkillSummaryDto>>();
+        }
+
+        var skillIds = links.Select(link => link.SkillId).Distinct().ToList();
+        var skills = (await _unitOfWork.Skills.GetAllAsync(
+                skill => skillIds.Contains(skill.Id) && !skill.IsDeleted))
+            .ToDictionary(skill => skill.Id);
+
+        return links
+            .Where(link => skills.ContainsKey(link.SkillId))
+            .GroupBy(link => link.ProgramId)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(link => MapSkillSummary(skills[link.SkillId]))
+                    .OrderBy(skill => skill.Name)
+                    .ThenBy(skill => skill.Code)
+                    .ToList());
+    }
+
+    private async Task ValidateSkillIdsAsync(List<Guid> skillIds)
+    {
+        if (skillIds.Any(id => id == Guid.Empty))
+        {
+            throw ErrorHelper.BadRequest("Skill id is required.");
+        }
+
+        var distinctIds = skillIds.Distinct().ToList();
+        if (distinctIds.Count != skillIds.Count)
+        {
+            throw ErrorHelper.BadRequest("Duplicate skill ids are not allowed.");
+        }
+
+        if (distinctIds.Count == 0)
+        {
+            return;
+        }
+
+        var found = await _unitOfWork.Skills.GetAllAsync(
+            skill => distinctIds.Contains(skill.Id) && !skill.IsDeleted);
+        if (found.Count != distinctIds.Count)
+        {
+            throw ErrorHelper.BadRequest("One or more skill ids are missing or deleted.");
+        }
+    }
+
+    private async Task<bool> ReplaceProgramSkillsAsync(Guid programId, List<Guid> skillIds)
+    {
+        await ValidateSkillIdsAsync(skillIds);
+        var distinctIds = skillIds.Distinct().ToList();
+
+        var existing = await _unitOfWork.ProgramSkills.GetAllAsync(
+            link => link.ProgramId == programId && !link.IsDeleted);
+        var requested = distinctIds.ToHashSet();
+        var existingIds = existing.Select(link => link.SkillId).ToHashSet();
+
+        var toRemove = existing.Where(link => !requested.Contains(link.SkillId)).ToList();
+        var toAdd = distinctIds
+            .Where(id => !existingIds.Contains(id))
+            .Select(id => new ProgramSkill
+            {
+                Id = Guid.NewGuid(),
+                ProgramId = programId,
+                SkillId = id,
+            })
+            .ToList();
+
+        if (toRemove.Count == 0 && toAdd.Count == 0)
+        {
+            return false;
+        }
+
+        if (toRemove.Count > 0)
+        {
+            await _unitOfWork.ProgramSkills.SoftRemoveRange(toRemove);
+        }
+
+        if (toAdd.Count > 0)
+        {
+            await _unitOfWork.ProgramSkills.AddRangeAsync(toAdd);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        return true;
+    }
+
+    private static SkillSummaryDto MapSkillSummary(Skill skill) => new()
+    {
+        Id = skill.Id,
+        Code = skill.Code,
+        Name = skill.Name,
+        Category = skill.Category,
+        Subcategory = skill.Subcategory,
+    };
 
 }

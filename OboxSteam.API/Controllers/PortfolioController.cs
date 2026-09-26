@@ -405,11 +405,36 @@ public class PortfolioController : ControllerBase
             "Portfolio sections reordered successfully."));
     }
 
+    [HttpPut("me/skills")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Replace portfolio skill curation",
+        Description = "Replaces visibility, pin, and order for every achieved skill. Students cannot add skills that are not already achieved. At most 6 skills can be pinned.")]
+    [ProducesResponseType(typeof(ApiResult<List<PortfolioSkillDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    public async Task<IActionResult> UpdateMySkills(
+        [FromBody, SwaggerParameter("Full achieved-skill curation")] UpdatePortfolioSkillsRequestDto dto)
+    {
+        if (dto == null)
+        {
+            return BadRequest(ApiResult<object>.Failure("400", "Portfolio skill curation is required."));
+        }
+
+        var result = await _portfolioService.UpdateMySkillsAsync(dto);
+        return Ok(ApiResult<List<PortfolioSkillDto>>.Success(
+            result,
+            "200",
+            "Portfolio skills updated successfully."));
+    }
+
     [HttpPost("me/sync")]
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Sync auto-imported portfolio items",
-        Description = "Idempotently imports certificates, graded capstone projects, and completed highlight reels.")]
+        Description = "Idempotently imports certificates and graded capstone projects, backfills the Skills section, and refreshes achieved skills without dropping curation.")]
     [ProducesResponseType(typeof(ApiResult<PortfolioResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

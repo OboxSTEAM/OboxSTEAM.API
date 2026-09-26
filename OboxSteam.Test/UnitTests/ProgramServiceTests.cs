@@ -791,6 +791,91 @@ public sealed class ProgramServiceTests
             _programId, new AssignProgramAdvisorRequest { AdvisorExpertId = _expertId }));
     }
 
+    [Fact]
+    public async Task Create_WithSkillIds_ReturnsCatalogSkills()
+    {
+        var skillId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        _db.Skills.Seed(new Skill
+        {
+            Id = skillId,
+            Code = "SK-ROBOT",
+            Name = "Robotics",
+            Category = SkillCategory.Technology,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().CreateProgramAsync(new CreateProgramRequestDto
+        {
+            Code = "PRG-SKILLS",
+            Name = "Skills Program",
+            Category = ProgramCategory.Technology,
+            Level = DifficultyLevel.Beginner,
+            SkillsGained = "Marketing copy",
+            SkillIds = [skillId],
+        });
+
+        Assert.Equal("Marketing copy", result.SkillsGained);
+        Assert.Single(result.Skills);
+        Assert.Equal(skillId, result.Skills[0].Id);
+        Assert.Equal("Robotics", result.Skills[0].Name);
+    }
+
+    [Fact]
+    public async Task Create_ThrowsBadRequest_WhenSkillIdIsMissing()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => CreateSut().CreateProgramAsync(new CreateProgramRequestDto
+        {
+            Code = "PRG-MISSING",
+            Name = "Missing Skill",
+            Category = ProgramCategory.Technology,
+            SkillIds = [Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")],
+        }));
+
+        Assert.Empty(_db.Programs.Items);
+    }
+
+    [Fact]
+    public async Task Update_ReplacesProgramSkills()
+    {
+        SeedProgram();
+        var keptId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1");
+        var addedId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2");
+        _db.Skills.Seed(
+            new Skill
+            {
+                Id = keptId,
+                Code = "SK-KEEP",
+                Name = "Keep",
+                Category = SkillCategory.Science,
+                IsDeleted = false,
+            },
+            new Skill
+            {
+                Id = addedId,
+                Code = "SK-ADD",
+                Name = "Add",
+                Category = SkillCategory.Math,
+                IsDeleted = false,
+            });
+        _db.ProgramSkills.Seed(new ProgramSkill
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = _programId,
+            SkillId = keptId,
+            IsDeleted = false,
+        });
+
+        var result = await CreateSut().UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+        {
+            SkillIds = [addedId],
+        });
+
+        Assert.Single(result.Skills);
+        Assert.Equal(addedId, result.Skills[0].Id);
+        Assert.Contains(_db.ProgramSkills.Items, link => link.SkillId == keptId && link.IsDeleted);
+        Assert.Contains(_db.ProgramSkills.Items, link => link.SkillId == addedId && !link.IsDeleted);
+    }
+
     private Guid SeedClass(ClassStatus status)
     {
         var classId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");

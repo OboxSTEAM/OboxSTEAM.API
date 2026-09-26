@@ -25,4 +25,6 @@ public class PublicPortfolioResponseDto
     public List<PortfolioCustomItemResponseDto> Items { get; set; } = [];
 
     public List<PortfolioSectionResponseDto> Sections { get; set; } = [];
+
+    public List<PortfolioSkillDto> Skills { get; set; } = [];
 }
