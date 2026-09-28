@@ -107,9 +107,10 @@ public partial class SeedService : ISeedService
         await SeedPassedSubmissionsForElapsedRequiredWindowsAsync();
         await AlignInProgressCurriculumToClassTimetableAsync();
         await SeedCertTestProgressAsync();
+        // Before certificates/payments so reviewer Completed enrollments get both.
+        await SeedProgramReviewsAsync();
         await SeedCompletedProgramCertificatesAsync();
         await SeedPaymentsAsync();
-        await SeedProgramReviewsAsync();
         await SeedNotificationsAsync();
         await SeedExpertAdvisoryNotificationsAsync();
         await RestoreInProgressPurchasesClosedDuringSeedAsync();
