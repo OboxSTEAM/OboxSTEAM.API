@@ -170,6 +170,28 @@ public static class NotificationCatalog
             entityId: programEnrollmentId,
             tokens: NotificationTokenKeys.Create(studentName: studentName, programName: programName));
 
+    public static NotificationCommand ProgramReviewRequested(
+        Guid studentId,
+        Guid programId,
+        Guid programEnrollmentId,
+        string? programName = null)
+        => new(
+            NotificationType.ProgramReviewRequested,
+            NotificationAudience.ForUser(studentId),
+            NotificationRoleTemplates.FromDefault(
+                "Đánh giá chương trình",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "Chúc mừng bạn đã hoàn thành chương trình! Hãy chia sẻ đánh giá của bạn."
+                    : "Chúc mừng bạn đã hoàn thành chương trình \"{programName}\"! Hãy chia sẻ đánh giá của bạn."),
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                StudentId = studentId
+            }.SetEnrollment(programEnrollmentId).WithNames(programName: programName),
+            entityType: "ProgramEnrollment",
+            entityId: programEnrollmentId,
+            tokens: NotificationTokenKeys.Create(programName: programName));
+
     public static NotificationCommand ModuleCompleted(
         Guid studentId,
         Guid moduleId,

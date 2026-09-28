@@ -37,6 +37,9 @@ public class ProgramEnrollmentResponseDto
 
     public Guid? SupersededByEnrollmentId { get; set; }
 
+    /// <summary>The student's active review for this program; null when not reviewed.</summary>
+    public Guid? ReviewId { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 

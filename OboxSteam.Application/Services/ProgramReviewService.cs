@@ -3,6 +3,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramReviewDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
+using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
@@ -32,36 +33,36 @@ public class ProgramReviewService : IProgramReviewService
             "[CreateReviewAsync] StudentId={StudentId} creating review for ProgramId={ProgramId}",
             studentId, programId);
 
-        if (dto.StarRating < 1 || dto.StarRating > 5)
-            throw ErrorHelper.BadRequest("StarRating must be between 1 and 5.");
+        if (dto == null)
+            throw ErrorHelper.BadRequest("Request body is required.");
 
-        var program = await _unitOfWork.Programs.GetByIdAsync(programId);
-        if (program == null || program.IsDeleted)
-            throw ErrorHelper.NotFound($"Program with id '{programId}' not found.");
+        ProgramReviewValidator.ValidateStarRating(dto.StarRating);
+        var comment = ProgramReviewValidator.NormalizeComment(dto.Comment);
 
-        var enrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-            e => e.ProgramId == programId && e.StudentId == studentId && !e.IsDeleted);
-        if (enrollment == null)
-            throw ErrorHelper.Forbidden("You must be enrolled in this program to leave a review.");
-
-        var existing = await _unitOfWork.ProgramReviews.FirstOrDefaultAsync(
-            r => r.ProgramId == programId && r.StudentId == studentId && !r.IsDeleted);
-        if (existing != null)
-            throw ErrorHelper.Conflict("You have already submitted a review for this program.");
-
-        var review = new ProgramReview
+        // Program row lock serializes concurrent review mutations so the rating aggregate stays exact.
+        var review = await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
-            ProgramId = programId,
-            StudentId = studentId,
-            StarRating = dto.StarRating,
-            Comment = dto.Comment,
-        };
+            await GetActiveProgramAsync(programId);
 
-        await _unitOfWork.ProgramReviews.AddAsync(review);
-        await _unitOfWork.SaveChangesAsync();
+            var eligibility = await ProgramReviewValidator.ResolveEligibilityAsync(_unitOfWork, programId, studentId);
+            ProgramReviewValidator.EnsureCanCreate(eligibility);
 
-        await RecalculateProgramRatingAsync(programId);
-        await _unitOfWork.SaveChangesAsync();
+            var created = new ProgramReview
+            {
+                ProgramId = programId,
+                StudentId = studentId,
+                StarRating = dto.StarRating,
+                Comment = comment,
+            };
+
+            await _unitOfWork.ProgramReviews.AddAsync(created);
+            await _unitOfWork.SaveChangesAsync();
+
+            await RecalculateProgramRatingAsync(programId);
+            await _unitOfWork.SaveChangesAsync();
+
+            return created;
+        });
 
         _logger.LogInformation(
             "[CreateReviewAsync] Review {ReviewId} created for Program {ProgramId}.",
@@ -70,6 +71,32 @@ public class ProgramReviewService : IProgramReviewService
         var student = await _unitOfWork.Users.GetByIdAsync(studentId);
 
         return MapToDto(review, student);
+    }
+
+    public async Task<MyProgramReviewResponseDto> GetMyReviewAsync(Guid programId)
+    {
+        var studentId = _claimsService.GetCurrentUserId;
+        _logger.LogInformation(
+            "[GetMyReviewAsync] StudentId={StudentId} ProgramId={ProgramId}",
+            studentId, programId);
+
+        await GetActiveProgramAsync(programId);
+
+        var eligibility = await ProgramReviewValidator.ResolveEligibilityAsync(_unitOfWork, programId, studentId);
+
+        ProgramReviewResponseDto? reviewDto = null;
+        if (eligibility.ActiveReview != null)
+        {
+            var student = await _unitOfWork.Users.GetByIdAsync(studentId);
+            reviewDto = MapToDto(eligibility.ActiveReview, student);
+        }
+
+        return new MyProgramReviewResponseDto
+        {
+            CanReview = eligibility.CanReview,
+            Reason = eligibility.Reason,
+            Review = reviewDto,
+        };
     }
 
     public async Task<Pagination<ProgramReviewResponseDto>> GetReviewsByProgramAsync(
@@ -134,24 +161,44 @@ public class ProgramReviewService : IProgramReviewService
             "[UpdateReviewAsync] UserId={UserId} updating ReviewId={ReviewId}",
             currentUserId, reviewId);
 
-        var review = await _unitOfWork.ProgramReviews.GetByIdAsync(reviewId);
-        if (review == null || review.IsDeleted)
-            throw ErrorHelper.NotFound($"Review with id '{reviewId}' not found.");
+        if (dto == null)
+            throw ErrorHelper.BadRequest("Request body is required.");
 
-        if (review.ProgramId != programId)
-            throw ErrorHelper.NotFound($"Review '{reviewId}' does not belong to program '{programId}'.");
-
-        if (review.StudentId != currentUserId)
-            throw ErrorHelper.Forbidden("You can only edit your own reviews.");
-
-        if (dto.StarRating.HasValue && (dto.StarRating < 1 || dto.StarRating > 5))
-            throw ErrorHelper.BadRequest("StarRating must be between 1 and 5.");
-
-        var isUpdated = UpdateHelper.ApplyUpdates(review, dto);
-
-        if (isUpdated)
+        var review = await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
-            await _unitOfWork.ProgramReviews.Update(review);
+            var existing = await GetReviewInProgramAsync(programId, reviewId);
+
+            if (existing.StudentId != currentUserId)
+                throw ErrorHelper.Forbidden("You can only edit your own reviews.");
+
+            if (dto.StarRating.HasValue)
+                ProgramReviewValidator.ValidateStarRating(dto.StarRating.Value);
+
+            var isUpdated = false;
+
+            if (dto.StarRating is int starRating && starRating != existing.StarRating)
+            {
+                existing.StarRating = starRating;
+                isUpdated = true;
+            }
+
+            if (dto.Comment != null)
+            {
+                var comment = ProgramReviewValidator.NormalizeComment(dto.Comment);
+                if (comment != existing.Comment)
+                {
+                    existing.Comment = comment;
+                    isUpdated = true;
+                }
+            }
+
+            if (!isUpdated)
+            {
+                _logger.LogInformation("[UpdateReviewAsync] No changes detected for Review {ReviewId}.", reviewId);
+                return existing;
+            }
+
+            await _unitOfWork.ProgramReviews.Update(existing);
             await _unitOfWork.SaveChangesAsync();
 
             await RecalculateProgramRatingAsync(programId);
@@ -160,11 +207,9 @@ public class ProgramReviewService : IProgramReviewService
             _logger.LogInformation(
                 "[UpdateReviewAsync] Review {ReviewId} updated. Recalculated rating for Program {ProgramId}.",
                 reviewId, programId);
-        }
-        else
-        {
-            _logger.LogInformation("[UpdateReviewAsync] No changes detected for Review {ReviewId}.", reviewId);
-        }
+
+            return existing;
+        });
 
         var student = await _unitOfWork.Users.GetByIdAsync(review.StudentId);
         return MapToDto(review, student);
@@ -177,6 +222,43 @@ public class ProgramReviewService : IProgramReviewService
             "[DeleteReviewAsync] UserId={UserId} deleting ReviewId={ReviewId}",
             currentUserId, reviewId);
 
+        return await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
+        {
+            var review = await GetReviewInProgramAsync(programId, reviewId);
+
+            var currentUser = await _unitOfWork.Users.GetByIdAsync(currentUserId);
+            var isPrivileged = currentUser != null &&
+                (currentUser.Role == RoleType.Admin || currentUser.Role == RoleType.Manager);
+
+            if (review.StudentId != currentUserId && !isPrivileged)
+                throw ErrorHelper.Forbidden("You are not authorised to delete this review.");
+
+            // SoftRemove records DeletedBy; a deleter other than the owner blocks re-reviewing.
+            await _unitOfWork.ProgramReviews.SoftRemove(review);
+            await _unitOfWork.SaveChangesAsync();
+
+            await RecalculateProgramRatingAsync(programId);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "[DeleteReviewAsync] Review {ReviewId} soft-deleted by {UserId} (moderator={IsModerator}). Recalculated rating for Program {ProgramId}.",
+                reviewId, currentUserId, review.StudentId != currentUserId, programId);
+
+            return true;
+        });
+    }
+
+    private async Task<Program> GetActiveProgramAsync(Guid programId)
+    {
+        var program = await _unitOfWork.Programs.GetByIdAsync(programId);
+        if (program == null || program.IsDeleted)
+            throw ErrorHelper.NotFound($"Program with id '{programId}' not found.");
+
+        return program;
+    }
+
+    private async Task<ProgramReview> GetReviewInProgramAsync(Guid programId, Guid reviewId)
+    {
         var review = await _unitOfWork.ProgramReviews.GetByIdAsync(reviewId);
         if (review == null || review.IsDeleted)
             throw ErrorHelper.NotFound($"Review with id '{reviewId}' not found.");
@@ -184,24 +266,7 @@ public class ProgramReviewService : IProgramReviewService
         if (review.ProgramId != programId)
             throw ErrorHelper.NotFound($"Review '{reviewId}' does not belong to program '{programId}'.");
 
-        var currentUser = await _unitOfWork.Users.GetByIdAsync(currentUserId);
-        bool isPrivileged = currentUser != null &&
-            (currentUser.Role == RoleType.Admin || currentUser.Role == RoleType.Manager);
-
-        if (review.StudentId != currentUserId && !isPrivileged)
-            throw ErrorHelper.Forbidden("You are not authorised to delete this review.");
-
-        await _unitOfWork.ProgramReviews.SoftRemove(review);
-        await _unitOfWork.SaveChangesAsync();
-
-        await RecalculateProgramRatingAsync(programId);
-        await _unitOfWork.SaveChangesAsync();
-
-        _logger.LogInformation(
-            "[DeleteReviewAsync] Review {ReviewId} soft-deleted. Recalculated rating for Program {ProgramId}.",
-            reviewId, programId);
-
-        return true;
+        return review;
     }
 
     private async Task RecalculateProgramRatingAsync(Guid programId)

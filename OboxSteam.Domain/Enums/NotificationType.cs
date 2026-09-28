@@ -27,6 +27,7 @@ public enum NotificationType
     ModuleRetakeInitiated,
     PendingPaymentExpired,
     ActivityCompleted,
+    ProgramReviewRequested,
 
     // Payment
     PaymentSucceeded,

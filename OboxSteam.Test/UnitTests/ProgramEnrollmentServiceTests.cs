@@ -413,6 +413,35 @@ public sealed class ProgramEnrollmentServiceTests
     }
 
     [Fact]
+    public async Task GetMy_SetsReviewId_FromActiveReviewOnly()
+    {
+        SeedStudent();
+        var p1 = SeedProgram();
+        var p2 = SeedProgram(_programId2, "Art");
+        SeedEnrollment(id: _enrollmentId, programId: _programId, program: p1);
+        SeedEnrollment(id: Guid.NewGuid(), programId: _programId2, program: p2);
+        var reviewId = Guid.NewGuid();
+        _db.ProgramReviews.Seed(
+            new ProgramReview { Id = reviewId, ProgramId = _programId, StudentId = _studentId, StarRating = 5 },
+            new ProgramReview
+            {
+                Id = Guid.NewGuid(),
+                ProgramId = _programId2,
+                StudentId = _studentId,
+                StarRating = 1,
+                IsDeleted = true,
+            });
+        var sut = CreateSut();
+
+        var list = await sut.GetMyProgramEnrollmentsAsync(null, null, false, 1, 10);
+        var single = await sut.GetProgramEnrollmentByIdAsync(_enrollmentId);
+
+        Assert.Equal(reviewId, list.Items.Single(e => e.ProgramId == _programId).ReviewId);
+        Assert.Null(list.Items.Single(e => e.ProgramId == _programId2).ReviewId);
+        Assert.Equal(reviewId, single.ReviewId);
+    }
+
+    [Fact]
     public async Task GetMy_FiltersByProgramId()
     {
         SeedStudent();

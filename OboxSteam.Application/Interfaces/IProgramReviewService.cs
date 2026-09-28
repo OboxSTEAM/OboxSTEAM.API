@@ -6,10 +6,16 @@ namespace OboxSteam.Application.Interfaces;
 public interface IProgramReviewService
 {
     /// <summary>
-    /// Creates a new review for a program. The caller must be enrolled in the program
-    /// and must not already have an existing review for it.
+    /// Creates a new review for a program. The caller must have a Completed, non-superseded
+    /// enrollment, must not already have an active review, and must not have had their
+    /// latest review removed by a moderator.
     /// </summary>
     Task<ProgramReviewResponseDto> CreateReviewAsync(Guid programId, CreateProgramReviewDto dto);
+
+    /// <summary>
+    /// Returns whether the current student may review the program, why not, and their active review.
+    /// </summary>
+    Task<MyProgramReviewResponseDto> GetMyReviewAsync(Guid programId);
 
     /// <summary>
     /// Returns a paginated list of reviews for the given program.

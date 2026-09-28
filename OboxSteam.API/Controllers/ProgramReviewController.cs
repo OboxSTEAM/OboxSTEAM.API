@@ -23,7 +23,7 @@ public class ProgramReviewController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Create a program review",
-        Description = "Allows an enrolled student to submit a star rating and optional comment for a program they are enrolled in. One review per student per program.")]
+        Description = "Allows a student who completed the program to submit a star rating (1-5) and an optional plain-text comment (trimmed, max 2000 characters, empty stored as null). One active review per student per program. Error codes: 403 REVIEW_NOT_ELIGIBLE (no Completed enrollment), 409 REVIEW_ALREADY_EXISTS (an active review exists), 403 REVIEW_REMOVED_BY_MODERATOR (a moderator removed the previous review), 400 REVIEW_COMMENT_INVALID (HTML or too long).")]
     [ProducesResponseType(typeof(ApiResult<ProgramReviewResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -65,11 +65,27 @@ public class ProgramReviewController : ControllerBase
         return Ok(ApiResult<Pagination<ProgramReviewResponseDto>>.Success(result, "200", "Reviews retrieved successfully."));
     }
 
+    [HttpGet("me")]
+    [Authorize(Roles = "Student")]
+    [SwaggerOperation(
+        Summary = "Get my review state for a program",
+        Description = "Returns whether the current student can review the program (canReview), why not (reason: NotEnrolled, NotCompleted, AlreadyReviewed, RemovedByModerator, or null), and the student's active review when one exists.")]
+    [ProducesResponseType(typeof(ApiResult<MyProgramReviewResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 500)]
+    public async Task<IActionResult> GetMyReview([FromRoute] Guid programId)
+    {
+        var result = await _reviewService.GetMyReviewAsync(programId);
+        return Ok(ApiResult<MyProgramReviewResponseDto>.Success(result, "200", "Review state retrieved successfully."));
+    }
+
     [HttpPut("{reviewId:guid}")]
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Update a program review",
-        Description = "Allows the review owner to update their star rating or comment. Both fields are optional (partial update).")]
+        Description = "Allows the review owner to update their star rating or comment. Both fields are optional (partial update). A null comment leaves it unchanged; an empty or whitespace comment clears it. 400 REVIEW_COMMENT_INVALID when the comment contains HTML or is too long.")]
     [ProducesResponseType(typeof(ApiResult<ProgramReviewResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -89,7 +105,7 @@ public class ProgramReviewController : ControllerBase
     [Authorize(Roles = "Student,Admin,Manager")]
     [SwaggerOperation(
         Summary = "Delete a program review",
-        Description = "Soft-deletes a review. The review owner, Admin, or Manager may call this endpoint.")]
+        Description = "Soft-deletes a review. The review owner, Admin, or Manager may call this endpoint. After an Admin or Manager removes a review, the student cannot create a new one for the program; after the owner deletes it, they may review again.")]
     [ProducesResponseType(typeof(ApiResult<bool>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

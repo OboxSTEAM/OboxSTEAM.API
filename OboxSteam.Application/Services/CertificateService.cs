@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.CertificateDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -24,6 +25,7 @@ public sealed class CertificateService : ICertificateService
     private readonly ICertificatePdfGenerator _pdfGenerator;
     private readonly IConfiguration _configuration;
     private readonly ILogger<CertificateService> _logger;
+    private readonly INotificationPublisher _notificationPublisher;
 
     public CertificateService(
         IUnitOfWork unitOfWork,
@@ -31,7 +33,8 @@ public sealed class CertificateService : ICertificateService
         IBlobService blobService,
         ICertificatePdfGenerator pdfGenerator,
         IConfiguration configuration,
-        ILogger<CertificateService> logger)
+        ILogger<CertificateService> logger,
+        INotificationPublisher notificationPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
@@ -39,24 +42,35 @@ public sealed class CertificateService : ICertificateService
         _pdfGenerator = pdfGenerator;
         _configuration = configuration;
         _logger = logger;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task<CertificateDetailDto?> EnsureProgramCertificateAsync(Guid programEnrollmentId)
     {
-        return await EnsureProgramCertificateCoreAsync(programEnrollmentId, requireCallerAuth: true);
+        return await EnsureProgramCertificateCoreAsync(
+            programEnrollmentId,
+            requireCallerAuth: true,
+            requestReview: true);
     }
 
     public async Task<CertificateDetailDto?> EnsureProgramCertificateInternalAsync(Guid programEnrollmentId)
     {
-        return await EnsureProgramCertificateCoreAsync(programEnrollmentId, requireCallerAuth: false);
+        return await EnsureProgramCertificateCoreAsync(
+            programEnrollmentId,
+            requireCallerAuth: false,
+            requestReview: true);
     }
 
     public Task<CertificateDetailDto?> EnsureProgramCertificateForSeedAsync(Guid programEnrollmentId)
-        => EnsureProgramCertificateInternalAsync(programEnrollmentId);
+        => EnsureProgramCertificateCoreAsync(
+            programEnrollmentId,
+            requireCallerAuth: false,
+            requestReview: false);
 
     private async Task<CertificateDetailDto?> EnsureProgramCertificateCoreAsync(
         Guid programEnrollmentId,
-        bool requireCallerAuth)
+        bool requireCallerAuth,
+        bool requestReview)
     {
         if (programEnrollmentId == Guid.Empty)
         {
@@ -72,6 +86,11 @@ public sealed class CertificateService : ICertificateService
         if (requireCallerAuth)
         {
             await EnsureCallerCanIssueAsync(enrollment.StudentId);
+        }
+
+        if (requestReview && enrollment.Status == EnrollmentStatus.Completed)
+        {
+            await PublishReviewRequestOnceAsync(enrollment);
         }
 
         if (!await AreAllProgramActivitiesDoneAsync(enrollment))
@@ -175,6 +194,36 @@ public sealed class CertificateService : ICertificateService
             programEnrollmentId);
 
         return await MapDetailAsync(certificate);
+    }
+
+    /// <summary>
+    /// Asks the student to review the program once per completed enrollment. Deleted
+    /// notifications still count so dismissing the inbox item does not re-send it.
+    /// </summary>
+    private async Task PublishReviewRequestOnceAsync(ProgramEnrollment enrollment)
+    {
+        var alreadySent = await _unitOfWork.Notifications.AnyIncludingDeletedAsync(
+            n => n.Type == NotificationType.ProgramReviewRequested
+                 && n.RecipientUserId == enrollment.StudentId
+                 && n.EntityType == "ProgramEnrollment"
+                 && n.EntityId == enrollment.Id);
+        if (alreadySent)
+        {
+            return;
+        }
+
+        var program = await _unitOfWork.Programs.GetByIdAsync(enrollment.ProgramId);
+
+        await _notificationPublisher.PublishAsync(
+            NotificationCatalog.ProgramReviewRequested(
+                enrollment.StudentId,
+                enrollment.ProgramId,
+                enrollment.Id,
+                program?.Name));
+
+        _logger.LogInformation(
+            "[PublishReviewRequestOnceAsync] Review request sent for enrollment {EnrollmentId}.",
+            enrollment.Id);
     }
 
     public async Task<List<CertificateListItemDto>> GetMyCertificatesAsync()

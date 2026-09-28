@@ -193,8 +193,9 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
                   && pe.ProgramId == enrollment.ProgramId
                   && !pe.IsDeleted);
         var byId = related.ToDictionary(pe => pe.Id);
+        var reviewIds = await LoadActiveReviewIdsAsync([enrollment]);
 
-        return MapToDto(enrollment, program, byId);
+        return MapToDto(enrollment, program, byId, reviewIds);
     }
 
     public async Task<Pagination<ProgramEnrollmentResponseDto>> GetMyProgramEnrollmentsAsync(
@@ -330,6 +331,7 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
         var programIds = pageItems.Select(pe => pe.ProgramId).Distinct().ToList();
         var programs = await _unitOfWork.Programs.GetAllAsync(p => programIds.Contains(p.Id) && !p.IsDeleted);
         var programsById = programs.ToDictionary(p => p.Id);
+        var reviewIds = await LoadActiveReviewIdsAsync(pageItems);
 
         var dtos = new List<ProgramEnrollmentResponseDto>(pageItems.Count);
         foreach (var enrollment in pageItems)
@@ -339,10 +341,34 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
                 throw ErrorHelper.NotFound($"Program with id '{enrollment.ProgramId}' not found.");
             }
 
-            dtos.Add(MapToDto(enrollment, program, byId));
+            dtos.Add(MapToDto(enrollment, program, byId, reviewIds));
         }
 
         return new Pagination<ProgramEnrollmentResponseDto>(dtos, totalCount, page, pageSize);
+    }
+
+    /// <summary>
+    /// Active review id per (student, program) for the given enrollments, loaded in one query.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<(Guid StudentId, Guid ProgramId), Guid>> LoadActiveReviewIdsAsync(
+        IReadOnlyCollection<ProgramEnrollment> enrollments)
+    {
+        if (enrollments.Count == 0)
+        {
+            return new Dictionary<(Guid, Guid), Guid>();
+        }
+
+        var studentIds = enrollments.Select(pe => pe.StudentId).Distinct().ToList();
+        var programIds = enrollments.Select(pe => pe.ProgramId).Distinct().ToList();
+
+        var reviews = await _unitOfWork.ProgramReviews.GetAllAsync(
+            r => studentIds.Contains(r.StudentId)
+                 && programIds.Contains(r.ProgramId)
+                 && !r.IsDeleted);
+
+        return reviews
+            .GroupBy(r => (r.StudentId, r.ProgramId))
+            .ToDictionary(g => g.Key, g => g.First().Id);
     }
 
     /// <summary>
@@ -415,7 +441,8 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
     private static ProgramEnrollmentResponseDto MapToDto(
         ProgramEnrollment enrollment,
         Program program,
-        IReadOnlyDictionary<Guid, ProgramEnrollment> byId)
+        IReadOnlyDictionary<Guid, ProgramEnrollment> byId,
+        IReadOnlyDictionary<(Guid StudentId, Guid ProgramId), Guid> reviewIds)
     {
         ProgramEnrollment? source = null;
         if (enrollment.SourceProgramEnrollmentId is Guid sourceId)
@@ -443,6 +470,9 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
             PriorEndReason = source?.EndReason,
             IsSuperseded = enrollment.SupersededByEnrollmentId.HasValue,
             SupersededByEnrollmentId = enrollment.SupersededByEnrollmentId,
+            ReviewId = reviewIds.TryGetValue((enrollment.StudentId, enrollment.ProgramId), out var reviewId)
+                ? reviewId
+                : null,
             CreatedAt = enrollment.CreatedAt,
             UpdatedAt = enrollment.UpdatedAt,
             Code = program.Code,

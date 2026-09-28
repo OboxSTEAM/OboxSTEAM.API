@@ -60,16 +60,23 @@ public sealed class ProgramReviewServiceTests
         });
     }
 
-    private void SeedEnrollment(Guid studentId, Guid? programId = null)
+    private ProgramEnrollment SeedEnrollment(
+        Guid studentId,
+        Guid? programId = null,
+        EnrollmentStatus status = EnrollmentStatus.Completed,
+        Guid? supersededBy = null)
     {
-        _db.ProgramEnrollments.Seed(new ProgramEnrollment
+        var enrollment = new ProgramEnrollment
         {
             Id = Guid.NewGuid(),
             StudentId = studentId,
             ProgramId = programId ?? _programId,
-            Status = EnrollmentStatus.Active,
+            Status = status,
+            SupersededByEnrollmentId = supersededBy,
             IsDeleted = false,
-        });
+        };
+        _db.ProgramEnrollments.Seed(enrollment);
+        return enrollment;
     }
 
     private ProgramReview SeedReview(
@@ -78,7 +85,8 @@ public sealed class ProgramReviewServiceTests
         Guid? programId = null,
         int starRating = 4,
         DateTime? createdAt = null,
-        bool isDeleted = false)
+        bool isDeleted = false,
+        Guid? deletedBy = null)
     {
         var review = new ProgramReview
         {
@@ -89,6 +97,8 @@ public sealed class ProgramReviewServiceTests
             Comment = "Good course",
             CreatedAt = createdAt ?? _now.AddDays(-1),
             IsDeleted = isDeleted,
+            DeletedAt = isDeleted ? _now.AddHours(-1) : null,
+            DeletedBy = deletedBy,
         };
         _db.ProgramReviews.Seed(review);
         return review;
@@ -110,9 +120,227 @@ public sealed class ProgramReviewServiceTests
 
         Assert.Equal(5, result.StarRating);
         Assert.Equal("Alice", result.StudentName);
+        Assert.Equal("Excellent", result.Comment);
         var program = _db.Programs.Items.Single();
         Assert.Equal(1, program.TotalReviews);
         Assert.Equal(5.0m, program.Rating);
+    }
+
+    [Theory]
+    [InlineData(EnrollmentStatus.Active)]
+    [InlineData(EnrollmentStatus.Deferred)]
+    [InlineData(EnrollmentStatus.Failed)]
+    [InlineData(EnrollmentStatus.Dropped)]
+    public async Task CreateReview_ReturnsNotEligible_WhenEnrollmentNotCompleted(EnrollmentStatus status)
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedProgram();
+        SeedEnrollment(_studentId, status: status);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.CreateReviewAsync(_programId, new CreateProgramReviewDto { StarRating = 4 }));
+
+        Assert.Equal("REVIEW_NOT_ELIGIBLE", ex.ErrorCode);
+        Assert.Empty(_db.ProgramReviews.Items);
+    }
+
+    [Fact]
+    public async Task CreateReview_ReturnsNotEligible_WhenCompletedEnrollmentIsSuperseded()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedProgram();
+        var rebuy = SeedEnrollment(_studentId, status: EnrollmentStatus.Active);
+        SeedEnrollment(_studentId, supersededBy: rebuy.Id);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.CreateReviewAsync(_programId, new CreateProgramReviewDto { StarRating = 4 }));
+
+        Assert.Equal("REVIEW_NOT_ELIGIBLE", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CreateReview_AllowsCompletedStudent_WhenLaterCheckoutIsPending()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedProgram();
+        SeedEnrollment(_studentId);
+        SeedEnrollment(_studentId, status: EnrollmentStatus.PendingPayment);
+        var sut = CreateSut();
+
+        var result = await sut.CreateReviewAsync(_programId, new CreateProgramReviewDto { StarRating = 3 });
+
+        Assert.Equal(3, result.StarRating);
+    }
+
+    [Fact]
+    public async Task CreateReview_SucceedsOnce_ThenReturnsAlreadyExists()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedProgram();
+        SeedEnrollment(_studentId);
+        var sut = CreateSut();
+
+        await sut.CreateReviewAsync(_programId, new CreateProgramReviewDto { StarRating = 4 });
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.CreateReviewAsync(_programId, new CreateProgramReviewDto { StarRating = 5 }));
+
+        Assert.Equal("REVIEW_ALREADY_EXISTS", ex.ErrorCode);
+        Assert.Single(_db.ProgramReviews.Items);
+    }
+
+    [Fact]
+    public async Task CreateReview_ReturnsRemovedByModerator_WhenManagerDeletedPreviousReview()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedProgram();
+        SeedEnrollment(_studentId);
+        SeedReview(isDeleted: true, deletedBy: _managerId);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.CreateReviewAsync(_programId, new CreateProgramReviewDto { StarRating = 4 }));
+
+        Assert.Equal("REVIEW_REMOVED_BY_MODERATOR", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CreateReview_Succeeds_WhenStudentDeletedOwnPreviousReview()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedProgram();
+        SeedEnrollment(_studentId);
+        SeedReview(isDeleted: true, deletedBy: _studentId);
+        var sut = CreateSut();
+
+        var result = await sut.CreateReviewAsync(_programId, new CreateProgramReviewDto { StarRating = 2 });
+
+        Assert.Equal(2, result.StarRating);
+        Assert.Equal(1, _db.Programs.Items.Single().TotalReviews);
+    }
+
+    [Fact]
+    public async Task CreateReview_ValidatesComment()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedProgram();
+        SeedEnrollment(_studentId);
+        var sut = CreateSut();
+
+        var html = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateReviewAsync(_programId, new CreateProgramReviewDto
+            {
+                StarRating = 4,
+                Comment = "<script>alert(1)</script>",
+            }));
+        var tooLong = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateReviewAsync(_programId, new CreateProgramReviewDto
+            {
+                StarRating = 4,
+                Comment = new string('a', 2001),
+            }));
+        var result = await sut.CreateReviewAsync(_programId, new CreateProgramReviewDto
+        {
+            StarRating = 4,
+            Comment = "   ",
+        });
+
+        Assert.Equal("REVIEW_COMMENT_INVALID", html.ErrorCode);
+        Assert.Equal("REVIEW_COMMENT_INVALID", tooLong.ErrorCode);
+        Assert.Null(result.Comment);
+    }
+
+    [Fact]
+    public async Task GetMyReview_ReturnsNotEnrolled()
+    {
+        SeedProgram();
+        SeedEnrollment(_studentId, status: EnrollmentStatus.PendingPayment);
+
+        var result = await CreateSut().GetMyReviewAsync(_programId);
+
+        Assert.False(result.CanReview);
+        Assert.Equal(ProgramReviewEligibilityReason.NotEnrolled, result.Reason);
+        Assert.Null(result.Review);
+    }
+
+    [Fact]
+    public async Task GetMyReview_ReturnsNotCompleted()
+    {
+        SeedProgram();
+        SeedEnrollment(_studentId, status: EnrollmentStatus.Active);
+
+        var result = await CreateSut().GetMyReviewAsync(_programId);
+
+        Assert.False(result.CanReview);
+        Assert.Equal(ProgramReviewEligibilityReason.NotCompleted, result.Reason);
+        Assert.Null(result.Review);
+    }
+
+    [Fact]
+    public async Task GetMyReview_ReturnsAlreadyReviewed_WithReview()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001", "Alice");
+        SeedProgram();
+        SeedEnrollment(_studentId);
+        SeedReview(starRating: 5);
+
+        var result = await CreateSut().GetMyReviewAsync(_programId);
+
+        Assert.False(result.CanReview);
+        Assert.Equal(ProgramReviewEligibilityReason.AlreadyReviewed, result.Reason);
+        Assert.NotNull(result.Review);
+        Assert.Equal(_reviewId, result.Review!.Id);
+        Assert.Equal("Alice", result.Review.StudentName);
+    }
+
+    [Fact]
+    public async Task GetMyReview_ReturnsRemovedByModerator()
+    {
+        SeedProgram();
+        SeedEnrollment(_studentId);
+        SeedReview(isDeleted: true, deletedBy: _managerId);
+
+        var result = await CreateSut().GetMyReviewAsync(_programId);
+
+        Assert.False(result.CanReview);
+        Assert.Equal(ProgramReviewEligibilityReason.RemovedByModerator, result.Reason);
+        Assert.Null(result.Review);
+    }
+
+    [Fact]
+    public async Task GetMyReview_ReturnsCanReview_WhenEligible()
+    {
+        SeedProgram();
+        SeedEnrollment(_studentId);
+
+        var result = await CreateSut().GetMyReviewAsync(_programId);
+
+        Assert.True(result.CanReview);
+        Assert.Null(result.Reason);
+        Assert.Null(result.Review);
+    }
+
+    [Fact]
+    public async Task GetMyReview_Throws_WhenProgramMissing()
+    {
+        await Assert.ThrowsAsync<NotFoundException>(() => CreateSut().GetMyReviewAsync(_programId));
+    }
+
+    [Fact]
+    public async Task UpdateReview_ClearsComment_WhenEmpty()
+    {
+        SeedUser(_studentId, RoleType.Student, "STD-001");
+        SeedProgram();
+        SeedReview();
+
+        var result = await CreateSut().UpdateReviewAsync(_programId, _reviewId, new UpdateProgramReviewDto
+        {
+            Comment = "  ",
+        });
+
+        Assert.Null(result.Comment);
+        Assert.Equal(4, result.StarRating);
     }
 
     [Fact]

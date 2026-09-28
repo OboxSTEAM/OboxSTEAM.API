@@ -4,6 +4,7 @@ using Moq;
 using OboxSteam.Application.DTOs.CertificateDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -30,9 +31,22 @@ public sealed class CertificateServiceTests
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<IBlobService> _blobService = new();
     private readonly Mock<ICertificatePdfGenerator> _pdfGenerator = new();
+    private readonly Mock<INotificationPublisher> _notificationPublisher = new();
 
     private CertificateService CreateSut(Guid? currentUserId = null)
     {
+        _notificationPublisher
+            .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
+            .Callback<NotificationCommand, CancellationToken>((command, _) => _db.Notifications.Seed(new Notification
+            {
+                Id = Guid.NewGuid(),
+                RecipientUserId = command.Audience.UserId ?? Guid.Empty,
+                Type = command.Type,
+                Title = command.Title,
+                EntityType = command.EntityType,
+                EntityId = command.EntityId,
+            }))
+            .Returns(Task.CompletedTask);
         _claimsService.Setup(c => c.GetCurrentUserId).Returns(currentUserId ?? _studentId);
         _blobService
             .Setup(b => b.UploadFileAsync(
@@ -61,7 +75,8 @@ public sealed class CertificateServiceTests
             _blobService.Object,
             _pdfGenerator.Object,
             configuration,
-            NullLogger<CertificateService>.Instance);
+            NullLogger<CertificateService>.Instance,
+            _notificationPublisher.Object);
     }
 
     private void SeedUser(Guid id, RoleType role, string code, string? fullName = null)
@@ -228,6 +243,44 @@ public sealed class CertificateServiceTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
         _blobService.Verify(b => b.GetPreviewUrlAsync(It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Ensure_PublishesReviewRequestOnce_WhenEnrollmentCompleted()
+    {
+        SeedProgramCurriculum();
+        SeedEnrollmentChain();
+        _db.ProgramEnrollments.Items.Single().Status = EnrollmentStatus.Completed;
+        var sut = CreateSut();
+
+        await sut.EnsureProgramCertificateInternalAsync(_programEnrollmentId);
+        await sut.EnsureProgramCertificateInternalAsync(_programEnrollmentId);
+
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(
+                It.Is<NotificationCommand>(c =>
+                    c.Type == NotificationType.ProgramReviewRequested
+                    && c.Audience.UserId == _studentId
+                    && c.Payload!.ProgramId == _programId
+                    && c.Payload.ProgramEnrollmentId == _programEnrollmentId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Ensure_DoesNotPublishReviewRequest_WhenNotCompletedOrSeed()
+    {
+        SeedProgramCurriculum();
+        SeedEnrollmentChain();
+        var sut = CreateSut();
+
+        await sut.EnsureProgramCertificateInternalAsync(_programEnrollmentId);
+        _db.ProgramEnrollments.Items.Single().Status = EnrollmentStatus.Completed;
+        await sut.EnsureProgramCertificateForSeedAsync(_programEnrollmentId);
+
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
