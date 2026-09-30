@@ -87,7 +87,7 @@ chat store).
 | `systemEventCode` | enum? | See 2.3.1. |
 | `systemEventPayloadJson` | jsonb? | |
 | `editedAt` | datetime? | |
-| `deletedAt` | datetime? | Soft delete: text cleared, attachments hidden, mentions removed from counts, pin removed. |
+| `deletedAt` | datetime? | Author removal (stored as `RemovedAt`/`RemovedByUserId`, separate from the global soft-delete flag so tombstones stay visible): text cleared, attachments hidden, mentions removed from counts, pin removed. |
 | pin fields | | `pinStatus` (`Open`, `Addressed`, `Resolved`)?, `pinnedByUserId`?, `pinnedAt`?, `addressedByUserId`?, `addressedAt`?, `resolvedByUserId`?, `resolvedAt`? |
 
 #### 2.3.1 System event codes
@@ -152,6 +152,10 @@ the same transaction that increments `curriculumVersion`.
 `CurriculumChangeSeen`: `programId, userId, seenVersion` (unique on program + user).
 
 ### 2.7 Migration
+
+Schema lands first (`AddAdvisoryChatModel`). Data steps run with the task that
+switches the behaviour: steps 2–5 with the new discussion service, step 1 with
+the new approval lifecycle, step 7 with the framework-rules change.
 
 1. `Programs.Status = 'PendingReview'` → `'Draft'`.
 2. For each program: copy messages of the `General` advisory thread into

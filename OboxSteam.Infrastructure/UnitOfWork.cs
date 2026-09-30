@@ -78,6 +78,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents => Repository<ProgramAdvisoryThreadEvent>();
     public IGenericRepository<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages => Repository<ProgramAdvisoryDiscussionMessage>();
     public IGenericRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences => Repository<ProgramAdvisoryDiscussionMessageReference>();
+    public IGenericRepository<ProgramAdvisoryDiscussionAttachment> ProgramAdvisoryDiscussionAttachments => Repository<ProgramAdvisoryDiscussionAttachment>();
+    public IGenericRepository<ProgramApproval> ProgramApprovals => Repository<ProgramApproval>();
     public IGenericRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads => Repository<ProgramAdvisoryStreamRead>();
     public IGenericRepository<CurriculumReviewRequirement> CurriculumReviewRequirements => Repository<CurriculumReviewRequirement>();
     public IGenericRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents => Repository<ProgramAdvisoryNotificationIntent>();

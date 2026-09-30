@@ -26,6 +26,7 @@ public class ProgramsResponseDto
     public int? FrameworkVersionNumber { get; set; }
     public Guid? AdvisorExpertId { get; set; }
     public string? AdvisorExpertName { get; set; }
+    public long CurriculumVersion { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<ModulesResponseDto> Modules { get; set; } = new();

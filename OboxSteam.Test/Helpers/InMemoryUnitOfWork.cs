@@ -56,6 +56,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents { get; } = new();
     public InMemoryRepository<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages { get; } = new();
     public InMemoryRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences { get; } = new();
+    public InMemoryRepository<ProgramAdvisoryDiscussionAttachment> ProgramAdvisoryDiscussionAttachments { get; } = new();
+    public InMemoryRepository<ProgramApproval> ProgramApprovals { get; } = new();
     public InMemoryRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads { get; } = new();
     public InMemoryRepository<CurriculumReviewRequirement> CurriculumReviewRequirements { get; } = new();
     public InMemoryRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents { get; } = new();
@@ -140,6 +142,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<ProgramAdvisoryThreadEvent> IUnitOfWork.ProgramAdvisoryThreadEvents => ProgramAdvisoryThreadEvents;
     IGenericRepository<ProgramAdvisoryDiscussionMessage> IUnitOfWork.ProgramAdvisoryDiscussionMessages => ProgramAdvisoryDiscussionMessages;
     IGenericRepository<ProgramAdvisoryDiscussionMessageReference> IUnitOfWork.ProgramAdvisoryDiscussionMessageReferences => ProgramAdvisoryDiscussionMessageReferences;
+    IGenericRepository<ProgramAdvisoryDiscussionAttachment> IUnitOfWork.ProgramAdvisoryDiscussionAttachments => ProgramAdvisoryDiscussionAttachments;
+    IGenericRepository<ProgramApproval> IUnitOfWork.ProgramApprovals => ProgramApprovals;
     IGenericRepository<ProgramAdvisoryStreamRead> IUnitOfWork.ProgramAdvisoryStreamReads => ProgramAdvisoryStreamReads;
     IGenericRepository<CurriculumReviewRequirement> IUnitOfWork.CurriculumReviewRequirements => CurriculumReviewRequirements;
     IGenericRepository<ProgramAdvisoryNotificationIntent> IUnitOfWork.ProgramAdvisoryNotificationIntents => ProgramAdvisoryNotificationIntents;
@@ -228,6 +232,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(ProgramAdvisoryThreadEvent) => ProgramAdvisoryThreadEvents,
             nameof(ProgramAdvisoryDiscussionMessage) => ProgramAdvisoryDiscussionMessages,
             nameof(ProgramAdvisoryDiscussionMessageReference) => ProgramAdvisoryDiscussionMessageReferences,
+            nameof(ProgramAdvisoryDiscussionAttachment) => ProgramAdvisoryDiscussionAttachments,
+            nameof(ProgramApproval) => ProgramApprovals,
             nameof(ProgramAdvisoryStreamRead) => ProgramAdvisoryStreamReads,
             nameof(CurriculumReviewRequirement) => CurriculumReviewRequirements,
             nameof(ProgramAdvisoryNotificationIntent) => ProgramAdvisoryNotificationIntents,

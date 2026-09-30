@@ -85,6 +85,7 @@ public class ProgramService : IProgramService
             FrameworkVersionNumber = frameworkVersion?.VersionNumber,
             AdvisorExpertId = program.AdvisorExpertId,
             AdvisorExpertName = advisor?.FullName,
+            CurriculumVersion = program.CurriculumVersion,
             Skills = skills,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
@@ -166,6 +167,7 @@ public class ProgramService : IProgramService
             FrameworkId = program.FrameworkId,
             FrameworkVersionId = program.FrameworkVersionId,
             AdvisorExpertId = program.AdvisorExpertId,
+            CurriculumVersion = program.CurriculumVersion,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.OrderBy(m => m.ModuleOrder).Select(m => new ModulesResponseDto
@@ -303,6 +305,7 @@ public class ProgramService : IProgramService
             FrameworkId = program.FrameworkId,
             FrameworkVersionId = program.FrameworkVersionId,
             AdvisorExpertId = program.AdvisorExpertId,
+            CurriculumVersion = program.CurriculumVersion,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = modulesByProgramId.TryGetValue(program.Id, out var programModules)
@@ -456,6 +459,7 @@ public class ProgramService : IProgramService
         FrameworkId = program.FrameworkId,
         FrameworkVersionId = program.FrameworkVersionId,
         AdvisorExpertId = program.AdvisorExpertId,
+        CurriculumVersion = program.CurriculumVersion,
         CreatedAt = program.CreatedAt,
         UpdatedAt = program.UpdatedAt,
     };
@@ -559,6 +563,7 @@ public class ProgramService : IProgramService
             FrameworkId = program.FrameworkId,
             FrameworkVersionId = program.FrameworkVersionId,
             AdvisorExpertId = program.AdvisorExpertId,
+            CurriculumVersion = program.CurriculumVersion,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = new(),
@@ -641,6 +646,7 @@ public class ProgramService : IProgramService
                 FrameworkId = program.FrameworkId,
                 FrameworkVersionId = program.FrameworkVersionId,
                 AdvisorExpertId = program.AdvisorExpertId,
+                CurriculumVersion = program.CurriculumVersion,
                 CreatedAt = program.CreatedAt,
                 UpdatedAt = program.UpdatedAt,
                 Modules = program.Modules?.Select(m => new ModulesResponseDto
@@ -685,6 +691,7 @@ public class ProgramService : IProgramService
             FrameworkId = program.FrameworkId,
             FrameworkVersionId = program.FrameworkVersionId,
             AdvisorExpertId = program.AdvisorExpertId,
+            CurriculumVersion = program.CurriculumVersion,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.Select(m => new ModulesResponseDto
@@ -751,6 +758,7 @@ public class ProgramService : IProgramService
             FrameworkId = program.FrameworkId,
             FrameworkVersionId = program.FrameworkVersionId,
             AdvisorExpertId = program.AdvisorExpertId,
+            CurriculumVersion = program.CurriculumVersion,
             CreatedAt = program.CreatedAt,
             UpdatedAt = program.UpdatedAt,
             Modules = program.Modules?.Select(m => new ModulesResponseDto

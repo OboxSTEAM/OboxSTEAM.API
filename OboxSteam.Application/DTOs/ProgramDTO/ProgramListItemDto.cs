@@ -23,6 +23,7 @@ public class ProgramListItemDto
     public Guid? FrameworkId { get; set; }
     public Guid? FrameworkVersionId { get; set; }
     public Guid? AdvisorExpertId { get; set; }
+    public long CurriculumVersion { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<ProgramExpertSummaryDto> Experts { get; set; } = new();

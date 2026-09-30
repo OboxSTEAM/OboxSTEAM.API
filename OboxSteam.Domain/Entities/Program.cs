@@ -55,6 +55,12 @@ public class Program : BaseEntity
     /// <summary>Monotonic sequence allocated for program Discussion messages.</summary>
     public long AdvisoryDiscussionSequence { get; set; }
 
+    /// <summary>
+    /// Incremented once per save that mutates curriculum content under this program.
+    /// Approval and publish are bound to this value.
+    /// </summary>
+    public long CurriculumVersion { get; set; }
+
     // Navigation
     public ICollection<ProgramBoard> ProgramBoards { get; set; } = new List<ProgramBoard>();
     public ICollection<Module> Modules { get; set; } = new List<Module>();
@@ -66,6 +72,7 @@ public class Program : BaseEntity
     public ICollection<ProgramAdvisoryThread> AdvisoryThreads { get; set; } = [];
     public ICollection<ProgramAdvisoryReference> AdvisoryReferences { get; set; } = [];
     public ICollection<ProgramAdvisoryDiscussionMessage> AdvisoryDiscussionMessages { get; set; } = [];
+    public ICollection<ProgramApproval> Approvals { get; set; } = [];
     public ICollection<Class> Classes { get; set; } = new List<Class>();
     public ICollection<PaymentRequest> PaymentRequests { get; set; } = new List<PaymentRequest>();
     public ICollection<ProgramSkill> ProgramSkills { get; set; } = new List<ProgramSkill>();

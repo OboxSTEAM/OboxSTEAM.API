@@ -51,6 +51,8 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents { get; }
     IGenericRepository<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages { get; }
     IGenericRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences { get; }
+    IGenericRepository<ProgramAdvisoryDiscussionAttachment> ProgramAdvisoryDiscussionAttachments { get; }
+    IGenericRepository<ProgramApproval> ProgramApprovals { get; }
     IGenericRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads { get; }
     IGenericRepository<CurriculumReviewRequirement> CurriculumReviewRequirements { get; }
     IGenericRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents { get; }

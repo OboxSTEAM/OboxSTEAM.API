@@ -34,6 +34,8 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents { get; set; }
     public DbSet<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages { get; set; }
     public DbSet<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences { get; set; }
+    public DbSet<ProgramAdvisoryDiscussionAttachment> ProgramAdvisoryDiscussionAttachments { get; set; }
+    public DbSet<ProgramApproval> ProgramApprovals { get; set; }
     public DbSet<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads { get; set; }
     public DbSet<CurriculumReviewRequirement> CurriculumReviewRequirements { get; set; }
     public DbSet<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents { get; set; }
@@ -153,6 +155,8 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ProgramAdvisoryThreadEvent>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryDiscussionMessage>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryDiscussionMessageReference>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramAdvisoryDiscussionAttachment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ProgramApproval>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryStreamRead>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CurriculumReviewRequirement>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryNotificationIntent>().HasQueryFilter(e => !e.IsDeleted);
@@ -538,6 +542,8 @@ public class OboxSteamDbContext : DbContext
 
             entity.HasIndex(p => p.AdvisorExpertId)
                 .HasFilter("\"IsDeleted\" = false AND \"AdvisorExpertId\" IS NOT NULL");
+
+            entity.Property(p => p.CurriculumVersion).HasDefaultValue(0L);
         });
 
         // =============================================
@@ -718,6 +724,52 @@ public class OboxSteamDbContext : DbContext
                 .HasFilter("\"IsDeleted\" = false");
             entity.HasIndex(m => new { m.ProgramId, m.AuthorUserId, m.ClientMessageId }).IsUnique()
                 .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(m => new { m.ProgramId, m.PinStatus })
+                .HasFilter("\"IsDeleted\" = false AND \"PinStatus\" IS NOT NULL");
+            entity.HasIndex(m => new { m.ProgramId, m.SystemEventCode, m.CreatedAt })
+                .HasFilter("\"IsDeleted\" = false AND \"SystemEventCode\" IS NOT NULL");
+            entity.Property(m => m.SystemEventPayloadJson).HasColumnType("jsonb");
+            entity.Property(m => m.Kind).HasDefaultValue(DiscussionMessageKind.User);
+        });
+
+        modelBuilder.Entity<ProgramAdvisoryDiscussionAttachment>(entity =>
+        {
+            entity.HasOne(a => a.Program).WithMany()
+                .HasForeignKey(a => a.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(a => a.Message).WithMany(m => m.Attachments)
+                .HasForeignKey(a => a.MessageId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
+            entity.HasOne(a => a.UploaderUser).WithMany()
+                .HasForeignKey(a => a.UploaderUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(a => a.MessageId)
+                .HasFilter("\"IsDeleted\" = false AND \"MessageId\" IS NOT NULL");
+            entity.HasIndex(a => a.CreatedAt)
+                .HasFilter("\"IsDeleted\" = false AND \"MessageId\" IS NULL")
+                .HasDatabaseName("IX_ProgramAdvisoryDiscussionAttachments_Unsent");
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_ProgramAdvisoryDiscussionAttachments_SizeNonNegative", "\"SizeBytes\" >= 0"));
+        });
+
+        modelBuilder.Entity<ProgramApproval>(entity =>
+        {
+            entity.HasOne(a => a.Program).WithMany(p => p.Approvals)
+                .HasForeignKey(a => a.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(a => a.FrameworkVersion).WithMany()
+                .HasForeignKey(a => a.FrameworkVersionId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
+            entity.HasOne(a => a.ApprovedByExpert).WithMany()
+                .HasForeignKey(a => a.ApprovedByExpertId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(a => a.RevokedByUser).WithMany()
+                .HasForeignKey(a => a.RevokedByUserId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
+            entity.HasIndex(a => a.ProgramId)
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false AND \"RevokedAt\" IS NULL")
+                .HasDatabaseName("IX_ProgramApprovals_OneActivePerProgram");
+            entity.HasIndex(a => new { a.ProgramId, a.ApprovedAt })
+                .HasFilter("\"IsDeleted\" = false");
+            entity.Property(a => a.FrameworkCheckJson).HasColumnType("jsonb");
+            entity.Property(a => a.CurriculumSnapshotJson).HasColumnType("jsonb");
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_ProgramApprovals_VersionRange",
+                "\"CurriculumVersion\" >= 0 AND \"FromVersion\" >= 0 AND \"FromVersion\" <= \"CurriculumVersion\""));
         });
 
         modelBuilder.Entity<ProgramAdvisoryDiscussionMessageReference>(entity =>

@@ -169,6 +169,20 @@ public sealed class ProgramServiceTests
     }
 
     [Fact]
+    public async Task GetByIdAndList_ExposeCurriculumVersion()
+    {
+        var program = SeedProgram();
+        program.CurriculumVersion = 17;
+        var sut = CreateSut();
+
+        var byId = await sut.GetProgramByIdAsync(_programId);
+        var list = await sut.GetAllProgramsAsync(null, "name", false, 1, 10);
+
+        Assert.Equal(17, byId.CurriculumVersion);
+        Assert.Equal(17, Assert.Single(list.Items).CurriculumVersion);
+    }
+
+    [Fact]
     public async Task GetById_Throws_WhenMissingOrDeleted()
     {
         SeedProgram(isDeleted: true);

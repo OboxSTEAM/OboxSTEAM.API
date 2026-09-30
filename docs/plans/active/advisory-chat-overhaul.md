@@ -39,10 +39,9 @@ typing/presence indicators; replies/quotes.
 One task per review/commit cycle, in this order:
 
 1. Contract doc (this plan + `specs/advisory-chat-contract.md`).
-2. A1 model + migration: `Program.CurriculumVersion`, `ProgramApproval`,
-   discussion message extensions (kind, system event, pin, edit/delete),
-   `ProgramAdvisoryDiscussionAttachment`, remove `PendingReview`, migrate the
-   `General` thread and RequiredChange/Suggestion roots into discussion.
+2. A1 model (schema only): `Program.CurriculumVersion`, `ProgramApproval`,
+   discussion message extensions (kind, system event, pin, edit, removal),
+   `ProgramAdvisoryDiscussionAttachment`. Migration `AddAdvisoryChatModel`.
 3. A8 change log: EF `SaveChanges` interceptor (version bump + `CurriculumChange`
    rows), lock rules (`CURRICULUM_LOCKED_ACTIVE`, auto-revoke on Approved),
    `curriculum/changes` with net consolidation, `changes/seen`, lazy
@@ -50,9 +49,12 @@ One task per review/commit cycle, in this order:
 4. A7 framework rules: drop rubric tables/columns, add rule fields, validation,
    framework-check codes.
 5. A3 + A2: mention-targets, discussion messages/pins/attachments/
-   mention-counts, material from attachment, attachment purge job.
+   mention-counts, material from attachment, attachment purge job. Data
+   migration: copy `General` thread messages and RequiredChange/Suggestion
+   roots into discussion messages.
 6. A4: workspace DTO, approval request/approve/revoke, publish, advisor change,
-   expert read permissions.
+   expert read permissions. Remove `PendingReview` (data migration
+   `PendingReview` -> `Draft`).
 7. A5 + A6: sync scopes, notification types + batching + in-memory presence,
    410 `ENDPOINT_REMOVED` on old routes, delete old service code.
 8. Seed cleanup: remove rubric, review rounds, submissions, drafts, threads;
@@ -71,7 +73,7 @@ One task per review/commit cycle, in this order:
 ## Progress
 
 - [x] 1. Contract doc
-- [ ] 2. A1 model + migration
+- [x] 2. A1 model (schema) — migration `20260930165911_AddAdvisoryChatModel`
 - [ ] 3. A8 change log + lock rules
 - [ ] 4. A7 framework rules + rubric drop
 - [ ] 5. A3 + A2 discussion endpoints
@@ -94,6 +96,14 @@ One task per review/commit cycle, in this order:
 - 2026-09-30: Change capture uses an EF Core `SaveChanges` interceptor.
 - 2026-09-30: `CurriculumUpdated` session message is maintained lazily on
   each save (no background job).
+- 2026-09-30: Data migrations run in the task that switches the behaviour, not
+  in A1: the chat copy lands with the new discussion service (task 5) so no
+  General-thread messages written in between are lost, and `PendingReview`
+  removal lands with the new approval lifecycle (task 6) because the old
+  submit/withdraw code still depends on it.
+- 2026-09-30: Author retraction uses `RemovedAt`/`RemovedByUserId`, not
+  `BaseEntity.IsDeleted`, so removed messages stay in the stream as tombstones
+  despite the global soft-delete query filter.
 
 ## Validation
 
