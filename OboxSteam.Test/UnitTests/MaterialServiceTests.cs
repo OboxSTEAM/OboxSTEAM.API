@@ -452,6 +452,22 @@ public sealed class MaterialServiceTests
     {
         SeedMaterial();
         SeedCurriculum();
+        var sut = CreateSut();
+
+        var result = await sut.UpdateMaterialAsync(_materialId, new UpdateMaterialRequestDto
+        {
+            Title = "Updated slides",
+        });
+
+        Assert.Equal("Updated slides", result.Title);
+        Assert.Equal("Updated slides", _db.Materials.Items[0].Title);
+    }
+
+    [Fact]
+    public async Task Update_ThrowsConflict_WhenClassInProgress()
+    {
+        SeedMaterial();
+        SeedCurriculum();
         _db.Classes.Seed(new Class
         {
             Id = _classId,
@@ -463,13 +479,30 @@ public sealed class MaterialServiceTests
         });
         var sut = CreateSut();
 
-        var result = await sut.UpdateMaterialAsync(_materialId, new UpdateMaterialRequestDto
-        {
-            Title = "Updated slides",
-        });
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateMaterialAsync(_materialId, new UpdateMaterialRequestDto { Title = "Updated slides" }));
+        Assert.Equal("Slides", _db.Materials.Items[0].Title);
+    }
 
-        Assert.Equal("Updated slides", result.Title);
-        Assert.Equal("Updated slides", _db.Materials.Items[0].Title);
+    [Fact]
+    public async Task Delete_ThrowsConflict_WhenActiveProgramHasClassInProgress()
+    {
+        SeedMaterial();
+        SeedCurriculum();
+        _db.Programs.Items.Single().Status = ProgramStatus.Active;
+        _db.Classes.Seed(new Class
+        {
+            Id = _classId,
+            Code = "CLS-001",
+            Name = "Cohort A",
+            ProgramId = _programId,
+            Status = ClassStatus.InProgress,
+        });
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() => sut.DeleteMaterialAsync(_materialId));
+
+        Assert.False(_db.Materials.Items.Single().IsDeleted);
     }
 
     [Fact]

@@ -43,7 +43,7 @@ One task per review/commit cycle, in this order:
    discussion message extensions (kind, system event, pin, edit, removal),
    `ProgramAdvisoryDiscussionAttachment`. Migration `AddAdvisoryChatModel`.
 3. A8 change log: EF `SaveChanges` interceptor (version bump + `CurriculumChange`
-   rows), lock rules (`CURRICULUM_LOCKED_ACTIVE`, auto-revoke on Approved),
+   rows), cohort-only lock, auto-revoke + advisor notification on edit,
    `curriculum/changes` with net consolidation, `changes/seen`, lazy
    `CurriculumUpdated` session message.
 4. A7 framework rules: drop rubric tables/columns, add rule fields, validation,
@@ -74,7 +74,7 @@ One task per review/commit cycle, in this order:
 
 - [x] 1. Contract doc
 - [x] 2. A1 model (schema) — migration `20260930165911_AddAdvisoryChatModel`
-- [ ] 3. A8 change log + lock rules
+- [x] 3. A8 change log + lock rules — migration `20260930172444_AddCurriculumChangeLog`
 - [ ] 4. A7 framework rules + rubric drop
 - [ ] 5. A3 + A2 discussion endpoints
 - [ ] 6. A4 approval lifecycle
@@ -104,6 +104,25 @@ One task per review/commit cycle, in this order:
 - 2026-09-30: Author retraction uses `RemovedAt`/`RemovedByUserId`, not
   `BaseEntity.IsDeleted`, so removed messages stay in the stream as tombstones
   despite the global soft-delete query filter.
+- 2026-09-30: The interceptor (Infrastructure) only extracts tracked entries;
+  all rules live in `CurriculumChangeRecorder` (Application) so they are unit
+  tested with the in-memory unit of work. The recorder is resolved lazily from
+  the request scope to avoid a DbContext → UnitOfWork → DbContext cycle.
+- 2026-10-01: `CurriculumEditGuard` keeps the original cohort-only lock (class
+  `InProgress`, or `Open` with `Active` enrollments); there is no
+  Active/Inactive lock. Approved no longer blocks edits. `PendingReview`
+  still blocks until task 6. An edit while an approval is active revokes it
+  (`CurriculumEdited`); `Approved` returns to `Draft`, `Active`/`Inactive`
+  keep their status (re-approval of live programs is phase 2).
+- 2026-10-01: The advisor gets one `CurriculumApprovalRevoked` notification
+  per revoke. The recorder queues it; `UnitOfWork` publishes after a save with
+  no open transaction or after `ExecuteAdvisoryTransactionAsync` commits, and
+  the interceptor/rollback path discards it on failure.
+- 2026-09-30: `MaterialService` upload/update/delete now go through
+  `CurriculumEditGuard` (previously unguarded).
+- 2026-09-30: The session message moves to the end of the stream when
+  extended; cascaded deletes and insert-driven sibling shifts are not recorded
+  separately; no concurrency token on `CurriculumVersion` (accepted race).
 
 ## Validation
 

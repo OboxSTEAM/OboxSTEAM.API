@@ -19,6 +19,7 @@ using OboxSteam.Application.Services;
 using OboxSteam.Infrastructure;
 using OboxSteam.Infrastructure.Commons;
 using OboxSteam.Infrastructure.Persistence;
+using OboxSteam.Infrastructure.Persistence.Interceptors;
 using OboxSteam.Infrastructure.Services;
 using Resend;
 using System.Text;
@@ -179,16 +180,17 @@ public static class IocContainer
 
         AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", false);
 
-        services.AddDbContext<OboxSteamDbContext>(options =>
+        services.AddDbContext<OboxSteamDbContext>((serviceProvider, options) =>
             options.UseNpgsql(connectionString, npgsql =>
-            {
-                npgsql.MigrationsAssembly(typeof(OboxSteamDbContext).Assembly.FullName);
-                // Built-in retry logic - tự động retry khi connection fail
-                npgsql.EnableRetryOnFailure(
-                    maxRetryCount: 10,
-                    maxRetryDelay: TimeSpan.FromSeconds(30),
-                    errorCodesToAdd: null);
-            })
+                {
+                    npgsql.MigrationsAssembly(typeof(OboxSteamDbContext).Assembly.FullName);
+                    // Built-in retry logic - tự động retry khi connection fail
+                    npgsql.EnableRetryOnFailure(
+                        maxRetryCount: 10,
+                        maxRetryDelay: TimeSpan.FromSeconds(30),
+                        errorCodesToAdd: null);
+                })
+                .AddInterceptors(new CurriculumChangeInterceptor(serviceProvider))
         );
 
         return services;
@@ -211,6 +213,8 @@ public static class IocContainer
         services.AddScoped<IProgramAdvisoryService, ProgramAdvisoryService>();
         services.AddScoped<IAdvisoryReferenceResolver, AdvisoryReferenceResolver>();
         services.AddScoped<IProgramAdvisoryDiscussionService, ProgramAdvisoryDiscussionService>();
+        services.AddScoped<ICurriculumChangeRecorder, CurriculumChangeRecorder>();
+        services.AddScoped<ICurriculumChangeService, CurriculumChangeService>();
         services.AddScoped<IParentService, ParentService>();
         services.AddScoped<IParentProgressionService, ParentProgressionService>();
         services.AddScoped<IPersonalVideoService, PersonalVideoService>();

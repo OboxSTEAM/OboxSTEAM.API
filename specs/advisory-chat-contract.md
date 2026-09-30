@@ -31,10 +31,19 @@ Active <--> Inactive (manager)
 
 - `ProgramStatus` values after migration: `Draft`, `Active`, `Inactive`,
   `Approved`. `PendingReview` is removed; existing rows become `Draft`.
-- Curriculum is editable only in `Draft`. In `Approved`, any curriculum
-  mutation auto-revokes the approval (`CurriculumEdited`) and the edit
-  proceeds. In `Active`/`Inactive`, curriculum mutations return
-  **409 `CURRICULUM_LOCKED_ACTIVE`**.
+- Curriculum edits are blocked only by live cohorts (`CurriculumEditGuard`):
+  any class `InProgress`, or an `Open` class with `Active` enrollments
+  (**409**). `PendingReview` stays blocked until it is removed.
+- When a curriculum edit lands while an approval is active (or the program
+  is `Approved`), the approval is auto-revoked (`CurriculumEdited`) in the
+  same save and an `ApprovalRevoked` system message is posted. `Approved`
+  returns to `Draft`; `Active`/`Inactive` keep their status (re-approval of
+  live programs is phase 2).
+- The advisor receives one `CurriculumApprovalRevoked` notification per
+  revoke. Later edits find no active approval and only extend the
+  editing-session message. The notification is queued during the save and
+  published only after commit; a failed save or rolled-back transaction
+  drops it.
 
 ## 2. Data model
 
@@ -145,11 +154,30 @@ the same transaction that increments `curriculumVersion`.
 | `changeKind` | `Created`, `Updated`, `Deleted`, `Moved`, `Reordered` |
 | `fieldsJson` | jsonb: `[{ fieldKey, before, after }]` with typed JSON values |
 | `parentBefore`, `parentAfter` | uuid? |
+| `parentBeforeLabel`, `parentAfterLabel` | string? (captured for `moved` labels) |
 | `orderBefore`, `orderAfter` | int? |
 | `labelSnapshot` | string |
-| `pathSnapshotJson` | jsonb: `[{ targetType, targetId, label }]` |
+| `pathSnapshotJson` | jsonb: `[{ targetType, targetId, label }]` (ancestors, program first) |
 
 `CurriculumChangeSeen`: `programId, userId, seenVersion` (unique on program + user).
+
+Capture rules (one save = one version):
+
+- Only whitelisted fields count (see `CurriculumChangeFieldCatalog`); audit
+  columns, price, status, framework, and advisor never bump the version.
+- Skill links are recorded on the `Program` item as field `skill:{skillId}`
+  (`false` → `true` when added). Milestone-activity links are recorded on the
+  `ResearchMilestone` item as `activityLink:{activityId}` and
+  `activityLinkRequired:{activityId}`.
+- Creating or deleting the program itself records nothing.
+- Deleting a component records only the topmost deleted component (cascaded
+  child deletes are implied).
+- Sibling order shifts caused by an insert, delete, or move under the same
+  parent are not recorded separately.
+- Seeding runs with recording suppressed.
+- No optimistic concurrency token on `curriculumVersion`: two simultaneous
+  saves can produce the same version number; consolidation still works because
+  rows are grouped by target and ordered by `(version, at)`.
 
 ### 2.7 Migration
 
@@ -468,22 +496,32 @@ Query `base`: `lastApproval` (default; falls back to `start` if never
 approved), `lastSeen`, `start`, or `version:N`. Optional `to` (default current
 version).
 
+Access: advisory participants (Manager, Admin, advisor, board experts).
+Invalid `base` or `to` → **400**.
+
 ```json
 {
   "fromVersion": 15,
   "toVersion": 17,
-  "summary": { "created": 3, "updated": 7, "deleted": 2, "moved": 0 },
+  "currentVersion": 17,
+  "seenVersion": 16,
+  "summary": { "created": 3, "updated": 7, "deleted": 2, "moved": 1 },
   "items": [
     {
-      "targetType": "activity",
+      "targetType": "Activity",
       "targetId": "uuid",
       "label": "Thí nghiệm núi lửa",
-      "path": [ { "targetType": "module", "targetId": "uuid", "label": "Học phần 1" } ],
-      "changeKind": "updated",
+      "path": [
+        { "targetType": "Program", "targetId": "uuid", "label": "Robotics" },
+        { "targetType": "Module", "targetId": "uuid", "label": "Học phần 1" },
+        { "targetType": "Course", "targetId": "uuid", "label": "Khóa 1" }
+      ],
+      "changeKind": "Updated",
       "fields": [
-        { "fieldKey": "durationMinutes", "label": "Thời lượng", "valueType": "durationMinutes", "before": 90, "after": 45 }
+        { "fieldKey": "durationMinutes", "label": "Duration", "valueType": "DurationMinutes", "before": 90, "after": 45 }
       ],
       "moved": null,
+      "reorderedChildren": [],
       "changedBy": [ { "userId": "uuid", "name": "Lan Nguyễn" } ],
       "lastChangedAt": "2026-09-30T10:00:00Z",
       "isUnseen": true
@@ -492,11 +530,18 @@ version).
 }
 ```
 
-`valueType`: `ShortText`, `LongText`, `Number`, `DurationMinutes`, `Enum`,
-`Boolean`, `List`, `Media`. `moved`:
-`{ fromParentLabel, toParentLabel, fromOrder, toOrder }`. Items are sorted in
-current tree order; deleted items follow their last known parent. `summary.moved`
-counts `Moved` and `Reordered`.
+- Enum values are PascalCase (global string enum converter). Field `label` is
+  an English default; clients may localize by `fieldKey`. Dynamic keys get
+  `Skill: {name}`, `Linked activity: {name}`, `Required before submission: {name}`.
+- `valueType`: `ShortText`, `LongText`, `Number`, `DurationMinutes`, `Enum`,
+  `Boolean`, `List`, `Media`.
+- `moved`: `{ fromParentLabel, toParentLabel, fromOrder, toOrder }`, set for
+  `Moved`, single-item `Reordered`, and `Updated` items whose order also changed.
+- `reorderedChildren`: `[{ targetType, targetId, label, fromOrder, toOrder }]`,
+  set on a parent item when two or more of its children were reordered.
+- `Created` items list their final non-null field values (`before` = null).
+- Items are sorted in current tree order; deleted items follow their deepest
+  surviving ancestor. `summary.moved` counts `Moved` and `Reordered`.
 
 ### 7.2 Net consolidation
 
@@ -506,7 +551,8 @@ counts `Moved` and `Reordered`.
 - Created then updated → `Created` with final values.
 - Created then deleted → omitted.
 - Updated then deleted → `Deleted`.
-- Several reorders under the same parent → one `Reordered` item.
+- Several reorders under the same parent → one `Reordered` item on the parent
+  (merged into the parent's own item when the parent also changed).
 - Moved to another parent (course/activity) → `Moved`.
 
 ### 7.3 `POST /api/programs/{id}/curriculum/changes/seen`
@@ -520,10 +566,18 @@ No background job. On each curriculum save by user U:
 
 - If the latest `CurriculumUpdated` message for U is less than 10 minutes old
   (from its last update) and no user message by U was posted after it, update
-  its payload (`toVersion`, `changeCount`) and bump its `editedAt`.
-- Otherwise post a new `CurriculumUpdated` system message.
+  its payload (`toVersion`, `changeCount`), bump its `editedAt`, and move it to
+  the end of the stream (new `sequence`), so it reappears as unread.
+- Otherwise post a new `CurriculumUpdated` system message with
+  `fromVersion` = the version before this save.
+- Saves without an authenticated user post no session message.
 
 `changeCount` is the net item count between `fromVersion` and `toVersion`.
+
+When an approval is active (or the program is `Approved`), the same save also
+revokes it, posts `ApprovalRevoked` (`reason = CurriculumEdited`) before the
+session message, and queues the advisor's `CurriculumApprovalRevoked`
+notification.
 
 ## 8. Realtime and notifications
 
@@ -543,7 +597,8 @@ Notification types:
 - Added: `AdvisoryDiscussionMessage` (at most one per recipient per program
   per 5 minutes; skipped when the recipient has a live connection in the
   program group — single-instance in-memory tracker), `AdvisoryMentionPinned`,
-  `CurriculumApprovalRequested`, `CurriculumApprovalRevoked`.
+  `CurriculumApprovalRequested`, `CurriculumApprovalRevoked` (advisor only,
+  once per revoke, published after commit — see section 1).
 - Kept: `CurriculumReviewApproved`, `CurriculumReviewPublished`.
 - Deprecated (no longer emitted): `CurriculumReviewSubmitted`,
   `CurriculumReviewChangesRequested`, `AdvisoryFeedbackPublished`,
@@ -567,17 +622,16 @@ is extended with `unreadCount`, `openPinCount`, `status`, `approvalState`
 
 ## 10. Error code index
 
-| Code | HTTP | Where |
-|---|---|---|
-| `CURRICULUM_VERSION_STALE` | 409 | approve, publish |
-| `APPROVAL_BLOCKED` | 409 | approve (open pins) |
-| `FRAMEWORK_CHECK_FAILED` | 409 | approve (data = `FrameworkCheckDto`) |
-| `CURRICULUM_LOCKED_ACTIVE` | 409 | any curriculum mutation on Active/Inactive |
-| `INVALID_STATUS` | 409 | lifecycle action in wrong status |
-| `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED` | 400 | approval request |
-| `MENTION_TARGET_INVALID` | 400 | post/edit message |
-| `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, `TOO_MANY_MENTIONS`, `TOO_MANY_ATTACHMENTS` | 400 | post/edit message |
-| `ATTACHMENT_INVALID`, `ATTACHMENT_TOO_LARGE`, `ATTACHMENT_TYPE_NOT_ALLOWED` | 400 | attachments |
-| `MATERIAL_ACTIVITY_INVALID` | 409 | save attachment as material |
-| `FRAMEWORK_RULES_INVALID` | 400 | framework version save |
-| `ENDPOINT_REMOVED` | 410 | removed endpoints |
+| Code                                                                             | HTTP | Where                                      |
+| ----------------------------------------------------------------------------------| ------| --------------------------------------------|
+| `CURRICULUM_VERSION_STALE`                                                       | 409  | approve, publish                           |
+| `APPROVAL_BLOCKED`                                                               | 409  | approve (open pins)                        |
+| `FRAMEWORK_CHECK_FAILED`                                                         | 409  | approve (data = `FrameworkCheckDto`)       |
+| `INVALID_STATUS`                                                                 | 409  | lifecycle action in wrong status           |
+| `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED`                                     | 400  | approval request                           |
+| `MENTION_TARGET_INVALID`                                                         | 400  | post/edit message                          |
+| `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, `TOO_MANY_MENTIONS`, `TOO_MANY_ATTACHMENTS` | 400  | post/edit message                          |
+| `ATTACHMENT_INVALID`, `ATTACHMENT_TOO_LARGE`, `ATTACHMENT_TYPE_NOT_ALLOWED`      | 400  | attachments                                |
+| `MATERIAL_ACTIVITY_INVALID`                                                      | 409  | save attachment as material                |
+| `FRAMEWORK_RULES_INVALID`                                                        | 400  | framework version save                     |
+| `ENDPOINT_REMOVED`                                                               | 410  | removed endpoints                          |

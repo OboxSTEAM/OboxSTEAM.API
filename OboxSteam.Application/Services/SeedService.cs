@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.Commons.CurriculumChanges;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Interfaces;
@@ -36,6 +37,7 @@ public partial class SeedService : ISeedService
         _seedNow = DateTime.UtcNow;
 
         using (await SeedExecutionGuard.BeginAsync())
+        using (CurriculumChangeScope.Suppress())
         {
             await SeedAllDataCoreAsync();
         }

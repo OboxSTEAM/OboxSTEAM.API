@@ -36,6 +36,8 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences { get; set; }
     public DbSet<ProgramAdvisoryDiscussionAttachment> ProgramAdvisoryDiscussionAttachments { get; set; }
     public DbSet<ProgramApproval> ProgramApprovals { get; set; }
+    public DbSet<CurriculumChange> CurriculumChanges { get; set; }
+    public DbSet<CurriculumChangeSeen> CurriculumChangeSeens { get; set; }
     public DbSet<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads { get; set; }
     public DbSet<CurriculumReviewRequirement> CurriculumReviewRequirements { get; set; }
     public DbSet<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents { get; set; }
@@ -157,6 +159,8 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ProgramAdvisoryDiscussionMessageReference>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryDiscussionAttachment>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramApproval>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CurriculumChange>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CurriculumChangeSeen>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryStreamRead>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CurriculumReviewRequirement>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryNotificationIntent>().HasQueryFilter(e => !e.IsDeleted);
@@ -770,6 +774,31 @@ public class OboxSteamDbContext : DbContext
             entity.ToTable(t => t.HasCheckConstraint(
                 "CK_ProgramApprovals_VersionRange",
                 "\"CurriculumVersion\" >= 0 AND \"FromVersion\" >= 0 AND \"FromVersion\" <= \"CurriculumVersion\""));
+        });
+
+        modelBuilder.Entity<CurriculumChange>(entity =>
+        {
+            entity.HasOne(c => c.Program).WithMany()
+                .HasForeignKey(c => c.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(c => new { c.ProgramId, c.Version })
+                .HasFilter("\"IsDeleted\" = false");
+            entity.HasIndex(c => new { c.ProgramId, c.TargetType, c.TargetId })
+                .HasFilter("\"IsDeleted\" = false");
+            entity.Property(c => c.FieldsJson).HasColumnType("jsonb");
+            entity.Property(c => c.PathSnapshotJson).HasColumnType("jsonb");
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_CurriculumChanges_VersionPositive", "\"Version\" > 0"));
+        });
+
+        modelBuilder.Entity<CurriculumChangeSeen>(entity =>
+        {
+            entity.HasOne(s => s.Program).WithMany()
+                .HasForeignKey(s => s.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(s => s.User).WithMany()
+                .HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(s => new { s.ProgramId, s.UserId })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = false");
         });
 
         modelBuilder.Entity<ProgramAdvisoryDiscussionMessageReference>(entity =>

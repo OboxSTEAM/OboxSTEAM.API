@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using System.Data;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Domain.Entities;
@@ -12,14 +13,20 @@ public class UnitOfWork : IUnitOfWork
     private readonly OboxSteamDbContext _dbContext;
     private readonly ICurrentTime _timeService;
     private readonly IClaimsService _claimsService;
+    private readonly IServiceProvider _serviceProvider;
     private readonly Dictionary<Type, object> _repositories = new();
     private bool _disposed;
 
-    public UnitOfWork(OboxSteamDbContext dbContext, ICurrentTime timeService, IClaimsService claimsService)
+    public UnitOfWork(
+        OboxSteamDbContext dbContext,
+        ICurrentTime timeService,
+        IClaimsService claimsService,
+        IServiceProvider serviceProvider)
     {
         _dbContext = dbContext;
         _timeService = timeService;
         _claimsService = claimsService;
+        _serviceProvider = serviceProvider;
     }
 
     public IGenericRepository<TEntity> Repository<TEntity>() where TEntity : BaseEntity
@@ -80,6 +87,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences => Repository<ProgramAdvisoryDiscussionMessageReference>();
     public IGenericRepository<ProgramAdvisoryDiscussionAttachment> ProgramAdvisoryDiscussionAttachments => Repository<ProgramAdvisoryDiscussionAttachment>();
     public IGenericRepository<ProgramApproval> ProgramApprovals => Repository<ProgramApproval>();
+    public IGenericRepository<CurriculumChange> CurriculumChanges => Repository<CurriculumChange>();
+    public IGenericRepository<CurriculumChangeSeen> CurriculumChangeSeens => Repository<CurriculumChangeSeen>();
     public IGenericRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads => Repository<ProgramAdvisoryStreamRead>();
     public IGenericRepository<CurriculumReviewRequirement> CurriculumReviewRequirements => Repository<CurriculumReviewRequirement>();
     public IGenericRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents => Repository<ProgramAdvisoryNotificationIntent>();
@@ -121,8 +130,20 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Notification> Notifications => Repository<Notification>();
     public async Task<int> SaveChangesAsync()
     {
-        return await _dbContext.SaveChangesAsync();
+        var saved = await _dbContext.SaveChangesAsync();
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            await FlushCurriculumNotificationsAsync();
+        }
+
+        return saved;
     }
+
+    private Task FlushCurriculumNotificationsAsync()
+        => _serviceProvider.GetService<ICurriculumChangeRecorder>()?.FlushNotificationsAsync() ?? Task.CompletedTask;
+
+    private void DiscardCurriculumNotifications()
+        => _serviceProvider.GetService<ICurriculumChangeRecorder>()?.DiscardNotifications();
 
     public async Task<TResult> ExecuteAdvisoryTransactionAsync<TResult>(Guid programId, Func<Task<TResult>> operation)
     {
@@ -146,11 +167,13 @@ public class UnitOfWork : IUnitOfWork
 
                 var result = await operation();
                 await transaction.CommitAsync();
+                await FlushCurriculumNotificationsAsync();
                 return result;
             }
             catch
             {
                 await transaction.RollbackAsync();
+                DiscardCurriculumNotifications();
                 // Clear tracked entities so a transient retry does not reuse a half-built graph.
                 _dbContext.ChangeTracker.Clear();
                 throw;

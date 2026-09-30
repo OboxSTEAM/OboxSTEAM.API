@@ -2041,6 +2041,27 @@ public static class NotificationCatalog
             entityId: programId,
             tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
 
+    public static NotificationCommand CurriculumApprovalRevoked(
+        Guid advisorUserId,
+        Guid programId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumApprovalRevoked,
+            NotificationAudience.ForUser(advisorUserId),
+            NotificationRoleTemplates.ForExpert(
+                "Chương trình đã được chỉnh sửa sau khi duyệt",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã chỉnh sửa chương trình. Phê duyệt đã bị thu hồi, vui lòng xem lại các thay đổi."
+                    : "{actorName} đã chỉnh sửa chương trình \"{programName}\". Phê duyệt đã bị thu hồi, vui lòng xem lại các thay đổi."),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
     public static NotificationCommand AdvisoryFeedbackPublished(
         Guid recipientUserId,
         Guid programId,

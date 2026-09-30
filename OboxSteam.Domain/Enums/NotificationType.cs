@@ -133,4 +133,7 @@ public enum NotificationType
     AdvisoryFeedbackPublished,
     AdvisoryReply,
     AdvisoryCorrectionAddressed,
+
+    // Versioned curriculum approval
+    CurriculumApprovalRevoked,
 }

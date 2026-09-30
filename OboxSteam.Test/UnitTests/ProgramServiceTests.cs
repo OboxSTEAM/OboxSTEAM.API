@@ -668,15 +668,15 @@ public sealed class ProgramServiceTests
     }
 
     [Fact]
-    public async Task Update_ThrowsConflict_WhenApprovedWaitingPublish()
+    public async Task Update_Succeeds_WhenApproved()
     {
         SeedProgram();
         _db.Programs.Items.Single().Status = ProgramStatus.Approved;
         var sut = CreateSut();
 
-        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Blocked" }));
-        Assert.Contains("waiting to be published", ex.Message, StringComparison.OrdinalIgnoreCase);
+        var result = await sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Renamed" });
+
+        Assert.Equal("Renamed", result.Name);
     }
 
     [Fact]

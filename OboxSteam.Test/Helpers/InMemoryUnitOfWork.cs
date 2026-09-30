@@ -58,6 +58,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences { get; } = new();
     public InMemoryRepository<ProgramAdvisoryDiscussionAttachment> ProgramAdvisoryDiscussionAttachments { get; } = new();
     public InMemoryRepository<ProgramApproval> ProgramApprovals { get; } = new();
+    public InMemoryRepository<CurriculumChange> CurriculumChanges { get; } = new();
+    public InMemoryRepository<CurriculumChangeSeen> CurriculumChangeSeens { get; } = new();
     public InMemoryRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads { get; } = new();
     public InMemoryRepository<CurriculumReviewRequirement> CurriculumReviewRequirements { get; } = new();
     public InMemoryRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents { get; } = new();
@@ -144,6 +146,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<ProgramAdvisoryDiscussionMessageReference> IUnitOfWork.ProgramAdvisoryDiscussionMessageReferences => ProgramAdvisoryDiscussionMessageReferences;
     IGenericRepository<ProgramAdvisoryDiscussionAttachment> IUnitOfWork.ProgramAdvisoryDiscussionAttachments => ProgramAdvisoryDiscussionAttachments;
     IGenericRepository<ProgramApproval> IUnitOfWork.ProgramApprovals => ProgramApprovals;
+    IGenericRepository<CurriculumChange> IUnitOfWork.CurriculumChanges => CurriculumChanges;
+    IGenericRepository<CurriculumChangeSeen> IUnitOfWork.CurriculumChangeSeens => CurriculumChangeSeens;
     IGenericRepository<ProgramAdvisoryStreamRead> IUnitOfWork.ProgramAdvisoryStreamReads => ProgramAdvisoryStreamReads;
     IGenericRepository<CurriculumReviewRequirement> IUnitOfWork.CurriculumReviewRequirements => CurriculumReviewRequirements;
     IGenericRepository<ProgramAdvisoryNotificationIntent> IUnitOfWork.ProgramAdvisoryNotificationIntents => ProgramAdvisoryNotificationIntents;
@@ -234,6 +238,8 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(ProgramAdvisoryDiscussionMessageReference) => ProgramAdvisoryDiscussionMessageReferences,
             nameof(ProgramAdvisoryDiscussionAttachment) => ProgramAdvisoryDiscussionAttachments,
             nameof(ProgramApproval) => ProgramApprovals,
+            nameof(CurriculumChange) => CurriculumChanges,
+            nameof(CurriculumChangeSeen) => CurriculumChangeSeens,
             nameof(ProgramAdvisoryStreamRead) => ProgramAdvisoryStreamReads,
             nameof(CurriculumReviewRequirement) => CurriculumReviewRequirements,
             nameof(ProgramAdvisoryNotificationIntent) => ProgramAdvisoryNotificationIntents,

@@ -97,6 +97,8 @@ public class MaterialService : IMaterialService
             throw ErrorHelper.Conflict("This activity already has a material. Delete it before uploading a new one.");
         }
 
+        await EnsureCurriculumEditableAsync(activity!);
+
         var folder   = ResolveFolder(materialType.Value);
         var fileName = $"{request.ActivityId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
         var s3Key    = $"{folder}/{fileName}";
@@ -324,6 +326,8 @@ public class MaterialService : IMaterialService
             throw ErrorHelper.NotFound("Material not found.");
         }
 
+        await EnsureCurriculumEditableAsync(material.ActivityId);
+
         if (!string.IsNullOrWhiteSpace(request.Title))
         {
             material.Title = request.Title;
@@ -359,6 +363,7 @@ public class MaterialService : IMaterialService
             throw ErrorHelper.NotFound("Material not found.");
         }
 
+        await EnsureCurriculumEditableAsync(material.ActivityId);
         await DeleteMaterialFileFromS3Async(material);
 
         await _unitOfWork.Materials.HardRemoveRange([material]);
@@ -370,6 +375,25 @@ public class MaterialService : IMaterialService
     // =========================================================================
     // Private helpers
     // =========================================================================
+
+    private async Task EnsureCurriculumEditableAsync(Guid activityId)
+    {
+        var activity = await _unitOfWork.Activities.GetByIdAsync(activityId);
+        if (activity != null)
+        {
+            await EnsureCurriculumEditableAsync(activity);
+        }
+    }
+
+    private async Task EnsureCurriculumEditableAsync(Activity activity)
+    {
+        var course = await _unitOfWork.Courses.GetByIdAsync(activity.CourseId);
+        var module = course == null ? null : await _unitOfWork.Modules.GetByIdAsync(course.ModuleId);
+        if (module != null)
+        {
+            await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, module.ProgramId);
+        }
+    }
 
     /// <summary>
     /// Notifies Open/InProgress class rosters for the material's program.

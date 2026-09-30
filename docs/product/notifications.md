@@ -161,6 +161,7 @@ service emits it.
 | `CurriculumReviewApproved`       | `ForManagers`                                                | `CurriculumReviewService`                   |
 | `CurriculumReviewChangesRequested` | `ForManagers`                                              | `CurriculumReviewService`                   |
 | `CurriculumReviewPublished`      | `ForManagers`                                                | `CurriculumReviewService`                   |
+| `CurriculumApprovalRevoked`      | Program advisor (linked login) via `ForUser`, once per revoke after a curriculum edit; published after commit | `CurriculumChangeRecorder`                  |
 | `ClassSessionExpertInvited`        | Expert via `ForUser`                                       | `ClassSessionExpertService`                 |
 | `ClassSessionExpertAccepted`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
 | `ClassSessionExpertDeclined`       | `ForManagers`                                              | `ClassSessionExpertService`                 |

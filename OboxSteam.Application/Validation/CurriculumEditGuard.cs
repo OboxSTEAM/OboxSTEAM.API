@@ -5,10 +5,10 @@ using OboxSteam.Domain.Interfaces;
 namespace OboxSteam.Application.Validation;
 
 /// <summary>
-/// Guards program and curriculum mutations while delivery cohorts are live
-/// or while the program is in expert review / waiting to publish.
-/// Locked when any class is InProgress, or any Open class has Active enrollments,
-/// or the program is PendingReview or Approved.
+/// Guards program and curriculum mutations while delivery cohorts are live or while the
+/// program is pending expert review. Locked when any class is InProgress, or any Open class
+/// has Active enrollments, or the program is PendingReview. Edits on Approved or Active
+/// programs are allowed; the change recorder revokes the approval and notifies the advisor.
 /// </summary>
 public static class CurriculumEditGuard
 {
@@ -18,8 +18,6 @@ public static class CurriculumEditGuard
             programId,
             pendingReviewMessage:
                 "Program curriculum cannot be changed while the program is pending expert review.",
-            approvedMessage:
-                "Program curriculum cannot be changed while the program is approved and waiting to be published.",
             inProgressMessage:
                 "Program curriculum cannot be changed while a class is in progress. " +
                 "Wait for in-progress classes to complete — curriculum changes apply to new cohorts.",
@@ -36,8 +34,6 @@ public static class CurriculumEditGuard
             programId,
             pendingReviewMessage:
                 "Program cannot be updated or deleted while it is pending expert review.",
-            approvedMessage:
-                "Program cannot be updated or deleted while it is approved and waiting to be published.",
             inProgressMessage:
                 "Program cannot be updated or deleted while a class is in progress. " +
                 "Wait for in-progress classes to complete.",
@@ -48,22 +44,13 @@ public static class CurriculumEditGuard
         IUnitOfWork unitOfWork,
         Guid programId,
         string pendingReviewMessage,
-        string approvedMessage,
         string inProgressMessage,
         string openEnrolledMessage)
     {
         var program = await unitOfWork.Programs.GetByIdAsync(programId);
-        if (program != null && !program.IsDeleted)
+        if (program != null && !program.IsDeleted && program.Status == ProgramStatus.PendingReview)
         {
-            if (program.Status == ProgramStatus.PendingReview)
-            {
-                throw ErrorHelper.Conflict(pendingReviewMessage);
-            }
-
-            if (program.Status == ProgramStatus.Approved)
-            {
-                throw ErrorHelper.Conflict(approvedMessage);
-            }
+            throw ErrorHelper.Conflict(pendingReviewMessage);
         }
 
         var classes = await unitOfWork.Classes.GetAllAsync(
