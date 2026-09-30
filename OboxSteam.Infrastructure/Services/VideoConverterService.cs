@@ -17,6 +17,15 @@ public class VideoConverterService : IVideoConverterService
     private const string EnvS3Bucket = "AWS_S3_BUCKET";
     private const string EnvRoleArn = "AWS_MEDIACONVERT_ROLE_ARN";
 
+    /// <summary>
+    /// Highlight outputs are locked to 1080p so the watermark sits inside the frame.
+    /// Source clips keep their aspect ratio; MediaConvert pads with black bars when needed.
+    /// </summary>
+    private const int HighlightOutputWidth = 1920;
+    private const int HighlightOutputHeight = 1080;
+    private const int WatermarkSizePx = 125;
+    private const int WatermarkMarginPx = 50;
+
     private readonly IAmazonMediaConvert _mediaConvert;
     private readonly ILogger<VideoConverterService> _logger;
 
@@ -358,6 +367,9 @@ public class VideoConverterService : IVideoConverterService
 
         if (!string.IsNullOrWhiteSpace(watermarkS3Uri))
         {
+            desc.Width = HighlightOutputWidth;
+            desc.Height = HighlightOutputHeight;
+            desc.ScalingBehavior = ScalingBehavior.DEFAULT;
             desc.VideoPreprocessors = new VideoPreprocessor
             {
                 ImageInserter = new ImageInserter
@@ -367,13 +379,10 @@ public class VideoConverterService : IVideoConverterService
                         new InsertableImage
                         {
                             ImageInserterInput = watermarkS3Uri,
-                            // Tọa độ giả định cho video 1080p (1920x1080)
-                            // ImageX = 1920 - 150 (Width) - 50 (Margin) = 1720
-                            // ImageY = 1080 - 150 (Height) - 50 (Margin) = 880
-                            ImageX = 1780,
-                            ImageY = 950,
-                            Width = 125,  // Scale down width (adjust as needed)
-                            Height = 125, // Scale down height (adjust as needed)
+                            ImageX = HighlightOutputWidth - WatermarkSizePx - WatermarkMarginPx,
+                            ImageY = HighlightOutputHeight - WatermarkSizePx - WatermarkMarginPx,
+                            Width = WatermarkSizePx,
+                            Height = WatermarkSizePx,
                             Opacity = 80,
                             Layer = 1
                         }
