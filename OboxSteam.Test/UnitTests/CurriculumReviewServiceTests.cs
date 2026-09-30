@@ -10,6 +10,9 @@ using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
 
+// Covers the legacy submission-based review flow, which still uses the obsolete PendingReview status.
+#pragma warning disable CS0618
+
 namespace OboxSteam.Test.UnitTests;
 
 public sealed class CurriculumReviewServiceTests
@@ -323,32 +326,6 @@ public sealed class CurriculumReviewServiceTests
         var sut = CreateSut(_managerId);
 
         await Assert.ThrowsAsync<ConflictException>(() => sut.WithdrawReviewAsync(_programId));
-    }
-
-    [Fact]
-    public async Task Publish_Approved_GoesToActive()
-    {
-        SeedStaffAndOwner();
-        SeedProgram(status: ProgramStatus.Approved);
-        var sut = CreateSut(_managerId);
-
-        var result = await sut.PublishAsync(_programId);
-
-        Assert.Equal(ProgramStatus.Active, result.Status);
-        var published = Assert.Single(_published);
-        Assert.Equal(NotificationType.CurriculumReviewPublished, published.Type);
-        Assert.Equal(NotificationAudienceKind.Managers, published.Audience.Kind);
-        Assert.Equal(_programId, published.Payload!.ProgramId);
-    }
-
-    [Fact]
-    public async Task Publish_NotApproved_Conflict()
-    {
-        SeedStaffAndOwner();
-        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
-        var sut = CreateSut(_managerId);
-
-        await Assert.ThrowsAsync<ConflictException>(() => sut.PublishAsync(_programId));
     }
 
     [Fact]

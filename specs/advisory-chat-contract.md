@@ -33,7 +33,8 @@ Active <--> Inactive (manager)
   `Approved`. `PendingReview` is removed; existing rows become `Draft`.
 - Curriculum edits are blocked only by live cohorts (`CurriculumEditGuard`):
   any class `InProgress`, or an `Open` class with `Active` enrollments
-  (**409**). `PendingReview` stays blocked until it is removed.
+  (**409**). Since task 6 `PendingReview` is `[Obsolete]` and no longer
+  reachable; the enum value is deleted in task 7.
 - When a curriculum edit lands while an approval is active (or the program
   is `Approved`), the approval is auto-revoked (`CurriculumEdited`) in the
   same save and an `ApprovalRevoked` system message is posted. `Approved`
@@ -185,7 +186,13 @@ Schema lands first (`AddAdvisoryChatModel`). Data steps run with the task that
 switches the behaviour: steps 2–5 with the new discussion service, step 1 with
 the new approval lifecycle, step 7 with the framework-rules change.
 
-1. `Programs.Status = 'PendingReview'` → `'Draft'`.
+1. `Programs.Status = 'PendingReview'` → `'Draft'` (migration
+   `ApprovalLifecycleRemovePendingReview`). The same migration backfills one
+   active `ProgramApproval` per existing `Approved` program: the expert and
+   time come from its latest `Approved` curriculum review (fallback: current
+   advisor, now), `CurriculumVersion` = the program's current version (so it
+   stays publishable), snapshot and framework check `{}`.
+   An `Approved` program with no identifiable expert goes back to `Draft`.
 2. For each program (migration `MigrateAdvisoryThreadsToDiscussion`): copy
    messages of the `General` advisory thread and the root message of every
    `RequiredChange` / `Suggestion` thread into
@@ -675,6 +682,11 @@ Routes stay registered, marked `[Obsolete]`, and return **410** with
 Since task 5 the advisory thread write routes (`POST {id}/advisory-threads`,
 `POST .../messages`, `POST .../actions`, `PATCH .../status`) already return
 410; thread read routes remain until task 7.
+
+Since task 6 the review write routes return 410: `POST {id}/submit-review`,
+`withdraw-review`, `approve-review`, `request-changes`,
+`PUT {id}/review-submissions/{submissionId}/draft`, and
+`GET /api/programs/review-queue`. Review read routes remain until task 7.
 
 - `POST {id}/submit-review`, `withdraw-review`, `approve-review`, `request-changes`
 - `{id}/review-submissions/*` (including `draft` and `changes`), `{id}/curriculum-reviews`

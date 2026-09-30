@@ -48,8 +48,6 @@ public static class ClassValidator
         {
             ProgramStatus.Draft =>
                 $"Program '{program.Code}' is a draft. Publish it before creating, opening, or starting classes.",
-            ProgramStatus.PendingReview =>
-                $"Program '{program.Code}' is pending expert review. Classes can only be created, opened, or started when the program is Active.",
             ProgramStatus.Approved =>
                 $"Program '{program.Code}' is approved but not published. Publish it before creating, opening, or starting classes.",
             ProgramStatus.Inactive =>

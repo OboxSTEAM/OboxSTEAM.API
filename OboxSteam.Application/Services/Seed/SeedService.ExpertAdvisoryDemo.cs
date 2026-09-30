@@ -131,7 +131,7 @@ public partial class SeedService
             SeedAdvPendingCode,
             "ADV Pending Review",
             "Scenario C: submission #1 Pending with partial review draft.",
-            ProgramStatus.PendingReview,
+            ProgramStatus.Draft,
             framework.Id,
             publishedV1.Id,
             expert001.Id);
@@ -235,7 +235,7 @@ public partial class SeedService
             submittedAt: _seedNow.AddDays(-1),
             closedAt: null);
 
-        progD.Status = ProgramStatus.PendingReview;
+        progD.Status = ProgramStatus.Draft;
         await _unitOfWork.Programs.Update(progD);
 
         await SeedAdvReviewDraftAsync(subD2, expert001.Id);
@@ -449,7 +449,7 @@ public partial class SeedService
             _seedNow.AddDays(-1),
             null);
 
-        program.Status = ProgramStatus.PendingReview;
+        program.Status = ProgramStatus.Draft;
         await _unitOfWork.Programs.Update(program);
         await SeedAdvReviewDraftAsync(submission2, expert001.Id);
         await SeedAdvResubmitThreadsAsync(

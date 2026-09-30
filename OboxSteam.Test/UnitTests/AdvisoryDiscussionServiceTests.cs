@@ -606,4 +606,15 @@ public sealed class AdvisoryDiscussionServiceTests
         Assert.Equal("MATERIAL_ACTIVITY_INVALID", foreignActivity.ErrorCode);
         _blobService.Verify(b => b.CopyObjectAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task MaterialRead_ExpertsOnlyForOwnPrograms()
+    {
+        Assert.NotNull(await Materials(_advisorUserId).GetMaterialByActivityAsync(_activityWithMaterialId));
+        Assert.NotNull(await Materials(_boardUserId).GetMaterialByActivityAsync(_activityWithMaterialId));
+        Assert.NotNull(await Materials(_managerId).GetMaterialByActivityAsync(_activityWithMaterialId));
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => Materials(_outsiderUserId).GetMaterialByActivityAsync(_activityWithMaterialId));
+    }
 }

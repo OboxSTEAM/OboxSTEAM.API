@@ -21,8 +21,11 @@ public class ProgramController : ControllerBase
     private readonly IProgramService _programService;
     private readonly ICurriculumReviewService _curriculumReviewService;
     private readonly IProgramAdvisoryService _programAdvisoryService;
+    private readonly IProgramApprovalService _programApprovalService;
     private const string ThreadsRemovedMessage =
         "Advisory threads are read-only; use the program advisory discussion (advisory-discussion/messages).";
+    private const string ReviewFlowRemovedMessage =
+        "The submission-based review flow was replaced by versioned approval; use approval/request, approval, approval/revoke, and publish.";
 
     private readonly IProgramAdvisoryDiscussionService _programAdvisoryDiscussionService;
     private readonly IProgramAdvisoryAttachmentService _programAdvisoryAttachmentService;
@@ -35,6 +38,7 @@ public class ProgramController : ControllerBase
         IProgramService programService,
         ICurriculumReviewService curriculumReviewService,
         IProgramAdvisoryService programAdvisoryService,
+        IProgramApprovalService programApprovalService,
         IProgramAdvisoryDiscussionService programAdvisoryDiscussionService,
         IProgramAdvisoryAttachmentService programAdvisoryAttachmentService,
         IEnrollmentCurriculumService enrollmentCurriculumService,
@@ -45,6 +49,7 @@ public class ProgramController : ControllerBase
         _programService = programService;
         _curriculumReviewService = curriculumReviewService;
         _programAdvisoryService = programAdvisoryService;
+        _programApprovalService = programApprovalService;
         _programAdvisoryDiscussionService = programAdvisoryDiscussionService;
         _programAdvisoryAttachmentService = programAdvisoryAttachmentService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
@@ -76,7 +81,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, PendingReview, Approved, Active, Inactive (optional). Active also requires an enrollable Open Standard class with seats.")] ProgramStatus? status = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, Approved, Active, Inactive (optional). Active also requires an enrollable Open Standard class with seats.")] ProgramStatus? status = null,
         [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)
@@ -111,7 +116,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
         [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, PendingReview, Approved, Active, Inactive (optional). Active also requires an enrollable Open Standard class with seats.")] ProgramStatus? status = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, Approved, Active, Inactive (optional). Active also requires an enrollable Open Standard class with seats.")] ProgramStatus? status = null,
         [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
         if (page < 1 || pageSize < 1)
@@ -283,28 +288,13 @@ public class ProgramController : ControllerBase
     // REVIEW QUEUE  —  GET /api/programs/review-queue
     // =========================================================================
 
+    [Obsolete("The review queue was removed; use advisory-mine.")]
     [HttpGet("review-queue")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "Curriculum review queue",
-        Description = "Experts see PendingReview programs on their program board or whose attached framework they own. Manager and Admin see all pending.")]
-    [ProducesResponseType(typeof(ApiResult<Pagination<ProgramReviewQueueItemDto>>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    public async Task<IActionResult> GetReviewQueue(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10)
-    {
-        if (page < 1 || pageSize < 1)
-        {
-            return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
-        }
-
-        var result = await _curriculumReviewService.GetReviewQueueAsync(page, pageSize);
-        return Ok(ApiResult<Pagination<ProgramReviewQueueItemDto>>.Success(
-            result, "200", "Review queue retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetReviewQueue()
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
     [HttpGet("{id:guid}/curriculum-reviews")]
     [Authorize(Roles = "Expert,Manager,Admin")]
@@ -322,61 +312,97 @@ public class ProgramController : ControllerBase
             result, "200", "Curriculum reviews retrieved successfully."));
     }
 
+    [Obsolete("Replaced by POST approval/request.")]
     [HttpPost("{id:guid}/submit-review")]
     [Authorize(Roles = "Admin,Manager")]
-    [SwaggerOperation(
-        Summary = "Submit a draft program for review",
-        Description = "Draft only. Always requires a responsible advisor with an active linked login (with or without a framework). Creates an immutable ProgramReviewSubmission, notifies the advisor, and moves to PendingReview. When a published FrameworkVersionId is pinned, framework pre-checks run; failures return machine codes ADVISOR_REQUIRED, ADVISOR_LOGIN_REQUIRED, MODULES_REQUIRED, FRAMEWORK_UNAVAILABLE, or FRAMEWORK_CHECK_FAILED.")]
-    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> SubmitForReview([FromRoute] Guid id)
-    {
-        var result = await _curriculumReviewService.SubmitForReviewAsync(id);
-        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program submitted for review."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult SubmitForReview([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
+    [Obsolete("Replaced by POST approval/revoke.")]
     [HttpPost("{id:guid}/withdraw-review")]
     [Authorize(Roles = "Admin,Manager")]
-    [SwaggerOperation(
-        Summary = "Withdraw a pending review",
-        Description = "Moves PendingReview or Approved back to Draft. No curriculum review row is created.")]
-    [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> WithdrawReview([FromRoute] Guid id)
-    {
-        var result = await _curriculumReviewService.WithdrawReviewAsync(id);
-        return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program review withdrawn."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult WithdrawReview([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
     [HttpPut("{id:guid}/advisor")]
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Assign the responsible program expert",
-        Description = "The expert must have an active linked login and is added to the program board. Pending or approved review must be withdrawn before reassignment.")]
+        Description = "The expert must have an active linked login and is added to the program board. Allowed in Draft and Approved; changing the advisor of an Approved program revokes the approval (AdvisorChanged) and returns it to Draft. Posts AdvisorChanged. Active/Inactive return 409 INVALID_STATUS.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> AssignAdvisor(
         [FromRoute] Guid id,
         [FromBody] AssignProgramAdvisorRequest request)
     {
-        var result = await _programService.AssignAdvisorAsync(id, request);
+        var result = await _programApprovalService.AssignAdvisorAsync(id, request);
         return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Responsible expert assigned."));
+    }
+
+    [HttpPost("{id:guid}/approval/request")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Ask the advisor to approve the current curriculum",
+        Description = "Draft only (409 INVALID_STATUS). Requires a responsible advisor (400 ADVISOR_REQUIRED) with an active login (400 ADVISOR_LOGIN_REQUIRED). Posts ApprovalRequested and notifies the advisor. Status is unchanged.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> RequestApproval([FromRoute] Guid id)
+    {
+        var result = await _programApprovalService.RequestApprovalAsync(id);
+        return Ok(ApiResult<ProgramAdvisoryWorkspaceDto>.Success(result, "200", "Approval requested."));
+    }
+
+    [HttpPost("{id:guid}/approval")]
+    [Authorize(Roles = "Expert")]
+    [SwaggerOperation(
+        Summary = "Approve the current curriculum version (advisor)",
+        Description = "Checks in order: caller is the advisor (403); status Draft (409 INVALID_STATUS); curriculumVersion matches (409 CURRICULUM_VERSION_STALE); no Open pins (409 APPROVAL_BLOCKED); framework check passes (409 FRAMEWORK_CHECK_FAILED with FrameworkCheckDto in value.data). Resolves Addressed pins, sets Approved, posts Approved, and notifies managers.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<FrameworkCheckDto>), 409)]
+    public async Task<IActionResult> ApproveProgram(
+        [FromRoute] Guid id,
+        [FromBody] ApproveProgramRequest request)
+    {
+        var result = await _programApprovalService.ApproveAsync(id, request);
+        return Ok(ApiResult<ProgramAdvisoryWorkspaceDto>.Success(result, "200", "Program approved."));
+    }
+
+    [HttpPost("{id:guid}/approval/revoke")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "Revoke the active approval",
+        Description = "Manager/Admin (ManagerReopened, notifies the advisor) or the advisor (ExpertRevoked, notifies managers). Approved only (409 INVALID_STATUS). Returns the program to Draft and posts ApprovalRevoked.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> RevokeApproval(
+        [FromRoute] Guid id,
+        [FromBody] RevokeProgramApprovalRequest? request = null)
+    {
+        var result = await _programApprovalService.RevokeAsync(id, request);
+        return Ok(ApiResult<ProgramAdvisoryWorkspaceDto>.Success(result, "200", "Approval revoked."));
     }
 
     [HttpPost("{id:guid}/publish")]
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Publish an approved program",
-        Description = "Moves Approved to Active. Notifies managers. Enrollment and class creation require Active.")]
+        Description = "Approved only (409 INVALID_STATUS) and the active approval must cover the current curriculumVersion (409 CURRICULUM_VERSION_STALE). Moves to Active, posts Published, and notifies managers. Enrollment and class creation require Active.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -384,53 +410,25 @@ public class ProgramController : ControllerBase
     [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> PublishProgram([FromRoute] Guid id)
     {
-        var result = await _curriculumReviewService.PublishAsync(id);
+        var result = await _programApprovalService.PublishAsync(id);
         return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program published successfully."));
     }
 
+    [Obsolete("Replaced by POST approval.")]
     [HttpPost("{id:guid}/approve-review")]
     [Authorize(Roles = "Expert")]
-    [SwaggerOperation(
-        Summary = "Approve a program as the deciding expert",
-        Description = "PendingReview → Approved. Only the assigned responsible advisor may approve. Unresolved RequiredChange threads (Open + Addressed) block approval (error code APPROVAL_BLOCKED). Submission concurrencyVersion is distinct from draft autosave tokens; stale tokens return 409.")]
-    [ProducesResponseType(typeof(ApiResult<CurriculumReviewResponseDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> ApproveReview(
-        [FromRoute] Guid id,
-        [FromBody] ApproveCurriculumReviewRequest? request = null)
-    {
-        var result = await _curriculumReviewService.ApproveAsync(id, request);
-        return Ok(ApiResult<CurriculumReviewResponseDto>.Success(result, "200", "Program approved."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult ApproveReview([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
+    [Obsolete("Replaced by pinned discussion messages.")]
     [HttpPost("{id:guid}/request-changes")]
     [Authorize(Roles = "Expert")]
-    [SwaggerOperation(
-        Summary = "Request curriculum changes",
-        Description = "PendingReview → Draft (program unlocked for edit; timeline moves to Revision). Honors requiredChangeThreadIds and idempotent clientOperationId. Submission concurrencyVersion is distinct from draft autosave tokens; stale tokens return 409 SUBMISSION_CONCURRENCY_STALE. Carried RequiredChanges remain visible across the next submission.")]
-    [ProducesResponseType(typeof(ApiResult<CurriculumReviewResponseDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> RequestChanges(
-        [FromRoute] Guid id,
-        [FromBody] RequestCurriculumChangesRequest request)
-    {
-        if (request == null)
-        {
-            return BadRequest(ApiResult<object>.Failure("400", "Request body is required."));
-        }
-
-        var result = await _curriculumReviewService.RequestChangesAsync(id, request);
-        return Ok(ApiResult<CurriculumReviewResponseDto>.Success(
-            result, "200", "Changes requested."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult RequestChanges([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
     // =========================================================================
     // ADVISORY WORKSPACE
@@ -460,11 +458,11 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Advisory workspace summary for a program",
-        Description = "Includes collaborationContractVersion 3, capabilities, a 5-stage workflow timeline with round and nextAction, outstandingRequiredCount, fixedRequiredCount, and unreadNoteCount (notes plus the general thread).")]
+        Description = "Status, curriculumVersion, participants, capabilities, the active approval, pin counts, discussion unreadCount, live frameworkCheckPassed, changesSinceApprovalCount, unseenChangeCount, and latestSequence.")]
     [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
     public async Task<IActionResult> GetAdvisoryWorkspace([FromRoute] Guid id)
     {
-        var result = await _programAdvisoryService.GetAdvisoryWorkspaceAsync(id);
+        var result = await _programApprovalService.GetWorkspaceAsync(id);
         return Ok(ApiResult<ProgramAdvisoryWorkspaceDto>.Success(
             result, "200", "Advisory workspace retrieved successfully."));
     }
@@ -902,18 +900,13 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<ProgramReviewDraftDto>.Success(result, "200", "Review draft retrieved successfully."));
     }
 
+    [Obsolete("Review drafts were removed with the submission-based review flow.")]
     [HttpPut("{id:guid}/review-submissions/{submissionId:guid}/draft")]
     [Authorize(Roles = "Expert")]
-    [SwaggerOperation(Summary = "Autosave the advisor private review draft")]
-    [ProducesResponseType(typeof(ApiResult<ProgramReviewDraftDto>), 200)]
-    public async Task<IActionResult> SaveReviewDraft(
-        [FromRoute] Guid id,
-        [FromRoute] Guid submissionId,
-        [FromBody] SaveProgramReviewDraftRequest request)
-    {
-        var result = await _curriculumReviewService.SaveDraftAsync(id, submissionId, request);
-        return Ok(ApiResult<ProgramReviewDraftDto>.Success(result, "200", "Review draft saved."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult SaveReviewDraft([FromRoute] Guid id, [FromRoute] Guid submissionId)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
     // =========================================================================
     // CREATE  —  POST /api/programs          [Admin only]
@@ -924,7 +917,7 @@ public class ProgramController : ControllerBase
     [Consumes("multipart/form-data")]
     [SwaggerOperation(
         Summary = "Create a new program",
-        Description = "Creates a new program as Draft. Use submit-review and publish to change status. Requires Admin or Manager role.")]
+        Description = "Creates a new program as Draft. Use the approval endpoints and publish to change status. Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

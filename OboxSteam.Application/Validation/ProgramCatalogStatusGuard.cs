@@ -5,8 +5,8 @@ using OboxSteam.Domain.Enums;
 namespace OboxSteam.Application.Validation;
 
 /// <summary>
-/// Catalog lifecycle on create/update. PendingReview and Approved are not
-/// writable through program CRUD — use submit-review, decision, or publish.
+/// Catalog lifecycle on create/update. Approved is not writable through program CRUD —
+/// use the approval endpoints and publish.
 /// </summary>
 public static class ProgramCatalogStatusGuard
 {
@@ -15,7 +15,7 @@ public static class ProgramCatalogStatusGuard
         if (status.HasValue && status.Value != ProgramStatus.Draft)
         {
             throw ErrorHelper.BadRequest(
-                "New programs must be created as Draft. Use submit-review and publish to change status.");
+                "New programs must be created as Draft. Use the approval flow and publish to change status.");
         }
     }
 
@@ -38,7 +38,7 @@ public static class ProgramCatalogStatusGuard
         if (!isCatalogToggle)
         {
             throw ErrorHelper.BadRequest(
-                "Program status cannot be changed via update. Use submit-review, withdraw-review, expert decision, or publish.");
+                "Program status cannot be changed via update. Use the approval endpoints or publish.");
         }
 
         program.Status = next;

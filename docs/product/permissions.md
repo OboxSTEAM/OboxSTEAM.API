@@ -96,12 +96,11 @@ Create, update, delete for:
   Manager/Admin may list and read all, not write). Create/delete stay
   Expert-only. Blueprint/criteria writes are blocked unless the framework is
   unattached or the attached program is `Draft`.
-  Curriculum review: `GET /api/programs/review-queue`,
-  `GET /api/programs/{id}/curriculum-reviews` (framework owner or board may
-  view), `POST /api/programs/{id}/approve-review`,
-  `POST /api/programs/{id}/request-changes` (framework owner when attached;
-  otherwise any one login Expert on `ProgramBoard`).
-  Manager/Admin submit, withdraw (`PendingReview` or `Approved`), and publish.
+  Curriculum approval: the program advisor approves
+  (`POST /api/programs/{id}/approval`) and may revoke
+  (`POST /api/programs/{id}/approval/revoke`). Manager/Admin request approval,
+  reopen (revoke), and publish. Legacy `GET /api/programs/{id}/curriculum-reviews`
+  stays read-only.
   Offline co-teach:
   `POST|GET /api/class-session-experts`, Expert `GET /mine`,
   `POST /{id}/accept|decline`,
@@ -116,16 +115,15 @@ Create, update, delete for:
 
 ### Expert advisory board permissions
 
-- Expert board participants may read the submission-scoped board and frozen
-  snapshot nodes, and may create Suggestion threads.
-- The responsible advisor may additionally create RequiredChange threads and
-  decide the pending assessment.
-- Manager/Admin may read the board, mark required changes fixed, and
-  acknowledge suggestions. They cannot accept a required change or decide an
-  expert assessment.
+- Participants are Manager/Admin, the program advisor, and board experts. All
+  may post in the advisory chat; experts (advisor and board) may pin and
+  resolve pins.
+- Only the advisor approves. The advisor or a Manager/Admin may revoke an
+  approval.
+- Experts read activity material only for programs they participate in (403
+  otherwise).
 - Advisory users never mutate curriculum through these endpoints. Curriculum
-  mutations remain Manager/Admin operations and are locked while a program is
-  PendingReview or Approved.
+  mutations remain Manager/Admin operations, locked only by live cohorts.
 
 ### Mentor skill visibility
 

@@ -27,15 +27,6 @@ public sealed class CurriculumEditGuardTests
     }
 
     [Fact]
-    public async Task Curriculum_Throws_WhenPendingReview()
-    {
-        SeedProgram(ProgramStatus.PendingReview);
-
-        await Assert.ThrowsAsync<ConflictException>(() =>
-            CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_db, _programId));
-    }
-
-    [Fact]
     public async Task Curriculum_Throws_WhenClassInProgress()
     {
         SeedProgram(ProgramStatus.Draft);

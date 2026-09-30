@@ -22,9 +22,9 @@ Program
 Represents a sellable STEAM track (e.g. robotics, coding). Key fields: `Code`,
 `Name`, `Category`, `Level`, `Price`, `SkillsGained`, `Rating`, `Status`.
 
-`ProgramStatus`: **Draft** (manager is authoring; not open for registration),
-**PendingReview** (submitted to the deciding expert), **Approved** (ready for
-manager publish), **Active** (published; class creation and purchase/enroll
+`ProgramStatus`: **Draft** (manager is authoring and the advisor reviews in the
+advisory chat; not open for registration), **Approved** (the advisor approved
+the current curriculum version; ready for manager publish), **Active** (published; class creation and purchase/enroll
 allowed when a recruiting cohort exists), **Inactive** (stopped; no new payment
 or pending enrollment).
 
@@ -34,100 +34,60 @@ one Standard class in **Open** with remaining seats (aligned with
 class setup / mentor / open enrollment do not appear in that list.
 
 Create via API is always **Draft** (omitted or explicit). `PUT` cannot set
-`PendingReview` or `Approved`. `Active` ↔ `Inactive` is allowed only when the
+`Approved`; only the approval endpoints move a program in or out of it. `Active` ↔ `Inactive` is allowed only when the
 program is already in one of those two catalog states. Enrollment, class
 creation, opening enrollment, and starting a class still require **Active**.
 
-Lifecycle endpoints (Manager/Admin unless noted):
+Lifecycle endpoints (Manager/Admin unless noted). Full contract:
+`specs/advisory-chat-contract.md`.
 
 - `PUT /api/programs/{id}/advisor` — assign the one responsible active Expert
-  with a linked login. Assignment adds the expert to `ProgramBoard`.
-  `PendingReview` or `Approved` must be withdrawn before reassignment.
-- `POST /api/programs/{id}/submit-review` — Draft only and requires a responsible
-  advisor with an active linked login (with or without a framework). Runs the
-  pinned published framework-version checks when present, requires at least one
-  module, creates an immutable `ProgramReviewSubmission` snapshot, notifies that
-  advisor, and moves to `PendingReview`. Machine-usable error codes include
-  `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED`, `MODULES_REQUIRED`,
-  `FRAMEWORK_UNAVAILABLE`, `FRAMEWORK_CHECK_FAILED`, and
-  `REQUIRED_CHANGES_NOT_FIXED` when any RequiredChange is still `Open`.
-- `POST /api/programs/{id}/withdraw-review` — `PendingReview` or `Approved`
-  → `Draft`. Pending submissions are closed as `Withdrawn` (draft autosave
-  blocked).
-- `POST /api/programs/{id}/publish` — `Approved` → `Active`. Notifies
-  `ForManagers` (`CurriculumReviewPublished`).
-- `GET /api/programs/review-queue` — Expert sees `PendingReview` programs for
-  which they are the responsible advisor; Manager/Admin see all pending.
+  with a linked login (`Draft` or `Approved`, else 409 `INVALID_STATUS`).
+  Assignment adds the expert to `ProgramBoard` and posts an `AdvisorChanged`
+  system message; on an `Approved` program the approval is revoked
+  (`AdvisorChanged`) and the program returns to `Draft`.
+- `POST /api/programs/{id}/approval/request` — `Draft` only; requires an
+  advisor with an active linked login (`ADVISOR_REQUIRED`,
+  `ADVISOR_LOGIN_REQUIRED`). Posts `ApprovalRequested` and notifies the
+  advisor (`CurriculumApprovalRequested`). Does not change status.
+- `POST /api/programs/{id}/approval` — advisor only (Expert). Body
+  `{ curriculumVersion, comment? }`. `Draft` only; `curriculumVersion` must
+  equal the program's (`CURRICULUM_VERSION_STALE`); no `Open` pins
+  (`APPROVAL_BLOCKED`); the live framework check must pass
+  (`FRAMEWORK_CHECK_FAILED`, check in `data`). Creates a `ProgramApproval`
+  with a curriculum snapshot, resolves `Addressed` pins, moves to `Approved`,
+  posts `Approved`, and notifies managers (`CurriculumReviewApproved`).
+- `POST /api/programs/{id}/approval/revoke` — Manager/Admin or the advisor,
+  `Approved` only; optional `{ reason }`. Revokes the active approval
+  (`ManagerReopened` / `ExpertRevoked`), returns to `Draft`, posts
+  `ApprovalRevoked`. A manager reopen notifies the advisor; an advisor revoke
+  notifies managers (`CurriculumApprovalRevoked`).
+- `POST /api/programs/{id}/publish` — `Approved` → `Active`; the active
+  approval must cover the current curriculum version
+  (`CURRICULUM_VERSION_STALE`). Notifies managers (`CurriculumReviewPublished`).
+- `GET /api/programs/{id}/advisory` — workspace: status, curriculum version,
+  advisor, participants (managers, advisor, board experts), capabilities
+  (`canPost`, `canPin`, `canResolvePin`, `canEditCurriculum`,
+  `canRequestApproval`, `canApprove`, `canRevokeApproval`, `canPublish`), the
+  active approval, pin/unread counts, `frameworkCheckPassed`, and change counts
+  since the last approval.
 - `GET /api/programs/advisory-mine` — paginated assigned advisory programs
-  (advisor/board for Expert; all for Manager/Admin) with unread counts and
-  next actions.
-- `GET /api/programs/{id}/advisory` — workspace summary: `collaborationContractVersion`
-  `3`, `capabilities`, a 5-stage server `workflow` timeline (`Preparation`,
-  `Review`, `Revision`, `AwaitingPublication`, `Published`) with `round` and
-  per-user `nextAction`, `outstandingRequiredCount` (Open + Addressed
-  RequiredChanges; matches `scope=outstanding`), `fixedRequiredCount`
-  (Addressed only), `unreadNoteCount` (notes and the general thread),
-  `pendingSubmission` / `latestSubmission`, and `reviewActionsLocked`.
-- `GET /api/programs/advisory-anchor-fields` — published allowlist of
-  `targetType` + `fieldKey` (+ `label`) for note anchors and references.
-- `GET /api/programs/{id}/advisory/board?submissionId=${uuid}` — the
-  submission-scoped hybrid board aggregate: immutable curriculum tree, thread
-  pins, revision summary, and framework highlights.
+  (advisor/board for Expert; all for Manager/Admin).
 - `GET /api/programs/{id}/framework-check` — structured expected/actual checks
   against the pinned framework version.
-- `GET|POST /api/programs/{id}/advisory-threads` — Suggestion, RequiredChange,
-  and one get-or-create `General` thread pinned on unfiltered reads. Reads
-  support `submissionId`, `scope=outstanding` (unresolved RequiredChanges
-  across rounds with origin round labels), and node/status/type filters.
-  Review-time creates require `submissionId`. Field anchors must use
-  allowlisted keys. Only the responsible advisor creates RequiredChange.
-  Each thread returns `availableActions` and a live `targetPath`
-  (`moduleId` / `courseId` / `activityId` / `assignmentId`) plus `targetExists`.
-  Material targets resolve to the owning activity. `MarkFixed` is offered only
-  while the program is `Draft`.
-- `GET /api/programs/{id}/advisory-threads/pins?submissionId=${uuid}` —
-  submission-scoped open-required/open-suggestion counts by curriculum node.
-- `GET|POST /api/programs/{id}/advisory-threads/{threadId}/messages`
-- `GET /api/programs/{id}/advisory-threads/{threadId}` — full thread with ordered
-  `events` and `messages` (avoid double-rendering `MessageAdded` against a
-  separate message list).
-- `POST /api/programs/{id}/advisory-threads/{threadId}/actions` — `MarkFixed`
-  (Manager/Admin, open RequiredChange, Draft only), `Acknowledge` (Manager/Admin
-  or the author, open Suggestion), `Accept` (responsible advisor, open or
-  Addressed RequiredChange). Message is optional. Returns the full thread.
-  Requires `concurrencyVersion`; `clientOperationId` is idempotent.
-- `PATCH /api/programs/{id}/advisory-threads/{threadId}/status` — obsolete.
-  Waive is rejected (`ADVISORY_WAIVE_REMOVED`).
-- `GET|POST /api/programs/{id}/advisory-discussion/*` — obsolete. Discussion
-  is the program `General` thread.
-- `POST /api/programs/{id}/advisory-read` — legacy program last-read (does not
-  clear independent note/discussion stream cursors).
-- `GET /api/programs/{id}/review-submissions` (+ `/{submissionId}`,
-  `/{submissionId}/changes`, `/{submissionId}/draft` GET|PUT) — submission
-  snapshots, revision diffs, and private advisor draft autosave (`409` on
-  stale concurrency; draft tokens are distinct from submission decide tokens).
-- `GET /api/programs/{id}/curriculum-reviews` — decision history (framework
-  owner, board experts, and Manager/Admin). Legacy rows report
-  `snapshotAvailable=false`.
-- `POST /api/programs/{id}/approve-review` — only the assigned responsible
-  expert. Outstanding RequiredChange threads are accepted in the same
-  transaction (`Accepted on approval`). No scores (the rubric was removed).
-  `PendingReview` → `Approved`. Notifies `ForManagers`
-  (`CurriculumReviewApproved`). Payload `programId` is the deeplink.
-- `POST /api/programs/{id}/request-changes` — same actor as approve;
-  `PendingReview` → `Draft`. `comment` is optional when RequiredChanges are
-  already outstanding and required when none are (the comment becomes a new
-  program-level RequiredChange). Every Addressed RequiredChange returns to
-  Open with a `Chưa đạt ở lần N` event. Idempotent `clientOperationId`.
-  Notifies
-  `ForManagers` (`CurriculumReviewChangesRequested`); inbox body includes the
-  expert comment; payload `programId` is the deeplink.
+- Advisory chat: `/api/programs/{id}/advisory-discussion/*` (messages,
+  mentions, pins, attachments).
+- Removed (410 `ENDPOINT_REMOVED`): `submit-review`, `withdraw-review`,
+  `approve-review`, `request-changes`, `PUT review-submissions/{id}/draft`,
+  `GET review-queue`, and the advisory thread write routes. The old review and
+  thread read routes stay read-only until they are removed.
 
-Curriculum structure (and program metadata update/delete) is locked while
-`PendingReview` or `Approved`. After `ChangesRequested` the program is `Draft`
-again and can be edited. Optional `frameworkId` on create/update selects an
-expert blueprint (`clearFramework` unlinks). Pre-check runs at submit-review,
-not on create/update.
+Curriculum edits are locked only by live cohorts (a class `InProgress`, or an
+`Open` class with `Active` enrollments). An edit while an approval is active
+revokes it (`CurriculumEdited`); an `Approved` program returns to `Draft`.
+Optional `frameworkId` on create/update selects an expert blueprint
+(`clearFramework` unlinks). The framework check runs at approval, not on
+create/update.
 
 ## Module
 
@@ -301,8 +261,9 @@ one material per activity. LiveOnline and Offline activities do not have materia
 
 Types via `MaterialType` enum. API: `/api/materials`.
 
-Material files are not public while a program is `Draft`, `PendingReview`, or
-`Approved`. Experts, Managers, and Admins can receive an authorized preview;
+Material files are not public while a program is `Draft` or `Approved`.
+Managers and Admins can receive an authorized preview; Experts only for
+programs where they are the advisor or a board member (else 403);
 students use enrollment-scoped access. Once a program is `Active`, the activity
 material endpoint may be called without enrollment and returns a time-limited
 preview URL. The S3 `materials/*` prefix is excluded from the bucket's anonymous

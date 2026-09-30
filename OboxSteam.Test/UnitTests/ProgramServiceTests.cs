@@ -656,18 +656,6 @@ public sealed class ProgramServiceTests
     }
 
     [Fact]
-    public async Task Update_ThrowsConflict_WhenPendingReview()
-    {
-        SeedProgram();
-        _db.Programs.Items.Single().Status = ProgramStatus.PendingReview;
-        var sut = CreateSut();
-
-        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
-            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Blocked" }));
-        Assert.Contains("pending expert review", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
     public async Task Update_Succeeds_WhenApproved()
     {
         SeedProgram();
@@ -772,37 +760,6 @@ public sealed class ProgramServiceTests
 
         Assert.Null(result.FrameworkId);
         Assert.Null(_db.Programs.Items.Single().FrameworkId);
-    }
-
-    [Fact]
-    public async Task AssignAdvisor_AddsResponsibleExpertToBoard()
-    {
-        SeedProgram();
-        _db.Users.Seed(new User
-        {
-            Id = _expertUserId, Code = "USR-EXP", Email = "expert@test.local",
-            Role = RoleType.Expert, Status = AccountStatus.Active,
-        });
-        _db.Experts.Seed(new Expert
-        {
-            Id = _expertId, Code = "EXP", FullName = "Expert", UserId = _expertUserId,
-        });
-
-        var result = await CreateSut().AssignAdvisorAsync(
-            _programId, new AssignProgramAdvisorRequest { AdvisorExpertId = _expertId });
-
-        Assert.Equal(_expertId, result.AdvisorExpertId);
-        Assert.Single(_db.ProgramBoards.Items, b => b.ProgramId == _programId && b.ExpertId == _expertId);
-    }
-
-    [Fact]
-    public async Task AssignAdvisor_PendingReviewRequiresWithdrawal()
-    {
-        SeedProgram();
-        _db.Programs.Items.Single().Status = ProgramStatus.PendingReview;
-
-        await Assert.ThrowsAsync<ConflictException>(() => CreateSut().AssignAdvisorAsync(
-            _programId, new AssignProgramAdvisorRequest { AdvisorExpertId = _expertId }));
     }
 
     [Fact]

@@ -493,7 +493,7 @@ public class ProgramService : IProgramService
         var (frameworkId, frameworkVersionId) = await ResolveFrameworkAssignmentAsync(
             request.FrameworkId,
             request.FrameworkVersionId);
-        var advisorExpertId = await ResolveAdvisorIdAsync(request.AdvisorExpertId);
+        var advisorExpertId = (await ProgramAdvisorResolver.ResolveAsync(_unitOfWork, request.AdvisorExpertId))?.Id;
 
         var program = new Program
         {
@@ -871,48 +871,6 @@ public class ProgramService : IProgramService
         }
 
         return false;
-    }
-
-    private async Task<Guid?> ResolveAdvisorIdAsync(Guid? advisorExpertId)
-    {
-        if (!advisorExpertId.HasValue) return null;
-        if (advisorExpertId.Value == Guid.Empty) throw ErrorHelper.BadRequest("AdvisorExpertId cannot be empty.");
-        var expert = await _unitOfWork.Experts.GetByIdAsync(advisorExpertId.Value);
-        if (expert == null || expert.IsDeleted || !expert.UserId.HasValue)
-            throw ErrorHelper.BadRequest("Advisor must be an active expert with a linked login.");
-        var user = await _unitOfWork.Users.GetByIdAsync(expert.UserId.Value);
-        if (user == null || user.IsDeleted || user.Role != RoleType.Expert || user.Status != AccountStatus.Active)
-            throw ErrorHelper.BadRequest("Advisor must be an active expert with a linked login.");
-        return expert.Id;
-    }
-
-    public async Task<ProgramsResponseDto> AssignAdvisorAsync(Guid id, AssignProgramAdvisorRequest request)
-        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
-            id,
-            () => AssignAdvisorCoreAsync(id, request));
-
-    private async Task<ProgramsResponseDto> AssignAdvisorCoreAsync(Guid id, AssignProgramAdvisorRequest request)
-    {
-        var program = await _unitOfWork.Programs.GetByIdAsync(id);
-        if (program == null || program.IsDeleted) throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
-        if (program.Status is ProgramStatus.PendingReview or ProgramStatus.Approved)
-            throw ErrorHelper.Conflict("Withdraw the current review before reassigning the responsible expert.");
-        var advisorId = await ResolveAdvisorIdAsync(request.AdvisorExpertId)
-            ?? throw ErrorHelper.BadRequest("AdvisorExpertId is required.");
-        program.AdvisorExpertId = advisorId;
-        var board = await _unitOfWork.ProgramBoards.FirstOrDefaultAsync(
-            b => b.ProgramId == program.Id && b.ExpertId == advisorId && !b.IsDeleted);
-        if (board == null)
-        {
-            await _unitOfWork.ProgramBoards.AddAsync(new ProgramBoard
-            {
-                Id = Guid.NewGuid(), ProgramId = program.Id, ExpertId = advisorId,
-                RoleInBoard = "Responsible advisor",
-            });
-        }
-        await _unitOfWork.Programs.Update(program);
-        await _unitOfWork.SaveChangesAsync();
-        return await GetProgramByIdAsync(program.Id);
     }
 
     // =========================================================================

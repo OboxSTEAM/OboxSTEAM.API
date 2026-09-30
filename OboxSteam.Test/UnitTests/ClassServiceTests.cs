@@ -567,7 +567,6 @@ public sealed class ClassServiceTests
 
     [Theory]
     [InlineData(ProgramStatus.Draft)]
-    [InlineData(ProgramStatus.PendingReview)]
     [InlineData(ProgramStatus.Approved)]
     [InlineData(ProgramStatus.Inactive)]
     public async Task Create_Throws_WhenProgramNotActive(ProgramStatus status)
@@ -838,7 +837,6 @@ public sealed class ClassServiceTests
 
     [Theory]
     [InlineData(ProgramStatus.Draft)]
-    [InlineData(ProgramStatus.PendingReview)]
     [InlineData(ProgramStatus.Approved)]
     [InlineData(ProgramStatus.Inactive)]
     public async Task Open_Throws_WhenProgramNotActive(ProgramStatus status)
@@ -885,7 +883,6 @@ public sealed class ClassServiceTests
 
     [Theory]
     [InlineData(ProgramStatus.Draft)]
-    [InlineData(ProgramStatus.PendingReview)]
     [InlineData(ProgramStatus.Approved)]
     [InlineData(ProgramStatus.Inactive)]
     public async Task Start_Throws_WhenProgramNotActive(ProgramStatus status)

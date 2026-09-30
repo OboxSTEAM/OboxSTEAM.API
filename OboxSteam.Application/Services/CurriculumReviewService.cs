@@ -13,6 +13,9 @@ using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
 
+// Legacy submission-based review flow; it still reads the obsolete PendingReview status.
+#pragma warning disable CS0618
+
 namespace OboxSteam.Application.Services;
 
 public sealed class CurriculumReviewService : ICurriculumReviewService
@@ -193,40 +196,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             "[WithdrawReview] Program {ProgramId} withdrawn to Draft by {UserId}.",
             program.Id,
             actor.Id);
-
-        return await _programService.GetProgramByIdAsync(programId);
-    }
-
-    public async Task<ProgramsResponseDto> PublishAsync(Guid programId)
-        => await _unitOfWork.ExecuteAdvisoryTransactionAsync(
-            programId,
-            () => PublishCoreAsync(programId));
-
-    private async Task<ProgramsResponseDto> PublishCoreAsync(Guid programId)
-    {
-        var actor = await RequireManagerOrAdminAsync();
-        var program = await GetActiveProgramAsync(programId);
-
-        if (program.Status != ProgramStatus.Approved)
-        {
-            throw ErrorHelper.Conflict("Only Approved programs can be published.");
-        }
-
-        program.Status = ProgramStatus.Active;
-        await _unitOfWork.Programs.Update(program);
-        await _unitOfWork.SaveChangesAsync();
-
-        _logger.LogInformation(
-            "[Publish] Program {ProgramId} published to Active by {UserId}.",
-            program.Id,
-            actor.Id);
-
-        await _notificationPublisher.PublishAsync(
-            NotificationCatalog.CurriculumReviewPublished(
-                program.Id,
-                actor.Id,
-                program.Name,
-                DisplayName(actor)));
 
         return await _programService.GetProgramByIdAsync(programId);
     }
@@ -549,28 +518,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     {
         await ResolveReviewActorAsync();
         var program = await GetActiveProgramAsync(programId);
-        var dto = new FrameworkCheckDto
-        {
-            ProgramId = program.Id,
-            FrameworkVersionId = program.FrameworkVersionId,
-            AllPassed = true,
-        };
-
-        if (!program.FrameworkVersionId.HasValue)
-        {
-            return dto;
-        }
-
-        var version = await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value);
-        if (version == null || version.IsDeleted || !version.IsPublished)
-        {
-            throw ErrorHelper.Conflict("The assigned framework version is unavailable or not published.");
-        }
-
-        var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
-        dto.Checks = await FrameworkRuleEvaluator.EvaluateAsync(_unitOfWork, version, snapshot);
-        dto.AllPassed = dto.Checks.TrueForAll(c => c.Passed);
-        return dto;
+        return await ProgramFrameworkCheck.RunAsync(_unitOfWork, program);
     }
 
     public async Task<IReadOnlyList<ProgramReviewSubmissionSummaryDto>> GetSubmissionsAsync(Guid programId)

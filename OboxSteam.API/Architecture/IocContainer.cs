@@ -217,6 +217,7 @@ public static class IocContainer
         services.AddScoped<IProgramAdvisoryAttachmentService, ProgramAdvisoryAttachmentService>();
         services.AddScoped<ICurriculumChangeRecorder, CurriculumChangeRecorder>();
         services.AddScoped<ICurriculumChangeService, CurriculumChangeService>();
+        services.AddScoped<IProgramApprovalService, ProgramApprovalService>();
         services.AddScoped<IParentService, ParentService>();
         services.AddScoped<IParentProgressionService, ParentProgressionService>();
         services.AddScoped<IPersonalVideoService, PersonalVideoService>();

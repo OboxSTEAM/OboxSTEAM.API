@@ -2,8 +2,8 @@ namespace OboxSteam.Domain.Enums;
 
 /// <summary>
 /// Catalog lifecycle for a program. Stored as text via EF string enum conversion.
-/// Aligns with FE: Draft (bản nháp), PendingReview (chờ expert duyệt),
-/// Approved (đã duyệt, chờ publish), Active (đang mở), Inactive (ngừng hoạt động).
+/// Aligns with FE: Draft (bản nháp), Approved (đã duyệt, chờ publish),
+/// Active (đang mở), Inactive (ngừng hoạt động).
 /// </summary>
 public enum ProgramStatus
 {
@@ -16,9 +16,13 @@ public enum ProgramStatus
     /// <summary>Stopped; no new registration or purchase.</summary>
     Inactive = 2,
 
-    /// <summary>Submitted for expert review; curriculum and program edits are locked.</summary>
+    /// <summary>Removed from the lifecycle; existing rows are migrated to Draft.</summary>
+    [Obsolete("PendingReview was removed from the approval lifecycle. Programs stay Draft until the advisor approves.")]
     PendingReview = 3,
 
-    /// <summary>Ready for manager publish; curriculum and program edits stay locked.</summary>
+    /// <summary>
+    /// The advisor approved the current curriculum version; ready for manager publish.
+    /// Curriculum edits revoke the approval and return the program to Draft.
+    /// </summary>
     Approved = 4,
 }

@@ -157,11 +157,12 @@ service emits it.
 | `MaterialUpdated`                | `ForClassRoster`                                             | `MaterialService`                           |
 | `AssignmentEditedByMentor`       | `ForManagers`                                                | `AssignmentService`                         |
 | `ClassQuizSetEditedByMentor`     | `ForManagers`                                                | `ClassQuizQuestionSetService`               |
-| `CurriculumReviewSubmitted`      | Framework owner via `ForUser` when `FrameworkId` is set; otherwise each login `ProgramBoard` expert via `ForUser` | `CurriculumReviewService`                   |
-| `CurriculumReviewApproved`       | `ForManagers`                                                | `CurriculumReviewService`                   |
-| `CurriculumReviewChangesRequested` | `ForManagers`                                              | `CurriculumReviewService`                   |
-| `CurriculumReviewPublished`      | `ForManagers`                                                | `CurriculumReviewService`                   |
-| `CurriculumApprovalRevoked`      | Program advisor (linked login) via `ForUser`, once per revoke after a curriculum edit; published after commit | `CurriculumChangeRecorder`                  |
+| `CurriculumReviewSubmitted`      | Legacy (submit-review removed); no longer sent               | —                                           |
+| `CurriculumReviewChangesRequested` | Legacy (request-changes removed); no longer sent           | —                                           |
+| `CurriculumApprovalRequested`    | Program advisor (linked login) via `ForUser`                 | `ProgramApprovalService`                    |
+| `CurriculumReviewApproved`       | `ForManagers`                                                | `ProgramApprovalService`                    |
+| `CurriculumReviewPublished`      | `ForManagers`                                                | `ProgramApprovalService`                    |
+| `CurriculumApprovalRevoked`      | Program advisor via `ForUser` after a curriculum edit (`CurriculumChangeRecorder`, published after commit) or a manager reopen; `ForManagers` when the advisor revokes. None on advisor change | `CurriculumChangeRecorder`, `ProgramApprovalService` |
 | `ClassSessionExpertInvited`        | Expert via `ForUser`                                       | `ClassSessionExpertService`                 |
 | `ClassSessionExpertAccepted`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
 | `ClassSessionExpertDeclined`       | `ForManagers`                                              | `ClassSessionExpertService`                 |

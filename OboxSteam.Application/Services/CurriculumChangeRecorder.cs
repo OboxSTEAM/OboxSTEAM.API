@@ -378,10 +378,11 @@ public sealed class CurriculumChangeRecorder : ICurriculumChangeRecorder
 
         var pathParentType = state == CurriculumEntryState.Deleted ? beforeParentType : afterParentType;
         var pathParentId = state == CurriculumEntryState.Deleted ? beforeParentId : afterParentId;
-        List<CurriculumPathSegment> path = entity is Program
+        var program = entity as Program;
+        List<CurriculumPathSegment> path = program != null
             ? []
             : await lookup.PathToAsync(pathParentType, pathParentId);
-        var programId = entity is Program program
+        var programId = program != null
             ? program.Id
             : path.FirstOrDefault(s => s.TargetType == ProgramAdvisoryTargetType.Program)?.TargetId;
         if (programId == null)

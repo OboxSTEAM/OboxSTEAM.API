@@ -28,6 +28,10 @@ public static class ErrorHelper
     public static Exception Conflict(string message = "A conflict occurred.", string? errorCode = null)
         => new ConflictException(message, errorCode);
 
+    /// <summary>409 with structured detail returned in <c>value.data</c>.</summary>
+    public static Exception Conflict(string message, string errorCode, object payload)
+        => new ConflictException(message, errorCode) { Payload = payload };
+
     /// <summary>410 — Resource or API surface permanently removed.</summary>
     public static Exception Gone(string message = "This resource is no longer available.", string? errorCode = null)
         => new GoneException(message, errorCode);

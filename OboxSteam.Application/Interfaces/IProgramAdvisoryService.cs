@@ -12,8 +12,6 @@ public interface IProgramAdvisoryService
         ProgramStatus? status = null,
         bool unreadOnly = false);
 
-    Task<ProgramAdvisoryWorkspaceDto> GetAdvisoryWorkspaceAsync(Guid programId);
-
     Task<AdvisoryWorkflowTimelineDto> GetWorkflowTimelineAsync(Guid programId);
 
     Task<IReadOnlyList<AdvisoryThreadDto>> GetThreadsAsync(

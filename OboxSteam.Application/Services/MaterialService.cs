@@ -346,11 +346,31 @@ public class MaterialService : IMaterialService
         var activity = await _unitOfWork.Activities.GetByIdAsync(activityId);
         MaterialValidator.ValidateActivityExists(activity, activityId);
         MaterialValidator.ValidateSelfPacedOnly(activity!);
+        await EnsureExpertIsProgramParticipantAsync(activity!);
 
         var material = await _unitOfWork.Materials.FirstOrDefaultAsync(
             m => m.ActivityId == activityId);
 
         return material == null ? null : await MapToPresignedDtoAsync(material);
+    }
+
+    /// <summary>Experts read material only for programs where they are the advisor or a board member.</summary>
+    private async Task EnsureExpertIsProgramParticipantAsync(Activity activity)
+    {
+        var user = await _unitOfWork.Users.GetByIdAsync(_claimsService.GetCurrentUserId);
+        if (user?.Role != RoleType.Expert)
+        {
+            return;
+        }
+
+        var course = await _unitOfWork.Courses.GetByIdAsync(activity.CourseId);
+        var module = course == null ? null : await _unitOfWork.Modules.GetByIdAsync(course.ModuleId);
+        if (module == null)
+        {
+            throw ErrorHelper.Forbidden("You are not a member of this program advisory team.");
+        }
+
+        await AdvisoryParticipantAccess.RequireAsync(_unitOfWork, _claimsService, module.ProgramId);
     }
 
     /// <inheritdoc />

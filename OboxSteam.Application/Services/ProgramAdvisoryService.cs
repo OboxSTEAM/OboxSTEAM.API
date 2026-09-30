@@ -9,6 +9,9 @@ using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
 
+// Legacy thread-based advisory flow; it still reads the obsolete PendingReview status.
+#pragma warning disable CS0618
+
 namespace OboxSteam.Application.Services;
 
 public sealed class ProgramAdvisoryService : IProgramAdvisoryService
@@ -145,114 +148,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             .ToList();
         var pageItems = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         return new Pagination<AdvisoryMineItemDto>(pageItems, ordered.Count, page, pageSize);
-    }
-
-    public async Task<ProgramAdvisoryWorkspaceDto> GetAdvisoryWorkspaceAsync(Guid programId)
-    {
-        var (program, actor, _, isAdvisor, isBoard, canStaff) = await RequireAdvisoryAccessAsync(programId);
-        await EnsureGeneralThreadAsync(program, actor);
-        var participants = await BuildParticipantsAsync(program);
-        var threads = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
-            t => t.ProgramId == program.Id && !t.IsDeleted);
-        var counts = BuildFeedbackCounts(threads);
-
-        var allSubmissions = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
-            s => s.ProgramId == program.Id && !s.IsDeleted);
-        var latestSubmission = allSubmissions
-            .OrderByDescending(s => s.SubmissionNumber)
-            .FirstOrDefault();
-        var pendingSubmission = allSubmissions
-            .Where(s => s.Status == ProgramReviewSubmissionStatus.Pending)
-            .OrderByDescending(s => s.SubmissionNumber)
-            .FirstOrDefault();
-        var workflow = await BuildWorkflowTimelineAsync(
-            program, isAdvisor, canStaff, allSubmissions, threads);
-
-        var read = await _unitOfWork.ProgramAdvisoryReads.FirstOrDefaultAsync(
-            r => r.ProgramId == program.Id && r.UserId == actor.Id && !r.IsDeleted);
-        var threadReads = await _unitOfWork.ProgramAdvisoryStreamReads.GetAllAsync(
-            r => r.ProgramId == program.Id
-                 && r.UserId == actor.Id
-                 && r.StreamType == AdvisoryStreamType.Thread
-                 && !r.IsDeleted);
-        var openRequired = threads.Count(t =>
-            t.Type == ProgramAdvisoryThreadType.RequiredChange
-            && t.Status != ProgramAdvisoryThreadStatus.Resolved);
-        var fixedRequired = threads.Count(t =>
-            t.Type == ProgramAdvisoryThreadType.RequiredChange
-            && t.Status == ProgramAdvisoryThreadStatus.Addressed);
-        var capabilities = BuildCapabilities(program, actor, isAdvisor, isBoard, canStaff);
-        var reviewActionsLocked = program.Status is ProgramStatus.Approved or ProgramStatus.Active or ProgramStatus.Inactive;
-        var unreadNoteCount = threads.Count(t =>
-        {
-            if (t.Type == ProgramAdvisoryThreadType.General && t.LatestActivitySequence == 0)
-            {
-                return false;
-            }
-
-            var threadRead = threadReads.FirstOrDefault(r => r.ThreadId == t.Id)?.LastReadSequence;
-            return t.LatestActivitySequence > 0
-                ? (!threadRead.HasValue || threadRead.Value < t.LatestActivitySequence)
-                : (read == null || t.LastMessageAt > read.LastReadAt);
-        });
-
-        int? versionNumber = null;
-        if (program.FrameworkVersionId.HasValue)
-        {
-            var version = await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value);
-            versionNumber = version?.VersionNumber;
-        }
-
-        string? advisorName = null;
-        if (program.AdvisorExpertId.HasValue)
-        {
-            var advisor = await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value);
-            advisorName = advisor?.FullName;
-        }
-
-        var hasUnread = threads.Any(t => read == null || t.LastMessageAt > read.LastReadAt);
-
-        return new ProgramAdvisoryWorkspaceDto
-        {
-            ProgramId = program.Id,
-            Code = program.Code,
-            Name = program.Name,
-            Status = program.Status,
-            AdvisorExpertId = program.AdvisorExpertId,
-            AdvisorName = advisorName,
-            FrameworkVersionId = program.FrameworkVersionId,
-            FrameworkVersionNumber = versionNumber,
-            Participants = participants,
-            Capabilities = capabilities,
-            Workflow = workflow,
-            OutstandingRequiredCount = openRequired,
-            FixedRequiredCount = fixedRequired,
-            OpenRequiredChangeCount = threads.Count(t =>
-                t.Type == ProgramAdvisoryThreadType.RequiredChange
-                && t.Status == ProgramAdvisoryThreadStatus.Open),
-            AddressedRequiredChangeCount = threads.Count(t =>
-                t.Type == ProgramAdvisoryThreadType.RequiredChange
-                && t.Status == ProgramAdvisoryThreadStatus.Addressed),
-            UnreadNoteCount = unreadNoteCount,
-            PendingSubmission = pendingSubmission == null ? null : MapSubmissionSummary(pendingSubmission),
-            ReviewActionsLocked = reviewActionsLocked,
-            LatestSubmission = latestSubmission == null
-                ? null
-                : new ProgramReviewSubmissionSummaryDto
-                {
-                    Id = latestSubmission.Id,
-                    SubmissionNumber = latestSubmission.SubmissionNumber,
-                    Status = latestSubmission.Status,
-                    ReviewRoundIntent = latestSubmission.ReviewRoundIntent,
-                    AssignedAdvisorExpertId = latestSubmission.AssignedAdvisorExpertId,
-                    FrameworkVersionId = latestSubmission.FrameworkVersionId,
-                    SubmittedAt = latestSubmission.SubmittedAt,
-                    ClosedAt = latestSubmission.ClosedAt,
-                    ConcurrencyVersion = latestSubmission.ConcurrencyVersion,
-                },
-            FeedbackCounts = counts,
-            HasUnreadFeedback = hasUnread,
-        };
     }
 
     public async Task<IReadOnlyList<AdvisoryThreadDto>> GetThreadsAsync(
@@ -1841,52 +1736,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         }
     }
 
-    private async Task<List<AdvisoryParticipantDto>> BuildParticipantsAsync(Program program)
-    {
-        var result = new List<AdvisoryParticipantDto>();
-        if (program.AdvisorExpertId.HasValue)
-        {
-            var advisor = await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value);
-            if (advisor is { IsDeleted: false, UserId: not null })
-            {
-                result.Add(new AdvisoryParticipantDto
-                {
-                    UserId = advisor.UserId.Value,
-                    ExpertId = advisor.Id,
-                    DisplayName = advisor.FullName,
-                    Role = "Advisor",
-                    IsAdvisor = true,
-                });
-            }
-        }
-
-        var boards = await _unitOfWork.ProgramBoards.GetAllAsync(
-            b => b.ProgramId == program.Id && !b.IsDeleted);
-        var expertIds = boards.Select(b => b.ExpertId).Distinct().ToList();
-        if (expertIds.Count > 0)
-        {
-            var experts = await _unitOfWork.Experts.GetAllAsync(e => expertIds.Contains(e.Id) && !e.IsDeleted);
-            foreach (var expert in experts)
-            {
-                if (!expert.UserId.HasValue || result.Any(p => p.ExpertId == expert.Id))
-                {
-                    continue;
-                }
-
-                result.Add(new AdvisoryParticipantDto
-                {
-                    UserId = expert.UserId.Value,
-                    ExpertId = expert.Id,
-                    DisplayName = expert.FullName,
-                    Role = "BoardExpert",
-                    IsAdvisor = false,
-                });
-            }
-        }
-
-        return result;
-    }
-
     private async Task<AdvisoryWorkflowTimelineDto> BuildWorkflowTimelineAsync(
         Program program,
         bool isAdvisor,
@@ -2048,25 +1897,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         return stage < currentStage
             ? AdvisoryWorkflowStageState.Completed
             : AdvisoryWorkflowStageState.Upcoming;
-    }
-
-    private static AdvisoryFeedbackCountsDto BuildFeedbackCounts(IReadOnlyList<ProgramAdvisoryThread> threads)
-    {
-        return new AdvisoryFeedbackCountsDto
-        {
-            OpenSuggestions = threads.Count(t =>
-                t.Type == ProgramAdvisoryThreadType.Suggestion && t.Status == ProgramAdvisoryThreadStatus.Open),
-            AddressedSuggestions = threads.Count(t =>
-                t.Type == ProgramAdvisoryThreadType.Suggestion && t.Status == ProgramAdvisoryThreadStatus.Addressed),
-            ResolvedSuggestions = threads.Count(t =>
-                t.Type == ProgramAdvisoryThreadType.Suggestion && t.Status == ProgramAdvisoryThreadStatus.Resolved),
-            OpenRequiredChanges = threads.Count(t =>
-                t.Type == ProgramAdvisoryThreadType.RequiredChange && t.Status == ProgramAdvisoryThreadStatus.Open),
-            AddressedRequiredChanges = threads.Count(t =>
-                t.Type == ProgramAdvisoryThreadType.RequiredChange && t.Status == ProgramAdvisoryThreadStatus.Addressed),
-            ResolvedRequiredChanges = threads.Count(t =>
-                t.Type == ProgramAdvisoryThreadType.RequiredChange && t.Status == ProgramAdvisoryThreadStatus.Resolved),
-        };
     }
 
     private static AdvisoryNextActionDto ResolveNextAction(
@@ -2483,27 +2313,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             CreatedAt = row.CreatedAt,
         };
 
-    private static AdvisoryCapabilitiesDto BuildCapabilities(
-        Program program,
-        User actor,
-        bool isAdvisor,
-        bool isBoard,
-        bool canStaff)
-    {
-        var notesMutable = program.Status is ProgramStatus.Draft or ProgramStatus.PendingReview;
-        var reviewActionsLocked = program.Status is ProgramStatus.Approved or ProgramStatus.Active or ProgramStatus.Inactive;
-        return new AdvisoryCapabilitiesDto
-        {
-            // Manager/Admin never create suggestions or required changes.
-            CanCreateSuggestion = notesMutable && actor.Role == RoleType.Expert && (isAdvisor || isBoard),
-            CanCreateRequiredChange = notesMutable && actor.Role == RoleType.Expert && isAdvisor,
-            CanReply = notesMutable && (canStaff || isAdvisor || isBoard),
-            CanEditCurriculum = canStaff && program.Status == ProgramStatus.Draft,
-            CanAssignAdvisor = canStaff && program.Status == ProgramStatus.Draft,
-            CanDecide = isAdvisor && program.Status == ProgramStatus.PendingReview && !reviewActionsLocked,
-        };
-    }
-
     public async Task<AdvisoryWorkflowTimelineDto> GetWorkflowTimelineAsync(Guid programId)
     {
         var (program, _, _, isAdvisor, _, canStaff) = await RequireAdvisoryAccessAsync(programId);
@@ -2513,20 +2322,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             t => t.ProgramId == programId && !t.IsDeleted);
         return await BuildWorkflowTimelineAsync(program, isAdvisor, canStaff, submissions, threads);
     }
-
-    private static ProgramReviewSubmissionSummaryDto MapSubmissionSummary(ProgramReviewSubmission submission)
-        => new()
-        {
-            Id = submission.Id,
-            SubmissionNumber = submission.SubmissionNumber,
-            Status = submission.Status,
-            ReviewRoundIntent = submission.ReviewRoundIntent,
-            AssignedAdvisorExpertId = submission.AssignedAdvisorExpertId,
-            FrameworkVersionId = submission.FrameworkVersionId,
-            SubmittedAt = submission.SubmittedAt,
-            ClosedAt = submission.ClosedAt,
-            ConcurrencyVersion = submission.ConcurrencyVersion,
-        };
 
     private static string? Preview(string? message)
     {

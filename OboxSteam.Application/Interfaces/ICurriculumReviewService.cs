@@ -12,8 +12,6 @@ public interface ICurriculumReviewService
 
     Task<ProgramsResponseDto> WithdrawReviewAsync(Guid programId);
 
-    Task<ProgramsResponseDto> PublishAsync(Guid programId);
-
     Task<Pagination<ProgramReviewQueueItemDto>> GetReviewQueueAsync(int page, int pageSize);
 
     Task<IReadOnlyList<CurriculumReviewResponseDto>> GetReviewsAsync(Guid programId);

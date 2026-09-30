@@ -1,6 +1,7 @@
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Utils;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OboxSteam.API.Middlewares;
 
@@ -66,12 +67,15 @@ public class GlobalExceptionMiddleware
             ? appException.ErrorCode
             : statusCode.ToString();
 
-        var response = ApiResult<object>.Failure(
-            errorCode,
-            statusCode == 500 ? "An unexpected error occurred." : exception.Message
-        );
+        var message = statusCode == 500 ? "An unexpected error occurred." : exception.Message;
+        var response = ApiResult<object>.Failure(errorCode, message);
+        if (exception is AppException { Payload: { } payload })
+        {
+            response.Value = new ResponseDataContent<object> { Code = errorCode, Message = message, Data = payload };
+        }
 
         var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        options.Converters.Add(new JsonStringEnumConverter());
         return context.Response.WriteAsync(JsonSerializer.Serialize(response, options));
     }
 }

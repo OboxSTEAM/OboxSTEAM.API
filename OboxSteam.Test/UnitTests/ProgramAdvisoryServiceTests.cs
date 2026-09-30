@@ -9,6 +9,9 @@ using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Test.Helpers;
 
+// Covers the legacy thread-based advisory flow, which still uses obsolete statuses and targets.
+#pragma warning disable CS0618
+
 namespace OboxSteam.Test.UnitTests;
 
 public sealed class ProgramAdvisoryServiceTests
@@ -672,78 +675,6 @@ public sealed class ProgramAdvisoryServiceTests
     }
 
     [Fact]
-    public async Task CapabilityMatrix_RoleAndStageAccurate()
-    {
-        SeedBase();
-
-        // Manager in Draft / Revision: no create suggestion/required; can edit; discuss always.
-        var managerDraft = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
-        Assert.False(managerDraft.Capabilities.CanCreateSuggestion);
-        Assert.False(managerDraft.Capabilities.CanCreateRequiredChange);
-        Assert.False(managerDraft.Capabilities.CanDecide);
-        Assert.True(managerDraft.Capabilities.CanEditCurriculum);
-        Assert.True(managerDraft.Capabilities.CanReply);
-        Assert.Equal("AdviseOptional", managerDraft.Workflow.NextAction.Code);
-        Assert.False(managerDraft.ReviewActionsLocked);
-
-        var submissionId = SeedPendingSubmission();
-        var managerReview = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
-        Assert.False(managerReview.Capabilities.CanCreateSuggestion);
-        Assert.False(managerReview.Capabilities.CanEditCurriculum);
-        Assert.False(managerReview.Capabilities.CanDecide);
-        Assert.True(managerReview.Capabilities.CanReply);
-
-        var boardReview = await CreateAdvisorySut(_otherExpertUserId).GetAdvisoryWorkspaceAsync(_programId);
-        Assert.True(boardReview.Capabilities.CanCreateSuggestion);
-        Assert.False(boardReview.Capabilities.CanCreateRequiredChange);
-        Assert.False(boardReview.Capabilities.CanDecide);
-
-        var advisorReview = await CreateAdvisorySut(_expertUserId).GetAdvisoryWorkspaceAsync(_programId);
-        Assert.True(advisorReview.Capabilities.CanCreateSuggestion);
-        Assert.True(advisorReview.Capabilities.CanCreateRequiredChange);
-        Assert.True(advisorReview.Capabilities.CanDecide);
-
-        var thread = await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
-        {
-            SubmissionId = submissionId,
-            TargetType = ProgramAdvisoryTargetType.Program,
-            Type = ProgramAdvisoryThreadType.RequiredChange,
-            Message = "Need clearer outcomes.",
-        });
-        var pendingThread = await CreateAdvisorySut(_managerId).GetThreadAsync(_programId, thread.Id);
-        Assert.DoesNotContain("MarkFixed", pendingThread.AvailableActions);
-        Assert.DoesNotContain("Accept", (await CreateAdvisorySut(_expertUserId).GetThreadAsync(_programId, thread.Id)).AvailableActions);
-
-        await CreateReviewSut(_expertUserId).RequestChangesAsync(
-            _programId,
-            new RequestCurriculumChangesRequest
-            {
-                SubmissionId = submissionId,
-                ConcurrencyVersion = _db.ProgramReviewSubmissions.Items.Single().ConcurrencyVersion,
-                Comment = "Please revise.",
-            });
-
-        var revisionWorkspace = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
-        Assert.Equal(ProgramStatus.Draft, revisionWorkspace.Status);
-        Assert.Equal(AdvisoryWorkflowStage.Revision, revisionWorkspace.Workflow.CurrentStage);
-        Assert.True(revisionWorkspace.Capabilities.CanEditCurriculum);
-        Assert.Equal(1, revisionWorkspace.OutstandingRequiredCount);
-        Assert.Equal("FixRequiredChanges", revisionWorkspace.Workflow.NextAction.Code);
-
-        var revisionThread = await CreateAdvisorySut(_managerId).GetThreadAsync(_programId, thread.Id);
-        Assert.Contains("MarkFixed", revisionThread.AvailableActions);
-        Assert.Equal(1, revisionThread.OriginSubmissionNumber);
-        Assert.Contains("Round 1", revisionThread.OriginRoundLabel);
-
-        _db.Programs.Items.Single().Status = ProgramStatus.Approved;
-        var locked = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
-        Assert.True(locked.ReviewActionsLocked);
-        Assert.False(locked.Capabilities.CanReply);
-        Assert.False(locked.Capabilities.CanDecide);
-        Assert.False(locked.Capabilities.CanCreateSuggestion);
-    }
-
-    [Fact]
     public async Task Address_ForbiddenWhilePendingReview_AllowedInDraft()
     {
         SeedBase();
@@ -805,12 +736,6 @@ public sealed class ProgramAdvisoryServiceTests
         });
         _db.ProgramAdvisoryThreads.Items.Single(t => t.Id == addressed.Id).Status =
             ProgramAdvisoryThreadStatus.Addressed;
-
-        var workspace = await CreateAdvisorySut(_expertUserId).GetAdvisoryWorkspaceAsync(_programId);
-        Assert.Equal(2, workspace.OutstandingRequiredCount);
-        Assert.Equal(1, workspace.FixedRequiredCount);
-        Assert.Equal(1, workspace.OpenRequiredChangeCount);
-        Assert.Equal(1, workspace.AddressedRequiredChangeCount);
 
         var outstanding = await CreateAdvisorySut(_expertUserId).GetThreadsAsync(
             _programId, scope: "outstanding");
@@ -1013,7 +938,6 @@ public sealed class ProgramAdvisoryServiceTests
         Assert.Equal("ADVISORY_ANCHOR_FIELD_INVALID", ex.ErrorCode);
     }
 
-#pragma warning disable CS0618
     [Fact]
     public async Task CreateThread_RubricCriterionTarget_Rejected()
     {
@@ -1047,39 +971,6 @@ public sealed class ProgramAdvisoryServiceTests
                     TargetId = Guid.NewGuid(),
                     AnchorKind = ProgramAdvisoryAnchorKind.Node,
                 }));
-    }
-#pragma warning restore CS0618
-
-    [Fact]
-    public async Task DiscussionRead_DoesNotClearNoteUnread()
-    {
-        SeedBase();
-        var submissionId = SeedPendingSubmission();
-        await CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
-        {
-            SubmissionId = submissionId,
-            TargetType = ProgramAdvisoryTargetType.Program,
-            Type = ProgramAdvisoryThreadType.Suggestion,
-            Message = "Note activity",
-        });
-        await CreateDiscussionSut(_expertUserId).AddMessageAsync(_programId, new PostAdvisoryDiscussionMessageRequest
-        {
-            Text = "Discussion activity",
-            ClientMessageId = "disc-1",
-        });
-
-        var before = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
-        Assert.True(before.UnreadNoteCount > 0);
-
-        await CreateDiscussionSut(_managerId).RecordDiscussionReadAsync(
-            _programId,
-            new RecordAdvisoryDiscussionReadRequest { LastDisplayedSequence = 1 });
-
-        var after = await CreateAdvisorySut(_managerId).GetAdvisoryWorkspaceAsync(_programId);
-        Assert.True(after.UnreadNoteCount > 0);
-        Assert.Contains(
-            _db.ProgramAdvisoryThreads.Items,
-            t => t.Type == ProgramAdvisoryThreadType.General);
     }
 
     [Fact]

@@ -2062,6 +2062,70 @@ public static class NotificationCatalog
             entityId: programId,
             tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
 
+    /// <summary>Manager reopened an approved program; sent to the advisor.</summary>
+    public static NotificationCommand CurriculumApprovalReopened(
+        Guid advisorUserId,
+        Guid programId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumApprovalRevoked,
+            NotificationAudience.ForUser(advisorUserId),
+            NotificationRoleTemplates.ForExpert(
+                "Phê duyệt chương trình đã bị thu hồi",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã mở lại chương trình để chỉnh sửa. Phê duyệt của bạn đã bị thu hồi."
+                    : "{actorName} đã mở lại chương trình \"{programName}\" để chỉnh sửa. Phê duyệt của bạn đã bị thu hồi."),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
+    /// <summary>The advisor withdrew their approval; sent to managers.</summary>
+    public static NotificationCommand CurriculumApprovalRevokedByAdvisor(
+        Guid programId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumApprovalRevoked,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chuyên gia đã thu hồi phê duyệt",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã thu hồi phê duyệt chương trình. Chương trình quay về bản nháp."
+                    : "{actorName} đã thu hồi phê duyệt chương trình \"{programName}\". Chương trình quay về bản nháp."),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
+    public static NotificationCommand CurriculumApprovalRequested(
+        Guid advisorUserId,
+        Guid programId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.CurriculumApprovalRequested,
+            NotificationAudience.ForUser(advisorUserId),
+            NotificationRoleTemplates.ForExpert(
+                "Có chương trình chờ bạn phê duyệt",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đề nghị bạn xem xét và phê duyệt chương trình."
+                    : "{actorName} đề nghị bạn xem xét và phê duyệt chương trình \"{programName}\"."),
+            payload: new NotificationPayload { ProgramId = programId }
+                .WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
     public static NotificationCommand AdvisoryFeedbackPublished(
         Guid recipientUserId,
         Guid programId,

@@ -6,7 +6,8 @@ Short product terms for OboxSTEAM.API. Process vocabulary lives in
 ## Program
 
 Sellable STEAM track. Has `Price`, modules, classes, and enrollments.
-`ProgramStatus`: Draft, PendingReview, Approved, Active, Inactive.
+`ProgramStatus`: Draft, Approved, Active, Inactive (`PendingReview` is
+obsolete and no longer used).
 Optional `FrameworkId` links to an expert `ProgramFramework` blueprint.
 
 ## ProgramFramework
@@ -16,21 +17,24 @@ opt-in rules on each `ProgramFrameworkVersion` (module/course counts, total
 hours, activity duration, Offline/LiveOnline ratios, assignments, materials,
 category, description, skills, thumbnail, capstone). The rubric scorecard was
 removed. Null or `false` rules are not enforced. `RequireCapstoneResearchMilestone =
-true` requires ≥1 `ResearchMilestone` with `IsCapstone`. With a framework,
-only the owning expert may approve or request-changes; board experts may
-view and co-teach. Removing an expert from the board unlinks their Invited
-and Accepted co-teach rows on that program. No `FrameworkId` is free-form board review (still
-`PendingReview`). CRUD: `/api/program-frameworks`.
+true` requires ≥1 `ResearchMilestone` with `IsCapstone`. The framework check
+must pass before the program advisor can approve; board experts may view and
+co-teach. Removing an expert from the board unlinks their Invited
+and Accepted co-teach rows on that program. CRUD: `/api/program-frameworks`.
 Blueprint edits are locked unless the framework is unattached or the
 attached program is `Draft`.
 
+## ProgramApproval
+
+The program advisor's approval of one curriculum version (not student
+`ProgramReview`), with a curriculum snapshot and framework check. At most one
+is active. It is revoked by a manager reopen, an advisor revoke, an advisor
+change, or a curriculum edit; the program then returns to `Draft`. Publishing
+requires an active approval at the current curriculum version.
+
 ## CurriculumReview
 
-Expert audit round on a program (not student `ProgramReview`). Scores live on
-`ReviewCriterionScore`. With a framework, only the owner decides; without a
-framework, any one board expert may approve or request-changes. Comment is
-required when requesting changes. Manager may withdraw from
-`PendingReview` or `Approved` back to `Draft`.
+Legacy expert decision history from the removed submission flow; read-only.
 
 ## ClassSessionExpert
 

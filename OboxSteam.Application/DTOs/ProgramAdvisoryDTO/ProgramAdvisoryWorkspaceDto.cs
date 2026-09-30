@@ -6,80 +6,60 @@ public sealed class ProgramAdvisoryWorkspaceDto
 {
     public Guid ProgramId { get; set; }
 
-    public string Code { get; set; } = null!;
-
-    public string Name { get; set; } = null!;
-
     public ProgramStatus Status { get; set; }
+
+    public long CurriculumVersion { get; set; }
 
     public Guid? AdvisorExpertId { get; set; }
 
     public string? AdvisorName { get; set; }
 
-    public Guid? FrameworkVersionId { get; set; }
-
-    public int? FrameworkVersionNumber { get; set; }
-
     public List<AdvisoryParticipantDto> Participants { get; set; } = [];
 
     public AdvisoryCapabilitiesDto Capabilities { get; set; } = new();
 
-    public AdvisoryWorkflowTimelineDto Workflow { get; set; } = new();
+    /// <summary>The active (non-revoked) approval, or null.</summary>
+    public ProgramApprovalSummaryDto? Approval { get; set; }
 
-    /// <summary>
-    /// RequiredChange threads that are not yet accepted
-    /// (<see cref="ProgramAdvisoryThreadStatus.Open"/> + <see cref="ProgramAdvisoryThreadStatus.Addressed"/>).
-    /// Matches <c>scope=outstanding</c> and timeline <c>outstandingRequirementCount</c>.
-    /// </summary>
-    public int OutstandingRequiredCount { get; set; }
+    public int OpenPinCount { get; set; }
 
-    /// <summary>RequiredChange threads the manager has marked fixed (Addressed) and the advisor has not accepted.</summary>
-    public int FixedRequiredCount { get; set; }
+    public int AddressedPinCount { get; set; }
 
-    public int OpenRequiredChangeCount { get; set; }
+    /// <summary>Discussion messages after the caller's read cursor, excluding their own.</summary>
+    public int UnreadCount { get; set; }
 
-    public int AddressedRequiredChangeCount { get; set; }
+    /// <summary>Live framework check; false when the pinned framework version is unavailable.</summary>
+    public bool FrameworkCheckPassed { get; set; }
 
-    /// <summary>Unread note threads, including the general discussion thread.</summary>
-    public int UnreadNoteCount { get; set; }
+    /// <summary>Net change items since the latest approval (<c>base=lastApproval</c>).</summary>
+    public int ChangesSinceApprovalCount { get; set; }
 
-    public ProgramReviewSubmissionSummaryDto? PendingSubmission { get; set; }
+    /// <summary>Net change items since the latest approval that the caller has not seen.</summary>
+    public int UnseenChangeCount { get; set; }
 
-    public bool ReviewActionsLocked { get; set; }
-
-    public string CollaborationContractVersion { get; set; } = "3";
-
-    public ProgramReviewSubmissionSummaryDto? LatestSubmission { get; set; }
-
-    public AdvisoryFeedbackCountsDto FeedbackCounts { get; set; } = new();
-
-    public bool HasUnreadFeedback { get; set; }
+    public long LatestSequence { get; set; }
 }
 
 public sealed class AdvisoryParticipantDto
 {
     public Guid UserId { get; set; }
 
-    public Guid? ExpertId { get; set; }
+    public string Name { get; set; } = null!;
 
-    public string DisplayName { get; set; } = null!;
-
-    public string Role { get; set; } = null!;
+    public RoleType Role { get; set; }
 
     public bool IsAdvisor { get; set; }
 }
 
-public sealed class AdvisoryFeedbackCountsDto
+public sealed class ProgramApprovalSummaryDto
 {
-    public int OpenSuggestions { get; set; }
+    public Guid Id { get; set; }
 
-    public int AddressedSuggestions { get; set; }
+    public long CurriculumVersion { get; set; }
 
-    public int ResolvedSuggestions { get; set; }
+    public DateTime ApprovedAt { get; set; }
 
-    public int OpenRequiredChanges { get; set; }
+    public string? ApprovedByName { get; set; }
 
-    public int AddressedRequiredChanges { get; set; }
-
-    public int ResolvedRequiredChanges { get; set; }
+    public string? Comment { get; set; }
 }

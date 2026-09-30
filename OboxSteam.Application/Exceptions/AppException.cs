@@ -15,6 +15,9 @@ public class AppException : Exception
     /// </summary>
     public string? ErrorCode { get; }
 
+    /// <summary>Optional structured detail returned in <c>ApiResult.value.data</c> of the failure response.</summary>
+    public object? Payload { get; init; }
+
     public AppException(int statusCode, string message, string? errorCode = null) : base(message)
     {
         StatusCode = statusCode;

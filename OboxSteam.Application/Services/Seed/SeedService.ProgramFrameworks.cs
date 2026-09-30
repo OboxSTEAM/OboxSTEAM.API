@@ -297,7 +297,7 @@ public partial class SeedService
             "QA — PendingReview, Robotics",
             "Already in expert queue. EXP-001 (framework owner) approve-review or request-changes. Board members may view only.",
             qaPending.Id,
-            ProgramStatus.PendingReview);
+            ProgramStatus.Draft);
         var noFrameworkProgram = await EnsureQaProgramAsync(
             SeedFrameworkNoFrameworkProgramCode,
             "QA — Draft, no framework",
@@ -318,7 +318,7 @@ public partial class SeedService
                 "QA — PendingReview, EXP-002 framework",
                 "Owner expert2@oboxsteam.com decides. EXP-001 does not own this framework and is not on this board, so they should not see this queue item.",
                 expert002Framework.Id,
-                ProgramStatus.PendingReview);
+                ProgramStatus.Draft);
             await EnsureQaTheoryModuleAsync(exp2Program, "EXP2");
             await EnsureExpertOnProgramBoardAsync(expert002, exp2Program.Id, "Reviewer");
         }

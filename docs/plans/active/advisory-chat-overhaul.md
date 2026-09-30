@@ -78,7 +78,8 @@ One task per review/commit cycle, in this order:
 - [x] 4. A7 framework rules + rubric drop — migration `20260930181132_DropRubricAddFrameworkRules`
 - [x] 5. A3 + A2 discussion endpoints — data migration
   `20260930183025_MigrateAdvisoryThreadsToDiscussion` (not applied locally)
-- [ ] 6. A4 approval lifecycle
+- [x] 6. A4 approval lifecycle — data migration
+  `20260930210212_ApprovalLifecycleRemovePendingReview` (not applied locally)
 - [ ] 7. A5 + A6 realtime + deprecation
 - [ ] 8. Seed cleanup
 
@@ -147,6 +148,20 @@ One task per review/commit cycle, in this order:
 - 2026-09-30: The session message moves to the end of the stream when
   extended; cascaded deletes and insert-driven sibling shifts are not recorded
   separately; no concurrency token on `CurriculumVersion` (accepted race).
+- 2026-10-01: Task 6 replaces the advisory workspace with the contract 5.1
+  shape (`ProgramApprovalService`). Review write routes and `review-queue`
+  return 410; review reads and the old services stay until task 7.
+  `PendingReview` is `[Obsolete]` (rows rewritten to `Draft`) and is deleted
+  in task 7.
+- 2026-10-01: Existing `Approved` programs get one backfilled active
+  `ProgramApproval` at their current curriculum version; without an
+  identifiable expert they return to `Draft`.
+- 2026-10-01: Revoke notifies the counterpart: manager reopen → advisor,
+  advisor revoke → managers. An advisor change posts `AdvisorChanged` and,
+  when `Approved`, revokes (`AdvisorChanged`) without a notification.
+- 2026-10-01: Workspace participants list active managers, then the advisor,
+  then board experts. Experts only get material signed URLs for programs where
+  they are the advisor or a board member.
 
 ## Validation
 

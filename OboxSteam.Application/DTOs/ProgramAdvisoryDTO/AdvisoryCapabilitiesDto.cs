@@ -2,10 +2,12 @@ namespace OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 
 public sealed class AdvisoryCapabilitiesDto
 {
-    public bool CanCreateSuggestion { get; set; }
-    public bool CanCreateRequiredChange { get; set; }
-    public bool CanReply { get; set; }
+    public bool CanPost { get; set; }
+    public bool CanPin { get; set; }
+    public bool CanResolvePin { get; set; }
     public bool CanEditCurriculum { get; set; }
-    public bool CanAssignAdvisor { get; set; }
-    public bool CanDecide { get; set; }
+    public bool CanApprove { get; set; }
+    public bool CanRevokeApproval { get; set; }
+    public bool CanRequestApproval { get; set; }
+    public bool CanPublish { get; set; }
 }

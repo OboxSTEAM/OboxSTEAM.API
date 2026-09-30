@@ -709,7 +709,6 @@ public sealed class ValidatorAndUtilsTests
 
     [Theory]
     [InlineData(ProgramStatus.Draft, "draft")]
-    [InlineData(ProgramStatus.PendingReview, "pending expert review")]
     [InlineData(ProgramStatus.Approved, "approved but not published")]
     [InlineData(ProgramStatus.Inactive, "inactive")]
     public void ClassValidator_EnsureProgramIsActive_Throws_WhenNotActive(
