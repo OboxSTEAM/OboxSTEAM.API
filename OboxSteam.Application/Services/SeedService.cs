@@ -14,17 +14,20 @@ public partial class SeedService : ISeedService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
     private readonly ICertificateService _certificateService;
+    private readonly IFaceRecognitionService _faceRecognitionService;
 
     public SeedService(
         ILogger<SeedService> loggerService,
         IUnitOfWork unitOfWork,
         IBlobService blobService,
-        ICertificateService certificateService)
+        ICertificateService certificateService,
+        IFaceRecognitionService faceRecognitionService)
     {
         _loggerService = loggerService;
         _unitOfWork = unitOfWork;
         _blobService = blobService;
         _certificateService = certificateService;
+        _faceRecognitionService = faceRecognitionService;
     }
 
     public async Task SeedAllDataAsync()
@@ -132,9 +135,14 @@ public partial class SeedService : ISeedService
     {
         _loggerService.LogInformation("Starting clear all data");
 
-        await ClearS3ObjectsAsync();
-        await _unitOfWork.TruncateAllApplicationTablesAsync();
-        await VerifyDatabaseIsEmptyAsync();
+        // Face vectors live in Rekognition, not PostgreSQL. Indexing is blocked
+        // until the collection has been purged again after the truncate.
+        await _faceRecognitionService.ResetCollectionAfterAsync(async () =>
+        {
+            await ClearS3ObjectsAsync();
+            await _unitOfWork.TruncateAllApplicationTablesAsync();
+            await VerifyDatabaseIsEmptyAsync();
+        });
 
         _loggerService.LogInformation("Finished clear all data");
     }
@@ -155,6 +163,7 @@ public partial class SeedService : ISeedService
         await EnsureTableEmptyAsync(_unitOfWork.ProgramSkills, "ProgramSkills");
         await EnsureTableEmptyAsync(_unitOfWork.PortfolioSkills, "PortfolioSkills");
         await EnsureTableEmptyAsync(_unitOfWork.Notifications, "Notifications");
+        await EnsureTableEmptyAsync(_unitOfWork.FaceEmbeddings, "FaceEmbeddings");
     }
 
     private static async Task EnsureTableEmptyAsync<TEntity>(

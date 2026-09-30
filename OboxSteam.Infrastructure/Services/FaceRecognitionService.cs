@@ -12,6 +12,9 @@ public class FaceRecognitionService : IFaceRecognitionService
 {
     private const string CollectionId = "oboxsteam-faces";
     private const float DefaultFaceMatchThreshold = 70f;
+    private const int ListFacesPageSize = 4096;
+    private const int MaxPurgeStalls = 5;
+    private const int MaxPurgeRounds = 200;
 
     /// <summary>
     /// When collapsing raw Rekognition timestamps into segments, detections within
@@ -65,48 +68,65 @@ public class FaceRecognitionService : IFaceRecognitionService
                 "Multiple faces detected in image. Please upload a photo containing only one face.");
         }
 
-        await EnsureCollectionExistsAsync();
-
-        var response = await _rekognition.IndexFacesAsync(new IndexFacesRequest
+        await _collectionInitLock.WaitAsync();
+        try
         {
-            CollectionId = CollectionId,
-            Image = new Image { Bytes = new MemoryStream(imageBytes) },
-            MaxFaces = 1,
-            QualityFilter = QualityFilter.AUTO,
-            ExternalImageId = userId.ToString()
-        });
-
-        var faceRecord = response.FaceRecords.FirstOrDefault();
-        if (faceRecord is null)
-        {
-            _logger.LogWarning("No face detected in image for UserId: {UserId}", userId);
-            throw ErrorHelper.BadRequest("No face detected in image. Please upload a clear photo of your face.");
-        }
-
-        var faceId = faceRecord.Face.FaceId;
-        _logger.LogInformation("Face indexed with FaceId: {FaceId} for UserId: {UserId}", faceId, userId);
-
-        var existing = await _unitOfWork.FaceEmbeddings
-            .FirstOrDefaultAsync(f => f.StudentId == userId);
-
-        if (existing != null)
-        {
-            _logger.LogInformation("Replacing existing face {OldFaceId} with {NewFaceId} for UserId: {UserId}", existing.AwsFaceId, faceId, userId);
-            await DeleteFaceAsync(existing.AwsFaceId);
-            existing.AwsFaceId = faceId;
-        }
-        else
-        {
-            _logger.LogInformation("Creating new FaceEmbedding for UserId: {UserId}", userId);
-            await _unitOfWork.FaceEmbeddings.AddAsync(new FaceEmbedding
+            // SQL existence check, not the tracked entity. A reset may have truncated
+            // the user after the caller loaded it and while this call waited for the lock.
+            var userStillExists = await _unitOfWork.Users.AnyIncludingDeletedAsync(u => u.Id == userId);
+            if (!userStillExists)
             {
-                StudentId = userId,
-                AwsFaceId = faceId,
-            });
-        }
+                _logger.LogWarning("IndexFaceAsync aborted. UserId {UserId} no longer exists.", userId);
+                throw ErrorHelper.NotFound("Account does not exist.");
+            }
 
-        _logger.LogInformation("IndexFaceAsync completed for UserId: {UserId}, FaceId: {FaceId} (pending save)", userId, faceId);
-        return faceId;
+            await EnsureCollectionExistsCoreAsync();
+
+            var response = await _rekognition.IndexFacesAsync(new IndexFacesRequest
+            {
+                CollectionId = CollectionId,
+                Image = new Image { Bytes = new MemoryStream(imageBytes) },
+                MaxFaces = 1,
+                QualityFilter = QualityFilter.AUTO,
+                ExternalImageId = userId.ToString()
+            });
+
+            var faceRecord = response.FaceRecords.FirstOrDefault();
+            if (faceRecord is null)
+            {
+                _logger.LogWarning("No face detected in image for UserId: {UserId}", userId);
+                throw ErrorHelper.BadRequest("No face detected in image. Please upload a clear photo of your face.");
+            }
+
+            var faceId = faceRecord.Face.FaceId;
+            _logger.LogInformation("Face indexed with FaceId: {FaceId} for UserId: {UserId}", faceId, userId);
+
+            var existing = await _unitOfWork.FaceEmbeddings
+                .FirstOrDefaultAsync(f => f.StudentId == userId);
+
+            if (existing != null)
+            {
+                _logger.LogInformation("Replacing existing face {OldFaceId} with {NewFaceId} for UserId: {UserId}", existing.AwsFaceId, faceId, userId);
+                await DeleteFaceCoreAsync(existing.AwsFaceId);
+                existing.AwsFaceId = faceId;
+            }
+            else
+            {
+                _logger.LogInformation("Creating new FaceEmbedding for UserId: {UserId}", userId);
+                await _unitOfWork.FaceEmbeddings.AddAsync(new FaceEmbedding
+                {
+                    StudentId = userId,
+                    AwsFaceId = faceId,
+                });
+            }
+
+            _logger.LogInformation("IndexFaceAsync completed for UserId: {UserId}, FaceId: {FaceId} (pending save)", userId, faceId);
+            return faceId;
+        }
+        finally
+        {
+            _collectionInitLock.Release();
+        }
     }
 
     /// <inheritdoc />
@@ -180,15 +200,39 @@ public class FaceRecognitionService : IFaceRecognitionService
     /// <inheritdoc />
     public async Task DeleteFaceAsync(string faceId)
     {
-        _logger.LogInformation("DeleteFaceAsync started for FaceId: {FaceId}", faceId);
-
-        await _rekognition.DeleteFacesAsync(new DeleteFacesRequest
+        await _collectionInitLock.WaitAsync();
+        try
         {
-            CollectionId = CollectionId,
-            FaceIds = new List<string> { faceId }
-        });
+            await DeleteFaceCoreAsync(faceId);
+        }
+        finally
+        {
+            _collectionInitLock.Release();
+        }
+    }
 
-        _logger.LogInformation("DeleteFaceAsync completed for FaceId: {FaceId}", faceId);
+    /// <inheritdoc />
+    public async Task ResetCollectionAfterAsync(Func<Task> beforeFinalPurge)
+    {
+        _logger.LogInformation("ResetCollectionAfterAsync started for collection '{CollectionId}'.", CollectionId);
+
+        await _collectionInitLock.WaitAsync();
+        try
+        {
+            // IndexFace and video face-search wait on this same lock, so they cannot
+            // add a vector between the database truncate and the final purge.
+            _collectionEnsured = false;
+            await PurgeCollectionFacesAsync();
+            await beforeFinalPurge();
+            await PurgeCollectionFacesAsync();
+            _collectionEnsured = true;
+        }
+        finally
+        {
+            _collectionInitLock.Release();
+        }
+
+        _logger.LogInformation("ResetCollectionAfterAsync completed for collection '{CollectionId}'.", CollectionId);
     }
 
     /// <inheritdoc />
@@ -200,8 +244,6 @@ public class FaceRecognitionService : IFaceRecognitionService
         _logger.LogInformation(
             "StartVideoFaceSearchAsync: Bucket={Bucket}, Key={Key}, MinConfidence={MinConfidence}",
             s3Bucket, s3Key, minConfidence);
-
-        await EnsureCollectionExistsAsync();
 
         var snsTopicArn = Environment.GetEnvironmentVariable("AWS_SNS_TOPIC_ARN");
         var roleArn = Environment.GetEnvironmentVariable("AWS_REKOGNITION_ROLE_ARN");
@@ -229,10 +271,18 @@ public class FaceRecognitionService : IFaceRecognitionService
             };
         }
 
-        var response = await _rekognition.StartFaceSearchAsync(request);
-
-        _logger.LogInformation("Video face search started. JobId: {JobId}", response.JobId);
-        return response.JobId;
+        await _collectionInitLock.WaitAsync();
+        try
+        {
+            await EnsureCollectionExistsCoreAsync();
+            var response = await _rekognition.StartFaceSearchAsync(request);
+            _logger.LogInformation("Video face search started. JobId: {JobId}", response.JobId);
+            return response.JobId;
+        }
+        finally
+        {
+            _collectionInitLock.Release();
+        }
     }
 
     /// <inheritdoc />
@@ -528,36 +578,152 @@ public class FaceRecognitionService : IFaceRecognitionService
 
     // ── Helpers ──────────────────────────────────────────
 
-    private async Task EnsureCollectionExistsAsync()
+    /// <summary>
+    /// Removes every indexed face and leaves the collection in place.
+    /// Deleting and recreating the collection races with AWS (CreateCollection can
+    /// still see the old id) and with the in-process "collection exists" flag.
+    /// Listing the first page and deleting it, without a pagination token, avoids
+    /// an invalid token after faces disappear.
+    /// </summary>
+    private async Task PurgeCollectionFacesAsync()
     {
-        // Fast path — no lock needed once initialized.
-        if (_collectionEnsured) return;
+        var deleted = 0;
+        var seenFaceIds = new HashSet<string>(StringComparer.Ordinal);
+        var stalls = 0;
 
-        await _collectionInitLock.WaitAsync();
-        try
+        for (var round = 0; round < MaxPurgeRounds; round++)
         {
-            // Double-check inside the lock in case another thread just finished.
-            if (_collectionEnsured) return;
-
+            ListFacesResponse list;
             try
             {
-                await _rekognition.CreateCollectionAsync(new CreateCollectionRequest
+                list = await _rekognition.ListFacesAsync(new ListFacesRequest
                 {
-                    CollectionId = CollectionId
+                    CollectionId = CollectionId,
+                    MaxResults = ListFacesPageSize
                 });
-                _logger.LogInformation("Rekognition collection '{CollectionId}' created.", CollectionId);
             }
-            catch (ResourceAlreadyExistsException)
+            catch (ResourceNotFoundException)
             {
-                _logger.LogDebug("Rekognition collection '{CollectionId}' already exists.", CollectionId);
+                await CreateCollectionIfMissingAsync();
+                continue;
             }
 
-            _collectionEnsured = true;
+            var faceIds = list.Faces?
+                .Select(face => face.FaceId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Select(id => id!)
+                .ToList() ?? new List<string>();
+
+            if (faceIds.Count == 0)
+            {
+                _logger.LogInformation(
+                    "Rekognition collection '{CollectionId}' is empty. DeletedFaces={Deleted}.",
+                    CollectionId,
+                    deleted);
+                return;
+            }
+
+            var freshIds = faceIds.Where(id => !seenFaceIds.Contains(id)).ToList();
+            if (freshIds.Count == 0)
+            {
+                stalls++;
+                if (stalls >= MaxPurgeStalls)
+                {
+                    throw ErrorHelper.Internal(
+                        $"Rekognition collection '{CollectionId}' still listed faces after delete.");
+                }
+
+                await DeleteFaceIdsAsync(faceIds);
+                await Task.Delay(TimeSpan.FromMilliseconds(500 * stalls));
+                continue;
+            }
+
+            stalls = 0;
+            foreach (var faceId in faceIds)
+                seenFaceIds.Add(faceId);
+
+            await DeleteFaceIdsAsync(faceIds);
+            deleted += faceIds.Count;
         }
-        finally
+
+        throw ErrorHelper.Internal(
+            $"Rekognition collection '{CollectionId}' was not empty after {MaxPurgeRounds} delete rounds.");
+    }
+
+    private async Task CreateCollectionIfMissingAsync()
+    {
+        try
         {
-            _collectionInitLock.Release();
+            await _rekognition.CreateCollectionAsync(new CreateCollectionRequest
+            {
+                CollectionId = CollectionId
+            });
+            _logger.LogInformation("Rekognition collection '{CollectionId}' created during purge.", CollectionId);
         }
+        catch (ResourceAlreadyExistsException)
+        {
+            _logger.LogDebug("Rekognition collection '{CollectionId}' already exists during purge.", CollectionId);
+        }
+    }
+
+    private async Task DeleteFaceIdsAsync(List<string> faceIds)
+    {
+        if (faceIds.Count == 0)
+            return;
+
+        var deleteResponse = await _rekognition.DeleteFacesAsync(new DeleteFacesRequest
+        {
+            CollectionId = CollectionId,
+            FaceIds = faceIds
+        });
+
+        var blocked = deleteResponse.UnsuccessfulFaceDeletions?
+            .Where(IsBlockingFaceDeletion)
+            .Select(failure => failure.FaceId)
+            .ToList() ?? new List<string>();
+
+        if (blocked.Count > 0)
+        {
+            throw ErrorHelper.Internal(
+                $"Failed to delete {blocked.Count} face(s) from Rekognition collection '{CollectionId}'.");
+        }
+    }
+
+    private async Task DeleteFaceCoreAsync(string faceId)
+    {
+        _logger.LogInformation("DeleteFaceAsync started for FaceId: {FaceId}", faceId);
+        await DeleteFaceIdsAsync(new List<string> { faceId });
+        _logger.LogInformation("DeleteFaceAsync completed for FaceId: {FaceId}", faceId);
+    }
+
+    private static bool IsBlockingFaceDeletion(UnsuccessfulFaceDeletion failure)
+    {
+        if (failure.Reasons == null || failure.Reasons.Count == 0)
+            return true;
+
+        return failure.Reasons.Any(reason =>
+            !string.Equals(reason, "FACE_NOT_FOUND", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task EnsureCollectionExistsCoreAsync()
+    {
+        if (_collectionEnsured)
+            return;
+
+        try
+        {
+            await _rekognition.CreateCollectionAsync(new CreateCollectionRequest
+            {
+                CollectionId = CollectionId
+            });
+            _logger.LogInformation("Rekognition collection '{CollectionId}' created.", CollectionId);
+        }
+        catch (ResourceAlreadyExistsException)
+        {
+            _logger.LogDebug("Rekognition collection '{CollectionId}' already exists.", CollectionId);
+        }
+
+        _collectionEnsured = true;
     }
 
     private static async Task<byte[]> ReadStreamAsync(Stream stream)

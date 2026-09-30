@@ -43,7 +43,7 @@ public class SeedController : ControllerBase
     [HttpDelete("clear")]
     [SwaggerOperation(
         Summary = "Clear all data",
-        Description = "Removes all application data from the database (PostgreSQL TRUNCATE CASCADE). EF migration history is preserved."
+        Description = "Blocks face indexing, purges Rekognition collection oboxsteam-faces, removes S3 objects except the Seed/ prefix, truncates application tables (PostgreSQL TRUNCATE CASCADE), then purges the collection again. EF migration history is preserved. The database is left unchanged if the first face purge fails."
     )]
     [ProducesResponseType(typeof(ApiResult), 200)]
     [ProducesResponseType(typeof(ApiResult), 400)]

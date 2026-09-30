@@ -22,6 +22,13 @@ public interface IFaceRecognitionService
     Task DeleteFaceAsync(string faceId);
 
     /// <summary>
+    /// Blocks face indexing, purges the shared collection, runs <paramref name="beforeFinalPurge"/>,
+    /// then purges again. The collection id stays the same. A failed first purge does not
+    /// run <paramref name="beforeFinalPurge"/>, so a database reset is not left ahead of Rekognition.
+    /// </summary>
+    Task ResetCollectionAfterAsync(Func<Task> beforeFinalPurge);
+
+    /// <summary>
     /// Starts async face search on a video already in S3. Returns a Rekognition job ID.
     /// When <c>AWS_SNS_TOPIC_ARN</c> and <c>AWS_REKOGNITION_ROLE_ARN</c> are configured,
     /// completion is delivered via SNS; otherwise callers must poll

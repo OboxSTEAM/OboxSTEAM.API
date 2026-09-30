@@ -345,7 +345,16 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
         }
     }
 
-    public Task TruncateAllApplicationTablesAsync() => Task.CompletedTask;
+    public int TruncateCallCount { get; private set; }
+
+    public Action? OnTruncate { get; set; }
+
+    public Task TruncateAllApplicationTablesAsync()
+    {
+        TruncateCallCount++;
+        OnTruncate?.Invoke();
+        return Task.CompletedTask;
+    }
 
     public void Dispose()
     {
