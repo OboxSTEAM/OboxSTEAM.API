@@ -2,7 +2,11 @@ namespace OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 
 public sealed class PostAdvisoryDiscussionMessageRequest
 {
-    public string Text { get; set; } = null!;
-    public List<Guid>? ReferenceIds { get; set; }
+    /// <summary>May contain mention tokens <c>@[Type:uuid]</c>. Empty only when attachments are present.</summary>
+    public string? Text { get; set; }
+
+    /// <summary>Unsent attachments uploaded by the caller for this program.</summary>
+    public List<Guid>? AttachmentIds { get; set; }
+
     public string ClientMessageId { get; set; } = null!;
 }

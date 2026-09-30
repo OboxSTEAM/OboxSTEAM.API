@@ -173,7 +173,14 @@ public class BlobService : IBlobService
     }
 
     /// <summary>Generates a presigned URL for downloading a file from S3.</summary>
-    public async Task<string> GetFileUrlAsync(string fileName, CancellationToken cancellationToken = default)
+    public Task<string> GetFileUrlAsync(string fileName, CancellationToken cancellationToken = default)
+        => GetFileUrlAsync(fileName, TimeSpan.FromDays(7), cancellationToken);
+
+    /// <summary>Generates a presigned download URL valid for <paramref name="lifetime"/>.</summary>
+    public async Task<string> GetFileUrlAsync(
+        string fileName,
+        TimeSpan lifetime,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -181,7 +188,7 @@ public class BlobService : IBlobService
             {
                 BucketName = _bucketName,
                 Key = fileName,
-                Expires = DateTime.UtcNow.AddDays(7)
+                Expires = DateTime.UtcNow.Add(lifetime)
             };
 
             var url = await _s3Client.GetPreSignedURLAsync(request);

@@ -186,17 +186,23 @@ switches the behaviour: steps 2–5 with the new discussion service, step 1 with
 the new approval lifecycle, step 7 with the framework-rules change.
 
 1. `Programs.Status = 'PendingReview'` → `'Draft'`.
-2. For each program: copy messages of the `General` advisory thread into
-   `ProgramAdvisoryDiscussionMessages` (kind `User`), ordered by original
-   `StreamSequence`, renumbering `sequence` after any existing discussion
-   messages.
-3. Root message of each `RequiredChange` thread with status `Open` or
-   `Addressed` → a pinned discussion message (same pin status) whose text
-   is prefixed with the mention token of the thread's target (when the target
-   is not `RubricCriterion`).
+2. For each program (migration `MigrateAdvisoryThreadsToDiscussion`): copy
+   messages of the `General` advisory thread and the root message of every
+   `RequiredChange` / `Suggestion` thread into
+   `ProgramAdvisoryDiscussionMessages` (kind `User`), interleaved by original
+   `CreatedAt` and numbered after any existing discussion messages.
+   `clientMessageId = "migrated:{sourceMessageId}"` (re-run safe). Replies in
+   `RequiredChange` / `Suggestion` threads are not copied (threads stay
+   readable for audit).
+3. Root message of a `RequiredChange` thread with status `Open` or
+   `Addressed` → pinned (same pin status; pinned by the thread author at
+   thread creation). A `Resolved` one → plain message. Text is prefixed with
+   the mention token of the thread's target plus a `WorkingDraft` / `Node`
+   reference when the target still exists; `[TargetLabel] ` when it no
+   longer exists.
 4. Root message of each `Suggestion` thread → a plain discussion message with
    the same mention prefix rule.
-5. Threads that target `RubricCriterion` → plain messages without a mention.
+5. Threads that target `RubricCriterion` → plain messages without a prefix.
 6. `Programs.CurriculumVersion = 0`; no change-log backfill.
 7. Rubric storage is dropped (no archive, migration
    `DropRubricAddFrameworkRules`): `FrameworkRubricCriteria`,
@@ -238,7 +244,12 @@ curriculum tree order.
 ```
 
 `order` is the zero-based index in tree order. `activityId` is set for
-activities, assignments, and materials.
+activities and materials. Enum values are serialized as PascalCase names
+(`Activity`, `ResearchMilestone`); the examples use lower case for brevity.
+Tree order: program; each module; then courses → activities (each followed by
+its material) → course assignments, or for research modules milestones →
+linked activities (+ material) → deliverable assignment; then the module's
+remaining assignments by code. A component appears once.
 
 ## 4. Discussion endpoints
 
@@ -306,8 +317,16 @@ Pin actions:
 | `Reopen` | advisor or board expert | `Addressed`/`Resolved` → `Open` |
 | `Resolve` | advisor or board expert | `Open`/`Addressed` → `Resolved` |
 
+An action on an unpinned message or from a status not listed →
+**409 `INVALID_STATUS`**. Pin / unpin are idempotent.
+
 Only `Open` pins block approval. Approval auto-resolves every `Addressed` pin.
 System messages cannot be pinned, edited, or deleted.
+
+`targetType` + `targetId` (both or neither, otherwise 400) filter messages
+that mention that exact component; mentions of descendants are not rolled up.
+`/mention-counts` uses the same exact-target rule. Deleted messages are
+excluded from both.
 
 ### 4.3 Posting rules
 
@@ -339,20 +358,27 @@ System messages cannot be pinned, edited, or deleted.
 Upload limits: ≤ 20 MB → **400 `ATTACHMENT_TOO_LARGE`**. Allowed types
 (by content type and extension): images (`png`, `jpg`, `jpeg`, `gif`, `webp`),
 `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `zip` → otherwise
-**400 `ATTACHMENT_TYPE_NOT_ALLOWED`**.
+**400 `ATTACHMENT_TYPE_NOT_ALLOWED`** (a declared content type that does not
+match the extension is also rejected; empty or `application/octet-stream` is
+accepted). Unsent attachments are visible only to the uploader and are purged
+(S3 object + row) 24 hours after upload by an hourly background job. The
+download URL of an attachment on a deleted message returns 404.
 
 ### 4.5 Save attachment as material
 
 `POST /api/materials/from-discussion-attachment` with
 `{ attachmentId, activityId, title }`.
 
-- Manager/Admin only; program must be `Draft` (or `Approved`, which
-  auto-revokes as a curriculum edit).
-- Same rules as material upload: the activity must be `SelfPaced`, belong to
-  the attachment's program, and have no material yet → otherwise
-  **409 `MATERIAL_ACTIVITY_INVALID`**.
-- The attachment must be sent (belongs to a message) → otherwise
+- Manager/Admin only. Same edit lock as material upload (`CurriculumEditGuard`:
+  cohort lock; an `Approved` program auto-revokes as a curriculum edit). No
+  separate program status check.
+- The activity must be `SelfPaced`, belong to the attachment's program, and
+  have no material yet → otherwise **409 `MATERIAL_ACTIVITY_INVALID`**.
+- The attachment must be sent (belongs to a non-deleted message) → otherwise
   **400 `ATTACHMENT_INVALID`**.
+- Material type and size rules of upload apply (PDF, DOC/DOCX, video, images
+  within their limits); `ppt`, `xls`, `zip`, etc. →
+  **400 `ATTACHMENT_TYPE_NOT_ALLOWED`**.
 - The S3 object is copied to the material key space. Returns the material DTO.
 
 ## 5. Advisory workspace and approval
@@ -646,6 +672,10 @@ Notification types:
 Routes stay registered, marked `[Obsolete]`, and return **410** with
 `error.code = "ENDPOINT_REMOVED"`. Their service code is deleted.
 
+Since task 5 the advisory thread write routes (`POST {id}/advisory-threads`,
+`POST .../messages`, `POST .../actions`, `PATCH .../status`) already return
+410; thread read routes remain until task 7.
+
 - `POST {id}/submit-review`, `withdraw-review`, `approve-review`, `request-changes`
 - `{id}/review-submissions/*` (including `draft` and `changes`), `{id}/curriculum-reviews`
 - `{id}/advisory-threads/*`, `{id}/advisory/board`, `{id}/advisory/timeline`,
@@ -666,11 +696,11 @@ is extended with `unreadCount`, `openPinCount`, `status`, `approvalState`
 | `FRAMEWORK_CHECK_FAILED`                                                         | 409  | approve (data = `FrameworkCheckDto`)       |
 | `FRAMEWORK_CHECK_FAILED`                                                         | 400  | old submit-review pre-check (until removed) |
 | `FRAMEWORK_UNAVAILABLE`                                                          | 409  | pinned framework version not published     |
-| `INVALID_STATUS`                                                                 | 409  | lifecycle action in wrong status           |
+| `INVALID_STATUS`                                                                 | 409  | lifecycle action or pin action in wrong status |
 | `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED`                                     | 400  | approval request                           |
 | `MENTION_TARGET_INVALID`                                                         | 400  | post/edit message                          |
 | `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, `TOO_MANY_MENTIONS`, `TOO_MANY_ATTACHMENTS` | 400  | post/edit message                          |
-| `ATTACHMENT_INVALID`, `ATTACHMENT_TOO_LARGE`, `ATTACHMENT_TYPE_NOT_ALLOWED`      | 400  | attachments                                |
+| `ATTACHMENT_INVALID`, `ATTACHMENT_TOO_LARGE`, `ATTACHMENT_TYPE_NOT_ALLOWED`      | 400  | attachments, save attachment as material   |
 | `MATERIAL_ACTIVITY_INVALID`                                                      | 409  | save attachment as material                |
 | `FRAMEWORK_RULES_INVALID`                                                        | 400  | framework version save                     |
 | `ENDPOINT_REMOVED`                                                               | 410  | removed endpoints                          |

@@ -76,7 +76,8 @@ One task per review/commit cycle, in this order:
 - [x] 2. A1 model (schema) — migration `20260930165911_AddAdvisoryChatModel`
 - [x] 3. A8 change log + lock rules — migration `20260930172444_AddCurriculumChangeLog`
 - [x] 4. A7 framework rules + rubric drop — migration `20260930181132_DropRubricAddFrameworkRules`
-- [ ] 5. A3 + A2 discussion endpoints
+- [x] 5. A3 + A2 discussion endpoints — data migration
+  `20260930183025_MigrateAdvisoryThreadsToDiscussion` (not applied locally)
 - [ ] 6. A4 approval lifecycle
 - [ ] 7. A5 + A6 realtime + deprecation
 - [ ] 8. Seed cleanup
@@ -131,6 +132,16 @@ One task per review/commit cycle, in this order:
   counts `ProgramSkill` links. The new checks run in `framework-check` and the
   old submit-review pre-check; the frozen-snapshot board highlights keep the
   original four. Evaluation semantics are recorded in contract section 6.1.
+- 2026-10-01: Task 5 makes thread write routes 410; thread reads and the old
+  thread service stay until task 7.
+- 2026-10-01: Thread migration interleaves General messages and
+  RequiredChange/Suggestion roots by `CreatedAt` after existing chat messages;
+  a `Resolved` RequiredChange root becomes a plain message.
+- 2026-10-01: Chat posts keep the existing `AdvisoryReply` notification
+  intent; no pin notifications or realtime events until task 7.
+- 2026-10-01: Message filter and mention counts use the exact target only.
+- 2026-10-01: Save-as-material uses `CurriculumEditGuard` (no status check)
+  plus material type/size rules (400 `ATTACHMENT_TYPE_NOT_ALLOWED`).
 - 2026-09-30: `MaterialService` upload/update/delete now go through
   `CurriculumEditGuard` (previously unguarded).
 - 2026-09-30: The session message moves to the end of the stream when

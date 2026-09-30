@@ -15,4 +15,9 @@ public interface IAdvisoryReferenceResolver
     Task<IReadOnlyList<AdvisoryReferenceDto>> ResolveManyAsync(
         Guid programId,
         IReadOnlyList<Guid> referenceIds);
+
+    /// <summary>Resolves already-loaded references, loading the curriculum tree at most once.</summary>
+    Task<IReadOnlyDictionary<Guid, AdvisoryReferenceDto>> ResolveLoadedAsync(
+        Guid programId,
+        IReadOnlyCollection<ProgramAdvisoryReference> references);
 }

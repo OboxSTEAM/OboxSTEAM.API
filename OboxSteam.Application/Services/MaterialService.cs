@@ -38,6 +38,8 @@ public class MaterialService : IMaterialService
     private const string FolderVideo   = "materials/video";
     private const string FolderImage   = "materials/image";
 
+    private const string MaterialActivityInvalidCode = "MATERIAL_ACTIVITY_INVALID";
+
     private readonly IClaimsService _claimsService;
     private readonly IUnitOfWork    _unitOfWork;
     private readonly IBlobService   _blobService;
@@ -130,6 +132,75 @@ public class MaterialService : IMaterialService
             "UploadMaterialAsync completed. MaterialId={MaterialId}, Type={Type}, Size={Size}B",
             material.Id, materialType, file.Length);
 
+        return await MapToPresignedDtoAsync(material);
+    }
+
+    /// <inheritdoc />
+    public async Task<MaterialResponseDto> CreateFromDiscussionAttachmentAsync(
+        CreateMaterialFromDiscussionAttachmentRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var title = request.Title?.Trim();
+        if (string.IsNullOrEmpty(title))
+        {
+            throw ErrorHelper.BadRequest("Title is required.");
+        }
+
+        var attachment = await _unitOfWork.ProgramAdvisoryDiscussionAttachments.GetByIdAsync(request.AttachmentId);
+        var message = attachment?.MessageId is { } messageId
+            ? await _unitOfWork.ProgramAdvisoryDiscussionMessages.GetByIdAsync(messageId)
+            : null;
+        if (attachment == null || attachment.IsDeleted || message == null || message.IsDeleted || message.RemovedAt != null)
+        {
+            throw ErrorHelper.BadRequest("The attachment must belong to a sent chat message.", "ATTACHMENT_INVALID");
+        }
+
+        var extension = Path.GetExtension(attachment.FileName).ToLowerInvariant();
+        var materialType = ResolveType(extension);
+        if (materialType is null || attachment.SizeBytes > MaxSizeFor(materialType.Value))
+        {
+            throw ErrorHelper.BadRequest(
+                "This attachment cannot be saved as a material: allowed are PDF, DOC/DOCX, video, and images within the material size limits.",
+                "ATTACHMENT_TYPE_NOT_ALLOWED");
+        }
+
+        var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, attachment.ProgramId);
+        if (!tree.ActivitiesById.TryGetValue(request.ActivityId, out var activity)
+            || activity.ActivityType != ActivityType.SelfPaced)
+        {
+            throw ErrorHelper.Conflict(
+                "The activity must be a SelfPaced activity of the attachment's program.", MaterialActivityInvalidCode);
+        }
+
+        if (await _unitOfWork.Materials.FirstOrDefaultAsync(m => m.ActivityId == request.ActivityId) != null)
+        {
+            throw ErrorHelper.Conflict("This activity already has a material.", MaterialActivityInvalidCode);
+        }
+
+        await EnsureCurriculumEditableAsync(activity);
+
+        var folder = ResolveFolder(materialType.Value);
+        var s3Key = $"{folder}/{request.ActivityId}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{extension}";
+        await _blobService.CopyObjectAsync(attachment.StorageKey, s3Key);
+        var userId = _claimsService.GetCurrentUserId;
+        var material = new Material
+        {
+            ActivityId = request.ActivityId,
+            Title = title,
+            MaterialType = materialType.Value,
+            FileUrl = await _blobService.GetPreviewUrlAsync(s3Key),
+            FileSizeBytes = attachment.SizeBytes,
+            CreatedBy = userId,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        await _unitOfWork.Materials.AddAsync(material);
+        await _unitOfWork.SaveChangesAsync();
+        await PublishMaterialUpdatedAsync(material, activity);
+
+        _logger.LogInformation(
+            "Material {MaterialId} created from discussion attachment {AttachmentId} by UserId={UserId}",
+            material.Id, attachment.Id, userId);
         return await MapToPresignedDtoAsync(material);
     }
 
@@ -545,6 +616,13 @@ public class MaterialService : IMaterialService
         MaterialType.Video => FolderVideo,
         MaterialType.Image => FolderImage,
         _       => throw new InvalidOperationException($"Unknown material type: {materialType}")
+    };
+
+    private static long MaxSizeFor(MaterialType materialType) => materialType switch
+    {
+        MaterialType.Video => MaxVideoSize,
+        MaterialType.Image => MaxImageSize,
+        _ => MaxDocSize,
     };
 
     private static void ValidateFileSize(MaterialType materialType, long fileLength)

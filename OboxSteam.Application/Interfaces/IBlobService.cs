@@ -24,6 +24,9 @@ public interface IBlobService
 
     Task<string> GetFileUrlAsync(string fileName, CancellationToken cancellationToken = default);
 
+    /// <summary>Presigned download URL for a bucket-relative key, valid for <paramref name="lifetime"/>.</summary>
+    Task<string> GetFileUrlAsync(string fileName, TimeSpan lifetime, CancellationToken cancellationToken = default);
+
     Task DeleteFileAsync(string fileUrl, CancellationToken cancellationToken = default);
 
     /// <summary>

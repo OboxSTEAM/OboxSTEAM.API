@@ -21,7 +21,11 @@ public class ProgramController : ControllerBase
     private readonly IProgramService _programService;
     private readonly ICurriculumReviewService _curriculumReviewService;
     private readonly IProgramAdvisoryService _programAdvisoryService;
+    private const string ThreadsRemovedMessage =
+        "Advisory threads are read-only; use the program advisory discussion (advisory-discussion/messages).";
+
     private readonly IProgramAdvisoryDiscussionService _programAdvisoryDiscussionService;
+    private readonly IProgramAdvisoryAttachmentService _programAdvisoryAttachmentService;
     private readonly IEnrollmentCurriculumService _enrollmentCurriculumService;
     private readonly IClassService _classService;
     private readonly IClassSeatHoldService _classSeatHoldService;
@@ -32,6 +36,7 @@ public class ProgramController : ControllerBase
         ICurriculumReviewService curriculumReviewService,
         IProgramAdvisoryService programAdvisoryService,
         IProgramAdvisoryDiscussionService programAdvisoryDiscussionService,
+        IProgramAdvisoryAttachmentService programAdvisoryAttachmentService,
         IEnrollmentCurriculumService enrollmentCurriculumService,
         IClassService classService,
         IClassSeatHoldService classSeatHoldService,
@@ -41,6 +46,7 @@ public class ProgramController : ControllerBase
         _curriculumReviewService = curriculumReviewService;
         _programAdvisoryService = programAdvisoryService;
         _programAdvisoryDiscussionService = programAdvisoryDiscussionService;
+        _programAdvisoryAttachmentService = programAdvisoryAttachmentService;
         _enrollmentCurriculumService = enrollmentCurriculumService;
         _classService = classService;
         _classSeatHoldService = classSeatHoldService;
@@ -557,17 +563,13 @@ public class ProgramController : ControllerBase
             result, "200", "Advisory pin summaries retrieved successfully."));
     }
 
+    [Obsolete("Advisory threads are read-only; use advisory-discussion/messages.")]
     [HttpPost("{id:guid}/advisory-threads")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Create an advisory thread")]
-    [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
-    public async Task<IActionResult> CreateAdvisoryThread(
-        [FromRoute] Guid id,
-        [FromBody] CreateAdvisoryThreadRequest request)
-    {
-        var result = await _programAdvisoryService.CreateThreadAsync(id, request);
-        return Ok(ApiResult<AdvisoryThreadDto>.Success(result, "200", "Advisory thread created."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult CreateAdvisoryThread([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
     [HttpGet("{id:guid}/advisory-threads/{threadId:guid}/messages")]
     [Authorize(Roles = "Expert,Manager,Admin")]
@@ -582,54 +584,29 @@ public class ProgramController : ControllerBase
             result, "200", "Advisory messages retrieved successfully."));
     }
 
+    [Obsolete("Advisory threads are read-only; use advisory-discussion/messages.")]
     [HttpPost("{id:guid}/advisory-threads/{threadId:guid}/messages")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Add a message to an advisory thread")]
-    [ProducesResponseType(typeof(ApiResult<AdvisoryMessageDto>), 200)]
-    public async Task<IActionResult> AddAdvisoryMessage(
-        [FromRoute] Guid id,
-        [FromRoute] Guid threadId,
-        [FromBody] AddAdvisoryMessageRequest request)
-    {
-        if (request == null)
-        {
-            return BadRequest(ApiResult<object>.Failure("400", "Request body is required."));
-        }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult AddAdvisoryMessage([FromRoute] Guid id, [FromRoute] Guid threadId)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
-        var result = await _programAdvisoryService.AddMessageAsync(id, threadId, request.Message);
-        return Ok(ApiResult<AdvisoryMessageDto>.Success(result, "200", "Advisory message added."));
-    }
-
+    [Obsolete("Advisory threads are read-only; use advisory-discussion pins.")]
     [HttpPost("{id:guid}/advisory-threads/{threadId:guid}/actions")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "Perform one advisory thread action",
-        Description = "MarkFixed (manager, open required change, Draft), Acknowledge (manager or author, open suggestion), or Accept (responsible advisor, Addressed required change while the program is PendingReview). Returns the full thread. clientOperationId is idempotent. Waive is not an action.")]
-    [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
-    public async Task<IActionResult> PerformAdvisoryThreadAction(
-        [FromRoute] Guid id,
-        [FromRoute] Guid threadId,
-        [FromBody] AdvisoryThreadActionRequest request)
-    {
-        var result = await _programAdvisoryService.PerformThreadActionAsync(id, threadId, request);
-        return Ok(ApiResult<AdvisoryThreadDto>.Success(result, "200", "Advisory thread action applied."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult PerformAdvisoryThreadAction([FromRoute] Guid id, [FromRoute] Guid threadId)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
-    [Obsolete("Use POST /api/programs/{id}/advisory-threads/{threadId}/actions.")]
+    [Obsolete("Advisory threads are read-only; use advisory-discussion pins.")]
     [HttpPatch("{id:guid}/advisory-threads/{threadId:guid}/status")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "Update advisory thread status",
-        Description = "Obsolete. Use POST .../actions. Waive is rejected. Returns the full AdvisoryThreadDto.")]
-    [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
-    public async Task<IActionResult> UpdateAdvisoryThreadStatus(
-        [FromRoute] Guid id,
-        [FromRoute] Guid threadId,
-        [FromBody] UpdateAdvisoryThreadStatusRequest request)
-    {
-        var result = await _programAdvisoryService.UpdateThreadStatusAsync(id, threadId, request);
-        return Ok(ApiResult<AdvisoryThreadDto>.Success(result, "200", "Advisory thread status updated."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult UpdateAdvisoryThreadStatus([FromRoute] Guid id, [FromRoute] Guid threadId)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
     [HttpPost("{id:guid}/advisory-read")]
     [Authorize(Roles = "Expert,Manager,Admin")]
@@ -680,25 +657,40 @@ public class ProgramController : ControllerBase
             result, "200", "Advisory anchor fields retrieved."));
     }
 
-    [Obsolete("Discussion lives on the program General advisory thread.")]
+    [HttpGet("{id:guid}/mention-targets")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "List mentionable curriculum components",
+        Description = "Participants only. Every component of the program (program, modules, courses, research milestones, activities, materials, assignments) as a flat list in curriculum tree order, with ancestor path.")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<MentionTargetDto>>), 200)]
+    public async Task<IActionResult> GetMentionTargets([FromRoute] Guid id)
+    {
+        var result = await _programAdvisoryDiscussionService.GetMentionTargetsAsync(id);
+        return Ok(ApiResult<IReadOnlyList<MentionTargetDto>>.Success(result, "200", "Mention targets retrieved."));
+    }
+
     [HttpGet("{id:guid}/advisory-discussion/messages")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "List paginated program Discussion messages")]
+    [SwaggerOperation(
+        Summary = "List paginated program chat messages",
+        Description = "Cursor paging with before/after. targetType + targetId (together) return only messages that mention that exact component. Deleted messages are tombstones.")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionPageDto>), 200)]
     public async Task<IActionResult> GetAdvisoryDiscussionMessages(
         [FromRoute] Guid id,
         [FromQuery] string? before = null,
         [FromQuery] string? after = null,
-        [FromQuery] int pageSize = 30)
+        [FromQuery] int pageSize = 30,
+        [FromQuery] ProgramAdvisoryTargetType? targetType = null,
+        [FromQuery] Guid? targetId = null)
     {
-        var result = await _programAdvisoryDiscussionService.GetMessagesAsync(id, before, after, pageSize);
+        var result = await _programAdvisoryDiscussionService.GetMessagesAsync(
+            id, before, after, pageSize, targetType, targetId);
         return Ok(ApiResult<AdvisoryDiscussionPageDto>.Success(result, "200", "Discussion messages retrieved successfully."));
     }
 
-    [Obsolete("Discussion lives on the program General advisory thread.")]
     [HttpGet("{id:guid}/advisory-discussion/messages/{messageId:guid}")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Get one program Discussion message")]
+    [SwaggerOperation(Summary = "Get one program chat message")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
     public async Task<IActionResult> GetAdvisoryDiscussionMessage(
         [FromRoute] Guid id,
@@ -708,10 +700,11 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<AdvisoryDiscussionMessageDto>.Success(result, "200", "Discussion message retrieved successfully."));
     }
 
-    [Obsolete("Discussion lives on the program General advisory thread.")]
     [HttpPost("{id:guid}/advisory-discussion/messages")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Add a program Discussion message")]
+    [SwaggerOperation(
+        Summary = "Post a program chat message",
+        Description = "Text may contain mention tokens @[Type:uuid] (≤ 20, each must belong to the program: 400 MENTION_TARGET_INVALID). Text ≤ 4000 (MESSAGE_TOO_LONG); text or attachments required (MESSAGE_EMPTY); ≤ 10 unsent own attachments (TOO_MANY_ATTACHMENTS, ATTACHMENT_INVALID). Idempotent on author + clientMessageId.")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
     public async Task<IActionResult> AddAdvisoryDiscussionMessage(
         [FromRoute] Guid id,
@@ -719,6 +712,120 @@ public class ProgramController : ControllerBase
     {
         var result = await _programAdvisoryDiscussionService.AddMessageAsync(id, request);
         return Ok(ApiResult<AdvisoryDiscussionMessageDto>.Success(result, "200", "Discussion message added."));
+    }
+
+    [HttpPatch("{id:guid}/advisory-discussion/messages/{messageId:guid}")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Edit own chat message", Description = "Author only. Mentions are re-parsed; same text rules as posting.")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
+    public async Task<IActionResult> EditAdvisoryDiscussionMessage(
+        [FromRoute] Guid id,
+        [FromRoute] Guid messageId,
+        [FromBody] EditAdvisoryDiscussionMessageRequest request)
+    {
+        var result = await _programAdvisoryDiscussionService.EditMessageAsync(id, messageId, request);
+        return Ok(ApiResult<AdvisoryDiscussionMessageDto>.Success(result, "200", "Discussion message updated."));
+    }
+
+    [HttpDelete("{id:guid}/advisory-discussion/messages/{messageId:guid}")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Delete own chat message", Description = "Author only. The message stays as a tombstone; mentions, attachments, and pin are removed.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 200)]
+    public async Task<IActionResult> RemoveAdvisoryDiscussionMessage(
+        [FromRoute] Guid id,
+        [FromRoute] Guid messageId)
+    {
+        await _programAdvisoryDiscussionService.RemoveMessageAsync(id, messageId);
+        return Ok(ApiResult<object>.Success(new { }, "200", "Discussion message deleted."));
+    }
+
+    [HttpPost("{id:guid}/advisory-discussion/messages/{messageId:guid}/pin")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Pin a chat message", Description = "Advisor or board expert. Pin starts Open; already pinned messages are returned unchanged.")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
+    public async Task<IActionResult> PinAdvisoryDiscussionMessage(
+        [FromRoute] Guid id,
+        [FromRoute] Guid messageId)
+    {
+        var result = await _programAdvisoryDiscussionService.PinMessageAsync(id, messageId);
+        return Ok(ApiResult<AdvisoryDiscussionMessageDto>.Success(result, "200", "Message pinned."));
+    }
+
+    [HttpDelete("{id:guid}/advisory-discussion/messages/{messageId:guid}/pin")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Unpin a chat message", Description = "Advisor or board expert.")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
+    public async Task<IActionResult> UnpinAdvisoryDiscussionMessage(
+        [FromRoute] Guid id,
+        [FromRoute] Guid messageId)
+    {
+        var result = await _programAdvisoryDiscussionService.UnpinMessageAsync(id, messageId);
+        return Ok(ApiResult<AdvisoryDiscussionMessageDto>.Success(result, "200", "Message unpinned."));
+    }
+
+    [HttpPost("{id:guid}/advisory-discussion/messages/{messageId:guid}/pin/actions")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "Change a pin status",
+        Description = "MarkAddressed (Manager/Admin, Open → Addressed), Reopen (advisor or board expert, Addressed/Resolved → Open), Resolve (advisor or board expert, Open/Addressed → Resolved). Invalid transitions return 409 INVALID_STATUS.")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
+    public async Task<IActionResult> PerformAdvisoryPinAction(
+        [FromRoute] Guid id,
+        [FromRoute] Guid messageId,
+        [FromBody] AdvisoryDiscussionPinActionRequest request)
+    {
+        var result = await _programAdvisoryDiscussionService.PerformPinActionAsync(id, messageId, request);
+        return Ok(ApiResult<AdvisoryDiscussionMessageDto>.Success(result, "200", "Pin updated."));
+    }
+
+    [HttpGet("{id:guid}/advisory-discussion/pins")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "List pinned chat messages", Description = "Ordered by pinnedAt; optional status filter.")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryDiscussionMessageDto>>), 200)]
+    public async Task<IActionResult> GetAdvisoryDiscussionPins(
+        [FromRoute] Guid id,
+        [FromQuery] DiscussionPinStatus? status = null)
+    {
+        var result = await _programAdvisoryDiscussionService.GetPinsAsync(id, status);
+        return Ok(ApiResult<IReadOnlyList<AdvisoryDiscussionMessageDto>>.Success(result, "200", "Pinned messages retrieved."));
+    }
+
+    [HttpGet("{id:guid}/advisory-discussion/mention-counts")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Mention counts per component", Description = "Exact target only (no roll-up to ancestors). Deleted messages are excluded.")]
+    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryMentionCountDto>>), 200)]
+    public async Task<IActionResult> GetAdvisoryMentionCounts([FromRoute] Guid id)
+    {
+        var result = await _programAdvisoryDiscussionService.GetMentionCountsAsync(id);
+        return Ok(ApiResult<IReadOnlyList<AdvisoryMentionCountDto>>.Success(result, "200", "Mention counts retrieved."));
+    }
+
+    [HttpPost("{id:guid}/advisory-discussion/attachments")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [RequestSizeLimit(25L * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 25L * 1024 * 1024)]
+    [SwaggerOperation(
+        Summary = "Upload a chat attachment",
+        Description = "Multipart field 'file'. ≤ 20 MB (400 ATTACHMENT_TOO_LARGE). Allowed: png, jpg, jpeg, gif, webp, pdf, doc, docx, ppt, pptx, xls, xlsx, zip (400 ATTACHMENT_TYPE_NOT_ALLOWED). The attachment stays unsent until a message references it; unsent uploads are purged after 24 hours.")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionAttachmentDto>), 200)]
+    public async Task<IActionResult> UploadAdvisoryDiscussionAttachment(
+        [FromRoute] Guid id,
+        IFormFile file)
+    {
+        var result = await _programAdvisoryAttachmentService.UploadAsync(id, file);
+        return Ok(ApiResult<AdvisoryDiscussionAttachmentDto>.Success(result, "200", "Attachment uploaded."));
+    }
+
+    [HttpGet("{id:guid}/advisory-discussion/attachments/{attachmentId:guid}/url")]
+    [Authorize(Roles = "Expert,Manager,Admin")]
+    [SwaggerOperation(Summary = "Get a chat attachment download URL", Description = "Presigned URL valid for 15 minutes. Unsent attachments are visible to their uploader only.")]
+    [ProducesResponseType(typeof(ApiResult<AdvisoryAttachmentUrlDto>), 200)]
+    public async Task<IActionResult> GetAdvisoryDiscussionAttachmentUrl(
+        [FromRoute] Guid id,
+        [FromRoute] Guid attachmentId)
+    {
+        var result = await _programAdvisoryAttachmentService.GetUrlAsync(id, attachmentId);
+        return Ok(ApiResult<AdvisoryAttachmentUrlDto>.Success(result, "200", "Attachment URL created."));
     }
 
     [HttpPost("{id:guid}/advisory-threads/{threadId:guid}/read")]
@@ -734,7 +841,6 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<object>.Success(new { }, "200", "Advisory thread read cursor recorded."));
     }
 
-    [Obsolete("Discussion lives on the program General advisory thread.")]
     [HttpPost("{id:guid}/advisory-discussion/read")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "Advance the program Discussion read cursor")]

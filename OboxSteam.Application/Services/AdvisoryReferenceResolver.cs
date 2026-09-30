@@ -122,22 +122,72 @@ public sealed class AdvisoryReferenceResolver : IAdvisoryReferenceResolver
             throw ErrorHelper.NotFound($"Advisory reference '{referenceId}' was not found.");
         }
 
+        return await ResolveCoreAsync(
+            programId,
+            reference,
+            () => ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId),
+            LoadSnapshotAsync);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, AdvisoryReferenceDto>> ResolveLoadedAsync(
+        Guid programId,
+        IReadOnlyCollection<ProgramAdvisoryReference> references)
+    {
+        ArgumentNullException.ThrowIfNull(references);
+        var result = new Dictionary<Guid, AdvisoryReferenceDto>();
+        ProgramCurriculumTreeSnapshot? tree = null;
+        var snapshots = new Dictionary<Guid, (ProgramReviewSubmission?, CurriculumReviewSnapshotBuilder.CurriculumSnapshotDocument?)>();
+        foreach (var reference in references.Where(r => r.ProgramId == programId && !r.IsDeleted))
+        {
+            result[reference.Id] = await ResolveCoreAsync(
+                programId,
+                reference,
+                async () => tree ??= await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId),
+                async submissionId =>
+                {
+                    if (!snapshots.TryGetValue(submissionId, out var loaded))
+                    {
+                        loaded = await LoadSnapshotAsync(submissionId);
+                        snapshots[submissionId] = loaded;
+                    }
+
+                    return loaded;
+                });
+        }
+
+        return result;
+    }
+
+    private async Task<(ProgramReviewSubmission?, CurriculumReviewSnapshotBuilder.CurriculumSnapshotDocument?)> LoadSnapshotAsync(
+        Guid submissionId)
+    {
+        var submission = await _unitOfWork.ProgramReviewSubmissions.GetByIdAsync(submissionId);
+        return (submission, submission == null
+            ? null
+            : CurriculumReviewSnapshotBuilder.TryDeserialize(submission.CurriculumSnapshotJson));
+    }
+
+    private static async Task<AdvisoryReferenceDto> ResolveCoreAsync(
+        Guid programId,
+        ProgramAdvisoryReference reference,
+        Func<Task<ProgramCurriculumTreeSnapshot>> loadTree,
+        Func<Guid, Task<(ProgramReviewSubmission?, CurriculumReviewSnapshotBuilder.CurriculumSnapshotDocument?)>> loadSnapshot)
+    {
         var dto = Map(reference);
         try
         {
             string currentValue;
             if (reference.Context == AdvisoryReferenceContext.Submission)
             {
-                var submission = reference.SubmissionId.HasValue
-                    ? await _unitOfWork.ProgramReviewSubmissions.GetByIdAsync(reference.SubmissionId.Value)
-                    : null;
+                var (submission, snapshot) = reference.SubmissionId.HasValue
+                    ? await loadSnapshot(reference.SubmissionId.Value)
+                    : (null, null);
                 if (submission == null || submission.IsDeleted || submission.ProgramId != programId)
                 {
                     dto.UnavailableReason = "The original submission snapshot is unavailable.";
                     return dto;
                 }
 
-                var snapshot = CurriculumReviewSnapshotBuilder.TryDeserialize(submission.CurriculumSnapshotJson);
                 if (snapshot == null)
                 {
                     dto.UnavailableReason = "The original submission snapshot is unavailable.";
@@ -151,7 +201,7 @@ public sealed class AdvisoryReferenceResolver : IAdvisoryReferenceResolver
             }
             else
             {
-                var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
+                var tree = await loadTree();
                 var (_, fields) = ResolveLiveTarget(tree, reference.TargetType, reference.TargetId);
                 currentValue = reference.AnchorKind == ProgramAdvisoryAnchorKind.Node
                     ? reference.CapturedLabel

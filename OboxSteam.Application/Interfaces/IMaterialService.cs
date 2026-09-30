@@ -13,6 +13,12 @@ public interface IMaterialService
     Task<MaterialResponseDto> UploadMaterialAsync(IFormFile file, UploadMaterialRequestDto request);
 
     /// <summary>
+    /// Copies a sent advisory chat attachment into the material key space and attaches it to a
+    /// SelfPaced activity of the same program. Same type, size, and edit rules as upload.
+    /// </summary>
+    Task<MaterialResponseDto> CreateFromDiscussionAttachmentAsync(CreateMaterialFromDiscussionAttachmentRequest request);
+
+    /// <summary>
     /// Get a paginated list of materials with program/course/activity context.
     /// Supports search (title, activity, course, program name), filter, and sort.
     /// </summary>

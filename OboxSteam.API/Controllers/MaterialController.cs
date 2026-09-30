@@ -96,6 +96,24 @@ public class MaterialController : ControllerBase
         return Ok(ApiResult<MaterialResponseDto>.Success(result, "200", "Material uploaded successfully."));
     }
 
+    [HttpPost("from-discussion-attachment")]
+    [Authorize(Roles = "Manager,Admin")]
+    [SwaggerOperation(
+        Summary = "Save an advisory chat attachment as a material",
+        Description = "Copies a sent chat attachment to the material storage and attaches it to a SelfPaced activity " +
+                      "of the same program that has no material yet (409 MATERIAL_ACTIVITY_INVALID). Material type and " +
+                      "size limits apply (400 ATTACHMENT_TYPE_NOT_ALLOWED); an unsent or deleted attachment returns " +
+                      "400 ATTACHMENT_INVALID. The same curriculum edit lock as upload applies.")]
+    [ProducesResponseType(typeof(ApiResult<MaterialResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> CreateFromDiscussionAttachment(
+        [FromBody] CreateMaterialFromDiscussionAttachmentRequest request)
+    {
+        var result = await _materialService.CreateFromDiscussionAttachmentAsync(request);
+        return Ok(ApiResult<MaterialResponseDto>.Success(result, "200", "Material created from attachment."));
+    }
+
     // =========================================================================
     // GET BY ACTIVITY  —  GET /api/materials/activity/{activityId}
     // =========================================================================

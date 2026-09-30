@@ -75,6 +75,7 @@ public static class IocContainer
         services.AddHostedService<PersonalVideoGenerationWorker>();
         services.AddHostedService<SessionReminderService>();
         services.AddHostedService<AssignmentWindowCloseService>();
+        services.AddHostedService<DiscussionAttachmentPurgeService>();
 
         // Add JWT Authentication
         services.SetupJwt(configuration);
@@ -213,6 +214,7 @@ public static class IocContainer
         services.AddScoped<IProgramAdvisoryService, ProgramAdvisoryService>();
         services.AddScoped<IAdvisoryReferenceResolver, AdvisoryReferenceResolver>();
         services.AddScoped<IProgramAdvisoryDiscussionService, ProgramAdvisoryDiscussionService>();
+        services.AddScoped<IProgramAdvisoryAttachmentService, ProgramAdvisoryAttachmentService>();
         services.AddScoped<ICurriculumChangeRecorder, CurriculumChangeRecorder>();
         services.AddScoped<ICurriculumChangeService, CurriculumChangeService>();
         services.AddScoped<IParentService, ParentService>();
