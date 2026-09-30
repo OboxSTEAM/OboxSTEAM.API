@@ -14,6 +14,9 @@ namespace OboxSteam.API.Controllers;
 [Authorize(Roles = "Expert,Manager,Admin")]
 public class ProgramFrameworkController : ControllerBase
 {
+    private const string RubricRemovedMessage =
+        "Framework rubric criteria were removed. Configure framework rule fields on the draft version instead.";
+
     private readonly IProgramFrameworkService _frameworkService;
 
     public ProgramFrameworkController(IProgramFrameworkService frameworkService)
@@ -44,7 +47,7 @@ public class ProgramFrameworkController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [SwaggerOperation(Summary = "Get a program framework with rubric criteria")]
+    [SwaggerOperation(Summary = "Get a program framework with its current rule set")]
     [ProducesResponseType(typeof(ApiResult<ProgramFrameworkResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 404)]
     public async Task<IActionResult> GetFrameworkById([FromRoute] Guid id)
@@ -58,7 +61,7 @@ public class ProgramFrameworkController : ControllerBase
     [Authorize(Roles = "Expert")]
     [SwaggerOperation(
         Summary = "Create a program framework",
-        Description = "Expert-owned blueprint. Opt-in rules (null = not enforced). Zero rubric criteria is allowed.")]
+        Description = "Expert-owned blueprint. Opt-in rules (null or false = not enforced). Invalid rule values return 400 FRAMEWORK_RULES_INVALID.")]
     [ProducesResponseType(typeof(ApiResult<ProgramFrameworkResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -144,68 +147,31 @@ public class ProgramFrameworkController : ControllerBase
         return Ok(ApiResult<ProgramFrameworkVersionResponseDto>.Success(result, "200", "Framework version published."));
     }
 
+    [Obsolete("Rubric criteria were removed; use framework rule fields.")]
     [HttpPut("{id:guid}/versions/{versionId:guid}/rubric")]
-    [Authorize(Roles = "Expert")]
-    [SwaggerOperation(Summary = "Replace a draft rubric atomically")]
-    public async Task<IActionResult> SaveDraftRubric(
-        [FromRoute] Guid id,
-        [FromRoute] Guid versionId,
-        [FromBody] SaveFrameworkRubricRequest request)
-    {
-        var result = await _frameworkService.SaveDraftRubricAsync(id, versionId, request);
-        return Ok(ApiResult<ProgramFrameworkVersionResponseDto>.Success(result, "200", "Draft rubric saved."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = "Rubric criteria were replaced by framework rule fields.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult SaveDraftRubric([FromRoute] Guid id, [FromRoute] Guid versionId)
+        => throw RemovedEndpoint.Gone(RubricRemovedMessage);
 
+    [Obsolete("Rubric criteria were removed; use framework rule fields.")]
     [HttpPost("{id:guid}/criteria")]
-    [SwaggerOperation(
-        Summary = "Add a rubric criterion to a program framework",
-        Description = "Owning expert only. Allowed when the framework is unattached or the attached program is Draft. Blocked with 409 otherwise.")]
-    [ProducesResponseType(typeof(ApiResult<FrameworkRubricCriterionResponseDto>), 201)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> AddCriterion(
-        [FromRoute] Guid id,
-        [FromBody] FrameworkRubricCriterionRequest request)
-    {
-        var result = await _frameworkService.AddCriterionAsync(id, request);
-        return CreatedAtAction(
-            nameof(GetFrameworkById),
-            new { id },
-            ApiResult<FrameworkRubricCriterionResponseDto>.Success(result, "201", "Criterion added successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = "Rubric criteria were replaced by framework rule fields.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult AddCriterion([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(RubricRemovedMessage);
 
+    [Obsolete("Rubric criteria were removed; use framework rule fields.")]
     [HttpPut("{id:guid}/criteria/{criterionId:guid}")]
-    [SwaggerOperation(
-        Summary = "Update a rubric criterion",
-        Description = "Owning expert only. Allowed when the framework is unattached or the attached program is Draft. Blocked with 409 otherwise.")]
-    [ProducesResponseType(typeof(ApiResult<FrameworkRubricCriterionResponseDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> UpdateCriterion(
-        [FromRoute] Guid id,
-        [FromRoute] Guid criterionId,
-        [FromBody] FrameworkRubricCriterionRequest request)
-    {
-        var result = await _frameworkService.UpdateCriterionAsync(id, criterionId, request);
-        return Ok(ApiResult<FrameworkRubricCriterionResponseDto>.Success(
-            result, "200", "Criterion updated successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = "Rubric criteria were replaced by framework rule fields.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult UpdateCriterion([FromRoute] Guid id, [FromRoute] Guid criterionId)
+        => throw RemovedEndpoint.Gone(RubricRemovedMessage);
 
+    [Obsolete("Rubric criteria were removed; use framework rule fields.")]
     [HttpDelete("{id:guid}/criteria/{criterionId:guid}")]
-    [SwaggerOperation(
-        Summary = "Delete a rubric criterion",
-        Description = "Owning expert only. Allowed when the framework is unattached or the attached program is Draft. Blocked with 409 otherwise.")]
-    [ProducesResponseType(typeof(ApiResult<bool>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    [ProducesResponseType(typeof(ApiResult<object>), 409)]
-    public async Task<IActionResult> DeleteCriterion([FromRoute] Guid id, [FromRoute] Guid criterionId)
-    {
-        var result = await _frameworkService.DeleteCriterionAsync(id, criterionId);
-        return Ok(ApiResult<bool>.Success(result, "200", "Criterion deleted successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = "Rubric criteria were replaced by framework rule fields.")]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult DeleteCriterion([FromRoute] Guid id, [FromRoute] Guid criterionId)
+        => throw RemovedEndpoint.Gone(RubricRemovedMessage);
 }

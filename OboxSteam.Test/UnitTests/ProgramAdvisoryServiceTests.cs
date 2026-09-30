@@ -23,7 +23,6 @@ public sealed class ProgramAdvisoryServiceTests
     private readonly Guid _programId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly Guid _frameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private readonly Guid _frameworkVersionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-    private readonly Guid _criterionId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
     private readonly DateTime _now = new(2026, 9, 9, 12, 0, 0, DateTimeKind.Utc);
 
     private readonly InMemoryUnitOfWork _db = new();
@@ -197,7 +196,6 @@ public sealed class ProgramAdvisoryServiceTests
             AssignedAdvisorExpertId = _expertId,
             FrameworkVersionId = _frameworkVersionId,
             CurriculumSnapshotJson = """{"programId":"22222222-2222-2222-2222-222222222222","modules":[]}""",
-            RubricSnapshotJson = "[]",
             Status = ProgramReviewSubmissionStatus.Pending,
             SubmittedAt = _now,
             ConcurrencyVersion = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
@@ -359,10 +357,6 @@ public sealed class ProgramAdvisoryServiceTests
         {
             ConcurrencyVersion = Guid.Empty,
             OverallComment = "WIP",
-            Scores =
-            [
-                new ReviewCriterionScoreRequest { CriterionId = _criterionId, Score = 5 },
-            ],
         });
         Assert.Equal("WIP", first.OverallComment);
         Assert.NotEqual(Guid.Empty, first.ConcurrencyVersion);
@@ -397,46 +391,24 @@ public sealed class ProgramAdvisoryServiceTests
     }
 
     [Fact]
-    public async Task RequestChanges_RetainsScores()
+    public async Task RequestChanges_ClosesSubmissionWithComment()
     {
         SeedBase();
-        _db.FrameworkRubricCriteria.Seed(new FrameworkRubricCriterion
-        {
-            Id = _criterionId,
-            FrameworkId = _frameworkId,
-            FrameworkVersionId = _frameworkVersionId,
-            Name = "Outcomes",
-            Description = "Clear outcomes",
-            EvidenceGuidance = "List outcomes",
-            MaxScore = 10,
-            DisplayOrder = 1,
-            IsDeleted = false,
-        });
-        SeedPendingSubmission();
+        var submissionId = SeedPendingSubmission();
 
         var result = await CreateReviewSut(_expertUserId).RequestChangesAsync(
             _programId,
             new RequestCurriculumChangesRequest
             {
                 Comment = "Need clearer outcomes.",
-                Scores =
-                [
-                    new ReviewCriterionScoreRequest
-                    {
-                        CriterionId = _criterionId,
-                        Score = 4,
-                        Comment = "Incomplete",
-                    },
-                ],
             });
 
-        Assert.Single(result.Scores);
-        Assert.Equal(4, result.Scores[0].Score);
-        Assert.Equal("Outcomes", result.Scores[0].CriterionName);
-        Assert.Equal(10, result.Scores[0].MaxScore);
-        var persisted = Assert.Single(_db.ReviewCriterionScores.Items);
-        Assert.Equal("Outcomes", persisted.CriterionNameSnapshot);
-        Assert.Equal(10, persisted.MaxScoreSnapshot);
+        Assert.Equal(CurriculumReviewDecision.ChangesRequested, result.Decision);
+        Assert.Equal("Need clearer outcomes.", result.Comment);
+        Assert.Equal(submissionId, result.SubmissionId);
+        Assert.Equal(
+            ProgramReviewSubmissionStatus.ChangesRequested,
+            _db.ProgramReviewSubmissions.Items.Single().Status);
     }
 
     [Fact]
@@ -559,7 +531,6 @@ public sealed class ProgramAdvisoryServiceTests
             AssignedAdvisorExpertId = _expertId,
             FrameworkVersionId = _frameworkVersionId,
             CurriculumSnapshotJson = "{\"programId\":\"22222222-2222-2222-2222-222222222222\",\"modules\":[]}",
-            RubricSnapshotJson = "[]",
             Status = ProgramReviewSubmissionStatus.Pending,
             SubmittedAt = _now,
             ConcurrencyVersion = Guid.NewGuid(),
@@ -1041,6 +1012,43 @@ public sealed class ProgramAdvisoryServiceTests
             }));
         Assert.Equal("ADVISORY_ANCHOR_FIELD_INVALID", ex.ErrorCode);
     }
+
+#pragma warning disable CS0618
+    [Fact]
+    public async Task CreateThread_RubricCriterionTarget_Rejected()
+    {
+        SeedBase();
+        var submissionId = SeedPendingSubmission();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            CreateAdvisorySut(_expertUserId).CreateThreadAsync(_programId, new CreateAdvisoryThreadRequest
+            {
+                SubmissionId = submissionId,
+                TargetType = ProgramAdvisoryTargetType.RubricCriterion,
+                TargetId = Guid.NewGuid(),
+                Type = ProgramAdvisoryThreadType.Suggestion,
+                Message = "Rubric targets were removed.",
+            }));
+        Assert.Empty(_db.ProgramAdvisoryThreads.Items);
+    }
+
+    [Fact]
+    public async Task CreateReference_RubricCriterionTarget_Rejected()
+    {
+        SeedBase();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            CreateAdvisorySutWithReferences(_managerId).CreateReferenceAsync(
+                _programId,
+                new CreateAdvisoryReferenceRequest
+                {
+                    Context = AdvisoryReferenceContext.WorkingDraft,
+                    TargetType = ProgramAdvisoryTargetType.RubricCriterion,
+                    TargetId = Guid.NewGuid(),
+                    AnchorKind = ProgramAdvisoryAnchorKind.Node,
+                }));
+    }
+#pragma warning restore CS0618
 
     [Fact]
     public async Task DiscussionRead_DoesNotClearNoteUnread()

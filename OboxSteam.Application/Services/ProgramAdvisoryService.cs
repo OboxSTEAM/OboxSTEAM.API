@@ -1432,23 +1432,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
 
                 return (material.Title, material.MaterialType.ToString());
             }
-            case ProgramAdvisoryTargetType.RubricCriterion:
-            {
-                if (!program.FrameworkVersionId.HasValue)
-                {
-                    throw ErrorHelper.BadRequest("Program has no pinned framework version for rubric targets.");
-                }
-
-                var criterion = await _unitOfWork.FrameworkRubricCriteria.GetByIdAsync(targetId.Value);
-                if (criterion == null
-                    || criterion.IsDeleted
-                    || criterion.FrameworkVersionId != program.FrameworkVersionId)
-                {
-                    throw ErrorHelper.BadRequest("Target rubric criterion does not belong to this program.");
-                }
-
-                return (criterion.Name, $"MaxScore={criterion.MaxScore}");
-            }
             default:
                 throw ErrorHelper.BadRequest("Unsupported advisory target type.");
         }
@@ -2252,7 +2235,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         var moduleIds = modules.Select(m => m.Id).ToList();
         if (moduleIds.Count == 0)
         {
-            await LoadCriteriaAsync(program, index);
             return index;
         }
 
@@ -2306,23 +2288,7 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
             index.Milestones[milestone.Id] = (milestone.ModuleId, milestone.AssignmentId);
         }
 
-        await LoadCriteriaAsync(program, index);
         return index;
-    }
-
-    private async Task LoadCriteriaAsync(Program program, LiveTargetIndex index)
-    {
-        if (!program.FrameworkVersionId.HasValue)
-        {
-            return;
-        }
-
-        var criteria = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
-            c => c.FrameworkVersionId == program.FrameworkVersionId && !c.IsDeleted);
-        foreach (var criterion in criteria)
-        {
-            index.Criteria.Add(criterion.Id);
-        }
     }
 
     private static void ApplyLiveTarget(
@@ -2391,10 +2357,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
                     AssignmentId = milestone.AssignmentId,
                 };
                 return;
-            case ProgramAdvisoryTargetType.RubricCriterion:
-                dto.TargetExists = index.Criteria.Contains(id);
-                dto.TargetPath = new AdvisoryTargetPathDto();
-                return;
             default:
                 dto.TargetExists = false;
                 dto.TargetPath = new AdvisoryTargetPathDto();
@@ -2410,7 +2372,6 @@ public sealed class ProgramAdvisoryService : IProgramAdvisoryService
         public Dictionary<Guid, (Guid ModuleId, Guid CourseId, Guid ActivityId)> Materials { get; } = [];
         public Dictionary<Guid, (Guid ModuleId, Guid? CourseId, Guid AssignmentId)> Assignments { get; } = [];
         public Dictionary<Guid, (Guid ModuleId, Guid AssignmentId)> Milestones { get; } = [];
-        public HashSet<Guid> Criteria { get; } = [];
     }
 
     private static AdvisoryThreadDto MapThread(

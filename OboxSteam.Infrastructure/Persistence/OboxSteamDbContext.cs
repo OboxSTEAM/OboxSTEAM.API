@@ -22,9 +22,7 @@ public class OboxSteamDbContext : DbContext
     public DbSet<ExpertPublication> ExpertPublications { get; set; }
     public DbSet<ProgramFramework> ProgramFrameworks { get; set; }
     public DbSet<ProgramFrameworkVersion> ProgramFrameworkVersions { get; set; }
-    public DbSet<FrameworkRubricCriterion> FrameworkRubricCriteria { get; set; }
     public DbSet<CurriculumReview> CurriculumReviews { get; set; }
-    public DbSet<ReviewCriterionScore> ReviewCriterionScores { get; set; }
     public DbSet<ProgramReviewSubmission> ProgramReviewSubmissions { get; set; }
     public DbSet<ProgramReviewDraft> ProgramReviewDrafts { get; set; }
     public DbSet<ProgramAdvisoryThread> ProgramAdvisoryThreads { get; set; }
@@ -145,9 +143,7 @@ public class OboxSteamDbContext : DbContext
         modelBuilder.Entity<ExpertPublication>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramFramework>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramFrameworkVersion>().HasQueryFilter(e => !e.IsDeleted);
-        modelBuilder.Entity<FrameworkRubricCriterion>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CurriculumReview>().HasQueryFilter(e => !e.IsDeleted);
-        modelBuilder.Entity<ReviewCriterionScore>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramReviewSubmission>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramReviewDraft>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ProgramAdvisoryThread>().HasQueryFilter(e => !e.IsDeleted);
@@ -477,42 +473,23 @@ public class OboxSteamDbContext : DbContext
                 t.HasCheckConstraint(
                     "CK_ProgramFrameworkVersions_VersionPositive",
                     "\"VersionNumber\" > 0");
+                foreach (var column in new[]
+                         {
+                             "MinModules", "MaxModules", "MinCoursesPerModule", "MaxCoursesPerModule",
+                             "MinTotalHours", "MaxTotalHours", "MaxActivityMinutes", "MinOfflineSessions",
+                             "MinLiveSessions", "MinMaterialsPerActivity", "MinDescriptionLength", "MinSkillsGained",
+                         })
+                {
+                    t.HasCheckConstraint(
+                        $"CK_ProgramFrameworkVersions_{column}NonNegative",
+                        $"\"{column}\" IS NULL OR \"{column}\" >= 0");
+                }
+
                 t.HasCheckConstraint(
-                    "CK_ProgramFrameworkVersions_MinModulesPositive",
-                    "\"MinModules\" IS NULL OR \"MinModules\" > 0");
-                t.HasCheckConstraint(
-                    "CK_ProgramFrameworkVersions_MinOfflineSessionsPositive",
-                    "\"MinOfflineSessions\" IS NULL OR \"MinOfflineSessions\" > 0");
-                t.HasCheckConstraint(
-                    "CK_ProgramFrameworkVersions_MinLiveSessionsPositive",
-                    "\"MinLiveSessions\" IS NULL OR \"MinLiveSessions\" > 0");
+                    "CK_ProgramFrameworkVersions_RatiosInRange",
+                    "(\"MinOfflineRatioPercent\" IS NULL OR \"MinOfflineRatioPercent\" BETWEEN 0 AND 100) " +
+                    "AND (\"MinLiveRatioPercent\" IS NULL OR \"MinLiveRatioPercent\" BETWEEN 0 AND 100)");
             });
-        });
-
-        // =============================================
-        // FRAMEWORK RUBRIC CRITERION
-        // =============================================
-        modelBuilder.Entity<FrameworkRubricCriterion>(entity =>
-        {
-            entity.HasOne(c => c.Framework)
-                .WithMany(f => f.LegacyRubricCriteria)
-                .HasForeignKey(c => c.FrameworkId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(c => c.FrameworkVersion)
-                .WithMany(v => v.RubricCriteria)
-                .HasForeignKey(c => c.FrameworkVersionId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(c => c.FrameworkId)
-                .HasFilter("\"IsDeleted\" = false");
-
-            entity.HasIndex(c => c.FrameworkVersionId)
-                .HasFilter("\"IsDeleted\" = false");
-
-            entity.ToTable(t => t.HasCheckConstraint(
-                "CK_FrameworkRubricCriteria_MaxScorePositive",
-                "\"MaxScore\" > 0"));
         });
 
         // =============================================
@@ -590,30 +567,6 @@ public class OboxSteamDbContext : DbContext
             entity.ToTable(t => t.HasCheckConstraint(
                 "CK_CurriculumReviews_RoundPositive",
                 "\"Round\" > 0"));
-        });
-
-        // =============================================
-        // REVIEW CRITERION SCORE
-        // =============================================
-        modelBuilder.Entity<ReviewCriterionScore>(entity =>
-        {
-            entity.HasOne(s => s.CurriculumReview)
-                .WithMany(r => r.CriterionScores)
-                .HasForeignKey(s => s.CurriculumReviewId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(s => s.FrameworkRubricCriterion)
-                .WithMany(c => c.Scores)
-                .HasForeignKey(s => s.FrameworkRubricCriterionId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(s => new { s.CurriculumReviewId, s.FrameworkRubricCriterionId })
-                .IsUnique()
-                .HasFilter("\"IsDeleted\" = false");
-
-            entity.ToTable(t => t.HasCheckConstraint(
-                "CK_ReviewCriterionScores_ScoreNonNegative",
-                "\"Score\" >= 0"));
         });
 
         modelBuilder.Entity<ProgramReviewSubmission>(entity =>

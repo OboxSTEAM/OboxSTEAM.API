@@ -24,24 +24,6 @@ public static class CurriculumReviewSnapshotBuilder
         return JsonSerializer.Serialize(snapshot, JsonOptions);
     }
 
-    public static string BuildRubricSnapshotJson(IReadOnlyList<FrameworkRubricCriterion> criteria)
-    {
-        var rows = criteria
-            .OrderBy(c => c.DisplayOrder)
-            .ThenBy(c => c.Name)
-            .Select(c => new RubricCriterionSnapshot
-            {
-                Id = c.Id,
-                Name = c.Name,
-                Description = c.Description,
-                EvidenceGuidance = c.EvidenceGuidance,
-                MaxScore = c.MaxScore,
-                DisplayOrder = c.DisplayOrder,
-            })
-            .ToList();
-        return JsonSerializer.Serialize(rows, JsonOptions);
-    }
-
     public static CurriculumSnapshotDocument BuildCurriculumSnapshot(ProgramCurriculumTreeSnapshot tree)
     {
         var modules = new List<ModuleSnapshot>();
@@ -802,21 +784,6 @@ public static class CurriculumReviewSnapshotBuilder
         public List<ActivitySnapshot> Activities { get; set; } = [];
 
         public List<Guid> ActivityIds { get; set; } = [];
-    }
-
-    public sealed class RubricCriterionSnapshot
-    {
-        public Guid Id { get; set; }
-
-        public string Name { get; set; } = null!;
-
-        public string? Description { get; set; }
-
-        public string? EvidenceGuidance { get; set; }
-
-        public int MaxScore { get; set; }
-
-        public int DisplayOrder { get; set; }
     }
 
     public sealed class ProgramSnapshot

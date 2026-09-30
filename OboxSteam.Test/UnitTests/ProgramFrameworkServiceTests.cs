@@ -44,68 +44,92 @@ public sealed class ProgramFrameworkServiceTests
     }
 
     [Fact]
-    public async Task Create_CreatesEditableDraftAndCompleteRubric()
+    public async Task Create_CreatesEditableDraftWithRules()
     {
         SeedExpert();
         var result = await CreateSut(_expertUserId).CreateFrameworkAsync(new CreateProgramFrameworkRequest
         {
-            Name = "Robotics", Category = ProgramCategory.Technology, MinModules = 2,
-            Criteria = [new FrameworkRubricCriterionRequest
-            {
-                Name = "Alignment", Description = "Outcome alignment", EvidenceGuidance = "Mapped evidence",
-                MaxScore = 10,
-            }],
+            Name = "Robotics", Category = ProgramCategory.Technology, MinModules = 2, MaxModules = 6,
+            MinTotalHours = 10, RequireAssignmentPerModule = true, MinOfflineRatioPercent = 30,
         });
 
         Assert.True(result.HasDraftVersion);
         Assert.Equal(1, result.CurrentVersionNumber);
-        Assert.Single(result.Criteria);
-        Assert.Single(_db.ProgramFrameworkVersions.Items);
-        Assert.Equal(result.CurrentVersionId, _db.FrameworkRubricCriteria.Items.Single().FrameworkVersionId);
+        Assert.Equal(6, result.MaxModules);
+        Assert.True(result.RequireAssignmentPerModule);
+        var version = Assert.Single(_db.ProgramFrameworkVersions.Items);
+        Assert.Equal(2, version.MinModules);
+        Assert.Equal(10, version.MinTotalHours);
+        Assert.Equal(30, version.MinOfflineRatioPercent);
     }
 
     [Fact]
-    public async Task PublishedVersion_IsImmutable_AndNewDraftCopiesIt()
+    public async Task PublishedVersion_NewDraftCopiesAllRules()
     {
         SeedExpert();
         var service = CreateSut(_expertUserId);
         var framework = await service.CreateFrameworkAsync(new CreateProgramFrameworkRequest
         {
             Name = "Robotics", Category = ProgramCategory.Technology,
-            Criteria = [new FrameworkRubricCriterionRequest { Name = "Quality", MaxScore = 5 }],
+            MaxActivityMinutes = 120, RequireActivityDuration = true, MinMaterialsPerActivity = 1,
+            RequireCategoryMatch = true, MinDescriptionLength = 50, MinSkillsGained = 2, RequireThumbnail = true,
         });
         var published = await service.PublishDraftVersionAsync(framework.Id, framework.CurrentVersionId!.Value);
-        await Assert.ThrowsAsync<ConflictException>(() => service.SaveDraftRubricAsync(
-            framework.Id, published.Id, new SaveFrameworkRubricRequest()));
 
         var draft = await service.CreateDraftVersionAsync(framework.Id);
+
         Assert.Equal(2, draft.VersionNumber);
         Assert.False(draft.IsPublished);
-        Assert.Single(draft.Criteria);
-        Assert.Equal(published.Id, framework.CurrentVersionId);
+        Assert.Equal(120, draft.MaxActivityMinutes);
+        Assert.True(draft.RequireActivityDuration);
+        Assert.Equal(1, draft.MinMaterialsPerActivity);
+        Assert.True(draft.RequireCategoryMatch);
+        Assert.Equal(50, draft.MinDescriptionLength);
+        Assert.Equal(2, draft.MinSkillsGained);
+        Assert.True(draft.RequireThumbnail);
+        Assert.True(published.IsPublished);
     }
 
     [Fact]
-    public async Task FullRubricSave_ReplacesDraftRowsInOneSaveBoundary()
+    public async Task Update_NullLeavesRuleUnchanged_ClearFlagTurnsItOff()
     {
         SeedExpert();
         var service = CreateSut(_expertUserId);
         var framework = await service.CreateFrameworkAsync(new CreateProgramFrameworkRequest
         {
             Name = "Robotics", Category = ProgramCategory.Technology,
-            Criteria = [new FrameworkRubricCriterionRequest { Name = "Old", MaxScore = 5 }],
+            MinModules = 2, MaxModules = 5, RequireThumbnail = true,
         });
-        var result = await service.SaveDraftRubricAsync(
-            framework.Id, framework.CurrentVersionId!.Value, new SaveFrameworkRubricRequest
-            {
-                Criteria =
-                [
-                    new FrameworkRubricCriterionRequest { Name = "A", MaxScore = 3 },
-                    new FrameworkRubricCriterionRequest { Name = "B", MaxScore = 7 },
-                ],
-            });
-        Assert.Equal(2, result.Criteria.Count);
-        Assert.Single(_db.FrameworkRubricCriteria.Items, c => c.IsDeleted);
+
+        var result = await service.UpdateFrameworkAsync(framework.Id, new UpdateProgramFrameworkRequest
+        {
+            ClearMaxModules = true,
+            MinTotalHours = 8,
+            RequireThumbnail = false,
+        });
+
+        Assert.Equal(2, result.MinModules);
+        Assert.Null(result.MaxModules);
+        Assert.Equal(8, result.MinTotalHours);
+        Assert.False(result.RequireThumbnail);
+    }
+
+    [Fact]
+    public async Task Update_MinAboveMax_ReturnsRulesInvalid()
+    {
+        SeedExpert();
+        var service = CreateSut(_expertUserId);
+        var framework = await service.CreateFrameworkAsync(new CreateProgramFrameworkRequest
+        {
+            Name = "Robotics", Category = ProgramCategory.Technology, MaxCoursesPerModule = 3,
+        });
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateFrameworkAsync(
+            framework.Id,
+            new UpdateProgramFrameworkRequest { MinCoursesPerModule = 4 }));
+
+        Assert.Equal("FRAMEWORK_RULES_INVALID", error.ErrorCode);
+        Assert.Equal(3, _db.ProgramFrameworkVersions.Items.Single().MaxCoursesPerModule);
     }
 
     [Fact]
@@ -136,13 +160,28 @@ public sealed class ProgramFrameworkServiceTests
     }
 
     [Fact]
-    public async Task Create_RejectsZeroConfiguredMinimum()
+    public async Task Create_AllowsZeroMinimum()
     {
         SeedExpert();
-        await Assert.ThrowsAsync<BadRequestException>(() => CreateSut(_expertUserId).CreateFrameworkAsync(
+        var result = await CreateSut(_expertUserId).CreateFrameworkAsync(new CreateProgramFrameworkRequest
+        {
+            Name = "Zero", Category = ProgramCategory.Technology, MinModules = 0,
+        });
+
+        Assert.Equal(0, result.MinModules);
+    }
+
+    [Fact]
+    public async Task Create_RejectsNegativeValue()
+    {
+        SeedExpert();
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => CreateSut(_expertUserId).CreateFrameworkAsync(
             new CreateProgramFrameworkRequest
             {
-                Name = "Bad", Category = ProgramCategory.Technology, MinModules = 0,
+                Name = "Bad", Category = ProgramCategory.Technology, MinModules = -1,
             }));
+
+        Assert.Equal("FRAMEWORK_RULES_INVALID", error.ErrorCode);
+        Assert.Empty(_db.ProgramFrameworks.Items);
     }
 }

@@ -43,8 +43,6 @@ public sealed class ProgramReviewSubmissionDetailDto
 
     public string CurriculumSnapshotJson { get; set; } = null!;
 
-    public string RubricSnapshotJson { get; set; } = "[]";
-
     public DateTime SubmittedAt { get; set; }
 
     public DateTime? ClosedAt { get; set; }

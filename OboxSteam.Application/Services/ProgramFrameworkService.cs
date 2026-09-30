@@ -63,8 +63,7 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
         var actor = await ResolveActorAsync();
         if (actor.Role != RoleType.Expert) throw ErrorHelper.Forbidden("Only an expert can create a program framework.");
         var expert = await RequireCurrentExpertAsync(actor);
-        ValidateVersionFields(request.Name, request.MinModules, request.MinOfflineSessions, request.MinLiveSessions);
-        ProgramFrameworkValidator.ValidateCriteriaList(request.Criteria);
+        ProgramFrameworkValidator.ValidateName(request.Name, required: true);
 
         var framework = new ProgramFramework
         {
@@ -75,13 +74,30 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
             Id = Guid.NewGuid(), FrameworkId = framework.Id, VersionNumber = 1,
             Description = NormalizeOptionalText(request.Description),
             AcademicGuidance = NormalizeOptionalText(request.AcademicGuidance),
-            MinModules = request.MinModules, MinOfflineSessions = request.MinOfflineSessions,
+            MinModules = request.MinModules,
+            MaxModules = request.MaxModules,
+            MinCoursesPerModule = request.MinCoursesPerModule,
+            MaxCoursesPerModule = request.MaxCoursesPerModule,
+            MinTotalHours = request.MinTotalHours,
+            MaxTotalHours = request.MaxTotalHours,
+            MaxActivityMinutes = request.MaxActivityMinutes,
+            RequireActivityDuration = request.RequireActivityDuration,
+            MinOfflineSessions = request.MinOfflineSessions,
             MinLiveSessions = request.MinLiveSessions,
+            MinOfflineRatioPercent = request.MinOfflineRatioPercent,
+            MinLiveRatioPercent = request.MinLiveRatioPercent,
+            RequireAssignmentPerModule = request.RequireAssignmentPerModule,
+            RequireAssignmentPassScore = request.RequireAssignmentPassScore,
+            MinMaterialsPerActivity = request.MinMaterialsPerActivity,
+            RequireCategoryMatch = request.RequireCategoryMatch,
+            MinDescriptionLength = request.MinDescriptionLength,
+            MinSkillsGained = request.MinSkillsGained,
+            RequireThumbnail = request.RequireThumbnail,
             RequireCapstoneResearchMilestone = request.RequireCapstoneResearchMilestone,
         };
+        ProgramFrameworkValidator.ValidateRules(draft);
         await _unitOfWork.ProgramFrameworks.AddAsync(framework);
         await _unitOfWork.ProgramFrameworkVersions.AddAsync(draft);
-        await AddCriteriaAsync(framework.Id, draft.Id, request.Criteria ?? []);
         await _unitOfWork.SaveChangesAsync();
         _logger.LogInformation("Expert {ExpertId} created framework {FrameworkId} with draft version 1.", expert.Id, framework.Id);
         return await MapFrameworkAsync(framework);
@@ -94,19 +110,13 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
         await EnsureCanWriteAsync(actor, framework);
         var draft = await RequireDraftAsync(id);
         ProgramFrameworkValidator.ValidateName(request.Name, required: false);
-        ProgramFrameworkValidator.ValidatePositiveConstraint(nameof(request.MinModules), request.MinModules);
-        ProgramFrameworkValidator.ValidatePositiveConstraint(nameof(request.MinOfflineSessions), request.MinOfflineSessions);
-        ProgramFrameworkValidator.ValidatePositiveConstraint(nameof(request.MinLiveSessions), request.MinLiveSessions);
 
         if (!string.IsNullOrWhiteSpace(request.Name)) framework.Name = request.Name.Trim();
         if (request.Category.HasValue) framework.Category = request.Category.Value;
         if (request.Description != null) draft.Description = NormalizeOptionalText(request.Description);
         if (request.AcademicGuidance != null) draft.AcademicGuidance = NormalizeOptionalText(request.AcademicGuidance);
-        ApplyOptionalInt(request.MinModules, request.ClearMinModules, value => draft.MinModules = value);
-        ApplyOptionalInt(request.MinOfflineSessions, request.ClearMinOfflineSessions, value => draft.MinOfflineSessions = value);
-        ApplyOptionalInt(request.MinLiveSessions, request.ClearMinLiveSessions, value => draft.MinLiveSessions = value);
-        if (request.RequireCapstoneResearchMilestone.HasValue) draft.RequireCapstoneResearchMilestone = request.RequireCapstoneResearchMilestone;
-        else if (request.ClearRequireCapstoneResearchMilestone == true) draft.RequireCapstoneResearchMilestone = null;
+        ApplyRuleUpdates(draft, request);
+        ProgramFrameworkValidator.ValidateRules(draft);
 
         await _unitOfWork.ProgramFrameworks.Update(framework);
         await _unitOfWork.ProgramFrameworkVersions.Update(draft);
@@ -140,10 +150,10 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
         var actor = await ResolveActorAsync();
         var framework = await GetFrameworkAsync(frameworkId);
         await EnsureCanReadAsync(actor, framework);
-        var result = new List<ProgramFrameworkVersionResponseDto>();
-        foreach (var version in (await GetVersionsInternalAsync(frameworkId)).OrderByDescending(v => v.VersionNumber))
-            result.Add(await MapVersionAsync(version));
-        return result;
+        return (await GetVersionsInternalAsync(frameworkId))
+            .OrderByDescending(v => v.VersionNumber)
+            .Select(MapVersion)
+            .ToList();
     }
 
     public async Task<ProgramFrameworkVersionResponseDto> GetVersionAsync(Guid frameworkId, Guid versionId)
@@ -151,7 +161,7 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
         var actor = await ResolveActorAsync();
         var framework = await GetFrameworkAsync(frameworkId);
         await EnsureCanReadAsync(actor, framework);
-        return await MapVersionAsync(await GetVersionInternalAsync(frameworkId, versionId));
+        return MapVersion(await GetVersionInternalAsync(frameworkId, versionId));
     }
 
     public async Task<ProgramFrameworkVersionResponseDto> CreateDraftVersionAsync(Guid frameworkId)
@@ -168,19 +178,30 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
         {
             Id = Guid.NewGuid(), FrameworkId = frameworkId, VersionNumber = versions.Max(v => v.VersionNumber) + 1,
             Description = source.Description, AcademicGuidance = source.AcademicGuidance,
-            MinModules = source.MinModules, MinOfflineSessions = source.MinOfflineSessions,
+            MinModules = source.MinModules,
+            MaxModules = source.MaxModules,
+            MinCoursesPerModule = source.MinCoursesPerModule,
+            MaxCoursesPerModule = source.MaxCoursesPerModule,
+            MinTotalHours = source.MinTotalHours,
+            MaxTotalHours = source.MaxTotalHours,
+            MaxActivityMinutes = source.MaxActivityMinutes,
+            RequireActivityDuration = source.RequireActivityDuration,
+            MinOfflineSessions = source.MinOfflineSessions,
             MinLiveSessions = source.MinLiveSessions,
+            MinOfflineRatioPercent = source.MinOfflineRatioPercent,
+            MinLiveRatioPercent = source.MinLiveRatioPercent,
+            RequireAssignmentPerModule = source.RequireAssignmentPerModule,
+            RequireAssignmentPassScore = source.RequireAssignmentPassScore,
+            MinMaterialsPerActivity = source.MinMaterialsPerActivity,
+            RequireCategoryMatch = source.RequireCategoryMatch,
+            MinDescriptionLength = source.MinDescriptionLength,
+            MinSkillsGained = source.MinSkillsGained,
+            RequireThumbnail = source.RequireThumbnail,
             RequireCapstoneResearchMilestone = source.RequireCapstoneResearchMilestone,
         };
         await _unitOfWork.ProgramFrameworkVersions.AddAsync(draft);
-        var sourceCriteria = await GetCriteriaAsync(source.Id);
-        await AddCriteriaAsync(frameworkId, draft.Id, sourceCriteria.Select(c => new FrameworkRubricCriterionRequest
-        {
-            Name = c.Name, Description = c.Description, EvidenceGuidance = c.EvidenceGuidance,
-            MaxScore = c.MaxScore, DisplayOrder = c.DisplayOrder,
-        }).ToList());
         await _unitOfWork.SaveChangesAsync();
-        return await MapVersionAsync(draft);
+        return MapVersion(draft);
     }
 
     public async Task<ProgramFrameworkVersionResponseDto> PublishDraftVersionAsync(Guid frameworkId, Guid versionId)
@@ -195,95 +216,34 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
         version.PublishedAt = DateTime.UtcNow;
         await _unitOfWork.ProgramFrameworkVersions.Update(version);
         await _unitOfWork.SaveChangesAsync();
-        return await MapVersionAsync(version);
+        return MapVersion(version);
     }
 
-    public async Task<ProgramFrameworkVersionResponseDto> SaveDraftRubricAsync(
-        Guid frameworkId, Guid versionId, SaveFrameworkRubricRequest request)
+    private static void ApplyRuleUpdates(ProgramFrameworkVersion draft, UpdateProgramFrameworkRequest request)
     {
-        var actor = await ResolveActorAsync();
-        var framework = await GetFrameworkAsync(frameworkId);
-        await EnsureCanWriteAsync(actor, framework);
-        var version = await GetVersionInternalAsync(frameworkId, versionId);
-        EnsureDraft(version);
-        ProgramFrameworkValidator.ValidateCriteriaList(request.Criteria);
-        var existing = await GetCriteriaAsync(version.Id);
-        if (existing.Count > 0) await _unitOfWork.FrameworkRubricCriteria.SoftRemoveRange(existing);
-        await AddCriteriaAsync(frameworkId, version.Id, request.Criteria);
-        await _unitOfWork.SaveChangesAsync();
-        return await MapVersionAsync(version);
-    }
+        ApplyOptionalInt(request.MinModules, request.ClearMinModules, value => draft.MinModules = value);
+        ApplyOptionalInt(request.MaxModules, request.ClearMaxModules, value => draft.MaxModules = value);
+        ApplyOptionalInt(request.MinCoursesPerModule, request.ClearMinCoursesPerModule, value => draft.MinCoursesPerModule = value);
+        ApplyOptionalInt(request.MaxCoursesPerModule, request.ClearMaxCoursesPerModule, value => draft.MaxCoursesPerModule = value);
+        ApplyOptionalInt(request.MinTotalHours, request.ClearMinTotalHours, value => draft.MinTotalHours = value);
+        ApplyOptionalInt(request.MaxTotalHours, request.ClearMaxTotalHours, value => draft.MaxTotalHours = value);
+        ApplyOptionalInt(request.MaxActivityMinutes, request.ClearMaxActivityMinutes, value => draft.MaxActivityMinutes = value);
+        ApplyOptionalInt(request.MinOfflineSessions, request.ClearMinOfflineSessions, value => draft.MinOfflineSessions = value);
+        ApplyOptionalInt(request.MinLiveSessions, request.ClearMinLiveSessions, value => draft.MinLiveSessions = value);
+        ApplyOptionalInt(request.MinOfflineRatioPercent, request.ClearMinOfflineRatioPercent, value => draft.MinOfflineRatioPercent = value);
+        ApplyOptionalInt(request.MinLiveRatioPercent, request.ClearMinLiveRatioPercent, value => draft.MinLiveRatioPercent = value);
+        ApplyOptionalInt(request.MinMaterialsPerActivity, request.ClearMinMaterialsPerActivity, value => draft.MinMaterialsPerActivity = value);
+        ApplyOptionalInt(request.MinDescriptionLength, request.ClearMinDescriptionLength, value => draft.MinDescriptionLength = value);
+        ApplyOptionalInt(request.MinSkillsGained, request.ClearMinSkillsGained, value => draft.MinSkillsGained = value);
 
-    public async Task<FrameworkRubricCriterionResponseDto> AddCriterionAsync(Guid frameworkId, FrameworkRubricCriterionRequest request)
-    {
-        var actor = await ResolveActorAsync();
-        var framework = await GetFrameworkAsync(frameworkId);
-        await EnsureCanWriteAsync(actor, framework);
-        var draft = await RequireDraftAsync(frameworkId);
-        ProgramFrameworkValidator.ValidateCriterion(request);
-        var existing = await GetCriteriaAsync(draft.Id);
-        var criterion = CreateCriterion(frameworkId, draft.Id, request,
-            request.DisplayOrder ?? (existing.Count == 0 ? 1 : existing.Max(c => c.DisplayOrder) + 1));
-        await _unitOfWork.FrameworkRubricCriteria.AddAsync(criterion);
-        await _unitOfWork.SaveChangesAsync();
-        return MapCriterion(criterion, frameworkId);
+        if (request.RequireActivityDuration.HasValue) draft.RequireActivityDuration = request.RequireActivityDuration.Value;
+        if (request.RequireAssignmentPerModule.HasValue) draft.RequireAssignmentPerModule = request.RequireAssignmentPerModule.Value;
+        if (request.RequireAssignmentPassScore.HasValue) draft.RequireAssignmentPassScore = request.RequireAssignmentPassScore.Value;
+        if (request.RequireCategoryMatch.HasValue) draft.RequireCategoryMatch = request.RequireCategoryMatch.Value;
+        if (request.RequireThumbnail.HasValue) draft.RequireThumbnail = request.RequireThumbnail.Value;
+        if (request.RequireCapstoneResearchMilestone.HasValue) draft.RequireCapstoneResearchMilestone = request.RequireCapstoneResearchMilestone;
+        else if (request.ClearRequireCapstoneResearchMilestone == true) draft.RequireCapstoneResearchMilestone = null;
     }
-
-    public async Task<FrameworkRubricCriterionResponseDto> UpdateCriterionAsync(
-        Guid frameworkId, Guid criterionId, FrameworkRubricCriterionRequest request)
-    {
-        var actor = await ResolveActorAsync();
-        var framework = await GetFrameworkAsync(frameworkId);
-        await EnsureCanWriteAsync(actor, framework);
-        var draft = await RequireDraftAsync(frameworkId);
-        ProgramFrameworkValidator.ValidateCriterion(request);
-        var criterion = await GetCriterionAsync(draft.Id, criterionId);
-        criterion.Name = request.Name.Trim();
-        criterion.Description = NormalizeOptionalText(request.Description);
-        criterion.EvidenceGuidance = NormalizeOptionalText(request.EvidenceGuidance);
-        criterion.MaxScore = request.MaxScore;
-        if (request.DisplayOrder.HasValue) criterion.DisplayOrder = request.DisplayOrder.Value;
-        await _unitOfWork.FrameworkRubricCriteria.Update(criterion);
-        await _unitOfWork.SaveChangesAsync();
-        return MapCriterion(criterion, frameworkId);
-    }
-
-    public async Task<bool> DeleteCriterionAsync(Guid frameworkId, Guid criterionId)
-    {
-        var actor = await ResolveActorAsync();
-        var framework = await GetFrameworkAsync(frameworkId);
-        await EnsureCanWriteAsync(actor, framework);
-        var draft = await RequireDraftAsync(frameworkId);
-        var criterion = await GetCriterionAsync(draft.Id, criterionId);
-        await _unitOfWork.FrameworkRubricCriteria.SoftRemove(criterion);
-        await _unitOfWork.SaveChangesAsync();
-        return true;
-    }
-
-    private async Task AddCriteriaAsync(
-        Guid frameworkId,
-        Guid versionId,
-        IReadOnlyCollection<FrameworkRubricCriterionRequest> criteria)
-    {
-        var fallbackOrder = 1;
-        foreach (var request in criteria)
-        {
-            await _unitOfWork.FrameworkRubricCriteria.AddAsync(
-                CreateCriterion(frameworkId, versionId, request, request.DisplayOrder ?? fallbackOrder));
-            fallbackOrder++;
-        }
-    }
-
-    private static FrameworkRubricCriterion CreateCriterion(
-        Guid frameworkId,
-        Guid versionId,
-        FrameworkRubricCriterionRequest request,
-        int displayOrder) => new()
-    {
-        Id = Guid.NewGuid(), FrameworkId = frameworkId, FrameworkVersionId = versionId, Name = request.Name.Trim(),
-        Description = NormalizeOptionalText(request.Description), EvidenceGuidance = NormalizeOptionalText(request.EvidenceGuidance),
-        MaxScore = request.MaxScore, DisplayOrder = displayOrder,
-    };
 
     private async Task<ProgramFramework> GetFrameworkAsync(Guid id)
     {
@@ -306,17 +266,6 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
     private async Task<ProgramFrameworkVersion> RequireDraftAsync(Guid frameworkId)
         => await _unitOfWork.ProgramFrameworkVersions.FirstOrDefaultAsync(v => v.FrameworkId == frameworkId && !v.IsPublished && !v.IsDeleted)
             ?? throw ErrorHelper.Conflict("Create a draft framework version before editing.");
-
-    private async Task<List<FrameworkRubricCriterion>> GetCriteriaAsync(Guid versionId)
-        => await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(c => c.FrameworkVersionId == versionId && !c.IsDeleted);
-
-    private async Task<FrameworkRubricCriterion> GetCriterionAsync(Guid versionId, Guid criterionId)
-    {
-        var criterion = await _unitOfWork.FrameworkRubricCriteria.GetByIdAsync(criterionId);
-        if (criterion == null || criterion.IsDeleted || criterion.FrameworkVersionId != versionId)
-            throw ErrorHelper.NotFound($"Rubric criterion with id '{criterionId}' not found.");
-        return criterion;
-    }
 
     private async Task<User> ResolveActorAsync()
     {
@@ -353,8 +302,7 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
         var current = versions.FirstOrDefault(v => !v.IsPublished)
             ?? versions.Where(v => v.IsPublished).OrderByDescending(v => v.VersionNumber).FirstOrDefault();
         var expert = await _unitOfWork.Experts.GetByIdAsync(framework.ExpertId);
-        var versionDtos = new List<ProgramFrameworkVersionResponseDto>();
-        foreach (var version in versions.OrderByDescending(v => v.VersionNumber)) versionDtos.Add(await MapVersionAsync(version));
+        var versionDtos = versions.OrderByDescending(v => v.VersionNumber).Select(MapVersion).ToList();
         var currentDto = current == null ? null : versionDtos.Single(v => v.Id == current.Id);
         return new ProgramFrameworkResponseDto
         {
@@ -362,46 +310,58 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
             Name = framework.Name, Category = framework.Category, IsArchived = framework.IsArchived,
             CurrentVersionId = current?.Id, CurrentVersionNumber = current?.VersionNumber,
             HasDraftVersion = versions.Any(v => !v.IsPublished), Description = currentDto?.Description,
-            MinModules = currentDto?.MinModules, MinOfflineSessions = currentDto?.MinOfflineSessions,
+            MinModules = currentDto?.MinModules,
+            MaxModules = currentDto?.MaxModules,
+            MinCoursesPerModule = currentDto?.MinCoursesPerModule,
+            MaxCoursesPerModule = currentDto?.MaxCoursesPerModule,
+            MinTotalHours = currentDto?.MinTotalHours,
+            MaxTotalHours = currentDto?.MaxTotalHours,
+            MaxActivityMinutes = currentDto?.MaxActivityMinutes,
+            RequireActivityDuration = currentDto?.RequireActivityDuration ?? false,
+            MinOfflineSessions = currentDto?.MinOfflineSessions,
             MinLiveSessions = currentDto?.MinLiveSessions,
+            MinOfflineRatioPercent = currentDto?.MinOfflineRatioPercent,
+            MinLiveRatioPercent = currentDto?.MinLiveRatioPercent,
+            RequireAssignmentPerModule = currentDto?.RequireAssignmentPerModule ?? false,
+            RequireAssignmentPassScore = currentDto?.RequireAssignmentPassScore ?? false,
+            MinMaterialsPerActivity = currentDto?.MinMaterialsPerActivity,
+            RequireCategoryMatch = currentDto?.RequireCategoryMatch ?? false,
+            MinDescriptionLength = currentDto?.MinDescriptionLength,
+            MinSkillsGained = currentDto?.MinSkillsGained,
+            RequireThumbnail = currentDto?.RequireThumbnail ?? false,
             RequireCapstoneResearchMilestone = currentDto?.RequireCapstoneResearchMilestone,
-            RequiresExpertReview = true, Criteria = currentDto?.Criteria.ToList() ?? [], Versions = versionDtos,
+            RequiresExpertReview = true, Versions = versionDtos,
             CreatedAt = framework.CreatedAt, UpdatedAt = framework.UpdatedAt,
         };
     }
 
-    private async Task<ProgramFrameworkVersionResponseDto> MapVersionAsync(ProgramFrameworkVersion version)
+    private static ProgramFrameworkVersionResponseDto MapVersion(ProgramFrameworkVersion version) => new()
     {
-        var criteria = await GetCriteriaAsync(version.Id);
-        return new ProgramFrameworkVersionResponseDto
-        {
-            Id = version.Id, FrameworkId = version.FrameworkId, VersionNumber = version.VersionNumber,
-            Description = version.Description, AcademicGuidance = version.AcademicGuidance,
-            MinModules = version.MinModules, MinOfflineSessions = version.MinOfflineSessions,
-            MinLiveSessions = version.MinLiveSessions,
-            RequireCapstoneResearchMilestone = version.RequireCapstoneResearchMilestone,
-            IsPublished = version.IsPublished, PublishedAt = version.PublishedAt,
-            Criteria = criteria.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name)
-                .Select(c => MapCriterion(c, version.FrameworkId)).ToList(),
-            CreatedAt = version.CreatedAt, UpdatedAt = version.UpdatedAt,
-        };
-    }
-
-    private static FrameworkRubricCriterionResponseDto MapCriterion(FrameworkRubricCriterion criterion, Guid frameworkId) => new()
-    {
-        Id = criterion.Id, FrameworkId = frameworkId, FrameworkVersionId = criterion.FrameworkVersionId ?? Guid.Empty,
-        Name = criterion.Name, Description = criterion.Description, EvidenceGuidance = criterion.EvidenceGuidance,
-        MaxScore = criterion.MaxScore, DisplayOrder = criterion.DisplayOrder,
-        CreatedAt = criterion.CreatedAt, UpdatedAt = criterion.UpdatedAt,
+        Id = version.Id, FrameworkId = version.FrameworkId, VersionNumber = version.VersionNumber,
+        Description = version.Description, AcademicGuidance = version.AcademicGuidance,
+        MinModules = version.MinModules,
+        MaxModules = version.MaxModules,
+        MinCoursesPerModule = version.MinCoursesPerModule,
+        MaxCoursesPerModule = version.MaxCoursesPerModule,
+        MinTotalHours = version.MinTotalHours,
+        MaxTotalHours = version.MaxTotalHours,
+        MaxActivityMinutes = version.MaxActivityMinutes,
+        RequireActivityDuration = version.RequireActivityDuration,
+        MinOfflineSessions = version.MinOfflineSessions,
+        MinLiveSessions = version.MinLiveSessions,
+        MinOfflineRatioPercent = version.MinOfflineRatioPercent,
+        MinLiveRatioPercent = version.MinLiveRatioPercent,
+        RequireAssignmentPerModule = version.RequireAssignmentPerModule,
+        RequireAssignmentPassScore = version.RequireAssignmentPassScore,
+        MinMaterialsPerActivity = version.MinMaterialsPerActivity,
+        RequireCategoryMatch = version.RequireCategoryMatch,
+        MinDescriptionLength = version.MinDescriptionLength,
+        MinSkillsGained = version.MinSkillsGained,
+        RequireThumbnail = version.RequireThumbnail,
+        RequireCapstoneResearchMilestone = version.RequireCapstoneResearchMilestone,
+        IsPublished = version.IsPublished, PublishedAt = version.PublishedAt,
+        CreatedAt = version.CreatedAt, UpdatedAt = version.UpdatedAt,
     };
-
-    private static void ValidateVersionFields(string? name, int? minModules, int? minOffline, int? minLive)
-    {
-        ProgramFrameworkValidator.ValidateName(name, required: true);
-        ProgramFrameworkValidator.ValidatePositiveConstraint(nameof(minModules), minModules);
-        ProgramFrameworkValidator.ValidatePositiveConstraint(nameof(minOffline), minOffline);
-        ProgramFrameworkValidator.ValidatePositiveConstraint(nameof(minLive), minLive);
-    }
 
     private static void EnsureDraft(ProgramFrameworkVersion version)
     {

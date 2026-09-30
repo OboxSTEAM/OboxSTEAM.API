@@ -2,7 +2,7 @@ namespace OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 
 /// <summary>
 /// Live curriculum parents for a thread target so the manager editor can open the node.
-/// Material and rubric targets resolve to the owning activity or assignment.
+/// Material targets resolve to the owning activity.
 /// </summary>
 public sealed class AdvisoryTargetPathDto
 {

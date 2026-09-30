@@ -386,7 +386,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert")]
     [SwaggerOperation(
         Summary = "Approve a program as the deciding expert",
-        Description = "PendingReview → Approved. Only the assigned responsible advisor may approve. Unresolved RequiredChange threads (Open + Addressed) block approval (error code APPROVAL_BLOCKED). Submission concurrencyVersion is distinct from draft autosave tokens; stale tokens return 409. Scores are required when the attached framework has rubric criteria.")]
+        Description = "PendingReview → Approved. Only the assigned responsible advisor may approve. Unresolved RequiredChange threads (Open + Addressed) block approval (error code APPROVAL_BLOCKED). Submission concurrencyVersion is distinct from draft autosave tokens; stale tokens return 409.")]
     [ProducesResponseType(typeof(ApiResult<CurriculumReviewResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

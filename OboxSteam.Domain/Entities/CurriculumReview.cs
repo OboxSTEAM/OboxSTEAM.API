@@ -32,6 +32,4 @@ public class CurriculumReview : BaseEntity
     /// <summary>Idempotency key for request-changes / approve clients (optional).</summary>
     [MaxLength(100)]
     public string? ClientOperationId { get; set; }
-
-    public ICollection<ReviewCriterionScore> CriterionScores { get; set; } = new List<ReviewCriterionScore>();
 }

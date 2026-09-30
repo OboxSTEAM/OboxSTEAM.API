@@ -7,6 +7,4 @@ public sealed class ApproveCurriculumReviewRequest
     public Guid? ConcurrencyVersion { get; set; }
 
     public string? Comment { get; set; }
-
-    public List<ReviewCriterionScoreRequest>? Scores { get; set; }
 }

@@ -12,8 +12,10 @@ Optional `FrameworkId` links to an expert `ProgramFramework` blueprint.
 ## ProgramFramework
 
 Expert-owned curriculum blueprint assigned to at most one program, with
-opt-in constraints and a rubric scorecard (`FrameworkRubricCriterion`).
-Null or `false` rules are not enforced. `RequireCapstoneResearchMilestone =
+opt-in rules on each `ProgramFrameworkVersion` (module/course counts, total
+hours, activity duration, Offline/LiveOnline ratios, assignments, materials,
+category, description, skills, thumbnail, capstone). The rubric scorecard was
+removed. Null or `false` rules are not enforced. `RequireCapstoneResearchMilestone =
 true` requires ≥1 `ResearchMilestone` with `IsCapstone`. With a framework,
 only the owning expert may approve or request-changes; board experts may
 view and co-teach. Removing an expert from the board unlinks their Invited

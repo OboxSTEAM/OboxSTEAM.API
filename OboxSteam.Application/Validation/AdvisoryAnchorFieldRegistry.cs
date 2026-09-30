@@ -65,13 +65,6 @@ public static class AdvisoryAnchorFieldRegistry
                 ("materialType", "Material type"),
                 ("fileName", "File name"),
             ],
-            [ProgramAdvisoryTargetType.RubricCriterion] =
-            [
-                ("name", "Name"),
-                ("description", "Description"),
-                ("evidenceGuidance", "Evidence guidance"),
-                ("maxScore", "Max score"),
-            ],
         };
 
     public static IReadOnlyList<AdvisoryAnchorFieldDto> ListAll()

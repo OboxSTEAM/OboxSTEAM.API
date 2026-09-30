@@ -25,7 +25,6 @@ public sealed class CurriculumReviewServiceTests
     private readonly Guid _frameworkVersionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private readonly Guid _otherFrameworkVersionId = Guid.Parse("bcbcbcbc-bcbc-bcbc-bcbc-bcbcbcbcbcbc");
     private readonly Guid _otherFrameworkId = Guid.Parse("abababab-abab-abab-abab-abababababab");
-    private readonly Guid _criterionId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
     private readonly DateTime _now = new(2026, 8, 31, 6, 0, 0, DateTimeKind.Utc);
 
     private readonly InMemoryUnitOfWork _db = new();
@@ -161,7 +160,6 @@ public sealed class CurriculumReviewServiceTests
             AssignedAdvisorExpertId = advisorExpertId ?? _expertId,
             FrameworkVersionId = _db.Programs.Items.FirstOrDefault(p => p.Id == (programId ?? _programId))?.FrameworkVersionId,
             CurriculumSnapshotJson = """{"programId":"22222222-2222-2222-2222-222222222222","modules":[]}""",
-            RubricSnapshotJson = "[]",
             Status = ProgramReviewSubmissionStatus.Pending,
             SubmittedAt = _now,
             ConcurrencyVersion = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
@@ -476,48 +474,14 @@ public sealed class CurriculumReviewServiceTests
         var result = await sut.ApproveAsync(_programId, null);
 
         Assert.Equal(CurriculumReviewDecision.Approved, result.Decision);
-        Assert.Empty(result.Scores);
         Assert.Equal(ProgramStatus.Approved, _db.Programs.Items.Single().Status);
     }
 
     [Fact]
-    public async Task Approve_RequiresScores_WhenCriteriaExist()
+    public async Task Approve_WithComment_PersistsCommentWithoutScores()
     {
         SeedStaffAndOwner();
         SeedFramework();
-        _db.FrameworkRubricCriteria.Seed(new FrameworkRubricCriterion
-        {
-            Id = _criterionId,
-            FrameworkId = _frameworkId,
-            FrameworkVersionId = _frameworkVersionId,
-            Name = "Outcomes",
-            MaxScore = 10,
-            DisplayOrder = 1,
-            IsDeleted = false,
-        });
-        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
-        SeedPendingSubmission();
-        var sut = CreateSut(_expertUserId);
-
-        await Assert.ThrowsAsync<BadRequestException>(() => sut.ApproveAsync(_programId, null));
-        Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
-    }
-
-    [Fact]
-    public async Task Approve_WithValidScores_PersistsScores()
-    {
-        SeedStaffAndOwner();
-        SeedFramework();
-        _db.FrameworkRubricCriteria.Seed(new FrameworkRubricCriterion
-        {
-            Id = _criterionId,
-            FrameworkId = _frameworkId,
-            FrameworkVersionId = _frameworkVersionId,
-            Name = "Outcomes",
-            MaxScore = 10,
-            DisplayOrder = 1,
-            IsDeleted = false,
-        });
         SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
         SeedPendingSubmission();
         var sut = CreateSut(_expertUserId);
@@ -525,113 +489,18 @@ public sealed class CurriculumReviewServiceTests
         var result = await sut.ApproveAsync(_programId, new ApproveCurriculumReviewRequest
         {
             Comment = "Solid track",
-            Scores =
-            [
-                new ReviewCriterionScoreRequest
-                {
-                    CriterionId = _criterionId,
-                    Score = 8,
-                    Comment = "Clear outcomes",
-                },
-            ],
-        });
-
-        Assert.Single(result.Scores);
-        Assert.Equal(8, result.Scores[0].Score);
-        Assert.Equal(10, result.Scores[0].MaxScore);
-        Assert.Equal("Solid track", result.Comment);
-    }
-
-    [Fact]
-    public async Task Approve_ScoreBelowHalf_ReturnsRubricScoreBelowHalf()
-    {
-        SeedStaffAndOwner();
-        SeedFramework();
-        _db.FrameworkRubricCriteria.Seed(new FrameworkRubricCriterion
-        {
-            Id = _criterionId,
-            FrameworkId = _frameworkId,
-            FrameworkVersionId = _frameworkVersionId,
-            Name = "Outcomes",
-            MaxScore = 10,
-            DisplayOrder = 1,
-            IsDeleted = false,
-        });
-        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
-        SeedPendingSubmission();
-        var sut = CreateSut(_expertUserId);
-
-        var conflict = await Assert.ThrowsAsync<ConflictException>(() => sut.ApproveAsync(
-            _programId,
-            new ApproveCurriculumReviewRequest
-            {
-                Scores =
-                [
-                    new ReviewCriterionScoreRequest
-                    {
-                        CriterionId = _criterionId,
-                        Score = 3,
-                    },
-                ],
-            }));
-
-        Assert.Equal("RUBRIC_SCORE_BELOW_HALF", conflict.ErrorCode);
-        Assert.Contains("Outcomes", conflict.Message, StringComparison.Ordinal);
-        Assert.Equal(ProgramStatus.PendingReview, _db.Programs.Items.Single().Status);
-        Assert.Empty(_db.CurriculumReviews.Items);
-    }
-
-    [Fact]
-    public async Task Approve_ScoreAtHalf_Succeeds()
-    {
-        SeedStaffAndOwner();
-        SeedFramework();
-        _db.FrameworkRubricCriteria.Seed(new FrameworkRubricCriterion
-        {
-            Id = _criterionId,
-            FrameworkId = _frameworkId,
-            FrameworkVersionId = _frameworkVersionId,
-            Name = "Outcomes",
-            MaxScore = 10,
-            DisplayOrder = 1,
-            IsDeleted = false,
-        });
-        SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
-        SeedPendingSubmission();
-        var sut = CreateSut(_expertUserId);
-
-        var result = await sut.ApproveAsync(_programId, new ApproveCurriculumReviewRequest
-        {
-            Scores =
-            [
-                new ReviewCriterionScoreRequest
-                {
-                    CriterionId = _criterionId,
-                    Score = 5,
-                },
-            ],
         });
 
         Assert.Equal(CurriculumReviewDecision.Approved, result.Decision);
-        Assert.Equal(ProgramStatus.Approved, _db.Programs.Items.Single().Status);
-        Assert.Equal(5, Assert.Single(result.Scores).Score);
+        Assert.Equal("Solid track", result.Comment);
+        Assert.Equal("Solid track", Assert.Single(_db.CurriculumReviews.Items).Comment);
     }
 
     [Fact]
-    public async Task RequestChanges_ScoreBelowHalf_StillSucceeds()
+    public async Task RequestChanges_WithComment_MovesToDraft()
     {
         SeedStaffAndOwner();
         SeedFramework();
-        _db.FrameworkRubricCriteria.Seed(new FrameworkRubricCriterion
-        {
-            Id = _criterionId,
-            FrameworkId = _frameworkId,
-            FrameworkVersionId = _frameworkVersionId,
-            Name = "Outcomes",
-            MaxScore = 10,
-            DisplayOrder = 1,
-            IsDeleted = false,
-        });
         SeedProgram(status: ProgramStatus.PendingReview, frameworkId: _frameworkId);
         SeedPendingSubmission();
         var sut = CreateSut(_expertUserId);
@@ -639,19 +508,11 @@ public sealed class CurriculumReviewServiceTests
         var result = await sut.RequestChangesAsync(_programId, new RequestCurriculumChangesRequest
         {
             Comment = "Outcomes need work.",
-            Scores =
-            [
-                new ReviewCriterionScoreRequest
-                {
-                    CriterionId = _criterionId,
-                    Score = 3,
-                },
-            ],
         });
 
         Assert.Equal(CurriculumReviewDecision.ChangesRequested, result.Decision);
         Assert.Equal(ProgramStatus.Draft, _db.Programs.Items.Single().Status);
-        Assert.Equal(3, Assert.Single(result.Scores).Score);
+        Assert.Equal("Outcomes need work.", result.Comment);
     }
 
     [Fact]

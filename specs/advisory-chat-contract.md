@@ -198,10 +198,15 @@ the new approval lifecycle, step 7 with the framework-rules change.
    the same mention prefix rule.
 5. Threads that target `RubricCriterion` → plain messages without a mention.
 6. `Programs.CurriculumVersion = 0`; no change-log backfill.
-7. Rubric storage is dropped (no archive): `FrameworkRubricCriteria`,
-   `ReviewCriterionScores`, `ProgramReviewDrafts`,
+7. Rubric storage is dropped (no archive, migration
+   `DropRubricAddFrameworkRules`): `FrameworkRubricCriteria`,
+   `ReviewCriterionScores`, `ProgramReviewDrafts.ScoresJson`,
    `ProgramReviewSubmissions.RubricSnapshotJson`, and any
-   `ProgramAdvisoryReferences` with `TargetType = 'RubricCriterion'`.
+   `ProgramAdvisoryReferences` with `TargetType = 'RubricCriterion'` (plus
+   their message-reference rows). `ProgramReviewDrafts` keeps its comment
+   until the old review endpoints are removed. The `RubricCriterion` enum
+   value stays (`[Obsolete]`, rejected as a new target) until the thread
+   migration in steps 3–5.
 8. `CurriculumReview`, `ProgramReviewSubmission`, and advisory thread tables
    stay read-only for audit. No endpoint writes them.
 
@@ -432,9 +437,11 @@ notify the manager(s) with `CurriculumReviewApproved`.
 
 ### 5.4 Auto-revoke
 
-Any curriculum mutation on an `Approved` program revokes the active approval
-with `CurriculumEdited`, sets status `Draft`, and posts `ApprovalRevoked`,
-inside the same transaction as the edit.
+Any curriculum mutation while an approval is active (or the program is
+`Approved`) revokes the approval with `CurriculumEdited` and posts
+`ApprovalRevoked` inside the same save as the edit. `Approved` returns to
+`Draft`; `Active`/`Inactive` keep their status. The advisor is notified once
+per revoke with `CurriculumApprovalRevoked`, after commit (see section 1).
 
 ### 5.5 Expert read access
 
@@ -471,7 +478,29 @@ Existing: `minModules` (`MinModules`), `minOfflineSessions`
 
 Checks are emitted only for rules that are on. Each check keeps the existing
 shape `{ code, label, expected, actual, passed, affectedCurriculumLinks[] }`;
-`affectedCurriculumLinks` lists the failing components.
+`affectedCurriculumLinks` lists the failing components (empty for
+program-level checks). The four existing checks keep their `expected`
+strings and link sets.
+
+Evaluation semantics:
+
+- `TotalHours` compares minutes (`hours × 60`); a null or ≤ 0 duration
+  counts as 0. `ActivityDurationSet` flags null or ≤ 0 durations.
+- Ratios are `count / all activities × 100`; with no activities the ratio
+  is 0.
+- `CoursesPerModule` applies to non-Research modules only.
+- `AssignmentPerModule` counts any assignment whose `moduleId` is the module
+  (course-scoped, module-scoped, or milestone deliverable).
+- `AssignmentPassScore` requires `0 < passScore ≤ maxPoints`.
+- `MaterialsPerActivity` counts SelfPaced activities (an activity has at
+  most one material).
+- `MaxModules` links the modules beyond the maximum (by module order).
+- `SkillsGained` counts `ProgramSkill` links.
+- `CategoryMatch` compares `Program.Category` with the framework category.
+
+Where checks run: `GET {id}/framework-check` and the submit-review pre-check
+(400 `FRAMEWORK_CHECK_FAILED`, message lists every failing check) use all
+rules. The advisory-board frozen-snapshot highlights keep the original four.
 
 ### 6.2 Validation on save (400 `FRAMEWORK_RULES_INVALID`)
 
@@ -487,6 +516,14 @@ Published versions stay immutable.
   create/update bodies.
 - `PUT /api/program-frameworks/{id}/versions/{versionId}/rubric` and the
   `/criteria` CRUD routes → **410 `ENDPOINT_REMOVED`**.
+- Review scores: `scores` on approve / request-changes bodies, on
+  `CurriculumReviewResponseDto`, and on the review draft; `rubricSnapshotJson`
+  on submission detail. The old review endpoints keep working without scores
+  until they are removed (section 9); `RUBRIC_SCORE_BELOW_HALF` no longer
+  exists.
+
+Update bodies are partial: `null` leaves a field unchanged; `clear<Field>:
+true` turns a numeric rule off; boolean rules take `true`/`false`.
 
 ## 7. Curriculum change log
 
@@ -627,6 +664,8 @@ is extended with `unreadCount`, `openPinCount`, `status`, `approvalState`
 | `CURRICULUM_VERSION_STALE`                                                       | 409  | approve, publish                           |
 | `APPROVAL_BLOCKED`                                                               | 409  | approve (open pins)                        |
 | `FRAMEWORK_CHECK_FAILED`                                                         | 409  | approve (data = `FrameworkCheckDto`)       |
+| `FRAMEWORK_CHECK_FAILED`                                                         | 400  | old submit-review pre-check (until removed) |
+| `FRAMEWORK_UNAVAILABLE`                                                          | 409  | pinned framework version not published     |
 | `INVALID_STATUS`                                                                 | 409  | lifecycle action in wrong status           |
 | `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED`                                     | 400  | approval request                           |
 | `MENTION_TARGET_INVALID`                                                         | 400  | post/edit message                          |

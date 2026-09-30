@@ -1,20 +1,18 @@
 using OboxSteam.Application.Commons;
-using OboxSteam.Application.DTOs.ProgramFrameworkDTO;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
-using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
 
 namespace OboxSteam.Application.Validation;
 
 /// <summary>
-/// Opt-in blueprint field rules and submit-review pre-check.
-/// Null constraint fields are not enforced. Multiple pre-check failures are joined
-/// into one <see cref="ErrorHelper.BadRequest"/> message.
+/// Framework rule-value validation and the submit-review pre-check.
+/// Null or false rules are not enforced. Multiple failures are joined into one message.
 /// </summary>
 public static class ProgramFrameworkValidator
 {
     public const int MaxNameLength = 255;
+    public const string RulesInvalidCode = "FRAMEWORK_RULES_INVALID";
 
     public static void ValidateName(string? name, bool required)
     {
@@ -34,54 +32,73 @@ public static class ProgramFrameworkValidator
         }
     }
 
-    public static void ValidatePositiveConstraint(string fieldName, int? value)
+    /// <summary>
+    /// Every value ≥ 0, each min ≤ its max, ratios in 0–100 and their sum ≤ 100.
+    /// Throws 400 <see cref="RulesInvalidCode"/> listing every violation.
+    /// </summary>
+    public static void ValidateRules(ProgramFrameworkVersion version)
     {
-        if (value.HasValue && value.Value <= 0)
-        {
-            throw ErrorHelper.BadRequest($"{fieldName} must be greater than 0 when set.");
-        }
-    }
+        ArgumentNullException.ThrowIfNull(version);
+        var errors = new List<string>();
 
-    public static void ValidateCriterion(FrameworkRubricCriterionRequest request)
-    {
-        if (request == null)
+        foreach (var (field, value) in new (string, int?)[]
+                 {
+                     (nameof(version.MinModules), version.MinModules),
+                     (nameof(version.MaxModules), version.MaxModules),
+                     (nameof(version.MinCoursesPerModule), version.MinCoursesPerModule),
+                     (nameof(version.MaxCoursesPerModule), version.MaxCoursesPerModule),
+                     (nameof(version.MinTotalHours), version.MinTotalHours),
+                     (nameof(version.MaxTotalHours), version.MaxTotalHours),
+                     (nameof(version.MaxActivityMinutes), version.MaxActivityMinutes),
+                     (nameof(version.MinOfflineSessions), version.MinOfflineSessions),
+                     (nameof(version.MinLiveSessions), version.MinLiveSessions),
+                     (nameof(version.MinOfflineRatioPercent), version.MinOfflineRatioPercent),
+                     (nameof(version.MinLiveRatioPercent), version.MinLiveRatioPercent),
+                     (nameof(version.MinMaterialsPerActivity), version.MinMaterialsPerActivity),
+                     (nameof(version.MinDescriptionLength), version.MinDescriptionLength),
+                     (nameof(version.MinSkillsGained), version.MinSkillsGained),
+                 })
         {
-            throw ErrorHelper.BadRequest("Criterion cannot be null.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            throw ErrorHelper.BadRequest("Criterion name is required.");
-        }
-
-        if (request.Name.Trim().Length > MaxNameLength)
-        {
-            throw ErrorHelper.BadRequest($"Criterion name must be at most {MaxNameLength} characters.");
-        }
-
-        if (request.MaxScore <= 0)
-        {
-            throw ErrorHelper.BadRequest("Criterion max score must be greater than 0.");
-        }
-    }
-
-    public static void ValidateCriteriaList(IReadOnlyList<FrameworkRubricCriterionRequest>? criteria)
-    {
-        if (criteria == null)
-        {
-            return;
+            if (value < 0)
+            {
+                errors.Add($"{field} must be 0 or greater.");
+            }
         }
 
-        foreach (var criterion in criteria)
+        AddMinMaxError(errors, nameof(version.MinModules), version.MinModules, nameof(version.MaxModules), version.MaxModules);
+        AddMinMaxError(
+            errors,
+            nameof(version.MinCoursesPerModule),
+            version.MinCoursesPerModule,
+            nameof(version.MaxCoursesPerModule),
+            version.MaxCoursesPerModule);
+        AddMinMaxError(errors, nameof(version.MinTotalHours), version.MinTotalHours, nameof(version.MaxTotalHours), version.MaxTotalHours);
+
+        if (version.MinOfflineRatioPercent > 100)
         {
-            ValidateCriterion(criterion);
+            errors.Add($"{nameof(version.MinOfflineRatioPercent)} must be at most 100.");
+        }
+
+        if (version.MinLiveRatioPercent > 100)
+        {
+            errors.Add($"{nameof(version.MinLiveRatioPercent)} must be at most 100.");
+        }
+
+        if ((version.MinOfflineRatioPercent ?? 0) + (version.MinLiveRatioPercent ?? 0) > 100)
+        {
+            errors.Add(
+                $"{nameof(version.MinOfflineRatioPercent)} + {nameof(version.MinLiveRatioPercent)} must be at most 100.");
+        }
+
+        if (errors.Count > 0)
+        {
+            throw ErrorHelper.BadRequest(string.Join(" ", errors), RulesInvalidCode);
         }
     }
 
     /// <summary>
-    /// Pre-check a program against its optional framework. No-op when
-    /// <see cref="Program.FrameworkId"/> is null or the blueprint was removed.
-    /// Only non-null rules are evaluated. Called from submit-review.
+    /// Pre-check a program against its pinned framework version. No-op when no version is pinned.
+    /// Called from submit-review.
     /// </summary>
     public static async Task ValidateForSubmitAsync(IUnitOfWork unitOfWork, Guid programId)
     {
@@ -105,7 +122,11 @@ public static class ProgramFrameworkValidator
         }
 
         var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(unitOfWork, programId);
-        var errors = CollectRuleFailures(version, snapshot);
+        var checks = await FrameworkRuleEvaluator.EvaluateAsync(unitOfWork, version, snapshot);
+        var errors = checks
+            .Where(c => !c.Passed)
+            .Select(c => $"{c.Label}: expected {c.Expected}, actual {c.Actual}.")
+            .ToList();
 
         if (errors.Count > 0)
         {
@@ -113,61 +134,11 @@ public static class ProgramFrameworkValidator
         }
     }
 
-    public static List<string> CollectRuleFailures(
-        ProgramFrameworkVersion framework,
-        ProgramCurriculumTreeSnapshot snapshot)
+    private static void AddMinMaxError(List<string> errors, string minField, int? min, string maxField, int? max)
     {
-        var errors = new List<string>();
-
-        var moduleCount = snapshot.Modules.Count;
-        if (framework.MinModules.HasValue && moduleCount < framework.MinModules.Value)
+        if (min.HasValue && max.HasValue && min.Value > max.Value)
         {
-            errors.Add(
-                $"Program has {moduleCount} module(s); framework requires at least {framework.MinModules.Value}.");
+            errors.Add($"{minField} must be less than or equal to {maxField}.");
         }
-
-        var offlineCount = snapshot.ActivitiesById.Values
-            .Count(a => a.ActivityType == ActivityType.Offline);
-        if (framework.MinOfflineSessions.HasValue && offlineCount < framework.MinOfflineSessions.Value)
-        {
-            errors.Add(
-                $"Program has {offlineCount} Offline session(s); framework requires at least {framework.MinOfflineSessions.Value}.");
-        }
-
-        var liveCount = snapshot.ActivitiesById.Values
-            .Count(a => a.ActivityType == ActivityType.LiveOnline);
-        if (framework.MinLiveSessions.HasValue && liveCount < framework.MinLiveSessions.Value)
-        {
-            errors.Add(
-                $"Program has {liveCount} LiveOnline session(s); framework requires at least {framework.MinLiveSessions.Value}.");
-        }
-
-        if (framework.RequireCapstoneResearchMilestone == true)
-        {
-            var capstoneCount = snapshot.MilestonesByModuleId.Values
-                .SelectMany(m => m)
-                .Count(m => m.IsCapstone && !m.IsDeleted);
-            if (capstoneCount < 1)
-            {
-                errors.Add(
-                    "Program has no ResearchMilestone with IsCapstone; framework requires a capstone research milestone.");
-            }
-        }
-
-        return errors;
-    }
-
-    /// <summary>Published versions are immutable; draft versions remain editable.</summary>
-    public static async Task EnsureNotLockedByReviewAsync(IUnitOfWork unitOfWork, Guid frameworkId)
-    {
-        var draft = await unitOfWork.ProgramFrameworkVersions.FirstOrDefaultAsync(
-            v => v.FrameworkId == frameworkId && !v.IsPublished && !v.IsDeleted);
-        if (draft != null)
-        {
-            return;
-        }
-
-        throw ErrorHelper.Conflict(
-            "Create a draft framework version before editing; published versions are immutable.");
     }
 }

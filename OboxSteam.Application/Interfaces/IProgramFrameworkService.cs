@@ -29,20 +29,4 @@ public interface IProgramFrameworkService
     Task<ProgramFrameworkVersionResponseDto> CreateDraftVersionAsync(Guid frameworkId);
 
     Task<ProgramFrameworkVersionResponseDto> PublishDraftVersionAsync(Guid frameworkId, Guid versionId);
-
-    Task<ProgramFrameworkVersionResponseDto> SaveDraftRubricAsync(
-        Guid frameworkId,
-        Guid versionId,
-        SaveFrameworkRubricRequest request);
-
-    Task<FrameworkRubricCriterionResponseDto> AddCriterionAsync(
-        Guid frameworkId,
-        FrameworkRubricCriterionRequest request);
-
-    Task<FrameworkRubricCriterionResponseDto> UpdateCriterionAsync(
-        Guid frameworkId,
-        Guid criterionId,
-        FrameworkRubricCriterionRequest request);
-
-    Task<bool> DeleteCriterionAsync(Guid frameworkId, Guid criterionId);
 }

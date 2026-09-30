@@ -21,7 +21,7 @@ public class CreateProgramRequestDto
     public ProgramStatus? Status { get; set; }
     public decimal? Price { get; set; }
 
-    /// <summary>Optional expert blueprint for pre-check and rubric. Null is free-form review.</summary>
+    /// <summary>Optional expert blueprint whose rules drive the framework check. Null is free-form review.</summary>
     public Guid? FrameworkId { get; set; }
 
     /// <summary>Published framework version to pin. Preferred over FrameworkId.</summary>

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
@@ -60,16 +59,9 @@ public sealed class AdvisoryReferenceResolver : IAdvisoryReferenceResolver
                 throw ErrorHelper.BadRequest("Submission does not belong to this program.");
             }
 
-            if (request.TargetType == ProgramAdvisoryTargetType.RubricCriterion)
-            {
-                (label, fields) = ResolveRubricSnapshotTarget(submission.RubricSnapshotJson, targetId);
-            }
-            else
-            {
-                var snapshot = CurriculumReviewSnapshotBuilder.TryDeserialize(submission.CurriculumSnapshotJson)
-                    ?? throw ErrorHelper.Conflict("The selected submission snapshot is unavailable.");
-                (label, fields) = ResolveSnapshotTarget(snapshot, request.TargetType, targetId);
-            }
+            var snapshot = CurriculumReviewSnapshotBuilder.TryDeserialize(submission.CurriculumSnapshotJson)
+                ?? throw ErrorHelper.Conflict("The selected submission snapshot is unavailable.");
+            (label, fields) = ResolveSnapshotTarget(snapshot, request.TargetType, targetId);
         }
         else
         {
@@ -78,15 +70,8 @@ public sealed class AdvisoryReferenceResolver : IAdvisoryReferenceResolver
                 throw ErrorHelper.BadRequest("Working-draft references cannot include SubmissionId.");
             }
 
-            if (request.TargetType == ProgramAdvisoryTargetType.RubricCriterion)
-            {
-                (label, fields) = await ResolveLiveRubricTargetAsync(program, targetId);
-            }
-            else
-            {
-                var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, program.Id);
-                (label, fields) = ResolveLiveTarget(tree, request.TargetType, targetId);
-            }
+            var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, program.Id);
+            (label, fields) = ResolveLiveTarget(tree, request.TargetType, targetId);
         }
 
         var excerpt = request.AnchorKind switch
@@ -152,40 +137,22 @@ public sealed class AdvisoryReferenceResolver : IAdvisoryReferenceResolver
                     return dto;
                 }
 
-                IReadOnlyDictionary<string, string?> fields;
-                if (reference.TargetType == ProgramAdvisoryTargetType.RubricCriterion)
+                var snapshot = CurriculumReviewSnapshotBuilder.TryDeserialize(submission.CurriculumSnapshotJson);
+                if (snapshot == null)
                 {
-                    (_, fields) = ResolveRubricSnapshotTarget(submission.RubricSnapshotJson, reference.TargetId);
+                    dto.UnavailableReason = "The original submission snapshot is unavailable.";
+                    return dto;
                 }
-                else
-                {
-                    var snapshot = CurriculumReviewSnapshotBuilder.TryDeserialize(submission.CurriculumSnapshotJson);
-                    if (snapshot == null)
-                    {
-                        dto.UnavailableReason = "The original submission snapshot is unavailable.";
-                        return dto;
-                    }
 
-                    (_, fields) = ResolveSnapshotTarget(snapshot, reference.TargetType, reference.TargetId);
-                }
+                var (_, fields) = ResolveSnapshotTarget(snapshot, reference.TargetType, reference.TargetId);
                 currentValue = reference.AnchorKind == ProgramAdvisoryAnchorKind.Node
                     ? reference.CapturedLabel
                     : GetFieldValue(fields, reference.FieldKey!);
             }
             else
             {
-                IReadOnlyDictionary<string, string?> fields;
-                if (reference.TargetType == ProgramAdvisoryTargetType.RubricCriterion)
-                {
-                    var program = await _unitOfWork.Programs.GetByIdAsync(programId)
-                        ?? throw ErrorHelper.NotFound("Program not found.");
-                    (_, fields) = await ResolveLiveRubricTargetAsync(program, reference.TargetId);
-                }
-                else
-                {
-                    var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
-                    (_, fields) = ResolveLiveTarget(tree, reference.TargetType, reference.TargetId);
-                }
+                var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
+                var (_, fields) = ResolveLiveTarget(tree, reference.TargetType, reference.TargetId);
                 currentValue = reference.AnchorKind == ProgramAdvisoryAnchorKind.Node
                     ? reference.CapturedLabel
                     : GetFieldValue(fields, reference.FieldKey!);
@@ -332,59 +299,6 @@ public sealed class AdvisoryReferenceResolver : IAdvisoryReferenceResolver
                 : throw ErrorHelper.BadRequest("Target material does not belong to this program."),
             _ => throw ErrorHelper.BadRequest("Unsupported advisory reference target type."),
         };
-    }
-
-    private async Task<(string Label, IReadOnlyDictionary<string, string?> Fields)> ResolveLiveRubricTargetAsync(
-        Program program,
-        Guid targetId)
-    {
-        if (!program.FrameworkVersionId.HasValue)
-        {
-            throw ErrorHelper.BadRequest("Program has no pinned framework version for rubric references.");
-        }
-
-        var criterion = await _unitOfWork.FrameworkRubricCriteria.GetByIdAsync(targetId);
-        if (criterion == null
-            || criterion.IsDeleted
-            || criterion.FrameworkVersionId != program.FrameworkVersionId)
-        {
-            throw ErrorHelper.BadRequest("Target rubric criterion does not belong to this program.");
-        }
-
-        return (criterion.Name, new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["name"] = criterion.Name,
-            ["description"] = criterion.Description,
-            ["evidenceGuidance"] = criterion.EvidenceGuidance,
-            ["maxScore"] = criterion.MaxScore.ToString(),
-        });
-    }
-
-    private static (string Label, IReadOnlyDictionary<string, string?> Fields) ResolveRubricSnapshotTarget(
-        string? json,
-        Guid targetId)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            throw ErrorHelper.NotFound("The referenced rubric criterion is no longer available.");
-        }
-
-        var criteria = JsonSerializer.Deserialize<List<CurriculumReviewSnapshotBuilder.RubricCriterionSnapshot>>(
-            json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        var criterion = criteria?.FirstOrDefault(c => c.Id == targetId);
-        if (criterion == null)
-        {
-            throw ErrorHelper.NotFound("The referenced rubric criterion is no longer available.");
-        }
-
-        return (criterion.Name, new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["name"] = criterion.Name,
-            ["description"] = criterion.Description,
-            ["evidenceGuidance"] = criterion.EvidenceGuidance,
-            ["maxScore"] = criterion.MaxScore.ToString(),
-        });
     }
 
     private static (string Label, IReadOnlyDictionary<string, string?> Fields) ResolveSnapshotTarget(

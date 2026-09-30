@@ -17,12 +17,6 @@ namespace OboxSteam.Application.Services;
 
 public sealed class CurriculumReviewService : ICurriculumReviewService
 {
-    private static readonly JsonSerializerOptions DraftJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-    };
-
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly IProgramService _programService;
@@ -120,9 +114,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             : ProgramReviewSubmissionIntent.InitialReview;
 
         var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
-        var criteria = await LoadVersionCriteriaAsync(program.FrameworkVersionId);
         var curriculumJson = CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(tree);
-        var rubricJson = CurriculumReviewSnapshotBuilder.BuildRubricSnapshotJson(criteria);
 
         var existing = await _unitOfWork.ProgramReviewSubmissions.GetAllAsync(
             s => s.ProgramId == program.Id && !s.IsDeleted);
@@ -137,7 +129,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             AssignedAdvisorExpertId = advisor.Id,
             FrameworkVersionId = program.FrameworkVersionId,
             CurriculumSnapshotJson = curriculumJson,
-            RubricSnapshotJson = rubricJson,
             ReviewRoundIntent = reviewRoundIntent,
             Status = ProgramReviewSubmissionStatus.Pending,
             SubmittedAt = now,
@@ -320,26 +311,8 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var experts = await _unitOfWork.Experts.GetAllAsync(e => expertIds.Contains(e.Id) && !e.IsDeleted);
         var expertsById = experts.ToDictionary(e => e.Id);
 
-        var reviewIds = ordered.Select(r => r.Id).ToList();
-        var scores = await _unitOfWork.ReviewCriterionScores.GetAllAsync(
-            s => reviewIds.Contains(s.CurriculumReviewId) && !s.IsDeleted);
-        var scoresByReviewId = scores
-            .GroupBy(s => s.CurriculumReviewId)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        var criterionIds = scores.Select(s => s.FrameworkRubricCriterionId).Distinct().ToList();
-        var criteria = criterionIds.Count == 0
-            ? []
-            : await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
-                c => criterionIds.Contains(c.Id));
-        var criteriaById = criteria.ToDictionary(c => c.Id);
-
         return ordered
-            .Select(review => MapReview(
-                review,
-                expertsById.GetValueOrDefault(review.ExpertId),
-                scoresByReviewId.GetValueOrDefault(review.Id) ?? [],
-                criteriaById))
+            .Select(review => MapReview(review, expertsById.GetValueOrDefault(review.ExpertId)))
             .ToList();
     }
 
@@ -354,13 +327,12 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         Guid programId,
         ApproveCurriculumReviewRequest? request)
     {
-        var (program, expert, criteria, actor) = await RequirePendingDecisionAsync(programId);
+        var (program, expert, actor) = await RequirePendingDecisionAsync(programId);
         var submission = await ResolvePendingSubmissionAsync(program.Id, request?.SubmissionId);
         EnsureSubmissionConcurrency(submission, request?.ConcurrencyVersion);
 
         var comment = CurriculumReviewValidator.NormalizeOptionalComment(request?.Comment);
         var reviewId = Guid.NewGuid();
-        var scoreRows = CurriculumReviewValidator.BuildScores(reviewId, criteria, request?.Scores);
         var now = _currentTime.GetCurrentTime().ToUniversalTime();
 
         var unresolvedRequired = await _unitOfWork.ProgramAdvisoryThreads.GetAllAsync(
@@ -381,7 +353,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             CurriculumReviewDecision.Approved,
             comment,
             reviewId,
-            scoreRows,
             submission.Id,
             snapshotAvailable: true);
 
@@ -444,7 +415,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             }
         }
 
-        var (program, expert, criteria, actor) = await RequirePendingDecisionAsync(programId);
+        var (program, expert, actor) = await RequirePendingDecisionAsync(programId);
         var submission = await ResolvePendingSubmissionAsync(program.Id, request.SubmissionId);
         EnsureSubmissionConcurrency(submission, request.ConcurrencyVersion);
 
@@ -457,7 +428,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             ? CurriculumReviewValidator.NormalizeOptionalComment(request.Comment)
             : CurriculumReviewValidator.RequireComment(request.Comment);
         var reviewId = Guid.NewGuid();
-        var scoreRows = CurriculumReviewValidator.BuildPartialScores(reviewId, criteria, request.Scores);
         var now = _currentTime.GetCurrentTime().ToUniversalTime();
 
         var review = await PersistDecisionAsync(
@@ -466,7 +436,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             CurriculumReviewDecision.ChangesRequested,
             comment,
             reviewId,
-            scoreRows,
             submission.Id,
             snapshotAvailable: true,
             clientOperationId: operationId);
@@ -599,7 +568,7 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         }
 
         var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, programId);
-        dto.Checks = BuildStructuredChecks(version, snapshot);
+        dto.Checks = await FrameworkRuleEvaluator.EvaluateAsync(_unitOfWork, version, snapshot);
         dto.AllPassed = dto.Checks.TrueForAll(c => c.Passed);
         return dto;
     }
@@ -651,7 +620,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             return new ProgramReviewDraftDto
             {
                 SubmissionId = submission.Id,
-                Scores = [],
                 OverallComment = null,
                 ConcurrencyVersion = Guid.Empty,
                 LastSavedAt = null,
@@ -682,7 +650,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         var draft = await _unitOfWork.ProgramReviewDrafts.FirstOrDefaultAsync(
             d => d.SubmissionId == submission.Id && d.AdvisorExpertId == expert.Id && !d.IsDeleted);
 
-        var scoresJson = JsonSerializer.Serialize(request.Scores ?? [], DraftJsonOptions);
         var comment = CurriculumReviewValidator.NormalizeOptionalComment(request.OverallComment);
 
         if (draft == null)
@@ -692,7 +659,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
                 Id = Guid.NewGuid(),
                 SubmissionId = submission.Id,
                 AdvisorExpertId = expert.Id,
-                ScoresJson = scoresJson,
                 OverallComment = comment,
                 ConcurrencyVersion = Guid.NewGuid(),
                 LastSavedAt = now,
@@ -708,7 +674,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
                 throw ErrorHelper.Conflict("Draft was updated elsewhere. Reload and try again.");
             }
 
-            draft.ScoresJson = scoresJson;
             draft.OverallComment = comment;
             draft.ConcurrencyVersion = Guid.NewGuid();
             draft.LastSavedAt = now;
@@ -919,7 +884,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         CurriculumReviewDecision decision,
         string? comment,
         Guid reviewId,
-        IReadOnlyList<ReviewCriterionScore> scores,
         Guid submissionId,
         bool snapshotAvailable,
         string? clientOperationId = null)
@@ -943,19 +907,10 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         };
 
         await _unitOfWork.CurriculumReviews.AddAsync(review);
-        if (scores.Count > 0)
-        {
-            await _unitOfWork.ReviewCriterionScores.AddRangeAsync(scores.ToList());
-        }
-
         return review;
     }
 
-    private async Task<(
-        Program Program,
-        Expert Expert,
-        List<FrameworkRubricCriterion> Criteria,
-        User Actor)> RequirePendingDecisionAsync(Guid programId)
+    private async Task<(Program Program, Expert Expert, User Actor)> RequirePendingDecisionAsync(Guid programId)
     {
         var actor = await ResolveReviewActorAsync();
         if (actor.Role != RoleType.Expert)
@@ -975,127 +930,13 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             throw ErrorHelper.Forbidden("Only the assigned responsible expert can decide this program review.");
         }
 
-        var criteria = await LoadVersionCriteriaAsync(program.FrameworkVersionId);
-        return (program, expert, criteria, actor);
+        return (program, expert, actor);
     }
 
-    private async Task<List<FrameworkRubricCriterion>> LoadVersionCriteriaAsync(Guid? frameworkVersionId)
-    {
-        if (!frameworkVersionId.HasValue)
-        {
-            return [];
-        }
-
-        var version = await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(frameworkVersionId.Value);
-        if (version == null || version.IsDeleted || !version.IsPublished)
-        {
-            throw ErrorHelper.Conflict("The pinned framework version is unavailable.");
-        }
-
-        var rows = await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
-            c => c.FrameworkVersionId == version.Id && !c.IsDeleted);
-        return rows.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name).ToList();
-    }
-
-    public static List<FrameworkCheckItemDto> BuildStructuredChecks(
-        ProgramFrameworkVersion framework,
-        ProgramCurriculumTreeSnapshot snapshot)
-    {
-        var checks = new List<FrameworkCheckItemDto>();
-        var moduleCount = snapshot.Modules.Count;
-        if (framework.MinModules.HasValue)
-        {
-            checks.Add(new FrameworkCheckItemDto
-            {
-                Code = "MinModules",
-                Label = "Minimum modules",
-                Expected = framework.MinModules.Value.ToString(),
-                Actual = moduleCount.ToString(),
-                Passed = moduleCount >= framework.MinModules.Value,
-                AffectedCurriculumLinks = snapshot.Modules
-                    .Select(m => new AffectedCurriculumLinkDto
-                    {
-                        TargetType = ProgramAdvisoryTargetType.Module,
-                        Id = m.Id,
-                        Label = m.Name,
-                    })
-                    .ToList(),
-            });
-        }
-
-        var offline = snapshot.ActivitiesById.Values
-            .Where(a => a.ActivityType == ActivityType.Offline)
-            .ToList();
-        if (framework.MinOfflineSessions.HasValue)
-        {
-            checks.Add(new FrameworkCheckItemDto
-            {
-                Code = "MinOfflineSessions",
-                Label = "Minimum Offline sessions",
-                Expected = framework.MinOfflineSessions.Value.ToString(),
-                Actual = offline.Count.ToString(),
-                Passed = offline.Count >= framework.MinOfflineSessions.Value,
-                AffectedCurriculumLinks = offline
-                    .Select(a => new AffectedCurriculumLinkDto
-                    {
-                        TargetType = ProgramAdvisoryTargetType.Activity,
-                        Id = a.Id,
-                        Label = a.Name,
-                    })
-                    .ToList(),
-            });
-        }
-
-        var live = snapshot.ActivitiesById.Values
-            .Where(a => a.ActivityType == ActivityType.LiveOnline)
-            .ToList();
-        if (framework.MinLiveSessions.HasValue)
-        {
-            checks.Add(new FrameworkCheckItemDto
-            {
-                Code = "MinLiveSessions",
-                Label = "Minimum LiveOnline sessions",
-                Expected = framework.MinLiveSessions.Value.ToString(),
-                Actual = live.Count.ToString(),
-                Passed = live.Count >= framework.MinLiveSessions.Value,
-                AffectedCurriculumLinks = live
-                    .Select(a => new AffectedCurriculumLinkDto
-                    {
-                        TargetType = ProgramAdvisoryTargetType.Activity,
-                        Id = a.Id,
-                        Label = a.Name,
-                    })
-                    .ToList(),
-            });
-        }
-
-        if (framework.RequireCapstoneResearchMilestone == true)
-        {
-            var capstones = snapshot.MilestonesByModuleId.Values
-                .SelectMany(m => m)
-                .Where(m => m.IsCapstone && !m.IsDeleted)
-                .ToList();
-            checks.Add(new FrameworkCheckItemDto
-            {
-                Code = "RequireCapstoneResearchMilestone",
-                Label = "Capstone research milestone",
-                Expected = "At least 1",
-                Actual = capstones.Count.ToString(),
-                Passed = capstones.Count >= 1,
-                AffectedCurriculumLinks = capstones
-                    .Select(m => new AffectedCurriculumLinkDto
-                    {
-                        TargetType = ProgramAdvisoryTargetType.ResearchMilestone,
-                        Id = m.Id,
-                        Label = m.Title,
-                    })
-                    .ToList(),
-            });
-        }
-
-        return checks;
-    }
-
+    /// <summary>
+    /// Legacy frozen-snapshot checks for the advisory board (original four rules only).
+    /// Live checks use <see cref="FrameworkRuleEvaluator"/>.
+    /// </summary>
     public static List<FrameworkCheckItemDto> BuildStructuredChecks(
         ProgramFrameworkVersion framework,
         CurriculumReviewSnapshotBuilder.CurriculumSnapshotDocument snapshot)
@@ -1420,25 +1261,10 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
     private async Task<CurriculumReviewResponseDto> MapReviewAsync(CurriculumReview review)
     {
         var expert = await _unitOfWork.Experts.GetByIdAsync(review.ExpertId);
-        var scores = await _unitOfWork.ReviewCriterionScores.GetAllAsync(
-            s => s.CurriculumReviewId == review.Id && !s.IsDeleted);
-        var criterionIds = scores.Select(s => s.FrameworkRubricCriterionId).Distinct().ToList();
-        var criteria = criterionIds.Count == 0
-            ? []
-            : await _unitOfWork.FrameworkRubricCriteria.GetAllAsync(
-                c => criterionIds.Contains(c.Id));
-        return MapReview(
-            review,
-            expert == null || expert.IsDeleted ? null : expert,
-            scores,
-            criteria.ToDictionary(c => c.Id));
+        return MapReview(review, expert == null || expert.IsDeleted ? null : expert);
     }
 
-    private static CurriculumReviewResponseDto MapReview(
-        CurriculumReview review,
-        Expert? expert,
-        IReadOnlyList<ReviewCriterionScore> scores,
-        IReadOnlyDictionary<Guid, FrameworkRubricCriterion> criteriaById)
+    private static CurriculumReviewResponseDto MapReview(CurriculumReview review, Expert? expert)
         => new()
         {
             Id = review.Id,
@@ -1451,25 +1277,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             Decision = review.Decision,
             Comment = review.Comment,
             ReviewedAt = review.ReviewedAt,
-            Scores = scores
-                .Select(s =>
-                {
-                    criteriaById.TryGetValue(s.FrameworkRubricCriterionId, out var criterion);
-                    return new ReviewCriterionScoreResponseDto
-                    {
-                        Id = s.Id,
-                        CriterionId = s.FrameworkRubricCriterionId,
-                        CriterionName = !string.IsNullOrWhiteSpace(s.CriterionNameSnapshot)
-                            ? s.CriterionNameSnapshot
-                            : criterion?.Name,
-                        Score = s.Score,
-                        MaxScore = s.MaxScoreSnapshot > 0
-                            ? s.MaxScoreSnapshot
-                            : criterion?.MaxScore ?? 0,
-                        Comment = s.Comment,
-                    };
-                })
-                .ToList(),
         };
 
     private static ProgramReviewSubmissionSummaryDto MapSubmissionSummary(ProgramReviewSubmission s)
@@ -1498,27 +1305,17 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
             AssignedAdvisorExpertId = s.AssignedAdvisorExpertId,
             FrameworkVersionId = s.FrameworkVersionId,
             CurriculumSnapshotJson = s.CurriculumSnapshotJson,
-            RubricSnapshotJson = s.RubricSnapshotJson,
             SubmittedAt = s.SubmittedAt,
             ClosedAt = s.ClosedAt,
             ConcurrencyVersion = s.ConcurrencyVersion,
         };
 
-    private static ProgramReviewDraftDto MapDraft(ProgramReviewDraft draft)
+    private static ProgramReviewDraftDto MapDraft(ProgramReviewDraft draft) => new()
     {
-        var scores = string.IsNullOrWhiteSpace(draft.ScoresJson)
-            ? []
-            : JsonSerializer.Deserialize<List<ReviewCriterionScoreRequest>>(draft.ScoresJson, DraftJsonOptions)
-              ?? [];
-
-        return new ProgramReviewDraftDto
-        {
-            Id = draft.Id,
-            SubmissionId = draft.SubmissionId,
-            Scores = scores,
-            OverallComment = draft.OverallComment,
-            ConcurrencyVersion = draft.ConcurrencyVersion,
-            LastSavedAt = draft.LastSavedAt,
-        };
-    }
+        Id = draft.Id,
+        SubmissionId = draft.SubmissionId,
+        OverallComment = draft.OverallComment,
+        ConcurrencyVersion = draft.ConcurrencyVersion,
+        LastSavedAt = draft.LastSavedAt,
+    };
 }

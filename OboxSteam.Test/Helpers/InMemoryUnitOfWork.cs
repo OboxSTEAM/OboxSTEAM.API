@@ -44,9 +44,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     public InMemoryRepository<ExpertPublication> ExpertPublications { get; } = new();
     public InMemoryRepository<ProgramFramework> ProgramFrameworks { get; } = new();
     public InMemoryRepository<ProgramFrameworkVersion> ProgramFrameworkVersions { get; } = new();
-    public InMemoryRepository<FrameworkRubricCriterion> FrameworkRubricCriteria { get; } = new();
     public InMemoryRepository<CurriculumReview> CurriculumReviews { get; } = new();
-    public InMemoryRepository<ReviewCriterionScore> ReviewCriterionScores { get; } = new();
     public InMemoryRepository<ProgramReviewSubmission> ProgramReviewSubmissions { get; } = new();
     public InMemoryRepository<ProgramReviewDraft> ProgramReviewDrafts { get; } = new();
     public InMemoryRepository<ProgramAdvisoryThread> ProgramAdvisoryThreads { get; } = new();
@@ -132,9 +130,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
     IGenericRepository<ExpertPublication> IUnitOfWork.ExpertPublications => ExpertPublications;
     IGenericRepository<ProgramFramework> IUnitOfWork.ProgramFrameworks => ProgramFrameworks;
     IGenericRepository<ProgramFrameworkVersion> IUnitOfWork.ProgramFrameworkVersions => ProgramFrameworkVersions;
-    IGenericRepository<FrameworkRubricCriterion> IUnitOfWork.FrameworkRubricCriteria => FrameworkRubricCriteria;
     IGenericRepository<CurriculumReview> IUnitOfWork.CurriculumReviews => CurriculumReviews;
-    IGenericRepository<ReviewCriterionScore> IUnitOfWork.ReviewCriterionScores => ReviewCriterionScores;
     IGenericRepository<ProgramReviewSubmission> IUnitOfWork.ProgramReviewSubmissions => ProgramReviewSubmissions;
     IGenericRepository<ProgramReviewDraft> IUnitOfWork.ProgramReviewDrafts => ProgramReviewDrafts;
     IGenericRepository<ProgramAdvisoryThread> IUnitOfWork.ProgramAdvisoryThreads => ProgramAdvisoryThreads;
@@ -224,9 +220,7 @@ public sealed class InMemoryUnitOfWork : IUnitOfWork
             nameof(ExpertPublication) => ExpertPublications,
             nameof(ProgramFramework) => ProgramFrameworks,
             nameof(ProgramFrameworkVersion) => ProgramFrameworkVersions,
-            nameof(FrameworkRubricCriterion) => FrameworkRubricCriteria,
             nameof(CurriculumReview) => CurriculumReviews,
-            nameof(ReviewCriterionScore) => ReviewCriterionScores,
             nameof(ProgramReviewSubmission) => ProgramReviewSubmissions,
             nameof(ProgramReviewDraft) => ProgramReviewDrafts,
             nameof(ProgramAdvisoryThread) => ProgramAdvisoryThreads,

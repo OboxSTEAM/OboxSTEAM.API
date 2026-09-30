@@ -75,7 +75,7 @@ One task per review/commit cycle, in this order:
 - [x] 1. Contract doc
 - [x] 2. A1 model (schema) — migration `20260930165911_AddAdvisoryChatModel`
 - [x] 3. A8 change log + lock rules — migration `20260930172444_AddCurriculumChangeLog`
-- [ ] 4. A7 framework rules + rubric drop
+- [x] 4. A7 framework rules + rubric drop — migration `20260930181132_DropRubricAddFrameworkRules`
 - [ ] 5. A3 + A2 discussion endpoints
 - [ ] 6. A4 approval lifecycle
 - [ ] 7. A5 + A6 realtime + deprecation
@@ -118,6 +118,19 @@ One task per review/commit cycle, in this order:
   per revoke. The recorder queues it; `UnitOfWork` publishes after a save with
   no open transaction or after `ExecuteAdvisoryTransactionAsync` commits, and
   the interceptor/rollback path discards it on failure.
+- 2026-10-01: Task 4 strips scores from the old review flow instead of
+  removing it: approve/request-changes/draft keep working with a comment only
+  (`RUBRIC_SCORE_BELOW_HALF` removed). `ProgramReviewDrafts` stays (comment
+  only; `ScoresJson` dropped) until task 7 removes the old endpoints.
+- 2026-10-01: `ProgramAdvisoryTargetType.RubricCriterion` stays as an
+  `[Obsolete]` value until the task 5 thread migration; new threads and
+  references reject it and the migration deletes rubric references.
+- 2026-10-01: Framework rules: every value ≥ 0 (zero allowed), min ≤ max,
+  ratios ≤ 100 with sum ≤ 100 (`FRAMEWORK_RULES_INVALID`). Update uses
+  `null` = unchanged and `Clear<Field>` for numeric rules. `SkillsGained`
+  counts `ProgramSkill` links. The new checks run in `framework-check` and the
+  old submit-review pre-check; the frozen-snapshot board highlights keep the
+  original four. Evaluation semantics are recorded in contract section 6.1.
 - 2026-09-30: `MaterialService` upload/update/delete now go through
   `CurriculumEditGuard` (previously unguarded).
 - 2026-09-30: The session message moves to the end of the stream when

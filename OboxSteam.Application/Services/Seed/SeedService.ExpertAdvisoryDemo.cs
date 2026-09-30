@@ -61,8 +61,7 @@ public partial class SeedService
             return;
         }
 
-        var (framework, publishedV1, _, publishedCriteria) =
-            await EnsureMakerAdvisoryFrameworkAsync(expert001.Id);
+        var (framework, publishedV1, _) = await EnsureMakerAdvisoryFrameworkAsync(expert001.Id);
 
         // A — Draft advice with open suggestions
         var progA = await CreateAdvProgramAsync(
@@ -120,7 +119,6 @@ public partial class SeedService
             manager.Id,
             expert001.Id,
             publishedV1.Id,
-            publishedCriteria,
             submissionNumber: 1,
             ProgramReviewSubmissionStatus.ChangesRequested,
             closedAt: _seedNow.AddDays(-1));
@@ -128,7 +126,7 @@ public partial class SeedService
         await _unitOfWork.ProgramReviewSubmissions.Update(subB);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvDraftFixCode);
 
-        // C — PendingReview + draft scores
+        // C — PendingReview + review draft
         var progC = await CreateAdvProgramAsync(
             SeedAdvPendingCode,
             "ADV Pending Review",
@@ -144,11 +142,10 @@ public partial class SeedService
             manager.Id,
             expert001.Id,
             publishedV1.Id,
-            publishedCriteria,
             submissionNumber: 1,
             ProgramReviewSubmissionStatus.Pending,
             closedAt: null);
-        await SeedAdvReviewDraftAsync(subC, expert001.Id, publishedCriteria);
+        await SeedAdvReviewDraftAsync(subC, expert001.Id);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvPendingCode);
 
         // D — Resubmit with diff (Added activity)
@@ -183,14 +180,12 @@ public partial class SeedService
 
         var treeD1 = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, progD.Id);
         var snapD1 = CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(treeD1);
-        var rubricD = CurriculumReviewSnapshotBuilder.BuildRubricSnapshotJson(publishedCriteria);
         var subD1 = await EnsureAdvSubmissionSnapshotAsync(
             progD,
             manager.Id,
             expert001.Id,
             publishedV1.Id,
             snapD1,
-            rubricD,
             submissionNumber: 1,
             ProgramReviewSubmissionStatus.ChangesRequested,
             submittedAt: _seedNow.AddDays(-5),
@@ -235,7 +230,6 @@ public partial class SeedService
             expert001.Id,
             publishedV1.Id,
             snapD2,
-            rubricD,
             submissionNumber: 2,
             ProgramReviewSubmissionStatus.Pending,
             submittedAt: _seedNow.AddDays(-1),
@@ -244,7 +238,7 @@ public partial class SeedService
         progD.Status = ProgramStatus.PendingReview;
         await _unitOfWork.Programs.Update(progD);
 
-        await SeedAdvReviewDraftAsync(subD2, expert001.Id, publishedCriteria);
+        await SeedAdvReviewDraftAsync(subD2, expert001.Id);
         await SeedAdvResubmitThreadsAsync(
             progD,
             subD2,
@@ -255,11 +249,11 @@ public partial class SeedService
             manager.Id);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvResubmitCode);
 
-        // E — Approved with snapshot scores
+        // E — Approved with snapshot-backed review
         var progE = await CreateAdvProgramAsync(
             SeedAdvApprovedCode,
             "ADV Approved",
-            "Scenario E: Approved submission + CurriculumReview with scores.",
+            "Scenario E: Approved submission + snapshot-backed CurriculumReview.",
             ProgramStatus.Approved,
             framework.Id,
             publishedV1.Id,
@@ -271,7 +265,6 @@ public partial class SeedService
             manager.Id,
             expert001.Id,
             publishedV1.Id,
-            publishedCriteria,
             submissionNumber: 1,
             ProgramReviewSubmissionStatus.Approved,
             closedAt: _seedNow.AddDays(-2));
@@ -279,9 +272,7 @@ public partial class SeedService
             progE,
             expert001.Id,
             subE.Id,
-            snapshotAvailable: true,
-            publishedCriteria,
-            includeScores: true);
+            snapshotAvailable: true);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvApprovedCode);
 
         // F — Active legacy review (no snapshot)
@@ -299,9 +290,7 @@ public partial class SeedService
             progF,
             expert001.Id,
             submissionId: null,
-            snapshotAvailable: false,
-            publishedCriteria,
-            includeScores: false);
+            snapshotAvailable: false);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvActiveCode);
 
         // G — Pin published v1 while draft v2 exists
@@ -370,8 +359,7 @@ public partial class SeedService
             return;
         }
 
-        var (_, publishedV1, _, criteria) =
-            await EnsureMakerAdvisoryFrameworkAsync(expert001.Id);
+        var (_, publishedV1, _) = await EnsureMakerAdvisoryFrameworkAsync(expert001.Id);
         var curriculum = await EnsureAdvCurriculumAsync(program, "RESUBMIT", includeAssignment: true);
         await EnsureExpertOnProgramBoardAsync(expert001, program.Id, "Advisor");
         await EnsureExpertOnProgramBoardAsync(expert002, program.Id, "Board Contributor");
@@ -415,7 +403,6 @@ public partial class SeedService
         await _unitOfWork.Modules.Update(research.Module);
         await _unitOfWork.Courses.Update(curriculum.TheoryCourse);
 
-        var rubricJson = CurriculumReviewSnapshotBuilder.BuildRubricSnapshotJson(criteria);
         var treeV1 = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, program.Id);
         var submission1 = await EnsureAdvSubmissionSnapshotAsync(
             program,
@@ -423,7 +410,6 @@ public partial class SeedService
             expert001.Id,
             publishedV1.Id,
             CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(treeV1),
-            rubricJson,
             1,
             ProgramReviewSubmissionStatus.ChangesRequested,
             _seedNow.AddDays(-5),
@@ -458,7 +444,6 @@ public partial class SeedService
             expert001.Id,
             publishedV1.Id,
             CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(treeV2),
-            rubricJson,
             2,
             ProgramReviewSubmissionStatus.Pending,
             _seedNow.AddDays(-1),
@@ -466,7 +451,7 @@ public partial class SeedService
 
         program.Status = ProgramStatus.PendingReview;
         await _unitOfWork.Programs.Update(program);
-        await SeedAdvReviewDraftAsync(submission2, expert001.Id, criteria);
+        await SeedAdvReviewDraftAsync(submission2, expert001.Id);
         await SeedAdvResubmitThreadsAsync(
             program,
             submission2,
@@ -499,7 +484,6 @@ public partial class SeedService
                     manager.Id,
                     expert001.Id,
                     publishedV1.Id,
-                    criteria,
                     submissionNumber: 1,
                     ProgramReviewSubmissionStatus.ChangesRequested,
                     closedAt: _seedNow.AddDays(-1));
@@ -756,8 +740,7 @@ public partial class SeedService
     private async Task<(
         ProgramFramework Framework,
         ProgramFrameworkVersion PublishedV1,
-        ProgramFrameworkVersion DraftV2,
-        List<FrameworkRubricCriterion> PublishedCriteria)> EnsureMakerAdvisoryFrameworkAsync(Guid expertId)
+        ProgramFrameworkVersion DraftV2)> EnsureMakerAdvisoryFrameworkAsync(Guid expertId)
     {
         var framework = await _unitOfWork.ProgramFrameworks.FirstOrDefaultAsync(
             f => f.ExpertId == expertId && f.Name == SeedMakerAdvisoryFrameworkName && !f.IsDeleted);
@@ -775,22 +758,6 @@ public partial class SeedService
             };
             await _unitOfWork.ProgramFrameworks.AddAsync(framework);
         }
-
-        var criteriaDefs = new (string Name, string Description, string EvidenceGuidance, int MaxScore, int DisplayOrder)[]
-        {
-            (
-                "Safety and facilitation",
-                "Facilitators keep makerspace sessions safe and well-paced.",
-                "Offline lab checklist, facilitator notes, and session photos showing reset workspace.",
-                10,
-                1),
-            (
-                "Learning progression",
-                "Theory and practice build a clear progression toward the offline lab.",
-                "Module outcomes map, SelfPaced checkpoint, and Offline activity brief.",
-                10,
-                2),
-        };
 
         var published = await _unitOfWork.ProgramFrameworkVersions.FirstOrDefaultAsync(
             v => v.FrameworkId == framework.Id && v.VersionNumber == 1 && !v.IsDeleted);
@@ -833,41 +800,6 @@ public partial class SeedService
             await _unitOfWork.ProgramFrameworkVersions.Update(published);
         }
 
-        var publishedCriteria = new List<FrameworkRubricCriterion>();
-        foreach (var item in criteriaDefs)
-        {
-            var existing = await _unitOfWork.FrameworkRubricCriteria.FirstOrDefaultAsync(
-                c => c.FrameworkVersionId == published.Id && c.Name == item.Name && !c.IsDeleted);
-            if (existing != null)
-            {
-                if (string.IsNullOrWhiteSpace(existing.EvidenceGuidance))
-                {
-                    existing.EvidenceGuidance = item.EvidenceGuidance;
-                    await _unitOfWork.FrameworkRubricCriteria.Update(existing);
-                }
-
-                publishedCriteria.Add(existing);
-                continue;
-            }
-
-            var criterion = new FrameworkRubricCriterion
-            {
-                Id = Guid.NewGuid(),
-                FrameworkId = framework.Id,
-                FrameworkVersionId = published.Id,
-                Name = item.Name,
-                Description = item.Description,
-                EvidenceGuidance = item.EvidenceGuidance,
-                MaxScore = item.MaxScore,
-                DisplayOrder = item.DisplayOrder,
-                CreatedAt = _seedNow,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            };
-            await _unitOfWork.FrameworkRubricCriteria.AddAsync(criterion);
-            publishedCriteria.Add(criterion);
-        }
-
         var draft = await _unitOfWork.ProgramFrameworkVersions.FirstOrDefaultAsync(
             v => v.FrameworkId == framework.Id && v.VersionNumber == 2 && !v.IsDeleted);
         if (draft == null)
@@ -888,28 +820,10 @@ public partial class SeedService
                 IsDeleted = false,
             };
             await _unitOfWork.ProgramFrameworkVersions.AddAsync(draft);
-
-            foreach (var source in publishedCriteria)
-            {
-                await _unitOfWork.FrameworkRubricCriteria.AddAsync(new FrameworkRubricCriterion
-                {
-                    Id = Guid.NewGuid(),
-                    FrameworkId = framework.Id,
-                    FrameworkVersionId = draft.Id,
-                    Name = source.Name,
-                    Description = source.Description,
-                    EvidenceGuidance = source.EvidenceGuidance,
-                    MaxScore = source.MaxScore,
-                    DisplayOrder = source.DisplayOrder,
-                    CreatedAt = _seedNow,
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false,
-                });
-            }
         }
 
         await _unitOfWork.SaveChangesAsync();
-        return (framework, published, draft, publishedCriteria);
+        return (framework, published, draft);
     }
 
     private async Task<Program> CreateAdvProgramAsync(
@@ -1233,7 +1147,6 @@ public partial class SeedService
         Guid advisorExpertId,
         Guid frameworkVersionId,
         string curriculumJson,
-        string rubricJson,
         int submissionNumber,
         ProgramReviewSubmissionStatus status,
         DateTime submittedAt,
@@ -1255,7 +1168,6 @@ public partial class SeedService
                 AssignedAdvisorExpertId = advisorExpertId,
                 FrameworkVersionId = frameworkVersionId,
                 CurriculumSnapshotJson = curriculumJson,
-                RubricSnapshotJson = rubricJson,
                 Status = status,
                 SubmittedAt = submittedAt,
                 ClosedAt = closedAt,
@@ -1273,7 +1185,6 @@ public partial class SeedService
         submission.AssignedAdvisorExpertId = advisorExpertId;
         submission.FrameworkVersionId = frameworkVersionId;
         submission.CurriculumSnapshotJson = curriculumJson;
-        submission.RubricSnapshotJson = rubricJson;
         submission.Status = status;
         submission.SubmittedAt = submittedAt;
         submission.ClosedAt = closedAt;
@@ -1707,14 +1618,12 @@ public partial class SeedService
         Guid managerId,
         Guid advisorExpertId,
         Guid frameworkVersionId,
-        IReadOnlyList<FrameworkRubricCriterion> criteria,
         int submissionNumber,
         ProgramReviewSubmissionStatus status,
         DateTime? closedAt)
     {
         var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, program.Id);
         var curriculumJson = CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(tree);
-        var rubricJson = CurriculumReviewSnapshotBuilder.BuildRubricSnapshotJson(criteria);
 
         var submission = new ProgramReviewSubmission
         {
@@ -1725,7 +1634,6 @@ public partial class SeedService
             AssignedAdvisorExpertId = advisorExpertId,
             FrameworkVersionId = frameworkVersionId,
             CurriculumSnapshotJson = curriculumJson,
-            RubricSnapshotJson = rubricJson,
             Status = status,
             SubmittedAt = closedAt?.AddDays(-2) ?? _seedNow.AddHours(-4),
             ClosedAt = closedAt,
@@ -1741,8 +1649,7 @@ public partial class SeedService
 
     private async Task SeedAdvReviewDraftAsync(
         ProgramReviewSubmission submission,
-        Guid advisorExpertId,
-        IReadOnlyList<FrameworkRubricCriterion> criteria)
+        Guid advisorExpertId)
     {
         var existing = await _unitOfWork.ProgramReviewDrafts.FirstOrDefaultAsync(
             d => d.SubmissionId == submission.Id && !d.IsDeleted);
@@ -1751,26 +1658,12 @@ public partial class SeedService
             return;
         }
 
-        var first = criteria.OrderBy(c => c.DisplayOrder).FirstOrDefault();
-        var scores = first == null
-            ? new List<ReviewCriterionScoreRequest>()
-            : new List<ReviewCriterionScoreRequest>
-            {
-                new()
-                {
-                    CriterionId = first.Id,
-                    Score = 7,
-                    Comment = "Partial draft score — safety looks solid so far.",
-                },
-            };
-
         await _unitOfWork.ProgramReviewDrafts.AddAsync(new ProgramReviewDraft
         {
             Id = Guid.NewGuid(),
             SubmissionId = submission.Id,
             AdvisorExpertId = advisorExpertId,
-            ScoresJson = JsonSerializer.Serialize(scores, SeedAdvJsonOptions),
-            OverallComment = "Draft in progress — still scoring learning progression.",
+            OverallComment = "Draft in progress — safety looks solid; still checking learning progression.",
             ConcurrencyVersion = Guid.NewGuid(),
             LastSavedAt = _seedNow,
             CreatedAt = _seedNow,
@@ -1784,14 +1677,11 @@ public partial class SeedService
         Program program,
         Guid expertId,
         Guid? submissionId,
-        bool snapshotAvailable,
-        IReadOnlyList<FrameworkRubricCriterion> criteria,
-        bool includeScores)
+        bool snapshotAvailable)
     {
-        var reviewId = Guid.NewGuid();
         await _unitOfWork.CurriculumReviews.AddAsync(new CurriculumReview
         {
-            Id = reviewId,
+            Id = Guid.NewGuid(),
             ProgramId = program.Id,
             ExpertId = expertId,
             Round = 1,
@@ -1799,35 +1689,13 @@ public partial class SeedService
             SnapshotAvailable = snapshotAvailable,
             Decision = CurriculumReviewDecision.Approved,
             Comment = snapshotAvailable
-                ? "Approved with full rubric scores."
+                ? "Approved; curriculum meets the framework rules."
                 : "Legacy approval before snapshot-backed submissions.",
             ReviewedAt = _seedNow.AddDays(-2),
             CreatedAt = _seedNow.AddDays(-2),
             CreatedBy = Guid.Empty,
             IsDeleted = false,
         });
-
-        if (includeScores)
-        {
-            foreach (var criterion in criteria.OrderBy(c => c.DisplayOrder))
-            {
-                await _unitOfWork.ReviewCriterionScores.AddAsync(new ReviewCriterionScore
-                {
-                    Id = Guid.NewGuid(),
-                    CurriculumReviewId = reviewId,
-                    FrameworkRubricCriterionId = criterion.Id,
-                    Score = criterion.MaxScore - 1,
-                    CriterionNameSnapshot = criterion.Name,
-                    CriterionDescriptionSnapshot = criterion.Description,
-                    EvidenceGuidanceSnapshot = criterion.EvidenceGuidance,
-                    MaxScoreSnapshot = criterion.MaxScore,
-                    Comment = $"Scored {criterion.Name} for FE demo.",
-                    CreatedAt = _seedNow.AddDays(-2),
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false,
-                });
-            }
-        }
 
         await _unitOfWork.SaveChangesAsync();
     }

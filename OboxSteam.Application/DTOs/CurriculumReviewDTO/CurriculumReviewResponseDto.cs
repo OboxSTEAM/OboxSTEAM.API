@@ -23,6 +23,4 @@ public sealed class CurriculumReviewResponseDto
     public string? Comment { get; set; }
 
     public DateTime ReviewedAt { get; set; }
-
-    public List<ReviewCriterionScoreResponseDto> Scores { get; set; } = [];
 }

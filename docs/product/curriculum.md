@@ -111,8 +111,8 @@ Lifecycle endpoints (Manager/Admin unless noted):
   `snapshotAvailable=false`.
 - `POST /api/programs/{id}/approve-review` — only the assigned responsible
   expert. Outstanding RequiredChange threads are accepted in the same
-  transaction (`Accepted on approval`). Full rubric scores required when
-  criteria exist. `PendingReview` → `Approved`. Notifies `ForManagers`
+  transaction (`Accepted on approval`). No scores (the rubric was removed).
+  `PendingReview` → `Approved`. Notifies `ForManagers`
   (`CurriculumReviewApproved`). Payload `programId` is the deeplink.
 - `POST /api/programs/{id}/request-changes` — same actor as approve;
   `PendingReview` → `Draft`. `comment` is optional when RequiredChanges are
@@ -329,39 +329,45 @@ Public reads: `GET /api/experts/{id}` and `GET /api/experts/{id}/profile`.
 
 `ProgramFramework` is a reusable expert-authored identity. Its immutable
 published `ProgramFrameworkVersion` rows hold description, academic guidance,
-optional positive structural rules (`MinModules`, activity-template counts for
-Offline and LiveOnline, and optional capstone requirement), plus the rubric.
-Blank rules are unrestricted; zero is invalid. A program pins one published
+and optional rules: module count (min/max), courses per non-Research module
+(min/max), total hours (min/max), max activity minutes, activity duration
+required, Offline/LiveOnline session minimums and share of activities,
+assignment in every module, valid assignment pass score, materials per
+SelfPaced activity, category match, description length, skills gained, thumbnail,
+and capstone research milestone. Blank or `false` rules are unrestricted;
+values are ≥ 0, each min ≤ its max, and the two ratios sum to ≤ 100
+(`FRAMEWORK_RULES_INVALID`). The rubric was removed. A program pins one published
 version and many programs may pin the same version, even when they have
 different responsible advisors. Publishing a newer version never changes an
 existing program. Managers explicitly adopt a newer version while curriculum
 is editable. Framework `Category` is guidance only and never an eligibility
 gate.
 
-Each version has rubric criteria with name, explanation, evidence guidance,
-numeric maximum score, and display order. There are no weights or automatic
-pass thresholds. Published versions and referenced history are immutable.
+Published versions and referenced history are immutable. Draft updates are
+partial: `null` leaves a rule unchanged and `clear<Field>` turns a numeric rule
+off.
 
 API: `/api/program-frameworks` — Expert CRUD on own blueprints; Manager/Admin
 may list and read all but cannot write another expert's blueprint.
 Create/archive/version publishing stay Expert-author-only. Category query is a
-hint only. Authoring occurs on one draft version; the full draft rubric is saved
-in one API operation. Archive prevents new assignment while retaining existing
+hint only. Authoring occurs on one draft version. The old rubric and criteria
+routes return 410 `ENDPOINT_REMOVED`. Archive prevents new assignment while retaining existing
 pins and history. Version routes live under
 `/api/program-frameworks/{id}/versions`.
 
 `ProgramFrameworkValidator.ValidateForSubmitAsync` pre-checks a program against
-non-null rules and joins every failure into one 400 message. Submit-review
-calls it; a failing pre-check does not change status.
+every enabled rule (`FrameworkRuleEvaluator`, same checks as
+`GET {id}/framework-check`) and joins every failure into one 400
+`FRAMEWORK_CHECK_FAILED` message. Submit-review calls it; a failing pre-check
+does not change status.
 
 `CurriculumReview` is one expert decision round (`Approved` /
-`ChangesRequested`) with optional `ReviewCriterionScore` rows. Distinct from
+`ChangesRequested`) with a comment. Distinct from
 student `ProgramReview` star ratings. Only `Program.AdvisorExpertId` may make
 the formal decision; framework authorship does not grant that authority.
 Other board experts may advise and may be invited to co-teach. The responsible
 advisor cannot be removed from the board until the program is reassigned.
-Decisions attach to a `ProgramReviewSubmission` when present; criterion score
-rows retain name/max/guidance snapshots. Legacy history without a genuine
+Decisions attach to a `ProgramReviewSubmission` when present. Legacy history without a genuine
 curriculum snapshot reports `snapshotAvailable=false`.
 
 ## Highlight Videos
