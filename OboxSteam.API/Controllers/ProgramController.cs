@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ClassDTO;
-using OboxSteam.Application.DTOs.CurriculumReviewDTO;
 using OboxSteam.Application.DTOs.PaymentDTO;
 using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
@@ -19,13 +18,15 @@ namespace OboxSteam.API.Controllers;
 public class ProgramController : ControllerBase
 {
     private readonly IProgramService _programService;
-    private readonly ICurriculumReviewService _curriculumReviewService;
-    private readonly IProgramAdvisoryService _programAdvisoryService;
     private readonly IProgramApprovalService _programApprovalService;
     private const string ThreadsRemovedMessage =
-        "Advisory threads are read-only; use the program advisory discussion (advisory-discussion/messages).";
+        "Advisory threads were removed; use the program advisory discussion (advisory-discussion/messages, pins, read).";
     private const string ReviewFlowRemovedMessage =
         "The submission-based review flow was replaced by versioned approval; use approval/request, approval, approval/revoke, and publish.";
+    private const string WorkspaceRemovedMessage =
+        "The advisory board and timeline were replaced by the advisory workspace; use GET advisory and curriculum/changes.";
+    private const string MentionsMovedMessage =
+        "Advisory references and anchor fields were replaced by discussion mentions; use mention-targets and advisory-discussion/messages.";
 
     private readonly IProgramAdvisoryDiscussionService _programAdvisoryDiscussionService;
     private readonly IProgramAdvisoryAttachmentService _programAdvisoryAttachmentService;
@@ -36,8 +37,6 @@ public class ProgramController : ControllerBase
 
     public ProgramController(
         IProgramService programService,
-        ICurriculumReviewService curriculumReviewService,
-        IProgramAdvisoryService programAdvisoryService,
         IProgramApprovalService programApprovalService,
         IProgramAdvisoryDiscussionService programAdvisoryDiscussionService,
         IProgramAdvisoryAttachmentService programAdvisoryAttachmentService,
@@ -47,8 +46,6 @@ public class ProgramController : ControllerBase
         IRebuyClassCatalogService rebuyClassCatalogService)
     {
         _programService = programService;
-        _curriculumReviewService = curriculumReviewService;
-        _programAdvisoryService = programAdvisoryService;
         _programApprovalService = programApprovalService;
         _programAdvisoryDiscussionService = programAdvisoryDiscussionService;
         _programAdvisoryAttachmentService = programAdvisoryAttachmentService;
@@ -296,21 +293,13 @@ public class ProgramController : ControllerBase
     public IActionResult GetReviewQueue()
         => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
+    [Obsolete("Curriculum review rounds were replaced by versioned approval.")]
     [HttpGet("{id:guid}/curriculum-reviews")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "List curriculum review rounds for a program",
-        Description = "Framework owner and program-board experts may read history. Manager and Admin may read all.")]
-    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<CurriculumReviewResponseDto>>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 403)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
-    public async Task<IActionResult> GetCurriculumReviews([FromRoute] Guid id)
-    {
-        var result = await _curriculumReviewService.GetReviewsAsync(id);
-        return Ok(ApiResult<IReadOnlyList<CurriculumReviewResponseDto>>.Success(
-            result, "200", "Curriculum reviews retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetCurriculumReviews([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
     [Obsolete("Replaced by POST approval/request.")]
     [HttpPost("{id:guid}/submit-review")]
@@ -469,38 +458,21 @@ public class ProgramController : ControllerBase
             result, "200", "Advisory workspace retrieved successfully."));
     }
 
+    [Obsolete("Replaced by GET advisory.")]
     [HttpGet("{id:guid}/advisory/timeline")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "Get the current advisory workflow timeline",
-        Description = "Returns the server-derived six-stage advisory workflow. Viewing a stage does not change lifecycle state.")]
-    [ProducesResponseType(typeof(ApiResult<AdvisoryWorkflowTimelineDto>), 200)]
-    public async Task<IActionResult> GetAdvisoryTimeline([FromRoute] Guid id)
-    {
-        var result = await _programAdvisoryService.GetWorkflowTimelineAsync(id);
-        return Ok(ApiResult<AdvisoryWorkflowTimelineDto>.Success(
-            result, "200", "Advisory workflow timeline retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = WorkspaceRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetAdvisoryTimeline([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(WorkspaceRemovedMessage);
 
+    [Obsolete("Replaced by GET advisory and curriculum/changes.")]
     [HttpGet("{id:guid}/advisory/board")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "Get the submission-scoped hybrid advisory board",
-        Description = "Returns the frozen curriculum tree, submission pins, revision summary, and framework highlights.")]
-    [ProducesResponseType(typeof(ApiResult<AdvisoryBoardDto>), 200)]
-    public async Task<IActionResult> GetAdvisoryBoard(
-        [FromRoute] Guid id,
-        [FromQuery] Guid submissionId)
-    {
-        if (submissionId == Guid.Empty)
-        {
-            return BadRequest(ApiResult<object>.Failure("400", "submissionId is required."));
-        }
-
-        var result = await _programAdvisoryService.GetBoardAsync(id, submissionId);
-        return Ok(ApiResult<AdvisoryBoardDto>.Success(
-            result, "200", "Advisory board retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = WorkspaceRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetAdvisoryBoard([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(WorkspaceRemovedMessage);
 
     [HttpGet("{id:guid}/framework-check")]
     [Authorize(Roles = "Expert,Manager,Admin")]
@@ -514,58 +486,31 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<FrameworkCheckDto>.Success(result, "200", "Framework check retrieved successfully."));
     }
 
+    [Obsolete("Replaced by advisory-discussion/messages.")]
     [HttpGet("{id:guid}/advisory-threads")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "List advisory threads for a program")]
-    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryThreadDto>>), 200)]
-    public async Task<IActionResult> GetAdvisoryThreads(
-        [FromRoute] Guid id,
-        [FromQuery] Guid? submissionId = null,
-        [FromQuery] ProgramAdvisoryTargetType? targetType = null,
-        [FromQuery] Guid? targetId = null,
-        [FromQuery] ProgramAdvisoryThreadStatus? status = null,
-        [FromQuery] ProgramAdvisoryThreadType? type = null,
-        [FromQuery] string? scope = null)
-    {
-        var result = await _programAdvisoryService.GetThreadsAsync(
-            id, submissionId, targetType, targetId, status, type, scope);
-        return Ok(ApiResult<IReadOnlyList<AdvisoryThreadDto>>.Success(
-            result, "200", "Advisory threads retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetAdvisoryThreads([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
+    [Obsolete("Replaced by advisory-discussion/messages.")]
     [HttpGet("{id:guid}/advisory-threads/{threadId:guid}")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "Get one advisory thread, including its event history",
-        Description = "Returns the full AdvisoryThreadDto with ordered events and ordered messages so clients do not double-render MessageAdded events against a separate message list. Status PATCH also returns this full thread shape.")]
-    [ProducesResponseType(typeof(ApiResult<AdvisoryThreadDto>), 200)]
-    public async Task<IActionResult> GetAdvisoryThread(
-        [FromRoute] Guid id,
-        [FromRoute] Guid threadId)
-    {
-        var result = await _programAdvisoryService.GetThreadAsync(id, threadId);
-        return Ok(ApiResult<AdvisoryThreadDto>.Success(result, "200", "Advisory thread retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetAdvisoryThread([FromRoute] Guid id, [FromRoute] Guid threadId)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
+    [Obsolete("Replaced by advisory-discussion/pins and advisory-discussion/mention-counts.")]
     [HttpGet("{id:guid}/advisory-threads/pins")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Get advisory pin counts grouped by curriculum node")]
-    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryThreadPinSummaryDto>>), 200)]
-    public async Task<IActionResult> GetAdvisoryThreadPins(
-        [FromRoute] Guid id,
-        [FromQuery] Guid submissionId)
-    {
-        if (submissionId == Guid.Empty)
-        {
-            return BadRequest(ApiResult<object>.Failure("400", "submissionId is required."));
-        }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetAdvisoryThreadPins([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
-        var result = await _programAdvisoryService.GetPinSummariesAsync(id, submissionId);
-        return Ok(ApiResult<IReadOnlyList<AdvisoryThreadPinSummaryDto>>.Success(
-            result, "200", "Advisory pin summaries retrieved successfully."));
-    }
-
-    [Obsolete("Advisory threads are read-only; use advisory-discussion/messages.")]
+    [Obsolete("Advisory threads were removed; use advisory-discussion/messages.")]
     [HttpPost("{id:guid}/advisory-threads")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
@@ -573,20 +518,15 @@ public class ProgramController : ControllerBase
     public IActionResult CreateAdvisoryThread([FromRoute] Guid id)
         => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
+    [Obsolete("Replaced by advisory-discussion/messages.")]
     [HttpGet("{id:guid}/advisory-threads/{threadId:guid}/messages")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "List messages in an advisory thread")]
-    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryMessageDto>>), 200)]
-    public async Task<IActionResult> GetAdvisoryMessages(
-        [FromRoute] Guid id,
-        [FromRoute] Guid threadId)
-    {
-        var result = await _programAdvisoryService.GetMessagesAsync(id, threadId);
-        return Ok(ApiResult<IReadOnlyList<AdvisoryMessageDto>>.Success(
-            result, "200", "Advisory messages retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetAdvisoryMessages([FromRoute] Guid id, [FromRoute] Guid threadId)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
-    [Obsolete("Advisory threads are read-only; use advisory-discussion/messages.")]
+    [Obsolete("Advisory threads were removed; use advisory-discussion/messages.")]
     [HttpPost("{id:guid}/advisory-threads/{threadId:guid}/messages")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
@@ -594,7 +534,7 @@ public class ProgramController : ControllerBase
     public IActionResult AddAdvisoryMessage([FromRoute] Guid id, [FromRoute] Guid threadId)
         => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
-    [Obsolete("Advisory threads are read-only; use advisory-discussion pins.")]
+    [Obsolete("Advisory threads were removed; use advisory-discussion pins.")]
     [HttpPost("{id:guid}/advisory-threads/{threadId:guid}/actions")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
@@ -602,7 +542,7 @@ public class ProgramController : ControllerBase
     public IActionResult PerformAdvisoryThreadAction([FromRoute] Guid id, [FromRoute] Guid threadId)
         => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
-    [Obsolete("Advisory threads are read-only; use advisory-discussion pins.")]
+    [Obsolete("Advisory threads were removed; use advisory-discussion pins.")]
     [HttpPatch("{id:guid}/advisory-threads/{threadId:guid}/status")]
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
@@ -610,54 +550,37 @@ public class ProgramController : ControllerBase
     public IActionResult UpdateAdvisoryThreadStatus([FromRoute] Guid id, [FromRoute] Guid threadId)
         => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
+    [Obsolete("Replaced by advisory-discussion/read.")]
     [HttpPost("{id:guid}/advisory-read")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Record advisory last-read position")]
-    [ProducesResponseType(typeof(ApiResult<object>), 200)]
-    public async Task<IActionResult> RecordAdvisoryRead(
-        [FromRoute] Guid id,
-        [FromBody] RecordAdvisoryReadRequest? request = null)
-    {
-        await _programAdvisoryService.RecordReadAsync(id, request);
-        return Ok(ApiResult<object>.Success(new { }, "200", "Advisory read position recorded."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult RecordAdvisoryRead([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
+    [Obsolete("Mentions are captured from advisory-discussion message bodies.")]
     [HttpPost("{id:guid}/advisory-references")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Capture an immutable advisory curriculum reference")]
-    [ProducesResponseType(typeof(ApiResult<AdvisoryReferenceDto>), 200)]
-    public async Task<IActionResult> CreateAdvisoryReference(
-        [FromRoute] Guid id,
-        [FromBody] CreateAdvisoryReferenceRequest request)
-    {
-        var result = await _programAdvisoryService.CreateReferenceAsync(id, request);
-        return Ok(ApiResult<AdvisoryReferenceDto>.Success(result, "200", "Advisory reference captured."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = MentionsMovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult CreateAdvisoryReference([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(MentionsMovedMessage);
 
+    [Obsolete("Mentions are resolved inside advisory-discussion messages.")]
     [HttpGet("{id:guid}/advisory-references/{referenceId:guid}")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Resolve an advisory reference")]
-    [ProducesResponseType(typeof(ApiResult<AdvisoryReferenceDto>), 200)]
-    public async Task<IActionResult> GetAdvisoryReference(
-        [FromRoute] Guid id,
-        [FromRoute] Guid referenceId)
-    {
-        var result = await _programAdvisoryService.GetReferenceAsync(id, referenceId);
-        return Ok(ApiResult<AdvisoryReferenceDto>.Success(result, "200", "Advisory reference resolved."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = MentionsMovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetAdvisoryReference([FromRoute] Guid id, [FromRoute] Guid referenceId)
+        => throw RemovedEndpoint.Gone(MentionsMovedMessage);
 
+    [Obsolete("Replaced by mention-targets.")]
     [HttpGet("advisory-anchor-fields")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(
-        Summary = "List allowed advisory anchor field keys",
-        Description = "Publishes the BE allowlist of targetType + fieldKey (+ label) values accepted for note anchors and advisory references. Unknown keys are rejected with 400 ADVISORY_ANCHOR_FIELD_INVALID.")]
-    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<AdvisoryAnchorFieldDto>>), 200)]
-    public async Task<IActionResult> GetAdvisoryAnchorFields()
-    {
-        var result = await _programAdvisoryService.GetAnchorFieldsAsync();
-        return Ok(ApiResult<IReadOnlyList<AdvisoryAnchorFieldDto>>.Success(
-            result, "200", "Advisory anchor fields retrieved."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = MentionsMovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetAdvisoryAnchorFields()
+        => throw RemovedEndpoint.Gone(MentionsMovedMessage);
 
     [HttpGet("{id:guid}/mention-targets")]
     [Authorize(Roles = "Expert,Manager,Admin")]
@@ -830,18 +753,13 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<AdvisoryAttachmentUrlDto>.Success(result, "200", "Attachment URL created."));
     }
 
+    [Obsolete("Replaced by advisory-discussion/read.")]
     [HttpPost("{id:guid}/advisory-threads/{threadId:guid}/read")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Advance a single advisory thread read cursor")]
-    [ProducesResponseType(typeof(ApiResult<object>), 200)]
-    public async Task<IActionResult> RecordAdvisoryThreadRead(
-        [FromRoute] Guid id,
-        [FromRoute] Guid threadId,
-        [FromBody] RecordAdvisoryThreadReadRequest request)
-    {
-        await _programAdvisoryDiscussionService.RecordThreadReadAsync(id, threadId, request);
-        return Ok(ApiResult<object>.Success(new { }, "200", "Advisory thread read cursor recorded."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ThreadsRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult RecordAdvisoryThreadRead([FromRoute] Guid id, [FromRoute] Guid threadId)
+        => throw RemovedEndpoint.Gone(ThreadsRemovedMessage);
 
     [HttpPost("{id:guid}/advisory-discussion/read")]
     [Authorize(Roles = "Expert,Manager,Admin")]
@@ -855,54 +773,37 @@ public class ProgramController : ControllerBase
         return Ok(ApiResult<object>.Success(new { }, "200", "Discussion read cursor recorded."));
     }
 
+    [Obsolete("Review submissions were replaced by versioned approval.")]
     [HttpGet("{id:guid}/review-submissions")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "List formal review submissions")]
-    [ProducesResponseType(typeof(ApiResult<IReadOnlyList<ProgramReviewSubmissionSummaryDto>>), 200)]
-    public async Task<IActionResult> GetReviewSubmissions([FromRoute] Guid id)
-    {
-        var result = await _curriculumReviewService.GetSubmissionsAsync(id);
-        return Ok(ApiResult<IReadOnlyList<ProgramReviewSubmissionSummaryDto>>.Success(
-            result, "200", "Review submissions retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetReviewSubmissions([FromRoute] Guid id)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
+    [Obsolete("Review submissions were replaced by versioned approval.")]
     [HttpGet("{id:guid}/review-submissions/{submissionId:guid}")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Get a review submission snapshot")]
-    [ProducesResponseType(typeof(ApiResult<ProgramReviewSubmissionDetailDto>), 200)]
-    public async Task<IActionResult> GetReviewSubmission(
-        [FromRoute] Guid id,
-        [FromRoute] Guid submissionId)
-    {
-        var result = await _curriculumReviewService.GetSubmissionAsync(id, submissionId);
-        return Ok(ApiResult<ProgramReviewSubmissionDetailDto>.Success(
-            result, "200", "Review submission retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetReviewSubmission([FromRoute] Guid id, [FromRoute] Guid submissionId)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
+    [Obsolete("Replaced by curriculum/changes.")]
     [HttpGet("{id:guid}/review-submissions/{submissionId:guid}/changes")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Diff a submission against the previous one")]
-    [ProducesResponseType(typeof(ApiResult<SubmissionChangesDto>), 200)]
-    public async Task<IActionResult> GetReviewSubmissionChanges(
-        [FromRoute] Guid id,
-        [FromRoute] Guid submissionId)
-    {
-        var result = await _curriculumReviewService.GetSubmissionChangesAsync(id, submissionId);
-        return Ok(ApiResult<SubmissionChangesDto>.Success(
-            result, "200", "Submission changes retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetReviewSubmissionChanges([FromRoute] Guid id, [FromRoute] Guid submissionId)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
+    [Obsolete("Review drafts were removed with the submission-based review flow.")]
     [HttpGet("{id:guid}/review-submissions/{submissionId:guid}/draft")]
     [Authorize(Roles = "Expert")]
-    [SwaggerOperation(Summary = "Get the advisor private review draft")]
-    [ProducesResponseType(typeof(ApiResult<ProgramReviewDraftDto>), 200)]
-    public async Task<IActionResult> GetReviewDraft(
-        [FromRoute] Guid id,
-        [FromRoute] Guid submissionId)
-    {
-        var result = await _curriculumReviewService.GetDraftAsync(id, submissionId);
-        return Ok(ApiResult<ProgramReviewDraftDto>.Success(result, "200", "Review draft retrieved successfully."));
-    }
+    [SwaggerOperation(Summary = "Removed (410 ENDPOINT_REMOVED)", Description = ReviewFlowRemovedMessage)]
+    [ProducesResponseType(typeof(ApiResult<object>), 410)]
+    public IActionResult GetReviewDraft([FromRoute] Guid id, [FromRoute] Guid submissionId)
+        => throw RemovedEndpoint.Gone(ReviewFlowRemovedMessage);
 
     [Obsolete("Review drafts were removed with the submission-based review flow.")]
     [HttpPut("{id:guid}/review-submissions/{submissionId:guid}/draft")]

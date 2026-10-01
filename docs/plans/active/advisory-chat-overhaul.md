@@ -192,6 +192,13 @@ One task per review/commit cycle, in this order:
   compatibility fields) and adds `unreadCount` (chat cursor), `openPinCount`,
   `approvalState` (`None`, `Approved`, `Revoked`), `latestActivityAt`;
   `unreadOnly` filters on chat unread.
+- 2026-10-01: Task 7d returns 410 `ENDPOINT_REMOVED` on every remaining old
+  read route (list in `docs/product/curriculum.md`); routes stay registered
+  and `[Obsolete]`. `ProgramController` no longer depends on
+  `CurriculumReviewService` / `ProgramAdvisoryService`; their now-unreachable
+  code (including the `FRAMEWORK_CHECK_FAILED` submit-review pre-check) is
+  deleted with the services in 7e. `RecordThreadReadAsync` and
+  `RecordAdvisoryThreadReadRequest` are removed.
 
 ## Remaining Contract
 
@@ -203,17 +210,6 @@ Notifications: deprecated catalog factories (`CurriculumReviewSubmitted`,
 `AdvisoryReply`, `AdvisoryCorrectionAddressed`) are deleted in 7e together
 with their last callers (old services, seed); enum values stay for old inbox
 rows.
-
-Removed endpoints (task 7d): routes stay registered, `[Obsolete]`, and return
-410 `ENDPOINT_REMOVED`; their service code is deleted. Already 410: advisory
-thread writes (task 5), review writes and `review-queue` (task 6), framework
-`rubric` / `criteria*`. Still to switch: `{id}/review-submissions/*` (list,
-detail, `changes`, draft GET), `{id}/curriculum-reviews`,
-`{id}/advisory-threads/*` (including `advisory-threads/pins` and
-`advisory-threads/{threadId}/read`), `{id}/advisory/board`,
-`{id}/advisory/timeline`, `advisory-anchor-fields`,
-`{id}/advisory-references/*`, `{id}/advisory-read`. The 400
-`FRAMEWORK_CHECK_FAILED` submit-review pre-check goes with them.
 
 Cleanup (task 7e): remove `ProgramStatus.PendingReview`,
 `ProgramAdvisoryTargetType.RubricCriterion`, `AdvisoryStreamType.Thread`; drop

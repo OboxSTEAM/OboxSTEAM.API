@@ -86,10 +86,14 @@ and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
   checks against the pinned framework version.
 - Advisory chat: `/api/programs/{id}/advisory-discussion/*` (messages,
   mentions, pins, attachments).
-- Removed (410 `ENDPOINT_REMOVED`): `submit-review`, `withdraw-review`,
-  `approve-review`, `request-changes`, `PUT review-submissions/{id}/draft`,
-  `GET review-queue`, and the advisory thread write routes. The old review and
-  thread read routes stay read-only until they are removed.
+- Removed (410 `ENDPOINT_REMOVED`, routes stay registered): `submit-review`,
+  `withdraw-review`, `approve-review`, `request-changes`, `GET review-queue`,
+  `{id}/curriculum-reviews`, `{id}/review-submissions/*` (list, detail,
+  `changes`, draft GET/PUT), `{id}/advisory-threads/*` (list, detail,
+  `pins`, messages, writes, `{threadId}/read`), `{id}/advisory/board`,
+  `{id}/advisory/timeline`, `{id}/advisory-read`,
+  `{id}/advisory-references/*`, `advisory-anchor-fields`, and the framework
+  `rubric` / `criteria*` routes.
 
 Curriculum edits are locked only by live cohorts (a class `InProgress`, or an
 `Open` class with `Active` enrollments). An edit while an approval is active

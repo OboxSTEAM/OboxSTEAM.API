@@ -460,37 +460,6 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             .ToList();
     }
 
-    public async Task RecordThreadReadAsync(
-        Guid programId,
-        Guid threadId,
-        RecordAdvisoryThreadReadRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        var sequence = ParseCursor(programId, request.Cursor) ?? request.LastDisplayedSequence;
-        if (sequence < 0)
-        {
-            throw ErrorHelper.BadRequest("LastDisplayedSequence cannot be negative.");
-        }
-
-        await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
-        {
-            var participant = await RequireParticipantAsync(programId);
-            var thread = await _unitOfWork.ProgramAdvisoryThreads.GetByIdAsync(threadId);
-            if (thread == null || thread.IsDeleted || thread.ProgramId != programId)
-            {
-                throw ErrorHelper.NotFound($"Advisory thread '{threadId}' was not found.");
-            }
-
-            if (sequence > thread.LatestActivitySequence)
-            {
-                throw ErrorHelper.BadRequest("The supplied thread cursor is not valid for this program.");
-            }
-
-            await AdvanceReadAsync(programId, participant.User.Id, AdvisoryStreamType.Thread, threadId, sequence);
-            return true;
-        });
-    }
-
     public async Task RecordDiscussionReadAsync(
         Guid programId,
         RecordAdvisoryDiscussionReadRequest request)

@@ -43,11 +43,6 @@ public interface IProgramAdvisoryDiscussionService
 
     Task<IReadOnlyList<AdvisoryMentionCountDto>> GetMentionCountsAsync(Guid programId);
 
-    Task RecordThreadReadAsync(
-        Guid programId,
-        Guid threadId,
-        RecordAdvisoryThreadReadRequest request);
-
     Task RecordDiscussionReadAsync(
         Guid programId,
         RecordAdvisoryDiscussionReadRequest request);
