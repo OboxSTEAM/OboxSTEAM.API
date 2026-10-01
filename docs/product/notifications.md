@@ -157,15 +157,15 @@ service emits it.
 | `MaterialUpdated`                | `ForClassRoster`                                             | `MaterialService`                           |
 | `AssignmentEditedByMentor`       | `ForManagers`                                                | `AssignmentService`                         |
 | `ClassQuizSetEditedByMentor`     | `ForManagers`                                                | `ClassQuizQuestionSetService`               |
-| `CurriculumReviewSubmitted`      | Legacy (submit-review removed); no longer sent               | —                                           |
-| `CurriculumReviewChangesRequested` | Legacy (request-changes removed); no longer sent           | —                                           |
+| `CurriculumReviewSubmitted`      | Legacy enum value only (no catalog factory); kept so old inbox rows still read | —                       |
+| `CurriculumReviewChangesRequested` | Legacy enum value only (no catalog factory); kept so old inbox rows still read | —                     |
 | `CurriculumApprovalRequested`    | Program advisor (linked login) via `ForUser`                 | `ProgramApprovalService`                    |
 | `CurriculumReviewApproved`       | `ForManagers`                                                | `ProgramApprovalService`                    |
 | `CurriculumReviewPublished`      | `ForManagers`                                                | `ProgramApprovalService`                    |
 | `CurriculumApprovalRevoked`      | Program advisor via `ForUser` after a curriculum edit (`CurriculumChangeRecorder`, published after commit) or a manager reopen; `ForManagers` when the advisor revokes. None on advisor change | `CurriculumChangeRecorder`, `ProgramApprovalService` |
 | `AdvisoryDiscussionMessage`      | Each advisory participant except the author via `ForUser` (active managers, advisor, board experts with a login), after commit, user messages only. Skipped when the recipient has a live connection in `advisory:{programId}` or already received one for that program in the last 5 minutes | `ProgramAdvisoryDiscussionService` |
 | `AdvisoryMentionPinned`          | `ForManagers` when an expert creates a pin (re-pin, unpin, and pin actions send nothing) | `ProgramAdvisoryDiscussionService` |
-| `AdvisoryFeedbackPublished`, `AdvisoryReply`, `AdvisoryCorrectionAddressed` | Legacy advisory threads; no longer sent by the chat | — |
+| `AdvisoryFeedbackPublished`, `AdvisoryReply`, `AdvisoryCorrectionAddressed` | Legacy enum values only (no catalog factories); kept so old inbox rows still read | — |
 | `ClassSessionExpertInvited`        | Expert via `ForUser`                                       | `ClassSessionExpertService`                 |
 | `ClassSessionExpertAccepted`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
 | `ClassSessionExpertDeclined`       | `ForManagers`                                              | `ClassSessionExpertService`                 |

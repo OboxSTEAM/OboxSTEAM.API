@@ -6,8 +6,8 @@ namespace OboxSteam.Application.Services;
 
 /// <summary>
 /// Two complete Draft programs with no framework. Manager attaches a blueprint via PUT
-/// then POST submit-review to reach PendingReview. Curriculum meets every seeded
-/// framework pre-check (3 modules, Offline, LiveOnline, capstone).
+/// then requests approval in the advisory chat. Curriculum meets every seeded
+/// framework check (3 modules, Offline, LiveOnline, capstone).
 /// Re-seed does not reset Status or FrameworkId after the manager mutates them.
 /// </summary>
 public partial class SeedService

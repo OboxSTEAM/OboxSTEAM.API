@@ -98,8 +98,6 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         var lastReadByProgram = (await _unitOfWork.ProgramAdvisoryStreamReads.GetAllAsync(
                 r => r.UserId == user.Id
                      && programIds.Contains(r.ProgramId)
-                     && r.StreamType == AdvisoryStreamType.Discussion
-                     && r.ThreadId == null
                      && !r.IsDeleted))
             .GroupBy(r => r.ProgramId)
             .ToDictionary(g => g.Key, g => g.Max(r => r.LastReadSequence));
@@ -272,7 +270,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
             FromVersion = Math.Min(previous?.CurriculumVersion ?? 0, program.CurriculumVersion),
             FrameworkVersionId = program.FrameworkVersionId,
             FrameworkCheckJson = JsonSerializer.Serialize(check, CurriculumChangeJson.Options),
-            CurriculumSnapshotJson = CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(tree),
+            CurriculumSnapshotJson = CurriculumSnapshotBuilder.BuildCurriculumSnapshotJson(tree),
             ApprovedByExpertId = program.AdvisorExpertId!.Value,
             ApprovedAt = now,
             Comment = comment,
@@ -578,8 +576,6 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         var read = await _unitOfWork.ProgramAdvisoryStreamReads.FirstOrDefaultAsync(
             r => r.ProgramId == program.Id
                  && r.UserId == user.Id
-                 && r.StreamType == AdvisoryStreamType.Discussion
-                 && r.ThreadId == null
                  && !r.IsDeleted);
         var lastRead = read?.LastReadSequence ?? 0;
 

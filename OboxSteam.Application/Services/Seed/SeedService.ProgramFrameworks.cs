@@ -282,32 +282,32 @@ public partial class SeedService
 
         var editProgram = await EnsureQaProgramAsync(
             SeedFrameworkEditableProgramCode,
-            "QA — Draft, Robotics, ready to submit",
-            "Has one Offline lab so Robotics MinOfflineSessions pre-check passes. Manager submit-review.",
+            "QA — Draft, Robotics, ready for approval",
+            "Has one Offline lab so the Robotics MinOfflineSessions framework check passes. Manager requests approval in the advisory chat.",
             qaDraft.Id,
             ProgramStatus.Draft);
         var emptyProgram = await EnsureQaProgramAsync(
             SeedFrameworkEmptyProgramCode,
-            "QA — Draft, C# framework, pre-check fail",
-            "No LiveOnline and no capstone. Submit-review must 400.",
+            "QA — Draft, C# framework, framework check fail",
+            "No LiveOnline and no capstone. The framework check fails, so approval is blocked.",
             csharp.Id,
             ProgramStatus.Draft);
         var pendingProgram = await EnsureQaProgramAsync(
             SeedFrameworkPendingProgramCode,
-            "QA — PendingReview, Robotics",
-            "Already in expert queue. EXP-001 (framework owner) approve-review or request-changes. Board members may view only.",
+            "QA — Draft, Robotics, second copy",
+            "Offline lab present, framework check passes. Discuss and approve in the advisory chat. Board members may view only.",
             qaPending.Id,
             ProgramStatus.Draft);
         var noFrameworkProgram = await EnsureQaProgramAsync(
             SeedFrameworkNoFrameworkProgramCode,
             "QA — Draft, no framework",
-            "Submit-review still goes to PendingReview. No framework: EXP-001 on the board reviews free-form (any board expert with a login may decide).",
+            "No framework, so the framework check passes trivially. EXP-001 on the board can discuss in the advisory chat.",
             frameworkId: null,
             status: ProgramStatus.Draft);
         var openProgram = await EnsureQaProgramAsync(
             SeedFrameworkOpenProgramCode,
             "QA — Draft, Open family (no rules)",
-            "Submit-review goes to PendingReview. EXP-001 (framework owner) approve-review. Board members may view only.",
+            "Framework with no rules, so the framework check passes. EXP-001 (framework owner) can discuss in the advisory chat. Board members may view only.",
             openFamily.Id,
             ProgramStatus.Draft);
 
@@ -315,8 +315,8 @@ public partial class SeedService
         {
             var exp2Program = await EnsureQaProgramAsync(
                 SeedFrameworkExp2PendingProgramCode,
-                "QA — PendingReview, EXP-002 framework",
-                "Owner expert2@oboxsteam.com decides. EXP-001 does not own this framework and is not on this board, so they should not see this queue item.",
+                "QA — Draft, EXP-002 framework",
+                "Owned by expert2@oboxsteam.com. EXP-001 does not own this framework and is not on this board, so they should not see this program in advisory-mine.",
                 expert002Framework.Id,
                 ProgramStatus.Draft);
             await EnsureQaTheoryModuleAsync(exp2Program, "EXP2");

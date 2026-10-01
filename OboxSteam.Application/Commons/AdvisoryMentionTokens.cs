@@ -42,11 +42,6 @@ public static class AdvisoryMentionTokens
         => $"@[{targetType}:{targetId:D}]";
 
     private static bool TryParseType(string value, out ProgramAdvisoryTargetType targetType)
-    {
-#pragma warning disable CS0618
-        return Enum.TryParse(value, ignoreCase: true, out targetType)
-               && Enum.IsDefined(targetType)
-               && targetType != ProgramAdvisoryTargetType.RubricCriterion;
-#pragma warning restore CS0618
-    }
+        => Enum.TryParse(value, ignoreCase: true, out targetType)
+           && Enum.IsDefined(targetType);
 }

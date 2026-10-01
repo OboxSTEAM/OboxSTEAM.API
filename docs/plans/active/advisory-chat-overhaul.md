@@ -26,8 +26,8 @@ removed on 2026-10-01.
   `docs/product/notifications.md`.
 - Superseded plan areas: `docs/plans/active/expert-advisory-flow.md`
   (threads, rounds, rubric).
-- Core code: `ProgramAdvisoryService`, `ProgramAdvisoryDiscussionService`,
-  `CurriculumReviewService`, `CurriculumReviewSnapshotBuilder`,
+- Core code: `ProgramApprovalService`, `ProgramAdvisoryDiscussionService`,
+  `CurriculumSnapshotBuilder`, `CurriculumChangeRecorder`,
   `ProgramFrameworkService`, `CurriculumEditGuard`, `NotificationHub`,
   `SyncEventPublisher`, `OboxSteamDbContext`.
 
@@ -85,8 +85,9 @@ One task per review/commit cycle, in this order:
   `20260930183025_MigrateAdvisoryThreadsToDiscussion` (not applied locally)
 - [x] 6. A4 approval lifecycle — data migration
   `20260930210212_ApprovalLifecycleRemovePendingReview` (not applied locally)
-- [ ] 7. A5 + A6 realtime + deprecation
-- [ ] 8. Seed cleanup
+- [x] 7. A5 + A6 realtime + deprecation — migration
+  `20261001112208_DropLegacyAdvisoryHistory` (not applied locally)
+- [ ] 8. Seed cleanup — removal done in 7e; new-flow seed pending
 
 ## Decisions
 
@@ -199,25 +200,39 @@ One task per review/commit cycle, in this order:
   code (including the `FRAMEWORK_CHECK_FAILED` submit-review pre-check) is
   deleted with the services in 7e. `RecordThreadReadAsync` and
   `RecordAdvisoryThreadReadRequest` are removed.
+- 2026-10-01: Task 7e deletes `CurriculumReviewService`,
+  `ProgramAdvisoryService`, their DTOs and tests, the 9 history entities, and
+  `ProgramFrameworkValidator.ValidateForSubmitAsync`. Removed enums/values:
+  `ProgramStatus.PendingReview`, `ProgramAdvisoryTargetType.RubricCriterion`,
+  `AdvisoryReferenceContext`, `AdvisoryStreamType`, and the thread, review
+  and intent enums. `CurriculumReviewSnapshotBuilder` becomes
+  `CurriculumSnapshotBuilder` (approval snapshot only).
+- 2026-10-01: References keep no context: submission-context references are
+  deleted and `Context`, `SubmissionId` are dropped (also from
+  `AdvisoryReferenceDto`, a client-visible change). References are always
+  resolved against the live curriculum.
+- 2026-10-01: `ProgramAdvisoryNotificationIntents` (entity, enum, repository)
+  is dropped in the same migration; chat notifications publish directly.
+- 2026-10-01: `ProgramAdvisoryStreamReads` loses `StreamType` and `ThreadId`
+  (only the discussion stream was left); one cursor per program and user,
+  unique on `(ProgramId, UserId)` for live rows.
+- 2026-10-01: Deprecated catalog factories (`CurriculumReviewSubmitted`,
+  `CurriculumReviewChangesRequested`, `AdvisoryFeedbackPublished`,
+  `AdvisoryReply`, `AdvisoryCorrectionAddressed`) are deleted; their
+  `NotificationType` values stay for old inbox rows.
+- 2026-10-01: Seed strips every old-flow fixture (threads, submissions,
+  drafts, curriculum reviews, advisory inbox samples, the board-flow upgrade
+  path) and keeps the ADV programs and curricula. Program codes are unchanged;
+  QA program names and descriptions no longer mention submit-review.
 
 ## Remaining Contract
 
-Target behaviour for the unfinished steps of tasks 7 and 8. Move each item
-into `docs/product` when it ships.
+Target behaviour for task 8. Move it into `docs/product` when it ships.
 
-Notifications: deprecated catalog factories (`CurriculumReviewSubmitted`,
-`CurriculumReviewChangesRequested`, `AdvisoryFeedbackPublished`,
-`AdvisoryReply`, `AdvisoryCorrectionAddressed`) are deleted in 7e together
-with their last callers (old services, seed); enum values stay for old inbox
-rows.
+Seed (task 8): a Draft program with chat messages and pins, an Approved
+program with a publishable approval, and a program with a revoked approval.
 
-Cleanup (task 7e): remove `ProgramStatus.PendingReview`,
-`ProgramAdvisoryTargetType.RubricCriterion`, `AdvisoryStreamType.Thread`; drop
-all history tables (`CurriculumReview`, `ProgramReviewSubmission`, review
-drafts, advisory threads/messages/events/reads) in one generated migration;
-keep and clean `ProgramAdvisoryReferences` and `ProgramAdvisoryStreamReads`.
-
-Migration history (tasks 2–6, for recovery):
+Migration history (tasks 2–7, for recovery):
 
 1. `ApprovalLifecycleRemovePendingReview`: `PendingReview` → `Draft`; one
    active `ProgramApproval` backfilled per `Approved` program (expert and time
@@ -239,6 +254,15 @@ Migration history (tasks 2–6, for recovery):
    `ProgramReviewSubmissions.RubricSnapshotJson`, and rubric
    `ProgramAdvisoryReferences` (plus message-reference rows) dropped without
    archive.
+5. `DropLegacyAdvisoryHistory`: deletes submission-context, rubric, and
+   unlinked `ProgramAdvisoryReferences` (and their message-reference rows) and
+   thread `ProgramAdvisoryStreamReads`; drops `CurriculumReviews`,
+   `CurriculumReviewRequirements`, `ProgramReviewSubmissions`,
+   `ProgramReviewDrafts`, `ProgramAdvisoryThreads`, `ProgramAdvisoryMessages`,
+   `ProgramAdvisoryThreadEvents`, `ProgramAdvisoryReads`,
+   `ProgramAdvisoryNotificationIntents`, and the reference
+   `Context`/`SubmissionId` and stream-read `StreamType`/`ThreadId` columns.
+   No archive; recovery is a pre-migration DB backup.
 
 ## Validation
 

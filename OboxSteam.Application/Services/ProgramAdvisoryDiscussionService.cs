@@ -486,7 +486,7 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
                 throw ErrorHelper.BadRequest("The supplied discussion cursor is not valid for this program.");
             }
 
-            await AdvanceReadAsync(programId, participant.User.Id, AdvisoryStreamType.Discussion, null, sequence);
+            await AdvanceReadAsync(programId, participant.User.Id, sequence);
             return true;
         });
     }
@@ -683,7 +683,6 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             {
                 Id = Guid.NewGuid(),
                 ProgramId = message.ProgramId,
-                Context = AdvisoryReferenceContext.WorkingDraft,
                 TargetType = target.TargetType,
                 TargetId = target.TargetId,
                 AnchorKind = ProgramAdvisoryAnchorKind.Node,
@@ -902,18 +901,11 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
         return document.RootElement.Clone();
     }
 
-    private async Task AdvanceReadAsync(
-        Guid programId,
-        Guid userId,
-        AdvisoryStreamType streamType,
-        Guid? threadId,
-        long sequence)
+    private async Task AdvanceReadAsync(Guid programId, Guid userId, long sequence)
     {
         var existing = await _unitOfWork.ProgramAdvisoryStreamReads.FirstOrDefaultAsync(
             r => r.ProgramId == programId
                  && r.UserId == userId
-                 && r.StreamType == streamType
-                 && r.ThreadId == threadId
                  && !r.IsDeleted);
         if (existing == null)
         {
@@ -923,8 +915,6 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
                 Id = Guid.NewGuid(),
                 ProgramId = programId,
                 UserId = userId,
-                StreamType = streamType,
-                ThreadId = threadId,
                 LastReadSequence = sequence,
                 CreatedAt = now,
                 CreatedBy = userId,

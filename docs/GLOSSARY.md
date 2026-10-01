@@ -6,8 +6,7 @@ Short product terms for OboxSTEAM.API. Process vocabulary lives in
 ## Program
 
 Sellable STEAM track. Has `Price`, modules, classes, and enrollments.
-`ProgramStatus`: Draft, Approved, Active, Inactive (`PendingReview` is
-obsolete and no longer used).
+`ProgramStatus`: Draft, Approved, Active, Inactive.
 Optional `FrameworkId` links to an expert `ProgramFramework` blueprint.
 
 ## ProgramFramework
@@ -33,10 +32,6 @@ change, or a curriculum edit; an `Approved` program then returns to `Draft`
 (`Active`/`Inactive` keep their status). Publishing requires an active
 approval at the current curriculum version. See
 `docs/product/curriculum.md` (Advisory Chat and Approval).
-
-## CurriculumReview
-
-Legacy expert decision history from the removed submission flow; read-only.
 
 ## ClassSessionExpert
 

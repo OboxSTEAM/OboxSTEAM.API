@@ -1,13 +1,10 @@
-using OboxSteam.Application.Commons;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
-using OboxSteam.Domain.Interfaces;
 
 namespace OboxSteam.Application.Validation;
 
 /// <summary>
-/// Framework rule-value validation and the submit-review pre-check.
-/// Null or false rules are not enforced. Multiple failures are joined into one message.
+/// Framework name and rule-value validation. Multiple failures are joined into one message.
 /// </summary>
 public static class ProgramFrameworkValidator
 {
@@ -93,44 +90,6 @@ public static class ProgramFrameworkValidator
         if (errors.Count > 0)
         {
             throw ErrorHelper.BadRequest(string.Join(" ", errors), RulesInvalidCode);
-        }
-    }
-
-    /// <summary>
-    /// Pre-check a program against its pinned framework version. No-op when no version is pinned.
-    /// Called from submit-review.
-    /// </summary>
-    public static async Task ValidateForSubmitAsync(IUnitOfWork unitOfWork, Guid programId)
-    {
-        var program = await unitOfWork.Programs.GetByIdAsync(programId);
-        if (program == null || program.IsDeleted)
-        {
-            throw ErrorHelper.NotFound($"Program with id '{programId}' not found.");
-        }
-
-        if (!program.FrameworkVersionId.HasValue)
-        {
-            return;
-        }
-
-        var version = await unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value);
-        if (version == null || version.IsDeleted || !version.IsPublished)
-        {
-            throw ErrorHelper.Conflict(
-                "The assigned framework version is unavailable or not published.",
-                "FRAMEWORK_UNAVAILABLE");
-        }
-
-        var snapshot = await ProgramCurriculumTreeLoader.LoadAsync(unitOfWork, programId);
-        var checks = await FrameworkRuleEvaluator.EvaluateAsync(unitOfWork, version, snapshot);
-        var errors = checks
-            .Where(c => !c.Passed)
-            .Select(c => $"{c.Label}: expected {c.Expected}, actual {c.Actual}.")
-            .ToList();
-
-        if (errors.Count > 0)
-        {
-            throw ErrorHelper.BadRequest(string.Join(" ", errors), "FRAMEWORK_CHECK_FAILED");
         }
     }
 

@@ -512,7 +512,6 @@ public sealed class ProgramApprovalServiceTests
             Id = Guid.NewGuid(),
             ProgramId = _programId,
             UserId = _managerId,
-            StreamType = AdvisoryStreamType.Discussion,
             LastReadSequence = 1,
         });
         SeedApproval(version: 1, revokedAt: _now.AddHours(-1));
@@ -616,7 +615,6 @@ public sealed class ProgramApprovalServiceTests
             Id = Guid.NewGuid(),
             ProgramId = _programId,
             UserId = userId,
-            StreamType = AdvisoryStreamType.Discussion,
             LastReadSequence = sequence,
         });
 

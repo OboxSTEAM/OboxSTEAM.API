@@ -1951,29 +1951,6 @@ public static class NotificationCatalog
 
     // ── Curriculum review ─────────────────────────────────────────────────────
 
-    public static NotificationCommand CurriculumReviewSubmitted(
-        Guid expertUserId,
-        Guid programId,
-        Guid? actorUserId = null,
-        string? programName = null,
-        string? frameworkName = null,
-        string? actorName = null)
-        => new(
-            NotificationType.CurriculumReviewSubmitted,
-            NotificationAudience.ForUser(expertUserId),
-            NotificationRoleTemplates.ForExpert(
-                "Có chương trình chờ duyệt",
-                BuildCurriculumReviewSubmittedBody(programName, frameworkName)),
-            payload: new NotificationPayload { ProgramId = programId }
-                .WithNames(actorName: actorName, programName: programName),
-            actorUserId: actorUserId,
-            entityType: "Program",
-            entityId: programId,
-            tokens: NotificationTokenKeys.Create(
-                actorName: actorName,
-                programName: programName,
-                frameworkName: frameworkName));
-
     public static NotificationCommand CurriculumReviewApproved(
         Guid programId,
         Guid? reviewId = null,
@@ -1994,32 +1971,6 @@ public static class NotificationCatalog
             entityType: "CurriculumReview",
             entityId: reviewId ?? programId,
             tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
-
-    public static NotificationCommand CurriculumReviewChangesRequested(
-        Guid programId,
-        string comment,
-        Guid? reviewId = null,
-        Guid? actorUserId = null,
-        string? programName = null,
-        string? actorName = null)
-        => new(
-            NotificationType.CurriculumReviewChangesRequested,
-            NotificationAudience.ForManagers(),
-            NotificationRoleTemplates.FromDefault(
-                "Chương trình cần chỉnh sửa",
-                BuildCurriculumReviewChangesRequestedBody(programName)),
-            payload: new NotificationPayload
-            {
-                ProgramId = programId,
-                Extra = comment
-            }.WithNames(actorName: actorName, programName: programName),
-            actorUserId: actorUserId,
-            entityType: "CurriculumReview",
-            entityId: reviewId ?? programId,
-            tokens: NotificationTokenKeys.Create(
-                actorName: actorName,
-                programName: programName,
-                comment: comment));
 
     public static NotificationCommand CurriculumReviewPublished(
         Guid programId,
@@ -2175,82 +2126,6 @@ public static class NotificationCatalog
             actorUserId: actorUserId,
             entityType: "ProgramAdvisoryDiscussionMessage",
             entityId: messageId,
-            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
-
-    public static NotificationCommand AdvisoryFeedbackPublished(
-        Guid recipientUserId,
-        Guid programId,
-        Guid threadId,
-        Guid? actorUserId = null,
-        string? programName = null,
-        string? actorName = null,
-        string? feedbackType = null)
-        => new(
-            NotificationType.AdvisoryFeedbackPublished,
-            recipientUserId == Guid.Empty
-                ? NotificationAudience.ForManagers()
-                : NotificationAudience.ForUser(recipientUserId),
-            NotificationRoleTemplates.FromDefault(
-                "Có góp ý chương trình mới",
-                string.IsNullOrWhiteSpace(programName)
-                    ? "{actorName} đã gửi góp ý chương trình."
-                    : "{actorName} đã gửi góp ý trên chương trình \"{programName}\"."),
-            payload: new NotificationPayload
-            {
-                ProgramId = programId,
-                Extra = feedbackType
-            }.WithNames(actorName: actorName, programName: programName),
-            actorUserId: actorUserId,
-            entityType: "ProgramAdvisoryThread",
-            entityId: threadId,
-            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
-
-    public static NotificationCommand AdvisoryReply(
-        Guid recipientUserId,
-        Guid programId,
-        Guid threadId,
-        Guid? actorUserId = null,
-        string? programName = null,
-        string? actorName = null)
-        => new(
-            NotificationType.AdvisoryReply,
-            recipientUserId == Guid.Empty
-                ? NotificationAudience.ForManagers()
-                : NotificationAudience.ForUser(recipientUserId),
-            NotificationRoleTemplates.FromDefault(
-                "Có phản hồi góp ý chương trình",
-                string.IsNullOrWhiteSpace(programName)
-                    ? "{actorName} đã trả lời một chuỗi góp ý."
-                    : "{actorName} đã trả lời góp ý trên chương trình \"{programName}\"."),
-            payload: new NotificationPayload { ProgramId = programId }
-                .WithNames(actorName: actorName, programName: programName),
-            actorUserId: actorUserId,
-            entityType: "ProgramAdvisoryThread",
-            entityId: threadId,
-            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
-
-    public static NotificationCommand AdvisoryCorrectionAddressed(
-        Guid recipientUserId,
-        Guid programId,
-        Guid threadId,
-        Guid? actorUserId = null,
-        string? programName = null,
-        string? actorName = null)
-        => new(
-            NotificationType.AdvisoryCorrectionAddressed,
-            recipientUserId == Guid.Empty
-                ? NotificationAudience.ForManagers()
-                : NotificationAudience.ForUser(recipientUserId),
-            NotificationRoleTemplates.FromDefault(
-                "Yêu cầu bắt buộc sửa đã được đánh dấu Đã sửa",
-                string.IsNullOrWhiteSpace(programName)
-                    ? "{actorName} đã đánh dấu một yêu cầu bắt buộc sửa là Đã sửa."
-                    : "{actorName} đã đánh dấu yêu cầu bắt buộc sửa trên chương trình \"{programName}\" là Đã sửa."),
-            payload: new NotificationPayload { ProgramId = programId }
-                .WithNames(actorName: actorName, programName: programName),
-            actorUserId: actorUserId,
-            entityType: "ProgramAdvisoryThread",
-            entityId: threadId,
             tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
 
     // ── Offline co-teach ──────────────────────────────────────────────────────
@@ -2554,31 +2429,6 @@ public static class NotificationCatalog
                 className: className,
                 programName: programName,
                 sessionTitle: sessionTitle));
-
-    private static string BuildCurriculumReviewSubmittedBody(string? programName, string? frameworkName)
-    {
-        if (!string.IsNullOrWhiteSpace(programName) && !string.IsNullOrWhiteSpace(frameworkName))
-        {
-            return "{actorName} đã gửi chương trình \"{programName}\" dựa trên khung \"{frameworkName}\" để bạn duyệt.";
-        }
-
-        if (!string.IsNullOrWhiteSpace(programName))
-        {
-            return "{actorName} đã gửi chương trình \"{programName}\" để bạn duyệt.";
-        }
-
-        if (!string.IsNullOrWhiteSpace(frameworkName))
-        {
-            return "{actorName} đã gửi một chương trình dựa trên khung \"{frameworkName}\" để bạn duyệt.";
-        }
-
-        return "{actorName} đã gửi một chương trình để bạn duyệt.";
-    }
-
-    private static string BuildCurriculumReviewChangesRequestedBody(string? programName)
-        => string.IsNullOrWhiteSpace(programName)
-            ? "{actorName} không duyệt chương trình. Yêu cầu kiểm tra và sửa lại. {comment}"
-            : "{actorName} không duyệt chương trình \"{programName}\". Yêu cầu kiểm tra và sửa lại. {comment}";
 
     private static NotificationCommand StudentAndParent(
         NotificationType type,

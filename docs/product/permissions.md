@@ -11,7 +11,7 @@
 | Mentor | Delivers courses and mentors class cohorts |
 | Parent | Views and acts on behalf of linked students |
 | Student | Learns, enrolls, submits work |
-| Expert | Framework blueprints, curriculum review, Offline co-teach |
+| Expert | Framework blueprints, advisory chat and curriculum approval, Offline co-teach |
 
 JWT role claims must match enum names exactly (e.g. `"Student"`, `"Admin"`, `"Expert"`).
 
@@ -90,17 +90,17 @@ Create, update, delete for:
   OTP flow — OTP is not sent at provisioning.
 - Updating an expert does not change login credentials. Deleting an expert
   locks the linked user (`AccountStatus.Locked`).
-- Intended surfaces: program framework blueprints, curriculum review queue,
-  and Offline co-teach invitations. Framework APIs are live at
+- Intended surfaces: program framework blueprints, the advisory chat and
+  curriculum approval, and Offline co-teach invitations. Framework APIs are live at
   `GET|POST|PUT|DELETE /api/program-frameworks` (Expert owns their blueprints;
   Manager/Admin may list and read all, not write). Create/delete stay
-  Expert-only. Blueprint/criteria writes are blocked unless the framework is
+  Expert-only. Blueprint writes are blocked unless the framework is
   unattached or the attached program is `Draft`.
   Curriculum approval: the program advisor approves
   (`POST /api/programs/{id}/approval`) and may revoke
   (`POST /api/programs/{id}/approval/revoke`). Manager/Admin request approval,
-  reopen (revoke), and publish. Legacy `GET /api/programs/{id}/curriculum-reviews`
-  stays read-only.
+  reopen (revoke), and publish. The old review routes return 410
+  `ENDPOINT_REMOVED`.
   Offline co-teach:
   `POST|GET /api/class-session-experts`, Expert `GET /mine`,
   `POST /{id}/accept|decline`,

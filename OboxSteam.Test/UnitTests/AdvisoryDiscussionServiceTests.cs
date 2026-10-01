@@ -78,7 +78,7 @@ public sealed class AdvisoryDiscussionServiceTests
             _db,
             _claimsService.Object,
             _currentTime.Object,
-            new AdvisoryReferenceResolver(_db, _currentTime.Object),
+            new AdvisoryReferenceResolver(_db),
             _sync,
             _notifications.Object,
             _presence);
@@ -288,10 +288,7 @@ public sealed class AdvisoryDiscussionServiceTests
             [ProgramAdvisoryTargetType.Activity, ProgramAdvisoryTargetType.Module],
             message.References.Select(r => r.TargetType).ToList());
         Assert.All(_db.ProgramAdvisoryReferences.Items, r =>
-        {
-            Assert.Equal(AdvisoryReferenceContext.WorkingDraft, r.Context);
-            Assert.Equal(ProgramAdvisoryAnchorKind.Node, r.AnchorKind);
-        });
+            Assert.Equal(ProgramAdvisoryAnchorKind.Node, r.AnchorKind));
 
         var byActivity = await chat.GetMessagesAsync(
             _programId, null, null, 30, ProgramAdvisoryTargetType.Activity, _activityWithMaterialId);
@@ -374,7 +371,7 @@ public sealed class AdvisoryDiscussionServiceTests
     }
 
     [Fact]
-    public async Task Post_IsIdempotentPerAuthorAndClientMessageId_AndWritesNoIntent()
+    public async Task Post_IsIdempotentPerAuthorAndClientMessageId()
     {
         var chat = Chat(_managerId);
 
@@ -385,7 +382,6 @@ public sealed class AdvisoryDiscussionServiceTests
         Assert.Equal(first.Id, retry.Id);
         Assert.NotEqual(first.Id, other.Id);
         Assert.Equal([1L, 2L], _db.ProgramAdvisoryDiscussionMessages.Items.Select(m => m.Sequence).Order().ToList());
-        Assert.Empty(_db.ProgramAdvisoryNotificationIntents.Items);
     }
 
     // ── Notifications ─────────────────────────────────────────────────────────

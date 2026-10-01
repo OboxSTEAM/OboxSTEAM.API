@@ -39,14 +39,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<ExpertPublication> ExpertPublications { get; }
     IGenericRepository<ProgramFramework> ProgramFrameworks { get; }
     IGenericRepository<ProgramFrameworkVersion> ProgramFrameworkVersions { get; }
-    IGenericRepository<CurriculumReview> CurriculumReviews { get; }
-    IGenericRepository<ProgramReviewSubmission> ProgramReviewSubmissions { get; }
-    IGenericRepository<ProgramReviewDraft> ProgramReviewDrafts { get; }
-    IGenericRepository<ProgramAdvisoryThread> ProgramAdvisoryThreads { get; }
-    IGenericRepository<ProgramAdvisoryMessage> ProgramAdvisoryMessages { get; }
-    IGenericRepository<ProgramAdvisoryRead> ProgramAdvisoryReads { get; }
     IGenericRepository<ProgramAdvisoryReference> ProgramAdvisoryReferences { get; }
-    IGenericRepository<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents { get; }
     IGenericRepository<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages { get; }
     IGenericRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences { get; }
     IGenericRepository<ProgramAdvisoryDiscussionAttachment> ProgramAdvisoryDiscussionAttachments { get; }
@@ -54,8 +47,6 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<CurriculumChange> CurriculumChanges { get; }
     IGenericRepository<CurriculumChangeSeen> CurriculumChangeSeens { get; }
     IGenericRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads { get; }
-    IGenericRepository<CurriculumReviewRequirement> CurriculumReviewRequirements { get; }
-    IGenericRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents { get; }
     IGenericRepository<ClassSessionExpert> ClassSessionExperts { get; }
     IGenericRepository<Certificate> Certificates { get; }
     IGenericRepository<MediaAsset> MediaAssets { get; }

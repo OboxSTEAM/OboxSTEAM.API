@@ -6,7 +6,7 @@
 Program
   ├── Framework? (ProgramFramework — optional blueprint)
   ├── ProgramBoard (expert associations)
-  ├── CurriculumReview[] (expert audit rounds; not student ProgramReview)
+  ├── ProgramApproval[] (advisor approvals of a curriculum version)
   ├── Module[]
   │     ├── Course[] (each has a Mentor)
   │     │     └── Activity[]
@@ -174,7 +174,8 @@ the net item count. A Manager/Admin chat message closes that manager's session.
 
 `ProgramApproval`: `curriculumVersion` (approved), `fromVersion` (previous
 approval's version or 0), `frameworkVersionId`, `frameworkCheckJson`,
-`curriculumSnapshotJson`, `approvedByExpertId`, `approvedAt`, `comment`
+`curriculumSnapshotJson` (built by `CurriculumSnapshotBuilder`),
+`approvedByExpertId`, `approvedAt`, `comment`
 (≤ 2000), `revokedAt`, `revokedByUserId`, `revokeReason` (`ManagerReopened`,
 `CurriculumEdited`, `ExpertRevoked`, `AdvisorChanged`). At most one
 non-revoked approval per program.
@@ -233,10 +234,15 @@ module's remaining assignments by code. Each component appears once.
 
 Base `/api/programs/{id}/advisory-discussion`, participants only. Store:
 `ProgramAdvisoryDiscussionMessage` (`sequence` per program, monotonic; `kind`
-`User`/`System`; `text` ≤ 4000 with `@[Type:uuid]` tokens). Mentions reuse
-`ProgramAdvisoryReference` (`Node` / `WorkingDraft`) via
+`User`/`System`; `text` ≤ 4000 with `@[Type:uuid]` tokens). Mentions are
+stored as `ProgramAdvisoryReference` rows (`Node` anchor) linked through
 `ProgramAdvisoryDiscussionMessageReference`. Target types: `Program`,
 `Module`, `Course`, `Activity`, `Assignment`, `ResearchMilestone`, `Material`.
+Reference DTO: `id`, `programId`, `targetType`, `targetId`, `anchorKind`,
+`fieldKey`, `quote`, `quotePrefix`, `quoteSuffix`, `capturedLabel`,
+`capturedExcerpt`, `capturedAt`, `isAvailable`, `unavailableReason`,
+`quoteMatched`; always resolved against the live curriculum. One read cursor
+per program and user (`ProgramAdvisoryStreamRead`).
 
 Message DTO: `id`, `programId`, `sequence`, `cursor` (`programId:sequence`),
 `kind`, `authorUserId`, `authorName`, `authorRole`, `text`, `clientMessageId`,
@@ -583,21 +589,17 @@ module. `AssignmentPassScore` requires `0 < passScore ≤ maxPoints`.
 `MaterialsPerActivity` counts SelfPaced activities. `MaxModules` links the
 modules beyond the maximum by order. `SkillsGained` counts `ProgramSkill`
 links. `CategoryMatch` compares `Program.Category` with the framework category.
-The advisory-board frozen-snapshot highlights keep only the original four
-checks.
+Approval runs the live check (409 `FRAMEWORK_CHECK_FAILED`).
 
-`ProgramFrameworkValidator.ValidateForSubmitAsync` runs the same checks and
-joins every failure into one 400 `FRAMEWORK_CHECK_FAILED` message for the old
-submit-review path, which now returns 410; approval uses the live check (409).
-
-`CurriculumReview` is one expert decision round (`Approved` /
-`ChangesRequested`) with a comment. Distinct from
-student `ProgramReview` star ratings. Only `Program.AdvisorExpertId` may make
-the formal decision; framework authorship does not grant that authority.
+Only `Program.AdvisorExpertId` approves (see
+[Approval](#approval)); framework authorship does not grant that authority.
 Other board experts may advise and may be invited to co-teach. The responsible
 advisor cannot be removed from the board until the program is reassigned.
-Decisions attach to a `ProgramReviewSubmission` when present. Legacy history without a genuine
-curriculum snapshot reports `snapshotAvailable=false`.
+`ProgramApproval` is the only approval record (distinct from student
+`ProgramReview` star ratings). The old review-round history
+(`CurriculumReview`, `CurriculumReviewRequirement`, `ProgramReviewSubmission`,
+`ProgramReviewDraft`, advisory threads, messages, events, reads, and
+notification intents) was dropped by migration `DropLegacyAdvisoryHistory`.
 
 ## Highlight Videos
 

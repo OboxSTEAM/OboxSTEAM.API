@@ -8,9 +8,6 @@ public sealed class ProgramAdvisoryReference : BaseEntity
 {
     public Guid ProgramId { get; set; }
     public Program Program { get; set; } = null!;
-    public AdvisoryReferenceContext Context { get; set; }
-    public Guid? SubmissionId { get; set; }
-    public ProgramReviewSubmission? Submission { get; set; }
     public ProgramAdvisoryTargetType TargetType { get; set; }
     public Guid TargetId { get; set; }
     public ProgramAdvisoryAnchorKind AnchorKind { get; set; }

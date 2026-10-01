@@ -16,10 +16,6 @@ public enum ProgramStatus
     /// <summary>Stopped; no new registration or purchase.</summary>
     Inactive = 2,
 
-    /// <summary>Removed from the lifecycle; existing rows are migrated to Draft.</summary>
-    [Obsolete("PendingReview was removed from the approval lifecycle. Programs stay Draft until the advisor approves.")]
-    PendingReview = 3,
-
     /// <summary>
     /// The advisor approved the current curriculum version; ready for manager publish.
     /// Curriculum edits revoke the approval and return the program to Draft.

@@ -42,6 +42,5 @@ public class Expert : BaseEntity
     public ICollection<ExpertPublication> Publications { get; set; } = new List<ExpertPublication>();
     public ICollection<ProgramFramework> ProgramFrameworks { get; set; } = new List<ProgramFramework>();
     public ICollection<Program> AdvisedPrograms { get; set; } = new List<Program>();
-    public ICollection<CurriculumReview> CurriculumReviews { get; set; } = new List<CurriculumReview>();
     public ICollection<ClassSessionExpert> ClassSessionExperts { get; set; } = new List<ClassSessionExpert>();
 }

@@ -52,48 +52,6 @@ public sealed class NotificationCatalogCopyTests
     }
 
     [Fact]
-    public void CurriculumReviewChangesRequested_IncludesProgramDeeplinkAndExpertComment()
-    {
-        var command = NotificationCatalog.CurriculumReviewChangesRequested(
-            SampleId,
-            "Thiếu buổi Offline.",
-            SampleId2,
-            SampleId,
-            "Robotics",
-            "TS. Lan");
-
-        Assert.Equal(NotificationType.CurriculumReviewChangesRequested, command.Type);
-        Assert.Equal(NotificationAudienceKind.Managers, command.Audience.Kind);
-        Assert.Equal(SampleId, command.Payload!.ProgramId);
-        Assert.Equal("Thiếu buổi Offline.", command.Payload.Extra);
-        Assert.Contains("{comment}", command.Templates.Default.Body!, StringComparison.Ordinal);
-        Assert.Contains("không duyệt chương trình", command.Templates.Default.Body!, StringComparison.Ordinal);
-        Assert.Contains("Thiếu buổi Offline.", command.Body!);
-        Assert.Contains("Robotics", command.Body!);
-    }
-
-    [Fact]
-    public void CurriculumReviewSubmitted_TargetsExpertUserWithFrameworkCopy()
-    {
-        var command = NotificationCatalog.CurriculumReviewSubmitted(
-            SampleId,
-            SampleId2,
-            SampleId,
-            "Robotics",
-            "Robotics blueprint",
-            "USR-MGR");
-
-        Assert.Equal(NotificationType.CurriculumReviewSubmitted, command.Type);
-        Assert.Equal(NotificationAudienceKind.User, command.Audience.Kind);
-        Assert.Equal(SampleId, command.Audience.UserId);
-        Assert.Equal(SampleId2, command.Payload!.ProgramId);
-        Assert.Contains("{frameworkName}", command.Templates.Default.Body!, StringComparison.Ordinal);
-        Assert.Contains("Robotics blueprint", command.Body!);
-        Assert.NotNull(command.Templates.Expert);
-        Assert.Contains("để bạn duyệt", command.Templates.Expert!.Body!, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void AdvisoryDiscussionMessage_TargetsRecipientWithProgramEntity()
     {
         var command = NotificationCatalog.AdvisoryDiscussionMessage(SampleId, SampleId2, SampleId, SampleId2, "Robotics", "Lan");
@@ -195,7 +153,7 @@ public sealed class NotificationCatalogCopyTests
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Count(m => m.ReturnType == typeof(NotificationCommand));
 
-        Assert.Equal(90, count);
+        Assert.Equal(85, count);
     }
 
     private static NotificationCommand InvokeFactory(MethodInfo method)

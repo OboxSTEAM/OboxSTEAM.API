@@ -3,16 +3,12 @@ using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
-using OboxSteam.Test.Helpers;
 
 namespace OboxSteam.Test.UnitTests;
 
 public sealed class ProgramFrameworkValidatorTests
 {
     private readonly Guid _programId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-    private readonly Guid _frameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private readonly Guid _versionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-    private readonly InMemoryUnitOfWork _db = new();
 
     [Fact]
     public void Evaluate_SkipsRulesThatAreOff()
@@ -228,62 +224,6 @@ public sealed class ProgramFrameworkValidatorTests
             new ProgramFrameworkVersion { MinLiveRatioPercent = 101 }));
 
         Assert.Equal(ProgramFrameworkValidator.RulesInvalidCode, error.ErrorCode);
-    }
-
-    [Fact]
-    public async Task ValidateForSubmit_UsesPinnedPublishedVersion()
-    {
-        _db.Programs.Seed(new Program
-        {
-            Id = _programId, Code = "PRG", Name = "Program", Category = ProgramCategory.Technology,
-            FrameworkId = _frameworkId, FrameworkVersionId = _versionId,
-        });
-        _db.ProgramFrameworkVersions.Seed(new ProgramFrameworkVersion
-        {
-            Id = _versionId, FrameworkId = _frameworkId, VersionNumber = 1,
-            IsPublished = true, MinModules = 1,
-        });
-
-        var error = await Assert.ThrowsAsync<BadRequestException>(
-            () => ProgramFrameworkValidator.ValidateForSubmitAsync(_db, _programId));
-        Assert.Equal("FRAMEWORK_CHECK_FAILED", error.ErrorCode);
-        Assert.Contains("module", error.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task ValidateForSubmit_ChecksNewRules()
-    {
-        _db.Programs.Seed(new Program
-        {
-            Id = _programId, Code = "PRG", Name = "Program", Category = ProgramCategory.Technology,
-            FrameworkId = _frameworkId, FrameworkVersionId = _versionId,
-        });
-        _db.ProgramFrameworkVersions.Seed(new ProgramFrameworkVersion
-        {
-            Id = _versionId, FrameworkId = _frameworkId, VersionNumber = 1,
-            IsPublished = true, RequireThumbnail = true,
-        });
-
-        var error = await Assert.ThrowsAsync<BadRequestException>(
-            () => ProgramFrameworkValidator.ValidateForSubmitAsync(_db, _programId));
-        Assert.Contains("Thumbnail set", error.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task ValidateForSubmit_RejectsDraftPinnedVersion()
-    {
-        _db.Programs.Seed(new Program
-        {
-            Id = _programId, Code = "PRG", Name = "Program", Category = ProgramCategory.Technology,
-            FrameworkId = _frameworkId, FrameworkVersionId = _versionId,
-        });
-        _db.ProgramFrameworkVersions.Seed(new ProgramFrameworkVersion
-        {
-            Id = _versionId, FrameworkId = _frameworkId, VersionNumber = 1,
-        });
-
-        await Assert.ThrowsAsync<ConflictException>(
-            () => ProgramFrameworkValidator.ValidateForSubmitAsync(_db, _programId));
     }
 
     private static Application.DTOs.ProgramAdvisoryDTO.FrameworkCheckItemDto Single(

@@ -6,8 +6,6 @@ public sealed class AdvisoryReferenceDto
 {
     public Guid Id { get; set; }
     public Guid ProgramId { get; set; }
-    public AdvisoryReferenceContext Context { get; set; }
-    public Guid? SubmissionId { get; set; }
     public ProgramAdvisoryTargetType TargetType { get; set; }
     public Guid TargetId { get; set; }
     public ProgramAdvisoryAnchorKind AnchorKind { get; set; }

@@ -73,14 +73,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ExpertPublication> ExpertPublications => Repository<ExpertPublication>();
     public IGenericRepository<ProgramFramework> ProgramFrameworks => Repository<ProgramFramework>();
     public IGenericRepository<ProgramFrameworkVersion> ProgramFrameworkVersions => Repository<ProgramFrameworkVersion>();
-    public IGenericRepository<CurriculumReview> CurriculumReviews => Repository<CurriculumReview>();
-    public IGenericRepository<ProgramReviewSubmission> ProgramReviewSubmissions => Repository<ProgramReviewSubmission>();
-    public IGenericRepository<ProgramReviewDraft> ProgramReviewDrafts => Repository<ProgramReviewDraft>();
-    public IGenericRepository<ProgramAdvisoryThread> ProgramAdvisoryThreads => Repository<ProgramAdvisoryThread>();
-    public IGenericRepository<ProgramAdvisoryMessage> ProgramAdvisoryMessages => Repository<ProgramAdvisoryMessage>();
-    public IGenericRepository<ProgramAdvisoryRead> ProgramAdvisoryReads => Repository<ProgramAdvisoryRead>();
     public IGenericRepository<ProgramAdvisoryReference> ProgramAdvisoryReferences => Repository<ProgramAdvisoryReference>();
-    public IGenericRepository<ProgramAdvisoryThreadEvent> ProgramAdvisoryThreadEvents => Repository<ProgramAdvisoryThreadEvent>();
     public IGenericRepository<ProgramAdvisoryDiscussionMessage> ProgramAdvisoryDiscussionMessages => Repository<ProgramAdvisoryDiscussionMessage>();
     public IGenericRepository<ProgramAdvisoryDiscussionMessageReference> ProgramAdvisoryDiscussionMessageReferences => Repository<ProgramAdvisoryDiscussionMessageReference>();
     public IGenericRepository<ProgramAdvisoryDiscussionAttachment> ProgramAdvisoryDiscussionAttachments => Repository<ProgramAdvisoryDiscussionAttachment>();
@@ -88,8 +81,6 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<CurriculumChange> CurriculumChanges => Repository<CurriculumChange>();
     public IGenericRepository<CurriculumChangeSeen> CurriculumChangeSeens => Repository<CurriculumChangeSeen>();
     public IGenericRepository<ProgramAdvisoryStreamRead> ProgramAdvisoryStreamReads => Repository<ProgramAdvisoryStreamRead>();
-    public IGenericRepository<CurriculumReviewRequirement> CurriculumReviewRequirements => Repository<CurriculumReviewRequirement>();
-    public IGenericRepository<ProgramAdvisoryNotificationIntent> ProgramAdvisoryNotificationIntents => Repository<ProgramAdvisoryNotificationIntent>();
     public IGenericRepository<ClassSessionExpert> ClassSessionExperts => Repository<ClassSessionExpert>();
     public IGenericRepository<Certificate> Certificates => Repository<Certificate>();
     public IGenericRepository<MediaAsset> MediaAssets => Repository<MediaAsset>();

@@ -117,7 +117,6 @@ public partial class SeedService : ISeedService
         await SeedCompletedProgramCertificatesAsync();
         await SeedPaymentsAsync();
         await SeedNotificationsAsync();
-        await SeedExpertAdvisoryNotificationsAsync();
         await RestoreInProgressPurchasesClosedDuringSeedAsync();
         // Restore-repair only: remove holds on not-yet-open windows and cover reopened seats.
         await SeedTaughtModuleAssessmentSafetyNetAsync();

@@ -1,17 +1,12 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using OboxSteam.Application.Commons;
-using OboxSteam.Application.DTOs.CurriculumReviewDTO;
-using OboxSteam.Application.Notifications;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.Services;
 
 /// <summary>
-/// FE-test fixtures for Milestone B advisory / review-submission flows.
-/// Idempotent on <c>PRG-ADV-DRAFT-ADVICE</c>; notifications skip when any ADV program
-/// already has a Program-scoped inbox row.
+/// FE-test fixture programs and curricula for the advisory chat.
+/// Idempotent on <c>PRG-ADV-DRAFT-ADVICE</c>.
 /// </summary>
 public partial class SeedService
 {
@@ -29,24 +24,17 @@ public partial class SeedService
 
     private static readonly decimal SeedAdvCatalogPrice = 1_200_000m;
 
-    private static readonly JsonSerializerOptions SeedAdvJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
-
     private async Task SeedExpertAdvisoryDemoAsync()
     {
-        _loggerService.LogInformation("Starting seed expert advisory demo (Milestone B)");
+        _loggerService.LogInformation("Starting seed expert advisory demo");
 
         var existingAnchor = await _unitOfWork.Programs.FirstOrDefaultAsync(
             p => p.Code == SeedAdvDraftAdviceCode && !p.IsDeleted);
         if (existingAnchor != null)
         {
             _loggerService.LogInformation(
-                "Expert advisory demo already present ({Code}). Applying idempotent board-flow refresh.",
+                "Expert advisory demo already present ({Code}). Skipping.",
                 SeedAdvDraftAdviceCode);
-            await UpgradeExpertAdvisoryDemoAsync();
             return;
         }
 
@@ -63,96 +51,51 @@ public partial class SeedService
 
         var (framework, publishedV1, _) = await EnsureMakerAdvisoryFrameworkAsync(expert001.Id);
 
-        // A — Draft advice with open suggestions
+        // A — Draft with a board contributor
         var progA = await CreateAdvProgramAsync(
             SeedAdvDraftAdviceCode,
             "ADV Draft Advice",
-            "Scenario A: open Suggestion threads; EXP-002 on board.",
+            "Scenario A: Draft; EXP-001 advisor, EXP-002 on board.",
             ProgramStatus.Draft,
             framework.Id,
             publishedV1.Id,
             expert001.Id);
-        var currA = await EnsureAdvCurriculumAsync(progA, "DRAFT-ADVICE", includeAssignment: true);
+        await EnsureAdvCurriculumAsync(progA, "DRAFT-ADVICE", includeAssignment: true);
         await EnsureExpertOnProgramBoardAsync(expert001, progA.Id, "Advisor");
         await EnsureExpertOnProgramBoardAsync(expert002, progA.Id, "Board Contributor");
-        await SeedAdvSuggestionThreadAsync(
-            progA,
-            expert002.UserId ?? Guid.Empty,
-            ProgramAdvisoryTargetType.Program,
-            progA.Id,
-            progA.Name,
-            "Overall curriculum framing",
-            "Consider strengthening the safety briefing before the offline lab.");
-        await SeedAdvSuggestionThreadAsync(
-            progA,
-            expert002.UserId ?? Guid.Empty,
-            ProgramAdvisoryTargetType.Module,
-            currA.TheoryModule.Id,
-            currA.TheoryModule.Name,
-            "Theory module outcomes",
-            "Optional: add a short checkpoint quiz after the SelfPaced reading.");
-        await EnsureAdvGeneralThreadAsync(
-            progA,
-            expert001.UserId ?? manager.Id,
-            "General discussion for the draft-advice fixture.");
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvDraftAdviceCode);
 
-        // B — Draft with addressed RequiredChange
+        // B — Draft, advisor only
         var progB = await CreateAdvProgramAsync(
             SeedAdvDraftFixCode,
             "ADV Draft Fix",
-            "Scenario B: RequiredChange Addressed; manager replied.",
+            "Scenario B: Draft; EXP-001 advisor only.",
             ProgramStatus.Draft,
             framework.Id,
             publishedV1.Id,
             expert001.Id);
-        var currB = await EnsureAdvCurriculumAsync(progB, "DRAFT-FIX", includeAssignment: true);
+        await EnsureAdvCurriculumAsync(progB, "DRAFT-FIX", includeAssignment: true);
         await EnsureExpertOnProgramBoardAsync(expert001, progB.Id, "Advisor");
-        var threadB = await SeedAdvRequiredChangeAddressedAsync(
-            progB,
-            currB.OfflineActivity,
-            expert001.UserId ?? Guid.Empty,
-            manager.Id);
-        _ = threadB;
-        var subB = await SeedAdvSubmissionAsync(
-            progB,
-            manager.Id,
-            expert001.Id,
-            publishedV1.Id,
-            submissionNumber: 1,
-            ProgramReviewSubmissionStatus.ChangesRequested,
-            closedAt: _seedNow.AddDays(-1));
-        subB.ReviewRoundIntent = ProgramReviewSubmissionIntent.InitialReview;
-        await _unitOfWork.ProgramReviewSubmissions.Update(subB);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvDraftFixCode);
 
-        // C — PendingReview + review draft
+        // C — Draft that passes the framework check
         var progC = await CreateAdvProgramAsync(
             SeedAdvPendingCode,
-            "ADV Pending Review",
-            "Scenario C: submission #1 Pending with partial review draft.",
+            "ADV Ready For Approval",
+            "Scenario C: Draft; framework check passes, ready for an approval request.",
             ProgramStatus.Draft,
             framework.Id,
             publishedV1.Id,
             expert001.Id);
         await EnsureAdvCurriculumAsync(progC, "PENDING", includeAssignment: true);
         await EnsureExpertOnProgramBoardAsync(expert001, progC.Id, "Advisor");
-        var subC = await SeedAdvSubmissionAsync(
-            progC,
-            manager.Id,
-            expert001.Id,
-            publishedV1.Id,
-            submissionNumber: 1,
-            ProgramReviewSubmissionStatus.Pending,
-            closedAt: null);
-        await SeedAdvReviewDraftAsync(subC, expert001.Id);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvPendingCode);
 
-        // D — Resubmit with diff (Added activity)
+        // D — Richer revised curriculum (materials, research capstone, extra activity)
         var progD = await CreateAdvProgramAsync(
             SeedAdvResubmitCode,
-            "ADV Resubmit",
-            "Scenario D: submission #1 ChangesRequested closed; #2 Pending with added activity.",
+            "ADV Revised Curriculum",
+            "Scenario D: Draft with materials, a research capstone and two theory activities; EXP-002 on board.",
             ProgramStatus.Draft,
             framework.Id,
             publishedV1.Id,
@@ -173,34 +116,13 @@ public partial class SeedService
             currD.TheorySelfPaced,
             "RESUBMIT");
 
-        // Keep one deliberately removable course in submission #1 so the diff
-        // has a real Removed item instead of only the Added activity from the
-        // original fixture.
-        var removedD = await EnsureAdvRemovedCourseAsync(currD.TheoryModule);
-
-        var treeD1 = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, progD.Id);
-        var snapD1 = CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(treeD1);
-        var subD1 = await EnsureAdvSubmissionSnapshotAsync(
-            progD,
-            manager.Id,
-            expert001.Id,
-            publishedV1.Id,
-            snapD1,
-            submissionNumber: 1,
-            ProgramReviewSubmissionStatus.ChangesRequested,
-            submittedAt: _seedNow.AddDays(-5),
-            closedAt: _seedNow.AddDays(-3));
-
-        await _unitOfWork.Activities.SoftRemove(removedD.Activity);
-        await _unitOfWork.Courses.SoftRemove(removedD.Course);
-
         var addedD = await EnsureAdvActivityAsync(
             currD.TheoryCourse.Id,
             "ACT-ADV-RESUBMIT-TH-SP2",
             "Theory follow-up SelfPaced",
             ActivityType.SelfPaced,
             activityOrder: 2,
-            "Second SelfPaced activity added after request-changes (diff Added).",
+            "Second SelfPaced activity with a learner checkpoint.",
             durationMinutes: null,
             requireQrCheckin: false);
         await EnsureAdvMaterialAsync(
@@ -215,82 +137,38 @@ public partial class SeedService
             "Evaluate a safe reset plan after peer feedback",
         ];
         currD.TheoryCourse.Description =
-            "SelfPaced theory updated with a checkpoint and post-review reflection.";
+            "SelfPaced theory with a checkpoint and a reflection step.";
         currD.TheoryModule.ModuleOrder = 3;
         researchD.Module.ModuleOrder = 2;
         await _unitOfWork.Modules.Update(currD.TheoryModule);
         await _unitOfWork.Modules.Update(researchD.Module);
         await _unitOfWork.Courses.Update(currD.TheoryCourse);
-
-        var treeD2 = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, progD.Id);
-        var snapD2 = CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(treeD2);
-        var subD2 = await EnsureAdvSubmissionSnapshotAsync(
-            progD,
-            manager.Id,
-            expert001.Id,
-            publishedV1.Id,
-            snapD2,
-            submissionNumber: 2,
-            ProgramReviewSubmissionStatus.Pending,
-            submittedAt: _seedNow.AddDays(-1),
-            closedAt: null);
-
-        progD.Status = ProgramStatus.Draft;
-        await _unitOfWork.Programs.Update(progD);
-
-        await SeedAdvReviewDraftAsync(subD2, expert001.Id);
-        await SeedAdvResubmitThreadsAsync(
-            progD,
-            subD2,
-            currD,
-            researchD,
-            addedD,
-            expert001.UserId ?? Guid.Empty,
-            manager.Id);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvResubmitCode);
 
-        // E — Approved with snapshot-backed review
+        // E — Approved
         var progE = await CreateAdvProgramAsync(
             SeedAdvApprovedCode,
             "ADV Approved",
-            "Scenario E: Approved submission + snapshot-backed CurriculumReview.",
+            "Scenario E: Approved status.",
             ProgramStatus.Approved,
             framework.Id,
             publishedV1.Id,
             expert001.Id);
         await EnsureAdvCurriculumAsync(progE, "APPROVED", includeAssignment: true);
         await EnsureExpertOnProgramBoardAsync(expert001, progE.Id, "Advisor");
-        var subE = await SeedAdvSubmissionAsync(
-            progE,
-            manager.Id,
-            expert001.Id,
-            publishedV1.Id,
-            submissionNumber: 1,
-            ProgramReviewSubmissionStatus.Approved,
-            closedAt: _seedNow.AddDays(-2));
-        await SeedAdvCurriculumReviewAsync(
-            progE,
-            expert001.Id,
-            subE.Id,
-            snapshotAvailable: true);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvApprovedCode);
 
-        // F — Active legacy review (no snapshot)
+        // F — Active catalog
         var progF = await CreateAdvProgramAsync(
             SeedAdvActiveCode,
             "ADV Active Catalog",
-            "Scenario F: Active catalog with legacy CurriculumReview (SnapshotAvailable=false).",
+            "Scenario F: Active catalog program.",
             ProgramStatus.Active,
             framework.Id,
             publishedV1.Id,
             expert001.Id);
         await EnsureAdvCurriculumAsync(progF, "ACTIVE", includeAssignment: true);
         await EnsureExpertOnProgramBoardAsync(expert001, progF.Id, "Advisor");
-        await SeedAdvCurriculumReviewAsync(
-            progF,
-            expert001.Id,
-            submissionId: null,
-            snapshotAvailable: false);
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvActiveCode);
 
         // G — Pin published v1 while draft v2 exists
@@ -323,7 +201,7 @@ public partial class SeedService
         var progHb = await CreateAdvProgramAsync(
             SeedAdvShareBCode,
             "ADV Share B",
-            "Scenario H: same FrameworkVersionId as SHARE-A; EXP-002 advisor; EXP-001 board suggester.",
+            "Scenario H: same FrameworkVersionId as SHARE-A; EXP-002 advisor; EXP-001 board contributor.",
             ProgramStatus.Draft,
             framework.Id,
             publishedV1.Id,
@@ -335,406 +213,6 @@ public partial class SeedService
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation("Finished seed expert advisory demo");
-    }
-
-    /// <summary>
-    /// Upgrades databases that already contain the original Milestone B fixture.
-    /// The old seed used a shallow two-module snapshot and unscoped threads, so
-    /// simply returning from the idempotency guard would leave the new board
-    /// empty after a normal application restart.
-    /// </summary>
-    private async Task UpgradeExpertAdvisoryDemoAsync()
-    {
-        var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
-        var expert002 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-002" && !e.IsDeleted);
-        var manager = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNG-001" && !u.IsDeleted);
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
-            p => p.Code == SeedAdvResubmitCode && !p.IsDeleted);
-
-        if (expert001 == null || expert002 == null || manager == null || program == null)
-        {
-            _loggerService.LogWarning(
-                "Cannot upgrade expert advisory demo; required EXP-001 / EXP-002 / MNG-001 / {Code} row missing.",
-                SeedAdvResubmitCode);
-            return;
-        }
-
-        var (_, publishedV1, _) = await EnsureMakerAdvisoryFrameworkAsync(expert001.Id);
-        var curriculum = await EnsureAdvCurriculumAsync(program, "RESUBMIT", includeAssignment: true);
-        await EnsureExpertOnProgramBoardAsync(expert001, program.Id, "Advisor");
-        await EnsureExpertOnProgramBoardAsync(expert002, program.Id, "Board Contributor");
-        await EnsureAdvMaterialAsync(
-            curriculum.TheorySelfPaced,
-            "Theory reading pack",
-            "https://cdn.example.com/seed/expert-advisory/theory-reading-pack.pdf");
-        var research = await EnsureAdvResearchFlowAsync(program, curriculum.TheorySelfPaced, "RESUBMIT");
-        var removed = await EnsureAdvRemovedCourseAsync(curriculum.TheoryModule);
-
-        var added = await FindOrCreateAdvActivityAsync(
-            curriculum.TheoryCourse.Id,
-            "ACT-ADV-RESUBMIT-TH-SP2",
-            "Theory follow-up SelfPaced",
-            ActivityType.SelfPaced,
-            2,
-            "Second SelfPaced activity added after request-changes (diff Added).",
-            null,
-            false);
-        await EnsureAdvMaterialAsync(
-            added,
-            "Follow-up checkpoint handout",
-            "https://cdn.example.com/seed/expert-advisory/follow-up-checkpoint.pdf");
-
-        // Restore the baseline state before rebuilding both frozen submissions.
-        removed.Course.IsDeleted = false;
-        removed.Activity.IsDeleted = false;
-        added.IsDeleted = true;
-        curriculum.TheoryModule.ModuleOrder = 2;
-        curriculum.TheoryModule.LearningOutcomes =
-        [
-            "Explain progression from reading to lab",
-            "Identify facilitation checkpoints",
-        ];
-        curriculum.TheoryCourse.Description = "SelfPaced theory before or after the lab.";
-        research.Module.ModuleOrder = 3;
-        await _unitOfWork.Courses.Update(removed.Course);
-        await _unitOfWork.Activities.Update(removed.Activity);
-        await _unitOfWork.Activities.Update(added);
-        await _unitOfWork.Modules.Update(curriculum.TheoryModule);
-        await _unitOfWork.Modules.Update(research.Module);
-        await _unitOfWork.Courses.Update(curriculum.TheoryCourse);
-
-        var treeV1 = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, program.Id);
-        var submission1 = await EnsureAdvSubmissionSnapshotAsync(
-            program,
-            manager.Id,
-            expert001.Id,
-            publishedV1.Id,
-            CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(treeV1),
-            1,
-            ProgramReviewSubmissionStatus.ChangesRequested,
-            _seedNow.AddDays(-5),
-            _seedNow.AddDays(-3));
-
-        // Apply the manager's revision: remove one course, add an activity,
-        // modify outcomes/course copy, and reorder the theory/research modules.
-        removed.Activity.IsDeleted = true;
-        removed.Course.IsDeleted = true;
-        added.IsDeleted = false;
-        curriculum.TheoryModule.LearningOutcomes =
-        [
-            "Explain progression from reading to lab",
-            "Identify facilitation checkpoints",
-            "Evaluate a safe reset plan after peer feedback",
-        ];
-        curriculum.TheoryCourse.Description =
-            "SelfPaced theory updated with a checkpoint and post-review reflection.";
-        curriculum.TheoryModule.ModuleOrder = 3;
-        research.Module.ModuleOrder = 2;
-        await _unitOfWork.Activities.Update(removed.Activity);
-        await _unitOfWork.Courses.Update(removed.Course);
-        await _unitOfWork.Activities.Update(added);
-        await _unitOfWork.Modules.Update(curriculum.TheoryModule);
-        await _unitOfWork.Modules.Update(research.Module);
-        await _unitOfWork.Courses.Update(curriculum.TheoryCourse);
-
-        var treeV2 = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, program.Id);
-        var submission2 = await EnsureAdvSubmissionSnapshotAsync(
-            program,
-            manager.Id,
-            expert001.Id,
-            publishedV1.Id,
-            CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(treeV2),
-            2,
-            ProgramReviewSubmissionStatus.Pending,
-            _seedNow.AddDays(-1),
-            null);
-
-        program.Status = ProgramStatus.Draft;
-        await _unitOfWork.Programs.Update(program);
-        await SeedAdvReviewDraftAsync(submission2, expert001.Id);
-        await SeedAdvResubmitThreadsAsync(
-            program,
-            submission2,
-            curriculum,
-            research,
-            added,
-            expert001.UserId ?? Guid.Empty,
-            manager.Id);
-        await _unitOfWork.SaveChangesAsync();
-        var draftAdvice = await _unitOfWork.Programs.FirstOrDefaultAsync(
-            p => p.Code == SeedAdvDraftAdviceCode && !p.IsDeleted);
-        if (draftAdvice != null)
-        {
-            await EnsureAdvGeneralThreadAsync(
-                draftAdvice,
-                expert001.UserId ?? manager.Id,
-                "General discussion for the draft-advice fixture.");
-        }
-
-        var draftFix = await _unitOfWork.Programs.FirstOrDefaultAsync(
-            p => p.Code == SeedAdvDraftFixCode && !p.IsDeleted);
-        if (draftFix != null)
-        {
-            var existingRound = await _unitOfWork.ProgramReviewSubmissions.FirstOrDefaultAsync(
-                s => s.ProgramId == draftFix.Id && !s.IsDeleted);
-            if (existingRound == null)
-            {
-                var revisionRound = await SeedAdvSubmissionAsync(
-                    draftFix,
-                    manager.Id,
-                    expert001.Id,
-                    publishedV1.Id,
-                    submissionNumber: 1,
-                    ProgramReviewSubmissionStatus.ChangesRequested,
-                    closedAt: _seedNow.AddDays(-1));
-                revisionRound.ReviewRoundIntent = ProgramReviewSubmissionIntent.InitialReview;
-                await _unitOfWork.ProgramReviewSubmissions.Update(revisionRound);
-                await _unitOfWork.SaveChangesAsync();
-            }
-        }
-
-        _loggerService.LogInformation("Upgraded advisory board flow for {Code}", SeedAdvResubmitCode);
-    }
-
-    private async Task SeedExpertAdvisoryNotificationsAsync()
-    {
-        _loggerService.LogInformation("Starting seed expert advisory notifications");
-
-        var advCodes = new[]
-        {
-            SeedAdvDraftAdviceCode,
-            SeedAdvDraftFixCode,
-            SeedAdvPendingCode,
-            SeedAdvResubmitCode,
-            SeedAdvApprovedCode,
-            SeedAdvActiveCode,
-            SeedAdvPinV1Code,
-            SeedAdvShareACode,
-            SeedAdvShareBCode,
-        };
-
-        var advPrograms = await _unitOfWork.Programs.GetAllAsync(
-            p => advCodes.Contains(p.Code) && !p.IsDeleted);
-        if (advPrograms.Count == 0)
-        {
-            _loggerService.LogWarning("No ADV programs found. Skipping advisory notifications.");
-            return;
-        }
-
-        var advIds = advPrograms.Select(p => p.Id).ToHashSet();
-        var existingAdvNotifs = await _unitOfWork.Notifications.GetAllAsync(
-            n => n.EntityType == "Program"
-                 && n.EntityId != null
-                 && advIds.Contains(n.EntityId.Value)
-                 && !n.IsDeleted);
-        var existingKeys = existingAdvNotifs
-            .Select(n => (n.RecipientUserId, n.Type, n.EntityId))
-            .ToHashSet();
-
-        var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
-        var manager = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Code == "MNG-001" && !u.IsDeleted);
-        if (expert001?.UserId == null || manager == null)
-        {
-            _loggerService.LogWarning(
-                "EXP-001 user or MNG-001 missing. Skipping advisory notifications.");
-            return;
-        }
-
-        var expertUserId = expert001.UserId.Value;
-        var expertUser = await _unitOfWork.Users.GetByIdAsync(expertUserId);
-        var expertName = expertUser == null
-            ? expert001.FullName
-            : (string.IsNullOrWhiteSpace(expertUser.FullName) ? expertUser.Email : expertUser.FullName!);
-        var managerName = string.IsNullOrWhiteSpace(manager.FullName) ? manager.Email : manager.FullName!;
-        var studentNamePlaceholder = "Seed Student";
-
-        Program? Find(string code) => advPrograms.FirstOrDefault(p => p.Code == code);
-
-        var progA = Find(SeedAdvDraftAdviceCode);
-        var progB = Find(SeedAdvDraftFixCode);
-        var progC = Find(SeedAdvPendingCode);
-        var progD = Find(SeedAdvResubmitCode);
-        var progE = Find(SeedAdvApprovedCode);
-
-        var threadA = progA == null
-            ? null
-            : await _unitOfWork.ProgramAdvisoryThreads.FirstOrDefaultAsync(
-                t => t.ProgramId == progA.Id
-                     && t.Type == ProgramAdvisoryThreadType.Suggestion
-                     && t.TargetType == ProgramAdvisoryTargetType.Program
-                     && !t.IsDeleted);
-        var threadB = progB == null
-            ? null
-            : await _unitOfWork.ProgramAdvisoryThreads.FirstOrDefaultAsync(
-                t => t.ProgramId == progB.Id
-                     && t.Type == ProgramAdvisoryThreadType.RequiredChange
-                     && !t.IsDeleted);
-        var reviewE = progE == null
-            ? null
-            : await _unitOfWork.CurriculumReviews.FirstOrDefaultAsync(
-                r => r.ProgramId == progE.Id && !r.IsDeleted);
-        var reviewD = progD == null
-            ? null
-            : (await _unitOfWork.CurriculumReviews.GetAllAsync(
-                  r => r.ProgramId == progD.Id && !r.IsDeleted))
-              .OrderBy(r => r.Round)
-              .FirstOrDefault();
-
-        var now = _seedNow;
-        var samples = new List<(NotificationCommand Command, Guid RecipientId, RoleType Role, DateTime? ReadAt)>();
-
-        if (progC != null)
-        {
-            samples.Add((
-                NotificationCatalog.CurriculumReviewSubmitted(
-                    expertUserId,
-                    progC.Id,
-                    actorUserId: manager.Id,
-                    programName: progC.Name,
-                    frameworkName: SeedMakerAdvisoryFrameworkName,
-                    actorName: managerName),
-                expertUserId,
-                RoleType.Expert,
-                null));
-        }
-
-        if (progD != null)
-        {
-            samples.Add((
-                NotificationCatalog.CurriculumReviewSubmitted(
-                    expertUserId,
-                    progD.Id,
-                    actorUserId: manager.Id,
-                    programName: progD.Name,
-                    frameworkName: SeedMakerAdvisoryFrameworkName,
-                    actorName: managerName),
-                expertUserId,
-                RoleType.Expert,
-                null));
-            samples.Add((
-                NotificationCatalog.CurriculumReviewChangesRequested(
-                    progD.Id,
-                    comment: "Please add a follow-up SelfPaced activity on the theory course.",
-                    reviewId: reviewD?.Id,
-                    actorUserId: expertUserId,
-                    programName: progD.Name,
-                    actorName: expertName),
-                manager.Id,
-                RoleType.Manager,
-                now.AddDays(-3)));
-        }
-
-        if (progB != null && threadB != null)
-        {
-            samples.Add((
-                NotificationCatalog.AdvisoryFeedbackPublished(
-                    manager.Id,
-                    progB.Id,
-                    threadB.Id,
-                    actorUserId: expertUserId,
-                    programName: progB.Name,
-                    actorName: expertName,
-                    feedbackType: ProgramAdvisoryThreadType.RequiredChange.ToString()),
-                manager.Id,
-                RoleType.Manager,
-                null));
-            samples.Add((
-                NotificationCatalog.AdvisoryFeedbackPublished(
-                    expertUserId,
-                    progB.Id,
-                    threadB.Id,
-                    actorUserId: expertUserId,
-                    programName: progB.Name,
-                    actorName: expertName,
-                    feedbackType: ProgramAdvisoryThreadType.RequiredChange.ToString()),
-                expertUserId,
-                RoleType.Expert,
-                now.AddHours(-20)));
-            samples.Add((
-                NotificationCatalog.AdvisoryCorrectionAddressed(
-                    expertUserId,
-                    progB.Id,
-                    threadB.Id,
-                    actorUserId: manager.Id,
-                    programName: progB.Name,
-                    actorName: managerName),
-                expertUserId,
-                RoleType.Expert,
-                null));
-        }
-
-        if (progA != null && threadA != null)
-        {
-            samples.Add((
-                NotificationCatalog.AdvisoryReply(
-                    expertUserId,
-                    progA.Id,
-                    threadA.Id,
-                    actorUserId: manager.Id,
-                    programName: progA.Name,
-                    actorName: managerName),
-                expertUserId,
-                RoleType.Expert,
-                null));
-        }
-
-        if (progE != null)
-        {
-            samples.Add((
-                NotificationCatalog.CurriculumReviewApproved(
-                    progE.Id,
-                    reviewId: reviewE?.Id,
-                    actorUserId: expertUserId,
-                    programName: progE.Name,
-                    actorName: expertName),
-                manager.Id,
-                RoleType.Manager,
-                null));
-        }
-
-        if (samples.Count == 0)
-        {
-            _loggerService.LogWarning("No advisory notification samples built. Skipping.");
-            return;
-        }
-
-        var notifications = new List<Notification>();
-        for (var i = 0; i < samples.Count; i++)
-        {
-            var (command, recipientId, role, readAt) = samples[i];
-            var key = (recipientId, command.Type, command.EntityId);
-            if (existingKeys.Contains(key))
-            {
-                continue;
-            }
-
-            notifications.Add(ToSeedNotification(
-                command,
-                recipientId,
-                role,
-                studentNamePlaceholder,
-                readAt,
-                now.AddMinutes(-(samples.Count - i) * 11)));
-            existingKeys.Add(key);
-        }
-
-        if (notifications.Count == 0)
-        {
-            _loggerService.LogInformation(
-                "Advisory notifications already present for ADV programs.");
-            return;
-        }
-
-        await _unitOfWork.Notifications.AddRangeAsync(notifications);
-        for (var i = 0; i < notifications.Count; i++)
-        {
-            notifications[i].CreatedAt = now.AddMinutes(-(notifications.Count - i) * 11);
-        }
-
-        await _unitOfWork.SaveChangesAsync();
-        _loggerService.LogInformation(
-            "Finished seed expert advisory notifications — backfilled {Count} inbox row(s).",
-            notifications.Count);
     }
 
     private async Task<(
@@ -1042,311 +520,6 @@ public partial class SeedService
         return new AdvResearchBundle(module, assignment, milestone);
     }
 
-    private async Task<(Course Course, Activity Activity)> EnsureAdvRemovedCourseAsync(Module module)
-    {
-        const string courseCode = "CRS-ADV-RESUBMIT-REMOVED";
-        const string activityCode = "ACT-ADV-RESUBMIT-REMOVED";
-
-        var course = await _unitOfWork.Courses.FirstOrDefaultAsync(c => c.Code == courseCode);
-        if (course == null)
-        {
-            course = (await _unitOfWork.Courses.GetAllIncludingDeletedAsync(c => c.Code == courseCode))
-                .FirstOrDefault();
-        }
-
-        if (course == null)
-        {
-            course = await EnsureAdvCourseAsync(
-                module.Id,
-                courseCode,
-                "Removed optional studio",
-                "This optional studio is present in submission #1 and removed in #2.");
-        }
-        else
-        {
-            course.ModuleId = module.Id;
-            course.Name = "Removed optional studio";
-            course.Description = "This optional studio is present in submission #1 and removed in #2.";
-            course.CourseOrder = 2;
-            course.IsDeleted = false;
-            await _unitOfWork.Courses.Update(course);
-        }
-
-        var activity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == activityCode);
-        if (activity == null)
-        {
-            activity = (await _unitOfWork.Activities.GetAllIncludingDeletedAsync(a => a.Code == activityCode))
-                .FirstOrDefault();
-        }
-
-        if (activity == null)
-        {
-            activity = await EnsureAdvActivityAsync(
-                course.Id,
-                activityCode,
-                "Optional studio checkpoint",
-                ActivityType.SelfPaced,
-                activityOrder: 1,
-                "Optional checkpoint removed after expert review.",
-                durationMinutes: 20,
-                requireQrCheckin: false);
-        }
-        else
-        {
-            activity.CourseId = course.Id;
-            activity.Name = "Optional studio checkpoint";
-            activity.Description = "Optional checkpoint removed after expert review.";
-            activity.ActivityType = ActivityType.SelfPaced;
-            activity.ActivityOrder = 1;
-            activity.IsDeleted = false;
-            await _unitOfWork.Activities.Update(activity);
-        }
-
-        return (course, activity);
-    }
-
-    private async Task<Activity> FindOrCreateAdvActivityAsync(
-        Guid courseId,
-        string code,
-        string name,
-        ActivityType activityType,
-        int activityOrder,
-        string description,
-        int? durationMinutes,
-        bool requireQrCheckin)
-    {
-        var activity = await _unitOfWork.Activities.FirstOrDefaultAsync(a => a.Code == code);
-        if (activity != null)
-        {
-            activity.CourseId = courseId;
-            activity.Name = name;
-            activity.ActivityType = activityType;
-            activity.ActivityOrder = activityOrder;
-            activity.Description = description;
-            activity.DurationMinutes = durationMinutes;
-            activity.RequireQrCheckin = requireQrCheckin;
-            activity.IsDeleted = false;
-            await _unitOfWork.Activities.Update(activity);
-            return activity;
-        }
-
-        return await EnsureAdvActivityAsync(
-            courseId,
-            code,
-            name,
-            activityType,
-            activityOrder,
-            description,
-            durationMinutes,
-            requireQrCheckin);
-    }
-
-    private async Task<ProgramReviewSubmission> EnsureAdvSubmissionSnapshotAsync(
-        Program program,
-        Guid managerId,
-        Guid advisorExpertId,
-        Guid frameworkVersionId,
-        string curriculumJson,
-        int submissionNumber,
-        ProgramReviewSubmissionStatus status,
-        DateTime submittedAt,
-        DateTime? closedAt)
-    {
-        var submission = await _unitOfWork.ProgramReviewSubmissions.FirstOrDefaultAsync(
-            s => s.ProgramId == program.Id && s.SubmissionNumber == submissionNumber);
-        if (submission == null)
-        {
-            // Insert only. GenericRepository.Update → DbSet.Update flips Added to
-            // Modified, so SaveChanges issues UPDATE ... WHERE ConcurrencyVersion
-            // and Postgres reports 0 rows (DbUpdateConcurrencyException).
-            submission = new ProgramReviewSubmission
-            {
-                Id = Guid.NewGuid(),
-                ProgramId = program.Id,
-                SubmissionNumber = submissionNumber,
-                SubmittedByManagerId = managerId,
-                AssignedAdvisorExpertId = advisorExpertId,
-                FrameworkVersionId = frameworkVersionId,
-                CurriculumSnapshotJson = curriculumJson,
-                Status = status,
-                SubmittedAt = submittedAt,
-                ClosedAt = closedAt,
-                ConcurrencyVersion = Guid.NewGuid(),
-                CreatedAt = submittedAt,
-                CreatedBy = managerId,
-                IsDeleted = false,
-            };
-            await _unitOfWork.ProgramReviewSubmissions.AddAsync(submission);
-            await _unitOfWork.SaveChangesAsync();
-            return submission;
-        }
-
-        submission.SubmittedByManagerId = managerId;
-        submission.AssignedAdvisorExpertId = advisorExpertId;
-        submission.FrameworkVersionId = frameworkVersionId;
-        submission.CurriculumSnapshotJson = curriculumJson;
-        submission.Status = status;
-        submission.SubmittedAt = submittedAt;
-        submission.ClosedAt = closedAt;
-        submission.IsDeleted = false;
-        // Stamp UpdatedAt first while OriginalValues.ConcurrencyVersion still
-        // matches the row, then rotate the token so the WHERE clause can succeed.
-        await _unitOfWork.ProgramReviewSubmissions.Update(submission);
-        submission.ConcurrencyVersion = Guid.NewGuid();
-        await _unitOfWork.SaveChangesAsync();
-        return submission;
-    }
-
-    private async Task SeedAdvResubmitThreadsAsync(
-        Program program,
-        ProgramReviewSubmission submission,
-        AdvCurriculumBundle curriculum,
-        AdvResearchBundle research,
-        Activity addedActivity,
-        Guid expertUserId,
-        Guid managerUserId)
-    {
-        await EnsureAdvReviewThreadAsync(
-            program, submission.Id, expertUserId, managerUserId,
-            ProgramAdvisoryTargetType.Module, curriculum.TheoryModule.Id, curriculum.TheoryModule.Name,
-            ProgramAdvisoryThreadType.Suggestion, ProgramAdvisoryThreadStatus.Open,
-            ProgramAdvisoryAnchorKind.Node, null, null,
-            "The revised outcomes now show a stronger reading-to-lab progression.",
-            "Thanks — I will keep this progression visible in the manager notes.");
-        await EnsureAdvReviewThreadAsync(
-            program, submission.Id, expertUserId, managerUserId,
-            ProgramAdvisoryTargetType.Course, curriculum.TheoryCourse.Id, curriculum.TheoryCourse.Name,
-            ProgramAdvisoryThreadType.RequiredChange, ProgramAdvisoryThreadStatus.Addressed,
-            ProgramAdvisoryAnchorKind.Field, "description", "SelfPaced theory updated with a checkpoint",
-            "Please keep the checkpoint outcome explicit in the course description.",
-            "Addressed in submission #2; the checkpoint is now named in the course copy.");
-        await EnsureAdvReviewThreadAsync(
-            program, submission.Id, expertUserId, managerUserId,
-            ProgramAdvisoryTargetType.Activity, addedActivity.Id, addedActivity.Name,
-            ProgramAdvisoryThreadType.RequiredChange, ProgramAdvisoryThreadStatus.Open,
-            ProgramAdvisoryAnchorKind.Field, "description", null,
-            "Required: add a concrete learner evidence instruction to this new activity.",
-            "I have not addressed this one yet; please review the next revision.");
-        await EnsureAdvReviewThreadAsync(
-            program, submission.Id, expertUserId, managerUserId,
-            ProgramAdvisoryTargetType.Assignment, research.Assignment.Id, research.Assignment.Title,
-            ProgramAdvisoryThreadType.Suggestion, ProgramAdvisoryThreadStatus.Resolved,
-            ProgramAdvisoryAnchorKind.Field, "passScore", "60",
-            "The capstone pass score looks appropriate for the first pilot.",
-            "Resolved after confirming the rubric calibration.");
-        await EnsureAdvReviewThreadAsync(
-            program, submission.Id, expertUserId, managerUserId,
-            ProgramAdvisoryTargetType.ResearchMilestone, research.Milestone.Id, research.Milestone.Title,
-            ProgramAdvisoryThreadType.Suggestion, ProgramAdvisoryThreadStatus.Resolved,
-            ProgramAdvisoryAnchorKind.Node, null, null,
-            "The capstone milestone gives the theory changes a clear evidence destination.",
-            "Resolved — milestone evidence is linked to the final deliverable.");
-    }
-
-    private async Task EnsureAdvReviewThreadAsync(
-        Program program,
-        Guid submissionId,
-        Guid expertUserId,
-        Guid managerUserId,
-        ProgramAdvisoryTargetType targetType,
-        Guid targetId,
-        string targetLabel,
-        ProgramAdvisoryThreadType type,
-        ProgramAdvisoryThreadStatus status,
-        ProgramAdvisoryAnchorKind? anchorKind,
-        string? anchorField,
-        string? anchorQuote,
-        string expertMessage,
-        string managerMessage)
-    {
-        if (expertUserId == Guid.Empty)
-        {
-            return;
-        }
-
-        var existing = await _unitOfWork.ProgramAdvisoryThreads.FirstOrDefaultAsync(
-            t => t.ProgramId == program.Id
-                 && t.SubmissionId == submissionId
-                 && t.TargetType == targetType
-                 && t.TargetId == targetId
-                 && t.Type == type
-                 && !t.IsDeleted);
-        ProgramAdvisoryThread thread;
-        var isNew = existing == null;
-        if (existing == null)
-        {
-            thread = new ProgramAdvisoryThread
-            {
-                Id = Guid.NewGuid(),
-                ProgramId = program.Id,
-                SubmissionId = submissionId,
-                AuthorUserId = expertUserId,
-                TargetType = targetType,
-                TargetId = targetId,
-                TargetLabel = targetLabel,
-                TargetContext = $"{targetType} pinned from submission #{submissionId}",
-                Type = type,
-                Status = status,
-                AnchorKind = anchorKind,
-                AnchorField = anchorField,
-                AnchorQuote = anchorQuote,
-                LastMessageAt = _seedNow.AddHours(-1),
-                CreatedAt = _seedNow.AddDays(-1),
-                CreatedBy = expertUserId,
-                IsDeleted = false,
-            };
-            await _unitOfWork.ProgramAdvisoryThreads.AddAsync(thread);
-        }
-        else
-        {
-            thread = existing;
-            thread.TargetLabel = targetLabel;
-            thread.Type = type;
-            thread.Status = status;
-            thread.AnchorKind = anchorKind;
-            thread.AnchorField = anchorField;
-            thread.AnchorQuote = anchorQuote;
-            thread.IsDeleted = false;
-        }
-
-        var messages = await _unitOfWork.ProgramAdvisoryMessages.GetAllAsync(
-            m => m.ThreadId == thread.Id && !m.IsDeleted);
-        if (messages.Count == 0)
-        {
-            await _unitOfWork.ProgramAdvisoryMessages.AddAsync(new ProgramAdvisoryMessage
-            {
-                Id = Guid.NewGuid(),
-                ThreadId = thread.Id,
-                AuthorUserId = expertUserId,
-                Message = expertMessage,
-                CreatedAt = _seedNow.AddHours(-3),
-                CreatedBy = expertUserId,
-                IsDeleted = false,
-            });
-            await _unitOfWork.ProgramAdvisoryMessages.AddAsync(new ProgramAdvisoryMessage
-            {
-                Id = Guid.NewGuid(),
-                ThreadId = thread.Id,
-                AuthorUserId = managerUserId,
-                Message = managerMessage,
-                CreatedAt = _seedNow.AddHours(-1),
-                CreatedBy = managerUserId,
-                IsDeleted = false,
-            });
-        }
-
-        thread.LastMessageAt = _seedNow.AddHours(-1);
-        // DbSet.Update on an Added thread flips it to Modified. SaveChanges then
-        // INSERTs messages first and UPDATEs a thread row that does not exist,
-        // which trips FK_ProgramAdvisoryMessages_ProgramAdvisoryThreads_ThreadId.
-        if (!isNew)
-        {
-            await _unitOfWork.ProgramAdvisoryThreads.Update(thread);
-        }
-
-        await _unitOfWork.SaveChangesAsync();
-    }
-
     private async Task<Module> EnsureAdvModuleAsync(
         Guid programId,
         string code,
@@ -1473,230 +646,6 @@ public partial class SeedService
             CreatedBy = Guid.Empty,
             IsDeleted = false,
         });
-        await _unitOfWork.SaveChangesAsync();
-    }
-
-    private async Task SeedAdvSuggestionThreadAsync(
-        Program program,
-        Guid authorUserId,
-        ProgramAdvisoryTargetType targetType,
-        Guid targetId,
-        string targetLabel,
-        string targetContext,
-        string messageText)
-    {
-        if (authorUserId == Guid.Empty)
-        {
-            return;
-        }
-
-        var thread = new ProgramAdvisoryThread
-        {
-            Id = Guid.NewGuid(),
-            ProgramId = program.Id,
-            AuthorUserId = authorUserId,
-            SubmissionId = null,
-            TargetType = targetType,
-            TargetId = targetId,
-            TargetLabel = targetLabel,
-            TargetContext = targetContext,
-            Type = ProgramAdvisoryThreadType.Suggestion,
-            Status = ProgramAdvisoryThreadStatus.Open,
-            LastMessageAt = _seedNow.AddHours(-6),
-            CreatedAt = _seedNow.AddHours(-6),
-            CreatedBy = authorUserId,
-            IsDeleted = false,
-        };
-        await _unitOfWork.ProgramAdvisoryThreads.AddAsync(thread);
-        await _unitOfWork.ProgramAdvisoryMessages.AddAsync(new ProgramAdvisoryMessage
-        {
-            Id = Guid.NewGuid(),
-            ThreadId = thread.Id,
-            AuthorUserId = authorUserId,
-            Message = messageText,
-            CreatedAt = _seedNow.AddHours(-6),
-            CreatedBy = authorUserId,
-            IsDeleted = false,
-        });
-        await _unitOfWork.SaveChangesAsync();
-    }
-
-    private async Task EnsureAdvGeneralThreadAsync(Program program, Guid authorUserId, string messageText)
-    {
-        var existing = await _unitOfWork.ProgramAdvisoryThreads.FirstOrDefaultAsync(
-            t => t.ProgramId == program.Id
-                 && t.Type == ProgramAdvisoryThreadType.General
-                 && !t.IsDeleted);
-        if (existing != null)
-        {
-            return;
-        }
-
-        var thread = new ProgramAdvisoryThread
-        {
-            Id = Guid.NewGuid(),
-            ProgramId = program.Id,
-            AuthorUserId = authorUserId,
-            TargetType = ProgramAdvisoryTargetType.Program,
-            TargetId = program.Id,
-            TargetLabel = program.Name,
-            TargetContext = "General discussion",
-            Type = ProgramAdvisoryThreadType.General,
-            Status = ProgramAdvisoryThreadStatus.Open,
-            LatestActivitySequence = 1,
-            LastMessageAt = _seedNow.AddHours(-5),
-            ConcurrencyVersion = Guid.NewGuid(),
-            CreatedAt = _seedNow.AddHours(-5),
-            CreatedBy = authorUserId,
-            IsDeleted = false,
-        };
-        await _unitOfWork.ProgramAdvisoryThreads.AddAsync(thread);
-        await _unitOfWork.ProgramAdvisoryMessages.AddAsync(new ProgramAdvisoryMessage
-        {
-            Id = Guid.NewGuid(),
-            ThreadId = thread.Id,
-            AuthorUserId = authorUserId,
-            StreamSequence = 1,
-            Message = messageText,
-            CreatedAt = _seedNow.AddHours(-5),
-            CreatedBy = authorUserId,
-            IsDeleted = false,
-        });
-        await _unitOfWork.SaveChangesAsync();
-    }
-
-    private async Task<ProgramAdvisoryThread> SeedAdvRequiredChangeAddressedAsync(
-        Program program,
-        Activity activity,
-        Guid expertUserId,
-        Guid managerUserId)
-    {
-        var thread = new ProgramAdvisoryThread
-        {
-            Id = Guid.NewGuid(),
-            ProgramId = program.Id,
-            AuthorUserId = expertUserId,
-            SubmissionId = null,
-            TargetType = ProgramAdvisoryTargetType.Activity,
-            TargetId = activity.Id,
-            TargetLabel = activity.Name,
-            TargetContext = "Offline lab facilitation checklist",
-            Type = ProgramAdvisoryThreadType.RequiredChange,
-            Status = ProgramAdvisoryThreadStatus.Addressed,
-            LastMessageAt = _seedNow.AddHours(-2),
-            CreatedAt = _seedNow.AddDays(-2),
-            CreatedBy = expertUserId,
-            IsDeleted = false,
-        };
-        await _unitOfWork.ProgramAdvisoryThreads.AddAsync(thread);
-        await _unitOfWork.ProgramAdvisoryMessages.AddAsync(new ProgramAdvisoryMessage
-        {
-            Id = Guid.NewGuid(),
-            ThreadId = thread.Id,
-            AuthorUserId = expertUserId,
-            Message = "Required: add an explicit safety reset step at the end of the Offline lab.",
-            CreatedAt = _seedNow.AddDays(-2),
-            CreatedBy = expertUserId,
-            IsDeleted = false,
-        });
-        await _unitOfWork.ProgramAdvisoryMessages.AddAsync(new ProgramAdvisoryMessage
-        {
-            Id = Guid.NewGuid(),
-            ThreadId = thread.Id,
-            AuthorUserId = managerUserId,
-            Message = "đã chỉnh sửa activity description và checklist theo yêu cầu.",
-            CreatedAt = _seedNow.AddHours(-2),
-            CreatedBy = managerUserId,
-            IsDeleted = false,
-        });
-        await _unitOfWork.SaveChangesAsync();
-        return thread;
-    }
-
-    private async Task<ProgramReviewSubmission> SeedAdvSubmissionAsync(
-        Program program,
-        Guid managerId,
-        Guid advisorExpertId,
-        Guid frameworkVersionId,
-        int submissionNumber,
-        ProgramReviewSubmissionStatus status,
-        DateTime? closedAt)
-    {
-        var tree = await ProgramCurriculumTreeLoader.LoadAsync(_unitOfWork, program.Id);
-        var curriculumJson = CurriculumReviewSnapshotBuilder.BuildCurriculumSnapshotJson(tree);
-
-        var submission = new ProgramReviewSubmission
-        {
-            Id = Guid.NewGuid(),
-            ProgramId = program.Id,
-            SubmissionNumber = submissionNumber,
-            SubmittedByManagerId = managerId,
-            AssignedAdvisorExpertId = advisorExpertId,
-            FrameworkVersionId = frameworkVersionId,
-            CurriculumSnapshotJson = curriculumJson,
-            Status = status,
-            SubmittedAt = closedAt?.AddDays(-2) ?? _seedNow.AddHours(-4),
-            ClosedAt = closedAt,
-            ConcurrencyVersion = Guid.NewGuid(),
-            CreatedAt = closedAt?.AddDays(-2) ?? _seedNow.AddHours(-4),
-            CreatedBy = managerId,
-            IsDeleted = false,
-        };
-        await _unitOfWork.ProgramReviewSubmissions.AddAsync(submission);
-        await _unitOfWork.SaveChangesAsync();
-        return submission;
-    }
-
-    private async Task SeedAdvReviewDraftAsync(
-        ProgramReviewSubmission submission,
-        Guid advisorExpertId)
-    {
-        var existing = await _unitOfWork.ProgramReviewDrafts.FirstOrDefaultAsync(
-            d => d.SubmissionId == submission.Id && !d.IsDeleted);
-        if (existing != null)
-        {
-            return;
-        }
-
-        await _unitOfWork.ProgramReviewDrafts.AddAsync(new ProgramReviewDraft
-        {
-            Id = Guid.NewGuid(),
-            SubmissionId = submission.Id,
-            AdvisorExpertId = advisorExpertId,
-            OverallComment = "Draft in progress — safety looks solid; still checking learning progression.",
-            ConcurrencyVersion = Guid.NewGuid(),
-            LastSavedAt = _seedNow,
-            CreatedAt = _seedNow,
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
-        });
-        await _unitOfWork.SaveChangesAsync();
-    }
-
-    private async Task SeedAdvCurriculumReviewAsync(
-        Program program,
-        Guid expertId,
-        Guid? submissionId,
-        bool snapshotAvailable)
-    {
-        await _unitOfWork.CurriculumReviews.AddAsync(new CurriculumReview
-        {
-            Id = Guid.NewGuid(),
-            ProgramId = program.Id,
-            ExpertId = expertId,
-            Round = 1,
-            SubmissionId = submissionId,
-            SnapshotAvailable = snapshotAvailable,
-            Decision = CurriculumReviewDecision.Approved,
-            Comment = snapshotAvailable
-                ? "Approved; curriculum meets the framework rules."
-                : "Legacy approval before snapshot-backed submissions.",
-            ReviewedAt = _seedNow.AddDays(-2),
-            CreatedAt = _seedNow.AddDays(-2),
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
-        });
-
         await _unitOfWork.SaveChangesAsync();
     }
 
