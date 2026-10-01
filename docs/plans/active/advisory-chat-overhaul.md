@@ -177,30 +177,25 @@ One task per review/commit cycle, in this order:
   auto-resolve sends one `advisory.pinChanged` per resolved pin. Existing
   student-side `curriculum.structureChanged` publishes stay; the recorder adds
   the advisory group publish with `{ curriculumVersion }`.
+- 2026-10-01: Task 7b chat notifications: the discussion service no longer
+  writes `ProgramAdvisoryNotificationIntents` (table kept) and publishes after
+  commit. `AdvisoryDiscussionMessage` goes to every workspace participant
+  except the author, user messages only, skipped when present in
+  `advisory:{programId}` or notified for the program in the last 5 minutes
+  (checked against the `Notifications` table, so it survives restarts).
+  `AdvisoryMentionPinned` goes to managers on every new pin. Deprecated
+  catalog factories stay until 7e.
 
 ## Remaining Contract
 
 Target behaviour for the unfinished steps of tasks 7 and 8. Move each item
 into `docs/product` when it ships.
 
-Notifications (task 7b):
-
-- Stop writing `ProgramAdvisoryNotificationIntents`; publish after commit.
-  Leave the table in place.
-- New `AdvisoryDiscussionMessage`: the first chat message notifies; further
-  messages to the same recipient for the same program within 5 minutes are
-  suppressed; skipped when the recipient has a live connection in
-  `advisory:{programId}` (in-memory, single-instance presence tracker).
-  Assumed recipients: all participants except the author (confirm first).
-- New `AdvisoryMentionPinned` to managers. Assumed to fire on every pin
-  (confirm first).
-- `CurriculumApprovalRevoked` follows the task 6 counterpart rule (manager
-  reopen or curriculum edit → advisor; advisor revoke → managers; none on
-  advisor change).
-- Kept: `CurriculumApprovalRequested`, `CurriculumReviewApproved`,
-  `CurriculumReviewPublished`. No longer emitted (enum values stay for old
-  inbox rows): `CurriculumReviewSubmitted`, `CurriculumReviewChangesRequested`,
-  `AdvisoryFeedbackPublished`, `AdvisoryReply`, `AdvisoryCorrectionAddressed`.
+Notifications: deprecated catalog factories (`CurriculumReviewSubmitted`,
+`CurriculumReviewChangesRequested`, `AdvisoryFeedbackPublished`,
+`AdvisoryReply`, `AdvisoryCorrectionAddressed`) are deleted in 7e together
+with their last callers (old services, seed); enum values stay for old inbox
+rows.
 
 Live endpoints (task 7c): move `GET {id}/framework-check` and
 `GET advisory-mine` out of the services deleted in 7e. `advisory-mine` keeps

@@ -38,10 +38,21 @@ public sealed class AdvisoryDiscussionServiceTests
     private readonly Mock<ICurrentTime> _currentTime = new();
     private readonly Mock<IBlobService> _blobService = new();
     private readonly FakeSyncEventPublisher _sync = new();
+    private readonly Mock<INotificationPublisher> _notifications = new();
+    private readonly List<NotificationCommand> _published = [];
+    private readonly AdvisoryPresenceTracker _presence = new();
 
     public AdvisoryDiscussionServiceTests()
     {
         _currentTime.Setup(c => c.GetCurrentTime()).Returns(() => _now);
+        _notifications
+            .Setup(n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((NotificationCommand command, CancellationToken _) => _published.Add(command))
+            .Returns(Task.CompletedTask);
+        _notifications
+            .Setup(n => n.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()))
+            .Callback((IReadOnlyList<NotificationCommand> commands, CancellationToken _) => _published.AddRange(commands))
+            .Returns(Task.CompletedTask);
         _blobService
             .Setup(b => b.GetFileUrlAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string key, TimeSpan _, CancellationToken _) => $"https://signed.test/{key}");
@@ -68,7 +79,9 @@ public sealed class AdvisoryDiscussionServiceTests
             _claimsService.Object,
             _currentTime.Object,
             new AdvisoryReferenceResolver(_db, _currentTime.Object),
-            _sync);
+            _sync,
+            _notifications.Object,
+            _presence);
     }
 
     private ProgramAdvisoryAttachmentService Attachments(Guid userId)
@@ -361,7 +374,7 @@ public sealed class AdvisoryDiscussionServiceTests
     }
 
     [Fact]
-    public async Task Post_IsIdempotentPerAuthorAndClientMessageId_AndQueuesNotification()
+    public async Task Post_IsIdempotentPerAuthorAndClientMessageId_AndWritesNoIntent()
     {
         var chat = Chat(_managerId);
 
@@ -372,9 +385,112 @@ public sealed class AdvisoryDiscussionServiceTests
         Assert.Equal(first.Id, retry.Id);
         Assert.NotEqual(first.Id, other.Id);
         Assert.Equal([1L, 2L], _db.ProgramAdvisoryDiscussionMessages.Items.Select(m => m.Sequence).Order().ToList());
-        Assert.Equal(2, _db.ProgramAdvisoryNotificationIntents.Items.Count);
-        Assert.All(_db.ProgramAdvisoryNotificationIntents.Items,
-            i => Assert.Equal(NotificationType.AdvisoryReply, i.NotificationType));
+        Assert.Empty(_db.ProgramAdvisoryNotificationIntents.Items);
+    }
+
+    // ── Notifications ─────────────────────────────────────────────────────────
+
+    private List<NotificationCommand> Published(NotificationType type)
+        => _published.Where(c => c.Type == type).ToList();
+
+    private void SeedChatNotification(Guid recipientId, DateTime createdAt)
+        => _db.Notifications.Seed(new Notification
+        {
+            Id = Guid.NewGuid(),
+            RecipientUserId = recipientId,
+            Type = NotificationType.AdvisoryDiscussionMessage,
+            Title = "chat",
+            EntityType = "Program",
+            EntityId = _programId,
+            CreatedAt = createdAt,
+        });
+
+    [Fact]
+    public async Task Post_NotifiesEveryOtherParticipant_ButNotOnReplay()
+    {
+        var message = await Chat(_managerId).AddMessageAsync(_programId, Post("hello", "c1"));
+        await Chat(_managerId).AddMessageAsync(_programId, Post("hello", "c1"));
+
+        var commands = Published(NotificationType.AdvisoryDiscussionMessage);
+        Assert.Equal(
+            new HashSet<Guid> { _advisorUserId, _boardUserId },
+            commands.Select(c => c.Audience.UserId!.Value).ToHashSet());
+        Assert.Equal(2, commands.Count);
+        Assert.All(commands, c =>
+        {
+            Assert.Equal(NotificationAudienceKind.User, c.Audience.Kind);
+            Assert.Equal(_managerId, c.ActorUserId);
+            Assert.Equal("Program", c.EntityType);
+            Assert.Equal(_programId, c.EntityId);
+            Assert.Equal(_programId, c.Payload!.ProgramId);
+            Assert.Equal(message.Id.ToString(), c.Payload.Extra);
+            Assert.Contains("Robotics", c.Body!);
+        });
+    }
+
+    [Fact]
+    public async Task Post_SkipsRecipientsNotifiedInTheLastFiveMinutes()
+    {
+        SeedChatNotification(_advisorUserId, _now.AddMinutes(-4));
+        SeedChatNotification(_boardUserId, _now.AddMinutes(-6));
+
+        await Chat(_managerId).AddMessageAsync(_programId, Post("hello", "c1"));
+
+        var recipient = Assert.Single(Published(NotificationType.AdvisoryDiscussionMessage));
+        Assert.Equal(_boardUserId, recipient.Audience.UserId);
+    }
+
+    [Fact]
+    public async Task Post_SkipsRecipientsPresentInTheAdvisoryGroup()
+    {
+        _presence.Join(_programId, _advisorUserId, "conn-advisor");
+        _presence.Join(Guid.NewGuid(), _boardUserId, "conn-board-elsewhere");
+
+        await Chat(_managerId).AddMessageAsync(_programId, Post("hello", "c1"));
+
+        var recipient = Assert.Single(Published(NotificationType.AdvisoryDiscussionMessage));
+        Assert.Equal(_boardUserId, recipient.Audience.UserId);
+    }
+
+    [Fact]
+    public async Task Post_ByExpert_NotifiesManagersAndOtherExperts()
+    {
+        await Chat(_boardUserId).AddMessageAsync(_programId, Post("hello", "c1"));
+
+        Assert.Equal(
+            new HashSet<Guid> { _managerId, _advisorUserId },
+            Published(NotificationType.AdvisoryDiscussionMessage).Select(c => c.Audience.UserId!.Value).ToHashSet());
+    }
+
+    [Fact]
+    public async Task Pin_NotifiesManagersOnce_AndRepinSendsNothing()
+    {
+        var message = await Chat(_managerId).AddMessageAsync(_programId, Post("Fix the intro", "c1"));
+        _published.Clear();
+
+        await Chat(_advisorUserId).PinMessageAsync(_programId, message.Id);
+        await Chat(_boardUserId).PinMessageAsync(_programId, message.Id);
+        await Chat(_managerId).PerformPinActionAsync(
+            _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.MarkAddressed });
+        await Chat(_advisorUserId).PerformPinActionAsync(
+            _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.Reopen });
+
+        var command = Assert.Single(_published);
+        Assert.Equal(NotificationType.AdvisoryMentionPinned, command.Type);
+        Assert.Equal(NotificationAudienceKind.Managers, command.Audience.Kind);
+        Assert.Equal(_advisorUserId, command.ActorUserId);
+        Assert.Equal("ProgramAdvisoryDiscussionMessage", command.EntityType);
+        Assert.Equal(message.Id, command.EntityId);
+        Assert.Equal(_programId, command.Payload!.ProgramId);
+    }
+
+    [Fact]
+    public async Task FailedPost_SendsNoNotification()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => Chat(_managerId).AddMessageAsync(
+            _programId, Post(Token(ProgramAdvisoryTargetType.Activity, Guid.NewGuid()), "c1")));
+
+        Assert.Empty(_published);
     }
 
     // ── Edit / remove ─────────────────────────────────────────────────────────

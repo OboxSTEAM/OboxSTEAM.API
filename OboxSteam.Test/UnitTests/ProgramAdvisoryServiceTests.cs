@@ -4,6 +4,7 @@ using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -81,7 +82,9 @@ public sealed class ProgramAdvisoryServiceTests
             _claimsService.Object,
             _currentTime.Object,
             new AdvisoryReferenceResolver(_db, _currentTime.Object),
-            new FakeSyncEventPublisher());
+            new FakeSyncEventPublisher(),
+            _notificationPublisher.Object,
+            new AdvisoryPresenceTracker());
     }
 
     private CurriculumReviewService CreateReviewSut(Guid currentUserId)

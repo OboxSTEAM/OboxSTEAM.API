@@ -2,6 +2,7 @@ using System.Text.Json;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
@@ -19,25 +20,32 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
     private const int MaxClientMessageIdLength = 100;
     private const int MaxCapturedLabelLength = 255;
     private const string InvalidStatusCode = "INVALID_STATUS";
+    private static readonly TimeSpan MessageNotificationWindow = TimeSpan.FromMinutes(5);
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
     private readonly ICurrentTime _currentTime;
     private readonly IAdvisoryReferenceResolver _referenceResolver;
     private readonly ISyncEventPublisher _syncEventPublisher;
+    private readonly INotificationPublisher _notificationPublisher;
+    private readonly IAdvisoryPresenceTracker _presenceTracker;
 
     public ProgramAdvisoryDiscussionService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         ICurrentTime currentTime,
         IAdvisoryReferenceResolver referenceResolver,
-        ISyncEventPublisher syncEventPublisher)
+        ISyncEventPublisher syncEventPublisher,
+        INotificationPublisher notificationPublisher,
+        IAdvisoryPresenceTracker presenceTracker)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _currentTime = currentTime;
         _referenceResolver = referenceResolver;
         _syncEventPublisher = syncEventPublisher;
+        _notificationPublisher = notificationPublisher;
+        _presenceTracker = presenceTracker;
     }
 
     public async Task<IReadOnlyList<MentionTargetDto>> GetMentionTargetsAsync(Guid programId)
@@ -121,9 +129,12 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
         var mentions = ValidateText(text, attachmentIds.Count);
         var actorId = _claimsService.GetCurrentUserId;
         var sync = new AdvisorySyncBatch(programId);
+        AdvisoryParticipant? author = null;
+        ProgramAdvisoryDiscussionMessage? created = null;
         var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
             sync.Reset();
+            created = null;
             var participant = await RequireParticipantAsync(programId);
             var existing = await _unitOfWork.ProgramAdvisoryDiscussionMessages.FirstOrDefaultAsync(
                 m => m.ProgramId == programId
@@ -163,25 +174,18 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             }
 
             await _unitOfWork.Programs.Update(program);
-            await _unitOfWork.ProgramAdvisoryNotificationIntents.AddAsync(
-                new ProgramAdvisoryNotificationIntent
-                {
-                    Id = Guid.NewGuid(),
-                    ProgramId = programId,
-                    EventId = message.Id,
-                    EventType = "AdvisoryDiscussionMessageCreated",
-                    NotificationType = NotificationType.AdvisoryReply,
-                    PayloadJson = JsonSerializer.Serialize(new { programId, messageId = message.Id }),
-                    Status = AdvisoryNotificationIntentStatus.Pending,
-                    NextAttemptAt = now,
-                    CreatedAt = now,
-                    CreatedBy = participant.User.Id,
-                });
             await _unitOfWork.SaveChangesAsync();
             sync.DiscussionChanged(message.Sequence);
+            author = participant;
+            created = message;
             return await MapMessageAsync(message);
         });
         await sync.PublishAsync(_syncEventPublisher);
+        if (author != null && created != null)
+        {
+            await NotifyNewMessageAsync(author, created);
+        }
+
         return result;
     }
 
@@ -276,9 +280,11 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
     public async Task<AdvisoryDiscussionMessageDto> PinMessageAsync(Guid programId, Guid messageId)
     {
         var sync = new AdvisorySyncBatch(programId);
+        AdvisoryParticipant? pinnedBy = null;
         var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
             sync.Reset();
+            pinnedBy = null;
             var participant = await RequireParticipantAsync(programId);
             RequireExpertParticipant(participant);
             var message = await RequirePinnableMessageAsync(programId, messageId);
@@ -294,9 +300,20 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             message.PinnedAt = now;
             var saved = await SaveMessageAsync(message, participant.User.Id, now);
             sync.PinChanged(message.Id);
+            pinnedBy = participant;
             return saved;
         });
         await sync.PublishAsync(_syncEventPublisher);
+        if (pinnedBy != null)
+        {
+            await _notificationPublisher.PublishAsync(NotificationCatalog.AdvisoryMentionPinned(
+                programId,
+                messageId,
+                pinnedBy.User.Id,
+                pinnedBy.Program.Name,
+                AdvisoryParticipantAccess.DisplayName(pinnedBy.User)));
+        }
+
         return result;
     }
 
@@ -507,6 +524,46 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
 
     private Task<AdvisoryParticipant> RequireParticipantAsync(Guid programId)
         => AdvisoryParticipantAccess.RequireAsync(_unitOfWork, _claimsService, programId);
+
+    /// <summary>
+    /// Notifies every other participant who is not in the advisory group right now and has not had a
+    /// chat notification for this program within the window.
+    /// </summary>
+    private async Task NotifyNewMessageAsync(AdvisoryParticipant author, ProgramAdvisoryDiscussionMessage message)
+    {
+        var program = author.Program;
+        var advisor = program.AdvisorExpertId.HasValue
+            ? await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value)
+            : null;
+        var participants = await AdvisoryParticipantAccess.ListAsync(_unitOfWork, program, advisor);
+        var since = Now() - MessageNotificationWindow;
+        var recentlyNotified = (await _unitOfWork.Notifications.GetAllAsync(
+                n => n.Type == NotificationType.AdvisoryDiscussionMessage
+                     && n.EntityId == program.Id
+                     && n.CreatedAt >= since
+                     && !n.IsDeleted))
+            .Select(n => n.RecipientUserId)
+            .ToHashSet();
+        var authorName = AdvisoryParticipantAccess.DisplayName(author.User);
+        var commands = participants
+            .Select(p => p.UserId)
+            .Distinct()
+            .Where(userId => userId != author.User.Id
+                             && !_presenceTracker.IsPresent(program.Id, userId)
+                             && !recentlyNotified.Contains(userId))
+            .Select(userId => NotificationCatalog.AdvisoryDiscussionMessage(
+                userId,
+                program.Id,
+                message.Id,
+                author.User.Id,
+                program.Name,
+                authorName))
+            .ToList();
+        if (commands.Count > 0)
+        {
+            await _notificationPublisher.PublishManyAsync(commands);
+        }
+    }
 
     private async Task<ProgramAdvisoryDiscussionMessage> RequireMessageAsync(Guid programId, Guid messageId)
     {

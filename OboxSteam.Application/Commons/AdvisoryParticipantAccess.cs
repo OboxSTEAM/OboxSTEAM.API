@@ -1,3 +1,4 @@
+using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
@@ -104,6 +105,60 @@ public static class AdvisoryParticipantAccess
         var boardMember = await unitOfWork.ProgramBoards.FirstOrDefaultAsync(
             b => b.ProgramId == program.Id && b.ExpertId == expert.Id && !b.IsDeleted);
         return boardMember != null ? AdvisoryParticipantRole.BoardExpert : null;
+    }
+
+    /// <summary>Workspace participants with a login: active managers, then the advisor, then board experts.</summary>
+    public static async Task<List<AdvisoryParticipantDto>> ListAsync(
+        IUnitOfWork unitOfWork,
+        Program program,
+        Expert? advisor)
+    {
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+        ArgumentNullException.ThrowIfNull(program);
+        var managers = await unitOfWork.Users.GetAllAsync(
+            u => u.Role == RoleType.Manager && u.Status == AccountStatus.Active && !u.IsDeleted);
+        var result = managers
+            .Select(u => new AdvisoryParticipantDto
+            {
+                UserId = u.Id,
+                Name = DisplayName(u),
+                Role = RoleType.Manager,
+            })
+            .OrderBy(p => p.Name)
+            .ToList();
+
+        if (advisor is { IsDeleted: false, UserId: not null })
+        {
+            result.Add(new AdvisoryParticipantDto
+            {
+                UserId = advisor.UserId.Value,
+                Name = advisor.FullName,
+                Role = RoleType.Expert,
+                IsAdvisor = true,
+            });
+        }
+
+        var boardExpertIds = (await unitOfWork.ProgramBoards.GetAllAsync(
+                b => b.ProgramId == program.Id && !b.IsDeleted))
+            .Select(b => b.ExpertId)
+            .Where(id => id != advisor?.Id)
+            .Distinct()
+            .ToList();
+        if (boardExpertIds.Count > 0)
+        {
+            var experts = await unitOfWork.Experts.GetAllAsync(
+                e => boardExpertIds.Contains(e.Id) && e.UserId != null && !e.IsDeleted);
+            result.AddRange(experts
+                .Select(e => new AdvisoryParticipantDto
+                {
+                    UserId = e.UserId!.Value,
+                    Name = e.FullName,
+                    Role = RoleType.Expert,
+                })
+                .OrderBy(p => p.Name));
+        }
+
+        return result;
     }
 
     public static string DisplayName(User user)

@@ -93,6 +93,35 @@ public sealed class NotificationCatalogCopyTests
         Assert.Contains("để bạn duyệt", command.Templates.Expert!.Body!, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AdvisoryDiscussionMessage_TargetsRecipientWithProgramEntity()
+    {
+        var command = NotificationCatalog.AdvisoryDiscussionMessage(SampleId, SampleId2, SampleId, SampleId2, "Robotics", "Lan");
+
+        Assert.Equal(NotificationType.AdvisoryDiscussionMessage, command.Type);
+        Assert.Equal(NotificationAudienceKind.User, command.Audience.Kind);
+        Assert.Equal(SampleId, command.Audience.UserId);
+        Assert.Equal("Program", command.EntityType);
+        Assert.Equal(SampleId2, command.EntityId);
+        Assert.Equal(SampleId2, command.Payload!.ProgramId);
+        Assert.Equal(SampleId.ToString(), command.Payload.Extra);
+        Assert.Contains("Robotics", command.Body!);
+    }
+
+    [Fact]
+    public void AdvisoryMentionPinned_TargetsManagersWithMessageEntity()
+    {
+        var command = NotificationCatalog.AdvisoryMentionPinned(SampleId2, SampleId, SampleId2, "Robotics", "TS. Minh");
+
+        Assert.Equal(NotificationType.AdvisoryMentionPinned, command.Type);
+        Assert.Equal(NotificationAudienceKind.Managers, command.Audience.Kind);
+        Assert.Equal("ProgramAdvisoryDiscussionMessage", command.EntityType);
+        Assert.Equal(SampleId, command.EntityId);
+        Assert.Equal(SampleId2, command.Payload!.ProgramId);
+        Assert.Contains("{actorName}", command.Templates.Default.Body!, StringComparison.Ordinal);
+        Assert.Contains("Robotics", command.Body!);
+    }
+
     [Theory]
     [MemberData(nameof(CatalogFactoryMethods))]
     public void CatalogFactory_StudentParentVariants_FollowAddressingRules(string name, MethodInfo method)
@@ -166,7 +195,7 @@ public sealed class NotificationCatalogCopyTests
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Count(m => m.ReturnType == typeof(NotificationCommand));
 
-        Assert.Equal(88, count);
+        Assert.Equal(90, count);
     }
 
     private static NotificationCommand InvokeFactory(MethodInfo method)

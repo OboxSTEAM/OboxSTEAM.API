@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.Interfaces;
 using OboxSteam.Domain.Interfaces;
 
 namespace OboxSteam.API.Hubs;
@@ -10,10 +11,12 @@ namespace OboxSteam.API.Hubs;
 public sealed class NotificationHub : Hub
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAdvisoryPresenceTracker _presenceTracker;
 
-    public NotificationHub(IUnitOfWork unitOfWork)
+    public NotificationHub(IUnitOfWork unitOfWork, IAdvisoryPresenceTracker presenceTracker)
     {
         _unitOfWork = unitOfWork;
+        _presenceTracker = presenceTracker;
     }
 
     public override async Task OnConnectedAsync()
@@ -50,10 +53,20 @@ public sealed class NotificationHub : Hub
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, $"advisory:{programId}");
+        _presenceTracker.Join(programId, userId, Context.ConnectionId);
     }
 
     public Task LeaveAdvisorySync(Guid programId)
-        => Groups.RemoveFromGroupAsync(Context.ConnectionId, $"advisory:{programId}");
+    {
+        _presenceTracker.Leave(programId, Context.ConnectionId);
+        return Groups.RemoveFromGroupAsync(Context.ConnectionId, $"advisory:{programId}");
+    }
+
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        _presenceTracker.Disconnect(Context.ConnectionId);
+        return base.OnDisconnectedAsync(exception);
+    }
 
     private string? CurrentUserId()
         => Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value

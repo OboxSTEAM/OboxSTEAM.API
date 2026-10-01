@@ -2126,6 +2126,57 @@ public static class NotificationCatalog
             entityId: programId,
             tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
 
+    /// <summary>New chat message for one participant; entity is the program so repeats can be suppressed per program.</summary>
+    public static NotificationCommand AdvisoryDiscussionMessage(
+        Guid recipientUserId,
+        Guid programId,
+        Guid messageId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.AdvisoryDiscussionMessage,
+            NotificationAudience.ForUser(recipientUserId),
+            NotificationRoleTemplates.FromDefault(
+                "Tin nhắn mới trong trao đổi chương trình",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã gửi tin nhắn mới trong trao đổi chương trình."
+                    : "{actorName} đã gửi tin nhắn mới trong trao đổi chương trình \"{programName}\"."),
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                Extra = messageId.ToString()
+            }.WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
+    /// <summary>An expert pinned a chat message as a must-fix item; sent to managers.</summary>
+    public static NotificationCommand AdvisoryMentionPinned(
+        Guid programId,
+        Guid messageId,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.AdvisoryMentionPinned,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Chuyên gia ghim yêu cầu cần sửa",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã ghim một yêu cầu cần sửa trong trao đổi chương trình."
+                    : "{actorName} đã ghim một yêu cầu cần sửa trong trao đổi chương trình \"{programName}\"."),
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                Extra = messageId.ToString()
+            }.WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "ProgramAdvisoryDiscussionMessage",
+            entityId: messageId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
     public static NotificationCommand AdvisoryFeedbackPublished(
         Guid recipientUserId,
         Guid programId,

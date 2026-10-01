@@ -137,4 +137,8 @@ public enum NotificationType
     // Versioned curriculum approval
     CurriculumApprovalRevoked,
     CurriculumApprovalRequested,
+
+    // Advisory chat
+    AdvisoryDiscussionMessage,
+    AdvisoryMentionPinned,
 }

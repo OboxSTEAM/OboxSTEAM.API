@@ -502,7 +502,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
             CurriculumVersion = program.CurriculumVersion,
             AdvisorExpertId = program.AdvisorExpertId,
             AdvisorName = advisor?.FullName,
-            Participants = await BuildParticipantsAsync(program, advisor),
+            Participants = await AdvisoryParticipantAccess.ListAsync(_unitOfWork, program, advisor),
             Capabilities = new AdvisoryCapabilitiesDto
             {
                 CanPost = true,
@@ -534,54 +534,6 @@ public sealed class ProgramApprovalService : IProgramApprovalService
             UnseenChangeCount = unseenChanges,
             LatestSequence = messages.Select(m => (long?)m.Sequence).Max() ?? 0,
         };
-    }
-
-    private async Task<List<AdvisoryParticipantDto>> BuildParticipantsAsync(Program program, Expert? advisor)
-    {
-        var managers = await _unitOfWork.Users.GetAllAsync(
-            u => u.Role == RoleType.Manager && u.Status == AccountStatus.Active && !u.IsDeleted);
-        var result = managers
-            .Select(u => new AdvisoryParticipantDto
-            {
-                UserId = u.Id,
-                Name = AdvisoryParticipantAccess.DisplayName(u),
-                Role = RoleType.Manager,
-            })
-            .OrderBy(p => p.Name)
-            .ToList();
-
-        if (advisor is { IsDeleted: false, UserId: not null })
-        {
-            result.Add(new AdvisoryParticipantDto
-            {
-                UserId = advisor.UserId.Value,
-                Name = advisor.FullName,
-                Role = RoleType.Expert,
-                IsAdvisor = true,
-            });
-        }
-
-        var boardExpertIds = (await _unitOfWork.ProgramBoards.GetAllAsync(
-                b => b.ProgramId == program.Id && !b.IsDeleted))
-            .Select(b => b.ExpertId)
-            .Where(id => id != advisor?.Id)
-            .Distinct()
-            .ToList();
-        if (boardExpertIds.Count > 0)
-        {
-            var experts = await _unitOfWork.Experts.GetAllAsync(
-                e => boardExpertIds.Contains(e.Id) && e.UserId != null && !e.IsDeleted);
-            result.AddRange(experts
-                .Select(e => new AdvisoryParticipantDto
-                {
-                    UserId = e.UserId!.Value,
-                    Name = e.FullName,
-                    Role = RoleType.Expert,
-                })
-                .OrderBy(p => p.Name));
-        }
-
-        return result;
     }
 
     private async Task<(int SinceApproval, int Unseen)> CountChangesAsync(Program program, Guid userId)

@@ -15,6 +15,7 @@ using OboxSteam.API.Hubs;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Configuration;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Services;
 using OboxSteam.Infrastructure;
 using OboxSteam.Infrastructure.Commons;
@@ -271,6 +272,7 @@ public static class IocContainer
         services.AddScoped<INotificationEmailDispatcher, NotificationEmailDispatcher>();
         services.AddSingleton<ISignalRSyncDispatcher, SignalRSyncDispatcher>();
         services.AddScoped<ISyncEventPublisher, SyncEventPublisher>();
+        services.AddSingleton<IAdvisoryPresenceTracker, AdvisoryPresenceTracker>();
         return services;
     }
 
