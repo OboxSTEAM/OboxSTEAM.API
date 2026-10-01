@@ -54,6 +54,99 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         return await BuildWorkspaceAsync(participant);
     }
 
+    public async Task<FrameworkCheckDto> GetFrameworkCheckAsync(Guid programId)
+    {
+        var participant = await RequireParticipantAsync(programId);
+        return await ProgramFrameworkCheck.RunAsync(_unitOfWork, participant.Program);
+    }
+
+    public async Task<Pagination<AdvisoryMineItemDto>> GetAdvisoryMineAsync(
+        int page,
+        int pageSize,
+        ProgramStatus? status = null,
+        bool unreadOnly = false)
+    {
+        var user = await RequireAdvisoryUserAsync();
+        var programs = await _unitOfWork.Programs.GetAllAsync(
+            p => !p.IsDeleted && (status == null || p.Status == status));
+        Expert? expert = null;
+        if (user.Role == RoleType.Expert)
+        {
+            expert = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.UserId == user.Id && !e.IsDeleted)
+                ?? throw ErrorHelper.Forbidden("Current user is not linked to an expert profile.");
+            var expertId = expert.Id;
+            var boardProgramIds = (await _unitOfWork.ProgramBoards.GetAllAsync(
+                    b => b.ExpertId == expertId && !b.IsDeleted))
+                .Select(b => b.ProgramId)
+                .ToHashSet();
+            programs = programs
+                .Where(p => p.AdvisorExpertId == expertId || boardProgramIds.Contains(p.Id))
+                .ToList();
+        }
+
+        var programIds = programs.Select(p => p.Id).ToList();
+        var versionIds = programs
+            .Where(p => p.FrameworkVersionId.HasValue)
+            .Select(p => p.FrameworkVersionId!.Value)
+            .Distinct()
+            .ToList();
+        var versionNumbers = (await _unitOfWork.ProgramFrameworkVersions.GetAllAsync(v => versionIds.Contains(v.Id)))
+            .ToDictionary(v => v.Id, v => v.VersionNumber);
+        var messagesByProgram = (await _unitOfWork.ProgramAdvisoryDiscussionMessages.GetAllAsync(
+                m => programIds.Contains(m.ProgramId) && !m.IsDeleted))
+            .ToLookup(m => m.ProgramId);
+        var lastReadByProgram = (await _unitOfWork.ProgramAdvisoryStreamReads.GetAllAsync(
+                r => r.UserId == user.Id
+                     && programIds.Contains(r.ProgramId)
+                     && r.StreamType == AdvisoryStreamType.Discussion
+                     && r.ThreadId == null
+                     && !r.IsDeleted))
+            .GroupBy(r => r.ProgramId)
+            .ToDictionary(g => g.Key, g => g.Max(r => r.LastReadSequence));
+        var approvalsByProgram = (await _unitOfWork.ProgramApprovals.GetAllAsync(
+                a => programIds.Contains(a.ProgramId) && !a.IsDeleted))
+            .ToLookup(a => a.ProgramId);
+
+        var items = new List<AdvisoryMineItemDto>();
+        foreach (var program in programs)
+        {
+            var messages = messagesByProgram[program.Id].ToList();
+            var liveMessages = messages.Where(m => m.RemovedAt == null).ToList();
+            var lastRead = lastReadByProgram.GetValueOrDefault(program.Id);
+            var unreadCount = liveMessages.Count(m => m.Sequence > lastRead && m.AuthorUserId != user.Id);
+            if (unreadOnly && unreadCount == 0)
+            {
+                continue;
+            }
+
+            items.Add(new AdvisoryMineItemDto
+            {
+                ProgramId = program.Id,
+                Code = program.Code,
+                Name = program.Name,
+                Status = program.Status,
+                FrameworkVersionNumber = program.FrameworkVersionId.HasValue
+                    && versionNumbers.TryGetValue(program.FrameworkVersionId.Value, out var versionNumber)
+                        ? versionNumber
+                        : null,
+                IsAdvisor = expert != null && program.AdvisorExpertId == expert.Id,
+                LatestActivityAt = messages.Count > 0
+                    ? messages.Max(m => m.EditedAt ?? m.CreatedAt)
+                    : program.UpdatedAt ?? program.CreatedAt,
+                UnreadCount = unreadCount,
+                OpenPinCount = liveMessages.Count(m => m.PinStatus == DiscussionPinStatus.Open),
+                ApprovalState = ResolveApprovalState(approvalsByProgram[program.Id]),
+            });
+        }
+
+        var ordered = items
+            .OrderByDescending(i => i.LatestActivityAt ?? DateTime.MinValue)
+            .ThenBy(i => i.Name)
+            .ToList();
+        var pageItems = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        return new Pagination<AdvisoryMineItemDto>(pageItems, ordered.Count, page, pageSize);
+    }
+
     public async Task<ProgramAdvisoryWorkspaceDto> RequestApprovalAsync(Guid programId)
     {
         var sync = new AdvisorySyncBatch(programId);
@@ -571,10 +664,40 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         }
     }
 
+    private static AdvisoryApprovalState ResolveApprovalState(IEnumerable<ProgramApproval> approvals)
+    {
+        var list = approvals.ToList();
+        if (list.Count == 0)
+        {
+            return AdvisoryApprovalState.None;
+        }
+
+        return list.Any(a => a.RevokedAt == null) ? AdvisoryApprovalState.Approved : AdvisoryApprovalState.Revoked;
+    }
+
     // ---- Helpers ----
 
     private Task<AdvisoryParticipant> RequireParticipantAsync(Guid programId)
         => AdvisoryParticipantAccess.RequireAsync(_unitOfWork, _claimsService, programId);
+
+    private async Task<User> RequireAdvisoryUserAsync()
+    {
+        var userId = _claimsService.GetCurrentUserId;
+        if (userId == Guid.Empty)
+        {
+            throw ErrorHelper.Unauthorized("Authenticated user id is unavailable.");
+        }
+
+        var user = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null || user.IsDeleted)
+        {
+            throw ErrorHelper.Unauthorized("Authenticated user was not found.");
+        }
+
+        return user.Role is RoleType.Manager or RoleType.Admin or RoleType.Expert
+            ? user
+            : throw ErrorHelper.Forbidden("Only managers, admins, and experts can access advisory programs.");
+    }
 
     private async Task<AdvisoryParticipant> RequireManagerAsync(Guid programId)
     {

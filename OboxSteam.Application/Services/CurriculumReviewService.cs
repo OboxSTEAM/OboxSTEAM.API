@@ -514,13 +514,6 @@ public sealed class CurriculumReviewService : ICurriculumReviewService
         return await MapReviewAsync(review);
     }
 
-    public async Task<FrameworkCheckDto> GetFrameworkCheckAsync(Guid programId)
-    {
-        await ResolveReviewActorAsync();
-        var program = await GetActiveProgramAsync(programId);
-        return await ProgramFrameworkCheck.RunAsync(_unitOfWork, program);
-    }
-
     public async Task<IReadOnlyList<ProgramReviewSubmissionSummaryDto>> GetSubmissionsAsync(Guid programId)
     {
         await EnsureCanAccessSubmissionsAsync(programId);

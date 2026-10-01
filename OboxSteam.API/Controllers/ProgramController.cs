@@ -436,7 +436,9 @@ public class ProgramController : ControllerBase
 
     [HttpGet("advisory-mine")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Assigned advisory programs for the current user")]
+    [SwaggerOperation(
+        Summary = "Assigned advisory programs for the current user",
+        Description = "Experts see programs where they are the advisor or a board member; managers and admins see all. Each item has status, approvalState, unreadCount (chat read cursor), openPinCount, and latestActivityAt. unreadOnly keeps items with unreadCount > 0.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<AdvisoryMineItemDto>>), 200)]
     public async Task<IActionResult> GetAdvisoryMine(
         [FromQuery] int page = 1,
@@ -449,7 +451,7 @@ public class ProgramController : ControllerBase
             return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
         }
 
-        var result = await _programAdvisoryService.GetAdvisoryMineAsync(page, pageSize, status, unreadOnly);
+        var result = await _programApprovalService.GetAdvisoryMineAsync(page, pageSize, status, unreadOnly);
         return Ok(ApiResult<Pagination<AdvisoryMineItemDto>>.Success(
             result, "200", "Advisory programs retrieved successfully."));
     }
@@ -502,11 +504,13 @@ public class ProgramController : ControllerBase
 
     [HttpGet("{id:guid}/framework-check")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Structured framework checks for a program")]
+    [SwaggerOperation(
+        Summary = "Structured framework checks for a program",
+        Description = "Advisory participants only (Manager/Admin, the advisor, board experts).")]
     [ProducesResponseType(typeof(ApiResult<FrameworkCheckDto>), 200)]
     public async Task<IActionResult> GetFrameworkCheck([FromRoute] Guid id)
     {
-        var result = await _curriculumReviewService.GetFrameworkCheckAsync(id);
+        var result = await _programApprovalService.GetFrameworkCheckAsync(id);
         return Ok(ApiResult<FrameworkCheckDto>.Success(result, "200", "Framework check retrieved successfully."));
     }
 

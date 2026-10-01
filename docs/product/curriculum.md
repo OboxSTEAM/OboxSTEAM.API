@@ -71,10 +71,19 @@ and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
   `canRequestApproval`, `canApprove`, `canRevokeApproval`, `canPublish`), the
   active approval, pin/unread counts, `frameworkCheckPassed`, and change counts
   since the last approval.
-- `GET /api/programs/advisory-mine` — paginated assigned advisory programs
-  (advisor/board for Expert; all for Manager/Admin).
-- `GET /api/programs/{id}/framework-check` — structured expected/actual checks
-  against the pinned framework version.
+- `GET /api/programs/advisory-mine` — Manager/Admin/Expert; paginated
+  assigned advisory programs (advisor/board for Expert, 403 without an expert
+  profile; all for Manager/Admin). Query `page`, `pageSize`, `status`,
+  `unreadOnly`. Each item: `programId`, `code`, `name`, `status`,
+  `frameworkVersionNumber`, `isAdvisor`, `latestActivityAt` (latest chat
+  message create/edit, else program update/create), `unreadCount` (chat
+  read cursor, same rule as the workspace), `openPinCount`, `approvalState`
+  (`None` = never approved, `Approved` = active approval, `Revoked` = all
+  approvals revoked). `unreadOnly` keeps items with `unreadCount > 0`.
+  Ordered by `latestActivityAt` desc, then name.
+- `GET /api/programs/{id}/framework-check` — advisory participants only
+  (Manager/Admin, the advisor, board experts); structured expected/actual
+  checks against the pinned framework version.
 - Advisory chat: `/api/programs/{id}/advisory-discussion/*` (messages,
   mentions, pins, attachments).
 - Removed (410 `ENDPOINT_REMOVED`): `submit-review`, `withdraw-review`,

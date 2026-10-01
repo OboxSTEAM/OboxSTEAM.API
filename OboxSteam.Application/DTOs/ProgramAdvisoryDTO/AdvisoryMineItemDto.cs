@@ -10,15 +10,18 @@ public sealed class AdvisoryMineItemDto
 
     public string Name { get; set; } = null!;
 
-    public bool IsAdvisor { get; set; }
+    public ProgramStatus Status { get; set; }
 
     public int? FrameworkVersionNumber { get; set; }
 
-    public ProgramStatus Status { get; set; }
+    /// <summary>True only when the caller is the program's responsible advisor.</summary>
+    public bool IsAdvisor { get; set; }
 
     public DateTime? LatestActivityAt { get; set; }
 
-    public string NextAction { get; set; } = "None";
+    public int UnreadCount { get; set; }
 
-    public int UnreadFeedbackCount { get; set; }
+    public int OpenPinCount { get; set; }
+
+    public AdvisoryApprovalState ApprovalState { get; set; }
 }

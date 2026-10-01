@@ -579,4 +579,131 @@ public sealed class ProgramApprovalServiceTests
         Assert.True(advisor.Capabilities.CanRevokeApproval);
         Assert.False(advisor.Capabilities.CanApprove);
     }
+
+    // ── advisory-mine ─────────────────────────────────────────────────────────
+
+    private Program SeedOtherProgram(ProgramStatus status)
+    {
+        var program = new Program
+        {
+            Id = Guid.NewGuid(),
+            Code = "PRG-002",
+            Name = "Art",
+            Category = ProgramCategory.Art,
+            Level = DifficultyLevel.Beginner,
+            Status = status,
+            CreatedAt = _now.AddDays(-10),
+        };
+        _db.Programs.Seed(program);
+        return program;
+    }
+
+    private void SeedChatMessage(Guid authorId, long sequence, DateTime createdAt)
+        => _db.ProgramAdvisoryDiscussionMessages.Seed(new ProgramAdvisoryDiscussionMessage
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = _programId,
+            AuthorUserId = authorId,
+            Sequence = sequence,
+            Text = $"Message {sequence}",
+            ClientMessageId = $"msg-{sequence}",
+            CreatedAt = createdAt,
+        });
+
+    private void SeedReadCursor(Guid userId, long sequence)
+        => _db.ProgramAdvisoryStreamReads.Seed(new ProgramAdvisoryStreamRead
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = _programId,
+            UserId = userId,
+            StreamType = AdvisoryStreamType.Discussion,
+            LastReadSequence = sequence,
+        });
+
+    [Fact]
+    public async Task AdvisoryMine_ScopesByRole_AndReportsChatCountsAndApprovalState()
+    {
+        var other = SeedOtherProgram(ProgramStatus.Draft);
+        SeedPin(DiscussionPinStatus.Open, 1).CreatedAt = _now.AddHours(-3);
+        SeedPin(DiscussionPinStatus.Addressed, 2).CreatedAt = _now.AddHours(-2);
+        SeedChatMessage(_managerId, 3, _now.AddHours(-1));
+        SeedReadCursor(_managerId, 1);
+        SeedApproval(version: 2, revokedAt: _now.AddHours(-5));
+
+        var manager = await Sut(_managerId).GetAdvisoryMineAsync(1, 10);
+        var advisor = await Sut(_advisorUserId).GetAdvisoryMineAsync(1, 10);
+        var board = await Sut(_boardUserId).GetAdvisoryMineAsync(1, 10);
+
+        Assert.Equal([_programId, other.Id], manager.Items.Select(i => i.ProgramId).ToList());
+        var managerItem = manager.Items[0];
+        Assert.False(managerItem.IsAdvisor);
+        Assert.Equal(1, managerItem.UnreadCount);
+        Assert.Equal(1, managerItem.OpenPinCount);
+        Assert.Equal(AdvisoryApprovalState.Revoked, managerItem.ApprovalState);
+        Assert.Equal(_now.AddHours(-1), managerItem.LatestActivityAt);
+        var otherItem = manager.Items[1];
+        Assert.Equal(AdvisoryApprovalState.None, otherItem.ApprovalState);
+        Assert.Equal(other.CreatedAt, otherItem.LatestActivityAt);
+        Assert.Equal(0, otherItem.UnreadCount);
+
+        var advisorItem = Assert.Single(advisor.Items);
+        Assert.True(advisorItem.IsAdvisor);
+        Assert.Equal(3, advisorItem.UnreadCount);
+        var boardItem = Assert.Single(board.Items);
+        Assert.False(boardItem.IsAdvisor);
+        Assert.Equal(1, boardItem.UnreadCount);
+    }
+
+    [Fact]
+    public async Task AdvisoryMine_FiltersByUnreadAndStatus_AndReportsActiveApproval()
+    {
+        var other = SeedOtherProgram(ProgramStatus.Approved);
+        _db.ProgramApprovals.Seed(new ProgramApproval
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = other.Id,
+            CurriculumVersion = 0,
+            ApprovedByExpertId = _advisorExpertId,
+            ApprovedAt = _now.AddDays(-1),
+        });
+        SeedChatMessage(_boardUserId, 1, _now);
+
+        var unread = await Sut(_managerId).GetAdvisoryMineAsync(1, 10, unreadOnly: true);
+        var approved = await Sut(_managerId).GetAdvisoryMineAsync(1, 10, ProgramStatus.Approved);
+
+        Assert.Equal([_programId], unread.Items.Select(i => i.ProgramId).ToList());
+        var approvedItem = Assert.Single(approved.Items);
+        Assert.Equal(other.Id, approvedItem.ProgramId);
+        Assert.Equal(AdvisoryApprovalState.Approved, approvedItem.ApprovalState);
+    }
+
+    [Fact]
+    public async Task AdvisoryMine_RejectsOtherRolesAndExpertsWithoutProfile()
+    {
+        var studentId = Guid.NewGuid();
+        SeedUser(studentId, RoleType.Student, "USR-STU");
+        var unlinkedExpertId = Guid.NewGuid();
+        SeedUser(unlinkedExpertId, RoleType.Expert, "USR-EXP");
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => Sut(studentId).GetAdvisoryMineAsync(1, 10));
+        await Assert.ThrowsAsync<ForbiddenException>(() => Sut(unlinkedExpertId).GetAdvisoryMineAsync(1, 10));
+    }
+
+    // ── framework-check ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task FrameworkCheck_ParticipantsOnly()
+    {
+        PinFramework(minModules: 2);
+        var outsiderUserId = Guid.NewGuid();
+        SeedUser(outsiderUserId, RoleType.Expert, "USR-OUT");
+        SeedExpert(Guid.NewGuid(), outsiderUserId, "EXP-OUT");
+
+        var check = await Sut(_boardUserId).GetFrameworkCheckAsync(_programId);
+
+        Assert.False(check.AllPassed);
+        Assert.Contains(check.Checks, c => c.Code == "MinModules" && !c.Passed);
+        Assert.True((await Sut(_managerId).GetFrameworkCheckAsync(_programId)).Checks.Count > 0);
+        await Assert.ThrowsAsync<ForbiddenException>(() => Sut(outsiderUserId).GetFrameworkCheckAsync(_programId));
+    }
 }

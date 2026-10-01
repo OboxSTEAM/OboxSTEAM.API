@@ -6,12 +6,6 @@ namespace OboxSteam.Application.Interfaces;
 
 public interface IProgramAdvisoryService
 {
-    Task<Pagination<AdvisoryMineItemDto>> GetAdvisoryMineAsync(
-        int page,
-        int pageSize,
-        ProgramStatus? status = null,
-        bool unreadOnly = false);
-
     Task<AdvisoryWorkflowTimelineDto> GetWorkflowTimelineAsync(Guid programId);
 
     Task<IReadOnlyList<AdvisoryThreadDto>> GetThreadsAsync(

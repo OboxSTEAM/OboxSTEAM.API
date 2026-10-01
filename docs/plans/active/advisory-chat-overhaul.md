@@ -185,6 +185,13 @@ One task per review/commit cycle, in this order:
   (checked against the `Notifications` table, so it survives restarts).
   `AdvisoryMentionPinned` goes to managers on every new pin. Deprecated
   catalog factories stay until 7e.
+- 2026-10-01: Task 7c moves `advisory-mine` and `framework-check` to
+  `ProgramApprovalService`. The advisory flow is Manager/Admin and Expert
+  only: `framework-check` is participants only, `advisory-mine` rejects other
+  roles. `advisory-mine` drops `nextAction` and `unreadFeedbackCount` (no
+  compatibility fields) and adds `unreadCount` (chat cursor), `openPinCount`,
+  `approvalState` (`None`, `Approved`, `Revoked`), `latestActivityAt`;
+  `unreadOnly` filters on chat unread.
 
 ## Remaining Contract
 
@@ -196,11 +203,6 @@ Notifications: deprecated catalog factories (`CurriculumReviewSubmitted`,
 `AdvisoryReply`, `AdvisoryCorrectionAddressed`) are deleted in 7e together
 with their last callers (old services, seed); enum values stay for old inbox
 rows.
-
-Live endpoints (task 7c): move `GET {id}/framework-check` and
-`GET advisory-mine` out of the services deleted in 7e. `advisory-mine` keeps
-`page`, `pageSize`, `status`, `unreadOnly` and adds `unreadCount`,
-`openPinCount`, `status`, `approvalState` (`None`, `Approved`, `Revoked`).
 
 Removed endpoints (task 7d): routes stay registered, `[Obsolete]`, and return
 410 `ENDPOINT_REMOVED`; their service code is deleted. Already 410: advisory

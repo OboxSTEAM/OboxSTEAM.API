@@ -1,5 +1,7 @@
+using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
+using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.Interfaces;
 
@@ -7,6 +9,14 @@ namespace OboxSteam.Application.Interfaces;
 public interface IProgramApprovalService
 {
     Task<ProgramAdvisoryWorkspaceDto> GetWorkspaceAsync(Guid programId);
+
+    Task<Pagination<AdvisoryMineItemDto>> GetAdvisoryMineAsync(
+        int page,
+        int pageSize,
+        ProgramStatus? status = null,
+        bool unreadOnly = false);
+
+    Task<FrameworkCheckDto> GetFrameworkCheckAsync(Guid programId);
 
     Task<ProgramAdvisoryWorkspaceDto> RequestApprovalAsync(Guid programId);
 

@@ -20,8 +20,6 @@ public interface ICurriculumReviewService
 
     Task<CurriculumReviewResponseDto> RequestChangesAsync(Guid programId, RequestCurriculumChangesRequest request);
 
-    Task<FrameworkCheckDto> GetFrameworkCheckAsync(Guid programId);
-
     Task<IReadOnlyList<ProgramReviewSubmissionSummaryDto>> GetSubmissionsAsync(Guid programId);
 
     Task<ProgramReviewSubmissionDetailDto> GetSubmissionAsync(Guid programId, Guid submissionId);
