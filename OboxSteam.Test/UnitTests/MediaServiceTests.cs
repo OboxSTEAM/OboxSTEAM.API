@@ -454,6 +454,94 @@ public sealed class MediaServiceTests
     }
 
     [Fact]
+    public async Task ProcessVideoTagsAsync_Image_ReplacesTagsWithActiveEnrolledMatches()
+    {
+        SeedBase();
+        SeedActiveEnrollment(_studentId);
+        SeedMediaAssets();
+
+        var existingTag = new MediaTag
+        {
+            Id = Guid.Parse("abababab-abab-abab-abab-abababababab"),
+            MediaId = _imageId,
+            StudentId = _outsideStudentId,
+            ConfidenceScore = 90m,
+            IsVerified = true,
+            IsDeleted = false,
+        };
+        var image = _db.MediaAssets.Items.Single(m => m.Id == _imageId);
+        image.MediaTags.Add(existingTag);
+        _db.MediaTags.Seed(existingTag);
+
+        _faceRecognition
+            .Setup(f => f.SearchFacesAsync("obox-bucket", "photo.jpg", It.IsAny<float>()))
+            .ReturnsAsync(
+            [
+                new FaceMatchResult(_studentId, "face-in", 98f),
+                new FaceMatchResult(_outsideStudentId, "face-out", 97f),
+            ]);
+
+        var sut = CreateSut(_managerId);
+        var result = await sut.ProcessVideoTagsAsync(_imageId);
+
+        Assert.Equal("image", result.FileType);
+        Assert.Equal(VideoProcessingStatus.None, result.VideoStatus);
+        Assert.Single(result.Tags);
+        Assert.Equal(_studentId, result.Tags[0].StudentId);
+        Assert.DoesNotContain(_db.MediaTags.Items, t => t.Id == existingTag.Id);
+        Assert.DoesNotContain(_db.MediaTags.Items, t => t.MediaId == _imageId && t.StudentId == _outsideStudentId);
+        _faceRecognition.Verify(
+            f => f.StartVideoFaceSearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessVideoTagsAsync_Image_EmptyMatches_ClearsExistingTags()
+    {
+        SeedBase();
+        SeedMediaAssets();
+
+        var existingTag = new MediaTag
+        {
+            Id = Guid.Parse("cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd"),
+            MediaId = _imageId,
+            StudentId = _studentId,
+            ConfidenceScore = 95m,
+            IsVerified = true,
+            IsDeleted = false,
+        };
+        var image = _db.MediaAssets.Items.Single(m => m.Id == _imageId);
+        image.MediaTags.Add(existingTag);
+        _db.MediaTags.Seed(existingTag);
+
+        _faceRecognition
+            .Setup(f => f.SearchFacesAsync("obox-bucket", "photo.jpg", It.IsAny<float>()))
+            .ReturnsAsync([]);
+
+        var sut = CreateSut(_managerId);
+        var result = await sut.ProcessVideoTagsAsync(_imageId);
+
+        Assert.Empty(result.Tags);
+        Assert.DoesNotContain(_db.MediaTags.Items, t => t.MediaId == _imageId && !t.IsDeleted);
+        Assert.Equal(VideoProcessingStatus.None, image.VideoStatus);
+    }
+
+    [Fact]
+    public async Task ProcessVideoTagsAsync_Image_MissingFile_ThrowsBadRequest()
+    {
+        SeedBase();
+        SeedMediaAssets();
+        var image = _db.MediaAssets.Items.Single(m => m.Id == _imageId);
+        image.FileUrl = null;
+
+        var sut = CreateSut(_managerId);
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.ProcessVideoTagsAsync(_imageId));
+
+        Assert.Equal(400, ex.StatusCode);
+        Assert.Equal("Image file is not available.", ex.Message);
+    }
+
+    [Fact]
     public async Task TryProcessVideoTagsAsync_SkipsStudentsNotActiveInClass()
     {
         SeedBase();

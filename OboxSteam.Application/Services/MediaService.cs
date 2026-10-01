@@ -802,11 +802,14 @@ public class MediaService : IMediaService
         if (media == null || media.IsDeleted)
             throw ErrorHelper.NotFound("Media not found.");
 
+        if (string.Equals(media.FileType, "image", StringComparison.OrdinalIgnoreCase))
+            return await ProcessImageTagsAsync(media);
+
         if (!CanRestartVideoFaceSearch(media))
         {
             throw ErrorHelper.BadRequest(
-                media.FileType != "video"
-                    ? "Face tag processing applies to video media only."
+                !string.Equals(media.FileType, "video", StringComparison.OrdinalIgnoreCase)
+                    ? "Face tag processing applies to image and video media only."
                     : media.VideoStatus == VideoProcessingStatus.Transcoding
                         ? "Video is still transcoding. Try again after transcoding completes."
                         : "Transcoded video output is not available yet.");
@@ -1342,6 +1345,36 @@ public class MediaService : IMediaService
                 ? mediaList.OrderByDescending(m => m.UploadedAt ?? m.CreatedAt).ToList()
                 : mediaList.OrderBy(m => m.UploadedAt ?? m.CreatedAt).ToList(),
         };
+    }
+
+    /// <summary>
+    /// Re-runs synchronous Rekognition search on the stored image and replaces active tags
+    /// with the latest in-class matches. Empty results clear existing tags.
+    /// </summary>
+    private async Task<MediaAssetDto> ProcessImageTagsAsync(MediaAsset media)
+    {
+        var s3Key = ExtractS3KeyFromFileUrl(media.FileUrl);
+        if (string.IsNullOrWhiteSpace(s3Key))
+            throw ErrorHelper.BadRequest("Image file is not available.");
+
+        _logger.LogInformation(
+            "ProcessImageTagsAsync: MediaId={MediaId}, S3Key={Key}",
+            media.Id, s3Key);
+
+        var matches = await _faceRecognitionService.SearchFacesAsync(_blobService.BucketName, s3Key);
+
+        var activeExistingTags = media.MediaTags.Where(t => !t.IsDeleted).ToList();
+        if (activeExistingTags.Count > 0)
+        {
+            await _unitOfWork.MediaTags.HardRemoveRange(activeExistingTags);
+            foreach (var existingTag in activeExistingTags)
+            {
+                media.MediaTags.Remove(existingTag);
+            }
+        }
+
+        var newTags = await SaveFaceTagsAsync(media.Id, media.ClassId, matches);
+        return await MapToDto(media, newTags);
     }
 
     /// <summary>

@@ -5,7 +5,8 @@ namespace OboxSteam.Application.Interfaces;
 /// Flow: IndexFace (register avatar) → SearchFaces (sync image tagging) → StartVideoFaceSearch
 /// (async video tagging) → DeleteFace (account removal).
 /// Video jobs complete via SNS webhook (<see cref="IMediaService.HandleFaceSearchWebhookAsync"/>)
-/// or manual <c>POST /api/media/{mediaId}/process-tags</c>.
+/// or manual <c>POST /api/media/{mediaId}/process-tags</c>. The same endpoint re-runs
+/// <see cref="SearchFacesAsync"/> for images.
 /// </summary>
 public interface IFaceRecognitionService
 {

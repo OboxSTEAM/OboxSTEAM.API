@@ -291,12 +291,13 @@ public class MediaController : ControllerBase
     }
 
     /// <summary>
-    /// Restart Rekognition face search on the transcoded video and persist MediaTags when ready.
+    /// Reprocess face tags for an image or video and persist MediaTags when ready.
     /// </summary>
     [HttpPost("{mediaId:guid}/process-tags")]
     [SwaggerOperation(
-        Summary = "Process video face tags",
-        Description = "Submits a new Rekognition face-search job on the transcoded video output, " +
+        Summary = "Process media face tags",
+        Description = "Images: runs Rekognition face search on the stored image and replaces tags immediately (200). " +
+                      "Videos: submits a new Rekognition face-search job on the transcoded output, " +
                       "restarts label detection, then polls once for results. " +
                       "Returns 202 while VideoStatus is PendingTagging; call again until TaggingComplete."
     )]
@@ -316,7 +317,11 @@ public class MediaController : ControllerBase
                 "Face tagging in progress. Call again when processing completes."));
         }
 
-        return Ok(ApiResult<MediaAssetDto>.Success(result, "200", "Video tags processed."));
+        var message = string.Equals(result.FileType, "image", StringComparison.OrdinalIgnoreCase)
+            ? "Image tags processed."
+            : "Video tags processed.";
+
+        return Ok(ApiResult<MediaAssetDto>.Success(result, "200", message));
     }
 
     /// <summary>
