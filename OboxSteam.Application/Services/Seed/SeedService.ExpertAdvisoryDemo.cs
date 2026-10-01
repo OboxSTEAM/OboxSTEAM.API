@@ -55,7 +55,7 @@ public partial class SeedService
         var progA = await CreateAdvProgramAsync(
             SeedAdvDraftAdviceCode,
             "ADV Draft Advice",
-            "Scenario A: Draft; EXP-001 advisor, EXP-002 on board.",
+            "Scenario A: Draft with chat mentions, an open and an addressed pin; EXP-001 advisor, EXP-002 on board.",
             ProgramStatus.Draft,
             framework.Id,
             publishedV1.Id,
@@ -78,11 +78,11 @@ public partial class SeedService
         await EnsureExpertOnProgramBoardAsync(expert001, progB.Id, "Advisor");
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvDraftFixCode);
 
-        // C — Draft that passes the framework check
+        // C — Draft with an approval request and no pins
         var progC = await CreateAdvProgramAsync(
             SeedAdvPendingCode,
             "ADV Ready For Approval",
-            "Scenario C: Draft; framework check passes, ready for an approval request.",
+            "Scenario C: Draft; framework check passes and approval is requested, so the advisor can approve.",
             ProgramStatus.Draft,
             framework.Id,
             publishedV1.Id,
@@ -91,11 +91,11 @@ public partial class SeedService
         await EnsureExpertOnProgramBoardAsync(expert001, progC.Id, "Advisor");
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvPendingCode);
 
-        // D — Richer revised curriculum (materials, research capstone, extra activity)
+        // D — Approval revoked by curriculum edits (revision applied by the advisory chat seed)
         var progD = await CreateAdvProgramAsync(
             SeedAdvResubmitCode,
             "ADV Revised Curriculum",
-            "Scenario D: Draft with materials, a research capstone and two theory activities; EXP-002 on board.",
+            "Scenario D: Draft; approval revoked after curriculum edits (added activity, outcome and description edits, module reorder); EXP-002 on board.",
             ProgramStatus.Draft,
             framework.Id,
             publishedV1.Id,
@@ -107,49 +107,15 @@ public partial class SeedService
         await EnsureExpertOnProgramBoardAsync(expert001, progD.Id, "Advisor");
         await EnsureExpertOnProgramBoardAsync(expert002, progD.Id, "Board Contributor");
 
-        await EnsureAdvMaterialAsync(
-            currD.TheorySelfPaced,
-            "Theory reading pack",
-            "https://cdn.example.com/seed/expert-advisory/theory-reading-pack.pdf");
-        var researchD = await EnsureAdvResearchFlowAsync(
-            progD,
-            currD.TheorySelfPaced,
-            "RESUBMIT");
-
-        var addedD = await EnsureAdvActivityAsync(
-            currD.TheoryCourse.Id,
-            "ACT-ADV-RESUBMIT-TH-SP2",
-            "Theory follow-up SelfPaced",
-            ActivityType.SelfPaced,
-            activityOrder: 2,
-            "Second SelfPaced activity with a learner checkpoint.",
-            durationMinutes: null,
-            requireQrCheckin: false);
-        await EnsureAdvMaterialAsync(
-            addedD,
-            "Follow-up checkpoint handout",
-            "https://cdn.example.com/seed/expert-advisory/follow-up-checkpoint.pdf");
-
-        currD.TheoryModule.LearningOutcomes =
-        [
-            "Explain progression from reading to lab",
-            "Identify facilitation checkpoints",
-            "Evaluate a safe reset plan after peer feedback",
-        ];
-        currD.TheoryCourse.Description =
-            "SelfPaced theory with a checkpoint and a reflection step.";
-        currD.TheoryModule.ModuleOrder = 3;
-        researchD.Module.ModuleOrder = 2;
-        await _unitOfWork.Modules.Update(currD.TheoryModule);
-        await _unitOfWork.Modules.Update(researchD.Module);
-        await _unitOfWork.Courses.Update(currD.TheoryCourse);
+        await EnsureAdvMaterialAsync(currD.TheorySelfPaced, "Theory reading pack", SeedAdvTheoryReadingUrl);
+        await EnsureAdvResearchFlowAsync(progD, currD.TheorySelfPaced, "RESUBMIT");
         _loggerService.LogInformation("Seeded advisory scenario {Code}", SeedAdvResubmitCode);
 
         // E — Approved
         var progE = await CreateAdvProgramAsync(
             SeedAdvApprovedCode,
             "ADV Approved",
-            "Scenario E: Approved status.",
+            "Scenario E: Approved with an active approval at the current curriculum version; publishable.",
             ProgramStatus.Approved,
             framework.Id,
             publishedV1.Id,

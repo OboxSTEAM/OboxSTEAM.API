@@ -96,6 +96,7 @@ public partial class SeedService : ISeedService
         await SeedDemoShowcaseProgramsAsync();
         await SeedReviewDraftProgramsAsync();
         await SeedExpertAdvisoryDemoAsync();
+        await SeedAdvisoryChatDemoAsync();
         await EnsureClassSessionCoverageAsync();
         await RealignSeedSessionWallClocksAsync();
         await SeedWeeklyScheduleFixtureAsync();

@@ -130,7 +130,9 @@ ancestor path snapshots). Rules live in `CurriculumChangeRecorder`:
   `activityLink:{activityId}` / `activityLinkRequired:{activityId}`.
 - Creating or deleting the program records nothing. A cascaded delete records
   only the topmost component. Sibling order shifts from insert/delete/move are
-  not recorded separately. Seeding runs with recording suppressed.
+  not recorded separately. Seeding runs with recording suppressed; the
+  advisory chat seed (`SeedService.AdvisoryChatDemo`) writes its change rows,
+  `CurriculumVersion` bumps and system messages explicitly.
 - No concurrency token on `CurriculumVersion`: two simultaneous saves may share
   a version; consolidation orders rows by `(version, at)`.
 

@@ -87,7 +87,8 @@ One task per review/commit cycle, in this order:
   `20260930210212_ApprovalLifecycleRemovePendingReview` (not applied locally)
 - [x] 7. A5 + A6 realtime + deprecation — migration
   `20261001112208_DropLegacyAdvisoryHistory` (not applied locally)
-- [ ] 8. Seed cleanup — removal done in 7e; new-flow seed pending
+- [x] 8. Seed cleanup — removal in 7e; new-flow seed in
+  `SeedService.AdvisoryChatDemo.cs` (seed clear + seed on a dev DB not yet run)
 
 ## Decisions
 
@@ -224,13 +225,29 @@ One task per review/commit cycle, in this order:
   drafts, curriculum reviews, advisory inbox samples, the board-flow upgrade
   path) and keeps the ADV programs and curricula. Program codes are unchanged;
   QA program names and descriptions no longer mention submit-review.
+- 2026-10-01: The new-flow seed reuses the ADV programs. `PRG-ADV-DRAFT-ADVICE`:
+  chat with mentions, one `Open` and one `Addressed` pin, `ApprovalRequested`
+  (approval blocked by the open pin). `PRG-ADV-PENDING`: `ApprovalRequested`,
+  no pins. `PRG-ADV-APPROVED`: active approval at the current version plus
+  `Approved` (publishable). `PRG-ADV-RESUBMIT`: approval at the base version,
+  then the revision (added `ACT-ADV-RESUBMIT-TH-SP2` and its material, theory
+  outcomes, theory course description, theory/research reorder) as change
+  rows over four versions, revoked with `CurriculumEdited`, then
+  `ApprovalRevoked` and `CurriculumUpdated`. No attachments.
+- 2026-10-01: Those four programs get a research capstone and a fourth module
+  so they pass Maker framework v1 (`MinModules = 4`, capstone required); the
+  framework rules are unchanged.
+- 2026-10-01: Seed notifications, one of each: `CurriculumApprovalRequested`
+  (EXP-001), `AdvisoryDiscussionMessage` (EXP-001 and MNG-001),
+  `AdvisoryMentionPinned` (MNG-001), `CurriculumReviewApproved` (MNG-001),
+  `CurriculumApprovalRevoked` (EXP-001). MNG-001 has a read cursor at its own
+  last message in each chat; EXP-001 has none, so both see unread counts.
+- 2026-10-01: The chat seed is idempotent per program on `seed:` client
+  message ids and also runs on databases where the ADV programs already exist.
 
 ## Remaining Contract
 
-Target behaviour for task 8. Move it into `docs/product` when it ships.
-
-Seed (task 8): a Draft program with chat messages and pins, an Approved
-program with a publishable approval, and a program with a revoked approval.
+None.
 
 Migration history (tasks 2–7, for recovery):
 
@@ -272,4 +289,8 @@ Migration history (tasks 2–7, for recovery):
 
 ## Result
 
-Pending.
+Tasks 1–8 implemented. Builds (local SDK and .NET 8 SDK) and
+`dotnet test` pass. Open before moving this plan to `docs/plans/completed/`:
+apply the migrations on a dev DB, run `DELETE /api/seed/clear` then
+`POST /api/seed`, and confirm `VerifySeedDemoIntegrityAsync` passes and the
+four ADV chats look as described in Decisions.
