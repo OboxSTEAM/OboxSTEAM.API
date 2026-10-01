@@ -52,7 +52,7 @@ public sealed class CurriculumChangeService : ICurriculumChangeService
         var items = consolidated
             .OrderBy(item => SortKey(item, treeOrder))
             .ThenBy(item => item.LastChangedAt)
-            .Select(item => ToDto(item, seenVersion))
+            .Select(item => ToDto(item, actor.Id, seenVersion))
             .ToList();
 
         return new CurriculumChangesDto
@@ -140,7 +140,7 @@ public sealed class CurriculumChangeService : ICurriculumChangeService
             "Invalid 'base'. Use lastApproval, lastSeen, start, or version:N with N not above the current version.");
     }
 
-    private static CurriculumChangeItemDto ToDto(ConsolidatedCurriculumChange item, long seenVersion)
+    private static CurriculumChangeItemDto ToDto(ConsolidatedCurriculumChange item, Guid viewerId, long seenVersion)
         => new()
         {
             TargetType = item.TargetType,
@@ -174,7 +174,7 @@ public sealed class CurriculumChangeService : ICurriculumChangeService
                 .Select(a => new CurriculumChangeActorDto { UserId = a.UserId, Name = a.Name })
                 .ToList(),
             LastChangedAt = item.LastChangedAt,
-            IsUnseen = item.LastVersion > seenVersion,
+            IsUnseen = item.IsUnseenBy(viewerId, seenVersion),
         };
 
     private static CurriculumChangeFieldDto ToFieldDto(ProgramAdvisoryTargetType targetType, CurriculumFieldChange field)

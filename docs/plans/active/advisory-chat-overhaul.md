@@ -251,6 +251,10 @@ One task per review/commit cycle, in this order:
   `CURRICULUM_LOCKED_COHORT`. The advisory flow is Expert ↔ Manager only
   (Admin is legacy). Chat notifications drop the 5-minute window: one per
   message, suppressed only by presence in `advisory:{programId}`.
+- 2026-10-01: The viewer's own edits never count toward `isUnseen` or
+  `unseenChangeCount`. Program update applies the cohort lock only when a
+  curriculum field changes; status, price and framework stay editable while a
+  class runs.
 
 ## Remaining Contract
 

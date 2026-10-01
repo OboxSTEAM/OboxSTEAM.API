@@ -26,4 +26,14 @@ public sealed class ConsolidatedCurriculumChange
     public List<CurriculumChangeActor> ChangedBy { get; set; } = [];
     public DateTime LastChangedAt { get; set; }
     public long LastVersion { get; set; }
+
+    /// <summary>Version and actor of every raw row folded into this item.</summary>
+    public List<CurriculumChangeEdit> Edits { get; set; } = [];
+
+    /// <summary>
+    /// True when someone other than the viewer changed the item after the viewer's seen version;
+    /// the viewer's own edits never count as unseen.
+    /// </summary>
+    public bool IsUnseenBy(Guid viewerId, long seenVersion)
+        => Edits.Any(e => e.Version > seenVersion && e.ActorUserId != viewerId);
 }

@@ -168,12 +168,13 @@ public sealed class ProgramApprovalServiceTests
         return approval;
     }
 
-    private void SeedChange(long version, Guid targetId)
+    private void SeedChange(long version, Guid targetId, Guid? actorUserId = null)
         => _db.CurriculumChanges.Seed(new CurriculumChange
         {
             Id = Guid.NewGuid(),
             ProgramId = _programId,
             Version = version,
+            ActorUserId = actorUserId,
             At = _now,
             TargetType = ProgramAdvisoryTargetType.Module,
             TargetId = targetId,
@@ -499,6 +500,21 @@ public sealed class ProgramApprovalServiceTests
 
         Assert.Equal("INVALID_STATUS", ex.ErrorCode);
         Assert.Equal(_advisorExpertId, TheProgram.AdvisorExpertId);
+    }
+
+    [Fact]
+    public async Task Workspace_UnseenChangeCount_ExcludesViewersOwnEdits()
+    {
+        SeedApproval(version: 1, revokedAt: _now.AddHours(-1));
+        SeedChange(2, Guid.NewGuid(), _managerId);
+        SeedChange(3, Guid.NewGuid(), _advisorUserId);
+
+        var manager = await Sut(_managerId).GetWorkspaceAsync(_programId);
+        var advisor = await Sut(_advisorUserId).GetWorkspaceAsync(_programId);
+
+        Assert.Equal(2, manager.ChangesSinceApprovalCount);
+        Assert.Equal(1, manager.UnseenChangeCount);
+        Assert.Equal(1, advisor.UnseenChangeCount);
     }
 
     [Fact]

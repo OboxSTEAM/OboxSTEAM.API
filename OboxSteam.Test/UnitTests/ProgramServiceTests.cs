@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using OboxSteam.Application.Commons.CurriculumChanges;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
@@ -595,6 +596,111 @@ public sealed class ProgramServiceTests
 
         var result = await sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { Name = "Allowed" });
         Assert.Equal("Allowed", result.Name);
+    }
+
+    [Fact]
+    public async Task Update_AllowsStatusAndPrice_WhenClassInProgress()
+    {
+        SeedProgram();
+        SeedClass(ClassStatus.InProgress);
+
+        var result = await CreateSut().UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+        {
+            Status = ProgramStatus.Inactive,
+            Price = 250m,
+        });
+
+        Assert.Equal(ProgramStatus.Inactive, result.Status);
+        Assert.Equal(250m, result.Price);
+    }
+
+    [Fact]
+    public async Task Update_UnchangedCurriculumValues_DoNotLock_WhenClassInProgress()
+    {
+        SeedProgram();
+        SeedClass(ClassStatus.InProgress);
+
+        var result = await CreateSut().UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+        {
+            Name = "STEAM Program",
+            Code = "PRG-001",
+            Level = DifficultyLevel.Beginner,
+            SkillIds = [],
+            Status = ProgramStatus.Inactive,
+        });
+
+        Assert.Equal(ProgramStatus.Inactive, result.Status);
+    }
+
+    [Fact]
+    public void UpdateRequest_EveryFieldIsClassifiedForTheCohortLock()
+    {
+        string[] lockedSeparately = [nameof(UpdateProgramRequestDto.SkillIds)];
+        string[] notCurriculum =
+        [
+            nameof(UpdateProgramRequestDto.Status),
+            nameof(UpdateProgramRequestDto.Price),
+            nameof(UpdateProgramRequestDto.FrameworkId),
+            nameof(UpdateProgramRequestDto.FrameworkVersionId),
+            nameof(UpdateProgramRequestDto.ClearFramework),
+        ];
+        var catalogFields = CurriculumChangeFieldCatalog.GetDescriptor(typeof(Program))!.Fields
+            .Select(f => f.PropertyName);
+
+        var unclassified = typeof(UpdateProgramRequestDto).GetProperties()
+            .Select(p => p.Name)
+            .Except(catalogFields)
+            .Except(lockedSeparately)
+            .Except(notCurriculum);
+
+        Assert.Empty(unclassified);
+    }
+
+    [Theory]
+    [InlineData(nameof(UpdateProgramRequestDto.Description))]
+    [InlineData(nameof(UpdateProgramRequestDto.Category))]
+    [InlineData(nameof(UpdateProgramRequestDto.ThumbnailUrl))]
+    public async Task Update_CatalogFieldChange_ThrowsLocked_WhenClassInProgress(string field)
+    {
+        SeedProgram();
+        SeedClass(ClassStatus.InProgress);
+        var request = field switch
+        {
+            nameof(UpdateProgramRequestDto.Description) => new UpdateProgramRequestDto { Description = "New" },
+            nameof(UpdateProgramRequestDto.Category) => new UpdateProgramRequestDto { Category = ProgramCategory.Science },
+            _ => new UpdateProgramRequestDto { ThumbnailUrl = "https://cdn.test/new.png" },
+        };
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => CreateSut().UpdateProgramAsync(_programId, request));
+
+        Assert.Equal("CURRICULUM_LOCKED_COHORT", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Update_SkillLinkChange_ThrowsLocked_WhenClassInProgress()
+    {
+        SeedProgram();
+        SeedClass(ClassStatus.InProgress);
+        var skillId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3");
+        _db.Skills.Seed(new Skill
+        {
+            Id = skillId,
+            Code = "SK-LOCK",
+            Name = "Lock",
+            Category = SkillCategory.Science,
+            IsDeleted = false,
+        });
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateSut().UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+            {
+                Status = ProgramStatus.Inactive,
+                SkillIds = [skillId],
+            }));
+
+        Assert.Equal("CURRICULUM_LOCKED_COHORT", ex.ErrorCode);
+        Assert.Equal(ProgramStatus.Active, _db.Programs.Items.Single().Status);
+        Assert.Empty(_db.ProgramSkills.Items);
     }
 
     [Fact]

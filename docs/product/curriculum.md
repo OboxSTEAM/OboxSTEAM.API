@@ -97,7 +97,9 @@ and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
 
 Curriculum edits are locked only by live cohorts (a class `InProgress`, or an
 `Open` class with `Active` enrollments): 409 `CURRICULUM_LOCKED_COHORT`. The same
-lock and code apply to program update and delete. An edit while an approval is active
+lock and code apply to program delete, thumbnail upload, and a program update that
+changes a curriculum field (values equal to the current ones do not count);
+`status`, `price` and framework updates stay allowed. An edit while an approval is active
 revokes it (`CurriculumEdited`); an `Approved` program returns to `Draft`.
 Optional `frameworkId` on create/update selects an expert blueprint
 (`clearFramework` unlinks). The framework check runs at approval, not on
@@ -163,7 +165,8 @@ before, after }`, `moved?`, `reorderedChildren[]`, `changedBy[]`,
 
 `POST /api/programs/{id}/curriculum/changes/seen` — body `{ version }`; stores
 `max(seenVersion, version)` per user (drives `isUnseen`, `unseenChangeCount`);
-`version` > current → 400.
+`version` > current → 400. An item is unseen only when someone other than the
+viewer changed it after `seenVersion`; the viewer's own edits never count.
 
 Editing session message (no background job): on each curriculum save by user
 U, if U's latest `CurriculumUpdated` message is under 10 minutes old (from its
@@ -327,7 +330,7 @@ The S3 object is copied to the material key space; returns the material DTO.
 | `FRAMEWORK_CHECK_FAILED` | 409 | approve (`data` = `FrameworkCheckDto`) |
 | `FRAMEWORK_UNAVAILABLE` | 409 | pinned framework version not published |
 | `INVALID_STATUS` | 409 | lifecycle or pin action in the wrong status |
-| `CURRICULUM_LOCKED_COHORT` | 409 | curriculum, program update/delete, save as material while a live cohort runs |
+| `CURRICULUM_LOCKED_COHORT` | 409 | curriculum, program update of curriculum fields, program delete, save as material while a live cohort runs |
 | `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED` | 400 | approval request |
 | `MENTION_TARGET_INVALID` | 400 | post/edit message |
 | `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, `TOO_MANY_MENTIONS`, `TOO_MANY_ATTACHMENTS` | 400 | post/edit message |

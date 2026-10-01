@@ -44,6 +44,7 @@ public static class CurriculumChangeConsolidator
                 .ToList(),
             LastChangedAt = ordered.Max(r => r.At),
             LastVersion = ordered.Max(r => r.Version),
+            Edits = ordered.Select(r => new CurriculumChangeEdit(r.Version, r.ActorUserId)).ToList(),
         };
         var merged = MergeFields(ordered);
 
@@ -176,6 +177,7 @@ public static class CurriculumChangeConsolidator
                 .ToList();
             parent.LastChangedAt = children.Select(c => c.LastChangedAt).Append(parent.LastChangedAt).Max();
             parent.LastVersion = children.Select(c => c.LastVersion).Append(parent.LastVersion).Max();
+            parent.Edits = parent.Edits.Concat(children.SelectMany(c => c.Edits)).ToList();
         }
 
         return items;

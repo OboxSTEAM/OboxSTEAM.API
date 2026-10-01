@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.Commons.CurriculumChanges;
 using OboxSteam.Application.DTOs.ModuleDTO;
 using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.DTOs.SkillDTO;
@@ -21,6 +22,8 @@ public class ProgramService : IProgramService
         { ".jpg", ".jpeg", ".png", ".webp" };
     private const long MaxThumbnailSize = 5 * 1024 * 1024; // 5 MB
     private const string ThumbnailFolder = "program-thumbnails";
+    private static readonly string[] ProgramCurriculumProperties =
+        CurriculumChangeFieldCatalog.GetDescriptor(typeof(Program))!.Fields.Select(f => f.PropertyName).ToArray();
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBlobService _blobService;
@@ -586,7 +589,12 @@ public class ProgramService : IProgramService
             throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
         }
 
-        await CurriculumEditGuard.EnsureProgramEditableAsync(_unitOfWork, id);
+        // Status, price and framework stay editable while a cohort runs; only curriculum fields lock.
+        if (ChangesCurriculumFields(program, request)
+            || (request.SkillIds != null && await SkillLinksDifferAsync(id, request.SkillIds)))
+        {
+            await CurriculumEditGuard.EnsureProgramEditableAsync(_unitOfWork, id);
+        }
 
         // Kiểm tra trùng Code khi đổi Code
         if (!string.IsNullOrWhiteSpace(request.Code) &&
@@ -961,6 +969,16 @@ public class ProgramService : IProgramService
         {
             throw ErrorHelper.BadRequest("One or more skill ids are missing or deleted.");
         }
+    }
+
+    private static bool ChangesCurriculumFields(Program program, UpdateProgramRequestDto request)
+        => UpdateHelper.WouldChange(program, request, ProgramCurriculumProperties);
+
+    private async Task<bool> SkillLinksDifferAsync(Guid programId, List<Guid> skillIds)
+    {
+        var existing = await _unitOfWork.ProgramSkills.GetAllAsync(
+            link => link.ProgramId == programId && !link.IsDeleted);
+        return !existing.Select(link => link.SkillId).ToHashSet().SetEquals(skillIds);
     }
 
     private async Task<bool> ReplaceProgramSkillsAsync(Guid programId, List<Guid> skillIds)

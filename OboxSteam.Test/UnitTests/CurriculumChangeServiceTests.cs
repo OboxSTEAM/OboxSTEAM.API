@@ -48,13 +48,14 @@ public sealed class CurriculumChangeServiceTests
             ModuleRow(_moduleOne, 3, "isMandatory", true, false));
     }
 
-    private CurriculumChange ModuleRow(Module module, long version, string fieldKey, object before, object after)
+    private CurriculumChange ModuleRow(
+        Module module, long version, string fieldKey, object before, object after, Guid? actorUserId = null)
         => new()
         {
             Id = Guid.NewGuid(),
             ProgramId = _program.Id,
             Version = version,
-            ActorUserId = _managerId,
+            ActorUserId = actorUserId ?? _managerId,
             ActorName = "Manager",
             At = new DateTime(2026, 9, 30, 9, 0, 0, DateTimeKind.Utc).AddMinutes(version),
             TargetType = ProgramAdvisoryTargetType.Module,
@@ -114,7 +115,7 @@ public sealed class CurriculumChangeServiceTests
     }
 
     [Fact]
-    public async Task GetChanges_VersionBase_AndUnseenFlags()
+    public async Task GetChanges_VersionBase_OwnEditsAreNotUnseen()
     {
         _db.CurriculumChangeSeens.Seed(new CurriculumChangeSeen
         {
@@ -127,7 +128,28 @@ public sealed class CurriculumChangeServiceTests
         Assert.Equal(2, result.SeenVersion);
         var item = Assert.Single(result.Items);
         Assert.Equal(_moduleOne.Id, item.TargetId);
-        Assert.True(item.IsUnseen);
+        Assert.False(item.IsUnseen);
+    }
+
+    [Fact]
+    public async Task GetChanges_OtherActorEditAfterSeenVersion_IsUnseen()
+    {
+        var otherManagerId = Guid.NewGuid();
+        _db.CurriculumChanges.Seed(
+            ModuleRow(_moduleOne, 3, "code", "M1", "M1-A", otherManagerId),
+            ModuleRow(_moduleTwo, 2, "code", "M2", "M2-A", otherManagerId));
+        _db.CurriculumChangeSeens.Seed(new CurriculumChangeSeen
+        {
+            Id = Guid.NewGuid(), ProgramId = _program.Id, UserId = _managerId, SeenVersion = 2,
+        });
+
+        var result = await CreateSut().GetChangesAsync(_program.Id, "start", null);
+
+        var moduleOne = result.Items.Single(i => i.TargetId == _moduleOne.Id);
+        var moduleTwo = result.Items.Single(i => i.TargetId == _moduleTwo.Id);
+        Assert.True(moduleOne.IsUnseen);
+        Assert.False(moduleTwo.IsUnseen);
+        Assert.Equal([_managerId, otherManagerId], moduleOne.ChangedBy.Select(a => a.UserId));
     }
 
     [Theory]

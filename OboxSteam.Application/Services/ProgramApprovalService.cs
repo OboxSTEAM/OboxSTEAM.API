@@ -647,7 +647,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         var seen = await _unitOfWork.CurriculumChangeSeens.FirstOrDefaultAsync(
             s => s.ProgramId == program.Id && s.UserId == userId && !s.IsDeleted);
         var seenVersion = seen?.SeenVersion ?? 0;
-        return (items.Count, items.Count(i => i.LastVersion > seenVersion));
+        return (items.Count, items.Count(i => i.IsUnseenBy(userId, seenVersion)));
     }
 
     private async Task<bool> IsFrameworkCheckPassedAsync(Program program)
