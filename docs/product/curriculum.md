@@ -38,8 +38,8 @@ Create via API is always **Draft** (omitted or explicit). `PUT` cannot set
 program is already in one of those two catalog states. Enrollment, class
 creation, opening enrollment, and starting a class still require **Active**.
 
-Lifecycle endpoints (Manager/Admin unless noted). Full contract:
-`specs/advisory-chat-contract.md`.
+Lifecycle endpoints (Manager/Admin unless noted). Chat, change log, workspace,
+and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
 
 - `PUT /api/programs/{id}/advisor` — assign the one responsible active Expert
   with a linked login (`Draft` or `Approved`, else 409 `INVALID_STATUS`).
@@ -88,6 +88,229 @@ revokes it (`CurriculumEdited`); an `Approved` program returns to `Draft`.
 Optional `frameworkId` on create/update selects an expert blueprint
 (`clearFramework` unlinks). The framework check runs at approval, not on
 create/update.
+
+## Advisory Chat and Approval
+
+One realtime chat per program plus a single versioned approval by the
+responsible advisor. Participants are Manager/Admin, the advisor
+(`Program.AdvisorExpertId`), and `ProgramBoard` experts. Only the advisor
+approves. Realtime events and notifications: `docs/product/notifications.md`.
+
+### Curriculum version and change log
+
+`Program.CurriculumVersion` (int64, starts at 0) increments once per
+`SaveChanges` that mutates curriculum. It is returned on program DTOs and the
+workspace. Curriculum = program content fields (`name`, `code`, `description`,
+`level`, `category`, `estimatedDuration`, `skillsGained`, `thumbnailUrl`, skill
+links), modules, courses, activities, assignments, research milestones,
+milestone-activity links, materials. Not curriculum (no bump, allowed on Active
+programs): `price`, `retakeFee`, `status`, framework, advisor, board, ratings.
+
+An EF Core `SaveChanges` interceptor writes `CurriculumChange` rows in the same
+transaction (`version`, actor, `targetType`, `targetId`, `changeKind`
+`Created`/`Updated`/`Deleted`/`Moved`/`Reordered`, typed `fieldsJson`
+`[{ fieldKey, before, after }]`, parent and order before/after, label and
+ancestor path snapshots). Rules live in `CurriculumChangeRecorder`:
+
+- Only fields in `CurriculumChangeFieldCatalog` count. Skill links are recorded
+  on the Program as `skill:{skillId}`; milestone links on the milestone as
+  `activityLink:{activityId}` / `activityLinkRequired:{activityId}`.
+- Creating or deleting the program records nothing. A cascaded delete records
+  only the topmost component. Sibling order shifts from insert/delete/move are
+  not recorded separately. Seeding runs with recording suppressed.
+- No concurrency token on `CurriculumVersion`: two simultaneous saves may share
+  a version; consolidation orders rows by `(version, at)`.
+
+`GET /api/programs/{id}/curriculum/changes` — participants. Query `base`:
+`lastApproval` (default; `start` if never approved), `lastSeen`, `start`, or
+`version:N`; optional `to` (default current). Invalid → 400. Returns
+`{ fromVersion, toVersion, currentVersion, seenVersion, summary { created,
+updated, deleted, moved }, items[] }`. Each item: `targetType`, `targetId`,
+`label`, `path[]`, `changeKind`, `fields[] { fieldKey, label, valueType,
+before, after }`, `moved?`, `reorderedChildren[]`, `changedBy[]`,
+`lastChangedAt`, `isUnseen`.
+
+- `label` is an English default (clients may localize by `fieldKey`); dynamic
+  keys get `Skill: {name}`, `Linked activity: {name}`,
+  `Required before submission: {name}`. `valueType`: `ShortText`, `LongText`,
+  `Number`, `DurationMinutes`, `Enum`, `Boolean`, `List`, `Media`.
+- `moved` = `{ fromParentLabel, toParentLabel, fromOrder, toOrder }` for
+  `Moved`, single-item `Reordered`, and `Updated` items whose order changed.
+  `reorderedChildren` is set on a parent when two or more children reordered.
+- Items are in current tree order; deleted items follow their deepest surviving
+  ancestor. `summary.moved` counts `Moved` and `Reordered`.
+- Net consolidation: several updates → first `before`, last `after`; a field
+  back to its original value is dropped (an empty `Updated` item too); created
+  then updated → `Created` with final values (`before` null); created then
+  deleted → omitted; updated then deleted → `Deleted`; reorders under one parent
+  → one `Reordered` item on the parent; move to another parent → `Moved`.
+
+`POST /api/programs/{id}/curriculum/changes/seen` — body `{ version }`; stores
+`max(seenVersion, version)` per user (drives `isUnseen`, `unseenChangeCount`);
+`version` > current → 400.
+
+Editing session message (no background job): on each curriculum save by user
+U, if U's latest `CurriculumUpdated` message is under 10 minutes old (from its
+last update) and U has posted no user message since, its payload (`toVersion`,
+`changeCount`) is updated, `editedAt` bumped, and it moves to the end of the
+stream (new `sequence`). Otherwise a new one is posted with `fromVersion` = the
+version before the save. Saves without a user post nothing. `changeCount` is
+the net item count. A Manager/Admin chat message closes that manager's session.
+
+### Approval
+
+`ProgramApproval`: `curriculumVersion` (approved), `fromVersion` (previous
+approval's version or 0), `frameworkVersionId`, `frameworkCheckJson`,
+`curriculumSnapshotJson`, `approvedByExpertId`, `approvedAt`, `comment`
+(≤ 2000), `revokedAt`, `revokedByUserId`, `revokeReason` (`ManagerReopened`,
+`CurriculumEdited`, `ExpertRevoked`, `AdvisorChanged`). At most one
+non-revoked approval per program.
+
+Approve checks, in order: caller is the advisor (403); status `Draft`
+(409 `INVALID_STATUS`); `curriculumVersion` matches (409
+`CURRICULUM_VERSION_STALE`); no `Open` pins (409 `APPROVAL_BLOCKED`, message
+includes the count); framework check passes (409 `FRAMEWORK_CHECK_FAILED`,
+`FrameworkCheckDto` in `value.data`). On success, in one transaction: create
+the approval, resolve every `Addressed` pin, set `Approved`, post `Approved`,
+notify managers.
+
+Auto-revoke: any curriculum save while an approval is active (or the program is
+`Approved`) revokes it (`CurriculumEdited`) in the same save and posts
+`ApprovalRevoked` before the session message. `Approved` returns to `Draft`;
+`Active`/`Inactive` keep their status (re-approval of live programs is out of
+scope). Later edits find no active approval and only extend the session
+message.
+
+Workspace `GET /api/programs/{id}/advisory` returns `programId`, `status`,
+`curriculumVersion`, `advisorExpertId`, `advisorName`, `participants[]
+{ userId, name, role, isAdvisor }` (active managers, then the advisor, then
+board experts), `capabilities`, `approval` (active approval or null:
+`id`, `curriculumVersion`, `approvedAt`, `approvedByName`, `comment`),
+`openPinCount`, `addressedPinCount`, `unreadCount`, `frameworkCheckPassed`
+(live), `changesSinceApprovalCount` (net items for `base=lastApproval`),
+`unseenChangeCount`, `latestSequence`. Approval request/approve/revoke return
+the workspace DTO.
+
+| Capability | Rule |
+| --- | --- |
+| `canPost` | participant |
+| `canPin`, `canResolvePin` | advisor or board expert |
+| `canEditCurriculum` | Manager/Admin and status `Draft` or `Approved` |
+| `canRequestApproval` | Manager/Admin, `Draft`, advisor assigned with a login |
+| `canApprove` | caller is the advisor and status `Draft` |
+| `canRevokeApproval` | `Approved` and caller is Manager/Admin or the advisor |
+| `canPublish` | Manager/Admin, `Approved`, approval version = `curriculumVersion` |
+
+Board experts and the advisor get read access to the program's modules,
+courses, activities, assignments, research milestones (and links), and
+material signed URLs.
+
+### Mention index
+
+`GET /api/programs/{id}/mention-targets` — participants. Flat list of every
+component in curriculum tree order: `{ targetType, targetId, label, code,
+path[] { targetType, targetId, label }, moduleId, courseId, activityId, order }`.
+`order` is the zero-based tree index; `activityId` is set for activities and
+materials. Tree order: program; each module; then courses → activities (each
+followed by its material) → course assignments, or for Research modules
+milestones → linked activities (+ material) → deliverable assignment; then the
+module's remaining assignments by code. Each component appears once.
+
+### Discussion
+
+Base `/api/programs/{id}/advisory-discussion`, participants only. Store:
+`ProgramAdvisoryDiscussionMessage` (`sequence` per program, monotonic; `kind`
+`User`/`System`; `text` ≤ 4000 with `@[Type:uuid]` tokens). Mentions reuse
+`ProgramAdvisoryReference` (`Node` / `WorkingDraft`) via
+`ProgramAdvisoryDiscussionMessageReference`. Target types: `Program`,
+`Module`, `Course`, `Activity`, `Assignment`, `ResearchMilestone`, `Material`.
+
+Message DTO: `id`, `programId`, `sequence`, `cursor` (`programId:sequence`),
+`kind`, `authorUserId`, `authorName`, `authorRole`, `text`, `clientMessageId`,
+`systemEvent { code, payload }`, `references[]` (by first token occurrence),
+`attachments[]`, `pin { status, pinnedByName, pinnedAt, addressedByName,
+addressedAt, resolvedByName, resolvedAt }`, `createdAt`, `editedAt`,
+`isDeleted`. `systemEvent` and `pin` are null when not applicable. Removed
+messages (`RemovedAt`, separate from global soft delete) are tombstones: empty
+text, no references, attachments, or pin; excluded from filters and counts.
+
+| Method | Route | Who | Body / query | Result |
+| --- | --- | --- | --- | --- |
+| GET | `/messages` | participant | `before?`, `after?`, `pageSize` (1–100, default 30), `targetType?`, `targetId?` | `{ messages[], before, after, hasMoreBefore, hasMoreAfter }` |
+| GET | `/messages/{messageId}` | participant | | Message DTO |
+| POST | `/messages` | participant | `{ text, attachmentIds[], clientMessageId }` | Message DTO; idempotent on author + `clientMessageId` |
+| PATCH | `/messages/{messageId}` | author | `{ text }` | Message DTO; mentions re-parsed |
+| DELETE | `/messages/{messageId}` | author | | Removal (tombstone; pin removed) |
+| POST | `/messages/{messageId}/pin` | advisor or board expert | | Pin `Open` (idempotent) |
+| DELETE | `/messages/{messageId}/pin` | advisor or board expert | | Pin removed (idempotent) |
+| POST | `/messages/{messageId}/pin/actions` | see below | `{ action }` | Message DTO |
+| GET | `/pins` | participant | `status?` | Message DTO[] by `pinnedAt` |
+| GET | `/mention-counts` | participant | | `[{ targetType, targetId, messageCount, openPinCount }]` |
+| POST | `/read` | participant | `{ cursor?, lastDisplayedSequence }` | Read cursor |
+| POST | `/attachments` | participant | multipart `file` | AttachmentDto |
+| GET | `/attachments/{attachmentId}/url` | participant | | `{ url, expiresAt }` (15 minutes) |
+
+Pin actions: `MarkAddressed` (Manager/Admin, `Open` → `Addressed`), `Reopen`
+(advisor or board expert, `Addressed`/`Resolved` → `Open`), `Resolve` (advisor
+or board expert, `Open`/`Addressed` → `Resolved`). Unpinned message or wrong
+status → 409 `INVALID_STATUS`. Only `Open` pins block approval. System
+messages cannot be pinned, edited, or removed. `targetType` + `targetId` (both
+or neither, else 400) and mention counts match the exact component only;
+descendants are not rolled up.
+
+Posting rules: tokens are `@[Type:uuid]` (type case-insensitive; malformed
+tokens stay plain text). Targets must belong to the program (400
+`MENTION_TARGET_INVALID`). Text ≤ 4000 (`MESSAGE_TOO_LONG`), ≤ 20 distinct
+mentions (`TOO_MANY_MENTIONS`), ≤ 10 attachments (`TOO_MANY_ATTACHMENTS`),
+text and attachments not both empty (`MESSAGE_EMPTY`). `attachmentIds` must be
+the caller's unsent attachments for this program (`ATTACHMENT_INVALID`).
+
+System event codes and payloads:
+
+| Code | Payload | Posted when |
+| --- | --- | --- |
+| `CurriculumUpdated` | `{ actorUserId, actorName, fromVersion, toVersion, changeCount }` | Editing session (updated in place) |
+| `ApprovalRequested` | `{ requestedByName }` | `POST approval/request` |
+| `Approved` | `{ approvalId, curriculumVersion, approvedByName, comment? }` | Approval |
+| `ApprovalRevoked` | `{ approvalId, reason, actorName, comment? }` | Any revoke path |
+| `Published` | `{ publishedByName }` | Publish |
+| `AdvisorChanged` | `{ previousAdvisorName?, newAdvisorName? }` | `PUT advisor` |
+
+Attachments (`ProgramAdvisoryDiscussionAttachment`, S3 key
+`advisory/{programId}/{attachmentId}/{fileName}`): AttachmentDto `{ id,
+fileName, contentType, sizeBytes, kind (Image/File), uploaderUserId,
+createdAt }`. ≤ 20 MB (400 `ATTACHMENT_TOO_LARGE`). Allowed by content type
+and extension: `png`, `jpg`, `jpeg`, `gif`, `webp`, `pdf`, `doc`, `docx`,
+`ppt`, `pptx`, `xls`, `xlsx`, `zip`; otherwise or on a content type that does
+not match the extension, 400 `ATTACHMENT_TYPE_NOT_ALLOWED` (empty or
+`application/octet-stream` is accepted). Unsent attachments are visible only
+to the uploader and purged (S3 object + row) 24 hours after upload by an hourly
+job. The URL of an attachment on a removed message returns 404.
+
+Save as material: `POST /api/materials/from-discussion-attachment`
+`{ attachmentId, activityId, title }` — Manager/Admin; `CurriculumEditGuard`
+(an `Approved` program auto-revokes). The activity must be `SelfPaced`, in the
+attachment's program, with no material (409 `MATERIAL_ACTIVITY_INVALID`); the
+attachment must be sent (400 `ATTACHMENT_INVALID`); material type and size
+rules apply (`ppt`, `xls`, `zip`, etc. → 400 `ATTACHMENT_TYPE_NOT_ALLOWED`).
+The S3 object is copied to the material key space; returns the material DTO.
+
+### Error codes
+
+| Code | HTTP | Where |
+| --- | --- | --- |
+| `CURRICULUM_VERSION_STALE` | 409 | approve, publish |
+| `APPROVAL_BLOCKED` | 409 | approve (open pins) |
+| `FRAMEWORK_CHECK_FAILED` | 409 | approve (`data` = `FrameworkCheckDto`) |
+| `FRAMEWORK_UNAVAILABLE` | 409 | pinned framework version not published |
+| `INVALID_STATUS` | 409 | lifecycle or pin action in the wrong status |
+| `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED` | 400 | approval request |
+| `MENTION_TARGET_INVALID` | 400 | post/edit message |
+| `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, `TOO_MANY_MENTIONS`, `TOO_MANY_ATTACHMENTS` | 400 | post/edit message |
+| `ATTACHMENT_INVALID`, `ATTACHMENT_TOO_LARGE`, `ATTACHMENT_TYPE_NOT_ALLOWED` | 400 | attachments, save as material |
+| `MATERIAL_ACTIVITY_INVALID` | 409 | save as material |
+| `FRAMEWORK_RULES_INVALID` | 400 | framework version save |
+| `ENDPOINT_REMOVED` | 410 | removed endpoints |
 
 ## Module
 
@@ -316,11 +539,43 @@ routes return 410 `ENDPOINT_REMOVED`. Archive prevents new assignment while reta
 pins and history. Version routes live under
 `/api/program-frameworks/{id}/versions`.
 
-`ProgramFrameworkValidator.ValidateForSubmitAsync` pre-checks a program against
-every enabled rule (`FrameworkRuleEvaluator`, same checks as
-`GET {id}/framework-check`) and joins every failure into one 400
-`FRAMEWORK_CHECK_FAILED` message. Submit-review calls it; a failing pre-check
-does not change status.
+Rule fields and `FrameworkRuleEvaluator` check codes (checks are emitted only
+for rules that are on):
+
+| Field | Check code |
+| --- | --- |
+| `minModules`, `maxModules` | `MinModules`, `MaxModules` |
+| `minCoursesPerModule`, `maxCoursesPerModule` | `CoursesPerModule` |
+| `minTotalHours`, `maxTotalHours` | `TotalHours` |
+| `maxActivityMinutes` | `MaxActivityDuration` |
+| `requireActivityDuration` | `ActivityDurationSet` |
+| `minOfflineRatioPercent`, `minLiveRatioPercent` | `OfflineRatio`, `LiveRatio` |
+| `minOfflineSessions`, `minLiveSessions` | `MinOfflineSessions`, `MinLiveSessions` |
+| `requireAssignmentPerModule` | `AssignmentPerModule` |
+| `requireAssignmentPassScore` | `AssignmentPassScore` |
+| `minMaterialsPerActivity` | `MaterialsPerActivity` |
+| `requireCategoryMatch` | `CategoryMatch` |
+| `minDescriptionLength` | `DescriptionLength` |
+| `minSkillsGained` | `SkillsGained` |
+| `requireThumbnail` | `ThumbnailSet` |
+| `requireCapstoneResearchMilestone` | `RequireCapstoneResearchMilestone` |
+
+Each check is `{ code, label, expected, actual, passed,
+affectedCurriculumLinks[] }` (failing components; empty for program-level
+checks). `TotalHours` compares minutes (`hours × 60`); null or ≤ 0 durations
+count as 0 and fail `ActivityDurationSet`. Ratios are `count / all activities
+× 100` (0 with no activities). `CoursesPerModule` applies to non-Research
+modules. `AssignmentPerModule` counts any assignment whose `moduleId` is the
+module. `AssignmentPassScore` requires `0 < passScore ≤ maxPoints`.
+`MaterialsPerActivity` counts SelfPaced activities. `MaxModules` links the
+modules beyond the maximum by order. `SkillsGained` counts `ProgramSkill`
+links. `CategoryMatch` compares `Program.Category` with the framework category.
+The advisory-board frozen-snapshot highlights keep only the original four
+checks.
+
+`ProgramFrameworkValidator.ValidateForSubmitAsync` runs the same checks and
+joins every failure into one 400 `FRAMEWORK_CHECK_FAILED` message for the old
+submit-review path, which now returns 410; approval uses the live check (409).
 
 `CurriculumReview` is one expert decision round (`Approved` /
 `ChangesRequested`) with a comment. Distinct from

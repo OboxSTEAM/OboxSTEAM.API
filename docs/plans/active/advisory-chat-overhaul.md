@@ -13,7 +13,11 @@ versioned advisor approval replace advisory threads, review rounds, the rubric,
 and `PendingReview`. Framework rules are automatic only. Curriculum edits are
 versioned and logged so the expert sees one consolidated change list.
 
-Contract: `specs/advisory-chat-contract.md`.
+Contract: current behaviour lives in `docs/product/curriculum.md` (Advisory
+Chat and Approval, framework rules) and `docs/product/notifications.md`
+(Realtime Sync Events). Work not yet shipped is in "Remaining Contract" below.
+The original `specs/advisory-chat-contract.md` was folded into those files and
+removed on 2026-10-01.
 
 ## Context
 
@@ -38,7 +42,8 @@ typing/presence indicators; replies/quotes.
 
 One task per review/commit cycle, in this order:
 
-1. Contract doc (this plan + `specs/advisory-chat-contract.md`).
+1. Contract doc (this plan + a contract spec, since folded into
+   `docs/product`).
 2. A1 model (schema only): `Program.CurriculumVersion`, `ProgramApproval`,
    discussion message extensions (kind, system event, pin, edit, removal),
    `ProgramAdvisoryDiscussionAttachment`. Migration `AddAdvisoryChatModel`.
@@ -132,7 +137,8 @@ One task per review/commit cycle, in this order:
   `null` = unchanged and `Clear<Field>` for numeric rules. `SkillsGained`
   counts `ProgramSkill` links. The new checks run in `framework-check` and the
   old submit-review pre-check; the frozen-snapshot board highlights keep the
-  original four. Evaluation semantics are recorded in contract section 6.1.
+  original four. Evaluation semantics are recorded in
+  `docs/product/curriculum.md` (Program framework and curriculum review).
 - 2026-10-01: Task 5 makes thread write routes 410; thread reads and the old
   thread service stay until task 7.
 - 2026-10-01: Thread migration interleaves General messages and
@@ -148,7 +154,7 @@ One task per review/commit cycle, in this order:
 - 2026-09-30: The session message moves to the end of the stream when
   extended; cascaded deletes and insert-driven sibling shifts are not recorded
   separately; no concurrency token on `CurriculumVersion` (accepted race).
-- 2026-10-01: Task 6 replaces the advisory workspace with the contract 5.1
+- 2026-10-01: Task 6 replaces the advisory workspace with the new workspace
   shape (`ProgramApprovalService`). Review write routes and `review-queue`
   return 410; review reads and the old services stay until task 7.
   `PendingReview` is `[Obsolete]` (rows rewritten to `Draft`) and is deleted
@@ -162,6 +168,84 @@ One task per review/commit cycle, in this order:
 - 2026-10-01: Workspace participants list active managers, then the advisor,
   then board experts. Experts only get material signed URLs for programs where
   they are the advisor or a board member.
+
+- 2026-10-01: Advisory realtime uses a separate authorized group
+  `advisory:{programId}` (`JoinAdvisorySync` / `LeaveAdvisorySync`, participants
+  only); the public `program:{programId}` group stays unchanged.
+- 2026-10-01: `advisory.discussionChanged` payload is
+  `{ latestSequence, messageId }` (`messageId` set on edit/remove). Approval
+  auto-resolve sends one `advisory.pinChanged` per resolved pin. Existing
+  student-side `curriculum.structureChanged` publishes stay; the recorder adds
+  the advisory group publish with `{ curriculumVersion }`.
+
+## Remaining Contract
+
+Target behaviour for the unfinished steps of tasks 7 and 8. Move each item
+into `docs/product` when it ships.
+
+Notifications (task 7b):
+
+- Stop writing `ProgramAdvisoryNotificationIntents`; publish after commit.
+  Leave the table in place.
+- New `AdvisoryDiscussionMessage`: the first chat message notifies; further
+  messages to the same recipient for the same program within 5 minutes are
+  suppressed; skipped when the recipient has a live connection in
+  `advisory:{programId}` (in-memory, single-instance presence tracker).
+  Assumed recipients: all participants except the author (confirm first).
+- New `AdvisoryMentionPinned` to managers. Assumed to fire on every pin
+  (confirm first).
+- `CurriculumApprovalRevoked` follows the task 6 counterpart rule (manager
+  reopen or curriculum edit → advisor; advisor revoke → managers; none on
+  advisor change).
+- Kept: `CurriculumApprovalRequested`, `CurriculumReviewApproved`,
+  `CurriculumReviewPublished`. No longer emitted (enum values stay for old
+  inbox rows): `CurriculumReviewSubmitted`, `CurriculumReviewChangesRequested`,
+  `AdvisoryFeedbackPublished`, `AdvisoryReply`, `AdvisoryCorrectionAddressed`.
+
+Live endpoints (task 7c): move `GET {id}/framework-check` and
+`GET advisory-mine` out of the services deleted in 7e. `advisory-mine` keeps
+`page`, `pageSize`, `status`, `unreadOnly` and adds `unreadCount`,
+`openPinCount`, `status`, `approvalState` (`None`, `Approved`, `Revoked`).
+
+Removed endpoints (task 7d): routes stay registered, `[Obsolete]`, and return
+410 `ENDPOINT_REMOVED`; their service code is deleted. Already 410: advisory
+thread writes (task 5), review writes and `review-queue` (task 6), framework
+`rubric` / `criteria*`. Still to switch: `{id}/review-submissions/*` (list,
+detail, `changes`, draft GET), `{id}/curriculum-reviews`,
+`{id}/advisory-threads/*` (including `advisory-threads/pins` and
+`advisory-threads/{threadId}/read`), `{id}/advisory/board`,
+`{id}/advisory/timeline`, `advisory-anchor-fields`,
+`{id}/advisory-references/*`, `{id}/advisory-read`. The 400
+`FRAMEWORK_CHECK_FAILED` submit-review pre-check goes with them.
+
+Cleanup (task 7e): remove `ProgramStatus.PendingReview`,
+`ProgramAdvisoryTargetType.RubricCriterion`, `AdvisoryStreamType.Thread`; drop
+all history tables (`CurriculumReview`, `ProgramReviewSubmission`, review
+drafts, advisory threads/messages/events/reads) in one generated migration;
+keep and clean `ProgramAdvisoryReferences` and `ProgramAdvisoryStreamReads`.
+
+Migration history (tasks 2–6, for recovery):
+
+1. `ApprovalLifecycleRemovePendingReview`: `PendingReview` → `Draft`; one
+   active `ProgramApproval` backfilled per `Approved` program (expert and time
+   from its latest `Approved` curriculum review, else current advisor and now;
+   version = current; snapshot and framework check `{}`); without an
+   identifiable expert the program returns to `Draft`.
+2. `MigrateAdvisoryThreadsToDiscussion`: `General` thread messages and
+   `RequiredChange` / `Suggestion` root messages copied as `User` messages,
+   interleaved by `CreatedAt` after existing messages,
+   `clientMessageId = "migrated:{sourceMessageId}"` (re-run safe). Replies are
+   not copied. `Open` / `Addressed` RequiredChange roots become pins with the
+   same status (pinned by the thread author at thread creation); `Resolved`
+   ones become plain messages. Text is prefixed with the target's mention
+   token (plus a `WorkingDraft` / `Node` reference) or `[TargetLabel] ` when
+   the target no longer exists. `RubricCriterion` threads get no prefix.
+3. `CurriculumVersion` starts at 0; no change-log backfill.
+4. `DropRubricAddFrameworkRules`: `FrameworkRubricCriteria`,
+   `ReviewCriterionScores`, `ProgramReviewDrafts.ScoresJson`,
+   `ProgramReviewSubmissions.RubricSnapshotJson`, and rubric
+   `ProgramAdvisoryReferences` (plus message-reference rows) dropped without
+   archive.
 
 ## Validation
 

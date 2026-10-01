@@ -171,6 +171,38 @@ service emits it.
 | `ClassSessionExpertFeedbackRequested`  | Accepted expert via `ForUser` when the session first becomes Completed | `ClassSessionService`        |
 | `ClassSessionExpertFeedbackSubmitted`  | Class mentor via `ForClassMentor`                      | `ClassSessionExpertService`                 |
 
+## Realtime Sync Events
+
+Hub `/hubs/notifications` (authenticated). Besides `notificationReceived`
+(inbox rows), clients receive `syncEvent`
+`{ scope, entityType, entityId, at, payload? }`: an ephemeral hint, never
+persisted, telling the client to refetch the REST resource. `payload` is null
+unless the scope defines one; enum values in payloads are strings.
+
+Groups: every connection joins `user:{userId}` and `role:{role}`.
+`JoinProgramSync(programId)` / `LeaveProgramSync` join the public
+`program:{programId}` group (catalog seat counts). `JoinAdvisorySync(programId)`
+/ `LeaveAdvisorySync` join `advisory:{programId}`; only advisory participants
+(Manager/Admin, the advisor, board experts) may join, otherwise the hub throws
+`HubException`.
+
+| Scope | Group | Payload | Raised on |
+| --- | --- | --- | --- |
+| `seats.changed` | `program:{id}` | none | Seat holds, enrollments, transfers, payments |
+| `curriculum.structureChanged` | `ForProgramParticipants` (students, parents, class mentors) | none | Course, activity, assignment changes |
+| `curriculum.structureChanged` | `advisory:{id}` | `{ curriculumVersion }` | Every curriculum save that bumps the version (after commit) |
+| `advisory.discussionChanged` | `advisory:{id}` | `{ latestSequence, messageId }` | Post, edit, remove, and every system message; `messageId` is set on edit/remove, null when messages were appended |
+| `advisory.pinChanged` | `advisory:{id}` | `{ messageId }` | Pin, unpin, pin actions, removing a pinned message; one per pin auto-resolved by approval |
+| `advisory.approvalChanged` | `advisory:{id}` | `{ status, curriculumVersion }` | Approval request, approve, revoke (manual, curriculum edit, advisor change), publish |
+
+Advisory events are all `entityType = "Program"`, `entityId = programId`.
+They are collected per program during the transaction (repeated discussion,
+approval, and structure events collapse into one) and published only after
+commit; a rolled-back transaction publishes nothing.
+
+Advisory chat posts do not create inbox notifications yet; chat notification
+types are in progress (`docs/plans/active/advisory-chat-overhaul.md`).
+
 ## Parent Time-Support Policy
 
 Verified parents receive planning-relevant events that help them support a

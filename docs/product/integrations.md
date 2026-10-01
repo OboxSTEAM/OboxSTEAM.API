@@ -42,7 +42,9 @@
 ## SignalR
 
 - Hub registered with detailed errors enabled.
-- Real-time client contracts are not defined in this API repo.
+- Hub `/hubs/notifications`; client events `notificationReceived` and
+  `syncEvent` are defined in `docs/product/notifications.md` (Realtime Sync
+  Events).
 
 ## Webhooks
 

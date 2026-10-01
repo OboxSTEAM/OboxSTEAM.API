@@ -29,8 +29,10 @@ attached program is `Draft`.
 The program advisor's approval of one curriculum version (not student
 `ProgramReview`), with a curriculum snapshot and framework check. At most one
 is active. It is revoked by a manager reopen, an advisor revoke, an advisor
-change, or a curriculum edit; the program then returns to `Draft`. Publishing
-requires an active approval at the current curriculum version.
+change, or a curriculum edit; an `Approved` program then returns to `Draft`
+(`Active`/`Inactive` keep their status). Publishing requires an active
+approval at the current curriculum version. See
+`docs/product/curriculum.md` (Advisory Chat and Approval).
 
 ## CurriculumReview
 
