@@ -425,15 +425,17 @@ public sealed class AdvisoryDiscussionServiceTests
     }
 
     [Fact]
-    public async Task Post_SkipsRecipientsNotifiedInTheLastFiveMinutes()
+    public async Task Post_NotifiesEveryMessage_EvenWhenRecentlyNotified()
     {
-        SeedChatNotification(_advisorUserId, _now.AddMinutes(-4));
-        SeedChatNotification(_boardUserId, _now.AddMinutes(-6));
+        SeedChatNotification(_advisorUserId, _now.AddMinutes(-1));
 
-        await Chat(_managerId).AddMessageAsync(_programId, Post("hello", "c1"));
+        await Chat(_managerId).AddMessageAsync(_programId, Post("first", "c1"));
+        await Chat(_managerId).AddMessageAsync(_programId, Post("second", "c2"));
 
-        var recipient = Assert.Single(Published(NotificationType.AdvisoryDiscussionMessage));
-        Assert.Equal(_boardUserId, recipient.Audience.UserId);
+        var advisorNotifications = Published(NotificationType.AdvisoryDiscussionMessage)
+            .Where(c => c.Audience.UserId == _advisorUserId)
+            .ToList();
+        Assert.Equal(2, advisorNotifications.Count);
     }
 
     [Fact]
@@ -446,6 +448,20 @@ public sealed class AdvisoryDiscussionServiceTests
 
         var recipient = Assert.Single(Published(NotificationType.AdvisoryDiscussionMessage));
         Assert.Equal(_boardUserId, recipient.Audience.UserId);
+    }
+
+    [Fact]
+    public async Task Post_NotifiesRecipientAgainAfterLeavingTheAdvisoryGroup()
+    {
+        _presence.Join(_programId, _advisorUserId, "conn-advisor");
+        await Chat(_managerId).AddMessageAsync(_programId, Post("while present", "c1"));
+        _presence.Leave(_programId, "conn-advisor");
+
+        await Chat(_managerId).AddMessageAsync(_programId, Post("after leaving", "c2"));
+
+        Assert.Single(
+            Published(NotificationType.AdvisoryDiscussionMessage),
+            c => c.Audience.UserId == _advisorUserId);
     }
 
     [Fact]

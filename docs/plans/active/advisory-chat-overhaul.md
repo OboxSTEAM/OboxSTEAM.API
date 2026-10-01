@@ -184,6 +184,7 @@ One task per review/commit cycle, in this order:
   commit. `AdvisoryDiscussionMessage` goes to every workspace participant
   except the author, user messages only, skipped when present in
   `advisory:{programId}` or notified for the program in the last 5 minutes
+  (window removed later on 2026-10-01, see Owner review)
   (checked against the `Notifications` table, so it survives restarts).
   `AdvisoryMentionPinned` goes to managers on every new pin. Deprecated
   catalog factories stay until 7e.
@@ -244,6 +245,12 @@ One task per review/commit cycle, in this order:
   last message in each chat; EXP-001 has none, so both see unread counts.
 - 2026-10-01: The chat seed is idempotent per program on `seed:` client
   message ids and also runs on databases where the ADV programs already exist.
+- 2026-10-01: Owner review: `Active` is not live; only a running cohort is.
+  `canEditCurriculum` = Manager/Admin and not cohort-locked (any status);
+  the workspace exposes `curriculumLocked`; the cohort lock returns 409
+  `CURRICULUM_LOCKED_COHORT`. The advisory flow is Expert ↔ Manager only
+  (Admin is legacy). Chat notifications drop the 5-minute window: one per
+  message, suppressed only by presence in `advisory:{programId}`.
 
 ## Remaining Contract
 

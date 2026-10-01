@@ -10,6 +10,9 @@ public sealed class ProgramAdvisoryWorkspaceDto
 
     public long CurriculumVersion { get; set; }
 
+    /// <summary>True while a live cohort (class InProgress, or Open with Active enrollments) blocks curriculum edits.</summary>
+    public bool CurriculumLocked { get; set; }
+
     public Guid? AdvisorExpertId { get; set; }
 
     public string? AdvisorName { get; set; }

@@ -11,6 +11,12 @@ namespace OboxSteam.Application.Validation;
 /// </summary>
 public static class CurriculumEditGuard
 {
+    public const string LockedCode = "CURRICULUM_LOCKED_COHORT";
+
+    /// <summary>True while a live cohort locks the program and its curriculum.</summary>
+    public static async Task<bool> IsLockedAsync(IUnitOfWork unitOfWork, Guid programId)
+        => await ResolveLockAsync(unitOfWork, programId) != CohortLock.None;
+
     public static Task EnsureProgramCurriculumEditableAsync(IUnitOfWork unitOfWork, Guid programId)
         => EnsureNotLockedAsync(
             unitOfWork,
@@ -40,6 +46,17 @@ public static class CurriculumEditGuard
         string inProgressMessage,
         string openEnrolledMessage)
     {
+        switch (await ResolveLockAsync(unitOfWork, programId))
+        {
+            case CohortLock.InProgress:
+                throw ErrorHelper.Conflict(inProgressMessage, LockedCode);
+            case CohortLock.OpenWithEnrollments:
+                throw ErrorHelper.Conflict(openEnrolledMessage, LockedCode);
+        }
+    }
+
+    private static async Task<CohortLock> ResolveLockAsync(IUnitOfWork unitOfWork, Guid programId)
+    {
         var classes = await unitOfWork.Classes.GetAllAsync(
             c => c.ProgramId == programId
                  && !c.IsDeleted
@@ -47,7 +64,7 @@ public static class CurriculumEditGuard
 
         if (classes.Any(c => c.Status == ClassStatus.InProgress))
         {
-            throw ErrorHelper.Conflict(inProgressMessage);
+            return CohortLock.InProgress;
         }
 
         var openClassIds = classes
@@ -57,7 +74,7 @@ public static class CurriculumEditGuard
 
         if (openClassIds.Count == 0)
         {
-            return;
+            return CohortLock.None;
         }
 
         var hasEnrolledStudents = unitOfWork.ClassEnrollments
@@ -66,9 +83,13 @@ public static class CurriculumEditGuard
                       && e.Status == ClassEnrollmentStatus.Active
                       && !e.IsDeleted);
 
-        if (hasEnrolledStudents)
-        {
-            throw ErrorHelper.Conflict(openEnrolledMessage);
-        }
+        return hasEnrolledStudents ? CohortLock.OpenWithEnrollments : CohortLock.None;
+    }
+
+    private enum CohortLock
+    {
+        None,
+        InProgress,
+        OpenWithEnrollments,
     }
 }

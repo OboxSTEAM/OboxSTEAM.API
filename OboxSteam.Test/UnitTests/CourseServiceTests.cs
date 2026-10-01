@@ -419,7 +419,7 @@ public sealed class CourseServiceTests
         });
         var sut = CreateSut();
 
-        await Assert.ThrowsAsync<ConflictException>(() =>
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
             sut.CreateCourseAsync(new CreateCourseRequestDto
             {
                 Code = "CRS-NEW",
@@ -427,6 +427,7 @@ public sealed class CourseServiceTests
                 Name = "New Course",
                 CourseOrder = 1,
             }));
+        Assert.Equal("CURRICULUM_LOCKED_COHORT", ex.ErrorCode);
     }
 
     [Fact]

@@ -20,7 +20,6 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
     private const int MaxClientMessageIdLength = 100;
     private const int MaxCapturedLabelLength = 255;
     private const string InvalidStatusCode = "INVALID_STATUS";
-    private static readonly TimeSpan MessageNotificationWindow = TimeSpan.FromMinutes(5);
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
@@ -494,10 +493,7 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
     private Task<AdvisoryParticipant> RequireParticipantAsync(Guid programId)
         => AdvisoryParticipantAccess.RequireAsync(_unitOfWork, _claimsService, programId);
 
-    /// <summary>
-    /// Notifies every other participant who is not in the advisory group right now and has not had a
-    /// chat notification for this program within the window.
-    /// </summary>
+    /// <summary>Notifies every other participant who is not in the advisory group right now.</summary>
     private async Task NotifyNewMessageAsync(AdvisoryParticipant author, ProgramAdvisoryDiscussionMessage message)
     {
         var program = author.Program;
@@ -505,21 +501,12 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             ? await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value)
             : null;
         var participants = await AdvisoryParticipantAccess.ListAsync(_unitOfWork, program, advisor);
-        var since = Now() - MessageNotificationWindow;
-        var recentlyNotified = (await _unitOfWork.Notifications.GetAllAsync(
-                n => n.Type == NotificationType.AdvisoryDiscussionMessage
-                     && n.EntityId == program.Id
-                     && n.CreatedAt >= since
-                     && !n.IsDeleted))
-            .Select(n => n.RecipientUserId)
-            .ToHashSet();
         var authorName = AdvisoryParticipantAccess.DisplayName(author.User);
         var commands = participants
             .Select(p => p.UserId)
             .Distinct()
             .Where(userId => userId != author.User.Id
-                             && !_presenceTracker.IsPresent(program.Id, userId)
-                             && !recentlyNotified.Contains(userId))
+                             && !_presenceTracker.IsPresent(program.Id, userId))
             .Select(userId => NotificationCatalog.AdvisoryDiscussionMessage(
                 userId,
                 program.Id,

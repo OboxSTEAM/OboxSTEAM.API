@@ -583,12 +583,14 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         var isManager = participant.IsManager;
         var isAdvisor = participant.Role == AdvisoryParticipantRole.Advisor;
         var status = program.Status;
+        var curriculumLocked = await CurriculumEditGuard.IsLockedAsync(_unitOfWork, program.Id);
 
         return new ProgramAdvisoryWorkspaceDto
         {
             ProgramId = program.Id,
             Status = status,
             CurriculumVersion = program.CurriculumVersion,
+            CurriculumLocked = curriculumLocked,
             AdvisorExpertId = program.AdvisorExpertId,
             AdvisorName = advisor?.FullName,
             Participants = await AdvisoryParticipantAccess.ListAsync(_unitOfWork, program, advisor),
@@ -597,7 +599,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
                 CanPost = true,
                 CanPin = participant.IsExpertParticipant,
                 CanResolvePin = participant.IsExpertParticipant,
-                CanEditCurriculum = isManager && status is (ProgramStatus.Draft or ProgramStatus.Approved),
+                CanEditCurriculum = isManager && !curriculumLocked,
                 CanRequestApproval = isManager && status == ProgramStatus.Draft && advisorHasLogin,
                 CanApprove = isAdvisor && status == ProgramStatus.Draft,
                 CanRevokeApproval = status == ProgramStatus.Approved && (isManager || isAdvisor),

@@ -579,6 +579,73 @@ public sealed class ProgramApprovalServiceTests
         Assert.False(advisor.Capabilities.CanApprove);
     }
 
+    [Theory]
+    [InlineData(ProgramStatus.Active)]
+    [InlineData(ProgramStatus.Inactive)]
+    public async Task Workspace_LiveCatalogWithoutCohort_ManagerCanEdit(ProgramStatus status)
+    {
+        TheProgram.Status = status;
+
+        var manager = await Sut(_managerId).GetWorkspaceAsync(_programId);
+
+        Assert.False(manager.CurriculumLocked);
+        Assert.True(manager.Capabilities.CanEditCurriculum);
+        Assert.False(manager.Capabilities.CanRequestApproval);
+    }
+
+    [Theory]
+    [InlineData(ClassStatus.InProgress, false)]
+    [InlineData(ClassStatus.Open, true)]
+    public async Task Workspace_LiveCohort_LocksCurriculum(ClassStatus classStatus, bool withEnrollment)
+    {
+        TheProgram.Status = ProgramStatus.Active;
+        var classId = Guid.NewGuid();
+        _db.Classes.Seed(new Class
+        {
+            Id = classId,
+            Code = "CLS-LIVE",
+            Name = "Live cohort",
+            ProgramId = _programId,
+            Status = classStatus,
+            MaxCapacity = 10,
+        });
+        if (withEnrollment)
+        {
+            _db.ClassEnrollments.Seed(new ClassEnrollment
+            {
+                Id = Guid.NewGuid(),
+                ClassId = classId,
+                StudentId = Guid.NewGuid(),
+                Status = ClassEnrollmentStatus.Active,
+            });
+        }
+
+        var manager = await Sut(_managerId).GetWorkspaceAsync(_programId);
+
+        Assert.True(manager.CurriculumLocked);
+        Assert.False(manager.Capabilities.CanEditCurriculum);
+    }
+
+    [Fact]
+    public async Task Workspace_OpenClassWithoutEnrollments_DoesNotLock()
+    {
+        TheProgram.Status = ProgramStatus.Active;
+        _db.Classes.Seed(new Class
+        {
+            Id = Guid.NewGuid(),
+            Code = "CLS-OPEN",
+            Name = "Recruiting",
+            ProgramId = _programId,
+            Status = ClassStatus.Open,
+            MaxCapacity = 10,
+        });
+
+        var manager = await Sut(_managerId).GetWorkspaceAsync(_programId);
+
+        Assert.False(manager.CurriculumLocked);
+        Assert.True(manager.Capabilities.CanEditCurriculum);
+    }
+
     // ── advisory-mine ─────────────────────────────────────────────────────────
 
     private Program SeedOtherProgram(ProgramStatus status)

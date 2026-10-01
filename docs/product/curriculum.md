@@ -96,7 +96,8 @@ and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
   `rubric` / `criteria*` routes.
 
 Curriculum edits are locked only by live cohorts (a class `InProgress`, or an
-`Open` class with `Active` enrollments). An edit while an approval is active
+`Open` class with `Active` enrollments): 409 `CURRICULUM_LOCKED_COHORT`. The same
+lock and code apply to program update and delete. An edit while an approval is active
 revokes it (`CurriculumEdited`); an `Approved` program returns to `Draft`.
 Optional `frameworkId` on create/update selects an expert blueprint
 (`clearFramework` unlinks). The framework check runs at approval, not on
@@ -198,7 +199,8 @@ scope). Later edits find no active approval and only extend the session
 message.
 
 Workspace `GET /api/programs/{id}/advisory` returns `programId`, `status`,
-`curriculumVersion`, `advisorExpertId`, `advisorName`, `participants[]
+`curriculumVersion`, `curriculumLocked` (a live cohort blocks curriculum edits),
+`advisorExpertId`, `advisorName`, `participants[]
 { userId, name, role, isAdvisor }` (active managers, then the advisor, then
 board experts), `capabilities`, `approval` (active approval or null:
 `id`, `curriculumVersion`, `approvedAt`, `approvedByName`, `comment`),
@@ -211,7 +213,7 @@ the workspace DTO.
 | --- | --- |
 | `canPost` | participant |
 | `canPin`, `canResolvePin` | advisor or board expert |
-| `canEditCurriculum` | Manager/Admin and status `Draft` or `Approved` |
+| `canEditCurriculum` | Manager/Admin and `curriculumLocked` is false (any status) |
 | `canRequestApproval` | Manager/Admin, `Draft`, advisor assigned with a login |
 | `canApprove` | caller is the advisor and status `Draft` |
 | `canRevokeApproval` | `Approved` and caller is Manager/Admin or the advisor |
@@ -325,6 +327,7 @@ The S3 object is copied to the material key space; returns the material DTO.
 | `FRAMEWORK_CHECK_FAILED` | 409 | approve (`data` = `FrameworkCheckDto`) |
 | `FRAMEWORK_UNAVAILABLE` | 409 | pinned framework version not published |
 | `INVALID_STATUS` | 409 | lifecycle or pin action in the wrong status |
+| `CURRICULUM_LOCKED_COHORT` | 409 | curriculum, program update/delete, save as material while a live cohort runs |
 | `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED` | 400 | approval request |
 | `MENTION_TARGET_INVALID` | 400 | post/edit message |
 | `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, `TOO_MANY_MENTIONS`, `TOO_MANY_ATTACHMENTS` | 400 | post/edit message |

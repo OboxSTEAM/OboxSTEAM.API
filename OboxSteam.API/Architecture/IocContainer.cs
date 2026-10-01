@@ -24,6 +24,8 @@ using OboxSteam.Infrastructure.Persistence.Interceptors;
 using OboxSteam.Infrastructure.Services;
 using Resend;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace OboxSteam.API.Architecture;
 
@@ -416,6 +418,11 @@ public static class IocContainer
                 Nullable = true,
                 Example = new OpenApiString("15/06/2026 14:30:00")
             });
+
+            // Free-form JSON values; reflecting System.Text.Json internals breaks schema generation.
+            c.MapType<JsonNode>(() => new OpenApiSchema { Nullable = true });
+            c.MapType<JsonElement>(() => new OpenApiSchema());
+            c.MapType<JsonElement?>(() => new OpenApiSchema { Nullable = true });
 
             // Add file upload operation filter
             c.OperationFilter<FileUploadOperationFilter>();
