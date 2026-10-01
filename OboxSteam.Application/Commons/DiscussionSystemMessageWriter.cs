@@ -14,6 +14,14 @@ public static class DiscussionSystemMessageWriter
 {
     public static long AllocateSequence(IUnitOfWork unitOfWork, Program program)
     {
+        var sequence = LatestSequence(unitOfWork, program) + 1;
+        program.AdvisoryDiscussionSequence = sequence;
+        return sequence;
+    }
+
+    /// <summary>Highest sequence currently in the program chat (0 when empty).</summary>
+    public static long LatestSequence(IUnitOfWork unitOfWork, Program program)
+    {
         ArgumentNullException.ThrowIfNull(unitOfWork);
         ArgumentNullException.ThrowIfNull(program);
         var existingMax = unitOfWork.ProgramAdvisoryDiscussionMessages
@@ -21,9 +29,7 @@ public static class DiscussionSystemMessageWriter
             .Where(m => m.ProgramId == program.Id)
             .Select(m => (long?)m.Sequence)
             .Max() ?? 0;
-        var sequence = Math.Max(program.AdvisoryDiscussionSequence, existingMax) + 1;
-        program.AdvisoryDiscussionSequence = sequence;
-        return sequence;
+        return Math.Max(program.AdvisoryDiscussionSequence, existingMax);
     }
 
     public static async Task<ProgramAdvisoryDiscussionMessage> AddAsync(

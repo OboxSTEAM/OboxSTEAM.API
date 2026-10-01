@@ -3,6 +3,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.Commons.CurriculumChanges;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
@@ -18,33 +19,60 @@ public sealed class CurriculumChangeRecorder : ICurriculumChangeRecorder
     private readonly IClaimsService _claimsService;
     private readonly ICurrentTime _currentTime;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly ISyncEventPublisher _syncEventPublisher;
     private readonly List<NotificationCommand> _pendingNotifications = [];
+    private readonly Dictionary<Guid, AdvisorySyncBatch> _pendingSync = new();
 
     public CurriculumChangeRecorder(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         ICurrentTime currentTime,
-        INotificationPublisher notificationPublisher)
+        INotificationPublisher notificationPublisher,
+        ISyncEventPublisher syncEventPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _currentTime = currentTime;
         _notificationPublisher = notificationPublisher;
+        _syncEventPublisher = syncEventPublisher;
     }
 
     public async Task FlushNotificationsAsync()
     {
-        if (_pendingNotifications.Count == 0)
+        if (_pendingNotifications.Count > 0)
         {
-            return;
+            var commands = _pendingNotifications.ToList();
+            _pendingNotifications.Clear();
+            await _notificationPublisher.PublishManyAsync(commands);
         }
 
-        var commands = _pendingNotifications.ToList();
-        _pendingNotifications.Clear();
-        await _notificationPublisher.PublishManyAsync(commands);
+        if (_pendingSync.Count > 0)
+        {
+            var batches = _pendingSync.Values.ToList();
+            _pendingSync.Clear();
+            foreach (var batch in batches)
+            {
+                await batch.PublishAsync(_syncEventPublisher);
+            }
+        }
     }
 
-    public void DiscardNotifications() => _pendingNotifications.Clear();
+    public void DiscardNotifications()
+    {
+        _pendingNotifications.Clear();
+        _pendingSync.Clear();
+    }
+
+    private AdvisorySyncBatch SyncBatchFor(Guid programId)
+    {
+        if (!_pendingSync.TryGetValue(programId, out var batch))
+        {
+            batch = new AdvisorySyncBatch(programId);
+            _pendingSync[programId] = batch;
+        }
+
+        return batch;
+    }
 
     private async Task QueueAdvisorNotificationAsync(Program program, User? actor, string? actorName)
     {
@@ -124,16 +152,22 @@ public sealed class CurriculumChangeRecorder : ICurriculumChangeRecorder
             await _unitOfWork.CurriculumChanges.AddAsync(row);
         }
 
+        var sync = SyncBatchFor(program.Id);
+        sync.StructureChanged(version);
+
         var approval = await _unitOfWork.ProgramApprovals.FirstOrDefaultAsync(
             a => a.ProgramId == program.Id && a.RevokedAt == null && !a.IsDeleted);
         if (approval != null || program.Status == ProgramStatus.Approved)
         {
             await RevokeApprovalAsync(program, approval, actor, actorName, now);
+            sync.ApprovalChanged(program.Status, version);
+            sync.DiscussionChanged(program.AdvisoryDiscussionSequence);
         }
 
         if (actor != null)
         {
             await UpsertSessionMessageAsync(program, actor, actorName, previousVersion, version, rows, now);
+            sync.DiscussionChanged(program.AdvisoryDiscussionSequence);
         }
 
         await _unitOfWork.Programs.Update(program);

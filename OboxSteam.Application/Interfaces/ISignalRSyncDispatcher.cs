@@ -26,4 +26,10 @@ public interface ISignalRSyncDispatcher
         Guid programId,
         SyncEvent syncEvent,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Fan-out to the access-checked <c>advisory:{programId}</c> group.</summary>
+    Task DispatchToAdvisoryGroupAsync(
+        Guid programId,
+        SyncEvent syncEvent,
+        CancellationToken cancellationToken = default);
 }

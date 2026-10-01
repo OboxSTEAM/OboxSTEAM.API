@@ -16,4 +16,7 @@ public sealed class SyncEvent
     public Guid EntityId { get; init; }
 
     public DateTimeOffset At { get; init; }
+
+    /// <summary>Optional scope-specific hint, e.g. <c>{ latestSequence }</c>; null when the scope has none.</summary>
+    public object? Payload { get; init; }
 }

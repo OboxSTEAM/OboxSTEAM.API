@@ -3,9 +3,18 @@ namespace OboxSteam.Application.Realtime;
 /// <summary>Well-known <see cref="SyncEvent.Scope"/> values.</summary>
 public static class SyncScopes
 {
-    /// <summary>Module/Course/Activity/Assignment CRUD changed the curriculum tree of a program.</summary>
+    /// <summary>The curriculum tree or content of a program changed.</summary>
     public const string CurriculumStructureChanged = "curriculum.structureChanged";
 
     /// <summary>Open-class seat counts changed (hold, enroll, transfer, release).</summary>
     public const string SeatsChanged = "seats.changed";
+
+    /// <summary>A program advisory chat message was posted, edited, or removed, or a system message was added.</summary>
+    public const string AdvisoryDiscussionChanged = "advisory.discussionChanged";
+
+    /// <summary>A chat message was pinned, unpinned, or its pin status changed.</summary>
+    public const string AdvisoryPinChanged = "advisory.pinChanged";
+
+    /// <summary>The program approval was requested, granted, revoked, or the program was published.</summary>
+    public const string AdvisoryApprovalChanged = "advisory.approvalChanged";
 }

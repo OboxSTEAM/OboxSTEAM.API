@@ -49,28 +49,61 @@ public static class AdvisoryParticipantAccess
             throw ErrorHelper.NotFound($"Program with id '{programId}' not found.");
         }
 
+        var role = await ResolveRoleAsync(unitOfWork, user, program)
+            ?? throw ErrorHelper.Forbidden(NotMemberMessage);
+        return new AdvisoryParticipant(program, user, role);
+    }
+
+    /// <summary>Non-throwing membership check for callers without an HTTP request, e.g. hub methods.</summary>
+    public static async Task<bool> IsParticipantAsync(IUnitOfWork unitOfWork, Guid userId, Guid programId)
+    {
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+        if (userId == Guid.Empty || programId == Guid.Empty)
+        {
+            return false;
+        }
+
+        var user = await unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null || user.IsDeleted)
+        {
+            return false;
+        }
+
+        var program = await unitOfWork.Programs.GetByIdAsync(programId);
+        if (program == null || program.IsDeleted)
+        {
+            return false;
+        }
+
+        return await ResolveRoleAsync(unitOfWork, user, program) != null;
+    }
+
+    private static async Task<AdvisoryParticipantRole?> ResolveRoleAsync(IUnitOfWork unitOfWork, User user, Program program)
+    {
         if (user.Role is RoleType.Manager or RoleType.Admin)
         {
-            return new AdvisoryParticipant(program, user, AdvisoryParticipantRole.Manager);
+            return AdvisoryParticipantRole.Manager;
         }
 
         if (user.Role != RoleType.Expert)
         {
-            throw ErrorHelper.Forbidden(NotMemberMessage);
+            return null;
         }
 
-        var expert = await unitOfWork.Experts.FirstOrDefaultAsync(e => e.UserId == user.Id && !e.IsDeleted)
-            ?? throw ErrorHelper.Forbidden(NotMemberMessage);
+        var expert = await unitOfWork.Experts.FirstOrDefaultAsync(e => e.UserId == user.Id && !e.IsDeleted);
+        if (expert == null)
+        {
+            return null;
+        }
+
         if (program.AdvisorExpertId == expert.Id)
         {
-            return new AdvisoryParticipant(program, user, AdvisoryParticipantRole.Advisor);
+            return AdvisoryParticipantRole.Advisor;
         }
 
         var boardMember = await unitOfWork.ProgramBoards.FirstOrDefaultAsync(
-            b => b.ProgramId == programId && b.ExpertId == expert.Id && !b.IsDeleted);
-        return boardMember != null
-            ? new AdvisoryParticipant(program, user, AdvisoryParticipantRole.BoardExpert)
-            : throw ErrorHelper.Forbidden(NotMemberMessage);
+            b => b.ProgramId == program.Id && b.ExpertId == expert.Id && !b.IsDeleted);
+        return boardMember != null ? AdvisoryParticipantRole.BoardExpert : null;
     }
 
     public static string DisplayName(User user)

@@ -37,6 +37,7 @@ public sealed class SyncEventPublisher : ISyncEventPublisher
         NotificationAudience audience,
         string entityType,
         Guid entityId,
+        object? payload = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(audience);
@@ -47,6 +48,7 @@ public sealed class SyncEventPublisher : ISyncEventPublisher
             EntityType = entityType,
             EntityId = entityId,
             At = new DateTimeOffset(_currentTime.GetCurrentTime(), TimeSpan.Zero),
+            Payload = payload,
         };
 
         try
@@ -71,6 +73,23 @@ public sealed class SyncEventPublisher : ISyncEventPublisher
                 }
 
                 await _dispatcher.DispatchToProgramGroupAsync(
+                    audience.ProgramId.Value,
+                    syncEvent,
+                    cancellationToken);
+                return;
+            }
+
+            if (audience.Kind == NotificationAudienceKind.AdvisoryParticipants)
+            {
+                if (!audience.ProgramId.HasValue)
+                {
+                    _logger.LogDebug(
+                        "Sync event {Scope} for AdvisoryParticipants missing ProgramId; skipping.",
+                        scope);
+                    return;
+                }
+
+                await _dispatcher.DispatchToAdvisoryGroupAsync(
                     audience.ProgramId.Value,
                     syncEvent,
                     cancellationToken);

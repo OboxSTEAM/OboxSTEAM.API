@@ -63,4 +63,11 @@ public sealed class NotificationAudience
 
     public static NotificationAudience ForProgramBrowsers(Guid programId)
         => new(NotificationAudienceKind.ProgramBrowsers, programId: programId);
+
+    /// <summary>
+    /// Connections that joined a program's advisory workspace (manager, advisor, board experts)
+    /// via <c>JoinAdvisorySync</c>. Used by ephemeral sync events only.
+    /// </summary>
+    public static NotificationAudience ForAdvisoryParticipants(Guid programId)
+        => new(NotificationAudienceKind.AdvisoryParticipants, programId: programId);
 }

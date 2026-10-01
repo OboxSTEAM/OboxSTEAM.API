@@ -6,6 +6,7 @@ using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -28,6 +29,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
     private readonly IClaimsService _claimsService;
     private readonly ICurrentTime _currentTime;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly ISyncEventPublisher _syncEventPublisher;
     private readonly IProgramService _programService;
 
     public ProgramApprovalService(
@@ -35,12 +37,14 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         IClaimsService claimsService,
         ICurrentTime currentTime,
         INotificationPublisher notificationPublisher,
+        ISyncEventPublisher syncEventPublisher,
         IProgramService programService)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _currentTime = currentTime;
         _notificationPublisher = notificationPublisher;
+        _syncEventPublisher = syncEventPublisher;
         _programService = programService;
     }
 
@@ -52,15 +56,18 @@ public sealed class ProgramApprovalService : IProgramApprovalService
 
     public async Task<ProgramAdvisoryWorkspaceDto> RequestApprovalAsync(Guid programId)
     {
+        var sync = new AdvisorySyncBatch(programId);
         var notification = await _unitOfWork.ExecuteAdvisoryTransactionAsync(
             programId,
-            () => RequestApprovalCoreAsync(programId));
+            () => RequestApprovalCoreAsync(programId, sync));
         await _notificationPublisher.PublishAsync(notification);
+        await sync.PublishAsync(_syncEventPublisher);
         return await GetWorkspaceAsync(programId);
     }
 
-    private async Task<NotificationCommand> RequestApprovalCoreAsync(Guid programId)
+    private async Task<NotificationCommand> RequestApprovalCoreAsync(Guid programId, AdvisorySyncBatch sync)
     {
+        sync.Reset();
         var participant = await RequireManagerAsync(programId);
         var program = participant.Program;
         EnsureStatus(program, ProgramStatus.Draft, "Approval can only be requested while the program is Draft.");
@@ -90,6 +97,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
             participant.User.Id);
         await _unitOfWork.Programs.Update(program);
         await _unitOfWork.SaveChangesAsync();
+        RecordApprovalChange(sync, program);
 
         return NotificationCatalog.CurriculumApprovalRequested(
             advisor.UserId!.Value,
@@ -102,15 +110,21 @@ public sealed class ProgramApprovalService : IProgramApprovalService
     public async Task<ProgramAdvisoryWorkspaceDto> ApproveAsync(Guid programId, ApproveProgramRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var sync = new AdvisorySyncBatch(programId);
         var notification = await _unitOfWork.ExecuteAdvisoryTransactionAsync(
             programId,
-            () => ApproveCoreAsync(programId, request));
+            () => ApproveCoreAsync(programId, request, sync));
         await _notificationPublisher.PublishAsync(notification);
+        await sync.PublishAsync(_syncEventPublisher);
         return await GetWorkspaceAsync(programId);
     }
 
-    private async Task<NotificationCommand> ApproveCoreAsync(Guid programId, ApproveProgramRequest request)
+    private async Task<NotificationCommand> ApproveCoreAsync(
+        Guid programId,
+        ApproveProgramRequest request,
+        AdvisorySyncBatch sync)
     {
+        sync.Reset();
         var participant = await RequireParticipantAsync(programId);
         if (participant.Role != AdvisoryParticipantRole.Advisor)
         {
@@ -174,7 +188,8 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         };
         await _unitOfWork.ProgramApprovals.AddAsync(approval);
 
-        foreach (var pin in pins.Where(m => m.PinStatus == DiscussionPinStatus.Addressed))
+        var resolvedPins = pins.Where(m => m.PinStatus == DiscussionPinStatus.Addressed).ToList();
+        foreach (var pin in resolvedPins)
         {
             pin.PinStatus = DiscussionPinStatus.Resolved;
             pin.ResolvedByUserId = participant.User.Id;
@@ -200,6 +215,12 @@ public sealed class ProgramApprovalService : IProgramApprovalService
             participant.User.Id);
         await _unitOfWork.Programs.Update(program);
         await _unitOfWork.SaveChangesAsync();
+        foreach (var pin in resolvedPins)
+        {
+            sync.PinChanged(pin.Id);
+        }
+
+        RecordApprovalChange(sync, program);
 
         return NotificationCatalog.CurriculumReviewApproved(
             program.Id,
@@ -211,19 +232,25 @@ public sealed class ProgramApprovalService : IProgramApprovalService
 
     public async Task<ProgramAdvisoryWorkspaceDto> RevokeAsync(Guid programId, RevokeProgramApprovalRequest? request)
     {
+        var sync = new AdvisorySyncBatch(programId);
         var notification = await _unitOfWork.ExecuteAdvisoryTransactionAsync(
             programId,
-            () => RevokeCoreAsync(programId, request));
+            () => RevokeCoreAsync(programId, request, sync));
         if (notification != null)
         {
             await _notificationPublisher.PublishAsync(notification);
         }
 
+        await sync.PublishAsync(_syncEventPublisher);
         return await GetWorkspaceAsync(programId);
     }
 
-    private async Task<NotificationCommand?> RevokeCoreAsync(Guid programId, RevokeProgramApprovalRequest? request)
+    private async Task<NotificationCommand?> RevokeCoreAsync(
+        Guid programId,
+        RevokeProgramApprovalRequest? request,
+        AdvisorySyncBatch sync)
     {
+        sync.Reset();
         var participant = await RequireParticipantAsync(programId);
         var isAdvisor = participant.Role == AdvisoryParticipantRole.Advisor;
         if (!participant.IsManager && !isAdvisor)
@@ -242,6 +269,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         await RevokeApprovalAsync(program, participant.User, actorName, reason, comment, Now());
         await _unitOfWork.Programs.Update(program);
         await _unitOfWork.SaveChangesAsync();
+        RecordApprovalChange(sync, program);
 
         if (isAdvisor)
         {
@@ -265,15 +293,18 @@ public sealed class ProgramApprovalService : IProgramApprovalService
 
     public async Task<ProgramsResponseDto> PublishAsync(Guid programId)
     {
+        var sync = new AdvisorySyncBatch(programId);
         var notification = await _unitOfWork.ExecuteAdvisoryTransactionAsync(
             programId,
-            () => PublishCoreAsync(programId));
+            () => PublishCoreAsync(programId, sync));
         await _notificationPublisher.PublishAsync(notification);
+        await sync.PublishAsync(_syncEventPublisher);
         return await _programService.GetProgramByIdAsync(programId);
     }
 
-    private async Task<NotificationCommand> PublishCoreAsync(Guid programId)
+    private async Task<NotificationCommand> PublishCoreAsync(Guid programId, AdvisorySyncBatch sync)
     {
+        sync.Reset();
         var participant = await RequireManagerAsync(programId);
         var program = participant.Program;
         EnsureStatus(program, ProgramStatus.Approved, "Only Approved programs can be published.");
@@ -297,6 +328,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
             participant.User.Id);
         await _unitOfWork.Programs.Update(program);
         await _unitOfWork.SaveChangesAsync();
+        RecordApprovalChange(sync, program);
 
         return NotificationCatalog.CurriculumReviewPublished(
             program.Id,
@@ -308,14 +340,20 @@ public sealed class ProgramApprovalService : IProgramApprovalService
     public async Task<ProgramsResponseDto> AssignAdvisorAsync(Guid programId, AssignProgramAdvisorRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var sync = new AdvisorySyncBatch(programId);
         await _unitOfWork.ExecuteAdvisoryTransactionAsync(
             programId,
-            () => AssignAdvisorCoreAsync(programId, request));
+            () => AssignAdvisorCoreAsync(programId, request, sync));
+        await sync.PublishAsync(_syncEventPublisher);
         return await _programService.GetProgramByIdAsync(programId);
     }
 
-    private async Task<bool> AssignAdvisorCoreAsync(Guid programId, AssignProgramAdvisorRequest request)
+    private async Task<bool> AssignAdvisorCoreAsync(
+        Guid programId,
+        AssignProgramAdvisorRequest request,
+        AdvisorySyncBatch sync)
     {
+        sync.Reset();
         var participant = await RequireManagerAsync(programId);
         var program = participant.Program;
         if (program.Status is not (ProgramStatus.Draft or ProgramStatus.Approved))
@@ -341,7 +379,9 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         }
 
         var previousAdvisorId = program.AdvisorExpertId;
-        if (previousAdvisorId != advisor.Id)
+        var advisorChanged = previousAdvisorId != advisor.Id;
+        var revoked = false;
+        if (advisorChanged)
         {
             var now = Now();
             var actorName = AdvisoryParticipantAccess.DisplayName(participant.User);
@@ -364,12 +404,29 @@ public sealed class ProgramApprovalService : IProgramApprovalService
                     ProgramApprovalRevokeReason.AdvisorChanged,
                     comment: null,
                     now);
+                revoked = true;
             }
         }
 
         await _unitOfWork.Programs.Update(program);
         await _unitOfWork.SaveChangesAsync();
+        if (revoked)
+        {
+            RecordApprovalChange(sync, program);
+        }
+        else if (advisorChanged)
+        {
+            sync.DiscussionChanged(program.AdvisoryDiscussionSequence);
+        }
+
         return true;
+    }
+
+    /// <summary>Queues approvalChanged plus discussionChanged for the lifecycle system message just written.</summary>
+    private static void RecordApprovalChange(AdvisorySyncBatch sync, Program program)
+    {
+        sync.ApprovalChanged(program.Status, program.CurriculumVersion);
+        sync.DiscussionChanged(program.AdvisoryDiscussionSequence);
     }
 
     /// <summary>Revokes the active approval (if any), returns the program to Draft, and posts ApprovalRevoked.</summary>

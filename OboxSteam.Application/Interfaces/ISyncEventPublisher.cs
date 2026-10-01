@@ -13,5 +13,6 @@ public interface ISyncEventPublisher
         NotificationAudience audience,
         string entityType,
         Guid entityId,
+        object? payload = null,
         CancellationToken cancellationToken = default);
 }

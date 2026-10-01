@@ -57,4 +57,15 @@ public sealed class SignalRSyncDispatcher : ISignalRSyncDispatcher
             .Group($"program:{programId}")
             .SendAsync(ISignalRSyncDispatcher.ClientEventName, syncEvent, cancellationToken);
     }
+
+    public Task DispatchToAdvisoryGroupAsync(
+        Guid programId,
+        SyncEvent syncEvent,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(syncEvent);
+        return _hubContext.Clients
+            .Group($"advisory:{programId}")
+            .SendAsync(ISignalRSyncDispatcher.ClientEventName, syncEvent, cancellationToken);
+    }
 }

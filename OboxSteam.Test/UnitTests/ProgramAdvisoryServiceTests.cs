@@ -80,7 +80,8 @@ public sealed class ProgramAdvisoryServiceTests
             _db,
             _claimsService.Object,
             _currentTime.Object,
-            new AdvisoryReferenceResolver(_db, _currentTime.Object));
+            new AdvisoryReferenceResolver(_db, _currentTime.Object),
+            new FakeSyncEventPublisher());
     }
 
     private CurriculumReviewService CreateReviewSut(Guid currentUserId)

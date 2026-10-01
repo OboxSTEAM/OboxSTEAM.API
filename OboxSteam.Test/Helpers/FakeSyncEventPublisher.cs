@@ -13,7 +13,8 @@ public sealed class FakeSyncEventPublisher : ISyncEventPublisher
         string Scope,
         NotificationAudience Audience,
         string EntityType,
-        Guid EntityId);
+        Guid EntityId,
+        object? Payload = null);
 
     public List<PublishedEvent> Events { get; } = new();
 
@@ -22,9 +23,10 @@ public sealed class FakeSyncEventPublisher : ISyncEventPublisher
         NotificationAudience audience,
         string entityType,
         Guid entityId,
+        object? payload = null,
         CancellationToken cancellationToken = default)
     {
-        Events.Add(new PublishedEvent(scope, audience, entityType, entityId));
+        Events.Add(new PublishedEvent(scope, audience, entityType, entityId, payload));
         return Task.CompletedTask;
     }
 }

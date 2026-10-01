@@ -134,6 +134,31 @@ public sealed class SyncEventPublisherTests
     }
 
     [Fact]
+    public async Task Publish_AdvisoryParticipants_DispatchesToAdvisoryGroupWithPayload()
+    {
+        var payload = new AdvisoryDiscussionChangedPayload { LatestSequence = 7 };
+        var sut = CreateSut();
+
+        await sut.PublishAsync(
+            SyncScopes.AdvisoryDiscussionChanged,
+            NotificationAudience.ForAdvisoryParticipants(_programId),
+            "Program",
+            _programId,
+            payload);
+
+        _dispatcher.Verify(
+            d => d.DispatchToAdvisoryGroupAsync(
+                _programId,
+                It.Is<SyncEvent>(e =>
+                    e.Scope == SyncScopes.AdvisoryDiscussionChanged
+                    && e.EntityId == _programId
+                    && ReferenceEquals(e.Payload, payload)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _dispatcher.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Publish_SkipsDispatch_WhenAudienceResolvesToNobody()
     {
         var sut = CreateSut();

@@ -5,6 +5,7 @@ using OboxSteam.Application.DTOs.ProgramDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -30,6 +31,7 @@ public sealed class ProgramApprovalServiceTests
     private readonly Mock<ICurrentTime> _currentTime = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
     private readonly List<NotificationCommand> _published = [];
+    private readonly FakeSyncEventPublisher _sync = new();
 
     public ProgramApprovalServiceTests()
     {
@@ -55,6 +57,7 @@ public sealed class ProgramApprovalServiceTests
             _claimsService.Object,
             _currentTime.Object,
             _notificationPublisher.Object,
+            _sync,
             programService);
     }
 
@@ -395,6 +398,94 @@ public sealed class ProgramApprovalServiceTests
             m => m.SystemEventCode == DiscussionSystemEventCode.AdvisorChanged);
         Assert.Equal(DiscussionSystemEventCode.ApprovalRevoked, LastSystemMessage().SystemEventCode);
         Assert.Empty(_published);
+    }
+
+    // ── Realtime ──────────────────────────────────────────────────────────────
+
+    private List<(string Scope, object? Payload)> SyncEvents()
+    {
+        Assert.All(_sync.Events, e =>
+        {
+            Assert.Equal(NotificationAudienceKind.AdvisoryParticipants, e.Audience.Kind);
+            Assert.Equal(_programId, e.Audience.ProgramId);
+            Assert.Equal(_programId, e.EntityId);
+        });
+        return _sync.Events.Select(e => (e.Scope, e.Payload)).ToList();
+    }
+
+    [Fact]
+    public async Task Approve_PublishesResolvedPinsApprovalAndDiscussionChanges()
+    {
+        PinFramework(minModules: 1);
+        var addressed = SeedPin(DiscussionPinStatus.Addressed, 1);
+        SeedPin(DiscussionPinStatus.Resolved, 2);
+
+        await Sut(_advisorUserId).ApproveAsync(_programId, new ApproveProgramRequest { CurriculumVersion = 3 });
+
+        Assert.Equal(
+            [
+                (SyncScopes.AdvisoryPinChanged, (object?)new AdvisoryPinChangedPayload { MessageId = addressed.Id }),
+                (SyncScopes.AdvisoryApprovalChanged, new AdvisoryApprovalChangedPayload { Status = "Approved", CurriculumVersion = 3 }),
+                (SyncScopes.AdvisoryDiscussionChanged, new AdvisoryDiscussionChangedPayload { LatestSequence = 3 }),
+            ],
+            SyncEvents());
+    }
+
+    [Fact]
+    public async Task RequestRevokeAndPublish_PublishApprovalChangedWithStatus()
+    {
+        await Sut(_managerId).RequestApprovalAsync(_programId);
+        Assert.Contains(
+            (SyncScopes.AdvisoryApprovalChanged, (object?)new AdvisoryApprovalChangedPayload { Status = "Draft", CurriculumVersion = 3 }),
+            SyncEvents());
+
+        _sync.Events.Clear();
+        TheProgram.Status = ProgramStatus.Approved;
+        SeedApproval(version: 3);
+        await Sut(_managerId).PublishAsync(_programId);
+        Assert.Contains(
+            (SyncScopes.AdvisoryApprovalChanged, (object?)new AdvisoryApprovalChangedPayload { Status = "Active", CurriculumVersion = 3 }),
+            SyncEvents());
+
+        _sync.Events.Clear();
+        TheProgram.Status = ProgramStatus.Approved;
+        await Sut(_advisorUserId).RevokeAsync(_programId, null);
+        Assert.Equal(
+            [
+                (SyncScopes.AdvisoryApprovalChanged, (object?)new AdvisoryApprovalChangedPayload { Status = "Draft", CurriculumVersion = 3 }),
+                (SyncScopes.AdvisoryDiscussionChanged, new AdvisoryDiscussionChangedPayload { LatestSequence = 3 }),
+            ],
+            SyncEvents());
+    }
+
+    [Fact]
+    public async Task AssignAdvisor_PublishesDiscussionChangedOnly_WhenDraft()
+    {
+        await Sut(_managerId).AssignAdvisorAsync(
+            _programId,
+            new AssignProgramAdvisorRequest { AdvisorExpertId = _advisorExpertId });
+        Assert.Empty(_sync.Events);
+
+        await Sut(_managerId).AssignAdvisorAsync(
+            _programId,
+            new AssignProgramAdvisorRequest { AdvisorExpertId = _boardExpertId });
+
+        Assert.Equal(
+            [(SyncScopes.AdvisoryDiscussionChanged, (object?)new AdvisoryDiscussionChangedPayload { LatestSequence = 1 })],
+            SyncEvents());
+    }
+
+    [Fact]
+    public async Task FailedLifecycleAction_PublishesNothing()
+    {
+        SeedPin(DiscussionPinStatus.Open, 1);
+
+        await Assert.ThrowsAsync<ConflictException>(() => Sut(_advisorUserId).ApproveAsync(
+            _programId,
+            new ApproveProgramRequest { CurriculumVersion = 3 }));
+        await Assert.ThrowsAsync<ConflictException>(() => Sut(_managerId).RevokeAsync(_programId, null));
+
+        Assert.Empty(_sync.Events);
     }
 
     [Fact]

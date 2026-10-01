@@ -369,14 +369,14 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
             NotificationAudience.ForProgramBrowsers(programId),
             entityType: "Class",
             entityId: classId,
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
         await _syncEventPublisher.PublishAsync(
             SyncScopes.SeatsChanged,
             NotificationAudience.ForManagers(),
             entityType: "Class",
             entityId: classId,
-            cancellationToken);
+            cancellationToken: cancellationToken);
     }
 
     public async Task ReleaseClassHoldForCheckoutAsync(

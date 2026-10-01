@@ -3,6 +3,7 @@ using Moq;
 using OboxSteam.Application.Commons.CurriculumChanges;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -16,6 +17,7 @@ public sealed class CurriculumChangeRecorderTests
     private readonly Mock<IClaimsService> _claims = new();
     private readonly Mock<ICurrentTime> _time = new();
     private readonly Mock<INotificationPublisher> _notifications = new();
+    private readonly FakeSyncEventPublisher _sync = new();
     private readonly Guid _managerId = Guid.NewGuid();
     private readonly Guid _advisorUserId = Guid.NewGuid();
     private DateTime _now = new(2026, 9, 30, 10, 0, 0, DateTimeKind.Utc);
@@ -48,7 +50,8 @@ public sealed class CurriculumChangeRecorderTests
         _db.Activities.Seed(_activity);
     }
 
-    private CurriculumChangeRecorder CreateSut() => new(_db, _claims.Object, _time.Object, _notifications.Object);
+    private CurriculumChangeRecorder CreateSut()
+        => new(_db, _claims.Object, _time.Object, _notifications.Object, _sync);
 
     private ProgramApproval SeedApprovalWithAdvisor(bool seedApproval = true)
     {
@@ -199,6 +202,62 @@ public sealed class CurriculumChangeRecorderTests
         await sut.FlushNotificationsAsync();
 
         VerifyAdvisorNotified(Times.Never());
+    }
+
+    [Fact]
+    public async Task Flush_PublishesStructureChangedToAdvisoryGroup_AfterTheSaveOnly()
+    {
+        var sut = CreateSut();
+
+        await sut.RecordAsync([Modified(_activity, (nameof(Activity.DurationMinutes), 90))]);
+        Assert.Empty(_sync.Events);
+        _now = _now.AddMinutes(1);
+        _activity.DurationMinutes = 30;
+        await sut.RecordAsync([Modified(_activity, (nameof(Activity.DurationMinutes), 45))]);
+        await sut.FlushNotificationsAsync();
+        await sut.FlushNotificationsAsync();
+
+        Assert.Equal(
+            [SyncScopes.CurriculumStructureChanged, SyncScopes.AdvisoryDiscussionChanged],
+            _sync.Events.Select(e => e.Scope).ToList());
+        Assert.All(_sync.Events, e =>
+        {
+            Assert.Equal(NotificationAudienceKind.AdvisoryParticipants, e.Audience.Kind);
+            Assert.Equal(_program.Id, e.Audience.ProgramId);
+            Assert.Equal(_program.Id, e.EntityId);
+        });
+        Assert.Equal(new CurriculumStructureChangedPayload { CurriculumVersion = 2 }, _sync.Events[0].Payload);
+        Assert.Equal(
+            new AdvisoryDiscussionChangedPayload { LatestSequence = _program.AdvisoryDiscussionSequence },
+            _sync.Events[1].Payload);
+    }
+
+    [Fact]
+    public async Task Flush_AutoRevoke_PublishesApprovalChangedWithNewStatus()
+    {
+        _program.Status = ProgramStatus.Approved;
+        SeedApprovalWithAdvisor();
+        var sut = CreateSut();
+
+        await sut.RecordAsync([Modified(_activity, (nameof(Activity.DurationMinutes), 90))]);
+        await sut.FlushNotificationsAsync();
+
+        Assert.Contains(
+            _sync.Events,
+            e => e.Scope == SyncScopes.AdvisoryApprovalChanged
+                 && Equals(e.Payload, new AdvisoryApprovalChangedPayload { Status = "Draft", CurriculumVersion = 1 }));
+    }
+
+    [Fact]
+    public async Task Discard_DropsQueuedSyncEvents()
+    {
+        var sut = CreateSut();
+
+        await sut.RecordAsync([Modified(_activity, (nameof(Activity.DurationMinutes), 90))]);
+        sut.DiscardNotifications();
+        await sut.FlushNotificationsAsync();
+
+        Assert.Empty(_sync.Events);
     }
 
     [Fact]

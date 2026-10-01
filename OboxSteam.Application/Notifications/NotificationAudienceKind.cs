@@ -12,5 +12,6 @@ public enum NotificationAudienceKind
     ClassRosterAndParentsAndMentor,
     Managers,
     ProgramParticipants,
-    ProgramBrowsers
+    ProgramBrowsers,
+    AdvisoryParticipants
 }

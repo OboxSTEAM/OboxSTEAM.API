@@ -7,6 +7,7 @@ using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -36,6 +37,7 @@ public sealed class AdvisoryDiscussionServiceTests
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<ICurrentTime> _currentTime = new();
     private readonly Mock<IBlobService> _blobService = new();
+    private readonly FakeSyncEventPublisher _sync = new();
 
     public AdvisoryDiscussionServiceTests()
     {
@@ -65,7 +67,8 @@ public sealed class AdvisoryDiscussionServiceTests
             _db,
             _claimsService.Object,
             _currentTime.Object,
-            new AdvisoryReferenceResolver(_db, _currentTime.Object));
+            new AdvisoryReferenceResolver(_db, _currentTime.Object),
+            _sync);
     }
 
     private ProgramAdvisoryAttachmentService Attachments(Guid userId)
@@ -468,6 +471,78 @@ public sealed class AdvisoryDiscussionServiceTests
 
         var unpinned = await Chat(_boardUserId).UnpinMessageAsync(_programId, message.Id);
         Assert.Null(unpinned.Pin);
+    }
+
+    // ── Realtime ──────────────────────────────────────────────────────────────
+
+    private List<object?> SyncPayloads(string scope)
+    {
+        Assert.All(_sync.Events, e =>
+        {
+            Assert.Equal(NotificationAudienceKind.AdvisoryParticipants, e.Audience.Kind);
+            Assert.Equal(_programId, e.Audience.ProgramId);
+            Assert.Equal("Program", e.EntityType);
+            Assert.Equal(_programId, e.EntityId);
+        });
+        return _sync.Events.Where(e => e.Scope == scope).Select(e => e.Payload).ToList();
+    }
+
+    [Fact]
+    public async Task Post_PublishesDiscussionChangedWithLatestSequence_ButNotOnReplay()
+    {
+        var chat = Chat(_managerId);
+        await chat.AddMessageAsync(_programId, Post("one", "c1"));
+        await chat.AddMessageAsync(_programId, Post("two", "c2"));
+        await chat.AddMessageAsync(_programId, Post("two", "c2"));
+
+        Assert.Equal(
+            [
+                new AdvisoryDiscussionChangedPayload { LatestSequence = 1 },
+                new AdvisoryDiscussionChangedPayload { LatestSequence = 2 },
+            ],
+            SyncPayloads(SyncScopes.AdvisoryDiscussionChanged));
+        Assert.Equal(2, _sync.Events.Count);
+    }
+
+    [Fact]
+    public async Task EditAndRemove_PublishMessageId_AndRemovingAPinPublishesPinChanged()
+    {
+        var first = await Chat(_managerId).AddMessageAsync(_programId, Post("one", "c1"));
+        await Chat(_managerId).AddMessageAsync(_programId, Post("two", "c2"));
+        await Chat(_advisorUserId).PinMessageAsync(_programId, first.Id);
+        _sync.Events.Clear();
+
+        await Chat(_managerId).EditMessageAsync(_programId, first.Id, new EditAdvisoryDiscussionMessageRequest { Text = "one" });
+        Assert.Empty(_sync.Events);
+
+        await Chat(_managerId).EditMessageAsync(_programId, first.Id, new EditAdvisoryDiscussionMessageRequest { Text = "uno" });
+        await Chat(_managerId).RemoveMessageAsync(_programId, first.Id);
+        await Chat(_managerId).RemoveMessageAsync(_programId, first.Id);
+
+        var expected = new AdvisoryDiscussionChangedPayload { LatestSequence = 2, MessageId = first.Id };
+        Assert.Equal([expected, expected], SyncPayloads(SyncScopes.AdvisoryDiscussionChanged));
+        Assert.Equal(
+            [new AdvisoryPinChangedPayload { MessageId = first.Id }],
+            SyncPayloads(SyncScopes.AdvisoryPinChanged));
+    }
+
+    [Fact]
+    public async Task PinActions_PublishPinChanged_OnlyWhenTheStatusChanges()
+    {
+        var message = await Chat(_managerId).AddMessageAsync(_programId, Post("Fix the intro", "c1"));
+        _sync.Events.Clear();
+
+        await Chat(_advisorUserId).PinMessageAsync(_programId, message.Id);
+        await Chat(_boardUserId).PinMessageAsync(_programId, message.Id);
+        await Chat(_managerId).PerformPinActionAsync(
+            _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.MarkAddressed });
+        await Chat(_boardUserId).UnpinMessageAsync(_programId, message.Id);
+        await Chat(_boardUserId).UnpinMessageAsync(_programId, message.Id);
+        await Assert.ThrowsAsync<ConflictException>(() => Chat(_advisorUserId).PerformPinActionAsync(
+            _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.Resolve }));
+
+        Assert.Equal(3, SyncPayloads(SyncScopes.AdvisoryPinChanged).Count);
+        Assert.All(_sync.Events, e => Assert.Equal(new AdvisoryPinChangedPayload { MessageId = message.Id }, e.Payload));
     }
 
     [Fact]

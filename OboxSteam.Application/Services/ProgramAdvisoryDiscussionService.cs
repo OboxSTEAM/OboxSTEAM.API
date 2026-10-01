@@ -2,6 +2,7 @@ using System.Text.Json;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramAdvisoryDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -23,17 +24,20 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
     private readonly IClaimsService _claimsService;
     private readonly ICurrentTime _currentTime;
     private readonly IAdvisoryReferenceResolver _referenceResolver;
+    private readonly ISyncEventPublisher _syncEventPublisher;
 
     public ProgramAdvisoryDiscussionService(
         IUnitOfWork unitOfWork,
         IClaimsService claimsService,
         ICurrentTime currentTime,
-        IAdvisoryReferenceResolver referenceResolver)
+        IAdvisoryReferenceResolver referenceResolver,
+        ISyncEventPublisher syncEventPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
         _currentTime = currentTime;
         _referenceResolver = referenceResolver;
+        _syncEventPublisher = syncEventPublisher;
     }
 
     public async Task<IReadOnlyList<MentionTargetDto>> GetMentionTargetsAsync(Guid programId)
@@ -116,8 +120,10 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
 
         var mentions = ValidateText(text, attachmentIds.Count);
         var actorId = _claimsService.GetCurrentUserId;
-        return await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
+        var sync = new AdvisorySyncBatch(programId);
+        var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
+            sync.Reset();
             var participant = await RequireParticipantAsync(programId);
             var existing = await _unitOfWork.ProgramAdvisoryDiscussionMessages.FirstOrDefaultAsync(
                 m => m.ProgramId == programId
@@ -172,8 +178,11 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
                     CreatedBy = participant.User.Id,
                 });
             await _unitOfWork.SaveChangesAsync();
+            sync.DiscussionChanged(message.Sequence);
             return await MapMessageAsync(message);
         });
+        await sync.PublishAsync(_syncEventPublisher);
+        return result;
     }
 
     public async Task<AdvisoryDiscussionMessageDto> EditMessageAsync(
@@ -183,8 +192,10 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
     {
         ArgumentNullException.ThrowIfNull(request);
         var text = NormalizeText(request.Text);
-        return await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
+        var sync = new AdvisorySyncBatch(programId);
+        var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
+            sync.Reset();
             var participant = await RequireParticipantAsync(programId);
             var message = await RequireMessageAsync(programId, messageId);
             RequireOwnUserMessage(message, participant, "edit");
@@ -206,14 +217,21 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             message.UpdatedBy = participant.User.Id;
             await _unitOfWork.ProgramAdvisoryDiscussionMessages.Update(message);
             await _unitOfWork.SaveChangesAsync();
+            sync.DiscussionChanged(
+                DiscussionSystemMessageWriter.LatestSequence(_unitOfWork, participant.Program),
+                message.Id);
             return await MapMessageAsync(message);
         });
+        await sync.PublishAsync(_syncEventPublisher);
+        return result;
     }
 
     public async Task RemoveMessageAsync(Guid programId, Guid messageId)
     {
+        var sync = new AdvisorySyncBatch(programId);
         await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
+            sync.Reset();
             var participant = await RequireParticipantAsync(programId);
             var message = await RequireMessageAsync(programId, messageId);
             if (message.Kind == DiscussionMessageKind.System)
@@ -232,6 +250,7 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             }
 
             var now = Now();
+            var wasPinned = message.PinStatus != null;
             await RemoveMentionReferencesAsync(message.Id);
             message.RemovedAt = now;
             message.RemovedByUserId = participant.User.Id;
@@ -241,14 +260,25 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             message.UpdatedBy = participant.User.Id;
             await _unitOfWork.ProgramAdvisoryDiscussionMessages.Update(message);
             await _unitOfWork.SaveChangesAsync();
+            sync.DiscussionChanged(
+                DiscussionSystemMessageWriter.LatestSequence(_unitOfWork, participant.Program),
+                message.Id);
+            if (wasPinned)
+            {
+                sync.PinChanged(message.Id);
+            }
+
             return true;
         });
+        await sync.PublishAsync(_syncEventPublisher);
     }
 
     public async Task<AdvisoryDiscussionMessageDto> PinMessageAsync(Guid programId, Guid messageId)
     {
-        return await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
+        var sync = new AdvisorySyncBatch(programId);
+        var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
+            sync.Reset();
             var participant = await RequireParticipantAsync(programId);
             RequireExpertParticipant(participant);
             var message = await RequirePinnableMessageAsync(programId, messageId);
@@ -262,14 +292,20 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             message.PinStatus = DiscussionPinStatus.Open;
             message.PinnedByUserId = participant.User.Id;
             message.PinnedAt = now;
-            return await SaveMessageAsync(message, participant.User.Id, now);
+            var saved = await SaveMessageAsync(message, participant.User.Id, now);
+            sync.PinChanged(message.Id);
+            return saved;
         });
+        await sync.PublishAsync(_syncEventPublisher);
+        return result;
     }
 
     public async Task<AdvisoryDiscussionMessageDto> UnpinMessageAsync(Guid programId, Guid messageId)
     {
-        return await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
+        var sync = new AdvisorySyncBatch(programId);
+        var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
+            sync.Reset();
             var participant = await RequireParticipantAsync(programId);
             RequireExpertParticipant(participant);
             var message = await RequirePinnableMessageAsync(programId, messageId);
@@ -279,8 +315,12 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             }
 
             ClearPin(message);
-            return await SaveMessageAsync(message, participant.User.Id, Now());
+            var saved = await SaveMessageAsync(message, participant.User.Id, Now());
+            sync.PinChanged(message.Id);
+            return saved;
         });
+        await sync.PublishAsync(_syncEventPublisher);
+        return result;
     }
 
     public async Task<AdvisoryDiscussionMessageDto> PerformPinActionAsync(
@@ -294,8 +334,10 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             throw ErrorHelper.BadRequest("Unsupported pin action.");
         }
 
-        return await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
+        var sync = new AdvisorySyncBatch(programId);
+        var result = await _unitOfWork.ExecuteAdvisoryTransactionAsync(programId, async () =>
         {
+            sync.Reset();
             var participant = await RequireParticipantAsync(programId);
             var message = await RequirePinnableMessageAsync(programId, messageId);
             if (message.PinStatus == null)
@@ -335,8 +377,12 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
                     break;
             }
 
-            return await SaveMessageAsync(message, participant.User.Id, now);
+            var saved = await SaveMessageAsync(message, participant.User.Id, now);
+            sync.PinChanged(message.Id);
+            return saved;
         });
+        await sync.PublishAsync(_syncEventPublisher);
+        return result;
     }
 
     public async Task<IReadOnlyList<AdvisoryDiscussionMessageDto>> GetPinsAsync(
