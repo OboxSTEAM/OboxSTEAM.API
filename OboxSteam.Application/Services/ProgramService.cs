@@ -22,6 +22,7 @@ public class ProgramService : IProgramService
         { ".jpg", ".jpeg", ".png", ".webp" };
     private const long MaxThumbnailSize = 5 * 1024 * 1024; // 5 MB
     private const string ThumbnailFolder = "program-thumbnails";
+    public const string FrameworkLockedCode = "FRAMEWORK_LOCKED";
     private static readonly string[] ProgramCurriculumProperties =
         CurriculumChangeFieldCatalog.GetDescriptor(typeof(Program))!.Fields.Select(f => f.PropertyName).ToArray();
 
@@ -62,9 +63,7 @@ public class ProgramService : IProgramService
         var advisor = program.AdvisorExpertId.HasValue
             ? await _unitOfWork.Experts.GetByIdAsync(program.AdvisorExpertId.Value)
             : null;
-        var frameworkVersion = program.FrameworkVersionId.HasValue
-            ? await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value)
-            : null;
+        var frameworkVersions = await FrameworkVersionLookup.ResolveAsync(_unitOfWork, program);
         _logger.LogInformation("[GetProgramByIdAsync] Program with Id {Id} retrieved successfully.", id);
         var skills = await LoadSkillSummariesAsync(program.Id);
         return new ProgramsResponseDto
@@ -85,7 +84,9 @@ public class ProgramService : IProgramService
             Price = program.Price,
             FrameworkId = program.FrameworkId,
             FrameworkVersionId = program.FrameworkVersionId,
-            FrameworkVersionNumber = frameworkVersion?.VersionNumber,
+            FrameworkVersionNumber = frameworkVersions.Current,
+            LatestFrameworkVersionNumber = frameworkVersions.Latest,
+            HasNewerFrameworkVersion = frameworkVersions.HasNewer,
             AdvisorExpertId = program.AdvisorExpertId,
             AdvisorExpertName = advisor?.FullName,
             CurriculumVersion = program.CurriculumVersion,
@@ -589,7 +590,9 @@ public class ProgramService : IProgramService
             throw ErrorHelper.NotFound($"Program with id '{id}' not found.");
         }
 
-        // Status, price and framework stay editable while a cohort runs; only curriculum fields lock.
+        EnsureFrameworkUnchanged(program, request);
+
+        // Status and price stay editable while a cohort runs; only curriculum fields lock.
         if (ChangesCurriculumFields(program, request)
             || (request.SkillIds != null && await SkillLinksDifferAsync(id, request.SkillIds)))
         {
@@ -617,14 +620,13 @@ public class ProgramService : IProgramService
         var skillIds = request.SkillIds;
         request.SkillIds = null;
         var statusChanged = ProgramCatalogStatusGuard.ApplyUpdate(program, requestedStatus);
-        var frameworkChanged = await ApplyFrameworkAssignmentAsync(program, request);
         if (skillIds != null)
         {
             await ValidateSkillIdsAsync(skillIds);
         }
 
         var skillsChanged = skillIds != null && await ReplaceProgramSkillsAsync(id, skillIds);
-        var isUpdated = UpdateHelper.ApplyUpdates(program, request) || frameworkChanged || statusChanged;
+        var isUpdated = UpdateHelper.ApplyUpdates(program, request) || statusChanged;
 
         if (!isUpdated)
         {
@@ -851,34 +853,21 @@ public class ProgramService : IProgramService
         return (framework.Id, latest.Id);
     }
 
-    private async Task<bool> ApplyFrameworkAssignmentAsync(Program program, UpdateProgramRequestDto request)
+    /// <summary>
+    /// The framework is fixed at creation: it decides the advisor and the rules approvals are checked against.
+    /// Omitted or matching values are ignored; version upgrades go through POST framework-version.
+    /// </summary>
+    private static void EnsureFrameworkUnchanged(Program program, UpdateProgramRequestDto request)
     {
-        if (request.FrameworkId.HasValue || request.FrameworkVersionId.HasValue)
+        var changesFramework = (request.FrameworkId.HasValue && request.FrameworkId != program.FrameworkId)
+                               || (request.FrameworkVersionId.HasValue && request.FrameworkVersionId != program.FrameworkVersionId)
+                               || (request.ClearFramework == true && program.FrameworkId.HasValue);
+        if (changesFramework)
         {
-            var resolved = await ResolveFrameworkAssignmentAsync(request.FrameworkId, request.FrameworkVersionId);
-            if (program.FrameworkId == resolved.FrameworkId && program.FrameworkVersionId == resolved.VersionId)
-            {
-                return false;
-            }
-
-            program.FrameworkId = resolved.FrameworkId;
-            program.FrameworkVersionId = resolved.VersionId;
-            return true;
+            throw ErrorHelper.Conflict(
+                "The framework cannot be changed after the program is created. Create a new program to use a different framework, or upgrade the framework version.",
+                FrameworkLockedCode);
         }
-
-        if (request.ClearFramework == true)
-        {
-            if (!program.FrameworkId.HasValue)
-            {
-                return false;
-            }
-
-            program.FrameworkId = null;
-            program.FrameworkVersionId = null;
-            return true;
-        }
-
-        return false;
     }
 
     // =========================================================================

@@ -125,7 +125,7 @@ public sealed class CurriculumChangeRecorderTests
     [Theory]
     [InlineData(ProgramStatus.Active)]
     [InlineData(ProgramStatus.Inactive)]
-    public async Task Record_PublishedProgram_RevokesApprovalAndKeepsStatus(ProgramStatus status)
+    public async Task Record_PublishedProgramWithoutFramework_RevokesApprovalAndKeepsStatus(ProgramStatus status)
     {
         _program.Status = status;
         var approval = SeedApprovalWithAdvisor();
@@ -137,6 +137,29 @@ public sealed class CurriculumChangeRecorderTests
         Assert.Equal(1, _program.CurriculumVersion);
         Assert.Single(_db.CurriculumChanges.Items);
         Assert.Equal(_now, approval.RevokedAt);
+        await sut.FlushNotificationsAsync();
+        VerifyAdvisorNotified(Times.Once());
+    }
+
+    [Theory]
+    [InlineData(ProgramStatus.Active, true)]
+    [InlineData(ProgramStatus.Inactive, true)]
+    [InlineData(ProgramStatus.Active, false)]
+    public async Task Record_PublishedProgramWithFramework_ReturnsToDraftAndNotifiesAdvisor(
+        ProgramStatus status,
+        bool hasApproval)
+    {
+        _program.Status = status;
+        _program.FrameworkId = Guid.NewGuid();
+        SeedApprovalWithAdvisor(hasApproval);
+        var sut = CreateSut();
+
+        await sut.RecordAsync([Modified(_activity, (nameof(Activity.DurationMinutes), 90))]);
+
+        Assert.Equal(ProgramStatus.Draft, _program.Status);
+        Assert.Contains(
+            _db.ProgramAdvisoryDiscussionMessages.Items,
+            m => m.SystemEventCode == DiscussionSystemEventCode.ApprovalRevoked);
         await sut.FlushNotificationsAsync();
         VerifyAdvisorNotified(Times.Once());
     }

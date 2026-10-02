@@ -18,8 +18,8 @@ public sealed record AdvisoryParticipant(Program Program, User User, AdvisoryPar
 {
     public bool IsManager => Role == AdvisoryParticipantRole.Manager;
 
-    /// <summary>Advisor or board expert: may pin, reopen, and resolve.</summary>
-    public bool IsExpertParticipant => Role is AdvisoryParticipantRole.Advisor or AdvisoryParticipantRole.BoardExpert;
+    /// <summary>The main advisor: the only participant who may pin, unpin, reopen, resolve, and approve.</summary>
+    public bool IsAdvisor => Role == AdvisoryParticipantRole.Advisor;
 }
 
 /// <summary>Participants of a program advisory chat: Manager/Admin, the advisor, and board experts.</summary>

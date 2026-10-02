@@ -17,6 +17,14 @@ public sealed class ProgramAdvisoryWorkspaceDto
 
     public string? AdvisorName { get; set; }
 
+    /// <summary>Pinned framework version number; null without a framework.</summary>
+    public int? FrameworkVersionNumber { get; set; }
+
+    /// <summary>Highest published version of the program's framework; null without a framework.</summary>
+    public int? LatestFrameworkVersionNumber { get; set; }
+
+    public bool HasNewerFrameworkVersion { get; set; }
+
     public List<AdvisoryParticipantDto> Participants { get; set; } = [];
 
     public AdvisoryCapabilitiesDto Capabilities { get; set; } = new();

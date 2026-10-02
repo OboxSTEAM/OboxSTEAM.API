@@ -24,6 +24,12 @@ public class ProgramsResponseDto
     public Guid? FrameworkId { get; set; }
     public Guid? FrameworkVersionId { get; set; }
     public int? FrameworkVersionNumber { get; set; }
+
+    /// <summary>Highest published version of the framework. Set by GET /api/programs/{id} only.</summary>
+    public int? LatestFrameworkVersionNumber { get; set; }
+
+    /// <summary>True when a newer published framework version exists. Set by GET /api/programs/{id} only.</summary>
+    public bool HasNewerFrameworkVersion { get; set; }
     public Guid? AdvisorExpertId { get; set; }
     public string? AdvisorExpertName { get; set; }
     public long CurriculumVersion { get; set; }

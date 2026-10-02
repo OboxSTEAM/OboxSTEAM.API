@@ -43,6 +43,15 @@ public interface IClassSeatHoldService
     Task PublishSeatsChangedAsync(Guid programId, Guid classId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Throws 400 PROGRAM_NOT_AVAILABLE when the program is not Active, after releasing the student's
+    /// seat hold and abandoning their pending checkout for it so no seat is sold on a Draft program.
+    /// </summary>
+    Task EnsureProgramPurchasableAsync(
+        Program program,
+        Guid studentId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Releases the current student's checkout hold for a program and abandons the pending enrollment.
     /// Idempotent when no hold or pending enrollment exists.
     /// </summary>

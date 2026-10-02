@@ -2128,6 +2128,61 @@ public static class NotificationCatalog
             entityId: messageId,
             tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
 
+    /// <summary>A manager moved the program to a newer framework version; sent to the advisor.</summary>
+    public static NotificationCommand ProgramFrameworkUpgraded(
+        Guid advisorUserId,
+        Guid programId,
+        int? fromVersion,
+        int toVersion,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? actorName = null)
+        => new(
+            NotificationType.ProgramFrameworkUpgraded,
+            NotificationAudience.ForUser(advisorUserId),
+            NotificationRoleTemplates.ForExpert(
+                "Chương trình đã cập nhật phiên bản khung",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "{actorName} đã cập nhật chương trình lên khung v" + toVersion + ". Phê duyệt đã bị thu hồi, vui lòng xem lại theo quy tắc mới."
+                    : "{actorName} đã cập nhật chương trình \"{programName}\" lên khung v" + toVersion + ". Phê duyệt đã bị thu hồi, vui lòng xem lại theo quy tắc mới."),
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                FromVersion = fromVersion,
+                ToVersion = toVersion,
+            }.WithNames(actorName: actorName, programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(actorName: actorName, programName: programName));
+
+    /// <summary>A newer framework version was published; sent to managers once per program pinned to an older version.</summary>
+    public static NotificationCommand FrameworkVersionPublished(
+        Guid programId,
+        int? fromVersion,
+        int toVersion,
+        Guid? actorUserId = null,
+        string? programName = null,
+        string? frameworkName = null)
+        => new(
+            NotificationType.FrameworkVersionPublished,
+            NotificationAudience.ForManagers(),
+            NotificationRoleTemplates.FromDefault(
+                "Có phiên bản khung mới",
+                string.IsNullOrWhiteSpace(programName)
+                    ? "Khung \"{frameworkName}\" đã có phiên bản v" + toVersion + ". Bạn có thể cập nhật chương trình."
+                    : "Khung \"{frameworkName}\" đã có phiên bản v" + toVersion + ". Bạn có thể cập nhật chương trình \"{programName}\"."),
+            payload: new NotificationPayload
+            {
+                ProgramId = programId,
+                FromVersion = fromVersion,
+                ToVersion = toVersion,
+            }.WithNames(programName: programName),
+            actorUserId: actorUserId,
+            entityType: "Program",
+            entityId: programId,
+            tokens: NotificationTokenKeys.Create(programName: programName, frameworkName: frameworkName));
+
     // ── Offline co-teach ──────────────────────────────────────────────────────
 
     public static NotificationCommand ClassSessionExpertInvited(

@@ -69,7 +69,7 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
             throw ErrorHelper.BadRequest("This program cannot be purchased because it has no valid price.");
         }
 
-        ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
+        await EnsureProgramPurchasableAsync(program, studentId, cancellationToken);
 
         await ReleaseExpiredHoldsAsync(cancellationToken);
 
@@ -377,6 +377,43 @@ public sealed class ClassSeatHoldService : IClassSeatHoldService
             entityType: "Class",
             entityId: classId,
             cancellationToken: cancellationToken);
+    }
+
+    public async Task EnsureProgramPurchasableAsync(
+        Program program,
+        Guid studentId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(program);
+        if (program.Status == ProgramStatus.Active)
+        {
+            return;
+        }
+
+        var enrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
+            pe => pe.StudentId == studentId
+                  && pe.ProgramId == program.Id
+                  && pe.Status == EnrollmentStatus.PendingPayment
+                  && !pe.IsDeleted);
+        if (enrollment != null)
+        {
+            var result = await PendingProgramCheckoutHelper.AbandonPendingProgramCheckoutAsync(
+                _unitOfWork,
+                enrollment.Id,
+                cancellationToken: cancellationToken);
+            if (result.Abandoned && result.ClassId.HasValue)
+            {
+                await PublishSeatsChangedAsync(program.Id, result.ClassId.Value, cancellationToken);
+            }
+
+            _logger.LogInformation(
+                "[EnsureProgramPurchasableAsync] Released checkout of student {StudentId} on {Status} program {ProgramId}.",
+                studentId,
+                program.Status,
+                program.Id);
+        }
+
+        ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
     }
 
     public async Task ReleaseClassHoldForCheckoutAsync(

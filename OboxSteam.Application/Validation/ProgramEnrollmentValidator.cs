@@ -13,6 +13,7 @@ public static class ProgramEnrollmentValidator
     public const string EnrollForbiddenMessage = "Only students can enroll in a program.";
     public const string ViewListForbiddenMessage = "You do not have permission to view program enrollments.";
     public const string ViewEnrollmentForbiddenMessage = "You do not have permission to view this enrollment.";
+    public const string ProgramNotAvailableCode = "PROGRAM_NOT_AVAILABLE";
 
     /// <summary>
     /// Soft product cap: Active + PendingPayment program enrollments per student.
@@ -82,7 +83,7 @@ public static class ProgramEnrollmentValidator
 
     /// <summary>
     /// Only Active programs accept new registration / checkout.
-    /// Draft and Inactive are blocked (FE: Bản nháp / Ngừng hoạt động).
+    /// Draft, Approved, and Inactive are blocked (FE: Bản nháp / Ngừng hoạt động).
     /// </summary>
     public static void EnsureProgramPurchasable(Program program)
     {
@@ -90,9 +91,10 @@ public static class ProgramEnrollmentValidator
             return;
 
         throw ErrorHelper.BadRequest(
-            program.Status == ProgramStatus.Draft
-                ? $"Program '{program.Code}' is a draft and cannot be purchased."
-                : $"Program '{program.Code}' is inactive and is not accepting registrations.");
+            program.Status == ProgramStatus.Inactive
+                ? $"Program '{program.Code}' is inactive and is not accepting registrations."
+                : $"Program '{program.Code}' is not available for purchase right now.",
+            ProgramNotAvailableCode);
     }
 
     /// <summary>

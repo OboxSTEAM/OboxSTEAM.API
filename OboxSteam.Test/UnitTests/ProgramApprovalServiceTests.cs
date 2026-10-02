@@ -111,10 +111,18 @@ public sealed class ProgramApprovalServiceTests
         };
         _db.Modules.Seed(module);
         TheProgram.Modules = [module];
+        PinFramework(minModules: 0);
     }
 
     private void PinFramework(int minModules)
     {
+        var existing = _db.ProgramFrameworkVersions.Items.SingleOrDefault(v => v.Id == _frameworkVersionId);
+        if (existing != null)
+        {
+            existing.MinModules = minModules;
+            return;
+        }
+
         _db.ProgramFrameworks.Seed(new ProgramFramework
         {
             Id = _frameworkId,
@@ -571,7 +579,8 @@ public sealed class ProgramApprovalServiceTests
         Assert.Equal(2, advisor.UnseenChangeCount);
 
         var board = await Sut(_boardUserId).GetWorkspaceAsync(_programId);
-        Assert.True(board.Capabilities.CanResolvePin);
+        Assert.False(board.Capabilities.CanPin);
+        Assert.False(board.Capabilities.CanResolvePin);
         Assert.False(board.Capabilities.CanApprove);
         Assert.False(board.Capabilities.CanRevokeApproval);
     }
@@ -786,5 +795,181 @@ public sealed class ProgramApprovalServiceTests
         Assert.Contains(check.Checks, c => c.Code == "MinModules" && !c.Passed);
         Assert.True((await Sut(_managerId).GetFrameworkCheckAsync(_programId)).Checks.Count > 0);
         await Assert.ThrowsAsync<ForbiddenException>(() => Sut(outsiderUserId).GetFrameworkCheckAsync(_programId));
+    }
+
+    // ── programs without a framework ──────────────────────────────────────────
+
+    private void RemoveFramework()
+    {
+        TheProgram.FrameworkId = null;
+        TheProgram.FrameworkVersionId = null;
+    }
+
+    [Theory]
+    [InlineData(ProgramStatus.Draft)]
+    [InlineData(ProgramStatus.Approved)]
+    public async Task Publish_WithoutFramework_PublishesDirectly(ProgramStatus status)
+    {
+        RemoveFramework();
+        TheProgram.Status = status;
+
+        await Sut(_managerId).PublishAsync(_programId);
+
+        Assert.Equal(ProgramStatus.Active, TheProgram.Status);
+        Assert.Equal(DiscussionSystemEventCode.Published, LastSystemMessage().SystemEventCode);
+    }
+
+    [Fact]
+    public async Task Publish_WithoutFramework_RejectsActive()
+    {
+        RemoveFramework();
+        TheProgram.Status = ProgramStatus.Active;
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => Sut(_managerId).PublishAsync(_programId));
+
+        Assert.Equal("INVALID_STATUS", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task RequestApprovalAndApprove_WithoutFramework_ReturnFrameworkRequired()
+    {
+        RemoveFramework();
+
+        var request = await Assert.ThrowsAsync<ConflictException>(() => Sut(_managerId).RequestApprovalAsync(_programId));
+        var approve = await Assert.ThrowsAsync<ConflictException>(() => Sut(_advisorUserId).ApproveAsync(
+            _programId,
+            new ApproveProgramRequest { CurriculumVersion = 3 }));
+
+        Assert.Equal(ProgramApprovalService.FrameworkRequiredCode, request.ErrorCode);
+        Assert.Equal(ProgramApprovalService.FrameworkRequiredCode, approve.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Workspace_WithoutFramework_AllowsDirectPublishOnly()
+    {
+        RemoveFramework();
+
+        var manager = await Sut(_managerId).GetWorkspaceAsync(_programId);
+        var advisor = await Sut(_advisorUserId).GetWorkspaceAsync(_programId);
+
+        Assert.True(manager.Capabilities.CanPublish);
+        Assert.False(manager.Capabilities.CanRequestApproval);
+        Assert.False(manager.Capabilities.CanUpgradeFrameworkVersion);
+        Assert.False(advisor.Capabilities.CanApprove);
+        Assert.Null(manager.FrameworkVersionNumber);
+        Assert.False(manager.HasNewerFrameworkVersion);
+    }
+
+    // ── framework version upgrade ─────────────────────────────────────────────
+
+    private ProgramFrameworkVersion SeedVersion(int number, bool published = true, Guid? frameworkId = null)
+    {
+        var version = new ProgramFrameworkVersion
+        {
+            Id = Guid.NewGuid(),
+            FrameworkId = frameworkId ?? _frameworkId,
+            VersionNumber = number,
+            IsPublished = published,
+            PublishedAt = published ? _now : null,
+        };
+        _db.ProgramFrameworkVersions.Seed(version);
+        return version;
+    }
+
+    [Fact]
+    public async Task Workspace_ReportsNewerFrameworkVersion()
+    {
+        SeedVersion(2);
+        SeedVersion(3, published: false);
+
+        var manager = await Sut(_managerId).GetWorkspaceAsync(_programId);
+
+        Assert.Equal(1, manager.FrameworkVersionNumber);
+        Assert.Equal(2, manager.LatestFrameworkVersionNumber);
+        Assert.True(manager.HasNewerFrameworkVersion);
+        Assert.True(manager.Capabilities.CanUpgradeFrameworkVersion);
+    }
+
+    [Fact]
+    public async Task UpgradeFrameworkVersion_Active_PinsVersionRevokesAndNotifiesAdvisor()
+    {
+        TheProgram.Status = ProgramStatus.Active;
+        var approval = SeedApproval(version: 3);
+        var v2 = SeedVersion(2);
+
+        var workspace = await Sut(_managerId).UpgradeFrameworkVersionAsync(
+            _programId,
+            new UpgradeProgramFrameworkVersionRequest { FrameworkVersionId = v2.Id });
+
+        Assert.Equal(v2.Id, TheProgram.FrameworkVersionId);
+        Assert.Equal(ProgramStatus.Draft, TheProgram.Status);
+        Assert.Equal(3, TheProgram.CurriculumVersion);
+        Assert.Equal(ProgramApprovalRevokeReason.FrameworkUpgraded, approval.RevokeReason);
+        Assert.Contains(
+            _db.ProgramAdvisoryDiscussionMessages.Items,
+            m => m.SystemEventCode == DiscussionSystemEventCode.ApprovalRevoked);
+        Assert.Equal(DiscussionSystemEventCode.FrameworkUpgraded, LastSystemMessage().SystemEventCode);
+        var notification = Assert.Single(_published);
+        Assert.Equal(NotificationType.ProgramFrameworkUpgraded, notification.Type);
+        Assert.Equal(1, notification.Payload!.FromVersion);
+        Assert.Equal(2, notification.Payload.ToVersion);
+        Assert.Equal(2, workspace.FrameworkVersionNumber);
+        Assert.False(workspace.HasNewerFrameworkVersion);
+    }
+
+    [Fact]
+    public async Task UpgradeFrameworkVersion_Draft_KeepsStatusWithoutRevokeMessage()
+    {
+        var v2 = SeedVersion(2);
+
+        await Sut(_managerId).UpgradeFrameworkVersionAsync(
+            _programId,
+            new UpgradeProgramFrameworkVersionRequest { FrameworkVersionId = v2.Id });
+
+        Assert.Equal(ProgramStatus.Draft, TheProgram.Status);
+        Assert.DoesNotContain(
+            _db.ProgramAdvisoryDiscussionMessages.Items,
+            m => m.SystemEventCode == DiscussionSystemEventCode.ApprovalRevoked);
+    }
+
+    [Fact]
+    public async Task UpgradeFrameworkVersion_RejectsInvalidVersions()
+    {
+        var unpublished = SeedVersion(2, published: false);
+        var otherFramework = SeedVersion(5, frameworkId: Guid.NewGuid());
+        var sut = Sut(_managerId);
+
+        foreach (var versionId in new[] { unpublished.Id, otherFramework.Id, _frameworkVersionId, Guid.NewGuid() })
+        {
+            var ex = await Assert.ThrowsAsync<BadRequestException>(() => sut.UpgradeFrameworkVersionAsync(
+                _programId,
+                new UpgradeProgramFrameworkVersionRequest { FrameworkVersionId = versionId }));
+            Assert.Equal(ProgramApprovalService.FrameworkVersionInvalidCode, ex.ErrorCode);
+        }
+
+        Assert.Equal(_frameworkVersionId, TheProgram.FrameworkVersionId);
+    }
+
+    [Fact]
+    public async Task UpgradeFrameworkVersion_RejectsNoFrameworkNonManagerAndLockedCohort()
+    {
+        var v2 = SeedVersion(2);
+        var request = new UpgradeProgramFrameworkVersionRequest { FrameworkVersionId = v2.Id };
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => Sut(_advisorUserId).UpgradeFrameworkVersionAsync(_programId, request));
+
+        var classId = Guid.NewGuid();
+        _db.Classes.Seed(new Class
+        {
+            Id = classId, Code = "CLS-LIVE", Name = "Live", ProgramId = _programId,
+            Status = ClassStatus.InProgress, MaxCapacity = 10,
+        });
+        var locked = await Assert.ThrowsAsync<ConflictException>(() => Sut(_managerId).UpgradeFrameworkVersionAsync(_programId, request));
+        Assert.Equal("CURRICULUM_LOCKED_COHORT", locked.ErrorCode);
+
+        RemoveFramework();
+        var noFramework = await Assert.ThrowsAsync<ConflictException>(() => Sut(_managerId).UpgradeFrameworkVersionAsync(_programId, request));
+        Assert.Equal(ProgramApprovalService.FrameworkRequiredCode, noFramework.ErrorCode);
+        Assert.Empty(_published);
     }
 }

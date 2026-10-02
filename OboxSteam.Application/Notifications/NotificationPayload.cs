@@ -83,6 +83,12 @@ public sealed class NotificationPayload
     [Description("Program display name for client context.")]
     public string? ProgramName { get; set; }
 
+    [Description("Framework version the program was pinned to before an upgrade or a newer publish.")]
+    public int? FromVersion { get; set; }
+
+    [Description("Framework version the program upgraded to, or the newly published version.")]
+    public int? ToVersion { get; set; }
+
     public string? Extra { get; set; }
 
     /// <summary>
@@ -155,6 +161,8 @@ public sealed class NotificationPayload
         ActorName = ActorName,
         ClassName = ClassName,
         ProgramName = ProgramName,
+        FromVersion = FromVersion,
+        ToVersion = ToVersion,
         Extra = Extra
     };
 }

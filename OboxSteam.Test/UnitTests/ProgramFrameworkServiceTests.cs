@@ -3,6 +3,7 @@ using Moq;
 using OboxSteam.Application.DTOs.ProgramFrameworkDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -18,11 +19,16 @@ public sealed class ProgramFrameworkServiceTests
     private readonly Guid _frameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private readonly InMemoryUnitOfWork _db = new();
     private readonly Mock<IClaimsService> _claims = new();
+    private readonly Mock<INotificationPublisher> _notificationPublisher = new();
 
     private ProgramFrameworkService CreateSut(Guid userId)
     {
         _claims.Setup(c => c.GetCurrentUserId).Returns(userId);
-        return new ProgramFrameworkService(_db, _claims.Object, NullLogger<ProgramFrameworkService>.Instance);
+        return new ProgramFrameworkService(
+            _db,
+            _claims.Object,
+            _notificationPublisher.Object,
+            NullLogger<ProgramFrameworkService>.Instance);
     }
 
     private void SeedUser(Guid id, RoleType role, string code)
@@ -157,6 +163,42 @@ public sealed class ProgramFrameworkServiceTests
             Id = _frameworkId, ExpertId = _expertId, Name = "Robotics", Category = ProgramCategory.Technology,
         });
         await Assert.ThrowsAsync<ForbiddenException>(() => CreateSut(_managerId).ArchiveFrameworkAsync(_frameworkId));
+    }
+
+    [Fact]
+    public async Task Publish_NotifiesManagersOfProgramsOnOlderVersions()
+    {
+        SeedExpert();
+        var service = CreateSut(_expertUserId);
+        var framework = await service.CreateFrameworkAsync(new CreateProgramFrameworkRequest
+        {
+            Name = "Robotics", Category = ProgramCategory.Technology,
+        });
+        var v1 = await service.PublishDraftVersionAsync(framework.Id, framework.CurrentVersionId!.Value);
+        var olderProgramId = Guid.NewGuid();
+        _db.Programs.Seed(
+            new Program
+            {
+                Id = olderProgramId, Code = "PRG-OLD", Name = "Old", FrameworkId = framework.Id, FrameworkVersionId = v1.Id,
+            },
+            new Program
+            {
+                Id = Guid.NewGuid(), Code = "PRG-NOFW", Name = "No framework",
+            });
+        var draft = await service.CreateDraftVersionAsync(framework.Id);
+        IReadOnlyList<NotificationCommand>? sent = null;
+        _notificationPublisher
+            .Setup(p => p.PublishManyAsync(It.IsAny<IReadOnlyList<NotificationCommand>>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<NotificationCommand>, CancellationToken>((commands, _) => sent = commands)
+            .Returns(Task.CompletedTask);
+
+        await service.PublishDraftVersionAsync(framework.Id, draft.Id);
+
+        var command = Assert.Single(sent!);
+        Assert.Equal(NotificationType.FrameworkVersionPublished, command.Type);
+        Assert.Equal(olderProgramId, command.Payload!.ProgramId);
+        Assert.Equal(1, command.Payload.FromVersion);
+        Assert.Equal(2, command.Payload.ToVersion);
     }
 
     [Fact]

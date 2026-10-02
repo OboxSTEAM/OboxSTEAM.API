@@ -852,20 +852,83 @@ public sealed class ProgramServiceTests
     }
 
     [Fact]
-    public async Task Update_ClearFramework_UnlinksBlueprint()
+    public async Task Update_ClearFramework_ThrowsFrameworkLocked()
     {
         SeedProgram();
         var program = _db.Programs.Items.Single();
         program.FrameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateSut().UpdateProgramAsync(_programId, new UpdateProgramRequestDto { ClearFramework = true }));
+
+        Assert.Equal(ProgramService.FrameworkLockedCode, ex.ErrorCode);
+        Assert.NotNull(_db.Programs.Items.Single().FrameworkId);
+    }
+
+    [Fact]
+    public async Task Update_DifferentFrameworkOrVersion_ThrowsFrameworkLocked()
+    {
+        SeedProgram();
+        var program = _db.Programs.Items.Single();
+        program.FrameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        program.FrameworkVersionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         var sut = CreateSut();
 
-        var result = await sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+        var frameworkEx = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { FrameworkId = Guid.NewGuid() }));
+        var versionEx = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.UpdateProgramAsync(_programId, new UpdateProgramRequestDto { FrameworkVersionId = Guid.NewGuid() }));
+
+        Assert.Equal(ProgramService.FrameworkLockedCode, frameworkEx.ErrorCode);
+        Assert.Equal(ProgramService.FrameworkLockedCode, versionEx.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Update_AssignFrameworkToProgramWithoutOne_ThrowsFrameworkLocked()
+    {
+        SeedProgram();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateSut().UpdateProgramAsync(_programId, new UpdateProgramRequestDto { FrameworkId = Guid.NewGuid() }));
+
+        Assert.Equal(ProgramService.FrameworkLockedCode, ex.ErrorCode);
+        Assert.Null(_db.Programs.Items.Single().FrameworkId);
+    }
+
+    [Fact]
+    public async Task Update_MatchingFrameworkValues_AreIgnored()
+    {
+        SeedProgram();
+        var frameworkId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var versionId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var program = _db.Programs.Items.Single();
+        program.FrameworkId = frameworkId;
+        program.FrameworkVersionId = versionId;
+
+        var result = await CreateSut().UpdateProgramAsync(_programId, new UpdateProgramRequestDto
         {
+            Name = "Renamed",
+            FrameworkId = frameworkId,
+            FrameworkVersionId = versionId,
+        });
+
+        Assert.Equal("Renamed", result.Name);
+        Assert.Equal(frameworkId, result.FrameworkId);
+        Assert.Equal(versionId, result.FrameworkVersionId);
+    }
+
+    [Fact]
+    public async Task Update_ClearFrameworkWithoutFramework_IsIgnored()
+    {
+        SeedProgram();
+
+        var result = await CreateSut().UpdateProgramAsync(_programId, new UpdateProgramRequestDto
+        {
+            Name = "Renamed",
             ClearFramework = true,
         });
 
-        Assert.Null(result.FrameworkId);
-        Assert.Null(_db.Programs.Items.Single().FrameworkId);
+        Assert.Equal("Renamed", result.Name);
     }
 
     [Fact]

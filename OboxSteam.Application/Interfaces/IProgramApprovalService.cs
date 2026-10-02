@@ -27,4 +27,12 @@ public interface IProgramApprovalService
     Task<ProgramsResponseDto> PublishAsync(Guid programId);
 
     Task<ProgramsResponseDto> AssignAdvisorAsync(Guid programId, AssignProgramAdvisorRequest request);
+
+    /// <summary>
+    /// Moves the program to a newer published version of its framework. Treated like a curriculum
+    /// edit: the approval is revoked and Approved/Active/Inactive programs return to Draft.
+    /// </summary>
+    Task<ProgramAdvisoryWorkspaceDto> UpgradeFrameworkVersionAsync(
+        Guid programId,
+        UpgradeProgramFrameworkVersionRequest request);
 }

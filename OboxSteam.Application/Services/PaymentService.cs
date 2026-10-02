@@ -74,7 +74,7 @@ public class PaymentService : IPaymentService
         if (program.Price == null || program.Price <= 0)
             throw ErrorHelper.BadRequest("This program cannot be purchased because it has no valid price.");
 
-        ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
+        await _classSeatHoldService.EnsureProgramPurchasableAsync(program, studentId);
 
         await _classSeatHoldService.ReleaseExpiredHoldsAsync();
 
@@ -206,7 +206,7 @@ public class PaymentService : IPaymentService
         if (program.Price == null || program.Price <= 0)
             throw ErrorHelper.BadRequest("This program cannot be purchased because it has no valid price.");
 
-        ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
+        await _classSeatHoldService.EnsureProgramPurchasableAsync(program, studentId);
 
         await _classSeatHoldService.ReleaseExpiredHoldsAsync();
 
@@ -371,7 +371,7 @@ public class PaymentService : IPaymentService
         {
             var program = await _unitOfWork.Programs.GetByIdAsync(paymentRequest.ProgramId!.Value)
                 ?? throw ErrorHelper.NotFound("Program not found.");
-            ProgramEnrollmentValidator.EnsureProgramPurchasable(program);
+            await _classSeatHoldService.EnsureProgramPurchasableAsync(program, paymentRequest.StudentId);
 
             var hold = await ClassEnrollmentValidator.GetValidSeatHoldAsync(
                 _unitOfWork,

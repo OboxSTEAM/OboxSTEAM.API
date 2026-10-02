@@ -23,6 +23,8 @@ public sealed class ProgramApprovalService : IProgramApprovalService
     private const string FrameworkCheckFailedCode = "FRAMEWORK_CHECK_FAILED";
     private const string AdvisorRequiredCode = "ADVISOR_REQUIRED";
     private const string AdvisorLoginRequiredCode = "ADVISOR_LOGIN_REQUIRED";
+    public const string FrameworkRequiredCode = "FRAMEWORK_REQUIRED";
+    public const string FrameworkVersionInvalidCode = "FRAMEWORK_VERSION_INVALID";
     private const int MaxCommentLength = 2000;
 
     private readonly IUnitOfWork _unitOfWork;
@@ -161,6 +163,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         sync.Reset();
         var participant = await RequireManagerAsync(programId);
         var program = participant.Program;
+        EnsureHasFramework(program);
         EnsureStatus(program, ProgramStatus.Draft, "Approval can only be requested while the program is Draft.");
 
         if (!program.AdvisorExpertId.HasValue)
@@ -223,6 +226,7 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         }
 
         var program = participant.Program;
+        EnsureHasFramework(program);
         EnsureStatus(program, ProgramStatus.Draft, "Only Draft programs can be approved.");
         if (request.CurriculumVersion != program.CurriculumVersion)
         {
@@ -398,14 +402,25 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         sync.Reset();
         var participant = await RequireManagerAsync(programId);
         var program = participant.Program;
-        EnsureStatus(program, ProgramStatus.Approved, "Only Approved programs can be published.");
-
-        var approval = await FindActiveApprovalAsync(programId);
-        if (approval == null || approval.CurriculumVersion != program.CurriculumVersion)
+        if (!program.FrameworkId.HasValue)
         {
-            throw ErrorHelper.Conflict(
-                "The approval does not cover the current curriculum version. Ask the advisor to approve again.",
-                VersionStaleCode);
+            if (program.Status is not (ProgramStatus.Draft or ProgramStatus.Approved))
+            {
+                throw ErrorHelper.Conflict(
+                    $"Only Draft programs can be published. Current status: {program.Status}.",
+                    InvalidStatusCode);
+            }
+        }
+        else
+        {
+            EnsureStatus(program, ProgramStatus.Approved, "Only Approved programs can be published.");
+            var approval = await FindActiveApprovalAsync(programId);
+            if (approval == null || approval.CurriculumVersion != program.CurriculumVersion)
+            {
+                throw ErrorHelper.Conflict(
+                    "The approval does not cover the current curriculum version. Ask the advisor to approve again.",
+                    VersionStaleCode);
+            }
         }
 
         var actorName = AdvisoryParticipantAccess.DisplayName(participant.User);
@@ -513,6 +528,105 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         return true;
     }
 
+    public async Task<ProgramAdvisoryWorkspaceDto> UpgradeFrameworkVersionAsync(
+        Guid programId,
+        UpgradeProgramFrameworkVersionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var sync = new AdvisorySyncBatch(programId);
+        var notification = await _unitOfWork.ExecuteAdvisoryTransactionAsync(
+            programId,
+            () => UpgradeFrameworkVersionCoreAsync(programId, request, sync));
+        if (notification != null)
+        {
+            await _notificationPublisher.PublishAsync(notification);
+        }
+
+        await sync.PublishAsync(_syncEventPublisher);
+        return await GetWorkspaceAsync(programId);
+    }
+
+    private async Task<NotificationCommand?> UpgradeFrameworkVersionCoreAsync(
+        Guid programId,
+        UpgradeProgramFrameworkVersionRequest request,
+        AdvisorySyncBatch sync)
+    {
+        sync.Reset();
+        var participant = await RequireManagerAsync(programId);
+        var program = participant.Program;
+        if (!program.FrameworkId.HasValue)
+        {
+            throw ErrorHelper.Conflict("This program has no framework to upgrade.", FrameworkRequiredCode);
+        }
+
+        if (request.FrameworkVersionId == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("FrameworkVersionId is required.", FrameworkVersionInvalidCode);
+        }
+
+        var target = await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(request.FrameworkVersionId);
+        if (target == null || target.IsDeleted || target.FrameworkId != program.FrameworkId || !target.IsPublished)
+        {
+            throw ErrorHelper.BadRequest(
+                "The version must be a published version of this program's framework.",
+                FrameworkVersionInvalidCode);
+        }
+
+        var current = program.FrameworkVersionId.HasValue
+            ? await _unitOfWork.ProgramFrameworkVersions.GetByIdAsync(program.FrameworkVersionId.Value)
+            : null;
+        if (current != null && target.VersionNumber <= current.VersionNumber)
+        {
+            throw ErrorHelper.BadRequest(
+                $"The version must be newer than the current version {current.VersionNumber}.",
+                FrameworkVersionInvalidCode);
+        }
+
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_unitOfWork, programId);
+
+        var now = Now();
+        var actorName = AdvisoryParticipantAccess.DisplayName(participant.User);
+        program.FrameworkVersionId = target.Id;
+        if (program.Status != ProgramStatus.Draft || await FindActiveApprovalAsync(programId) != null)
+        {
+            await RevokeApprovalAsync(
+                program,
+                participant.User,
+                actorName,
+                ProgramApprovalRevokeReason.FrameworkUpgraded,
+                comment: null,
+                now);
+        }
+
+        await DiscussionSystemMessageWriter.AddAsync(
+            _unitOfWork,
+            program,
+            DiscussionSystemEventCode.FrameworkUpgraded,
+            new
+            {
+                fromVersion = current?.VersionNumber,
+                toVersion = target.VersionNumber,
+                actorName,
+            },
+            now,
+            participant.User.Id);
+        await _unitOfWork.Programs.Update(program);
+        await _unitOfWork.SaveChangesAsync();
+        RecordApprovalChange(sync, program);
+
+        var advisorUserId = await AdvisorUserIdAsync(program);
+        return advisorUserId.HasValue && advisorUserId.Value != participant.User.Id
+            ? NotificationCatalog.ProgramFrameworkUpgraded(
+                advisorUserId.Value,
+                program.Id,
+                current?.VersionNumber,
+                target.VersionNumber,
+                participant.User.Id,
+                program.Name,
+                actorName)
+            : null;
+    }
+
     /// <summary>Queues approvalChanged plus discussionChanged for the lifecycle system message just written.</summary>
     private static void RecordApprovalChange(AdvisorySyncBatch sync, Program program)
     {
@@ -582,8 +696,10 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         var (changesSinceApproval, unseenChanges) = await CountChangesAsync(program, user.Id);
         var isManager = participant.IsManager;
         var isAdvisor = participant.Role == AdvisoryParticipantRole.Advisor;
+        var hasFramework = program.FrameworkId.HasValue;
         var status = program.Status;
         var curriculumLocked = await CurriculumEditGuard.IsLockedAsync(_unitOfWork, program.Id);
+        var frameworkVersions = await FrameworkVersionLookup.ResolveAsync(_unitOfWork, program);
 
         return new ProgramAdvisoryWorkspaceDto
         {
@@ -593,19 +709,25 @@ public sealed class ProgramApprovalService : IProgramApprovalService
             CurriculumLocked = curriculumLocked,
             AdvisorExpertId = program.AdvisorExpertId,
             AdvisorName = advisor?.FullName,
+            FrameworkVersionNumber = frameworkVersions.Current,
+            LatestFrameworkVersionNumber = frameworkVersions.Latest,
+            HasNewerFrameworkVersion = frameworkVersions.HasNewer,
             Participants = await AdvisoryParticipantAccess.ListAsync(_unitOfWork, program, advisor),
             Capabilities = new AdvisoryCapabilitiesDto
             {
                 CanPost = true,
-                CanPin = participant.IsExpertParticipant,
-                CanResolvePin = participant.IsExpertParticipant,
+                CanPin = isAdvisor,
+                CanResolvePin = isAdvisor,
                 CanEditCurriculum = isManager && !curriculumLocked,
-                CanRequestApproval = isManager && status == ProgramStatus.Draft && advisorHasLogin,
-                CanApprove = isAdvisor && status == ProgramStatus.Draft,
+                CanRequestApproval = hasFramework && isManager && status == ProgramStatus.Draft && advisorHasLogin,
+                CanApprove = hasFramework && isAdvisor && status == ProgramStatus.Draft,
                 CanRevokeApproval = status == ProgramStatus.Approved && (isManager || isAdvisor),
                 CanPublish = isManager
-                             && status == ProgramStatus.Approved
-                             && approval?.CurriculumVersion == program.CurriculumVersion,
+                             && (hasFramework
+                                 ? status == ProgramStatus.Approved
+                                   && approval?.CurriculumVersion == program.CurriculumVersion
+                                 : status is ProgramStatus.Draft or ProgramStatus.Approved),
+                CanUpgradeFrameworkVersion = isManager && frameworkVersions.HasNewer && !curriculumLocked,
             },
             Approval = approval == null
                 ? null
@@ -703,6 +825,16 @@ public sealed class ProgramApprovalService : IProgramApprovalService
         return participant.IsManager
             ? participant
             : throw ErrorHelper.Forbidden("Only a manager or admin can perform this action.");
+    }
+
+    private static void EnsureHasFramework(Program program)
+    {
+        if (!program.FrameworkId.HasValue)
+        {
+            throw ErrorHelper.Conflict(
+                "This program has no framework, so it has no advisor approval. Publish it directly.",
+                FrameworkRequiredCode);
+        }
     }
 
     private static void EnsureStatus(Program program, ProgramStatus expected, string message)

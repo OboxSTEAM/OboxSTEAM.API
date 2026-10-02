@@ -141,4 +141,8 @@ public enum NotificationType
     // Advisory chat
     AdvisoryDiscussionMessage,
     AdvisoryMentionPinned,
+
+    // Framework versions
+    ProgramFrameworkUpgraded,
+    FrameworkVersionPublished,
 }

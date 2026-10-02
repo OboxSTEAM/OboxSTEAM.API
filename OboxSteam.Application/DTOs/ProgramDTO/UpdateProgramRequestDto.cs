@@ -24,12 +24,12 @@ public class UpdateProgramRequestDto
     public ProgramStatus? Status { get; set; }
     public decimal? Price { get; set; }
 
-    /// <summary>Assign a blueprint. Null is skipped (partial update). Use <see cref="ClearFramework"/> to unlink.</summary>
+    /// <summary>Locked after creation. Null or the current value is ignored; any other value returns 409 FRAMEWORK_LOCKED.</summary>
     public Guid? FrameworkId { get; set; }
 
-    /// <summary>Explicit published version adoption while the program is editable.</summary>
+    /// <summary>Locked after creation. Null or the current value is ignored; upgrade via POST framework-version.</summary>
     public Guid? FrameworkVersionId { get; set; }
 
-    /// <summary>When true, clears <c>Program.FrameworkId</c>. Ignored when <see cref="FrameworkId"/> is set.</summary>
+    /// <summary>Locked after creation. True on a program with a framework returns 409 FRAMEWORK_LOCKED.</summary>
     public bool? ClearFramework { get; set; }
 }

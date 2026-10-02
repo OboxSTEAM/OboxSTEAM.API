@@ -46,12 +46,14 @@ and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
   Assignment adds the expert to `ProgramBoard` and posts an `AdvisorChanged`
   system message; on an `Approved` program the approval is revoked
   (`AdvisorChanged`) and the program returns to `Draft`.
-- `POST /api/programs/{id}/approval/request` — `Draft` only; requires an
+- `POST /api/programs/{id}/approval/request` — `Draft` only; the program must
+  have a framework (409 `FRAMEWORK_REQUIRED`); requires an
   advisor with an active linked login (`ADVISOR_REQUIRED`,
   `ADVISOR_LOGIN_REQUIRED`). Posts `ApprovalRequested` and notifies the
   advisor (`CurriculumApprovalRequested`). Does not change status.
 - `POST /api/programs/{id}/approval` — advisor only (Expert). Body
-  `{ curriculumVersion, comment? }`. `Draft` only; `curriculumVersion` must
+  `{ curriculumVersion, comment? }`. Framework required (409
+  `FRAMEWORK_REQUIRED`). `Draft` only; `curriculumVersion` must
   equal the program's (`CURRICULUM_VERSION_STALE`); no `Open` pins
   (`APPROVAL_BLOCKED`); the live framework check must pass
   (`FRAMEWORK_CHECK_FAILED`, check in `data`). Creates a `ProgramApproval`
@@ -62,15 +64,21 @@ and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
   (`ManagerReopened` / `ExpertRevoked`), returns to `Draft`, posts
   `ApprovalRevoked`. A manager reopen notifies the advisor; an advisor revoke
   notifies managers (`CurriculumApprovalRevoked`).
-- `POST /api/programs/{id}/publish` — `Approved` → `Active`; the active
-  approval must cover the current curriculum version
-  (`CURRICULUM_VERSION_STALE`). Notifies managers (`CurriculumReviewPublished`).
+- `POST /api/programs/{id}/publish` — with a framework: `Approved` → `Active`;
+  the active approval must cover the current curriculum version
+  (`CURRICULUM_VERSION_STALE`). Without a framework there is no approval step:
+  `Draft` or `Approved` → `Active` directly (other statuses 409
+  `INVALID_STATUS`). Notifies managers (`CurriculumReviewPublished`).
+- `POST /api/programs/{id}/framework-version` — Manager/Admin. Body
+  `{ frameworkVersionId }`. Upgrades the pinned framework version; see
+  [Framework version upgrade](#framework-version-upgrade).
 - `GET /api/programs/{id}/advisory` — workspace: status, curriculum version,
-  advisor, participants (managers, advisor, board experts), capabilities
-  (`canPost`, `canPin`, `canResolvePin`, `canEditCurriculum`,
-  `canRequestApproval`, `canApprove`, `canRevokeApproval`, `canPublish`), the
-  active approval, pin/unread counts, `frameworkCheckPassed`, and change counts
-  since the last approval.
+  `frameworkVersionNumber`, `latestFrameworkVersionNumber`,
+  `hasNewerFrameworkVersion`, advisor, participants (managers, advisor, board
+  experts), capabilities (`canPost`, `canPin`, `canResolvePin`,
+  `canEditCurriculum`, `canRequestApproval`, `canApprove`, `canRevokeApproval`,
+  `canPublish`, `canUpgradeFrameworkVersion`), the active approval, pin/unread
+  counts, `frameworkCheckPassed`, and change counts since the last approval.
 - `GET /api/programs/advisory-mine` — Manager/Admin/Expert; paginated
   assigned advisory programs (advisor/board for Expert, 403 without an expert
   profile; all for Manager/Admin). Query `page`, `pageSize`, `status`,
@@ -95,15 +103,34 @@ and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
   `{id}/advisory-references/*`, `advisory-anchor-fields`, and the framework
   `rubric` / `criteria*` routes.
 
-Curriculum edits are locked only by live cohorts (a class `InProgress`, or an
-`Open` class with `Active` enrollments): 409 `CURRICULUM_LOCKED_COHORT`. The same
-lock and code apply to program delete, thumbnail upload, and a program update that
-changes a curriculum field (values equal to the current ones do not count);
-`status`, `price` and framework updates stay allowed. An edit while an approval is active
-revokes it (`CurriculumEdited`); an `Approved` program returns to `Draft`.
-Optional `frameworkId` on create/update selects an expert blueprint
-(`clearFramework` unlinks). The framework check runs at approval, not on
-create/update.
+Curriculum edits are locked only by live cohorts (a class `InProgress`, an
+`Open` class with `Active` enrollments, or an `Open` class with a live seat hold
+whose program enrollment has a `Pending` Stripe/parent payment): 409
+`CURRICULUM_LOCKED_COHORT`. A plain 5-minute seat hold without an open payment
+does not lock. The same lock and code apply to program delete, thumbnail upload,
+framework version upgrade, and a program update that changes a curriculum field
+(values equal to the current ones do not count); `status` and `price` updates
+stay allowed. An edit while an approval is active revokes it (`CurriculumEdited`).
+See [Approval](#approval) for which statuses return to `Draft`.
+
+Optional `frameworkId` / `frameworkVersionId` on create selects an expert
+blueprint. After create the framework is locked: `PUT /api/programs/{id}` returns
+409 `FRAMEWORK_LOCKED` when `frameworkId` or `frameworkVersionId` is non-null and
+differs from the stored value, or `clearFramework: true` is sent for a program
+that has a framework. Null, omitted, and matching values are ignored. Use the
+upgrade endpoint to move to a newer version of the same framework. The framework
+check runs at approval and after an upgrade (workspace `frameworkCheckPassed`),
+not on create/update.
+
+`GET /api/programs/{id}` and the workspace return `frameworkVersionNumber`,
+`latestFrameworkVersionNumber` (highest published version of the program's
+framework), and `hasNewerFrameworkVersion` (null/false without a framework).
+
+Checkout (`select-class`, direct Stripe checkout, parent payment request, parent
+checkout) on a program that is not `Active` releases the student's pending
+checkout (seat hold withdrawn, pending payments cancelled, open payment requests
+expired) and fails with 400 `PROGRAM_NOT_AVAILABLE`, so no seat is sold on a
+`Draft` program.
 
 ## Advisory Chat and Approval
 
@@ -194,12 +221,37 @@ includes the count); framework check passes (409 `FRAMEWORK_CHECK_FAILED`,
 the approval, resolve every `Addressed` pin, set `Approved`, post `Approved`,
 notify managers.
 
-Auto-revoke: any curriculum save while an approval is active (or the program is
-`Approved`) revokes it (`CurriculumEdited`) in the same save and posts
-`ApprovalRevoked` before the session message. `Approved` returns to `Draft`;
-`Active`/`Inactive` keep their status (re-approval of live programs is out of
-scope). Later edits find no active approval and only extend the session
-message.
+Auto-revoke: any curriculum save while an approval is active, while the program
+is `Approved`, or while a program with a framework is `Active`/`Inactive`
+revokes the approval (`CurriculumEdited`) in the same save, posts
+`ApprovalRevoked` before the session message, and notifies the advisor
+(`CurriculumApprovalRevoked`). `Approved` returns to `Draft`; a program with a
+framework also returns from `Active`/`Inactive` to `Draft`, because every
+published version must be approved again. Programs without a framework keep
+`Active`/`Inactive`. Edits are only possible when `CurriculumEditGuard` passes,
+so only programs whose `Open` classes have no enrolled students or open
+checkouts are affected; those classes sell seats again after republish. Later
+edits find no active approval and only extend the session message.
+
+### Framework version upgrade
+
+`POST /api/programs/{id}/framework-version` — Manager/Admin. Body
+`{ frameworkVersionId }`. Checks, in order: program has a framework (409
+`FRAMEWORK_REQUIRED`); the version exists, belongs to the program's framework,
+is published, and is newer than the pinned version (400
+`FRAMEWORK_VERSION_INVALID`); `CurriculumEditGuard` passes (409
+`CURRICULUM_LOCKED_COHORT`). On success, in one transaction: pin the new
+version, revoke the active approval (`FrameworkUpgraded`) and return to `Draft`
+when the program is not `Draft` or has an active approval (posts
+`ApprovalRevoked`), post `FrameworkUpgraded`, and notify the advisor
+(`ProgramFrameworkUpgraded`). `curriculumVersion` is not bumped. The workspace
+`frameworkCheckPassed` reflects the new rules. Returns the workspace DTO.
+
+Publishing a new framework version (`POST
+/api/program-frameworks/{id}/versions/{versionId}/publish`) notifies managers
+once per non-deleted program of that framework pinned to an older version
+(`FrameworkVersionPublished`, payload `programId`, `fromVersion`,
+`toVersion`). Pinned programs never change by themselves.
 
 Workspace `GET /api/programs/{id}/advisory` returns `programId`, `status`,
 `curriculumVersion`, `curriculumLocked` (a live cohort blocks curriculum edits),
@@ -209,18 +261,20 @@ board experts), `capabilities`, `approval` (active approval or null:
 `id`, `curriculumVersion`, `approvedAt`, `approvedByName`, `comment`),
 `openPinCount`, `addressedPinCount`, `unreadCount`, `frameworkCheckPassed`
 (live), `changesSinceApprovalCount` (net items for `base=lastApproval`),
-`unseenChangeCount`, `latestSequence`. Approval request/approve/revoke return
-the workspace DTO.
+`unseenChangeCount`, `latestSequence`, `frameworkVersionNumber`,
+`latestFrameworkVersionNumber`, `hasNewerFrameworkVersion`. Approval
+request/approve/revoke and framework upgrade return the workspace DTO.
 
 | Capability | Rule |
 | --- | --- |
 | `canPost` | participant |
-| `canPin`, `canResolvePin` | advisor or board expert |
+| `canPin`, `canResolvePin` | caller is the advisor (board experts cannot) |
 | `canEditCurriculum` | Manager/Admin and `curriculumLocked` is false (any status) |
-| `canRequestApproval` | Manager/Admin, `Draft`, advisor assigned with a login |
-| `canApprove` | caller is the advisor and status `Draft` |
+| `canRequestApproval` | Manager/Admin, program has a framework, `Draft`, advisor assigned with a login |
+| `canApprove` | caller is the advisor, program has a framework, status `Draft` |
 | `canRevokeApproval` | `Approved` and caller is Manager/Admin or the advisor |
-| `canPublish` | Manager/Admin, `Approved`, approval version = `curriculumVersion` |
+| `canPublish` | Manager/Admin; with a framework: `Approved` and approval version = `curriculumVersion`; without: `Draft` or `Approved` |
+| `canUpgradeFrameworkVersion` | Manager/Admin, `hasNewerFrameworkVersion`, `curriculumLocked` is false |
 
 Board experts and the advisor get read access to the program's modules,
 courses, activities, assignments, research milestones (and links), and
@@ -267,8 +321,8 @@ text, no references, attachments, or pin; excluded from filters and counts.
 | POST | `/messages` | participant | `{ text, attachmentIds[], clientMessageId }` | Message DTO; idempotent on author + `clientMessageId` |
 | PATCH | `/messages/{messageId}` | author | `{ text }` | Message DTO; mentions re-parsed |
 | DELETE | `/messages/{messageId}` | author | | Removal (tombstone; pin removed) |
-| POST | `/messages/{messageId}/pin` | advisor or board expert | | Pin `Open` (idempotent) |
-| DELETE | `/messages/{messageId}/pin` | advisor or board expert | | Pin removed (idempotent) |
+| POST | `/messages/{messageId}/pin` | advisor | | Pin `Open` (idempotent) |
+| DELETE | `/messages/{messageId}/pin` | advisor | | Pin removed (idempotent) |
 | POST | `/messages/{messageId}/pin/actions` | see below | `{ action }` | Message DTO |
 | GET | `/pins` | participant | `status?` | Message DTO[] by `pinnedAt` |
 | GET | `/mention-counts` | participant | | `[{ targetType, targetId, messageCount, openPinCount }]` |
@@ -277,8 +331,9 @@ text, no references, attachments, or pin; excluded from filters and counts.
 | GET | `/attachments/{attachmentId}/url` | participant | | `{ url, expiresAt }` (15 minutes) |
 
 Pin actions: `MarkAddressed` (Manager/Admin, `Open` → `Addressed`), `Reopen`
-(advisor or board expert, `Addressed`/`Resolved` → `Open`), `Resolve` (advisor
-or board expert, `Open`/`Addressed` → `Resolved`). Unpinned message or wrong
+(advisor, `Addressed`/`Resolved` → `Open`), `Resolve` (advisor,
+`Open`/`Addressed` → `Resolved`). Board experts get 403 on pin, unpin, reopen,
+and resolve; they can still post and read. Unpinned message or wrong
 status → 409 `INVALID_STATUS`. Only `Open` pins block approval. System
 messages cannot be pinned, edited, or removed. `targetType` + `targetId` (both
 or neither, else 400) and mention counts match the exact component only;
@@ -301,6 +356,7 @@ System event codes and payloads:
 | `ApprovalRevoked` | `{ approvalId, reason, actorName, comment? }` | Any revoke path |
 | `Published` | `{ publishedByName }` | Publish |
 | `AdvisorChanged` | `{ previousAdvisorName?, newAdvisorName? }` | `PUT advisor` |
+| `FrameworkUpgraded` | `{ fromVersion?, toVersion, actorName }` | `POST framework-version` |
 
 Attachments (`ProgramAdvisoryDiscussionAttachment`, S3 key
 `advisory/{programId}/{attachmentId}/{fileName}`): AttachmentDto `{ id,
@@ -330,7 +386,11 @@ The S3 object is copied to the material key space; returns the material DTO.
 | `FRAMEWORK_CHECK_FAILED` | 409 | approve (`data` = `FrameworkCheckDto`) |
 | `FRAMEWORK_UNAVAILABLE` | 409 | pinned framework version not published |
 | `INVALID_STATUS` | 409 | lifecycle or pin action in the wrong status |
-| `CURRICULUM_LOCKED_COHORT` | 409 | curriculum, program update of curriculum fields, program delete, save as material while a live cohort runs |
+| `CURRICULUM_LOCKED_COHORT` | 409 | curriculum, program update of curriculum fields, program delete, save as material, framework upgrade while a live cohort runs or a checkout payment is open |
+| `FRAMEWORK_LOCKED` | 409 | `PUT /api/programs/{id}` that would change the framework |
+| `FRAMEWORK_REQUIRED` | 409 | approval request, approve, framework upgrade on a program without a framework |
+| `FRAMEWORK_VERSION_INVALID` | 400 | framework upgrade (other framework, unpublished, not newer) |
+| `PROGRAM_NOT_AVAILABLE` | 400 | checkout / parent payment on a program that is not `Active` |
 | `ADVISOR_REQUIRED`, `ADVISOR_LOGIN_REQUIRED` | 400 | approval request |
 | `MENTION_TARGET_INVALID` | 400 | post/edit message |
 | `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, `TOO_MANY_MENTIONS`, `TOO_MANY_ATTACHMENTS` | 400 | post/edit message |
@@ -567,8 +627,9 @@ values are ≥ 0, each min ≤ its max, and the two ratios sum to ≤ 100
 (`FRAMEWORK_RULES_INVALID`). The rubric was removed. A program pins one published
 version and many programs may pin the same version, even when they have
 different responsible advisors. Publishing a newer version never changes an
-existing program. Managers explicitly adopt a newer version while curriculum
-is editable. Framework `Category` is guidance only and never an eligibility
+existing program; managers are notified and explicitly adopt it with
+`POST /api/programs/{id}/framework-version` while curriculum is editable (see
+[Framework version upgrade](#framework-version-upgrade)). Framework `Category` is guidance only and never an eligibility
 gate.
 
 Published versions and referenced history are immutable. Draft updates are

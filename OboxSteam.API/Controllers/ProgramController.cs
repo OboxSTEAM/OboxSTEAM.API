@@ -226,7 +226,9 @@ public class ProgramController : ControllerBase
     [SwaggerOperation(
         Summary = "Select a class and hold a seat",
         Description = "Starts a 5-minute soft seat hold when the student selects a class. "
-            + "Checkout and parent-pay require this step first. Publishes seats.changed over SignalR.")]
+            + "Checkout and parent-pay require this step first. Publishes seats.changed over SignalR. "
+            + "When the program is not Active (for example it returned to Draft for re-approval), this, checkout, "
+            + "and parent-pay release the student's hold and pending checkout and return 400 PROGRAM_NOT_AVAILABLE.")]
     [ProducesResponseType(typeof(ApiResult<SelectProgramClassResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -339,7 +341,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Ask the advisor to approve the current curriculum",
-        Description = "Draft only (409 INVALID_STATUS). Requires a responsible advisor (400 ADVISOR_REQUIRED) with an active login (400 ADVISOR_LOGIN_REQUIRED). Posts ApprovalRequested and notifies the advisor. Status is unchanged.")]
+        Description = "Programs without a framework have no approval step (409 FRAMEWORK_REQUIRED). Draft only (409 INVALID_STATUS). Requires a responsible advisor (400 ADVISOR_REQUIRED) with an active login (400 ADVISOR_LOGIN_REQUIRED). Posts ApprovalRequested and notifies the advisor. Status is unchanged.")]
     [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -355,7 +357,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert")]
     [SwaggerOperation(
         Summary = "Approve the current curriculum version (advisor)",
-        Description = "Checks in order: caller is the advisor (403); status Draft (409 INVALID_STATUS); curriculumVersion matches (409 CURRICULUM_VERSION_STALE); no Open pins (409 APPROVAL_BLOCKED); framework check passes (409 FRAMEWORK_CHECK_FAILED with FrameworkCheckDto in value.data). Resolves Addressed pins, sets Approved, posts Approved, and notifies managers.")]
+        Description = "Checks in order: caller is the advisor (403); the program has a framework (409 FRAMEWORK_REQUIRED); status Draft (409 INVALID_STATUS); curriculumVersion matches (409 CURRICULUM_VERSION_STALE); no Open pins (409 APPROVAL_BLOCKED); framework check passes (409 FRAMEWORK_CHECK_FAILED with FrameworkCheckDto in value.data). Resolves Addressed pins, sets Approved, posts Approved, and notifies managers.")]
     [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -390,8 +392,10 @@ public class ProgramController : ControllerBase
     [HttpPost("{id:guid}/publish")]
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
-        Summary = "Publish an approved program",
-        Description = "Approved only (409 INVALID_STATUS) and the active approval must cover the current curriculumVersion (409 CURRICULUM_VERSION_STALE). Moves to Active, posts Published, and notifies managers. Enrollment and class creation require Active.")]
+        Summary = "Publish a program",
+        Description = "With a framework: Approved only (409 INVALID_STATUS) and the active approval must cover the current curriculumVersion (409 CURRICULUM_VERSION_STALE). "
+            + "Without a framework: no approval step; Draft (or legacy Approved) publishes directly, other statuses return 409 INVALID_STATUS. "
+            + "Moves to Active, posts Published, and notifies managers. Enrollment and class creation require Active.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]
@@ -401,6 +405,27 @@ public class ProgramController : ControllerBase
     {
         var result = await _programApprovalService.PublishAsync(id);
         return Ok(ApiResult<ProgramsResponseDto>.Success(result, "200", "Program published successfully."));
+    }
+
+    [HttpPost("{id:guid}/framework-version")]
+    [Authorize(Roles = "Admin,Manager")]
+    [SwaggerOperation(
+        Summary = "Upgrade to a newer version of the program's framework",
+        Description = "Programs without a framework return 409 FRAMEWORK_REQUIRED. The version must be published, belong to the same framework, and be newer than the pinned one (400 FRAMEWORK_VERSION_INVALID). "
+            + "Uses the curriculum cohort lock (409 CURRICULUM_LOCKED_COHORT). Pins the version, revokes the active approval (FrameworkUpgraded), "
+            + "returns Approved/Active/Inactive programs to Draft, posts FrameworkUpgraded { fromVersion, toVersion }, and notifies the advisor. "
+            + "Returns the workspace; frameworkCheckPassed reflects the new rules.")]
+    [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> UpgradeFrameworkVersion(
+        [FromRoute] Guid id,
+        [FromBody] UpgradeProgramFrameworkVersionRequest request)
+    {
+        var result = await _programApprovalService.UpgradeFrameworkVersionAsync(id, request);
+        return Ok(ApiResult<ProgramAdvisoryWorkspaceDto>.Success(result, "200", "Framework version upgraded."));
     }
 
     [Obsolete("Replaced by POST approval.")]
@@ -449,7 +474,8 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Advisory workspace summary for a program",
-        Description = "Status, curriculumVersion, participants, capabilities, the active approval, pin counts, discussion unreadCount, live frameworkCheckPassed, changesSinceApprovalCount, unseenChangeCount, and latestSequence.")]
+        Description = "Status, curriculumVersion, frameworkVersionNumber, latestFrameworkVersionNumber, hasNewerFrameworkVersion, participants, capabilities, the active approval, pin counts, discussion unreadCount, live frameworkCheckPassed, changesSinceApprovalCount, unseenChangeCount, and latestSequence. "
+            + "Only the advisor gets canPin/canResolvePin. Programs without a framework never get canRequestApproval/canApprove and get canPublish in Draft.")]
     [ProducesResponseType(typeof(ApiResult<ProgramAdvisoryWorkspaceDto>), 200)]
     public async Task<IActionResult> GetAdvisoryWorkspace([FromRoute] Guid id)
     {
@@ -666,7 +692,7 @@ public class ProgramController : ControllerBase
 
     [HttpPost("{id:guid}/advisory-discussion/messages/{messageId:guid}/pin")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Pin a chat message", Description = "Advisor or board expert. Pin starts Open; already pinned messages are returned unchanged.")]
+    [SwaggerOperation(Summary = "Pin a chat message", Description = "Program advisor only (board experts and managers get 403). Pin starts Open; already pinned messages are returned unchanged.")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
     public async Task<IActionResult> PinAdvisoryDiscussionMessage(
         [FromRoute] Guid id,
@@ -678,7 +704,7 @@ public class ProgramController : ControllerBase
 
     [HttpDelete("{id:guid}/advisory-discussion/messages/{messageId:guid}/pin")]
     [Authorize(Roles = "Expert,Manager,Admin")]
-    [SwaggerOperation(Summary = "Unpin a chat message", Description = "Advisor or board expert.")]
+    [SwaggerOperation(Summary = "Unpin a chat message", Description = "Program advisor only (board experts and managers get 403).")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
     public async Task<IActionResult> UnpinAdvisoryDiscussionMessage(
         [FromRoute] Guid id,
@@ -692,7 +718,7 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Expert,Manager,Admin")]
     [SwaggerOperation(
         Summary = "Change a pin status",
-        Description = "MarkAddressed (Manager/Admin, Open → Addressed), Reopen (advisor or board expert, Addressed/Resolved → Open), Resolve (advisor or board expert, Open/Addressed → Resolved). Invalid transitions return 409 INVALID_STATUS.")]
+        Description = "MarkAddressed (Manager/Admin, Open → Addressed), Reopen (program advisor, Addressed/Resolved → Open), Resolve (program advisor, Open/Addressed → Resolved). Board experts get 403. Invalid transitions return 409 INVALID_STATUS.")]
     [ProducesResponseType(typeof(ApiResult<AdvisoryDiscussionMessageDto>), 200)]
     public async Task<IActionResult> PerformAdvisoryPinAction(
         [FromRoute] Guid id,
@@ -849,7 +875,9 @@ public class ProgramController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Update program information",
-        Description = "Updates program details. Status may only toggle Active ↔ Inactive. Requires Admin or Manager role.")]
+        Description = "Updates program details. Status may only toggle Active ↔ Inactive. The framework is set only on create: "
+            + "frameworkId, frameworkVersionId, or clearFramework that would change it return 409 FRAMEWORK_LOCKED "
+            + "(omitted or matching values are ignored). Requires Admin or Manager role.")]
     [ProducesResponseType(typeof(ApiResult<ProgramsResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

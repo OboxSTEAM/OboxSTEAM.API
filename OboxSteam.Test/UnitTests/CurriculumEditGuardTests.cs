@@ -57,6 +57,54 @@ public sealed class CurriculumEditGuardTests
             CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_db, _programId));
     }
 
+    private Guid SeedHeldSeat(DateTime holdExpiresAt, PaymentStatus? paymentStatus)
+    {
+        var classId = Guid.NewGuid();
+        var programEnrollmentId = Guid.NewGuid();
+        _db.Classes.Seed(new Class
+        {
+            Id = classId, Code = "CLS", Name = "Cohort", ProgramId = _programId, Status = ClassStatus.Open,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(), ClassId = classId, StudentId = Guid.NewGuid(), Status = ClassEnrollmentStatus.Pending,
+            HoldExpiresAt = holdExpiresAt, ProgramEnrollmentId = programEnrollmentId,
+        });
+        if (paymentStatus.HasValue)
+        {
+            _db.Payments.Seed(new Payment
+            {
+                Id = Guid.NewGuid(), ProgramEnrollmentId = programEnrollmentId, Status = paymentStatus.Value,
+            });
+        }
+
+        return classId;
+    }
+
+    [Fact]
+    public async Task Curriculum_Throws_WhenOpenClassHasLiveCheckout()
+    {
+        SeedProgram(ProgramStatus.Active);
+        SeedHeldSeat(DateTime.UtcNow.AddHours(1), PaymentStatus.Pending);
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_db, _programId));
+
+        Assert.Equal(CurriculumEditGuard.LockedCode, ex.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData(null, 5)]
+    [InlineData(PaymentStatus.Pending, -5)]
+    [InlineData(PaymentStatus.Failed, 60)]
+    public async Task Curriculum_Allows_PlainHoldExpiredHoldOrClosedPayment(PaymentStatus? paymentStatus, int holdMinutes)
+    {
+        SeedProgram(ProgramStatus.Active);
+        SeedHeldSeat(DateTime.UtcNow.AddMinutes(holdMinutes), paymentStatus);
+
+        await CurriculumEditGuard.EnsureProgramCurriculumEditableAsync(_db, _programId);
+    }
+
     [Fact]
     public async Task Program_Throws_WhenClassInProgress()
     {

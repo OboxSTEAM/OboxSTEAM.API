@@ -285,7 +285,7 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
             sync.Reset();
             pinnedBy = null;
             var participant = await RequireParticipantAsync(programId);
-            RequireExpertParticipant(participant);
+            RequireAdvisor(participant);
             var message = await RequirePinnableMessageAsync(programId, messageId);
             if (message.PinStatus != null)
             {
@@ -323,7 +323,7 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
         {
             sync.Reset();
             var participant = await RequireParticipantAsync(programId);
-            RequireExpertParticipant(participant);
+            RequireAdvisor(participant);
             var message = await RequirePinnableMessageAsync(programId, messageId);
             if (message.PinStatus == null)
             {
@@ -376,7 +376,7 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
                     message.AddressedAt = now;
                     break;
                 case DiscussionPinAction.Reopen:
-                    RequireExpertParticipant(participant);
+                    RequireAdvisor(participant);
                     RequirePinStatus(message, DiscussionPinStatus.Addressed, DiscussionPinStatus.Resolved);
                     message.PinStatus = DiscussionPinStatus.Open;
                     message.AddressedByUserId = null;
@@ -385,7 +385,7 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
                     message.ResolvedAt = null;
                     break;
                 case DiscussionPinAction.Resolve:
-                    RequireExpertParticipant(participant);
+                    RequireAdvisor(participant);
                     RequirePinStatus(message, DiscussionPinStatus.Open, DiscussionPinStatus.Addressed);
                     message.PinStatus = DiscussionPinStatus.Resolved;
                     message.ResolvedByUserId = participant.User.Id;
@@ -569,11 +569,11 @@ public sealed class ProgramAdvisoryDiscussionService : IProgramAdvisoryDiscussio
         }
     }
 
-    private static void RequireExpertParticipant(AdvisoryParticipant participant)
+    private static void RequireAdvisor(AdvisoryParticipant participant)
     {
-        if (!participant.IsExpertParticipant)
+        if (!participant.IsAdvisor)
         {
-            throw ErrorHelper.Forbidden("Only the advisor or a board expert can manage pins.");
+            throw ErrorHelper.Forbidden("Only the program advisor can manage pins.");
         }
     }
 

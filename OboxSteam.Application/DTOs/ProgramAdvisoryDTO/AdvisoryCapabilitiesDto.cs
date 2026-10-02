@@ -10,4 +10,5 @@ public sealed class AdvisoryCapabilitiesDto
     public bool CanRevokeApproval { get; set; }
     public bool CanRequestApproval { get; set; }
     public bool CanPublish { get; set; }
+    public bool CanUpgradeFrameworkVersion { get; set; }
 }

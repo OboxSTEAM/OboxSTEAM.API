@@ -6,4 +6,5 @@ public enum ProgramApprovalRevokeReason
     CurriculumEdited,
     ExpertRevoked,
     AdvisorChanged,
+    FrameworkUpgraded,
 }

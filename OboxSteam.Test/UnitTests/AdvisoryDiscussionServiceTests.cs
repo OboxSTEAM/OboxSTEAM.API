@@ -481,7 +481,7 @@ public sealed class AdvisoryDiscussionServiceTests
         _published.Clear();
 
         await Chat(_advisorUserId).PinMessageAsync(_programId, message.Id);
-        await Chat(_boardUserId).PinMessageAsync(_programId, message.Id);
+        await Chat(_advisorUserId).PinMessageAsync(_programId, message.Id);
         await Chat(_managerId).PerformPinActionAsync(
             _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.MarkAddressed });
         await Chat(_advisorUserId).PerformPinActionAsync(
@@ -568,7 +568,8 @@ public sealed class AdvisoryDiscussionServiceTests
         var pinned = await Chat(_advisorUserId).PinMessageAsync(_programId, message.Id);
         Assert.Equal(DiscussionPinStatus.Open, pinned.Pin!.Status);
         Assert.Equal(_advisorUserId, pinned.Pin.PinnedByUserId);
-        var repinned = await Chat(_boardUserId).PinMessageAsync(_programId, message.Id);
+        await Assert.ThrowsAsync<ForbiddenException>(() => Chat(_boardUserId).PinMessageAsync(_programId, message.Id));
+        var repinned = await Chat(_advisorUserId).PinMessageAsync(_programId, message.Id);
         Assert.Equal(_advisorUserId, repinned.Pin!.PinnedByUserId);
 
         await Assert.ThrowsAsync<ForbiddenException>(() => Chat(_advisorUserId).PerformPinActionAsync(
@@ -580,11 +581,13 @@ public sealed class AdvisoryDiscussionServiceTests
 
         await Assert.ThrowsAsync<ForbiddenException>(() => Chat(_managerId).PerformPinActionAsync(
             _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.Resolve }));
-        var resolved = await Chat(_boardUserId).PerformPinActionAsync(
+        await Assert.ThrowsAsync<ForbiddenException>(() => Chat(_boardUserId).PerformPinActionAsync(
+            _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.Resolve }));
+        var resolved = await Chat(_advisorUserId).PerformPinActionAsync(
             _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.Resolve });
         Assert.Equal(DiscussionPinStatus.Resolved, resolved.Pin!.Status);
 
-        var again = await Assert.ThrowsAsync<ConflictException>(() => Chat(_boardUserId).PerformPinActionAsync(
+        var again = await Assert.ThrowsAsync<ConflictException>(() => Chat(_advisorUserId).PerformPinActionAsync(
             _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.Resolve }));
         Assert.Equal("INVALID_STATUS", again.ErrorCode);
         var addressResolved = await Assert.ThrowsAsync<ConflictException>(() => Chat(_managerId).PerformPinActionAsync(
@@ -597,7 +600,10 @@ public sealed class AdvisoryDiscussionServiceTests
         Assert.Null(reopened.Pin.AddressedAt);
         Assert.Null(reopened.Pin.ResolvedAt);
 
-        var unpinned = await Chat(_boardUserId).UnpinMessageAsync(_programId, message.Id);
+        await Assert.ThrowsAsync<ForbiddenException>(() => Chat(_boardUserId).PerformPinActionAsync(
+            _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.Reopen }));
+        await Assert.ThrowsAsync<ForbiddenException>(() => Chat(_boardUserId).UnpinMessageAsync(_programId, message.Id));
+        var unpinned = await Chat(_advisorUserId).UnpinMessageAsync(_programId, message.Id);
         Assert.Null(unpinned.Pin);
     }
 
@@ -661,11 +667,11 @@ public sealed class AdvisoryDiscussionServiceTests
         _sync.Events.Clear();
 
         await Chat(_advisorUserId).PinMessageAsync(_programId, message.Id);
-        await Chat(_boardUserId).PinMessageAsync(_programId, message.Id);
+        await Chat(_advisorUserId).PinMessageAsync(_programId, message.Id);
         await Chat(_managerId).PerformPinActionAsync(
             _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.MarkAddressed });
-        await Chat(_boardUserId).UnpinMessageAsync(_programId, message.Id);
-        await Chat(_boardUserId).UnpinMessageAsync(_programId, message.Id);
+        await Chat(_advisorUserId).UnpinMessageAsync(_programId, message.Id);
+        await Chat(_advisorUserId).UnpinMessageAsync(_programId, message.Id);
         await Assert.ThrowsAsync<ConflictException>(() => Chat(_advisorUserId).PerformPinActionAsync(
             _programId, message.Id, new AdvisoryDiscussionPinActionRequest { Action = DiscussionPinAction.Resolve }));
 

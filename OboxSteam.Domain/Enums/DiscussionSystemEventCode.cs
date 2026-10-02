@@ -8,4 +8,5 @@ public enum DiscussionSystemEventCode
     ApprovalRevoked,
     Published,
     AdvisorChanged,
+    FrameworkUpgraded,
 }

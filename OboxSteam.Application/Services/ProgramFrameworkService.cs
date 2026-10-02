@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ProgramFrameworkDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -14,12 +15,18 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClaimsService _claimsService;
+    private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<ProgramFrameworkService> _logger;
 
-    public ProgramFrameworkService(IUnitOfWork unitOfWork, IClaimsService claimsService, ILogger<ProgramFrameworkService> logger)
+    public ProgramFrameworkService(
+        IUnitOfWork unitOfWork,
+        IClaimsService claimsService,
+        INotificationPublisher notificationPublisher,
+        ILogger<ProgramFrameworkService> logger)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
+        _notificationPublisher = notificationPublisher;
         _logger = logger;
     }
 
@@ -216,7 +223,33 @@ public sealed class ProgramFrameworkService : IProgramFrameworkService
         version.PublishedAt = DateTime.UtcNow;
         await _unitOfWork.ProgramFrameworkVersions.Update(version);
         await _unitOfWork.SaveChangesAsync();
+        await NotifyProgramsOnOlderVersionsAsync(framework, version, actor.Id);
         return MapVersion(version);
+    }
+
+    /// <summary>Managers choose when each program upgrades, so a running program is never changed by surprise.</summary>
+    private async Task NotifyProgramsOnOlderVersionsAsync(ProgramFramework framework, ProgramFrameworkVersion published, Guid actorUserId)
+    {
+        var versionNumbers = (await _unitOfWork.ProgramFrameworkVersions.GetAllAsync(v => v.FrameworkId == framework.Id))
+            .ToDictionary(v => v.Id, v => v.VersionNumber);
+        var programs = await _unitOfWork.Programs.GetAllAsync(p => p.FrameworkId == framework.Id && !p.IsDeleted);
+        var commands = programs
+            .Select(p => (Program: p, From: p.FrameworkVersionId.HasValue
+                ? versionNumbers.GetValueOrDefault(p.FrameworkVersionId.Value)
+                : (int?)null))
+            .Where(x => x.From == null || x.From < published.VersionNumber)
+            .Select(x => NotificationCatalog.FrameworkVersionPublished(
+                x.Program.Id,
+                x.From,
+                published.VersionNumber,
+                actorUserId,
+                x.Program.Name,
+                framework.Name))
+            .ToList();
+        if (commands.Count > 0)
+        {
+            await _notificationPublisher.PublishManyAsync(commands);
+        }
     }
 
     private static void ApplyRuleUpdates(ProgramFrameworkVersion draft, UpdateProgramFrameworkRequest request)

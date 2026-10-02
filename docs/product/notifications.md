@@ -164,7 +164,9 @@ service emits it.
 | `CurriculumReviewPublished`      | `ForManagers`                                                | `ProgramApprovalService`                    |
 | `CurriculumApprovalRevoked`      | Program advisor via `ForUser` after a curriculum edit (`CurriculumChangeRecorder`, published after commit) or a manager reopen; `ForManagers` when the advisor revokes. None on advisor change | `CurriculumChangeRecorder`, `ProgramApprovalService` |
 | `AdvisoryDiscussionMessage`      | Each advisory participant except the author via `ForUser` (active managers, advisor, board experts with a login), after commit, user messages only, one per message. Skipped only while the recipient has a live connection in `advisory:{programId}` (a page showing that program's chat) | `ProgramAdvisoryDiscussionService` |
-| `AdvisoryMentionPinned`          | `ForManagers` when an expert creates a pin (re-pin, unpin, and pin actions send nothing) | `ProgramAdvisoryDiscussionService` |
+| `AdvisoryMentionPinned`          | `ForManagers` when the advisor creates a pin (re-pin, unpin, and pin actions send nothing) | `ProgramAdvisoryDiscussionService` |
+| `ProgramFrameworkUpgraded`       | Program advisor via `ForUser` after a manager upgrades the pinned framework version (payload `fromVersion`, `toVersion`); none when the advisor is the actor | `ProgramApprovalService` |
+| `FrameworkVersionPublished`      | `ForManagers`, once per program of the framework pinned to an older version, when the expert publishes a new version (payload `programId`, `fromVersion`, `toVersion`) | `ProgramFrameworkService` |
 | `AdvisoryFeedbackPublished`, `AdvisoryReply`, `AdvisoryCorrectionAddressed` | Legacy enum values only (no catalog factories); kept so old inbox rows still read | — |
 | `ClassSessionExpertInvited`        | Expert via `ForUser`                                       | `ClassSessionExpertService`                 |
 | `ClassSessionExpertAccepted`       | `ForManagers`                                              | `ClassSessionExpertService`                 |

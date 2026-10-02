@@ -157,7 +157,7 @@ public sealed class CurriculumChangeRecorder : ICurriculumChangeRecorder
 
         var approval = await _unitOfWork.ProgramApprovals.FirstOrDefaultAsync(
             a => a.ProgramId == program.Id && a.RevokedAt == null && !a.IsDeleted);
-        if (approval != null || program.Status == ProgramStatus.Approved)
+        if (approval != null || ReturnsToDraftOnEdit(program))
         {
             await RevokeApprovalAsync(program, approval, actor, actorName, now);
             sync.ApprovalChanged(program.Status, version);
@@ -174,8 +174,16 @@ public sealed class CurriculumChangeRecorder : ICurriculumChangeRecorder
     }
 
     /// <summary>
-    /// Revokes the active approval. An Approved program returns to Draft; an Active program
-    /// stays published (re-approval of live programs is out of scope). The advisor is
+    /// Every published version of a program with a framework must be approved by its advisor, so an
+    /// edit returns Approved, Active, and Inactive programs to Draft. Programs without a framework
+    /// have no approval and keep their status.
+    /// </summary>
+    private static bool ReturnsToDraftOnEdit(Program program)
+        => program.Status == ProgramStatus.Approved
+           || (program.FrameworkId.HasValue && program.Status is ProgramStatus.Active or ProgramStatus.Inactive);
+
+    /// <summary>
+    /// Revokes the active approval and applies <see cref="ReturnsToDraftOnEdit"/>. The advisor is
     /// notified once, after the save commits.
     /// </summary>
     private async Task RevokeApprovalAsync(
@@ -193,7 +201,7 @@ public sealed class CurriculumChangeRecorder : ICurriculumChangeRecorder
             await _unitOfWork.ProgramApprovals.Update(approval);
         }
 
-        if (program.Status == ProgramStatus.Approved)
+        if (ReturnsToDraftOnEdit(program))
         {
             program.Status = ProgramStatus.Draft;
         }
