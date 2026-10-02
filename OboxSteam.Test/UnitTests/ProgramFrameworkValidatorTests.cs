@@ -88,8 +88,8 @@ public sealed class ProgramFrameworkValidatorTests
         var snapshot = EmptySnapshot();
         var course = AddCourse(snapshot, AddModule(snapshot, "M", ModuleType.Experiential));
         var tooLong = AddActivity(snapshot, course, ActivityType.Offline, 200);
-        var missing = AddActivity(snapshot, course, ActivityType.SelfPaced, null);
-        var zero = AddActivity(snapshot, course, ActivityType.SelfPaced, 0);
+        var missing = AddActivity(snapshot, course, ActivityType.LiveOnline, null);
+        var zero = AddActivity(snapshot, course, ActivityType.Offline, 0);
 
         var checks = FrameworkRuleEvaluator.Evaluate(
             new ProgramFrameworkVersion { MaxActivityMinutes = 120, RequireActivityDuration = true },
@@ -100,7 +100,26 @@ public sealed class ProgramFrameworkValidatorTests
         var max = checks.Single(c => c.Code == "MaxActivityDuration");
         Assert.Equal([tooLong.Id], max.AffectedCurriculumLinks.Select(l => l.Id));
         var set = checks.Single(c => c.Code == "ActivityDurationSet");
+        Assert.False(set.Passed);
+        Assert.Equal("2 missing", set.Actual);
         Assert.Equal([missing.Id, zero.Id], set.AffectedCurriculumLinks.Select(l => l.Id));
+    }
+
+    [Fact]
+    public void Evaluate_ActivityDurationSet_IgnoresSelfPacedActivities()
+    {
+        var snapshot = EmptySnapshot();
+        var course = AddCourse(snapshot, AddModule(snapshot, "M", ModuleType.Theory));
+        AddActivity(snapshot, course, ActivityType.SelfPaced, null);
+        AddActivity(snapshot, course, ActivityType.Offline, 60);
+        AddActivity(snapshot, course, ActivityType.LiveOnline, 45);
+
+        var check = Single(new ProgramFrameworkVersion { RequireActivityDuration = true }, snapshot);
+
+        Assert.True(check.Passed);
+        Assert.Equal("All scheduled activities", check.Expected);
+        Assert.Equal("All scheduled activities", check.Actual);
+        Assert.Empty(check.AffectedCurriculumLinks);
     }
 
     [Fact]

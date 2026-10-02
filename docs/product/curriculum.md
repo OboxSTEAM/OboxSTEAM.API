@@ -558,8 +558,8 @@ Public reads: `GET /api/experts/{id}` and `GET /api/experts/{id}/profile`.
 `ProgramFramework` is a reusable expert-authored identity. Its immutable
 published `ProgramFrameworkVersion` rows hold description, academic guidance,
 and optional rules: module count (min/max), courses per non-Research module
-(min/max), total hours (min/max), max activity minutes, activity duration
-required, Offline/LiveOnline session minimums and share of activities,
+(min/max), total hours (min/max), max activity minutes, LiveOnline/Offline
+activity duration required, Offline/LiveOnline session minimums and share of activities,
 assignment in every module, valid assignment pass score, materials per
 SelfPaced activity, category match, description length, skills gained, thumbnail,
 and capstone research milestone. Blank or `false` rules are unrestricted;
@@ -607,7 +607,9 @@ for rules that are on):
 Each check is `{ code, label, expected, actual, passed,
 affectedCurriculumLinks[] }` (failing components; empty for program-level
 checks). `TotalHours` compares minutes (`hours × 60`); null or ≤ 0 durations
-count as 0 and fail `ActivityDurationSet`. Ratios are `count / all activities
+count as 0. `ActivityDurationSet` applies only to LiveOnline and Offline
+activities (null or ≤ 0 fails); SelfPaced activities have no duration and are
+exempt. Ratios are `count / all activities
 × 100` (0 with no activities). `CoursesPerModule` applies to non-Research
 modules. `AssignmentPerModule` counts any assignment whose `moduleId` is the
 module. `AssignmentPassScore` requires `0 < passScore ≤ maxPoints`.

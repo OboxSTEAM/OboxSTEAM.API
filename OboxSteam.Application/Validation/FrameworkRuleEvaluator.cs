@@ -133,12 +133,14 @@ public static class FrameworkRuleEvaluator
 
         if (version.RequireActivityDuration)
         {
-            var missing = activities.Where(a => a.DurationMinutes is null or <= 0).ToList();
+            var missing = activities
+                .Where(a => a.ActivityType != ActivityType.SelfPaced && a.DurationMinutes is null or <= 0)
+                .ToList();
             checks.Add(Check(
                 "ActivityDurationSet",
                 "Activity duration set",
-                "All activities",
-                missing.Count == 0 ? "All activities" : $"{missing.Count} missing",
+                "All scheduled activities",
+                missing.Count == 0 ? "All scheduled activities" : $"{missing.Count} missing",
                 missing.Count == 0,
                 missing.Select(ActivityLink)));
         }
