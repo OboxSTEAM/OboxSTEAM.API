@@ -1039,7 +1039,10 @@ public sealed class ClassSessionService : IClassSessionService
         if (originalStatus != ClassSessionStatus.Completed
             && session.Status == ClassSessionStatus.Completed)
         {
-            await CloseOpenParticipationSegmentsAsync(session);
+            await ClassSessionCompletionHelper.CloseOpenParticipationSegmentsAsync(
+                _unitOfWork,
+                session,
+                _currentTime.GetCurrentTime());
         }
 
         var cancelledCoTeaches = new List<ClassSessionExpert>();
@@ -1064,11 +1067,11 @@ public sealed class ClassSessionService : IClassSessionService
                         NotificationCatalog.ClassSessionStarted(session.ClassId, session.Id, classEntity!.ProgramId, classEntity.Name));
                     break;
                 case ClassSessionStatus.Completed:
-                    sessionNotifications.Add(
-                        NotificationCatalog.ClassSessionCompleted(session.ClassId, session.Id, classEntity!.ProgramId, classEntity.Name));
-                    var feedbackRequested = await BuildExpertFeedbackRequestedCommandsAsync(session, classEntity);
-                    sessionNotifications.AddRange(feedbackRequested);
-
+                    sessionNotifications.AddRange(
+                        await ClassSessionCompletionHelper.BuildCompletedNotificationsAsync(
+                            _unitOfWork,
+                            session,
+                            classEntity!));
                     break;
                 case ClassSessionStatus.Cancelled:
                     sessionNotifications.Add(
@@ -1320,36 +1323,6 @@ public sealed class ClassSessionService : IClassSessionService
         return commands;
     }
 
-    private async Task<List<NotificationCommand>> BuildExpertFeedbackRequestedCommandsAsync(
-        ClassSession session,
-        Class classEntity)
-    {
-        var accepted = (await GetActiveCoTeachesAsync(session.Id))
-            .Where(e => e.Status == ClassSessionExpertStatus.Accepted)
-            .ToList();
-        var commands = new List<NotificationCommand>();
-        foreach (var coTeach in accepted)
-        {
-            var expert = await _unitOfWork.Experts.GetByIdAsync(coTeach.ExpertId);
-            if (expert?.UserId is not Guid expertUserId)
-            {
-                continue;
-            }
-
-            commands.Add(NotificationCatalog.ClassSessionExpertFeedbackRequested(
-                expertUserId,
-                coTeach.Id,
-                session.Id,
-                classEntity.Id,
-                classEntity.ProgramId,
-                classEntity.Name,
-                programName: null,
-                session.Title));
-        }
-
-        return commands;
-    }
-
     private async Task<List<NotificationCommand>> BuildExpertCancelledCommandsAsync(
         ClassSession session,
         Class? classEntity,
@@ -1374,23 +1347,5 @@ public sealed class ClassSessionService : IClassSessionService
         }
 
         return commands;
-    }
-
-    private async Task CloseOpenParticipationSegmentsAsync(ClassSession session)
-    {
-        var attendances = await _unitOfWork.SessionAttendances.GetAllAsync(
-            sa => sa.ClassSessionId == session.Id && !sa.IsDeleted);
-
-        var now = _currentTime.GetCurrentTime();
-        foreach (var attendance in attendances)
-        {
-            if (attendance.CheckedInAt == null || attendance.LeftAt != null)
-            {
-                continue;
-            }
-
-            SessionParticipationHelper.CloseOpenSegment(attendance, session.EndTime, now);
-            await _unitOfWork.SessionAttendances.Update(attendance);
-        }
     }
 }

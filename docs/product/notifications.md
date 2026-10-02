@@ -133,8 +133,8 @@ service emits it.
 | `ClassSessionScheduled`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
 | `ClassSessionRescheduled`        | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
 | `SessionStartingSoon`            | `ForClassRosterAndParentsAndMentor`; hosted publisher ~30 minutes before `StartTime`, once per slot. Changing `StartTime` clears `ReminderSentAt` so the new slot can remind again. EndTime-only and description-only edits do not. | `SessionReminderPublisher`, `ClassSessionService` |
-| `ClassSessionStarted`            | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
-| `ClassSessionCompleted`          | `ForClassRosterAndParentsAndMentor`                          | `ClassSessionService`                       |
+| `ClassSessionStarted`            | `ForClassRosterAndParentsAndMentor`; manual status change or hosted auto-start at `StartTime` (LiveOnline / Offline) | `ClassSessionService`, `SessionLifecyclePublisher` |
+| `ClassSessionCompleted`          | `ForClassRosterAndParentsAndMentor`; manual status change or hosted auto-complete after `EndTime` (LiveOnline / Offline) | `ClassSessionService`, `SessionLifecyclePublisher` |
 | `ClassSessionCancelled`          | `ForClassRosterAndParentsAndMentor`; Invited/Accepted expert via `ForUser`. Those co-teach rows are then soft-deleted (same on session delete and class delete). | `ClassSessionService`, `ClassService`       |
 | `AttendanceMarkedPresent`        | `ForStudentAndParents` (staff mark); `ForParentsOfStudent` (first student check-in) | `SessionAttendanceService`                  |
 | `AttendanceMarkedLate`           | `ForStudentAndParents`                                       | `SessionAttendanceService`                  |
@@ -171,7 +171,7 @@ service emits it.
 | `ClassSessionExpertDeclined`       | `ForManagers`                                              | `ClassSessionExpertService`                 |
 | `ClassSessionExpertInvitationWithdrawn` | Expert via `ForUser` (manager withdraw, or board removal / expert delete) | `ClassSessionExpertService`, `ExpertService` |
 | `ClassSessionExpertClearedOnReschedule` | Invited and Accepted experts via `ForUser` when session time changes | `ClassSessionService`              |
-| `ClassSessionExpertFeedbackRequested`  | Accepted expert via `ForUser` when the session first becomes Completed | `ClassSessionService`        |
+| `ClassSessionExpertFeedbackRequested`  | Accepted expert via `ForUser` when the session first becomes Completed | `ClassSessionService`, `SessionLifecyclePublisher` |
 | `ClassSessionExpertFeedbackSubmitted`  | Class mentor via `ForClassMentor`                      | `ClassSessionExpertService`                 |
 
 ## Realtime Sync Events

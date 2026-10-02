@@ -128,6 +128,7 @@ public partial class SeedService : ISeedService
         await ApplyMakerSlice2JoinableSessionsAsync();
         // After ClearDemoProgramSubmissionsAsync so STD-010 theory quiz grade is not wiped.
         await ApplyMakerStudent10Module1CompleteAsync();
+        await AlignSeedAttendanceWithDoneSessionActivitiesAsync();
         // Once after Maker tail fixtures so joinable sessions get co-teach expert rows.
         await SeedClassSessionExpertsAsync();
         await VerifySeedDemoIntegrityAsync();

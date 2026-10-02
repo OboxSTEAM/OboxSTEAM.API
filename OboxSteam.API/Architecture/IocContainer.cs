@@ -77,6 +77,7 @@ public static class IocContainer
         services.AddHostedService<OpenClassAutoStartService>();
         services.AddHostedService<PersonalVideoGenerationWorker>();
         services.AddHostedService<SessionReminderService>();
+        services.AddHostedService<SessionLifecycleService>();
         services.AddHostedService<AssignmentWindowCloseService>();
         services.AddHostedService<DiscussionAttachmentPurgeService>();
 
@@ -248,6 +249,7 @@ public static class IocContainer
         services.AddScoped<ISessionMeetingService, SessionMeetingService>();
         services.AddScoped<ISessionEvidenceService, SessionEvidenceService>();
         services.AddScoped<ISessionReminderPublisher, SessionReminderPublisher>();
+        services.AddScoped<ISessionLifecyclePublisher, SessionLifecyclePublisher>();
         services.AddScoped<ProgramPurchaseLifecycle>();
         services.AddScoped<IQuestionBankService, QuestionBankService>();
         services.AddScoped<IBankQuestionService, BankQuestionService>();

@@ -398,6 +398,23 @@ If sessions are deleted or cancelled so coverage no longer matches the curriculu
 curriculum item: **LiveOnline**, **Offline**, or **AssignmentWindow**. LiveOnline
 join links live on `MeetingUrl` (separate from free-text `Location`).
 `SessionAttendance` records attendance status per student.
+
+Session lifecycle (`ClassSessionStatus`): **Scheduled → InProgress → Completed**,
+or **Cancelled**. Admin/Manager may move a session manually via
+`PUT /api/classes/{classId}/sessions/{id}`. A hosted job
+(`SessionLifecyclePublisher`, every ~5 minutes) applies the clock to LiveOnline
+and Offline sessions:
+
+- `Scheduled` with `StartTime <= now < EndTime` becomes `InProgress` and
+  publishes `ClassSessionStarted`. Pending co-teach invitations stay `Invited`.
+- `Scheduled` or `InProgress` with `EndTime <= now` becomes `Completed`, with
+  the same side effects as the manual move (open participation segments
+  closed, `ClassSessionCompleted`, expert feedback requests). An elapsed
+  `Scheduled` row goes straight to `Completed`.
+
+AssignmentWindow rows are not moved by the job. Completed sessions reject
+QR/code check-in and join.
+
 Student QR/code check-in for Offline sessions:
 
 | Endpoint | Who | Notes |
