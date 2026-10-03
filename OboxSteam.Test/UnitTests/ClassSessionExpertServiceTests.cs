@@ -554,4 +554,140 @@ public sealed class ClassSessionExpertServiceTests
         Assert.Empty(result.Items);
         Assert.Equal(0, result.TotalCount);
     }
+
+    [Fact]
+    public async Task GetForStudent_ReturnsAcceptedExpertsWithAvatar_AndHidesOtherStatuses()
+    {
+        var studentId = Guid.Parse("14141414-1414-1414-1414-141414141414");
+        SeedUsersAndClass();
+        SeedStudentEnrollment(studentId);
+        _db.Experts.Items[0].AvatarUrl = "https://cdn.example.com/experts/anh-pham.jpg";
+        SeedInvitation(ClassSessionExpertStatus.Accepted);
+        _db.ClassSessionExperts.Items[0].MentorFeedback = "Private";
+        _db.ClassSessionExperts.Items[0].MentorFeedbackRating = 5;
+        _db.ClassSessionExperts.Seed(new ClassSessionExpert
+        {
+            Id = Guid.NewGuid(),
+            ClassSessionId = _sessionId,
+            ExpertId = _otherExpertId,
+            Status = ClassSessionExpertStatus.Invited,
+            MentorFeedback = "Hidden",
+            IsDeleted = false,
+            CreatedAt = _now.AddMinutes(-1),
+        });
+        var sut = CreateSut(studentId);
+
+        var result = await sut.GetForStudentAsync(_classId, null, null, 1, 100);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(ClassSessionExpertStatus.Accepted, item.Status);
+        Assert.Equal(_expertId, item.ExpertId);
+        Assert.Equal("https://cdn.example.com/experts/anh-pham.jpg", item.ExpertAvatarUrl);
+        Assert.Equal(_sessionId, item.ClassSessionId);
+        Assert.DoesNotContain(
+            typeof(ClassSessionExpertStudentResponseDto).GetProperties(),
+            property => property.Name is "MentorFeedback" or "MentorFeedbackRating"
+                or "MentorFeedbackAt" or "ScheduleConflictWarning");
+    }
+
+    [Fact]
+    public async Task GetForStudent_RequiresClassId()
+    {
+        var studentId = Guid.Parse("14141414-1414-1414-1414-141414141414");
+        SeedUsersAndClass();
+        SeedStudentEnrollment(studentId);
+        var sut = CreateSut(studentId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.GetForStudentAsync(null, null, null, 1, 10));
+    }
+
+    [Fact]
+    public async Task GetForStudent_ThrowsForbidden_WhenNotEnrolled()
+    {
+        var studentId = Guid.Parse("14141414-1414-1414-1414-141414141414");
+        SeedUsersAndClass();
+        _db.Users.Seed(new User
+        {
+            Id = studentId,
+            Code = "STD",
+            Email = "std@test.com",
+            FullName = "Student",
+            Role = RoleType.Student,
+            IsDeleted = false,
+        });
+        var sut = CreateSut(studentId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.GetForStudentAsync(_classId, null, null, 1, 10));
+    }
+
+    [Fact]
+    public async Task GetForStudent_PageSizeOver100_Throws()
+    {
+        var studentId = Guid.Parse("14141414-1414-1414-1414-141414141414");
+        SeedUsersAndClass();
+        SeedStudentEnrollment(studentId);
+        var sut = CreateSut(studentId);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.GetForStudentAsync(_classId, null, null, 1, 101));
+    }
+
+    [Fact]
+    public async Task GetForStudent_HasNext_WhenAcceptedCountExceedsPageSize()
+    {
+        var studentId = Guid.Parse("14141414-1414-1414-1414-141414141414");
+        SeedUsersAndClass();
+        SeedStudentEnrollment(studentId);
+        for (var index = 0; index < 101; index++)
+        {
+            var expertId = Guid.NewGuid();
+            _db.Experts.Seed(new Expert
+            {
+                Id = expertId,
+                Code = $"EXP-{index:D3}",
+                FullName = $"Expert {index}",
+                IsDeleted = false,
+            });
+            _db.ClassSessionExperts.Seed(new ClassSessionExpert
+            {
+                Id = Guid.NewGuid(),
+                ClassSessionId = _sessionId,
+                ExpertId = expertId,
+                Status = ClassSessionExpertStatus.Accepted,
+                IsDeleted = false,
+                CreatedAt = _now.AddMinutes(-index),
+            });
+        }
+
+        var result = await CreateSut(studentId).GetForStudentAsync(_classId, null, null, 1, 100);
+
+        Assert.Equal(101, result.TotalCount);
+        Assert.Equal(100, result.Items.Count);
+        Assert.True(result.HasNext);
+        Assert.Equal(2, result.TotalPages);
+    }
+
+    private void SeedStudentEnrollment(Guid studentId)
+    {
+        _db.Users.Seed(new User
+        {
+            Id = studentId,
+            Code = "STD",
+            Email = "std@test.com",
+            FullName = "Student",
+            Role = RoleType.Student,
+            IsDeleted = false,
+        });
+        _db.ClassEnrollments.Seed(new ClassEnrollment
+        {
+            Id = Guid.NewGuid(),
+            ClassId = _classId,
+            StudentId = studentId,
+            ProgramEnrollmentId = Guid.NewGuid(),
+            Status = ClassEnrollmentStatus.Active,
+            IsDeleted = false,
+        });
+    }
 }

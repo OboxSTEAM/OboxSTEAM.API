@@ -106,7 +106,9 @@ Create, update, delete for:
   reopen (revoke), and publish. The old review routes return 410
   `ENDPOINT_REMOVED`.
   Offline co-teach:
-  `POST|GET /api/class-session-experts`, Expert `GET /mine`,
+  `POST|GET /api/class-session-experts` (Student `GET` is Accepted-only for a
+  class they are actively enrolled in; feedback fields are omitted),
+  Expert `GET /mine`,
   `POST /{id}/accept|decline`,
   Manager/Admin `POST /{id}/withdraw` (Invited only). Removing the expert from
   `ProgramBoard` also unlinks their Invited and Accepted co-teach rows on that

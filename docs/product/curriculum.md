@@ -512,6 +512,12 @@ Co-teach API (`/api/class-session-experts`):
   Offline** session.
 - `GET /mine` — Expert lists own invitations.
 - `GET /` — Manager/Admin list (`classId` / `sessionId` / `expertId` / `status`).
+  A Student who is actively enrolled may call the same route with `classId`
+  (required; missing → 400). Not enrolled → 403. The student list is always
+  `Accepted` only, even if another `status` is queried, and omits
+  `mentorFeedback`, `mentorFeedbackRating`, `mentorFeedbackAt`, and
+  `scheduleConflictWarning`. `expertAvatarUrl` is `Expert.AvatarUrl`.
+  Student `pageSize` cannot exceed 100.
 - `POST /{id}/accept` and `POST /{id}/decline` — owning Expert; accept is
   blocked (`409`) on calendar overlap with another Accepted Offline/LiveOnline
   session.

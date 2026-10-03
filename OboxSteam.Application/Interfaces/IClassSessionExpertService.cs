@@ -23,6 +23,13 @@ public interface IClassSessionExpertService
         int page,
         int pageSize);
 
+    Task<Pagination<ClassSessionExpertStudentResponseDto>> GetForStudentAsync(
+        Guid? classId,
+        Guid? sessionId,
+        Guid? expertId,
+        int page,
+        int pageSize);
+
     Task<ClassSessionExpertResponseDto> AcceptAsync(Guid id);
 
     Task<ClassSessionExpertResponseDto> DeclineAsync(Guid id);

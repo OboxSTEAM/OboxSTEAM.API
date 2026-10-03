@@ -68,7 +68,6 @@ public partial class SeedService : ISeedService
         await SeedProgramFrameworksAsync();
         await SeedProgramBoardsAsync();
         await SeedSkillsAsync();
-        await SeedProgramSkillsAsync();
         await SeedModulesAsync();
         await SeedCoursesAsync();
         await SeedActivitiesAsync();
@@ -101,10 +100,14 @@ public partial class SeedService : ISeedService
         await RealignSeedSessionWallClocksAsync();
         await SeedWeeklyScheduleFixtureAsync();
         await EnsureSeedSessionVenuesAsync();
+        // Catalog, demo, review, and advisory programs exist. Fail/rebuy is linked again below.
+        await SeedProgramSkillsAsync();
         await SeedPortfolioDataAsync();
         // Demo clear must run before Maker STD-010 fixtures (quiz grade would be wiped).
         await ClearDemoProgramSubmissionsAsync();
         await SeedFailRebuyFixturesAsync();
+        // Second pass picks up PRG-FAILREBUY. Existing pairs are skipped.
+        await SeedProgramSkillsAsync();
         // After FailRebuy so newly created self-paced activities get materials.
         await SeedMaterialsAsync();
         // Safety-net before windows so leftover-fail cannot AcademicFail mid-seed.

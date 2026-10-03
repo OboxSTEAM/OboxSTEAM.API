@@ -211,6 +211,7 @@ public partial class SeedService
     {
         var certificates = new List<Certificate>();
 
+        var skillsAcquired = await CatalogSkillsSnapshotAsync(programWebDev.Id);
         var programCert = await _unitOfWork.Certificates.FirstOrDefaultAsync(
             c => c.Code == "OBOX-CERT-PF-WEBDEV" && !c.IsDeleted);
         if (programCert == null)
@@ -225,14 +226,17 @@ public partial class SeedService
                 IssueDate = seedTime.AddDays(-3),
                 PdfUrl = "https://storage.oboxsteam.com/certificates/obox-cert-pf-webdev.pdf",
                 VerificationUrl = "https://oboxsteam.website/certificates/verify/OBOX-CERT-PF-WEBDEV",
-                SkillsAcquired = CertificateService.FormatSkillsAcquired(
-                    await CertificateService.LoadProgramSkillNamesAsync(_unitOfWork, programWebDev.Id)),
+                SkillsAcquired = skillsAcquired,
                 CreatedAt = seedTime,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
             };
             await _unitOfWork.Certificates.AddAsync(programCert);
             await _unitOfWork.SaveChangesAsync();
+        }
+        else
+        {
+            await RefreshSkillsSnapshotAsync(programCert, skillsAcquired);
         }
 
         certificates.Add(programCert);
@@ -253,7 +257,7 @@ public partial class SeedService
                     IssueDate = seedTime.AddDays(-55),
                     PdfUrl = "https://storage.oboxsteam.com/certificates/obox-cert-pf-wd-mod1.pdf",
                     VerificationUrl = "https://oboxsteam.website/certificates/verify/OBOX-CERT-PF-WD-MOD1",
-                    SkillsAcquired = "Semantic HTML, modern CSS layouts, responsive foundations",
+                    SkillsAcquired = skillsAcquired,
                     CreatedAt = seedTime,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false,
@@ -261,11 +265,31 @@ public partial class SeedService
                 await _unitOfWork.Certificates.AddAsync(moduleCert);
                 await _unitOfWork.SaveChangesAsync();
             }
+            else
+            {
+                await RefreshSkillsSnapshotAsync(moduleCert, skillsAcquired);
+            }
 
             certificates.Add(moduleCert);
         }
 
         return certificates;
+    }
+
+    private async Task<string?> CatalogSkillsSnapshotAsync(Guid programId)
+        => CertificateService.FormatSkillsAcquired(
+            await CertificateService.LoadProgramSkillNamesAsync(_unitOfWork, programId));
+
+    private async Task RefreshSkillsSnapshotAsync(Certificate certificate, string? skillsAcquired)
+    {
+        if (certificate.SkillsAcquired == skillsAcquired)
+        {
+            return;
+        }
+
+        certificate.SkillsAcquired = skillsAcquired;
+        await _unitOfWork.Certificates.Update(certificate);
+        await _unitOfWork.SaveChangesAsync();
     }
 
     private async Task<(Submission Wireframe, Submission Capstone)?>

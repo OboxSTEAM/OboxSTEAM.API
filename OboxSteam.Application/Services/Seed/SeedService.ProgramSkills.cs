@@ -6,8 +6,9 @@ namespace OboxSteam.Application.Services;
 public partial class SeedService
 {
     /// <summary>
-    /// Links catalog skills to published programs so completed enrollments grant portfolio skills.
-    /// Idempotent: skips pairs that already exist.
+    /// Links catalog skills to seeded programs so lists, certificates, and completed
+    /// enrollments share one skill set. Idempotent: skips pairs that already exist.
+    /// Runs twice: before portfolio (catalog, demo, review, advisory) and again after fail/rebuy.
     /// </summary>
     private async Task SeedProgramSkillsAsync()
     {
@@ -179,5 +180,99 @@ public partial class SeedService
             "SKL-SOFT-CREATIVE",
             "SKL-SOFT-COLLAB",
         ]),
+        ("PRG-BIOTECH",
+        [
+            "SKL-SCI-OBSERVE",
+            "SKL-SCI-HYPOTHESIS",
+            "SKL-SCI-DATA",
+            "SKL-SCI-LAB-TOOLS",
+            "SKL-SCI-REASONING",
+            "SKL-SCI-REPORT",
+        ]),
+        ("PRG-AIBASIC",
+        [
+            "SKL-TECH-PROG-PYTHON",
+            "SKL-TECH-COMP-THINK",
+            "SKL-TECH-DATA-DB",
+            "SKL-MATH-STATS",
+            "SKL-MATH-MODEL",
+            "SKL-SOFT-CRITICAL",
+        ]),
+        ("PRG-ENVSCI",
+        [
+            "SKL-SCI-OBSERVE",
+            "SKL-SCI-DATA",
+            "SKL-SCI-REASONING",
+            "SKL-SCI-REPORT",
+            "SKL-SOFT-CRITICAL",
+        ]),
+        ("PRG-CERT-TEST",
+        [
+            "SKL-SOFT-SELFLEARN",
+            "SKL-SOFT-TIME",
+            "SKL-SOFT-ADAPT",
+        ]),
+        ("PRG-DEMO-SCRATCH",
+        [
+            "SKL-TECH-PROG-SCRATCH",
+            "SKL-TECH-COMP-THINK",
+            "SKL-ART-STORY",
+            "SKL-SOFT-CREATIVE",
+        ]),
+        ("PRG-DEMO-CLIMATE",
+        [
+            "SKL-SCI-OBSERVE",
+            "SKL-SCI-DATA",
+            "SKL-SCI-REPORT",
+            "SKL-SOFT-COMM",
+        ]),
+        ("PRG-DEMO-MAKER",
+        [
+            "SKL-ENG-DESIGN",
+            "SKL-ENG-PROTOTYPE",
+            "SKL-ENG-TEST-ITERATE",
+            "SKL-SCI-LAB-TOOLS",
+            "SKL-SOFT-COMM",
+        ]),
+        ("PRG-REV-IOT",
+        [
+            "SKL-TECH-ROBOTICS-IOT",
+            "SKL-SCI-DATA",
+            "SKL-SCI-LAB-TOOLS",
+            "SKL-ENG-PROTOTYPE",
+            "SKL-ENG-TEST-ITERATE",
+        ]),
+        ("PRG-REV-CODE",
+        [
+            "SKL-TECH-PROG-SCRATCH",
+            "SKL-TECH-COMP-THINK",
+            "SKL-ART-STORY",
+            "SKL-SOFT-CREATIVE",
+            "SKL-ENG-TEST-ITERATE",
+        ]),
+        ("PRG-FAILREBUY",
+        [
+            "SKL-ENG-DESIGN",
+            "SKL-SCI-REPORT",
+            "SKL-SOFT-SELFLEARN",
+            "SKL-SOFT-COLLAB",
+        ]),
+        ("PRG-ADV-DRAFT-ADVICE", MakerAdvisorySkillCodes()),
+        ("PRG-ADV-DRAFT-FIX", MakerAdvisorySkillCodes()),
+        ("PRG-ADV-PENDING", MakerAdvisorySkillCodes()),
+        ("PRG-ADV-RESUBMIT", MakerAdvisorySkillCodes()),
+        ("PRG-ADV-APPROVED", MakerAdvisorySkillCodes()),
+        ("PRG-ADV-ACTIVE", MakerAdvisorySkillCodes()),
+        ("PRG-ADV-PIN-V1", MakerAdvisorySkillCodes()),
+        ("PRG-ADV-SHARE-A", MakerAdvisorySkillCodes()),
+        ("PRG-ADV-SHARE-B", MakerAdvisorySkillCodes()),
+    ];
+
+    private static string[] MakerAdvisorySkillCodes() =>
+    [
+        "SKL-ENG-PROTOTYPE",
+        "SKL-SOFT-COMM",
+        "SKL-SOFT-LEADER",
+        "SKL-SOFT-SELFLEARN",
     ];
 }

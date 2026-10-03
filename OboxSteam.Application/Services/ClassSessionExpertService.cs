@@ -216,6 +216,70 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
         return new Pagination<ClassSessionExpertResponseDto>(dtos, totalCount, page, pageSize);
     }
 
+    public async Task<Pagination<ClassSessionExpertStudentResponseDto>> GetForStudentAsync(
+        Guid? classId,
+        Guid? sessionId,
+        Guid? expertId,
+        int page,
+        int pageSize)
+    {
+        ClassSessionExpertValidator.ValidatePagination(page, pageSize);
+        if (pageSize > 100)
+        {
+            throw ErrorHelper.BadRequest("pageSize cannot exceed 100.");
+        }
+
+        if (!classId.HasValue || classId.Value == Guid.Empty)
+        {
+            throw ErrorHelper.BadRequest("classId is required.");
+        }
+
+        var student = await GetCurrentStudentAsync();
+        var enrolled = await _unitOfWork.ClassEnrollments.AnyIncludingDeletedAsync(
+            enrollment => enrollment.ClassId == classId.Value
+                          && enrollment.StudentId == student.Id
+                          && enrollment.Status == ClassEnrollmentStatus.Active
+                          && !enrollment.IsDeleted);
+        if (!enrolled)
+        {
+            throw ErrorHelper.Forbidden("You are not enrolled in this class.");
+        }
+
+        var query = RestrictToLiveSessions(
+            _unitOfWork.ClassSessionExperts
+                .GetQueryable()
+                .Where(e => !e.IsDeleted && e.Status == ClassSessionExpertStatus.Accepted));
+
+        if (sessionId.HasValue)
+        {
+            query = query.Where(e => e.ClassSessionId == sessionId.Value);
+        }
+
+        if (expertId.HasValue)
+        {
+            query = query.Where(e => e.ExpertId == expertId.Value);
+        }
+
+        var sessionIds = _unitOfWork.ClassSessions
+            .GetQueryable()
+            .Where(s => s.ClassId == classId.Value && !s.IsDeleted)
+            .Select(s => s.Id);
+        query = query.Where(e => sessionIds.Contains(e.ClassSessionId));
+        query = query.OrderByDescending(e => e.CreatedAt);
+
+        var totalCount = query.Count();
+        var items = query.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        var dtos = new List<ClassSessionExpertStudentResponseDto>(items.Count);
+        foreach (var item in items)
+        {
+            var (session, classEntity, expert) = await LoadGraphAsync(item);
+            dtos.Add(MapStudentResponse(item, session, classEntity, expert));
+        }
+
+        return new Pagination<ClassSessionExpertStudentResponseDto>(dtos, totalCount, page, pageSize);
+    }
+
     public async Task<ClassSessionExpertResponseDto> AcceptAsync(Guid id)
     {
         var expert = await GetCurrentExpertAsync();
@@ -392,7 +456,17 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
         Expert expert,
         string? warning = null)
     {
-        return Task.FromResult(new ClassSessionExpertResponseDto
+        return Task.FromResult(MapStaffResponse(invitation, session, classEntity, expert, warning));
+    }
+
+    private static ClassSessionExpertResponseDto MapStaffResponse(
+        ClassSessionExpert invitation,
+        ClassSession session,
+        Class classEntity,
+        Expert expert,
+        string? warning = null)
+    {
+        return new ClassSessionExpertResponseDto
         {
             Id = invitation.Id,
             ClassSessionId = session.Id,
@@ -403,6 +477,7 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
             ExpertUserId = expert.UserId,
             ExpertCode = expert.Code,
             ExpertName = expert.FullName,
+            ExpertAvatarUrl = string.IsNullOrWhiteSpace(expert.AvatarUrl) ? null : expert.AvatarUrl,
             Status = invitation.Status,
             SessionTitle = session.Title,
             SessionKind = session.SessionKind,
@@ -415,7 +490,58 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
             MentorFeedbackAt = invitation.MentorFeedbackAt,
             CreatedAt = invitation.CreatedAt,
             UpdatedAt = invitation.UpdatedAt,
-        });
+        };
+    }
+
+    private static ClassSessionExpertStudentResponseDto MapStudentResponse(
+        ClassSessionExpert invitation,
+        ClassSession session,
+        Class classEntity,
+        Expert expert)
+    {
+        return new ClassSessionExpertStudentResponseDto
+        {
+            Id = invitation.Id,
+            ClassSessionId = session.Id,
+            ClassId = classEntity.Id,
+            ClassName = classEntity.Name,
+            ProgramId = classEntity.ProgramId,
+            ExpertId = expert.Id,
+            ExpertUserId = expert.UserId,
+            ExpertCode = expert.Code,
+            ExpertName = expert.FullName,
+            ExpertAvatarUrl = string.IsNullOrWhiteSpace(expert.AvatarUrl) ? null : expert.AvatarUrl,
+            Status = invitation.Status,
+            SessionTitle = session.Title,
+            SessionKind = session.SessionKind,
+            SessionStatus = session.Status,
+            SessionStartTime = session.StartTime,
+            SessionEndTime = session.EndTime,
+            CreatedAt = invitation.CreatedAt,
+            UpdatedAt = invitation.UpdatedAt,
+        };
+    }
+
+    private async Task<User> GetCurrentStudentAsync()
+    {
+        var userId = _claimsService.GetCurrentUserId;
+        if (userId == Guid.Empty)
+        {
+            throw ErrorHelper.Unauthorized("Unauthorized access.");
+        }
+
+        var user = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null || user.IsDeleted)
+        {
+            throw ErrorHelper.NotFound("Current user not found.");
+        }
+
+        if (user.Role != RoleType.Student)
+        {
+            throw ErrorHelper.Forbidden("Only students can view co-teach experts for their class.");
+        }
+
+        return user;
     }
 
     private async Task<Expert> GetCurrentExpertAsync()

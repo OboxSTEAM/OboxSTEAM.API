@@ -54,9 +54,14 @@ public class ClassSessionExpertController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "Admin,Manager")]
-    [SwaggerOperation(Summary = "List co-teach invitations (manager)")]
+    [Authorize(Roles = "Admin,Manager,Student")]
+    [SwaggerOperation(
+        Summary = "List co-teach invitations",
+        Description = "Manager/Admin list any status. A Student must pass classId and must be actively enrolled; "
+            + "the result is only Accepted invitations and omits mentor feedback and schedule warnings. "
+            + "Student pageSize cannot exceed 100.")]
     [ProducesResponseType(typeof(ApiResult<Pagination<ClassSessionExpertResponseDto>>), 200)]
+    [ProducesResponseType(typeof(ApiResult<Pagination<ClassSessionExpertStudentResponseDto>>), 200)]
     public async Task<IActionResult> GetInvitations(
         [FromQuery] Guid? classId = null,
         [FromQuery] Guid? sessionId = null,
@@ -68,6 +73,13 @@ public class ClassSessionExpertController : ControllerBase
         if (page < 1 || pageSize < 1)
         {
             return BadRequest(ApiResult<object>.Failure("400", "Invalid pagination parameters."));
+        }
+
+        if (User.IsInRole(nameof(RoleType.Student)))
+        {
+            var studentResult = await _service.GetForStudentAsync(classId, sessionId, expertId, page, pageSize);
+            return Ok(ApiResult<Pagination<ClassSessionExpertStudentResponseDto>>.Success(
+                studentResult, "200", "Invitations retrieved successfully."));
         }
 
         var result = await _service.GetForManagerAsync(classId, sessionId, expertId, status, page, pageSize);

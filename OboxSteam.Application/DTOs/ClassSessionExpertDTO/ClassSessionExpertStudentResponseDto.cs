@@ -2,7 +2,11 @@ using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.DTOs.ClassSessionExpertDTO;
 
-public sealed class ClassSessionExpertResponseDto
+/// <summary>
+/// Co-teach card for a student enrolled in the class. Feedback and schedule
+/// warnings are omitted so they are not serialized.
+/// </summary>
+public sealed class ClassSessionExpertStudentResponseDto
 {
     public Guid Id { get; set; }
     public Guid ClassSessionId { get; set; }
@@ -20,10 +24,6 @@ public sealed class ClassSessionExpertResponseDto
     public ClassSessionStatus SessionStatus { get; set; }
     public DateTime SessionStartTime { get; set; }
     public DateTime SessionEndTime { get; set; }
-    public string? ScheduleConflictWarning { get; set; }
-    public string? MentorFeedback { get; set; }
-    public int? MentorFeedbackRating { get; set; }
-    public DateTime? MentorFeedbackAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }
