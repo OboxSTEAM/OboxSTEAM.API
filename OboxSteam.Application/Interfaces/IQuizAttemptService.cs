@@ -36,4 +36,10 @@ public interface IQuizAttemptService
     /// Returns the graded result for a submission.
     /// </summary>
     Task<QuizResultResponseDto?> GetQuizResult(Guid submissionId);
+
+    /// <summary>
+    /// System sweep: grades every <c>Pending</c> quiz attempt whose <c>ExpiresAt</c> plus grace
+    /// has passed, from its saved answers. Returns the number of attempts graded.
+    /// </summary>
+    Task<int> FinalizeExpiredAttemptsAsync(CancellationToken cancellationToken = default);
 }

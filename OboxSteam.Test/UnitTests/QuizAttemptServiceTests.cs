@@ -747,6 +747,7 @@ public sealed class QuizAttemptServiceTests
             }));
 
         Assert.Equal(AssignmentValidator.AttemptTimeLimitExceededMessage, ex.Message);
+        Assert.Equal(AssignmentValidator.AttemptTimeLimitExceededCode, ex.ErrorCode);
         Assert.Equal(SubmissionStatus.Pending, _db.Submissions.Items.Single(s => s.Id == submissionId).Status);
     }
 
@@ -785,12 +786,8 @@ public sealed class QuizAttemptServiceTests
             }));
     }
 
-    [Fact]
-    public async Task StartQuiz_AutoGradesExpiredPendingAttempt_AndStartsNewAttempt()
+    private Submission SeedExpiredAttemptWithCorrectAnswer()
     {
-        SeedStudentAndEnrollment();
-        SeedQuizAssignment(maxAttempts: 3, maxPoints: 10m, passScore: 5m);
-        SeedBankQuestion();
         var (submissionId, questionId, correctOptionId, _) = SeedAttemptSnapshot();
         var expired = _db.Submissions.Items.Single(s => s.Id == submissionId);
         expired.ExpiresAt = DateTime.UtcNow.AddMinutes(-10);
@@ -802,14 +799,145 @@ public sealed class QuizAttemptServiceTests
             QuizOptionId = correctOptionId,
             IsDeleted = false
         });
+        return expired;
+    }
+
+    [Fact]
+    public async Task StartQuiz_GradesExpiredPendingAttempt_AndThrowsConflictWithResult()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment(maxAttempts: 3, maxPoints: 10m, passScore: 5m);
+        SeedBankQuestion();
+        var expired = SeedExpiredAttemptWithCorrectAnswer();
         var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartQuiz(_assignmentId));
+
+        Assert.Equal(QuizAttemptValidator.ExpiredAttemptGradedCode, ex.ErrorCode);
+        var payload = Assert.IsType<QuizResultResponseDto>(ex.Payload);
+        Assert.Equal(expired.Id, payload.SubmissionId);
+        Assert.Equal(10m, payload.AssignedGrade);
+        Assert.True(payload.Passed);
+        Assert.Equal(SubmissionStatus.Graded, payload.Status);
+        Assert.Equal(SubmissionStatus.Graded, expired.Status);
+        Assert.Equal(10m, expired.AssignedGrade);
+        Assert.Single(_db.Submissions.Items);
+        _notificationPublisher.Verify(
+            n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task StartQuiz_AfterExpiredAttemptGraded_StartsNextAttempt()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment(maxAttempts: 3, maxPoints: 10m, passScore: 5m);
+        SeedBankQuestion();
+        var expired = SeedExpiredAttemptWithCorrectAnswer();
+        var sut = CreateSut();
+        await Assert.ThrowsAsync<ConflictException>(() => sut.StartQuiz(_assignmentId));
 
         var result = await sut.StartQuiz(_assignmentId);
 
-        Assert.NotEqual(submissionId, result.SubmissionId);
+        Assert.NotEqual(expired.Id, result.SubmissionId);
         Assert.Equal(2, result.AttemptNumber);
+    }
+
+    [Fact]
+    public async Task StartQuiz_ExpiredLastAttempt_ThenMaxAttemptsCode()
+    {
+        SeedStudentAndEnrollment(ModuleType.Experiential);
+        SeedQuizAssignment(maxAttempts: 1, maxPoints: 10m, passScore: 5m);
+        SeedBankQuestion();
+        SeedExpiredAttemptWithCorrectAnswer();
+        var sut = CreateSut();
+        await Assert.ThrowsAsync<ConflictException>(() => sut.StartQuiz(_assignmentId));
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartQuiz(_assignmentId));
+
+        Assert.Equal(AssessmentAttemptPolicy.MaxAttemptsReachedCode, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task FinalizeExpiredAttemptsAsync_GradesOnlyExpiredQuizAttempts()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment(maxPoints: 10m, passScore: 5m);
+        var expired = SeedExpiredAttemptWithCorrectAnswer();
+        var (activeId, _, _, _) = SeedAttemptSnapshot();
+        var active = _db.Submissions.Items.Single(s => s.Id == activeId);
+        active.ExpiresAt = DateTime.UtcNow.AddMinutes(10);
+
+        var retrospectiveId = Guid.NewGuid();
+        var retrospectiveAssignmentId = Guid.NewGuid();
+        _db.Assignments.Seed(new Assignment
+        {
+            Id = retrospectiveAssignmentId,
+            Code = "ASN-RETRO-001",
+            ModuleId = _moduleId,
+            Title = "Reflection",
+            AssignmentType = AssignmentType.Retrospective,
+            MaxPoints = 10,
+            PassScore = 5m,
+            MaxAttempts = 3,
+            IsDeleted = false
+        });
+        _db.Submissions.Seed(new Submission
+        {
+            Id = retrospectiveId,
+            Code = "SUB-RETRO001",
+            AssignmentId = retrospectiveAssignmentId,
+            StudentId = _studentId,
+            ModuleEnrollmentId = _enrollmentId,
+            AttemptNumber = 1,
+            Status = SubmissionStatus.Pending,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(-10),
+            IsDeleted = false
+        });
+        var sut = CreateSut();
+
+        var graded = await sut.FinalizeExpiredAttemptsAsync();
+
+        Assert.Equal(1, graded);
         Assert.Equal(SubmissionStatus.Graded, expired.Status);
         Assert.Equal(10m, expired.AssignedGrade);
+        Assert.Equal(SubmissionStatus.Pending, active.Status);
+        Assert.Equal(SubmissionStatus.Pending, _db.Submissions.Items.Single(s => s.Id == retrospectiveId).Status);
+    }
+
+    [Fact]
+    public async Task StartQuiz_WindowNotYetOpen_ThrowsNotOpenCodeWithWindowTimes()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment();
+        SeedBankQuestion();
+        var window = _db.ClassSessions.Items.Single();
+        window.StartTime = DateTime.UtcNow.AddDays(1);
+        window.EndTime = DateTime.UtcNow.AddDays(4);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartQuiz(_assignmentId));
+
+        Assert.Equal(AssignmentWindowPolicy.NotYetOpenCode, ex.ErrorCode);
+        var payload = Assert.IsType<OboxSteam.Application.DTOs.ClassSessionDTO.AssignmentWindowConflictDto>(ex.Payload);
+        Assert.Equal(window.StartTime, payload.StartTime);
+        Assert.Equal(window.EndTime, payload.EndTime);
+        Assert.Equal(_assignmentId, payload.AssignmentId);
+    }
+
+    [Fact]
+    public async Task StartQuiz_WindowClosed_ThrowsClosedCode()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment();
+        SeedBankQuestion();
+        ClassAssignmentWindowSeed.Close(_db.ClassSessions.Items.Single());
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.StartQuiz(_assignmentId));
+
+        Assert.Equal(AssignmentWindowPolicy.ClosedCode, ex.ErrorCode);
+        Assert.Equal(AssignmentWindowPolicy.ClosedMessage, ex.Message);
     }
 
     [Fact]

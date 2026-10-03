@@ -557,13 +557,22 @@ related teaching session’s `EndTime` (last live/offline of the course, or of
 the research milestone’s required lives, or of the module) and closes at the
 next live/offline `StartTime` (or class end). A generated window is at least
 48 hours, clamped to the end of the `Class.EndDate` day (23:59:59 Vietnam
-time). Mentors and managers may then change the times; an edit must end in the
-future, stay open at least 48 hours, and stay within the class dates (through
-the end of the class end date day). Not-yet-open and closed windows both return
-409. A timed quiz attempt cannot be saved or submitted more than 60 seconds
-after `Submission.ExpiresAt`; starting the quiz again auto-grades the expired
-attempt from its saved answers. The window close job is the only place that
-fails enrollments for an elapsed window; starting an attempt never does.
+time). Manual create (`POST /api/classes/{classId}/sessions`) and edits by
+mentors and managers follow the same rules: start not in the past (create),
+end in the future, open at least 48 hours, and within the class dates (through
+the end of the class end date day); violations return 400. Blocked new attempts
+return 409 with `error.code` `ASSIGNMENT_WINDOW_MISSING`,
+`ASSIGNMENT_WINDOW_NOT_OPEN`, or `ASSIGNMENT_WINDOW_CLOSED`; the last two carry
+`{ classSessionId, classId, assignmentId, startTime, endTime }` (UTC) in
+`value.data`. A timed quiz attempt cannot be saved or submitted more than 60
+seconds after `Submission.ExpiresAt` (409 `ASSIGNMENT_ATTEMPT_TIME_EXPIRED`).
+An expired quiz attempt is graded from its saved answers by the next quiz start
+(409 `QUIZ_ATTEMPT_EXPIRED_GRADED` with the quiz result in `value.data`; start
+again for the next attempt) or by the 5-minute window close job, which grades
+expired quiz attempts before it decides AcademicFail. That job is the only place
+that fails enrollments for an elapsed window; starting an attempt never does.
+Retrospective and file-upload work already in progress is not bound by the
+window or its timer and may be saved and turned in after `EndTime`.
 `GET /api/classes/{classId}/sessions` accepts `assignmentId`.
 AssignmentWindow rows do not count as mentor calendar busy time and do not
 require attendance. SelfPaced activities are never scheduled. Research

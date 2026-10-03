@@ -94,6 +94,23 @@ Flow:
 3. Submit merges drafts, validates completeness, auto-grades, sets Graded status.
 4. Result returns score against `PassScore` and `MaxPoints`.
 
+409 `error.code` values on these endpoints (and the matching retrospective,
+file-upload, research, and recovery endpoints where they apply):
+
+| Code | When | `value.data` |
+| --- | --- | --- |
+| `ASSIGNMENT_WINDOW_MISSING` | Student's class has no AssignmentWindow for the assignment | — |
+| `ASSIGNMENT_WINDOW_NOT_OPEN` | New attempt before window `StartTime` | window id, class, assignment, `startTime`, `endTime` (UTC) |
+| `ASSIGNMENT_WINDOW_CLOSED` | New attempt after window `EndTime` | same as above |
+| `ASSIGNMENT_MAX_ATTEMPTS` | Effective attempt budget used | — |
+| `ASSIGNMENT_ATTEMPT_TIME_EXPIRED` | Quiz save/submit more than 60 s after `ExpiresAt` | — |
+| `QUIZ_ATTEMPT_EXPIRED_GRADED` | Start found an expired Pending quiz attempt; it was graded from saved answers | `QuizResultResponseDto` |
+
+Expired Pending quiz attempts are also graded by the 5-minute window close job
+(before its AcademicFail check), and the student receives the quiz-graded
+notification. Retrospective drafts keep their continuation rule and are not
+auto-closed by the timer.
+
 ### Mentor / staff access
 
 `GET .../quiz` and `GET .../quiz/result` also allow **Mentor**, **Manager**, and

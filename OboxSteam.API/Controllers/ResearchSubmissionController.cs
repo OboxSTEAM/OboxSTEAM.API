@@ -85,7 +85,9 @@ public sealed class ResearchSubmissionController : ControllerBase
         Description = "Student submits research deliverable content for a milestone. Creates the submission "
             + "when none exists (milestone unlock + required activities + availability). "
             + "Resubmission after ReturnedForRevision does not require mentor to reopen. "
-            + "New attempts must fall inside the class AssignmentWindow. "
+            + "New attempts must fall inside the class AssignmentWindow "
+            + "(409 ASSIGNMENT_WINDOW_MISSING, ASSIGNMENT_WINDOW_NOT_OPEN or ASSIGNMENT_WINDOW_CLOSED; the last two "
+            + "carry AssignmentWindowConflictDto in data). 409 ASSIGNMENT_MAX_ATTEMPTS when the attempt budget is used. "
             + "Pass EvidenceMediaAssetIds from evidence upload (isEvidence=true); primary FileUrl stays a document URL.")]
     [ProducesResponseType(typeof(ApiResult<ResearchSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]

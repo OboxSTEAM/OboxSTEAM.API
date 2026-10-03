@@ -131,7 +131,11 @@ public class ClassSessionController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     [SwaggerOperation(
         Summary = "Create a class session",
-        Description = "Schedules a new session for a class cohort. Requires Admin or Manager role.")]
+        Description = "Schedules a new session for a class cohort. Requires Admin or Manager role. "
+            + "AssignmentWindow (AssignmentId set, no ActivityId): the client supplies StartTime and EndTime; "
+            + "StartTime must not be in the past, EndTime must be in the future and at least 48 hours after "
+            + "StartTime, and EndTime may run to 23:59:59 Asia/Ho_Chi_Minh on the class end date. "
+            + "Violations return 400.")]
     [ProducesResponseType(typeof(ApiResult<ClassSessionResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -200,7 +204,10 @@ public class ClassSessionController : ControllerBase
     [SwaggerOperation(
         Summary = "Update a class session",
         Description = "Updates a scheduled class session. Admin/Manager may update any session. "
-            + "Mentors may update StartTime, EndTime, and Description of AssignmentWindow sessions on their class.")]
+            + "Mentors may update StartTime, EndTime, and Description of AssignmentWindow sessions on their class. "
+            + "When an AssignmentWindow's times change (any role), EndTime must be in the future and at least "
+            + "48 hours after StartTime, and may run to 23:59:59 Asia/Ho_Chi_Minh on the class end date; "
+            + "violations return 400. Moving a window does not extend attempts already in progress.")]
     [ProducesResponseType(typeof(ApiResult<ClassSessionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

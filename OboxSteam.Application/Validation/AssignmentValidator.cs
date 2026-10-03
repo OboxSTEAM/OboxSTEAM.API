@@ -102,6 +102,8 @@ public static class AssignmentValidator
     public const string AttemptTimeLimitExceededMessage =
         "The time limit for this attempt has ended.";
 
+    public const string AttemptTimeLimitExceededCode = "ASSIGNMENT_ATTEMPT_TIME_EXPIRED";
+
     /// <summary>
     /// True when the attempt has an expiry and the grace period after it has elapsed.
     /// Attempts with no <see cref="Submission.ExpiresAt"/> never expire.
@@ -119,7 +121,7 @@ public static class AssignmentValidator
     public static void EnsureAttemptNotExpired(Submission submission, DateTime utcNow)
     {
         if (IsAttemptExpired(submission, utcNow))
-            throw ErrorHelper.Conflict(AttemptTimeLimitExceededMessage);
+            throw ErrorHelper.Conflict(AttemptTimeLimitExceededMessage, AttemptTimeLimitExceededCode);
     }
 
     public static Module ValidateModuleExists(Module? module)

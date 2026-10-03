@@ -638,7 +638,7 @@ public sealed class ClassSessionServiceTests
         SeedClass();
         var sut = CreateSut();
         var start = _now.AddDays(3);
-        var end = start.AddHours(3);
+        var end = start.AddHours(72);
         var request = BuildCreateRequest(
             start: start,
             end: end,
@@ -650,6 +650,42 @@ public sealed class ClassSessionServiceTests
         Assert.Equal(start, result.StartTime);
         Assert.Equal(end, result.EndTime);
         Assert.Equal(SessionKind.AssignmentWindow, result.SessionKind);
+    }
+
+    [Fact]
+    public async Task Create_AssignmentWindow_RejectsWindowInThePast()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateClassSessionAsync(BuildCreateRequest(
+                start: _now.AddDays(-5),
+                end: _now.AddDays(-1),
+                clearActivity: true,
+                assignmentId: _assignmentId)));
+
+        Assert.Contains("in the past", ex.Message);
+        Assert.Empty(_db.ClassSessions.Items);
+    }
+
+    [Fact]
+    public async Task Create_AssignmentWindow_RejectsWindowShorterThanMinimum()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.CreateClassSessionAsync(BuildCreateRequest(
+                start: _now.AddDays(3),
+                end: _now.AddDays(3).AddHours(10),
+                clearActivity: true,
+                assignmentId: _assignmentId)));
+
+        Assert.Contains("at least 48 hours", ex.Message);
+        Assert.Empty(_db.ClassSessions.Items);
     }
 
     [Fact]
@@ -781,7 +817,7 @@ public sealed class ClassSessionServiceTests
         SeedCurriculum();
         var classEntity = SeedClass(mentorId: _mentorId);
         var start = _now.AddDays(3);
-        var end = start.AddHours(2);
+        var end = start.AddHours(72);
         SeedSession(
             activityId: Guid.Parse("abababab-abab-abab-abab-abababababab"),
             startTime: start.AddMinutes(-30),

@@ -297,6 +297,10 @@ public sealed class ClassSessionService : IClassSessionService
         {
             endTime = request.EndTime!.Value;
             sessionKind = ClassSessionValidator.ResolveSessionKind(null, forAssignment: true);
+            ClassSessionValidator.ValidateAssignmentWindowTimes(
+                request.StartTime,
+                endTime,
+                _currentTime.GetCurrentTime());
         }
 
         ClassSessionValidator.ValidateSessionWithinClassDateRange(

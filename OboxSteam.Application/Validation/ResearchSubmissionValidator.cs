@@ -198,7 +198,8 @@ public static class ResearchSubmissionValidator
         if (nextAttemptNumber > assignment.MaxAttempts)
         {
             throw ErrorHelper.Conflict(
-                $"Maximum number of attempts ({assignment.MaxAttempts}) has been reached for this assignment.");
+                AssessmentAttemptPolicy.MaxAttemptsReachedMessage(assignment.MaxAttempts),
+                AssessmentAttemptPolicy.MaxAttemptsReachedCode);
         }
     }
 
@@ -223,7 +224,8 @@ public static class ResearchSubmissionValidator
         if (nextAttemptNumber > effectiveMax)
         {
             throw ErrorHelper.Conflict(
-                $"Maximum number of attempts ({effectiveMax}) has been reached for this assignment.");
+                AssessmentAttemptPolicy.MaxAttemptsReachedMessage(effectiveMax),
+                AssessmentAttemptPolicy.MaxAttemptsReachedCode);
         }
     }
 

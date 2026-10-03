@@ -23,7 +23,10 @@ public sealed class RetrospectiveController : ControllerBase
     [SwaggerOperation(
         Summary = "Start a retrospective draft",
         Description = "Creates a new Pending submission or resumes an existing draft or revision. "
-            + "Requires Student role and an active enrollment in the assignment's module.")]
+            + "Requires Student role and an active enrollment in the assignment's module. "
+            + "A new draft needs the class AssignmentWindow to be open; an existing submission resumes regardless. "
+            + "409 error codes: ASSIGNMENT_WINDOW_MISSING; ASSIGNMENT_WINDOW_NOT_OPEN and ASSIGNMENT_WINDOW_CLOSED "
+            + "(data = AssignmentWindowConflictDto with startTime/endTime in UTC).")]
     [ProducesResponseType(typeof(ApiResult<RetrospectiveAttemptResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -71,7 +74,9 @@ public sealed class RetrospectiveController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Save retrospective draft",
-        Description = "Autosaves plain-text draft content for a Pending or ReturnedForRevision submission.")]
+        Description = "Autosaves plain-text draft content for a Pending or ReturnedForRevision submission. "
+            + "Not blocked by the class AssignmentWindow or a time limit: work already in progress continues "
+            + "after the window closes. 409 when the submission is not in an editable state.")]
     [ProducesResponseType(typeof(ApiResult<SaveRetrospectiveDraftResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -95,7 +100,10 @@ public sealed class RetrospectiveController : ControllerBase
     [SwaggerOperation(
         Summary = "Submit retrospective",
         Description = "Final submit: merges optional request text with the saved draft, "
-            + "requires non-empty plain text, and sets submission to TurnedIn for mentor grading.")]
+            + "requires non-empty plain text, and sets submission to TurnedIn for mentor grading. "
+            + "Not blocked by the class AssignmentWindow: work already in progress can be turned in after it closes. "
+            + "409 error codes: ASSIGNMENT_MAX_ATTEMPTS when a resubmission after ReturnedForRevision or Graded "
+            + "exceeds the attempt budget; 409 when the submission is not in a submittable state.")]
     [ProducesResponseType(typeof(ApiResult<RetrospectiveAttemptResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

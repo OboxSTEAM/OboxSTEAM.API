@@ -21,6 +21,11 @@ public static class QuizAttemptValidator
     public const string EnrollmentNotActiveMessage =
         "Your program enrollment has ended. Repurchase the program to continue learning.";
 
+    public const string ExpiredAttemptGradedCode = "QUIZ_ATTEMPT_EXPIRED_GRADED";
+
+    public const string ExpiredAttemptGradedMessage =
+        "Your previous attempt ran out of time and was graded from your saved answers.";
+
     public static void ValidateAssignmentIdRequired(Guid assignmentId)
     {
         if (assignmentId == Guid.Empty)
@@ -258,7 +263,8 @@ public static class QuizAttemptValidator
         if (completedAttempts >= effectiveMax)
         {
             throw ErrorHelper.Conflict(
-                $"Maximum number of attempts ({effectiveMax}) has been reached for this assignment.");
+                AssessmentAttemptPolicy.MaxAttemptsReachedMessage(effectiveMax),
+                AssessmentAttemptPolicy.MaxAttemptsReachedCode);
         }
     }
 

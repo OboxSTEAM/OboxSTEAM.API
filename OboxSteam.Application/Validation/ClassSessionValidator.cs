@@ -217,7 +217,7 @@ public static class ClassSessionValidator
     }
 
     /// <summary>
-    /// Edited AssignmentWindow times must close in the future and stay open for at least
+    /// Created or edited AssignmentWindow times must close in the future and stay open for at least
     /// <see cref="AssignmentWindowPlacement.MinimumWindowHours"/> hours. Without this a
     /// window moved into the past makes the close job fail students' enrollments.
     /// </summary>

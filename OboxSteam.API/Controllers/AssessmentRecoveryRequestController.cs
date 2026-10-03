@@ -20,8 +20,13 @@ public class AssessmentRecoveryRequestController : ControllerBase
 
     [HttpPost]
     [Authorize(Roles = "Student")]
-    [SwaggerOperation(Summary = "Request extra attempts (same class window)")]
+    [SwaggerOperation(
+        Summary = "Request extra attempts (same class window)",
+        Description = "Only while the class AssignmentWindow has not ended. "
+            + "409 error codes: ASSIGNMENT_WINDOW_MISSING when the student's class has no window; "
+            + "ASSIGNMENT_WINDOW_CLOSED after EndTime (data = AssignmentWindowConflictDto).")]
     [ProducesResponseType(typeof(ApiResult<AssessmentRecoveryRequestResponseDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> Create([FromBody] CreateAssessmentRecoveryRequestDto dto)
     {
         var result = await _service.CreateAsync(dto);
@@ -64,8 +69,13 @@ public class AssessmentRecoveryRequestController : ControllerBase
 
     [HttpPost("{id:guid}/approve")]
     [Authorize(Roles = "Mentor,Manager,Admin")]
-    [SwaggerOperation(Summary = "Approve recovery request (same class grant)")]
+    [SwaggerOperation(
+        Summary = "Approve recovery request (same class grant)",
+        Description = "Only while the class AssignmentWindow has not ended. "
+            + "409 ASSIGNMENT_WINDOW_CLOSED when the window is missing or has ended "
+            + "(data = AssignmentWindowConflictDto when a window exists).")]
     [ProducesResponseType(typeof(ApiResult<AssessmentRecoveryRequestResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
     public async Task<IActionResult> Approve(
         [FromRoute] Guid id,
         [FromBody] DecideAssessmentRecoveryRequestDto dto)

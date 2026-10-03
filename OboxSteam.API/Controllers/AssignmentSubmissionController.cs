@@ -24,7 +24,12 @@ public sealed class AssignmentSubmissionController : ControllerBase
         Summary = "Submit work for a non-research assignment",
         Description = "Student turns in a FileUpload assignment. "
             + "Quizzes and retrospectives use their dedicated endpoints. "
-            + "Provide ContentText and/or FileUrl.")]
+            + "Provide ContentText and/or FileUrl. "
+            + "A first submission, or a resubmission after a failed grade, needs the class AssignmentWindow to be open; "
+            + "Pending or ReturnedForRevision work can still be turned in after the window closes. "
+            + "409 error codes: ASSIGNMENT_WINDOW_MISSING; ASSIGNMENT_WINDOW_NOT_OPEN and ASSIGNMENT_WINDOW_CLOSED "
+            + "(data = AssignmentWindowConflictDto); ASSIGNMENT_MAX_ATTEMPTS; plain 409 when the work already "
+            + "passed or is pending mentor review.")]
     [ProducesResponseType(typeof(ApiResult<AssignmentSubmissionResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]

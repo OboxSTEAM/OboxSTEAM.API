@@ -88,10 +88,7 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
             _unitOfWork,
             assignment.Id,
             student.Id);
-        if (DateTime.UtcNow > window.EndTime)
-        {
-            throw ErrorHelper.Conflict(AssignmentWindowPolicy.ClosedMessage);
-        }
+        AssignmentWindowPolicy.EnsureNotClosed(window, DateTime.UtcNow);
 
         var priorRequests = await _unitOfWork.AssessmentRecoveryRequests.GetAllAsync(
             r => r.ModuleEnrollmentId == enrollment.Id
@@ -236,10 +233,7 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
                     _unitOfWork,
                     assignment.Id,
                     entity.StudentId);
-            if (window == null || DateTime.UtcNow > window.EndTime)
-            {
-                throw ErrorHelper.Conflict(AssignmentWindowPolicy.ClosedMessage);
-            }
+            AssignmentWindowPolicy.EnsureNotClosed(window, DateTime.UtcNow);
         }
 
         entity.Status = AssessmentRecoveryRequestStatus.Approved;

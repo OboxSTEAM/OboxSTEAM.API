@@ -2,12 +2,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
 
 namespace OboxSteam.Infrastructure.Services;
 
 /// <summary>
-/// Hosted loop that closes purchases whose required AssignmentWindow has already ended.
+/// Hosted loop that grades timed-out quiz attempts, then closes purchases whose required
+/// AssignmentWindow has already ended.
 /// </summary>
 public sealed class AssignmentWindowCloseService : BackgroundService
 {
@@ -37,6 +39,17 @@ public sealed class AssignmentWindowCloseService : BackgroundService
                 {
                     await Task.Delay(RunInterval, stoppingToken);
                     continue;
+                }
+
+                // Grade timed-out quiz attempts first so a saved passing draft counts before
+                // the elapsed-window close decides AcademicFail.
+                var quizAttempts = scope.ServiceProvider.GetRequiredService<IQuizAttemptService>();
+                var graded = await quizAttempts.FinalizeExpiredAttemptsAsync(stoppingToken);
+                if (graded > 0)
+                {
+                    _logger.LogInformation(
+                        "AssignmentWindowCloseService graded {Count} expired quiz attempt(s).",
+                        graded);
                 }
 
                 var lifecycle = scope.ServiceProvider.GetRequiredService<ProgramPurchaseLifecycle>();

@@ -23,7 +23,14 @@ public class QuizController : ControllerBase
     [SwaggerOperation(
         Summary = "Start a quiz attempt",
         Description = "Starts a new Mode A quiz attempt or resumes an existing Pending submission. "
-            + "Requires Student role and an active enrollment in the assignment's module.")]
+            + "Requires Student role and an active enrollment in the assignment's module. "
+            + "A new attempt needs the class AssignmentWindow to be open (StartTime <= now <= EndTime); "
+            + "a Pending attempt still inside its time limit resumes even after the window closes. "
+            + "409 error codes: ASSIGNMENT_WINDOW_MISSING (no window for the student's class); "
+            + "ASSIGNMENT_WINDOW_NOT_OPEN and ASSIGNMENT_WINDOW_CLOSED (data = AssignmentWindowConflictDto with "
+            + "startTime/endTime in UTC); ASSIGNMENT_MAX_ATTEMPTS; QUIZ_ATTEMPT_EXPIRED_GRADED (the Pending "
+            + "attempt passed ExpiresAt + 60 s, was graded from its saved answers, and data = QuizResultResponseDto; "
+            + "call start again to open the next attempt when one is allowed).")]
     [ProducesResponseType(typeof(ApiResult<QuizAttemptResponseDto>), 201)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -65,7 +72,10 @@ public class QuizController : ControllerBase
     [Authorize(Roles = "Student")]
     [SwaggerOperation(
         Summary = "Save draft quiz answers",
-        Description = "Upserts draft answers for a Pending submission. Partial answers are allowed. Requires Student role.")]
+        Description = "Upserts draft answers for a Pending submission. Partial answers are allowed. Requires Student role. "
+            + "The class AssignmentWindow closing does not block an attempt already in progress. "
+            + "409 error codes: ASSIGNMENT_ATTEMPT_TIME_EXPIRED once ExpiresAt + 60 s grace has passed; "
+            + "409 when the submission is no longer Pending.")]
     [ProducesResponseType(typeof(ApiResult<SaveDraftAnswersResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -90,7 +100,10 @@ public class QuizController : ControllerBase
         Summary = "Submit quiz",
         Description = "Final submit: merges request answers with saved drafts, validates all questions are answered, "
             + "auto-grades, and sets submission to Graded. An empty answers array is allowed when all drafts are saved. "
-            + "Requires Student role.")]
+            + "Requires Student role. The class AssignmentWindow closing does not block an attempt already in progress. "
+            + "409 error codes: ASSIGNMENT_ATTEMPT_TIME_EXPIRED once ExpiresAt + 60 s grace has passed "
+            + "(the attempt is later graded from saved answers by start or by the 5-minute background sweep); "
+            + "409 when the submission is no longer Pending.")]
     [ProducesResponseType(typeof(ApiResult<QuizResultResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
@@ -112,7 +125,9 @@ public class QuizController : ControllerBase
         Summary = "Get quiz result",
         Description = "Returns the graded result for a submission. "
             + "Students may only access their own result and must have a module enrollment (any status). "
-            + "Mentors may access students in their class. Manager and Admin may access any submission.")]
+            + "Mentors may access students in their class. Manager and Admin may access any submission. "
+            + "409 while the submission is not Graded. A Pending attempt past ExpiresAt + 60 s is graded from its "
+            + "saved answers by the next start call or by the background sweep (runs every 5 minutes).")]
     [ProducesResponseType(typeof(ApiResult<QuizResultResponseDto>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 403)]

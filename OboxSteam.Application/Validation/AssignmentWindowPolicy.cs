@@ -1,4 +1,5 @@
 using OboxSteam.Application.Commons;
+using OboxSteam.Application.DTOs.ClassSessionDTO;
 using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -19,6 +20,12 @@ public static class AssignmentWindowPolicy
     public const string NotYetOpenMessage = "Assignment is not yet available.";
 
     public const string ClosedMessage = "Assignment is no longer available.";
+
+    public const string NotAvailableCode = "ASSIGNMENT_WINDOW_MISSING";
+
+    public const string NotYetOpenCode = "ASSIGNMENT_WINDOW_NOT_OPEN";
+
+    public const string ClosedCode = "ASSIGNMENT_WINDOW_CLOSED";
 
     public static bool IsActiveWindow(ClassSession session)
         => !session.IsDeleted
@@ -77,7 +84,7 @@ public static class AssignmentWindowPolicy
         var window = await TryGetForStudentAsync(unitOfWork, assignmentId, studentId);
         if (window == null)
         {
-            throw ErrorHelper.Conflict(NotAvailableMessage);
+            throw ErrorHelper.Conflict(NotAvailableMessage, NotAvailableCode);
         }
 
         return window;
@@ -233,16 +240,51 @@ public static class AssignmentWindowPolicy
     public static void EnsureOpenForNewAttempt(ClassSession window, DateTime utcNow)
         => EnsureAllowsNewAttempt(window, utcNow);
 
+    /// <summary>
+    /// 409 with a distinct code per reason: ASSIGNMENT_WINDOW_MISSING, ASSIGNMENT_WINDOW_NOT_OPEN,
+    /// ASSIGNMENT_WINDOW_CLOSED. The last two carry <see cref="AssignmentWindowConflictDto"/>.
+    /// </summary>
     public static void EnsureAllowsNewAttempt(ClassSession? window, DateTime utcNow)
     {
-        var reason = GetNewAttemptBlockReason(window, utcNow);
-        if (reason == null)
+        if (window == null)
         {
-            return;
+            throw ErrorHelper.Conflict(NotAvailableMessage, NotAvailableCode);
         }
 
-        throw ErrorHelper.Conflict(reason);
+        if (utcNow < window.StartTime)
+        {
+            throw ErrorHelper.Conflict(NotYetOpenMessage, NotYetOpenCode, ToConflictDto(window));
+        }
+
+        if (utcNow > window.EndTime)
+        {
+            throw ErrorHelper.Conflict(ClosedMessage, ClosedCode, ToConflictDto(window));
+        }
     }
+
+    /// <summary>409 ASSIGNMENT_WINDOW_CLOSED when the window is missing or has ended.</summary>
+    public static void EnsureNotClosed(ClassSession? window, DateTime utcNow)
+    {
+        if (window == null)
+        {
+            throw ErrorHelper.Conflict(ClosedMessage, ClosedCode);
+        }
+
+        if (utcNow > window.EndTime)
+        {
+            throw ErrorHelper.Conflict(ClosedMessage, ClosedCode, ToConflictDto(window));
+        }
+    }
+
+    private static AssignmentWindowConflictDto ToConflictDto(ClassSession window)
+        => new()
+        {
+            ClassSessionId = window.Id,
+            ClassId = window.ClassId,
+            AssignmentId = window.AssignmentId ?? Guid.Empty,
+            StartTime = AppDateTime.AsUtc(window.StartTime),
+            EndTime = AppDateTime.AsUtc(window.EndTime)
+        };
 
     public static bool IsOpen(ClassSession window, DateTime utcNow)
         => utcNow >= window.StartTime && utcNow <= window.EndTime;

@@ -13,6 +13,11 @@ public static class AssessmentAttemptPolicy
 {
     public const int MaxRecoveryRequestsPerAssignment = 2;
 
+    public const string MaxAttemptsReachedCode = "ASSIGNMENT_MAX_ATTEMPTS";
+
+    public static string MaxAttemptsReachedMessage(int effectiveMax)
+        => $"Maximum number of attempts ({effectiveMax}) has been reached for this assignment.";
+
     public static async Task<Module?> GetModuleForAssignmentAsync(IUnitOfWork unitOfWork, Assignment assignment)
     {
         return await unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
