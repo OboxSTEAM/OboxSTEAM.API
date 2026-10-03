@@ -93,6 +93,35 @@ public static class AssignmentValidator
         return utcNow.AddMinutes(timeLimitMinutes.Value);
     }
 
+    /// <summary>
+    /// Seconds after <see cref="Submission.ExpiresAt"/> during which a timed attempt may still
+    /// be saved or submitted, to absorb client/server clock drift and network latency.
+    /// </summary>
+    public const int AttemptExpiryGraceSeconds = 60;
+
+    public const string AttemptTimeLimitExceededMessage =
+        "The time limit for this attempt has ended.";
+
+    /// <summary>
+    /// True when the attempt has an expiry and the grace period after it has elapsed.
+    /// Attempts with no <see cref="Submission.ExpiresAt"/> never expire.
+    /// </summary>
+    public static bool IsAttemptExpired(Submission submission, DateTime utcNow)
+    {
+        if (!submission.ExpiresAt.HasValue)
+            return false;
+
+        var deadline = AppDateTime.AsUtc(submission.ExpiresAt.Value)
+            .AddSeconds(AttemptExpiryGraceSeconds);
+        return utcNow > deadline;
+    }
+
+    public static void EnsureAttemptNotExpired(Submission submission, DateTime utcNow)
+    {
+        if (IsAttemptExpired(submission, utcNow))
+            throw ErrorHelper.Conflict(AttemptTimeLimitExceededMessage);
+    }
+
     public static Module ValidateModuleExists(Module? module)
     {
         if (module == null || module.IsDeleted)

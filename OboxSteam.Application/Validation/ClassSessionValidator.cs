@@ -196,11 +196,47 @@ public static class ClassSessionValidator
         }
     }
 
-    public static void ValidateSessionWithinClassDateRange(Class classEntity, DateTime startTime, DateTime endTime)
+    /// <param name="throughEndOfClassDay">
+    /// When true the upper bound is the end of the class end date's day in Vietnam time
+    /// (used for AssignmentWindow, which generate closes at 23:59:59 local on that day).
+    /// </param>
+    public static void ValidateSessionWithinClassDateRange(
+        Class classEntity,
+        DateTime startTime,
+        DateTime endTime,
+        bool throughEndOfClassDay = false)
     {
-        if (startTime < classEntity.StartDate || endTime > classEntity.EndDate)
+        var upperBound = throughEndOfClassDay
+            ? AssignmentWindowPlacement.EndOfClassDay(classEntity.EndDate)
+            : classEntity.EndDate;
+
+        if (startTime < classEntity.StartDate || endTime > upperBound)
         {
             throw ErrorHelper.BadRequest("Session must fall within the class start and end dates.");
+        }
+    }
+
+    /// <summary>
+    /// Edited AssignmentWindow times must close in the future and stay open for at least
+    /// <see cref="AssignmentWindowPlacement.MinimumWindowHours"/> hours. Without this a
+    /// window moved into the past makes the close job fail students' enrollments.
+    /// </summary>
+    public static void ValidateAssignmentWindowTimes(DateTime startTime, DateTime endTime, DateTime utcNow)
+    {
+        if (endTime <= startTime)
+        {
+            throw ErrorHelper.BadRequest("EndTime must be after StartTime.");
+        }
+
+        if (endTime <= utcNow)
+        {
+            throw ErrorHelper.BadRequest("An assignment window must end in the future.");
+        }
+
+        if (endTime - startTime < TimeSpan.FromHours(AssignmentWindowPlacement.MinimumWindowHours))
+        {
+            throw ErrorHelper.BadRequest(
+                $"An assignment window must stay open for at least {AssignmentWindowPlacement.MinimumWindowHours} hours.");
         }
     }
 

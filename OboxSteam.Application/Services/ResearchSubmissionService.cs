@@ -398,15 +398,6 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
                 assignment.Id,
                 submission.ModuleEnrollmentId);
         }
-        else if (submission.Status == SubmissionStatus.Graded
-                 && submission.AssignedGrade.HasValue
-                 && submission.AssignedGrade.Value >= assignment.PassScore)
-        {
-            await _programPurchaseLifecycle.TryExtendNextMilestoneWindowAfterPassAsync(
-                assignment,
-                submission.StudentId,
-                submission.ModuleEnrollmentId);
-        }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
         Guid? programEnrollmentId = null;
@@ -526,13 +517,6 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         DateTime now,
         ClassSession? window)
     {
-        await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
-            enrollment.StudentId,
-            assignment.Id,
-            enrollment.Id,
-            window,
-            now);
-
         var milestoneIds = await ResearchSubmissionValidator.LoadModuleMilestoneIdsAsync(
             _unitOfWork,
             enrollment.ModuleId);

@@ -90,12 +90,6 @@ public sealed class AssessmentRecoveryRequestService : IAssessmentRecoveryReques
             student.Id);
         if (DateTime.UtcNow > window.EndTime)
         {
-            await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
-                student.Id,
-                assignment.Id,
-                enrollment.Id,
-                window,
-                DateTime.UtcNow);
             throw ErrorHelper.Conflict(AssignmentWindowPolicy.ClosedMessage);
         }
 

@@ -16,7 +16,8 @@ public interface IClassSessionService
         SessionKind? sessionKind = null,
         ClassSessionStatus? status = null,
         DateTime? from = null,
-        DateTime? to = null);
+        DateTime? to = null,
+        Guid? assignmentId = null);
 
     Task<ClassSessionResponseDto> GetClassSessionByIdAsync(Guid id);
 

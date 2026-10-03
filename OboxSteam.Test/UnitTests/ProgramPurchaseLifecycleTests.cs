@@ -725,66 +725,6 @@ public sealed class ProgramPurchaseLifecycleTests
     }
 
     [Fact]
-    public async Task TryExtendNextMilestoneWindowAfterPassAsync_ExtendsWhenClosedOrShort()
-    {
-        SeedAcademicContext(moduleType: ModuleType.Research);
-        var nextAssignmentId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1");
-        _db.Assignments.Seed(new Assignment
-        {
-            Id = nextAssignmentId,
-            Code = "ASM-NEXT",
-            Title = "Milestone 2",
-            ModuleId = _moduleId,
-            AssignmentType = AssignmentType.FileUpload,
-            MaxPoints = 100,
-            PassScore = 50,
-            IsRequiredForModulePass = true,
-            IsDeleted = false,
-        });
-        _db.ResearchMilestones.Seed(
-            new ResearchMilestone
-            {
-                Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1"),
-                Code = "MS-1",
-                Title = "Proposal",
-                ModuleId = _moduleId,
-                AssignmentId = _assignmentId,
-                MilestoneOrder = 1,
-                IsDeleted = false,
-            },
-            new ResearchMilestone
-            {
-                Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2"),
-                Code = "MS-2",
-                Title = "Report",
-                ModuleId = _moduleId,
-                AssignmentId = nextAssignmentId,
-                MilestoneOrder = 2,
-                IsDeleted = false,
-            });
-        ClassAssignmentWindowSeed.ClassWithActiveEnrollment(
-            _db,
-            _classId,
-            _programId,
-            _studentId,
-            _enrollmentId);
-        var nextWindow = ClassAssignmentWindowSeed.Open(
-            _db,
-            _classId,
-            _moduleId,
-            nextAssignmentId,
-            start: _now.AddDays(-10),
-            end: _now.AddHours(-1));
-        var sut = CreateSut();
-
-        await sut.TryExtendNextMilestoneWindowAfterPassAsync(
-            _db.Assignments.Items.Single(a => a.Id == _assignmentId),
-            _studentId);
-
-        Assert.Equal(_now.AddHours(ProgramPurchaseLifecycle.NextMilestoneWindowPadHours), nextWindow.EndTime);
-    }
-
-    [Fact]
     public void ResolveCreditHint_MapsCopiedRedoAndAhead()
     {
         var taught = new ClassSession

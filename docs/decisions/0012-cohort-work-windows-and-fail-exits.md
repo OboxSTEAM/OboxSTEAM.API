@@ -50,9 +50,9 @@ recovery, and no rebuy. Experiential/Research academic fail ignored
    required-only). A hosted scan closes students who never return.
 
 4. **Research grade hold.** Never AcademicFail while the latest submission is
-   `TurnedIn`. After a **pass** on milestone N, if milestone N+1’s class window
-   is closed or has fewer than 48 hours left, set its `EndTime` to
-   `max(EndTime, now+48h)` (keep `StartTime`).
+   `TurnedIn`. *Amended:* a pass on milestone N no longer extends milestone
+   N+1’s window. The window is class-wide, so one student’s result must not move
+   it; mentors extend it with the session PUT.
 
 5. **Attendance fail threshold is 50%** (`ModuleAbsencePolicy.MaxAbsencePercent`).
    Manager reopen uses the same bar (below 50%).

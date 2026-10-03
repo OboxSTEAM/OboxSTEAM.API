@@ -41,7 +41,8 @@ public class ClassSessionController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by session kind (optional)")] SessionKind? sessionKind = null,
         [FromQuery, SwaggerParameter(Description = "Filter by session status (optional)")] ClassSessionStatus? status = null,
         [FromQuery, SwaggerParameter(Description = "Include sessions ending on or after this time (optional)")] DateTime? from = null,
-        [FromQuery, SwaggerParameter(Description = "Include sessions starting on or before this time (optional)")] DateTime? to = null)
+        [FromQuery, SwaggerParameter(Description = "Include sessions starting on or before this time (optional)")] DateTime? to = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by assignment ID, e.g. the AssignmentWindow of one assignment (optional)")] Guid? assignmentId = null)
     {
         if (page < 1 || pageSize < 1)
         {
@@ -58,7 +59,8 @@ public class ClassSessionController : ControllerBase
             sessionKind,
             status,
             from,
-            to);
+            to,
+            assignmentId);
 
         return Ok(ApiResult<Pagination<ClassSessionResponseDto>>.Success(
             result,

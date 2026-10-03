@@ -1056,7 +1056,7 @@ public sealed class ClassSessionServiceTests
         session.AssignmentId = _assignmentId;
         session.SessionKind = SessionKind.AssignmentWindow;
         var sut = CreateSut();
-        var newEnd = session.StartTime.AddHours(4);
+        var newEnd = session.StartTime.AddHours(72);
 
         var result = await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
         {
@@ -1089,6 +1089,74 @@ public sealed class ClassSessionServiceTests
         Assert.Equal(newStart, result.StartTime);
         Assert.Equal(newEnd, result.EndTime);
         Assert.Equal("Window for this class", result.Description);
+    }
+
+    [Fact]
+    public async Task Update_AssignmentWindow_RejectsEndInThePast()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var session = SeedSession(status: ClassSessionStatus.Scheduled, activityId: null);
+        session.ActivityId = null;
+        session.AssignmentId = _assignmentId;
+        session.SessionKind = SessionKind.AssignmentWindow;
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+            {
+                StartTime = _now.AddDays(-5),
+                EndTime = _now.AddDays(-1),
+            }));
+
+        Assert.Contains("must end in the future", ex.Message);
+    }
+
+    [Fact]
+    public async Task Update_AssignmentWindow_RejectsWindowShorterThanMinimum()
+    {
+        SeedCurriculum();
+        SeedClass(mentorId: _mentorId);
+        var session = SeedSession(status: ClassSessionStatus.Scheduled, activityId: null);
+        session.ActivityId = null;
+        session.AssignmentId = _assignmentId;
+        session.SessionKind = SessionKind.AssignmentWindow;
+        var sut = CreateSut(_mentorId);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
+            sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
+            {
+                StartTime = _now.AddDays(2),
+                EndTime = _now.AddDays(2).AddHours(10),
+            }));
+
+        Assert.Contains("at least 48 hours", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetByClass_FiltersByAssignmentId()
+    {
+        SeedCurriculum();
+        SeedClass();
+        var window = SeedSession(
+            title: "Window",
+            kind: SessionKind.AssignmentWindow,
+            startTime: _now.AddDays(1),
+            endTime: _now.AddDays(4));
+        window.ActivityId = null;
+        window.AssignmentId = _assignmentId;
+        SeedSession(
+            id: Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+            title: "Live",
+            startTime: _now.AddDays(1),
+            endTime: _now.AddDays(1).AddHours(2));
+        var sut = CreateSut();
+
+        var result = await sut.GetClassSessionsByClassIdAsync(
+            _classId, null, false, 1, 10, assignmentId: _assignmentId);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("Window", result.Items[0].Title);
     }
 
     [Fact]
@@ -1398,7 +1466,7 @@ public sealed class ClassSessionServiceTests
 
         await sut.UpdateClassSessionAsync(_sessionId, new UpdateClassSessionRequestDto
         {
-            EndTime = session.StartTime.AddHours(4),
+            EndTime = session.StartTime.AddHours(72),
         });
 
         Assert.Equal(sentAt, session.ReminderSentAt);

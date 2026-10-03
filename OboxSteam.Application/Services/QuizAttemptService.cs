@@ -60,6 +60,19 @@ public sealed class QuizAttemptService : IQuizAttemptService
                  && s.Status == SubmissionStatus.Pending
                  && !s.IsDeleted);
 
+        if (pendingSubmission != null
+            && AssignmentValidator.IsAttemptExpired(pendingSubmission, DateTime.UtcNow))
+        {
+            // The previous attempt ran out of time: grade what was saved so the student is
+            // not stuck resuming an attempt that can no longer be submitted.
+            await FinalizeExpiredAttemptAsync(student.Id, pendingSubmission, assignment!);
+            enrollment = await QuizAttemptValidator.ValidateActiveModuleEnrollmentAsync(
+                _unitOfWork,
+                student.Id,
+                assignment!);
+            pendingSubmission = null;
+        }
+
         if (pendingSubmission != null)
         {
             _logger.LogInformation(
@@ -118,12 +131,6 @@ public sealed class QuizAttemptService : IQuizAttemptService
             assignment!.Id,
             student.Id);
         var now = DateTime.UtcNow;
-        await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
-            student.Id,
-            assignment.Id,
-            enrollment.Id,
-            window,
-            now);
         QuizAttemptValidator.ValidateAssignmentAvailability(window, now);
 
         await QuizAttemptValidator.ValidateMaxAttemptsForNewStartAsync(
@@ -317,6 +324,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
         QuizAttemptValidator.ValidateSubmissionExists(submission, submissionId);
         QuizAttemptValidator.ValidateSubmissionOwnership(submission!, student.Id);
         QuizAttemptValidator.ValidateSubmissionPending(submission!);
+        AssignmentValidator.EnsureAttemptNotExpired(submission!, DateTime.UtcNow);
 
         var draftAssignment = await _unitOfWork.Assignments.GetByIdAsync(submission!.AssignmentId);
         if (draftAssignment == null || draftAssignment.IsDeleted)
@@ -359,6 +367,7 @@ public sealed class QuizAttemptService : IQuizAttemptService
         QuizAttemptValidator.ValidateSubmissionExists(submission, submissionId);
         QuizAttemptValidator.ValidateSubmissionOwnership(submission!, student.Id);
         QuizAttemptValidator.ValidateSubmissionPending(submission!);
+        AssignmentValidator.EnsureAttemptNotExpired(submission!, DateTime.UtcNow);
 
         var assignment = await _unitOfWork.Assignments.GetByIdAsync(submission!.AssignmentId);
         QuizAttemptValidator.ValidateAssignmentForQuizStart(assignment);
@@ -412,13 +421,6 @@ public sealed class QuizAttemptService : IQuizAttemptService
                 assignment!.Id,
                 submission.ModuleEnrollmentId);
         }
-        else
-        {
-            await _programPurchaseLifecycle.TryExtendNextMilestoneWindowAfterPassAsync(
-                assignment!,
-                student.Id,
-                submission.ModuleEnrollmentId);
-        }
 
         var module = await _unitOfWork.Modules.GetByIdAsync(assignment!.ModuleId);
         Guid? programEnrollmentId = null;
@@ -460,6 +462,43 @@ public sealed class QuizAttemptService : IQuizAttemptService
             Status = submission.Status,
             SubmittedAt = submission.SubmittedAt
         };
+    }
+
+    private async Task FinalizeExpiredAttemptAsync(
+        Guid studentId,
+        Submission submission,
+        Assignment assignment)
+    {
+        var snapshotQuestions = await LoadSnapshotQuestionsAsync(submission.Id);
+        var savedAnswers = await _unitOfWork.QuizAnswers.GetAllAsync(
+            a => a.SubmissionId == submission.Id && !a.IsDeleted);
+
+        var grade = ResolveQuizResultGrade(assignment, submission, snapshotQuestions, savedAnswers);
+
+        submission.Status = SubmissionStatus.Graded;
+        submission.AssignedGrade = grade.AssignedGrade;
+        submission.SubmittedAt = submission.ExpiresAt.HasValue
+            ? AppDateTime.AsUtc(submission.ExpiresAt.Value)
+            : DateTime.UtcNow;
+
+        await _unitOfWork.Submissions.Update(submission);
+        await _unitOfWork.SaveChangesAsync();
+
+        await RecalculateEnrollmentProgressAsync(submission);
+
+        if (!grade.Passed)
+        {
+            await _programPurchaseLifecycle.TryCloseAfterFailedAssignmentAsync(
+                studentId,
+                assignment.Id,
+                submission.ModuleEnrollmentId);
+        }
+
+        _logger.LogInformation(
+            "Expired quiz attempt auto-graded from saved answers. SubmissionId={SubmissionId}, Grade={Grade}, Passed={Passed}",
+            submission.Id,
+            grade.AssignedGrade,
+            grade.Passed);
     }
 
     public async Task<QuizResultResponseDto?> GetQuizResult(Guid submissionId)

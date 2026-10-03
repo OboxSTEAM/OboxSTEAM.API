@@ -74,12 +74,6 @@ public sealed class RetrospectiveAttemptService : IRetrospectiveAttemptService
             _unitOfWork,
             assignment!.Id,
             student.Id);
-        await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
-            student.Id,
-            assignment.Id,
-            enrollment.Id,
-            window,
-            now);
         RetrospectiveAttemptValidator.ValidateAssignmentAvailability(window, now);
 
         var newSubmission = new Submission

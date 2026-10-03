@@ -241,11 +241,6 @@ public static class AssignmentWindowPolicy
             return;
         }
 
-        if (reason == NotYetOpenMessage)
-        {
-            throw ErrorHelper.Forbidden(reason);
-        }
-
         throw ErrorHelper.Conflict(reason);
     }
 

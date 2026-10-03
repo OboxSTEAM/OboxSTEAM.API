@@ -43,7 +43,7 @@ as a fallback when that seat exists.
 | ModuleType | `MaxAttempts` | Recovery |
 | --- | --- | --- |
 | Theory | Not enforced — unlimited free retries on the same class while the class window is open | No extra-attempt grant. Required work not passed after `EndTime` (no in-progress draft, nothing `TurnedIn`) → AcademicFail so the student can chuyen ca |
-| Experiential / Research | Enforced | After exhaustion, student submits `AssessmentRecoveryRequest`; mentor grants extra attempts **only** (same class, same open window). Cap: 2 requests per assignment per module enrollment. Window already ended → no recovery; required work AcademicFails. Latest `TurnedIn` never closes. Passing research milestone N extends milestone N+1’s window to at least `now+48h` if that window is closed or has less than 48 hours left |
+| Experiential / Research | Enforced | After exhaustion, student submits `AssessmentRecoveryRequest`; mentor grants extra attempts **only** (same class, same open window). Cap: 2 requests per assignment per module enrollment. Window already ended → no recovery; required work AcademicFails. Latest `TurnedIn` never closes. Passing a research milestone does not change the next milestone’s window; mentors extend it with the session PUT |
 
 API: `/api/assignments` — CRUD for Manager/Admin; student submission
 flows via assignment, quiz, and retrospective services.

@@ -731,6 +731,88 @@ public sealed class QuizAttemptServiceTests
     }
 
     [Fact]
+    public async Task SubmitQuiz_ThrowsConflict_WhenAttemptExpiredBeyondGrace()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment();
+        var (submissionId, questionId, correctOptionId, _) = SeedAttemptSnapshot();
+        _db.Submissions.Items.Single(s => s.Id == submissionId).ExpiresAt =
+            DateTime.UtcNow.AddSeconds(-(AssignmentValidator.AttemptExpiryGraceSeconds + 30));
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.SubmitQuiz(submissionId, new SubmitQuizAnswersRequestDto
+            {
+                Answers = [new QuizAnswerItemDto { QuestionId = questionId, SelectedOptionIds = [correctOptionId] }]
+            }));
+
+        Assert.Equal(AssignmentValidator.AttemptTimeLimitExceededMessage, ex.Message);
+        Assert.Equal(SubmissionStatus.Pending, _db.Submissions.Items.Single(s => s.Id == submissionId).Status);
+    }
+
+    [Fact]
+    public async Task SubmitQuiz_Succeeds_WhenExpiredWithinGrace()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment(maxPoints: 10m, passScore: 5m);
+        var (submissionId, questionId, correctOptionId, _) = SeedAttemptSnapshot();
+        _db.Submissions.Items.Single(s => s.Id == submissionId).ExpiresAt =
+            DateTime.UtcNow.AddSeconds(-(AssignmentValidator.AttemptExpiryGraceSeconds / 3));
+        var sut = CreateSut();
+
+        var result = await sut.SubmitQuiz(submissionId, new SubmitQuizAnswersRequestDto
+        {
+            Answers = [new QuizAnswerItemDto { QuestionId = questionId, SelectedOptionIds = [correctOptionId] }]
+        });
+
+        Assert.Equal(SubmissionStatus.Graded, result.Status);
+    }
+
+    [Fact]
+    public async Task SaveDraftAnswers_ThrowsConflict_WhenAttemptExpiredBeyondGrace()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment();
+        var (submissionId, questionId, correctOptionId, _) = SeedAttemptSnapshot();
+        _db.Submissions.Items.Single(s => s.Id == submissionId).ExpiresAt =
+            DateTime.UtcNow.AddMinutes(-10);
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.SaveDraftAnswers(submissionId, new SaveDraftAnswersRequestDto
+            {
+                Answers = [new QuizAnswerItemDto { QuestionId = questionId, SelectedOptionIds = [correctOptionId] }]
+            }));
+    }
+
+    [Fact]
+    public async Task StartQuiz_AutoGradesExpiredPendingAttempt_AndStartsNewAttempt()
+    {
+        SeedStudentAndEnrollment();
+        SeedQuizAssignment(maxAttempts: 3, maxPoints: 10m, passScore: 5m);
+        SeedBankQuestion();
+        var (submissionId, questionId, correctOptionId, _) = SeedAttemptSnapshot();
+        var expired = _db.Submissions.Items.Single(s => s.Id == submissionId);
+        expired.ExpiresAt = DateTime.UtcNow.AddMinutes(-10);
+        _db.QuizAnswers.Seed(new QuizAnswer
+        {
+            Id = Guid.NewGuid(),
+            SubmissionId = submissionId,
+            QuizQuestionId = questionId,
+            QuizOptionId = correctOptionId,
+            IsDeleted = false
+        });
+        var sut = CreateSut();
+
+        var result = await sut.StartQuiz(_assignmentId);
+
+        Assert.NotEqual(submissionId, result.SubmissionId);
+        Assert.Equal(2, result.AttemptNumber);
+        Assert.Equal(SubmissionStatus.Graded, expired.Status);
+        Assert.Equal(10m, expired.AssignedGrade);
+    }
+
+    [Fact]
     public async Task SubmitQuiz_ThrowsBadRequest_WhenAnyQuestionUnanswered()
     {
         SeedStudentAndEnrollment();

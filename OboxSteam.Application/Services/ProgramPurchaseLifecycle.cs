@@ -1075,8 +1075,6 @@ public sealed class ProgramPurchaseLifecycle
             seats.Count);
     }
 
-    public const int NextMilestoneWindowPadHours = 48;
-
     /// <summary>
     /// Required work whose class window has ended, with no in-progress continuation and
     /// nothing waiting to be graded, closes the purchase (including Theory).
@@ -1149,26 +1147,6 @@ public sealed class ProgramPurchaseLifecycle
         await CloseAsync(programEnrollment, ProgramPurchaseEndReason.AcademicFail, assignment.ModuleId);
     }
 
-    public async Task TryCloseIfWindowBlocksNewAttemptAsync(
-        Guid studentId,
-        Guid assignmentId,
-        Guid? moduleEnrollmentId,
-        ClassSession? window,
-        DateTime utcNow)
-    {
-        if (AssignmentWindowPolicy.GetNewAttemptBlockReason(window, utcNow)
-            != AssignmentWindowPolicy.ClosedMessage)
-        {
-            return;
-        }
-
-        await TryCloseAfterAssignmentWindowElapsedAsync(
-            studentId,
-            assignmentId,
-            moduleEnrollmentId,
-            window);
-    }
-
     /// <summary>
     /// Closes Active purchases whose required AssignmentWindow has already ended.
     /// </summary>
@@ -1236,72 +1214,6 @@ public sealed class ProgramPurchaseLifecycle
         }
 
         return closed;
-    }
-
-    public async Task TryExtendNextMilestoneWindowAfterPassAsync(
-        Assignment assignment,
-        Guid studentId,
-        Guid? moduleEnrollmentId = null)
-    {
-        var milestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
-            rm => rm.AssignmentId == assignment.Id && !rm.IsDeleted);
-        if (milestone == null)
-        {
-            return;
-        }
-
-        var next = (await _unitOfWork.ResearchMilestones.GetAllAsync(
-                rm => rm.ModuleId == milestone.ModuleId && !rm.IsDeleted))
-            .Where(rm => rm.MilestoneOrder > milestone.MilestoneOrder)
-            .OrderBy(rm => rm.MilestoneOrder)
-            .FirstOrDefault();
-        if (next == null)
-        {
-            return;
-        }
-
-        ClassSession? window = null;
-        if (moduleEnrollmentId.HasValue)
-        {
-            var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(moduleEnrollmentId.Value);
-            if (moduleEnrollment?.ProgramEnrollmentId is Guid programEnrollmentId)
-            {
-                var windows = await AssignmentWindowPolicy.LoadWindowsForProgramEnrollmentAsync(
-                    _unitOfWork,
-                    studentId,
-                    programEnrollmentId);
-                windows.TryGetValue(next.AssignmentId, out window);
-            }
-        }
-        else
-        {
-            window = await AssignmentWindowPolicy.TryGetForStudentAsync(
-                _unitOfWork,
-                next.AssignmentId,
-                studentId);
-        }
-
-        if (window == null)
-        {
-            return;
-        }
-
-        var now = _currentTime.GetCurrentTime();
-        var pad = now.AddHours(NextMilestoneWindowPadHours);
-        if (now <= window.EndTime && window.EndTime - now >= TimeSpan.FromHours(NextMilestoneWindowPadHours))
-        {
-            return;
-        }
-
-        var newEnd = window.EndTime > pad ? window.EndTime : pad;
-        if (newEnd <= window.EndTime)
-        {
-            return;
-        }
-
-        window.EndTime = newEnd;
-        await _unitOfWork.ClassSessions.Update(window);
-        await _unitOfWork.SaveChangesAsync();
     }
 
     public static RebuyModuleCreditHint ResolveCreditHint(

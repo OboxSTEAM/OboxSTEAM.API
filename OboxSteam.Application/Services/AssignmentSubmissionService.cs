@@ -87,12 +87,6 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
                 _unitOfWork,
                 assignment.Id,
                 student.Id);
-            await _programPurchaseLifecycle.TryCloseIfWindowBlocksNewAttemptAsync(
-                student.Id,
-                assignment.Id,
-                enrollment.Id,
-                window,
-                now);
             ResearchSubmissionValidator.ValidateAssignmentAvailability(window, now);
         }
 
@@ -259,15 +253,6 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
             await _programPurchaseLifecycle.TryCloseAfterFailedAssignmentAsync(
                 submission.StudentId,
                 assignment.Id,
-                submission.ModuleEnrollmentId);
-        }
-        else if (submission.Status == SubmissionStatus.Graded
-                 && submission.AssignedGrade.HasValue
-                 && submission.AssignedGrade.Value >= assignment.PassScore)
-        {
-            await _programPurchaseLifecycle.TryExtendNextMilestoneWindowAfterPassAsync(
-                assignment,
-                submission.StudentId,
                 submission.ModuleEnrollmentId);
         }
 

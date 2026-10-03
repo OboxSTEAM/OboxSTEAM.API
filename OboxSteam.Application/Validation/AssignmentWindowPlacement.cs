@@ -1,3 +1,4 @@
+using OboxSteam.Application.Utils;
 using OboxSteam.Domain.Entities;
 
 namespace OboxSteam.Application.Validation;
@@ -16,10 +17,17 @@ public static class AssignmentWindowPlacement
         DateTime StartTime,
         DateTime EndTime);
 
+    /// <summary>
+    /// Last instant (UTC) of the class end date's calendar day in Asia/Ho_Chi_Minh,
+    /// i.e. 23:59:59.9999999 Vietnam time.
+    /// </summary>
     public static DateTime EndOfClassDay(DateTime classEndDate)
     {
-        var date = DateTime.SpecifyKind(classEndDate.Date, DateTimeKind.Utc);
-        return date.AddDays(1).AddTicks(-1);
+        var vietnamEnd = TimeZoneInfo.ConvertTimeFromUtc(
+            AppDateTime.AsUtc(classEndDate),
+            AppDateTime.VietnamTimeZone);
+        var endOfDay = vietnamEnd.Date.AddDays(1).AddTicks(-1);
+        return AppDateTime.VietnamWallClockToUtc(endOfDay);
     }
 
     public static DateTime ResolveRelatedTeachingEnd(

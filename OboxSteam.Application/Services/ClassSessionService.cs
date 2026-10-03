@@ -43,7 +43,8 @@ public sealed class ClassSessionService : IClassSessionService
         SessionKind? sessionKind = null,
         ClassSessionStatus? status = null,
         DateTime? from = null,
-        DateTime? to = null)
+        DateTime? to = null,
+        Guid? assignmentId = null)
     {
         _logger.LogInformation(
             "[GetClassSessionsByClassIdAsync] Start — classId: {ClassId}, page: {Page}, pageSize: {PageSize}",
@@ -63,6 +64,11 @@ public sealed class ClassSessionService : IClassSessionService
         if (moduleId.HasValue)
         {
             query = query.Where(cs => cs.ModuleId == moduleId.Value);
+        }
+
+        if (assignmentId.HasValue)
+        {
+            query = query.Where(cs => cs.AssignmentId == assignmentId.Value);
         }
 
         if (sessionKind.HasValue)
@@ -296,7 +302,8 @@ public sealed class ClassSessionService : IClassSessionService
         ClassSessionValidator.ValidateSessionWithinClassDateRange(
             classEntity!,
             request.StartTime,
-            endTime);
+            endTime,
+            throughEndOfClassDay: sessionKind == SessionKind.AssignmentWindow);
 
         // Sessions may be scheduled before a mentor is assigned — the schedule is what
         // mentors review when requesting the class. Overlap is only checkable (and only
@@ -945,9 +952,13 @@ public sealed class ClassSessionService : IClassSessionService
                 timeChanged = true;
             }
 
-            if (timeChanged && targetEndTime <= targetStartTime)
+            if (timeChanged
+                && (session.StartTime != originalStartTime || session.EndTime != originalEndTime))
             {
-                throw ErrorHelper.BadRequest("EndTime must be after StartTime.");
+                ClassSessionValidator.ValidateAssignmentWindowTimes(
+                    targetStartTime,
+                    targetEndTime,
+                    _currentTime.GetCurrentTime());
             }
         }
 
@@ -967,7 +978,8 @@ public sealed class ClassSessionService : IClassSessionService
                 ClassSessionValidator.ValidateSessionWithinClassDateRange(
                     classEntity!,
                     targetStartTime,
-                    targetEndTime);
+                    targetEndTime,
+                    throughEndOfClassDay: session.SessionKind == SessionKind.AssignmentWindow);
 
                 if (classEntity!.MentorId.HasValue && session.SessionKind != SessionKind.AssignmentWindow)
                 {

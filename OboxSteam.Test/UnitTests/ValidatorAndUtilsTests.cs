@@ -401,7 +401,7 @@ public sealed class ValidatorAndUtilsTests
             ContentText = "hello",
         });
 
-        Assert.Throws<ForbiddenException>(() =>
+        Assert.Throws<ConflictException>(() =>
             ResearchSubmissionValidator.ValidateAssignmentAvailability(
                 new ClassSession
                 {
@@ -1136,7 +1136,7 @@ public sealed class ValidatorAndUtilsTests
     {
         var now = DateTime.UtcNow;
 
-        Assert.Throws<ForbiddenException>(() =>
+        Assert.Throws<ConflictException>(() =>
             QuizAttemptValidator.ValidateAssignmentAvailability(
                 new ClassSession
                 {

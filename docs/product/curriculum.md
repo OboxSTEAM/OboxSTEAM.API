@@ -556,7 +556,15 @@ and offlines take `DaysOfWeek` slots; each AssignmentWindow opens at the
 related teaching session’s `EndTime` (last live/offline of the course, or of
 the research milestone’s required lives, or of the module) and closes at the
 next live/offline `StartTime` (or class end). A generated window is at least
-48 hours, clamped to `Class.EndDate`. Mentors may then change the times.
+48 hours, clamped to the end of the `Class.EndDate` day (23:59:59 Vietnam
+time). Mentors and managers may then change the times; an edit must end in the
+future, stay open at least 48 hours, and stay within the class dates (through
+the end of the class end date day). Not-yet-open and closed windows both return
+409. A timed quiz attempt cannot be saved or submitted more than 60 seconds
+after `Submission.ExpiresAt`; starting the quiz again auto-grades the expired
+attempt from its saved answers. The window close job is the only place that
+fails enrollments for an elapsed window; starting an attempt never does.
+`GET /api/classes/{classId}/sessions` accepts `assignmentId`.
 AssignmentWindow rows do not count as mentor calendar busy time and do not
 require attendance. SelfPaced activities are never scheduled. Research
 milestone create/update/delete uses the same curriculum edit lock as

@@ -9,6 +9,19 @@ public sealed class AssignmentWindowPlacementTests
     private readonly DateTime _classEnd = new(2026, 11, 14, 0, 0, 0, DateTimeKind.Utc);
 
     [Fact]
+    public void EndOfClassDay_IsEndOfVietnamCalendarDay()
+    {
+        // 2026-11-14 00:00 UTC is 07:00 on 14 Nov in Vietnam; the day ends 23:59:59.9999999 local.
+        var expected = new DateTime(2026, 11, 14, 16, 59, 59, DateTimeKind.Utc).AddTicks(9_999_999);
+
+        Assert.Equal(expected, AssignmentWindowPlacement.EndOfClassDay(_classEnd));
+
+        // 2026-11-14 18:00 UTC is already 15 Nov in Vietnam, so the day rolls forward.
+        var lateUtc = new DateTime(2026, 11, 14, 18, 0, 0, DateTimeKind.Utc);
+        Assert.Equal(expected.AddDays(1), AssignmentWindowPlacement.EndOfClassDay(lateUtc));
+    }
+
+    [Fact]
     public void ResolveRelatedTeachingEnd_UsesCourseThenModuleThenClassStart()
     {
         var moduleId = Guid.Parse("11111111-1111-1111-1111-111111111111");
