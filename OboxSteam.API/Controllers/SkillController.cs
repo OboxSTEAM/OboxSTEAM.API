@@ -46,4 +46,22 @@ public sealed class SkillController : ControllerBase
         return Ok(ApiResult<Pagination<SkillSummaryDto>>.Success(
             result, "200", "Skills retrieved successfully."));
     }
+
+    [HttpPost]
+    [Authorize(Roles = "Manager")]
+    [SwaggerOperation(
+        Summary = "Create a catalog skill",
+        Description = "Adds a skill to the shared catalog. Code is unique, including soft-deleted skills. Manager only.")]
+    [ProducesResponseType(typeof(ApiResult<SkillDetailDto>), 201)]
+    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiResult<object>), 401)]
+    [ProducesResponseType(typeof(ApiResult<object>), 403)]
+    [ProducesResponseType(typeof(ApiResult<object>), 409)]
+    public async Task<IActionResult> CreateSkill([FromBody] CreateSkillRequestDto request)
+    {
+        var result = await _skillService.CreateSkill(request);
+        return StatusCode(
+            StatusCodes.Status201Created,
+            ApiResult<SkillDetailDto>.Success(result, "201", "Skill created successfully."));
+    }
 }

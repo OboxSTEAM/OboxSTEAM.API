@@ -15,7 +15,9 @@ Shared taxonomy entries with:
 - Optional `Subcategory` and `Description`
 
 Seeded via `SeedService.SeedSkillsAsync` (idempotent by `Code`) as part of
-`SeedAllDataAsync`.
+`SeedAllDataAsync`. Manager may add a catalog row with `POST /api/skills`
+(`code`, `name`, `category`, optional `subcategory` and `description`). `code`
+is unique, including soft-deleted rows. Admin is not allowed on that route.
 
 Module `LearningOutcomes` stay as free-text on `Module`. Mapping outcome → skill
 is deferred (LLM or a future join table when product needs a durable map).

@@ -30,6 +30,10 @@ JWT role claims must match enum names exactly (e.g. `"Student"`, `"Admin"`, `"Ex
 - `/api/media/*` (base controller requires auth; list endpoints are role-scoped in
   `MediaService`)
 
+### Manager only
+
+- `POST /api/skills` — add a catalog skill. Admin is not included.
+
 ### Manager / Admin
 
 Create, update, delete for:

@@ -2,6 +2,8 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.SkillDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Utils;
+using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
 
@@ -82,5 +84,85 @@ public sealed class SkillService : ISkillService
             items.Count, totalCount);
 
         return Task.FromResult(new Pagination<SkillSummaryDto>(items, totalCount, page, pageSize));
+    }
+
+    public async Task<SkillDetailDto> CreateSkill(CreateSkillRequestDto request)
+    {
+        if (request == null)
+        {
+            throw ErrorHelper.BadRequest("Skill is required.");
+        }
+
+        var code = request.Code?.Trim();
+        var name = request.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw ErrorHelper.BadRequest("Skill code is required.");
+        }
+
+        if (code.Length > 50)
+        {
+            throw ErrorHelper.BadRequest("Skill code cannot exceed 50 characters.");
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw ErrorHelper.BadRequest("Skill name is required.");
+        }
+
+        if (name.Length > 255)
+        {
+            throw ErrorHelper.BadRequest("Skill name cannot exceed 255 characters.");
+        }
+
+        if (!request.Category.HasValue || !Enum.IsDefined(request.Category.Value))
+        {
+            throw ErrorHelper.BadRequest("Skill category is required.");
+        }
+
+        var subcategory = string.IsNullOrWhiteSpace(request.Subcategory)
+            ? null
+            : request.Subcategory.Trim();
+        if (subcategory != null && subcategory.Length > 100)
+        {
+            throw ErrorHelper.BadRequest("Skill subcategory cannot exceed 100 characters.");
+        }
+
+        var description = string.IsNullOrWhiteSpace(request.Description)
+            ? null
+            : request.Description.Trim();
+
+        var normalizedCode = code.ToLower();
+        var codeTaken = await _unitOfWork.Skills.AnyIncludingDeletedAsync(
+            skill => skill.Code.ToLower() == normalizedCode);
+        if (codeTaken)
+        {
+            throw ErrorHelper.Conflict($"Skill with code '{code}' already exists.");
+        }
+
+        var skill = new Skill
+        {
+            Id = Guid.NewGuid(),
+            Code = code,
+            Name = name,
+            Category = request.Category.Value,
+            Subcategory = subcategory,
+            Description = description,
+        };
+
+        await _unitOfWork.Skills.AddAsync(skill);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("[CreateSkill] Created skill {Code} with Id {Id}.", skill.Code, skill.Id);
+
+        return new SkillDetailDto
+        {
+            Id = skill.Id,
+            Code = skill.Code,
+            Name = skill.Name,
+            Category = skill.Category,
+            Subcategory = skill.Subcategory,
+            Description = skill.Description,
+        };
     }
 }

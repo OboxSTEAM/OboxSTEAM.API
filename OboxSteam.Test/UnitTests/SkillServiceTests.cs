@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using OboxSteam.Application.DTOs.SkillDTO;
+using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -133,5 +135,91 @@ public sealed class SkillServiceTests
         Assert.Single(page3.Items);
         Assert.True(page3.HasPrevious);
         Assert.False(page3.HasNext);
+    }
+
+    [Fact]
+    public async Task CreateSkill_PersistsTrimmedCatalogRow()
+    {
+        var sut = CreateSut();
+
+        var result = await sut.CreateSkill(new CreateSkillRequestDto
+        {
+            Code = "  SKL-NEW  ",
+            Name = "  Circuit safety  ",
+            Category = SkillCategory.Engineering,
+            Subcategory = "  Lab  ",
+            Description = "  Use tools safely.  ",
+        });
+
+        Assert.Equal("SKL-NEW", result.Code);
+        Assert.Equal("Circuit safety", result.Name);
+        Assert.Equal(SkillCategory.Engineering, result.Category);
+        Assert.Equal("Lab", result.Subcategory);
+        Assert.Equal("Use tools safely.", result.Description);
+        var stored = Assert.Single(_db.Skills.Items);
+        Assert.Equal(result.Id, stored.Id);
+        Assert.False(stored.IsDeleted);
+    }
+
+    [Fact]
+    public async Task CreateSkill_ThrowsConflict_WhenCodeExistsIgnoringCaseOrDeleted()
+    {
+        SeedSkill("SKL-EXIST", "Existing", SkillCategory.Science, isDeleted: true);
+        var sut = CreateSut();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => sut.CreateSkill(new CreateSkillRequestDto
+        {
+            Code = "skl-exist",
+            Name = "Again",
+            Category = SkillCategory.Science,
+        }));
+
+        Assert.Contains("already exists", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(_db.Skills.Items);
+    }
+
+    [Theory]
+    [InlineData(null, "Name", SkillCategory.Math)]
+    [InlineData("   ", "Name", SkillCategory.Math)]
+    [InlineData("SKL-X", null, SkillCategory.Math)]
+    [InlineData("SKL-X", "   ", SkillCategory.Math)]
+    public async Task CreateSkill_ThrowsBadRequest_WhenCodeOrNameMissing(
+        string? code,
+        string? name,
+        SkillCategory category)
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.CreateSkill(new CreateSkillRequestDto
+        {
+            Code = code,
+            Name = name,
+            Category = category,
+        }));
+    }
+
+    [Fact]
+    public async Task CreateSkill_ThrowsBadRequest_WhenCategoryMissing()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.CreateSkill(new CreateSkillRequestDto
+        {
+            Code = "SKL-X",
+            Name = "Name",
+        }));
+    }
+
+    [Fact]
+    public async Task CreateSkill_ThrowsBadRequest_WhenFieldTooLong()
+    {
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => sut.CreateSkill(new CreateSkillRequestDto
+        {
+            Code = new string('A', 51),
+            Name = "Name",
+            Category = SkillCategory.Arts,
+        }));
     }
 }

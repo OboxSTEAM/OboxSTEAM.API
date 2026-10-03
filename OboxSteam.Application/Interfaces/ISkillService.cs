@@ -17,4 +17,6 @@ public interface ISkillService
         int pageSize,
         string? sortBy,
         bool isDescending);
+
+    Task<SkillDetailDto> CreateSkill(CreateSkillRequestDto request);
 }
