@@ -23,7 +23,6 @@ public sealed class CurriculumSnapshotBuilderTests
             Code = "PRG-ROBOTICS",
             Name = "Robotics",
             Description = "Build and test a rover.",
-            SkillsGained = "[\"Design\"]",
             FrameworkVersionId = Guid.NewGuid(),
         };
         var module = new Module

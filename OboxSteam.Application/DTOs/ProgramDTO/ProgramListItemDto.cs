@@ -13,7 +13,6 @@ public class ProgramListItemDto
     public DifficultyLevel Level { get; set; }
     public ProgramCategory Category { get; set; }
     public string? EstimatedDuration { get; set; }
-    public string? SkillsGained { get; set; }
     public List<SkillSummaryDto> Skills { get; set; } = new();
     public decimal? Rating { get; set; }
     public int TotalReviews { get; set; }

@@ -49,7 +49,6 @@ public class ProgramEnrollmentResponseDto
     public string? Description { get; set; }
     public DifficultyLevel Level { get; set; }
     public string? EstimatedDuration { get; set; }
-    public string? SkillsGained { get; set; }
     public decimal? Rating { get; set; }
     public int TotalReviews { get; set; }
     public string? ThumbnailUrl { get; set; }

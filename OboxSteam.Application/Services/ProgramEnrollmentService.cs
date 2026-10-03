@@ -481,7 +481,6 @@ public sealed class ProgramEnrollmentService : IProgramEnrollmentService
             Description = program.Description,
             Level = program.Level,
             EstimatedDuration = program.EstimatedDuration,
-            SkillsGained = program.SkillsGained,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
             ThumbnailUrl = program.ThumbnailUrl,

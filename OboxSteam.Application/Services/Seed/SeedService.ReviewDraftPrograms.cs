@@ -40,7 +40,6 @@ public partial class SeedService
             Level: DifficultyLevel.Beginner,
             Category: ProgramCategory.Technology,
             EstimatedDuration: "8 weeks at 3 hours a week",
-            SkillsGained: "Sensors, data logging, circuit safety, prototype iteration",
             Price: 1_500_000m,
             ThumbnailUrl:
                 "https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1170&auto=format&fit=crop",
@@ -64,7 +63,6 @@ public partial class SeedService
             Level: DifficultyLevel.Intermediate,
             Category: ProgramCategory.Technology,
             EstimatedDuration: "10 weeks at 4 hours a week",
-            SkillsGained: "Block coding, live debugging, computational thinking, project storytelling",
             Price: 1_800_000m,
             ThumbnailUrl:
                 "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?q=80&w=1169&auto=format&fit=crop",
@@ -199,7 +197,6 @@ public partial class SeedService
             Level = definition.Level,
             Category = definition.Category,
             EstimatedDuration = definition.EstimatedDuration,
-            SkillsGained = definition.SkillsGained,
             ThumbnailUrl = definition.ThumbnailUrl,
             Status = ProgramStatus.Draft,
             Price = definition.Price,
@@ -419,7 +416,6 @@ public partial class SeedService
         DifficultyLevel Level,
         ProgramCategory Category,
         string EstimatedDuration,
-        string SkillsGained,
         decimal Price,
         string ThumbnailUrl,
         string TheoryModuleName,

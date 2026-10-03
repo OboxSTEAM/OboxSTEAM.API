@@ -76,7 +76,6 @@ public class ProgramService : IProgramService
             Level = program.Level,
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
-            SkillsGained = program.SkillsGained,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
             ThumbnailUrl = program.ThumbnailUrl,
@@ -161,7 +160,6 @@ public class ProgramService : IProgramService
             Level = program.Level,
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
-            SkillsGained = program.SkillsGained,
             Skills = skills,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
@@ -299,7 +297,6 @@ public class ProgramService : IProgramService
             Level = program.Level,
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
-            SkillsGained = program.SkillsGained,
             Skills = skillsByProgramId.GetValueOrDefault(program.Id) ?? [],
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
@@ -371,9 +368,20 @@ public class ProgramService : IProgramService
             query = query.Where(p => p.Rating >= rating.Value);
 
         if (!string.IsNullOrWhiteSpace(skillsGained))
-            query = query.Where(p =>
-                p.SkillsGained != null &&
-                p.SkillsGained.ToLower().Contains(skillsGained.ToLower()));
+        {
+            var term = skillsGained.Trim().ToLower();
+            var skillIds = _unitOfWork.Skills.GetQueryable()
+                .Where(skill => !skill.IsDeleted &&
+                    (skill.Name.ToLower().Contains(term) || skill.Code.ToLower().Contains(term)))
+                .Select(skill => skill.Id)
+                .ToList();
+            var programIds = _unitOfWork.ProgramSkills.GetQueryable()
+                .Where(link => !link.IsDeleted && skillIds.Contains(link.SkillId))
+                .Select(link => link.ProgramId)
+                .Distinct()
+                .ToList();
+            query = query.Where(program => programIds.Contains(program.Id));
+        }
 
         if (status.HasValue)
             query = query.Where(p => p.Status == status.Value);
@@ -454,7 +462,6 @@ public class ProgramService : IProgramService
         Level = program.Level,
         Category = program.Category,
         EstimatedDuration = program.EstimatedDuration,
-        SkillsGained = program.SkillsGained,
         Rating = program.Rating,
         TotalReviews = program.TotalReviews,
         ThumbnailUrl = program.ThumbnailUrl,
@@ -509,7 +516,6 @@ public class ProgramService : IProgramService
             Level = request.Level,
             Category = request.Category,
             EstimatedDuration = request.EstimatedDuration,
-            SkillsGained = request.SkillsGained,
             ThumbnailUrl = request.ThumbnailUrl,
             Status = ProgramStatus.Draft,
             Price = request.Price,
@@ -557,7 +563,6 @@ public class ProgramService : IProgramService
             Level = program.Level,
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
-            SkillsGained = program.SkillsGained,
             Skills = skills,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
@@ -646,7 +651,6 @@ public class ProgramService : IProgramService
                 Level = program.Level,
                 Category = program.Category,
                 EstimatedDuration = program.EstimatedDuration,
-                SkillsGained = program.SkillsGained,
                 Skills = unchangedSkills,
                 Rating = program.Rating,
                 TotalReviews = program.TotalReviews,
@@ -691,7 +695,6 @@ public class ProgramService : IProgramService
             Level = program.Level,
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
-            SkillsGained = program.SkillsGained,
             Skills = updatedSkills,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,
@@ -758,7 +761,6 @@ public class ProgramService : IProgramService
             Level = program.Level,
             Category = program.Category,
             EstimatedDuration = program.EstimatedDuration,
-            SkillsGained = program.SkillsGained,
             Skills = thumbnailSkills,
             Rating = program.Rating,
             TotalReviews = program.TotalReviews,

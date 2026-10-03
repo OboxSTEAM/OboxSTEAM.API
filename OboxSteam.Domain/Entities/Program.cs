@@ -23,8 +23,6 @@ public class Program : BaseEntity
     [MaxLength(255)]
     public string? EstimatedDuration { get; set; } // e.g., 3 months at 10 hours a week
 
-    public string? SkillsGained { get; set; } // JSON array or comma separated
-
     public decimal? Rating { get; set; } // e.g., 4.8
 
     public int TotalReviews { get; set; }

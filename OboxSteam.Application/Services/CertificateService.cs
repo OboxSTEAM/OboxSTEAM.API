@@ -124,6 +124,9 @@ public sealed class CertificateService : ICertificateService
             .OrderBy(m => m.ModuleOrder)
             .ToList();
 
+        var skillNames = await LoadProgramSkillNamesAsync(_unitOfWork, program.Id);
+        var skillsAcquired = FormatSkillsAcquired(skillNames);
+
         var certificate = existing;
         if (certificate == null)
         {
@@ -134,7 +137,7 @@ public sealed class CertificateService : ICertificateService
                 ProgramId = enrollment.ProgramId,
                 ModuleId = null,
                 IssueDate = DateTime.UtcNow,
-                SkillsAcquired = program.SkillsGained,
+                SkillsAcquired = skillsAcquired,
             };
             await _unitOfWork.Certificates.AddAsync(certificate);
             await _unitOfWork.SaveChangesAsync();
@@ -142,7 +145,7 @@ public sealed class CertificateService : ICertificateService
         else
         {
             certificate.IssueDate ??= DateTime.UtcNow;
-            certificate.SkillsAcquired ??= program.SkillsGained;
+            certificate.SkillsAcquired = skillsAcquired;
             await _unitOfWork.Certificates.Update(certificate);
             await _unitOfWork.SaveChangesAsync();
         }
@@ -508,8 +511,7 @@ public sealed class CertificateService : ICertificateService
             }
         }
 
-        var skillsSource = certificate.SkillsAcquired ?? program.SkillsGained;
-        var skillsGained = ParseSkillsGained(skillsSource);
+        var skillNames = await LoadProgramSkillNamesAsync(_unitOfWork, program.Id);
 
         return new CertificateDetailDto
         {
@@ -518,7 +520,7 @@ public sealed class CertificateService : ICertificateService
             IssueDate = certificate.IssueDate,
             PdfUrl = certificate.PdfUrl,
             VerificationUrl = certificate.VerificationUrl,
-            SkillsAcquired = certificate.SkillsAcquired,
+            SkillsAcquired = FormatSkillsAcquired(skillNames),
             IssuerName = CertificateBranding.IssuerName,
             IssuerLogoUrl = CertificateBranding.IssuerLogoUrl,
             Student = new CertificateStudentDto
@@ -542,40 +544,30 @@ public sealed class CertificateService : ICertificateService
                 ModuleOrder = m.ModuleOrder,
             }).ToList(),
             LearningOutcomes = learningOutcomes,
-            SkillsGained = skillsGained,
+            SkillsGained = skillNames,
         };
     }
 
-    internal static List<string> ParseSkillsGained(string? skillsGained)
+    internal static async Task<List<string>> LoadProgramSkillNamesAsync(IUnitOfWork unitOfWork, Guid programId)
     {
-        if (string.IsNullOrWhiteSpace(skillsGained))
+        var links = await unitOfWork.ProgramSkills.GetAllAsync(
+            link => link.ProgramId == programId && !link.IsDeleted);
+        if (links.Count == 0)
         {
             return [];
         }
 
-        var trimmed = skillsGained.Trim();
-        if (trimmed.StartsWith('['))
-        {
-            try
-            {
-                var parsed = JsonSerializer.Deserialize<List<string>>(trimmed);
-                if (parsed != null)
-                {
-                    return parsed
-                        .Where(s => !string.IsNullOrWhiteSpace(s))
-                        .Select(s => s.Trim())
-                        .ToList();
-                }
-            }
-            catch (JsonException)
-            {
-                // Fall through to comma-separated parsing.
-            }
-        }
+        var skillIds = links.Select(link => link.SkillId).Distinct().ToList();
+        var skills = await unitOfWork.Skills.GetAllAsync(
+            skill => skillIds.Contains(skill.Id) && !skill.IsDeleted);
 
-        return trimmed
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(s => s.Length > 0)
+        return skills
+            .OrderBy(skill => skill.Name)
+            .ThenBy(skill => skill.Code)
+            .Select(skill => skill.Name)
             .ToList();
     }
+
+    internal static string? FormatSkillsAcquired(IReadOnlyList<string> skillNames)
+        => skillNames.Count == 0 ? null : JsonSerializer.Serialize(skillNames);
 }

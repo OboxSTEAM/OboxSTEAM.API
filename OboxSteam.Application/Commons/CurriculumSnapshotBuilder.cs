@@ -149,7 +149,6 @@ public static class CurriculumSnapshotBuilder
                 Name = tree.Program.Name,
                 Code = tree.Program.Code,
                 Description = tree.Program.Description,
-                SkillsGained = tree.Program.SkillsGained,
                 FrameworkVersionId = tree.Program.FrameworkVersionId,
             },
             Modules = modules,
@@ -412,8 +411,6 @@ public static class CurriculumSnapshotBuilder
         public string Code { get; set; } = null!;
 
         public string? Description { get; set; }
-
-        public string? SkillsGained { get; set; }
 
         public Guid? FrameworkVersionId { get; set; }
     }

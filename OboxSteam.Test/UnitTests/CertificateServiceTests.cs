@@ -92,7 +92,7 @@ public sealed class CertificateServiceTests
         });
     }
 
-    private void SeedProgramCurriculum(string skillsGained = "Robotics, Coding")
+    private void SeedProgramCurriculum(params string[] skillNames)
     {
         _db.Programs.Seed(new Program
         {
@@ -102,11 +102,29 @@ public sealed class CertificateServiceTests
             Description = "Full program",
             Category = ProgramCategory.Technology,
             Level = DifficultyLevel.Beginner,
-            SkillsGained = skillsGained,
             EstimatedDuration = "3 months",
             ThumbnailUrl = "https://cdn.example.com/thumb.png",
             IsDeleted = false,
         });
+        for (var index = 0; index < skillNames.Length; index++)
+        {
+            var skillId = Guid.Parse($"99000000-0000-0000-0000-{index + 1:000000000000}");
+            _db.Skills.Seed(new Skill
+            {
+                Id = skillId,
+                Code = $"SK-{index + 1}",
+                Name = skillNames[index],
+                Category = SkillCategory.Technology,
+                IsDeleted = false,
+            });
+            _db.ProgramSkills.Seed(new ProgramSkill
+            {
+                Id = Guid.Parse($"99100000-0000-0000-0000-{index + 1:000000000000}"),
+                ProgramId = _programId,
+                SkillId = skillId,
+                IsDeleted = false,
+            });
+        }
         _db.Modules.Seed(new Module
         {
             Id = _moduleId,
@@ -218,7 +236,7 @@ public sealed class CertificateServiceTests
     [Fact]
     public async Task Ensure_IssuesCertificate_WhenAllActivitiesDone()
     {
-        SeedProgramCurriculum();
+        SeedProgramCurriculum("Robotics", "Coding");
         SeedEnrollmentChain();
         var sut = CreateSut();
 
@@ -230,7 +248,8 @@ public sealed class CertificateServiceTests
         Assert.Equal("STEAM Program", result.Program.Name);
         Assert.Single(result.Modules);
         Assert.Contains("Build robots", result.LearningOutcomes);
-        Assert.Equal(["Robotics", "Coding"], result.SkillsGained);
+        Assert.Equal(["Coding", "Robotics"], result.SkillsGained);
+        Assert.Equal("[\"Coding\",\"Robotics\"]", result.SkillsAcquired);
         Assert.Equal("https://cdn.example.com/certificates/cert.pdf", result.PdfUrl);
         Assert.Equal($"https://app.test/certificates/verify/{result.Code}", result.VerificationUrl);
         Assert.Single(_db.Certificates.Items);
@@ -472,9 +491,9 @@ public sealed class CertificateServiceTests
     }
 
     [Fact]
-    public async Task Ensure_ParsesJsonSkillsGained()
+    public async Task Ensure_UsesProgramSkillNames()
     {
-        SeedProgramCurriculum(skillsGained: "[\"AI\",\"IoT\"]");
+        SeedProgramCurriculum("IoT", "AI");
         SeedEnrollmentChain();
         var sut = CreateSut();
 
@@ -482,6 +501,7 @@ public sealed class CertificateServiceTests
 
         Assert.NotNull(result);
         Assert.Equal(["AI", "IoT"], result!.SkillsGained);
+        Assert.Equal("[\"AI\",\"IoT\"]", _db.Certificates.Items.Single().SkillsAcquired);
     }
 
     // ── GetMyCertificatesAsync ────────────────────────────────────────────────

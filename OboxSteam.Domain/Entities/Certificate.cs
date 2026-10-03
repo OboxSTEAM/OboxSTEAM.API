@@ -28,6 +28,6 @@ public class Certificate : BaseEntity
     /// <summary>Public verification link (e.g., obox.id/verify/OBOX-CERT-9X8A).</summary>
     public string? VerificationUrl { get; set; }
 
-    /// <summary>Snapshot of skills gained at time of issue.</summary>
+    /// <summary>JSON array of catalog skill names snapshotted from ProgramSkill at issue.</summary>
     public string? SkillsAcquired { get; set; }
 }

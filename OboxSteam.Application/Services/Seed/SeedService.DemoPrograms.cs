@@ -206,7 +206,6 @@ public partial class SeedService
         DifficultyLevel Level,
         ProgramCategory Category,
         string EstimatedDuration,
-        string SkillsGained,
         decimal Price,
         string ThumbnailUrl,
         string ClassCode,
@@ -248,7 +247,6 @@ public partial class SeedService
             Level: DifficultyLevel.Beginner,
             Category: ProgramCategory.Technology,
             EstimatedDuration: "3 weeks at 2 hours a week",
-            SkillsGained: "Block coding, sprites, loops, creative storytelling",
             Price: 900_000m,
             ThumbnailUrl:
                 "https://images.unsplash.com/photo-1587620962725-abab7fe55159?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
@@ -282,7 +280,6 @@ public partial class SeedService
             Level: DifficultyLevel.Beginner,
             Category: ProgramCategory.Science,
             EstimatedDuration: "3 weeks at 2 hours a week",
-            SkillsGained: "Climate literacy, observation, data notes, evidence sharing",
             Price: 850_000m,
             ThumbnailUrl:
                 "https://images.unsplash.com/photo-1611273426858-450d8e3c9fce?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
@@ -316,7 +313,6 @@ public partial class SeedService
             Level: DifficultyLevel.Beginner,
             Category: ProgramCategory.Engineering,
             EstimatedDuration: "3 weeks at 2 hours a week",
-            SkillsGained: "Maker safety, prototyping, iteration notes, demo delivery",
             Price: 950_000m,
             ThumbnailUrl:
                 "https://images.unsplash.com/photo-1581092160562-40aa08e78837?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
@@ -689,7 +685,6 @@ public partial class SeedService
             Level = definition.Level,
             Category = definition.Category,
             EstimatedDuration = definition.EstimatedDuration,
-            SkillsGained = definition.SkillsGained,
             Rating = 4.8m,
             TotalReviews = 12,
             ThumbnailUrl = definition.ThumbnailUrl,

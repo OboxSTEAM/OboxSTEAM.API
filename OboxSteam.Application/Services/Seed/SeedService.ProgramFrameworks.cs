@@ -452,7 +452,6 @@ public partial class SeedService
             Level = DifficultyLevel.Beginner,
             Category = ProgramCategory.Technology,
             EstimatedDuration = "n/a",
-            SkillsGained = "QA",
             Status = status,
             Price = 0m,
             FrameworkId = frameworkId,

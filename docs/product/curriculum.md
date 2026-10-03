@@ -20,7 +20,8 @@ Program
 ## Program
 
 Represents a sellable STEAM track (e.g. robotics, coding). Key fields: `Code`,
-`Name`, `Category`, `Level`, `Price`, `SkillsGained`, `Rating`, `Status`.
+`Name`, `Category`, `Level`, `Price`, `Rating`, `Status`. Catalog skills are
+`ProgramSkill` links (`SkillIds` on create/update, `Skills` on responses).
 
 `ProgramStatus`: **Draft** (manager is authoring and the advisor reviews in the
 advisory chat; not open for registration), **Approved** (the advisor approved
@@ -144,7 +145,7 @@ approves. Realtime events and notifications: `docs/product/notifications.md`.
 `Program.CurriculumVersion` (int64, starts at 0) increments once per
 `SaveChanges` that mutates curriculum. It is returned on program DTOs and the
 workspace. Curriculum = program content fields (`name`, `code`, `description`,
-`level`, `category`, `estimatedDuration`, `skillsGained`, `thumbnailUrl`, skill
+`level`, `category`, `estimatedDuration`, `thumbnailUrl`, skill
 links), modules, courses, activities, assignments, research milestones,
 milestone-activity links, materials. Not curriculum (no bump, allowed on Active
 programs): `price`, `retakeFee`, `status`, framework, advisor, board, ratings.

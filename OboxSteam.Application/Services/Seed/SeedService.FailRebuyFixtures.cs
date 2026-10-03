@@ -280,7 +280,6 @@ public partial class SeedService
             Level = DifficultyLevel.Beginner,
             Category = ProgramCategory.Technology,
             EstimatedDuration = "6 weeks",
-            SkillsGained = "STEAM foundations, studio practice, research documentation",
             Status = ProgramStatus.Active,
             Price = 1_000_000m,
             RetakeFee = CatalogRetakeFee(1_000_000m),

@@ -11,7 +11,6 @@ public class CreateProgramRequestDto
     public DifficultyLevel Level { get; set; } = DifficultyLevel.Beginner;
     public ProgramCategory Category { get; set; }
     public string? EstimatedDuration { get; set; }
-    public string? SkillsGained { get; set; }
 
     /// <summary>Catalog skill ids. Omitted or null means no skills. Ids must exist and must not be deleted.</summary>
     public List<Guid>? SkillIds { get; set; }

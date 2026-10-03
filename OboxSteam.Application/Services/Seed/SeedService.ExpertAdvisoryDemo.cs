@@ -289,7 +289,6 @@ public partial class SeedService
             Level = DifficultyLevel.Beginner,
             Category = ProgramCategory.Technology,
             EstimatedDuration = "6 weeks at 3 hours a week",
-            SkillsGained = "Maker safety, facilitation, learning progression",
             ThumbnailUrl =
                 "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=1170&auto=format&fit=crop",
             Status = status,

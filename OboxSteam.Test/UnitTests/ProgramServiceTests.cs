@@ -75,7 +75,6 @@ public sealed class ProgramServiceTests
             Description = "Desc",
             Category = ProgramCategory.Technology,
             Level = DifficultyLevel.Beginner,
-            SkillsGained = "Robotics, Coding",
             Rating = 4.5m,
             Status = ProgramStatus.Active,
             Price = 100m,
@@ -270,6 +269,22 @@ public sealed class ProgramServiceTests
             name: "Advanced Program",
             code: "PRG-002");
         SeedExpertOnProgram();
+        var codingSkillId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa10");
+        _db.Skills.Seed(new Skill
+        {
+            Id = codingSkillId,
+            Code = "SK-CODING",
+            Name = "Coding",
+            Category = SkillCategory.Technology,
+            IsDeleted = false,
+        });
+        _db.ProgramSkills.Seed(new ProgramSkill
+        {
+            Id = Guid.NewGuid(),
+            ProgramId = _programId,
+            SkillId = codingSkillId,
+            IsDeleted = false,
+        });
         var sut = CreateSut();
 
         var result = await sut.GetAllProgramsAsync(
@@ -950,11 +965,9 @@ public sealed class ProgramServiceTests
             Name = "Skills Program",
             Category = ProgramCategory.Technology,
             Level = DifficultyLevel.Beginner,
-            SkillsGained = "Marketing copy",
             SkillIds = [skillId],
         });
 
-        Assert.Equal("Marketing copy", result.SkillsGained);
         Assert.Single(result.Skills);
         Assert.Equal(skillId, result.Skills[0].Id);
         Assert.Equal("Robotics", result.Skills[0].Name);

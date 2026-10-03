@@ -150,8 +150,8 @@ Endpoints under `/api/certificates`:
 - `POST /program-enrollments/{programEnrollmentId}/ensure` — idempotent issue/retry PDF
 
 The FE owns share UI and PDF download UX using `pdfUrl` and `verificationUrl`.
-Skills and learning outcomes come from existing `Program.SkillsGained` and
-module `LearningOutcomes` text arrays.
+Skills on the certificate are the catalog names of that program's `ProgramSkill`
+links. Learning outcomes come from module `LearningOutcomes` text arrays.
 
 ## Validation Expectations
 

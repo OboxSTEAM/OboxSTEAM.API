@@ -79,7 +79,6 @@ public sealed class AdvisoryReferenceResolver : IAdvisoryReferenceResolver
                 ["name"] = tree.Program.Name,
                 ["code"] = tree.Program.Code,
                 ["description"] = tree.Program.Description,
-                ["skillsGained"] = tree.Program.SkillsGained,
             });
         }
 

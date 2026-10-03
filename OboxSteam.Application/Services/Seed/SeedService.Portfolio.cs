@@ -225,7 +225,8 @@ public partial class SeedService
                 IssueDate = seedTime.AddDays(-3),
                 PdfUrl = "https://storage.oboxsteam.com/certificates/obox-cert-pf-webdev.pdf",
                 VerificationUrl = "https://oboxsteam.website/certificates/verify/OBOX-CERT-PF-WEBDEV",
-                SkillsAcquired = programWebDev.SkillsGained,
+                SkillsAcquired = CertificateService.FormatSkillsAcquired(
+                    await CertificateService.LoadProgramSkillNamesAsync(_unitOfWork, programWebDev.Id)),
                 CreatedAt = seedTime,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,

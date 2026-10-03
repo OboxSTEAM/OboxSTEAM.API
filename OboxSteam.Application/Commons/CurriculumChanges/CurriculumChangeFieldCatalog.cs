@@ -25,7 +25,6 @@ public static class CurriculumChangeFieldCatalog
                 Field(nameof(Program.Level), "Level", CurriculumFieldValueType.Enum),
                 Field(nameof(Program.Category), "Category", CurriculumFieldValueType.Enum),
                 Field(nameof(Program.EstimatedDuration), "Estimated duration", CurriculumFieldValueType.ShortText),
-                Field(nameof(Program.SkillsGained), "Skills gained", CurriculumFieldValueType.LongText),
                 Field(nameof(Program.ThumbnailUrl), "Thumbnail", CurriculumFieldValueType.Media),
             ],
             OrderProperty: null),

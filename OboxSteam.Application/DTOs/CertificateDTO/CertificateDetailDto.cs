@@ -29,6 +29,7 @@ public sealed class CertificateDetailDto
 
     public List<string> LearningOutcomes { get; set; } = [];
 
+    /// <summary>Catalog skill names from the program's ProgramSkill links, ordered by name then code.</summary>
     public List<string> SkillsGained { get; set; } = [];
 }
 

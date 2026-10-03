@@ -77,7 +77,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by program code (optional)")] string? code = null,
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by catalog skill name or code (optional)")] string? skillsGained = null,
         [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, Approved, Active, Inactive (optional). Active also requires an enrollable Open Standard class with seats.")] ProgramStatus? status = null,
         [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
@@ -112,7 +112,7 @@ public class ProgramController : ControllerBase
         [FromQuery, SwaggerParameter(Description = "Filter by program code (optional)")] string? code = null,
         [FromQuery, SwaggerParameter(Description = "Filter by difficulty level (optional)")] DifficultyLevel? level = null,
         [FromQuery, SwaggerParameter(Description = "Filter by minimum rating (optional)")] decimal? rating = null,
-        [FromQuery, SwaggerParameter(Description = "Filter by skills gained keyword (optional)")] string? skillsGained = null,
+        [FromQuery, SwaggerParameter(Description = "Filter by catalog skill name or code (optional)")] string? skillsGained = null,
         [FromQuery, SwaggerParameter(Description = "Filter by program status: Draft, Approved, Active, Inactive (optional). Active also requires an enrollable Open Standard class with seats.")] ProgramStatus? status = null,
         [FromQuery, SwaggerParameter(Description = "Filter by category (optional)")] ProgramCategory? category = null)
     {
