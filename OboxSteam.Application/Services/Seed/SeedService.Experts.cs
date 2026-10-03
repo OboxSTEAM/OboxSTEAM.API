@@ -28,7 +28,7 @@ public partial class SeedService
         ("EXP-004", "EXP-U004", "expert4@oboxsteam.com", "Dr. Mai Nguyen",
             "AI & Machine Learning Specialist", "Vietnam AI Institute",
             "Researcher and educator specializing in introductory AI and data science for students.",
-            "https://placeholder.local/avatars/exp-004",
+            "https://randomuser.me/api/portraits/women/83.jpg",
             "Led 5 national AI education initiatives"),
         ("EXP-005", "EXP-U005", "expert5@oboxsteam.com", "Prof. Hoa Le",
             "Mathematics Educator", "National University of Education",

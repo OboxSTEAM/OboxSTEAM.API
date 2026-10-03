@@ -50,10 +50,11 @@ public partial class SeedService : ISeedService
     /// <list type="bullet">
     /// <item>Materials after FailRebuy so new activities get reading assets.</item>
     /// <item>Safety-net before AssignmentWindows so leftover-fail cannot AcademicFail mid-seed.</item>
-    /// <item>Demo clear before Maker STD-010 so the theory quiz grade is not wiped.</item>
+    /// <item>Capstone live pair pinned after wall-clock realign / weekly grid / venues so Sat/Sun does not overwrite it,
+    /// and before AssignmentWindows so work windows follow the pinned times.</item>
+    /// <item>Demo clear before the capstone class journey so Module 1 quiz grades are not wiped.</item>
     /// <item>Research UI fixtures after the final elapsed-window pass so FileUpload rows keep ResearchMilestoneId.</item>
-    /// <item>Maker joinable sessions after wall-clock realign / weekly grid so Sat/Sun does not overwrite them.</item>
-    /// <item>Session experts once after Maker tail fixtures so joinable sessions get co-teach rows.</item>
+    /// <item>Session experts once at the end so the pinned capstone Offline gets its co-teach rows.</item>
     /// </list>
     /// </summary>
     private async Task SeedAllDataCoreAsync()
@@ -92,6 +93,7 @@ public partial class SeedService : ISeedService
         await BackfillActivityProgressStatusAsync();
         await SeedResearchSubmissionsAsync();
         await SeedExtendedResearchDataAsync();
+        await EnsureCapstoneStudentUsersAsync();
         await SeedDemoShowcaseProgramsAsync();
         await SeedReviewDraftProgramsAsync();
         await SeedExpertAdvisoryDemoAsync();
@@ -100,10 +102,12 @@ public partial class SeedService : ISeedService
         await RealignSeedSessionWallClocksAsync();
         await SeedWeeklyScheduleFixtureAsync();
         await EnsureSeedSessionVenuesAsync();
+        // After realign / weekly grid / venues so the LiveOnline + Offline pair stays on the seed clock.
+        await ApplyCapstoneLiveSessionsAsync();
         // Catalog, demo, review, and advisory programs exist. Fail/rebuy is linked again below.
         await SeedProgramSkillsAsync();
         await SeedPortfolioDataAsync();
-        // Demo clear must run before Maker STD-010 fixtures (quiz grade would be wiped).
+        // Demo clear must run before the capstone class journey (quiz grades would be wiped).
         await ClearDemoProgramSubmissionsAsync();
         await SeedFailRebuyFixturesAsync();
         // Second pass picks up PRG-FAILREBUY. Existing pairs are skipped.
@@ -127,13 +131,12 @@ public partial class SeedService : ISeedService
         await SeedPassedSubmissionsForElapsedRequiredWindowsAsync();
         // After final elapsed-related state: research FileUpload fixtures need ResearchMilestoneId.
         await SeedGradedCapstoneSubmissionForUiAsync();
-        // After RealignSeedSessionWallClocksAsync / weekly grid so Sat/Sun does not overwrite Maker Slice-2.
-        await ApplyMakerSlice2JoinableSessionsAsync();
-        // After ClearDemoProgramSubmissionsAsync so STD-010 theory quiz grade is not wiped.
-        await ApplyMakerStudent10Module1CompleteAsync();
+        // After ClearDemoProgramSubmissionsAsync so Module 1 quiz grades are not wiped.
+        await ApplyCapstoneClassJourneyAsync();
         await AlignSeedAttendanceWithDoneSessionActivitiesAsync();
-        // Once after Maker tail fixtures so joinable sessions get co-teach expert rows.
         await SeedClassSessionExpertsAsync();
+        // Last, so every account created by earlier steps (reviewers, fail/rebuy, experts) is covered.
+        await SeedUserAvatarsAsync();
         await VerifySeedDemoIntegrityAsync();
     }
 

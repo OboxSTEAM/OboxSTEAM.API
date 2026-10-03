@@ -7,16 +7,13 @@ namespace OboxSteam.Application.Services;
 /// <summary>
 /// EXP co-teach fixtures:
 /// <list type="bullet">
-/// <item>Maker Lab Adventures (CLS-DEMO-MAKER-2026A) — Slice-2 QR/check-in Offline, plus the research Offline left on the calendar.</item>
+/// <item>Smart City capstone (CLS-CAP-SMARTCITY-2026A) — EXP-007 + EXP-001 co-teach the live Module 2 Offline.</item>
 /// <item>Active Art/Math cohorts — Accepted Offline co-teach so catalog programs show expert presence.</item>
 /// </list>
 /// Idempotent for re-seed.
 /// </summary>
 public partial class SeedService
 {
-    private const string MakerCoTeachClassCode = "CLS-DEMO-MAKER-2026A";
-    private const string MakerCoTeachProgramCode = "PRG-DEMO-MAKER";
-    private const string MakerJoinableOfflineActivityCode = "ACT-DEMO-MAKER-02-03";
 
     /// <summary>
     /// InProgress Art/Math cohorts that should show at least one Accepted Offline co-teach.
@@ -32,107 +29,45 @@ public partial class SeedService
 
     private async Task SeedClassSessionExpertsAsync()
     {
-        _loggerService.LogInformation("Starting seed class session experts (Maker + Art/Math Offline)");
+        _loggerService.LogInformation("Starting seed class session experts (Capstone + Art/Math Offline)");
 
-        var makerSeeded = await SeedMakerLabCoTeachAsync();
+        var capstoneSeeded = await SeedCapstoneCoTeachAsync();
         var artMathSeeded = await SeedArtMathOfflineCoTeachAsync();
 
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Finished seed class session experts — Maker={MakerCount}, Art/Math Offline={ArtMathCount}.",
-            makerSeeded,
+            "Finished seed class session experts — Capstone={CapstoneCount}, Art/Math Offline={ArtMathCount}.",
+            capstoneSeeded,
             artMathSeeded);
     }
 
-    private async Task<int> SeedMakerLabCoTeachAsync()
+    private async Task<int> SeedCapstoneCoTeachAsync()
     {
-        var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
-        if (expert001 == null)
+        var experts = await EnsureCapstoneProgramBoardsAsync();
+        if (experts.Count == 0)
         {
-            _loggerService.LogWarning("EXP-001 missing. Skipping Maker class session expert seed.");
+            _loggerService.LogWarning("Capstone co-teach experts missing. Skipping capstone co-teach seed.");
             return 0;
         }
-
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
-            p => p.Code == MakerCoTeachProgramCode && !p.IsDeleted);
-        if (program == null)
-        {
-            _loggerService.LogWarning(
-                "{ProgramCode} missing. Skipping Maker class session expert seed.",
-                MakerCoTeachProgramCode);
-            return 0;
-        }
-
-        await EnsureExpertOnProgramBoardAsync(expert001, program.Id, "Maker Co-Teach Advisor");
 
         var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.Code == MakerCoTeachClassCode && !c.IsDeleted);
-        if (classEntity == null)
+            c => c.Code == CapstoneLiveClassCode && !c.IsDeleted);
+        var sessions = classEntity == null ? null : await LoadCapstoneLiveSessionsAsync(classEntity);
+        if (sessions == null)
         {
             _loggerService.LogWarning(
-                "{ClassCode} missing. Skipping Maker class session expert seed.",
-                MakerCoTeachClassCode);
+                "{ClassCode} or its Module 2 Offline is missing. Skipping capstone co-teach seed.",
+                CapstoneLiveClassCode);
             return 0;
-        }
-
-        var offlineSessions = (await _unitOfWork.ClassSessions.GetAllAsync(
-                s => s.ClassId == classEntity.Id
-                     && s.SessionKind == SessionKind.Offline
-                     && s.Status != ClassSessionStatus.Cancelled
-                     && !s.IsDeleted))
-            .OrderBy(s => s.StartTime)
-            .ToList();
-        if (offlineSessions.Count == 0)
-        {
-            _loggerService.LogWarning(
-                "No Offline sessions on {ClassCode}. Skipping Maker class session expert seed.",
-                MakerCoTeachClassCode);
-            return 0;
-        }
-
-        var joinableOfflineActivity = await _unitOfWork.Activities.FirstOrDefaultAsync(
-            a => a.Code == MakerJoinableOfflineActivityCode && !a.IsDeleted);
-        var joinableOffline = joinableOfflineActivity == null
-            ? null
-            : offlineSessions.FirstOrDefault(s => s.ActivityId == joinableOfflineActivity.Id);
-
-        // Research Offline stays on the calendar. Never force Completed, and never
-        // touch the Slice-2 joinable Offline — that breaks QR / check-in tests.
-        var feedbackOffline = offlineSessions.FirstOrDefault(
-            s => joinableOffline == null || s.Id != joinableOffline.Id);
-        if (feedbackOffline == null)
-        {
-            feedbackOffline = offlineSessions[0];
-        }
-
-        if (joinableOffline == null || feedbackOffline.Id != joinableOffline.Id)
-        {
-            var resolved = SeedTimeline.ResolveSessionStatus(
-                feedbackOffline.StartTime,
-                feedbackOffline.EndTime,
-                _seedNow);
-            if (feedbackOffline.Status != resolved)
-            {
-                feedbackOffline.Status = resolved;
-                await _unitOfWork.ClassSessions.Update(feedbackOffline);
-                _loggerService.LogInformation(
-                    "Aligned Maker research Offline {SessionId} to {Status} from the session clock.",
-                    feedbackOffline.Id,
-                    resolved);
-            }
         }
 
         var seeded = 0;
-        if (await TryEnsureAcceptedCoTeachAsync(feedbackOffline, expert001.Id))
+        foreach (var expert in experts)
         {
-            seeded++;
-        }
-
-        if (joinableOffline != null
-            && joinableOffline.Id != feedbackOffline.Id
-            && await TryEnsureAcceptedCoTeachAsync(joinableOffline, expert001.Id))
-        {
-            seeded++;
+            if (await TryEnsureAcceptedCoTeachAsync(sessions.Offline, expert.Id))
+            {
+                seeded++;
+            }
         }
 
         return seeded;

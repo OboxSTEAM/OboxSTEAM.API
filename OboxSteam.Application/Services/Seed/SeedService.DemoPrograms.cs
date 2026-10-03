@@ -1,36 +1,26 @@
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
-using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 
 namespace OboxSteam.Application.Services;
 
 /// <summary>
-/// Idempotent demo showcase programs for mentor grading walkthroughs.
-/// Does not modify existing programs; safe to run on an already-seeded database.
+/// Idempotent capstone demo programs: one lean curriculum shape (Theory, Experiential, Research;
+/// SelfPaced, LiveOnline, Offline) shared by an Open class to buy (Flow 1) and an InProgress
+/// class with a live LiveOnline + Offline pair (Flows 2 and 3).
 /// </summary>
 public partial class SeedService
 {
-    /// <summary>
-    /// One Active demo program (+ matching class) per student. Students chosen from
-    /// Completed/Failed/Dropped-only roster so academic Active/Pending slots stay ≤ 2.
-    /// STD-001/002 already hold Robotics Active and must not receive demo enrollments.
-    /// </summary>
-    private static readonly Dictionary<string, string[]> DemoStudentCodesByProgram =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["PRG-DEMO-SCRATCH"] = ["STD-003", "STD-016"],
-            ["PRG-DEMO-CLIMATE"] = ["STD-007", "STD-017"],
-            ["PRG-DEMO-MAKER"] = ["STD-009", "STD-010"],
-        };
-
     internal static IReadOnlyDictionary<string, string[]> GetDemoStudentCodesByProgram()
-        => DemoStudentCodesByProgram;
+        => GetDemoProgramDefinitions().ToDictionary(
+            d => d.ProgramCode,
+            d => d.StudentCodes,
+            StringComparer.OrdinalIgnoreCase);
 
     private async Task SeedDemoShowcaseProgramsAsync()
     {
-        _loggerService.LogInformation("Starting seed demo showcase programs");
+        _loggerService.LogInformation("Starting seed capstone demo programs");
 
         var seedTime = _seedNow;
         var mentors = (await _unitOfWork.Users.GetAllAsync(u => u.Role == RoleType.Mentor && !u.IsDeleted))
@@ -38,77 +28,23 @@ public partial class SeedService
 
         foreach (var definition in GetDemoProgramDefinitions())
         {
-            if (!mentors.TryGetValue(definition.InProgressMentorCode, out var inProgressMentor)
-                || !mentors.TryGetValue(definition.OpenMentorCode, out var openMentor))
+            if (!mentors.TryGetValue(definition.MentorCode, out var mentor))
             {
                 _loggerService.LogWarning(
-                    "Skipping demo program {ProgramCode}: mentor {InProgressMentor} or {OpenMentor} not found.",
+                    "Skipping demo program {ProgramCode}: mentor {MentorCode} not found.",
                     definition.ProgramCode,
-                    definition.InProgressMentorCode,
-                    definition.OpenMentorCode);
+                    definition.MentorCode);
                 continue;
             }
 
-            await SeedOneDemoProgramAsync(
-                definition,
-                inProgressMentor.Id,
-                openMentor.Id,
-                seedTime);
+            await SeedOneDemoProgramAsync(definition, mentor.Id, seedTime);
         }
 
-        // Demo programs stay submission-free (quiz / retrospective / research file uploads).
+        // Demo programs stay submission-free until the capstone journey tail seeds the theory quiz.
         await ClearDemoProgramSubmissionsAsync();
-        await EnsureExpert001OnDemoProgramBoardsAsync();
+        await EnsureCapstoneProgramBoardsAsync();
 
-        _loggerService.LogInformation("Finished seed demo showcase programs");
-    }
-
-    /// <summary>
-    /// Puts EXP-001 on demo program boards so Offline co-teach invites work.
-    /// Maker Lab (CLS-DEMO-MAKER-2026A) also seeds Accepted Offline co-teach rows for EXP-001.
-    /// Idempotent for re-seed without clear.
-    /// </summary>
-    private async Task EnsureExpert001OnDemoProgramBoardsAsync()
-    {
-        var expert001 = await _unitOfWork.Experts.FirstOrDefaultAsync(e => e.Code == "EXP-001" && !e.IsDeleted);
-        if (expert001 == null)
-        {
-            _loggerService.LogWarning("EXP-001 not found. Skipping demo co-teach program boards.");
-            return;
-        }
-
-        var demoProgramIds = await GetDemoProgramIdsAsync();
-        if (demoProgramIds.Count == 0)
-        {
-            return;
-        }
-
-        var existing = await _unitOfWork.ProgramBoards.GetAllAsync(
-            pb => pb.ExpertId == expert001.Id && demoProgramIds.Contains(pb.ProgramId) && !pb.IsDeleted);
-        var existingProgramIds = existing.Select(pb => pb.ProgramId).ToHashSet();
-        var missingProgramIds = demoProgramIds.Where(id => !existingProgramIds.Contains(id)).ToList();
-        if (missingProgramIds.Count == 0)
-        {
-            _loggerService.LogInformation("EXP-001 is already on all demo program boards.");
-            return;
-        }
-
-        var boards = missingProgramIds.Select(programId => new ProgramBoard
-        {
-            Id = Guid.NewGuid(),
-            ProgramId = programId,
-            ExpertId = expert001.Id,
-            RoleInBoard = "Demo Co-Teach Advisor",
-            CreatedAt = _seedNow,
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
-        }).ToList();
-
-        await _unitOfWork.ProgramBoards.AddRangeAsync(boards);
-        await _unitOfWork.SaveChangesAsync();
-        _loggerService.LogInformation(
-            "Added EXP-001 to {Count} demo program board(s) for Offline co-teach tests.",
-            boards.Count);
+        _loggerService.LogInformation("Finished seed capstone demo programs");
     }
 
     private static HashSet<string> GetDemoProgramCodeSet()
@@ -117,8 +53,8 @@ public partial class SeedService
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Program ids for demo showcase tracks. Used to keep dashboard/global seeds off live-demo data
-    /// and to clear showcase submissions before Maker fixtures.
+    /// Program ids for demo tracks. Used to keep dashboard/global seeds off live-demo data
+    /// and to clear demo submissions before the capstone journey fixtures.
     /// </summary>
     private async Task<HashSet<Guid>> GetDemoProgramIdsAsync()
     {
@@ -130,7 +66,7 @@ public partial class SeedService
 
     /// <summary>
     /// Programs excluded from taught-module safety-net and elapsed-window passes:
-    /// showcase demos, ADV advisory, review drafts, and fail/rebuy QA.
+    /// capstone demos, ADV advisory, review drafts, and fail/rebuy QA.
     /// </summary>
     private async Task<HashSet<Guid>> GetGlobalAssessmentExcludedProgramIdsAsync()
     {
@@ -154,9 +90,8 @@ public partial class SeedService
     }
 
     /// <summary>
-    /// Removes any submissions on demo showcase assignments so the track stays clean for live demos.
-    /// Demo seed never creates submissions; this clears leftovers from prior manual testing
-    /// and from global seeds that previously targeted every assignment.
+    /// Removes any submissions on demo assignments so the track stays clean for live demos.
+    /// Clears leftovers from prior manual testing and from global seeds that target every assignment.
     /// </summary>
     private async Task ClearDemoProgramSubmissionsAsync()
     {
@@ -187,19 +122,22 @@ public partial class SeedService
 
         if (submissions.Count == 0)
         {
-            _loggerService.LogInformation("Demo showcase programs have no submissions to clear.");
+            _loggerService.LogInformation("Demo programs have no submissions to clear.");
             return;
         }
 
         await _unitOfWork.Submissions.SoftRemoveRange(submissions);
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Cleared {Count} submission(s) from demo showcase program assignments.",
+            "Cleared {Count} submission(s) from demo program assignments.",
             submissions.Count);
     }
 
+    private sealed record DemoMilestoneDefinition(string Title, string Description, string AssignmentTitle);
+
     private sealed record DemoProgramDefinition(
         string ProgramCode,
+        string Slug,
         string Name,
         string SeriesName,
         string Description,
@@ -210,359 +148,343 @@ public partial class SeedService
         string ThumbnailUrl,
         string ClassCode,
         string ClassName,
+        ClassStatus ClassStatus,
+        int ClassStartDaysOffset,
+        int ClassEndDaysOffset,
         string ScheduleSummary,
-        string InProgressMentorCode,
-        string OpenMentorCode,
+        string MentorCode,
+        string[] StudentCodes,
         string TheoryModuleName,
         string ExperientialModuleName,
         string ResearchModuleName,
         string TheoryCourseName,
         string ExperientialCourseName,
         string ResearchCourseName,
+        string TheoryReading1Name,
+        string TheoryReading1File,
+        string TheoryReading2Name,
+        string TheoryReading2File,
+        string ExperientialLiveName,
+        string ExperientialOfflineName,
+        string ResearchBriefName,
+        string ResearchBriefFile,
+        string ResearchOfflineName,
         string QuizBankName,
         string QuizTitle,
         string RetrospectiveTitle,
         string RetrospectiveDescription,
-        string Milestone1Title,
-        string Milestone1Description,
-        string Milestone1AssignmentTitle,
-        string Milestone2Title,
-        string Milestone2Description,
-        string Milestone2AssignmentTitle,
+        DemoMilestoneDefinition DesignMilestone,
+        DemoMilestoneDefinition PrototypeMilestone,
+        DemoMilestoneDefinition CapstoneMilestone,
         (string Text, int Difficulty, string[] Options)[] BankQuestions)
     {
-        public string ResolveOpenClassCode()
-            => ClassCode.EndsWith("2026A", StringComparison.OrdinalIgnoreCase)
-                ? ClassCode[..^5] + "2026B"
-                : $"{ClassCode}-OPEN";
+        public string ModuleCode(int order) => $"MOD-CAP-{Slug}-{order:D2}";
+
+        public string ActivityCode(int moduleOrder, int activityOrder)
+            => $"ACT-CAP-{Slug}-{moduleOrder:D2}-{activityOrder:D2}";
+
+        public string AssignmentCode(string suffix) => $"ASG-CAP-{Slug}-{suffix}";
     }
+
+    private const string CapstoneBuyProgramCode = "PRG-CAP-AIROBOT";
+    private const string CapstoneBuyClassCode = "CLS-CAP-AIROBOT-2026B";
+    private const string CapstoneLiveProgramCode = "PRG-CAP-SMARTCITY";
+    private const string CapstoneLiveClassCode = "CLS-CAP-SMARTCITY-2026A";
 
     private static IReadOnlyList<DemoProgramDefinition> GetDemoProgramDefinitions() =>
     [
         new(
-            ProgramCode: "PRG-DEMO-SCRATCH",
-            Name: "Creative Coding with Scratch",
-            SeriesName: "Demo Showcase",
-            Description: "A short demo track for block-based coding: learn sprites, build a mini-game, then document a creative project.",
+            ProgramCode: CapstoneBuyProgramCode,
+            Slug: "AIROBOT",
+            Name: "AI Robotics Explorer",
+            SeriesName: "Capstone Showcase",
+            Description: "Build a small AI robot: learn how robots sense, think and act, code an obstacle-avoiding robot in the lab, then research and showcase your own robot project.",
             Level: DifficultyLevel.Beginner,
             Category: ProgramCategory.Technology,
-            EstimatedDuration: "3 weeks at 2 hours a week",
-            Price: 900_000m,
+            EstimatedDuration: "4 weeks at 3 hours a week",
+            Price: 1_200_000m,
             ThumbnailUrl:
-                "https://images.unsplash.com/photo-1587620962725-abab7fe55159?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-            ClassCode: "CLS-DEMO-SCRATCH-2026A",
-            ClassName: "Scratch Demo Cohort A",
+                "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+            ClassCode: CapstoneBuyClassCode,
+            ClassName: "AI Robotics Explorer Cohort B",
+            ClassStatus: ClassStatus.Open,
+            ClassStartDaysOffset: 14,
+            ClassEndDaysOffset: 42,
             ScheduleSummary: "Saturday & Sunday 09:00-11:00",
-            InProgressMentorCode: "MNT-001",
-            OpenMentorCode: "MNT-003",
-            TheoryModuleName: "Scratch Basics",
-            ExperientialModuleName: "Build a Mini-Game",
-            ResearchModuleName: "Creative Project Showcase",
-            TheoryCourseName: "Sprites & Scripts",
-            ExperientialCourseName: "Game Lab",
-            ResearchCourseName: "Project Studio",
-            QuizBankName: "Scratch Basics Question Bank",
-            QuizTitle: "Scratch Basics Quiz",
-            RetrospectiveTitle: "Mini-Game Lab Retrospective",
-            RetrospectiveDescription: "Write a short reflection on what you built, what was hard, and what you would try next.",
-            Milestone1Title: "Project Plan Upload",
-            Milestone1Description: "Plan your Scratch story or game and upload a short design note.",
-            Milestone1AssignmentTitle: "Upload Project Plan",
-            Milestone2Title: "Final Project File",
-            Milestone2Description: "Upload the finished Scratch project export and a short demo note.",
-            Milestone2AssignmentTitle: "Upload Final Scratch Project",
-            BankQuestions: ScratchDemoBankQuestions),
+            MentorCode: "MNT-005",
+            StudentCodes: [CapstoneTruongStudentCode, CapstoneLongStudentCode, CapstoneHoaStudentCode],
+            TheoryModuleName: "Robotics & AI Foundations",
+            ExperientialModuleName: "Robot Build Lab",
+            ResearchModuleName: "AI Robot Research Project",
+            TheoryCourseName: "Robots and Intelligent Machines",
+            ExperientialCourseName: "AI Robot Workshop",
+            ResearchCourseName: "Robot Research Studio",
+            TheoryReading1Name: "What Is a Robot?",
+            TheoryReading1File: "robot-1.pdf",
+            TheoryReading2Name: "Robots and Artificial Intelligence",
+            TheoryReading2File: "robotics-1.pdf",
+            ExperientialLiveName: "Robot Coding Live Coaching",
+            ExperientialOfflineName: "Obstacle-Avoiding Robot Lab",
+            ResearchBriefName: "Robot Sensors Research Brief",
+            ResearchBriefFile: "sensor-1.pdf",
+            ResearchOfflineName: "AI Robot Project Showcase",
+            QuizBankName: "Robotics & AI Foundations Question Bank",
+            QuizTitle: "Robotics & AI Foundations Quiz",
+            RetrospectiveTitle: "Obstacle Robot Lab Retrospective",
+            RetrospectiveDescription: "Reflect on the lab: what your robot did well, which sensor reading surprised you, and what you would change next time.",
+            DesignMilestone: new(
+                "Design: Robot Problem and Sketch",
+                "Choose a task your robot should solve, write a research question, and upload a sketch with the sensors and motors you plan to use.",
+                "Upload Robot Design Plan"),
+            PrototypeMilestone: new(
+                "Prototype: First Robot Build",
+                "Upload photos or a short video of your first robot build and notes from the first test run.",
+                "Upload Robot Prototype Evidence"),
+            CapstoneMilestone: new(
+                "Capstone: Robot Final Report",
+                "Upload your final report and showcase slides explaining how your robot works and what you learned.",
+                "Upload Robot Final Report"),
+            BankQuestions: AiRoboticsBankQuestions),
         new(
-            ProgramCode: "PRG-DEMO-CLIMATE",
-            Name: "Climate Detectives",
-            SeriesName: "Demo Showcase",
-            Description: "A short demo science track: learn climate basics, measure local clues, then share evidence as research milestones.",
-            Level: DifficultyLevel.Beginner,
-            Category: ProgramCategory.Science,
-            EstimatedDuration: "3 weeks at 2 hours a week",
-            Price: 850_000m,
-            ThumbnailUrl:
-                "https://images.unsplash.com/photo-1611273426858-450d8e3c9fce?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-            ClassCode: "CLS-DEMO-CLIMATE-2026A",
-            ClassName: "Climate Detectives Cohort A",
-            ScheduleSummary: "Saturday & Sunday 09:00-11:00",
-            InProgressMentorCode: "MNT-002",
-            OpenMentorCode: "MNT-005",
-            TheoryModuleName: "Climate Foundations",
-            ExperientialModuleName: "Field Clues Lab",
-            ResearchModuleName: "Evidence Report",
-            TheoryCourseName: "Weather & Climate",
-            ExperientialCourseName: "Observation Lab",
-            ResearchCourseName: "Detective Report Studio",
-            QuizBankName: "Climate Foundations Question Bank",
-            QuizTitle: "Climate Foundations Quiz",
-            RetrospectiveTitle: "Field Clues Retrospective",
-            RetrospectiveDescription: "Reflect on the clues you observed outdoors and what they might mean for local climate.",
-            Milestone1Title: "Observation Log Upload",
-            Milestone1Description: "Upload your observation log with photos or notes from the field.",
-            Milestone1AssignmentTitle: "Upload Observation Log",
-            Milestone2Title: "Evidence Summary Upload",
-            Milestone2Description: "Upload a short evidence summary connecting clues to a climate idea.",
-            Milestone2AssignmentTitle: "Upload Evidence Summary",
-            BankQuestions: ClimateDemoBankQuestions),
-        new(
-            ProgramCode: "PRG-DEMO-MAKER",
-            Name: "Maker Lab Adventures",
-            SeriesName: "Demo Showcase",
-            Description: "A short demo engineering track: learn maker safety, build a simple prototype, then upload milestone deliverables.",
+            ProgramCode: CapstoneLiveProgramCode,
+            Slug: "SMARTCITY",
+            Name: "Smart City IoT Lab",
+            SeriesName: "Capstone Showcase",
+            Description: "Explore how sensors and the Internet of Things make cities smarter: learn IoT basics, build a smart traffic light in the lab, then research a real city problem.",
             Level: DifficultyLevel.Beginner,
             Category: ProgramCategory.Engineering,
-            EstimatedDuration: "3 weeks at 2 hours a week",
-            Price: 950_000m,
+            EstimatedDuration: "4 weeks at 3 hours a week",
+            Price: 1_500_000m,
             ThumbnailUrl:
-                "https://images.unsplash.com/photo-1581092160562-40aa08e78837?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-            ClassCode: "CLS-DEMO-MAKER-2026A",
-            ClassName: "Maker Lab Cohort A",
+                "https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+            ClassCode: CapstoneLiveClassCode,
+            ClassName: "Smart City IoT Lab Cohort A",
+            ClassStatus: ClassStatus.InProgress,
+            ClassStartDaysOffset: -14,
+            ClassEndDaysOffset: 14,
             ScheduleSummary: "Saturday & Sunday 09:00-11:00",
-            InProgressMentorCode: "MNT-004",
-            OpenMentorCode: "MNT-006",
-            TheoryModuleName: "Maker Mindset",
-            ExperientialModuleName: "Prototype Sprint",
-            ResearchModuleName: "Build Journal",
-            TheoryCourseName: "Tools & Safety",
-            ExperientialCourseName: "Build Lab",
-            ResearchCourseName: "Prototype Journal Studio",
-            QuizBankName: "Maker Mindset Question Bank",
-            QuizTitle: "Maker Mindset Quiz",
-            RetrospectiveTitle: "Prototype Sprint Retrospective",
-            RetrospectiveDescription: "Reflect on your prototype: what worked, what broke, and what you would change.",
-            Milestone1Title: "Prototype Photo Upload",
-            Milestone1Description: "Upload photos of your first prototype and a short build note.",
-            Milestone1AssignmentTitle: "Upload Prototype Photos",
-            Milestone2Title: "Improved Build Upload",
-            Milestone2Description: "Upload the improved prototype evidence and a short iteration note.",
-            Milestone2AssignmentTitle: "Upload Improved Build",
-            BankQuestions: MakerDemoBankQuestions),
+            MentorCode: CapstoneDemoMentorCode,
+            StudentCodes:
+            [
+                CapstoneDriverStudentCode,
+                CapstoneTruongStudentCode,
+                CapstoneLongStudentCode,
+                CapstoneHoaStudentCode,
+            ],
+            TheoryModuleName: "Smart City Foundations",
+            ExperientialModuleName: "Smart City Build Lab",
+            ResearchModuleName: "Smart City Research Project",
+            TheoryCourseName: "Sensors & Connected Cities",
+            ExperientialCourseName: "Connected Prototype Lab",
+            ResearchCourseName: "City Problem Research Studio",
+            TheoryReading1Name: "Smart Cities and the Internet of Things",
+            TheoryReading1File: "smart-city-1.pdf",
+            TheoryReading2Name: "IoT Devices Around the City",
+            TheoryReading2File: "smart-iot-1.pdf",
+            ExperientialLiveName: "Smart Sensor Live Coaching",
+            ExperientialOfflineName: "Smart Traffic Light Lab",
+            ResearchBriefName: "Smart City Research Project Guide",
+            ResearchBriefFile: "smart-iot-2.pdf",
+            ResearchOfflineName: "Smart City Project Showcase",
+            QuizBankName: "Smart City Foundations Question Bank",
+            QuizTitle: "Smart City Foundations Quiz",
+            RetrospectiveTitle: "Smart Traffic Light Lab Retrospective",
+            RetrospectiveDescription: "Reflect on the lab: what your team built, which sensor worked best, and what you would improve for a real street.",
+            DesignMilestone: new(
+                "Design: City Problem and Solution Sketch",
+                "Pick one city problem (traffic, flooding, air quality or energy), write a research question, and upload a solution sketch with the sensors you plan to use.",
+                "Upload Smart City Design Plan"),
+            PrototypeMilestone: new(
+                "Prototype: Sensor Build and First Test",
+                "Upload photos of your smart city prototype and the first test data you collected.",
+                "Upload Smart City Prototype Evidence"),
+            CapstoneMilestone: new(
+                "Capstone: Smart City Final Report",
+                "Upload your final report and showcase slides explaining how your prototype helps the city.",
+                "Upload Smart City Final Report"),
+            BankQuestions: SmartCityBankQuestions),
     ];
 
-    // Mostly easy (difficulty 1-2) with a few medium (3) for demo draws.
-    private static readonly (string Text, int Difficulty, string[] Options)[] ScratchDemoBankQuestions =
+    // First option is the correct answer; options are shuffled at draw time. Difficulty 1-2 only (easy pool).
+    private static readonly (string Text, int Difficulty, string[] Options)[] SmartCityBankQuestions =
     [
-        ("In Scratch, a character on the stage is called a", 1, ["Sprite", "Sensor", "Battery", "Router"]),
-        ("What do you click to start most Scratch projects?", 1, ["The green flag", "The red stop only", "The trash can", "The backpack"]),
-        ("A stack of Scratch blocks that runs in order is a", 1, ["Script", "Costume", "Backdrop", "Paintbrush"]),
-        ("Which block category usually moves a sprite?", 1, ["Motion", "Looks", "Sound", "Events"]),
-        ("The red stop sign in Scratch is used to", 1, ["Stop all scripts", "Change costumes", "Add a sprite", "Save the project"]),
-        ("A loop block is useful when you want to", 2, ["Repeat actions", "Delete the stage", "Turn off sound forever", "Hide the green flag"]),
-        ("Costumes in Scratch let a sprite", 2, ["Change how it looks", "Connect to Wi-Fi", "Print paper", "Charge a battery"]),
-        ("The stage in Scratch is where", 2, ["Sprites perform the project", "You edit your password", "Files are encrypted", "Servers are hosted"]),
-        ("An event block such as 'when green flag clicked' is used to", 2, ["Start a script", "Draw a circle only", "Delete variables", "Export PDF"]),
-        ("A variable in Scratch stores", 3, ["A value you can change", "Only images", "Only music files", "The Wi-Fi password"]),
-        ("Broadcast blocks help sprites", 3, ["Send messages to each other", "Charge batteries", "Print documents", "Open email"]),
-        ("If a sprite goes to x:0 y:0 it moves toward the", 3, ["Center of the stage", "Top-left only", "Trash folder", "Sound library"]),
+        ("IoT là viết tắt của cụm từ nào?", 1, ["Internet of Things", "Internet of Tools", "Input of Technology", "Index of Tasks"]),
+        ("Thành phố thông minh dùng công nghệ để làm gì?", 1, ["Giúp cuộc sống người dân tốt hơn", "Làm thành phố ồn ào hơn", "Tắt hết điện vào ban ngày", "Đóng cửa công viên"]),
+        ("Đèn giao thông thông minh giúp thành phố điều gì?", 1, ["Giảm ùn tắc giao thông", "Tăng tiếng ồn", "Tắt hết đèn đường", "Đóng cửa trường học"]),
+        ("Cảm biến nhiệt độ dùng để đo gì?", 1, ["Nhiệt độ", "Màu sắc", "Âm nhạc", "Mật khẩu Wi-Fi"]),
+        ("Thiết bị IoT thường kết nối với nhau qua đâu?", 1, ["Mạng Internet", "Dây phơi quần áo", "Hộp bút", "Quyển vở"]),
+        ("Thùng rác thông minh có thể báo cho người thu gom khi nào?", 1, ["Khi thùng rác đã đầy", "Khi trời mưa", "Khi có người hát", "Khi đến giờ ăn trưa"]),
+        ("Đèn đường thông minh tự bật khi nào?", 2, ["Khi trời tối", "Khi trời nắng to", "Khi có mưa đá", "Khi điện thoại hết pin"]),
+        ("Cảm biến chất lượng không khí giúp chúng ta biết điều gì?", 2, ["Không khí sạch hay ô nhiễm", "Giờ tan học", "Giá vé xe buýt", "Tên đường phố"]),
+        ("Bãi đỗ xe thông minh giúp tài xế làm gì?", 2, ["Tìm chỗ đỗ xe trống nhanh hơn", "Lái xe nhanh hơn", "Đổ xăng miễn phí", "Rửa xe tự động"]),
+        ("Để tiết kiệm điện, ngôi nhà thông minh có thể làm gì?", 2, ["Tự tắt đèn khi không có người", "Bật tất cả đèn cả ngày", "Mở tủ lạnh liên tục", "Tắt Internet mãi mãi"]),
+        ("Bộ vi điều khiển như Arduino đóng vai trò gì trong thiết bị IoT?", 2, ["Bộ não xử lý dữ liệu", "Vỏ bảo vệ", "Dây điện", "Pin dự phòng"]),
+        ("Vì sao cần bảo vệ dữ liệu trong thành phố thông minh?", 2, ["Để giữ an toàn thông tin cá nhân", "Để máy chạy chậm hơn", "Để xóa hết dữ liệu", "Để không ai dùng được Internet"]),
     ];
 
-    private static readonly (string Text, int Difficulty, string[] Options)[] ClimateDemoBankQuestions =
+    private static readonly (string Text, int Difficulty, string[] Options)[] AiRoboticsBankQuestions =
     [
-        ("Weather is best described as", 1, ["Day-to-day conditions outside", "Only the ocean depth", "A type of rock", "A computer program"]),
-        ("Climate is best described as", 1, ["Average weather over many years", "One rainy afternoon", "A single thunderstorm", "Tonight's temperature only"]),
-        ("The gas people often discuss in climate change is", 1, ["Carbon dioxide (CO2)", "Helium only", "Neon only", "Argon perfume"]),
-        ("A thermometer is used to measure", 1, ["Temperature", "Wind color", "Soil taste", "Cloud password"]),
-        ("Rain, snow, and hail are forms of", 1, ["Precipitation", "Gravity", "Magnetism", "Electricity"]),
-        ("Trees help the climate because they can", 2, ["Absorb carbon dioxide", "Create plastic", "Stop the moon", "Delete clouds"]),
-        ("A simple way to observe local climate clues is to", 2, ["Record temperature and rainfall", "Ignore the outdoors", "Only watch cartoons", "Turn off all clocks"]),
-        ("Fossil fuels are commonly linked to", 2, ["Extra greenhouse gases", "Making more oxygen only", "Cooling the sun", "Stopping tides"]),
-        ("The water cycle includes", 2, ["Evaporation and condensation", "Only earthquakes", "Only volcanoes", "Only Wi-Fi"]),
-        ("An anemometer helps measure", 3, ["Wind speed", "Soil color", "Fish population", "Screen brightness"]),
-        ("Sea-level rise is often linked to", 3, ["Melting ice and warmer oceans", "More desk lamps", "Faster Wi-Fi", "Louder music"]),
-        ("A fair science observation should be", 3, ["Recorded carefully and honestly", "Guessed without notes", "Hidden from the team", "Changed to look nicer"]),
-    ];
-
-    private static readonly (string Text, int Difficulty, string[] Options)[] MakerDemoBankQuestions =
-    [
-        ("Before using tools in a maker lab you should", 1, ["Follow safety rules", "Run with scissors", "Ignore mentors", "Eat at the saw"]),
-        ("Safety goggles protect your", 1, ["Eyes", "Shoes only", "Phone case", "Backpack"]),
-        ("A prototype is", 1, ["An early version of an idea", "The final factory product only", "A password", "A Wi-Fi router"]),
-        ("Iteration means you", 1, ["Improve a design step by step", "Never change anything", "Delete all notes", "Skip testing"]),
-        ("Sharp tools should be", 1, ["Used carefully and stored safely", "Left on the floor", "Thrown to friends", "Kept in a pocket open"]),
-        ("Cardboard is popular in maker labs because it is", 2, ["Easy to cut and reshape", "Made of metal", "Always waterproof forever", "A type of battery"]),
-        ("Hot glue guns can", 2, ["Burn skin if you are not careful", "Cool the room", "Charge phones", "Print essays"]),
-        ("A quick sketch helps makers", 2, ["Plan before building", "Skip all ideas", "Hide mistakes forever", "Turn off lights"]),
-        ("Measuring before cutting helps you", 2, ["Avoid wasting materials", "Make louder noise", "Break more parts", "Skip safety"]),
-        ("Feedback from a mentor is useful because it", 3, ["Helps you improve the prototype", "Deletes your project", "Stops all learning", "Removes safety rules"]),
-        ("A bill of materials lists", 3, ["Parts you need for the build", "Only your lunch order", "Wi-Fi passwords", "Movie tickets"]),
-        ("Failure during a prototype test often means", 3, ["You learned what to fix next", "You must quit forever", "Science is broken", "Tools are illegal"]),
+        ("Robot là gì?", 1, ["Máy có thể tự thực hiện công việc", "Một loại trái cây", "Một bài hát", "Một loại bút chì"]),
+        ("Bộ phận nào giúp robot \"nhìn\" thấy vật cản?", 1, ["Cảm biến", "Bánh xe", "Pin", "Vỏ nhựa"]),
+        ("AI là viết tắt của cụm từ nào?", 1, ["Artificial Intelligence", "Auto Internet", "Active Input", "Art Image"]),
+        ("Động cơ giúp robot làm gì?", 1, ["Di chuyển", "Ngủ", "Đọc sách", "Nghe nhạc"]),
+        ("Robot cần gì để hoạt động?", 1, ["Nguồn điện hoặc pin", "Nước ngọt", "Kẹo", "Giấy màu"]),
+        ("Robot hút bụi giúp gia đình làm việc gì?", 1, ["Dọn sạch sàn nhà", "Nấu cơm", "Tưới cây", "Giặt quần áo"]),
+        ("Chu trình hoạt động cơ bản của robot là gì?", 2, ["Cảm nhận, suy nghĩ, hành động", "Ăn, ngủ, chơi", "Đọc, viết, vẽ", "Chạy, nhảy, bơi"]),
+        ("Muốn robot làm theo ý mình, chúng ta cần làm gì?", 2, ["Lập trình cho robot", "Hát cho robot nghe", "Sơn màu cho robot", "Để robot ngoài nắng"]),
+        ("AI giúp robot làm được điều gì?", 2, ["Nhận biết hình ảnh và ra quyết định", "Tự mọc thêm bánh xe", "Hoạt động không cần điện", "Biến thành con người"]),
+        ("Cảm biến siêu âm giúp robot đo được gì?", 2, ["Khoảng cách tới vật cản", "Nhiệt độ cơ thể", "Mùi thức ăn", "Màu của bầu trời"]),
+        ("Khi làm việc với robot, điều quan trọng nhất là gì?", 2, ["Tuân thủ quy tắc an toàn", "Chạy nhảy trong phòng", "Tháo pin khi robot đang chạy", "Đổ nước vào robot"]),
+        ("Robot trong nhà máy thường được dùng để làm gì?", 2, ["Lắp ráp sản phẩm", "Đi học thay học sinh", "Xem phim", "Chơi bóng đá"]),
     ];
 
     private async Task SeedOneDemoProgramAsync(
         DemoProgramDefinition definition,
-        Guid inProgressMentorId,
-        Guid openMentorId,
+        Guid mentorId,
         DateTime seedTime)
     {
-        var slug = definition.ProgramCode.Replace("PRG-DEMO-", string.Empty, StringComparison.OrdinalIgnoreCase);
-
+        var slug = definition.Slug;
         var program = await EnsureDemoProgramAsync(definition, seedTime);
+
+        // Theory allows SelfPaced + LiveOnline only (no Offline).
         var theoryModule = await EnsureDemoModuleAsync(
             program.Id,
-            $"MOD-DEMO-{slug}-01",
+            definition.ModuleCode(1),
             definition.TheoryModuleName,
             ModuleType.Theory,
             moduleOrder: 1,
-            price: 300_000m,
             seedTime);
         var experientialModule = await EnsureDemoModuleAsync(
             program.Id,
-            $"MOD-DEMO-{slug}-02",
+            definition.ModuleCode(2),
             definition.ExperientialModuleName,
             ModuleType.Experiential,
             moduleOrder: 2,
-            price: 320_000m,
             seedTime,
             prerequisiteModuleId: theoryModule.Id);
         var researchModule = await EnsureDemoModuleAsync(
             program.Id,
-            $"MOD-DEMO-{slug}-03",
+            definition.ModuleCode(3),
             definition.ResearchModuleName,
             ModuleType.Research,
             moduleOrder: 3,
-            price: 280_000m,
             seedTime,
             prerequisiteModuleId: experientialModule.Id);
 
         var theoryCourse = await EnsureDemoCourseAsync(
             theoryModule.Id,
-            $"CRS-DEMO-{slug}-01",
+            $"CRS-CAP-{slug}-01",
             definition.TheoryCourseName,
-            "Short theory course for the demo track.",
+            "Self-paced readings and a short quiz.",
             seedTime);
         var experientialCourse = await EnsureDemoCourseAsync(
             experientialModule.Id,
-            $"CRS-DEMO-{slug}-02",
+            $"CRS-CAP-{slug}-02",
             definition.ExperientialCourseName,
-            "Hands-on course for the demo track.",
+            "Live coaching followed by an on-site lab co-taught by board experts.",
             seedTime);
         var researchCourse = await EnsureDemoCourseAsync(
             researchModule.Id,
-            $"CRS-DEMO-{slug}-03",
+            $"CRS-CAP-{slug}-03",
             definition.ResearchCourseName,
-            "Research course with milestone deliverables.",
+            "Research brief, project showcase and Design / Prototype / Capstone milestones.",
             seedTime);
 
-        // Theory allows SelfPaced + LiveOnline only (no Offline).
-        var theorySelfPaced = await EnsureDemoActivityAsync(
+        var theoryReading1 = await EnsureDemoActivityAsync(
             theoryCourse.Id,
-            $"ACT-DEMO-{slug}-01-01",
-            $"{definition.TheoryCourseName} Reading",
+            definition.ActivityCode(1, 1),
+            definition.TheoryReading1Name,
             ActivityType.SelfPaced,
             1,
-            "Self-paced intro reading for the demo theory course.",
+            "Self-paced reading that introduces the core ideas of the program.",
             null,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
-        var theoryLive = await EnsureDemoActivityAsync(
+        var theoryReading2 = await EnsureDemoActivityAsync(
             theoryCourse.Id,
-            $"ACT-DEMO-{slug}-01-02",
-            $"{definition.TheoryCourseName} Live Session",
-            ActivityType.LiveOnline,
+            definition.ActivityCode(1, 2),
+            definition.TheoryReading2Name,
+            ActivityType.SelfPaced,
             2,
-            "Live online walkthrough of key ideas.",
-            120,
-            requireQrCheckin: false,
-            requireMediaEvidence: false,
-            seedTime);
-
-        var experientialSelfPaced = await EnsureDemoActivityAsync(
-            experientialCourse.Id,
-            $"ACT-DEMO-{slug}-02-01",
-            $"{definition.ExperientialCourseName} Prep",
-            ActivityType.SelfPaced,
-            1,
-            "Self-paced prep before the hands-on lab.",
+            "Self-paced reading on the devices and building blocks used in the lab.",
             null,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
+
         var experientialLive = await EnsureDemoActivityAsync(
             experientialCourse.Id,
-            $"ACT-DEMO-{slug}-02-02",
-            $"{definition.ExperientialCourseName} Live Coaching",
+            definition.ActivityCode(2, 1),
+            definition.ExperientialLiveName,
             ActivityType.LiveOnline,
-            2,
-            "Live coaching session for the hands-on build.",
-            120,
+            1,
+            "Live online coaching to plan the hands-on build.",
+            90,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
         var experientialOffline = await EnsureDemoActivityAsync(
             experientialCourse.Id,
-            $"ACT-DEMO-{slug}-02-03",
-            $"{definition.ExperientialCourseName} Offline Lab",
+            definition.ActivityCode(2, 2),
+            definition.ExperientialOfflineName,
             ActivityType.Offline,
-            3,
-            "On-site lab to practice skills and gather evidence.",
+            2,
+            "On-site lab co-taught by board experts. Check in with the session QR code.",
             180,
             requireQrCheckin: true,
             requireMediaEvidence: true,
             seedTime);
 
-        var researchSelfPaced = await EnsureDemoActivityAsync(
+        var researchBrief = await EnsureDemoActivityAsync(
             researchCourse.Id,
-            $"ACT-DEMO-{slug}-03-01",
-            $"{definition.ResearchCourseName} Brief",
+            definition.ActivityCode(3, 1),
+            definition.ResearchBriefName,
             ActivityType.SelfPaced,
             1,
-            "Self-paced research brief before milestone uploads.",
+            "Self-paced guide to planning, building and documenting your research project.",
             null,
-            requireQrCheckin: false,
-            requireMediaEvidence: false,
-            seedTime);
-        var researchLive = await EnsureDemoActivityAsync(
-            researchCourse.Id,
-            $"ACT-DEMO-{slug}-03-02",
-            $"{definition.ResearchCourseName} Check-in",
-            ActivityType.LiveOnline,
-            2,
-            "Live check-in before the first milestone upload.",
-            60,
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
         var researchOffline = await EnsureDemoActivityAsync(
             researchCourse.Id,
-            $"ACT-DEMO-{slug}-03-03",
-            $"{definition.ResearchCourseName} Showcase Lab",
+            definition.ActivityCode(3, 2),
+            definition.ResearchOfflineName,
             ActivityType.Offline,
-            3,
-            "On-site showcase lab for the final milestone.",
+            2,
+            "On-site showcase where teams present their final projects.",
             180,
             requireQrCheckin: true,
             requireMediaEvidence: true,
             seedTime);
 
-        // Reuse the same Seed/Material PDFs as robotics; experiential SelfPaced uses the new demo video.
         await EnsureDemoMaterialAsync(
-            theorySelfPaced.Id,
-            $"{definition.TheoryCourseName} Reading Pack",
+            theoryReading1.Id,
+            definition.TheoryReading1Name,
             MaterialType.PDF,
-            RoboticsTheoryMaterialUrl,
-            4_200_000L,
+            CapstoneMaterialBaseUrl + definition.TheoryReading1File,
+            2_500_000L,
             seedTime);
         await EnsureDemoMaterialAsync(
-            experientialSelfPaced.Id,
-            $"{definition.ExperientialCourseName} Prep Video",
-            MaterialType.Video,
-            DemoShowcaseVideoMaterialUrl,
-            85_000_000L,
+            theoryReading2.Id,
+            definition.TheoryReading2Name,
+            MaterialType.PDF,
+            CapstoneMaterialBaseUrl + definition.TheoryReading2File,
+            2_500_000L,
             seedTime);
         await EnsureDemoMaterialAsync(
-            researchSelfPaced.Id,
-            $"{definition.ResearchCourseName} Brief Pack",
+            researchBrief.Id,
+            definition.ResearchBriefName,
             MaterialType.PDF,
-            RoboticsResearchMaterialUrl,
-            3_800_000L,
+            CapstoneMaterialBaseUrl + definition.ResearchBriefFile,
+            2_500_000L,
             seedTime);
 
         var bank = await EnsureDemoQuestionBankAsync(
             theoryCourse.Id,
             definition.QuizBankName,
-            $"Easy demo question bank for {definition.Name}.",
+            $"Easy Vietnamese question bank for {definition.Name}.",
             definition.BankQuestions,
             seedTime);
 
@@ -570,75 +492,51 @@ public partial class SeedService
             theoryModule.Id,
             theoryCourse.Id,
             bank.Id,
-            $"ASG-DEMO-{slug}-QUIZ",
+            definition.AssignmentCode("QUIZ"),
             definition.QuizTitle,
             seedTime);
 
         await EnsureDemoRetrospectiveAsync(
             experientialModule.Id,
             experientialCourse.Id,
-            $"ASG-DEMO-{slug}-RETRO",
+            definition.AssignmentCode("RETRO"),
             definition.RetrospectiveTitle,
             definition.RetrospectiveDescription,
             seedTime);
 
         await EnsureDemoResearchMilestonesAsync(
             researchModule.Id,
-            slug,
             definition,
-            researchSelfPaced.Id,
-            researchLive.Id,
+            researchBrief.Id,
             researchOffline.Id,
             seedTime);
 
         var classEntity = await EnsureDemoClassAsync(
             program.Id,
-            inProgressMentorId,
+            mentorId,
             definition.ClassCode,
             definition.ClassName,
             definition.ScheduleSummary,
             seedTime,
-            ClassStatus.InProgress,
-            startDate: seedTime.AddDays(-7),
-            endDate: seedTime.AddDays(60));
+            definition.ClassStatus,
+            startDate: seedTime.AddDays(definition.ClassStartDaysOffset),
+            endDate: seedTime.AddDays(definition.ClassEndDaysOffset));
 
         await EnsureDemoClassSessionsAsync(
             classEntity,
-            theoryModule.Id,
-            experientialModule.Id,
-            researchModule.Id,
-            theoryLive,
-            experientialLive,
-            experientialOffline,
-            researchLive,
-            researchOffline,
+            [
+                (experientialModule.Id, experientialLive, SessionKind.LiveOnline),
+                (experientialModule.Id, experientialOffline, SessionKind.Offline),
+                (researchModule.Id, researchOffline, SessionKind.Offline),
+            ],
             seedTime);
 
-        // Open / not-started cohort for newly registered students to join.
-        // A different mentor than Cohort A so concurrent load and Saturday slots do not stack.
-        var openClassName = definition.ClassName.Contains("Cohort A", StringComparison.Ordinal)
-            ? definition.ClassName.Replace("Cohort A", "Cohort B", StringComparison.Ordinal)
-            : $"{definition.ClassName} (Open)";
-        await EnsureDemoClassAsync(
-            program.Id,
-            openMentorId,
-            definition.ResolveOpenClassCode(),
-            openClassName,
-            $"{definition.ScheduleSummary} (upcoming cohort)",
-            seedTime,
-            ClassStatus.Open,
-            startDate: seedTime.AddDays(14),
-            endDate: seedTime.AddDays(90));
-
-        await PruneDemoStudentEnrollmentsAsync(program, classEntity);
+        await PruneDemoStudentEnrollmentsAsync(program, definition.StudentCodes);
         await EnsureDemoStudentEnrollmentsAsync(
             program,
-            theoryModule,
-            experientialModule,
-            researchModule,
-            theoryCourse,
-            experientialCourse,
-            researchCourse,
+            definition.StudentCodes,
+            [theoryModule, experientialModule, researchModule],
+            [theoryCourse, experientialCourse, researchCourse],
             classEntity,
             seedTime);
     }
@@ -649,25 +547,9 @@ public partial class SeedService
             p => p.Code == definition.ProgramCode && !p.IsDeleted);
         if (existing != null)
         {
-            var changed = false;
             if (existing.RetakeFee == null)
             {
                 existing.RetakeFee = CatalogRetakeFee(existing.Price);
-                changed = existing.RetakeFee != null;
-            }
-
-            // Refresh missing or known-stale Unsplash thumbs (Climate 404 photo was retired).
-            if (string.IsNullOrWhiteSpace(existing.ThumbnailUrl)
-                || existing.ThumbnailUrl.Contains(
-                    "photo-1569163139394-de460e9b8570",
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                existing.ThumbnailUrl = definition.ThumbnailUrl;
-                changed = true;
-            }
-
-            if (changed)
-            {
                 await _unitOfWork.Programs.Update(existing);
                 await _unitOfWork.SaveChangesAsync();
             }
@@ -708,11 +590,9 @@ public partial class SeedService
         string name,
         ModuleType moduleType,
         int moduleOrder,
-        decimal price,
         DateTime seedTime,
         Guid? prerequisiteModuleId = null)
     {
-        _ = price;
         var existing = await _unitOfWork.Modules.FirstOrDefaultAsync(m => m.Code == code && !m.IsDeleted);
         if (existing != null)
         {
@@ -969,7 +849,7 @@ public partial class SeedService
             ModuleId = moduleId,
             CourseId = courseId,
             Title = title,
-            Description = "Easy demo quiz drawn from the course question bank.",
+            Description = "Easy quiz drawn from the course question bank.",
             AssignmentType = AssignmentType.Quiz,
             MaxPoints = 100,
             PassScore = 50,
@@ -978,8 +858,8 @@ public partial class SeedService
             ShuffleOptions = true,
             QuestionBankId = questionBankId,
             QuestionCount = 5,
-            EasyPercent = 80,
-            MediumPercent = 20,
+            EasyPercent = 100,
+            MediumPercent = 0,
             HardPercent = 0,
             TimeLimitMinutes = 15,
             MaxAttempts = 3,
@@ -1027,14 +907,12 @@ public partial class SeedService
 
     private async Task EnsureDemoResearchMilestonesAsync(
         Guid researchModuleId,
-        string slug,
         DemoProgramDefinition definition,
-        Guid researchSelfPacedId,
-        Guid researchLiveId,
+        Guid researchBriefId,
         Guid researchOfflineId,
         DateTime seedTime)
     {
-        var milestone1Code = $"RML-DEMO-{slug}-01";
+        var milestone1Code = $"RML-CAP-{definition.Slug}-01";
         var existingMilestone = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
             rm => rm.Code == milestone1Code && !rm.IsDeleted);
         if (existingMilestone != null)
@@ -1042,115 +920,76 @@ public partial class SeedService
             return;
         }
 
-        var assignment1Code = $"ASG-DEMO-{slug}-MS01";
-        var assignment2Code = $"ASG-DEMO-{slug}-MS02";
-
-        var assignment1 = new Assignment
+        var plans = new (DemoMilestoneDefinition Milestone, bool IsCapstone, Guid? LinkedActivityId)[]
         {
-            Id = Guid.NewGuid(),
-            Code = assignment1Code,
-            ModuleId = researchModuleId,
-            Title = definition.Milestone1AssignmentTitle,
-            Description = definition.Milestone1Description,
-            AssignmentType = AssignmentType.FileUpload,
-            MaxPoints = 100,
-            PassScore = 60m,
-            IsRequiredForModulePass = true,
-            MaxAttempts = 3,
-            TimeLimitMinutes = 60,
-            CreatedAt = seedTime,
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
+            (definition.DesignMilestone, false, researchBriefId),
+            (definition.PrototypeMilestone, false, null),
+            (definition.CapstoneMilestone, true, researchOfflineId),
         };
 
-        var assignment2 = new Assignment
-        {
-            Id = Guid.NewGuid(),
-            Code = assignment2Code,
-            ModuleId = researchModuleId,
-            Title = definition.Milestone2AssignmentTitle,
-            Description = definition.Milestone2Description,
-            AssignmentType = AssignmentType.FileUpload,
-            MaxPoints = 100,
-            PassScore = 60m,
-            IsRequiredForModulePass = true,
-            MaxAttempts = 3,
-            TimeLimitMinutes = 60,
-            CreatedAt = seedTime,
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
-        };
+        var assignments = new List<Assignment>();
+        var milestones = new List<ResearchMilestone>();
+        var links = new List<ResearchMilestoneActivity>();
 
-        var milestone1 = new ResearchMilestone
+        for (var index = 0; index < plans.Length; index++)
         {
-            Id = Guid.NewGuid(),
-            Code = milestone1Code,
-            ModuleId = researchModuleId,
-            Title = definition.Milestone1Title,
-            Description = definition.Milestone1Description,
-            MilestoneOrder = 1,
-            IsCapstone = false,
-            AssignmentId = assignment1.Id,
-            CreatedAt = seedTime,
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
-        };
+            var order = index + 1;
+            var plan = plans[index];
 
-        var milestone2 = new ResearchMilestone
-        {
-            Id = Guid.NewGuid(),
-            Code = $"RML-DEMO-{slug}-02",
-            ModuleId = researchModuleId,
-            Title = definition.Milestone2Title,
-            Description = definition.Milestone2Description,
-            MilestoneOrder = 2,
-            IsCapstone = true,
-            AssignmentId = assignment2.Id,
-            CreatedAt = seedTime,
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
-        };
+            var assignment = new Assignment
+            {
+                Id = Guid.NewGuid(),
+                Code = definition.AssignmentCode($"MS{order:D2}"),
+                ModuleId = researchModuleId,
+                Title = plan.Milestone.AssignmentTitle,
+                Description = plan.Milestone.Description,
+                AssignmentType = AssignmentType.FileUpload,
+                MaxPoints = 100,
+                PassScore = 60m,
+                IsRequiredForModulePass = true,
+                MaxAttempts = 3,
+                TimeLimitMinutes = 60,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            };
+            assignments.Add(assignment);
 
-        await _unitOfWork.Assignments.AddRangeAsync([assignment1, assignment2]);
-        await _unitOfWork.ResearchMilestones.AddRangeAsync([milestone1, milestone2]);
+            var milestone = new ResearchMilestone
+            {
+                Id = Guid.NewGuid(),
+                Code = $"RML-CAP-{definition.Slug}-{order:D2}",
+                ModuleId = researchModuleId,
+                Title = plan.Milestone.Title,
+                Description = plan.Milestone.Description,
+                MilestoneOrder = order,
+                IsCapstone = plan.IsCapstone,
+                AssignmentId = assignment.Id,
+                CreatedAt = seedTime,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            };
+            milestones.Add(milestone);
+
+            if (plan.LinkedActivityId is { } activityId)
+            {
+                links.Add(new ResearchMilestoneActivity
+                {
+                    Id = Guid.NewGuid(),
+                    ResearchMilestoneId = milestone.Id,
+                    ActivityId = activityId,
+                    IsRequiredForSubmission = true,
+                    DisplayOrder = 1,
+                    CreatedAt = seedTime,
+                    CreatedBy = Guid.Empty,
+                    IsDeleted = false,
+                });
+            }
+        }
+
+        await _unitOfWork.Assignments.AddRangeAsync(assignments);
+        await _unitOfWork.ResearchMilestones.AddRangeAsync(milestones);
         await _unitOfWork.SaveChangesAsync();
-
-        var links = new List<ResearchMilestoneActivity>
-        {
-            new()
-            {
-                Id = Guid.NewGuid(),
-                ResearchMilestoneId = milestone1.Id,
-                ActivityId = researchSelfPacedId,
-                IsRequiredForSubmission = true,
-                DisplayOrder = 1,
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                ResearchMilestoneId = milestone1.Id,
-                ActivityId = researchLiveId,
-                IsRequiredForSubmission = true,
-                DisplayOrder = 2,
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                ResearchMilestoneId = milestone2.Id,
-                ActivityId = researchOfflineId,
-                IsRequiredForSubmission = true,
-                DisplayOrder = 1,
-                CreatedAt = seedTime,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            },
-        };
 
         await _unitOfWork.ResearchMilestoneActivities.AddRangeAsync(links);
         await _unitOfWork.SaveChangesAsync();
@@ -1219,32 +1058,20 @@ public partial class SeedService
         return classEntity;
     }
 
+    /// <summary>
+    /// One session per LiveOnline/Offline activity on the Saturday/Sunday morning grid.
+    /// The InProgress capstone class is re-pinned to the seed clock by <c>ApplyCapstoneLiveSessionsAsync</c>.
+    /// </summary>
     private async Task EnsureDemoClassSessionsAsync(
         Class classEntity,
-        Guid theoryModuleId,
-        Guid experientialModuleId,
-        Guid researchModuleId,
-        Activity theoryLive,
-        Activity experientialLive,
-        Activity experientialOffline,
-        Activity researchLive,
-        Activity researchOffline,
+        IReadOnlyList<(Guid ModuleId, Activity Activity, SessionKind Kind)> sessionDefs,
         DateTime seedTime)
     {
-        var sessionDefs = new (Guid ModuleId, Activity Activity, SessionKind Kind, string Title)[]
-        {
-            (theoryModuleId, theoryLive, SessionKind.LiveOnline, theoryLive.Name),
-            (experientialModuleId, experientialLive, SessionKind.LiveOnline, experientialLive.Name),
-            (experientialModuleId, experientialOffline, SessionKind.Offline, experientialOffline.Name),
-            (researchModuleId, researchLive, SessionKind.LiveOnline, researchLive.Name),
-            (researchModuleId, researchOffline, SessionKind.Offline, researchOffline.Name),
-        };
-
         var sessionsToAdd = new List<ClassSession>();
-        var sessionIndex = 0;
 
-        foreach (var definition in sessionDefs)
+        for (var sessionIndex = 0; sessionIndex < sessionDefs.Count; sessionIndex++)
         {
+            var definition = sessionDefs[sessionIndex];
             var existing = await _unitOfWork.ClassSessions.FirstOrDefaultAsync(
                 cs => cs.ClassId == classEntity.Id
                       && cs.ActivityId == definition.Activity.Id
@@ -1255,7 +1082,6 @@ public partial class SeedService
                 classEntity.EndDate,
                 DemoSatSunMorning,
                 sessionIndex);
-            sessionIndex++;
             if (slot == null)
             {
                 continue;
@@ -1267,7 +1093,7 @@ public partial class SeedService
             var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
                 definition.Kind,
                 classEntity.Code,
-                sessionIndex - 1);
+                sessionIndex);
 
             if (existing != null)
             {
@@ -1291,7 +1117,7 @@ public partial class SeedService
                 ModuleId = definition.ModuleId,
                 ActivityId = definition.Activity.Id,
                 SessionKind = definition.Kind,
-                Title = definition.Title,
+                Title = definition.Activity.Name,
                 Description = definition.Activity.Description,
                 StartTime = startTime,
                 EndTime = endTime,
@@ -1316,701 +1142,8 @@ public partial class SeedService
         await _unitOfWork.SaveChangesAsync();
     }
 
-    /// <summary>
-    /// Maker Cohort A only: pin experiential LiveOnline + Offline to <see cref="_seedNow"/>
-    /// so Slice 2 JaaS join and QR check-in are immediately testable after every reseed.
-    /// Leaves Scratch/Climate and all academic-year classes on the calendar grid.
-    /// Must run after <c>RealignSeedSessionWallClocksAsync</c>.
-    /// </summary>
-    private async Task ApplyMakerSlice2JoinableSessionsAsync()
+    private async Task PruneDemoStudentEnrollmentsAsync(Program program, IReadOnlyCollection<string> allowedCodes)
     {
-        const string makerClassCode = "CLS-DEMO-MAKER-2026A";
-        const string liveActivityCode = "ACT-DEMO-MAKER-02-02";
-        const string offlineActivityCode = "ACT-DEMO-MAKER-02-03";
-
-        var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.Code == makerClassCode && !c.IsDeleted);
-        if (classEntity == null)
-        {
-            _loggerService.LogWarning(
-                "Maker Slice-2 joinable sessions skipped: class {ClassCode} not found.",
-                makerClassCode);
-            return;
-        }
-
-        var activities = await _unitOfWork.Activities.GetAllAsync(
-            a => (a.Code == liveActivityCode || a.Code == offlineActivityCode) && !a.IsDeleted);
-        var liveActivity = activities.FirstOrDefault(a =>
-            string.Equals(a.Code, liveActivityCode, StringComparison.OrdinalIgnoreCase));
-        var offlineActivity = activities.FirstOrDefault(a =>
-            string.Equals(a.Code, offlineActivityCode, StringComparison.OrdinalIgnoreCase));
-        if (liveActivity == null || offlineActivity == null)
-        {
-            _loggerService.LogWarning(
-                "Maker Slice-2 joinable sessions skipped: activities {Live} / {Offline} not found.",
-                liveActivityCode,
-                offlineActivityCode);
-            return;
-        }
-
-        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
-            cs => cs.ClassId == classEntity.Id
-                  && !cs.IsDeleted
-                  && cs.Status != ClassSessionStatus.Cancelled
-                  && cs.ActivityId != null
-                  && (cs.ActivityId == liveActivity.Id || cs.ActivityId == offlineActivity.Id));
-
-        var liveSession = sessions.FirstOrDefault(cs => cs.ActivityId == liveActivity.Id);
-        var offlineSession = sessions.FirstOrDefault(cs => cs.ActivityId == offlineActivity.Id);
-        if (liveSession == null || offlineSession == null)
-        {
-            _loggerService.LogWarning(
-                "Maker Slice-2 joinable sessions skipped: LiveOnline/Offline class sessions missing on {ClassCode}.",
-                makerClassCode);
-            return;
-        }
-
-        var seedTime = _seedNow;
-        var updated = 0;
-
-        // LiveOnline: start in 5 minutes → join window already open (opens 15 min before start).
-        var liveDuration = liveActivity.DurationMinutes is > 0
-            ? liveActivity.DurationMinutes.Value
-            : 120;
-        var liveStart = seedTime.AddMinutes(5);
-        var liveEnd = liveStart.AddMinutes(liveDuration);
-        updated += await ApplyMakerJoinableClockAsync(
-            liveSession,
-            SessionKind.LiveOnline,
-            liveStart,
-            liveEnd,
-            classEntity.Code,
-            ordinal: 1,
-            seedTime);
-
-        // Offline: already started → mentor can mint QR; student can check in.
-        var offlineDuration = offlineActivity.DurationMinutes is > 0
-            ? offlineActivity.DurationMinutes.Value
-            : 180;
-        var offlineStart = seedTime.AddMinutes(-5);
-        var offlineEnd = offlineStart.AddMinutes(offlineDuration);
-        updated += await ApplyMakerJoinableClockAsync(
-            offlineSession,
-            SessionKind.Offline,
-            offlineStart,
-            offlineEnd,
-            classEntity.Code,
-            ordinal: 2,
-            seedTime);
-
-        // FE Offline detail shows Location; pin a concrete campus room for Slice-2 testing.
-        offlineSession.Location = "NVH 601";
-        offlineSession.Latitude = 10.870000;
-        offlineSession.Longitude = 106.803000;
-        offlineSession.MeetingUrl = null;
-        offlineSession.RequiresAttendance = true;
-        offlineSession.RequiresMentorCheckIn = true;
-        offlineSession.UpdatedAt = seedTime;
-        offlineSession.UpdatedBy = Guid.Empty;
-        await _unitOfWork.ClassSessions.Update(offlineSession);
-        updated = Math.Max(updated, 1);
-
-        if (updated > 0)
-        {
-            await _unitOfWork.SaveChangesAsync();
-        }
-
-        _loggerService.LogInformation(
-            "Maker Slice-2 joinable sessions: refreshed {Count} session(s) on {ClassCode} for FE join/check-in.",
-            updated,
-            makerClassCode);
-    }
-
-    private async Task<int> ApplyMakerJoinableClockAsync(
-        ClassSession session,
-        SessionKind kind,
-        DateTime startTime,
-        DateTime endTime,
-        string classCode,
-        int ordinal,
-        DateTime seedTime)
-    {
-        var status = SeedTimeline.ResolveSessionStatus(startTime, endTime, seedTime);
-        var (location, meetingUrl, latitude, longitude) = SeedTimeline.ResolveSeedVenue(
-            kind,
-            classCode,
-            ordinal);
-
-        if (session.StartTime == startTime
-            && session.EndTime == endTime
-            && session.Status == status
-            && session.Location == location
-            && session.MeetingUrl == meetingUrl
-            && session.Latitude == latitude
-            && session.Longitude == longitude)
-        {
-            return 0;
-        }
-
-        session.StartTime = startTime;
-        session.EndTime = endTime;
-        session.Status = status;
-        session.Location = location;
-        session.MeetingUrl = meetingUrl;
-        session.Latitude = latitude;
-        session.Longitude = longitude;
-        session.UpdatedAt = seedTime;
-        session.UpdatedBy = Guid.Empty;
-        await _unitOfWork.ClassSessions.Update(session);
-        return 1;
-    }
-
-    /// <summary>
-    /// STD-010 on Maker only: complete Theory, unlock Module 2 prep, and seed graded
-    /// Quiz / Retrospective / Research FileUpload submissions so curriculum
-    /// <c>latestSubmissionId</c> hydrates FE result routes after every reseed.
-    /// Runs after <c>ClearDemoProgramSubmissionsAsync</c> so submissions survive the clear.
-    /// </summary>
-    private async Task ApplyMakerStudent10Module1CompleteAsync()
-    {
-        const string studentCode = "STD-010";
-        const string programCode = "PRG-DEMO-MAKER";
-        const string theoryModuleCode = "MOD-DEMO-MAKER-01";
-        const string experientialModuleCode = "MOD-DEMO-MAKER-02";
-        const string researchModuleCode = "MOD-DEMO-MAKER-03";
-        const string theorySelfPacedCode = "ACT-DEMO-MAKER-01-01";
-        const string theoryLiveCode = "ACT-DEMO-MAKER-01-02";
-        const string experientialPrepCode = "ACT-DEMO-MAKER-02-01";
-        const string researchSelfPacedCode = "ACT-DEMO-MAKER-03-01";
-        const string theoryQuizCode = "ASG-DEMO-MAKER-QUIZ";
-        const string retroCode = "ASG-DEMO-MAKER-RETRO";
-        const string researchMs1Code = "ASG-DEMO-MAKER-MS01";
-        const string researchMilestone1Code = "RML-DEMO-MAKER-01";
-
-        var student = await _unitOfWork.Users.FirstOrDefaultAsync(
-            u => u.Code == studentCode && !u.IsDeleted);
-        var program = await _unitOfWork.Programs.FirstOrDefaultAsync(
-            p => p.Code == programCode && !p.IsDeleted);
-        if (student == null || program == null)
-        {
-            _loggerService.LogWarning(
-                "Maker STD-010 result hydration skipped: student or program missing.");
-            return;
-        }
-
-        var programEnrollment = await _unitOfWork.ProgramEnrollments.FirstOrDefaultAsync(
-            pe => pe.StudentId == student.Id && pe.ProgramId == program.Id && !pe.IsDeleted);
-        if (programEnrollment == null)
-        {
-            _loggerService.LogWarning(
-                "Maker STD-010 result hydration skipped: program enrollment missing.");
-            return;
-        }
-
-        var theoryModule = await _unitOfWork.Modules.FirstOrDefaultAsync(
-            m => m.Code == theoryModuleCode && !m.IsDeleted);
-        var experientialModule = await _unitOfWork.Modules.FirstOrDefaultAsync(
-            m => m.Code == experientialModuleCode && !m.IsDeleted);
-        var researchModule = await _unitOfWork.Modules.FirstOrDefaultAsync(
-            m => m.Code == researchModuleCode && !m.IsDeleted);
-        if (theoryModule == null || experientialModule == null || researchModule == null)
-        {
-            _loggerService.LogWarning(
-                "Maker STD-010 result hydration skipped: theory/experiential/research module missing.");
-            return;
-        }
-
-        var theoryMe = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-            me => me.StudentId == student.Id
-                  && me.ModuleId == theoryModule.Id
-                  && me.ProgramEnrollmentId == programEnrollment.Id
-                  && !me.IsDeleted);
-        var experientialMe = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-            me => me.StudentId == student.Id
-                  && me.ModuleId == experientialModule.Id
-                  && me.ProgramEnrollmentId == programEnrollment.Id
-                  && !me.IsDeleted);
-        var researchMe = await _unitOfWork.ModuleEnrollments.FirstOrDefaultAsync(
-            me => me.StudentId == student.Id
-                  && me.ModuleId == researchModule.Id
-                  && me.ProgramEnrollmentId == programEnrollment.Id
-                  && !me.IsDeleted);
-        if (theoryMe == null || experientialMe == null || researchMe == null)
-        {
-            _loggerService.LogWarning(
-                "Maker STD-010 result hydration skipped: module enrollments missing.");
-            return;
-        }
-
-        var activityCodes = new[]
-        {
-            theorySelfPacedCode,
-            theoryLiveCode,
-            experientialPrepCode,
-            researchSelfPacedCode,
-        };
-        var activities = await _unitOfWork.Activities.GetAllAsync(
-            a => activityCodes.Contains(a.Code) && !a.IsDeleted);
-        var byCode = activities.ToDictionary(a => a.Code, StringComparer.OrdinalIgnoreCase);
-
-        if (!byCode.TryGetValue(theorySelfPacedCode, out var theorySelfPaced)
-            || !byCode.TryGetValue(theoryLiveCode, out var theoryLive)
-            || !byCode.TryGetValue(experientialPrepCode, out var experientialPrep)
-            || !byCode.TryGetValue(researchSelfPacedCode, out var researchSelfPaced))
-        {
-            _loggerService.LogWarning(
-                "Maker STD-010 result hydration skipped: expected activities missing.");
-            return;
-        }
-
-        var quiz = await _unitOfWork.Assignments.FirstOrDefaultAsync(
-            a => a.Code == theoryQuizCode && !a.IsDeleted);
-        var retrospective = await _unitOfWork.Assignments.FirstOrDefaultAsync(
-            a => a.Code == retroCode && !a.IsDeleted);
-        var researchMs1 = await _unitOfWork.Assignments.FirstOrDefaultAsync(
-            a => a.Code == researchMs1Code && !a.IsDeleted);
-        var researchMilestone1 = await _unitOfWork.ResearchMilestones.FirstOrDefaultAsync(
-            rm => rm.Code == researchMilestone1Code && !rm.IsDeleted);
-        if (quiz == null || retrospective == null || researchMs1 == null || researchMilestone1 == null)
-        {
-            _loggerService.LogWarning(
-                "Maker STD-010 result hydration skipped: quiz/retro/research assignment or milestone missing.");
-            return;
-        }
-
-        var seedTime = _seedNow;
-        await EnsureMakerSeedActivityDoneAsync(theoryMe, theorySelfPaced, seedTime.AddDays(-3));
-        await EnsureMakerSeedActivityDoneAsync(theoryMe, theoryLive, seedTime.AddDays(-2));
-        await EnsureMakerSeedActivityDoneAsync(experientialMe, experientialPrep, seedTime.AddDays(-1));
-        await EnsureMakerSeedActivityDoneAsync(researchMe, researchSelfPaced, seedTime.AddDays(-1));
-
-        await EnsureMakerSeedQuizPassedAsync(student, theoryMe, quiz, seedTime);
-        await EnsureMakerSeedRetrospectivePassedAsync(student, experientialMe, retrospective, seedTime);
-        await EnsureMakerSeedResearchFilePassedAsync(
-            student,
-            researchMe,
-            researchMs1,
-            researchMilestone1,
-            seedTime);
-
-        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, theoryMe);
-        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, experientialMe);
-        await ActivityProgressCalculationHelper.RecalculateModuleProgressAsync(_unitOfWork, researchMe);
-        await ActivityProgressCalculationHelper.RecalculateProgramProgressAsync(
-            _unitOfWork,
-            programEnrollment.Id,
-            theoryMe);
-        await _unitOfWork.SaveChangesAsync();
-
-        _loggerService.LogInformation(
-            "Maker STD-010: Theory {TheoryProgress}%, Experiential {ExpProgress}%, Research {ResProgress}% — quiz/retro/research latestSubmissionId ready.",
-            theoryMe.ProgressPercent,
-            experientialMe.ProgressPercent,
-            researchMe.ProgressPercent);
-    }
-
-    private async Task EnsureMakerSeedActivityDoneAsync(
-        ModuleEnrollment moduleEnrollment,
-        Activity activity,
-        DateTime completedAt)
-    {
-        var existing = await _unitOfWork.ActivityProgresses.FirstOrDefaultAsync(
-            ap => ap.ModuleEnrollmentId == moduleEnrollment.Id
-                  && ap.ActivityId == activity.Id
-                  && !ap.IsDeleted);
-
-        if (existing != null)
-        {
-            if (existing.ActivityStatus == ActivityStatus.Done && existing.IsCompleted)
-            {
-                return;
-            }
-
-            existing.ActivityStatus = ActivityStatus.Done;
-            existing.IsCompleted = true;
-            existing.CompletionSource = CompletionSource.Manual;
-            existing.CompletedAt ??= completedAt;
-            existing.LastAccessedAt = completedAt;
-            existing.UpdatedAt = completedAt;
-            existing.UpdatedBy = Guid.Empty;
-            await _unitOfWork.ActivityProgresses.Update(existing);
-            return;
-        }
-
-        await _unitOfWork.ActivityProgresses.AddAsync(new ActivityProgress
-        {
-            Id = Guid.NewGuid(),
-            StudentId = moduleEnrollment.StudentId,
-            ActivityId = activity.Id,
-            ModuleEnrollmentId = moduleEnrollment.Id,
-            ActivityStatus = ActivityStatus.Done,
-            IsCompleted = true,
-            CompletionSource = CompletionSource.Manual,
-            CompletedAt = completedAt,
-            LastAccessedAt = completedAt,
-            CreatedAt = completedAt,
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
-        });
-    }
-
-    private async Task EnsureMakerSeedQuizPassedAsync(
-        User student,
-        ModuleEnrollment moduleEnrollment,
-        Assignment quiz,
-        DateTime seedTime)
-    {
-        var submission = await _unitOfWork.Submissions.FirstOrDefaultAsync(
-            s => s.StudentId == student.Id
-                 && s.AssignmentId == quiz.Id
-                 && s.ModuleEnrollmentId == moduleEnrollment.Id
-                 && !s.IsDeleted);
-
-        var startedAt = seedTime.AddDays(-2).AddMinutes(-20);
-        var submittedAt = seedTime.AddDays(-2);
-
-        if (submission == null)
-        {
-            submission = new Submission
-            {
-                Id = Guid.NewGuid(),
-                Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-                AssignmentId = quiz.Id,
-                StudentId = student.Id,
-                ModuleEnrollmentId = moduleEnrollment.Id,
-                AttemptNumber = 1,
-                Status = SubmissionStatus.Graded,
-                AssignedGrade = 90m,
-                ContentText = "Seeded Maker theory quiz pass for Slice-2 FE testing (STD-010).",
-                StartedAt = startedAt,
-                SubmittedAt = submittedAt,
-                GradedAt = seedTime.AddDays(-1),
-                CreatedAt = startedAt,
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            };
-            await _unitOfWork.Submissions.AddAsync(submission);
-            await _unitOfWork.SaveChangesAsync();
-        }
-        else
-        {
-            submission.Status = SubmissionStatus.Graded;
-            submission.AssignedGrade = 90m;
-            submission.StartedAt ??= startedAt;
-            submission.SubmittedAt ??= submittedAt;
-            submission.GradedAt ??= seedTime.AddDays(-1);
-            submission.UpdatedAt = seedTime;
-            submission.UpdatedBy = Guid.Empty;
-            await _unitOfWork.Submissions.Update(submission);
-            await _unitOfWork.SaveChangesAsync();
-        }
-
-        await EnsureMakerSeedQuizSnapshotAndAnswersAsync(quiz, submission, seedTime);
-    }
-
-    /// <summary>
-    /// Builds a graded quiz snapshot (10 questions, 9 correct → AssignedGrade 90 / MaxPoints 100)
-    /// so <c>GET /api/submissions/{id}/quiz/result</c> returns real CorrectCount/TotalQuestions.
-    /// </summary>
-    private async Task EnsureMakerSeedQuizSnapshotAndAnswersAsync(
-        Assignment quiz,
-        Submission submission,
-        DateTime seedTime)
-    {
-        var existingQuestions = await _unitOfWork.QuizQuestions.GetAllAsync(
-            q => q.SubmissionId == submission.Id && !q.IsDeleted);
-        if (existingQuestions.Count > 0)
-        {
-            var existingAnswers = await _unitOfWork.QuizAnswers.GetAllAsync(
-                a => a.SubmissionId == submission.Id && !a.IsDeleted);
-            if (existingAnswers.Count > 0
-                && submission.AssignedGrade is >= 90m
-                && submission.Status == SubmissionStatus.Graded)
-            {
-                return;
-            }
-        }
-
-        if (quiz.QuestionBankId is null)
-        {
-            _loggerService.LogWarning(
-                "Maker STD-010 quiz snapshot skipped: assignment {Code} has no QuestionBankId.",
-                quiz.Code);
-            return;
-        }
-
-        var bankQuestions = (await _unitOfWork.BankQuestions.GetAllAsync(
-                q => q.QuestionBankId == quiz.QuestionBankId.Value && !q.IsDeleted))
-            .OrderBy(q => q.OrderIndex)
-            .Take(10)
-            .ToList();
-        if (bankQuestions.Count == 0)
-        {
-            _loggerService.LogWarning(
-                "Maker STD-010 quiz snapshot skipped: bank has no questions.");
-            return;
-        }
-
-        var bankQuestionIds = bankQuestions.Select(q => q.Id).ToList();
-        var bankOptions = await _unitOfWork.BankQuestionOptions.GetAllAsync(
-            o => bankQuestionIds.Contains(o.BankQuestionId) && !o.IsDeleted);
-        var optionsByBankQuestion = bankOptions
-            .GroupBy(o => o.BankQuestionId)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        // Soft-remove any incomplete prior snapshot on this submission before rebuilding.
-        if (existingQuestions.Count > 0)
-        {
-            var staleAnswers = await _unitOfWork.QuizAnswers.GetAllAsync(
-                a => a.SubmissionId == submission.Id && !a.IsDeleted);
-            if (staleAnswers.Count > 0)
-            {
-                await _unitOfWork.QuizAnswers.SoftRemoveRange(staleAnswers);
-            }
-
-            var staleOptionIds = existingQuestions.Select(q => q.Id).ToList();
-            var staleOptions = await _unitOfWork.QuizOptions.GetAllAsync(
-                o => staleOptionIds.Contains(o.QuestionId) && !o.IsDeleted);
-            if (staleOptions.Count > 0)
-            {
-                await _unitOfWork.QuizOptions.SoftRemoveRange(staleOptions);
-            }
-
-            await _unitOfWork.QuizQuestions.SoftRemoveRange(existingQuestions);
-            await _unitOfWork.SaveChangesAsync();
-        }
-
-        var quizQuestions = new List<QuizQuestion>();
-        var quizOptions = new List<QuizOption>();
-        var quizAnswers = new List<QuizAnswer>();
-        // 9/10 correct → 90 points when MaxPoints is 100.
-        var correctLimit = Math.Max(1, bankQuestions.Count - 1);
-
-        for (var index = 0; index < bankQuestions.Count; index++)
-        {
-            var bankQuestion = bankQuestions[index];
-            if (!optionsByBankQuestion.TryGetValue(bankQuestion.Id, out var activeBankOptions)
-                || activeBankOptions.Count == 0)
-            {
-                continue;
-            }
-
-            var quizQuestion = new QuizQuestion
-            {
-                Id = Guid.NewGuid(),
-                AssignmentId = quiz.Id,
-                SubmissionId = submission.Id,
-                BankQuestionId = bankQuestion.Id,
-                QuestionText = bankQuestion.QuestionText,
-                QuestionType = bankQuestion.QuestionType,
-                Points = bankQuestion.Points,
-                OrderIndex = index + 1,
-                AttemptNumber = submission.AttemptNumber,
-                CreatedAt = seedTime.AddDays(-2),
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            };
-            quizQuestions.Add(quizQuestion);
-
-            QuizOption? correctOption = null;
-            QuizOption? wrongOption = null;
-            foreach (var bankOption in activeBankOptions)
-            {
-                var option = new QuizOption
-                {
-                    Id = Guid.NewGuid(),
-                    QuestionId = quizQuestion.Id,
-                    OptionText = bankOption.OptionText,
-                    IsCorrect = bankOption.IsCorrect,
-                    CreatedAt = seedTime.AddDays(-2),
-                    CreatedBy = Guid.Empty,
-                    IsDeleted = false,
-                };
-                quizOptions.Add(option);
-                if (bankOption.IsCorrect)
-                {
-                    correctOption = option;
-                }
-                else
-                {
-                    wrongOption ??= option;
-                }
-            }
-
-            var selected = index < correctLimit
-                ? correctOption
-                : wrongOption ?? correctOption;
-            if (selected == null)
-            {
-                continue;
-            }
-
-            quizAnswers.Add(new QuizAnswer
-            {
-                Id = Guid.NewGuid(),
-                SubmissionId = submission.Id,
-                QuizQuestionId = quizQuestion.Id,
-                QuizOptionId = selected.Id,
-                CreatedAt = seedTime.AddDays(-2),
-                CreatedBy = Guid.Empty,
-                IsDeleted = false,
-            });
-        }
-
-        if (quizQuestions.Count == 0)
-        {
-            return;
-        }
-
-        await _unitOfWork.QuizQuestions.AddRangeAsync(quizQuestions);
-        await _unitOfWork.QuizOptions.AddRangeAsync(quizOptions);
-        await _unitOfWork.QuizAnswers.AddRangeAsync(quizAnswers);
-
-        // Attach options for scoring helper (in-memory).
-        foreach (var question in quizQuestions)
-        {
-            question.Options = quizOptions.Where(o => o.QuestionId == question.Id).ToList();
-        }
-
-        var grade = QuizScoreCalculator.Calculate(quiz, quizQuestions, quizAnswers);
-        submission.Status = SubmissionStatus.Graded;
-        submission.AssignedGrade = grade.AssignedGrade;
-        submission.SubmittedAt ??= seedTime.AddDays(-2);
-        submission.GradedAt ??= seedTime.AddDays(-1);
-        await _unitOfWork.Submissions.Update(submission);
-        await _unitOfWork.SaveChangesAsync();
-    }
-
-    private async Task EnsureMakerSeedRetrospectivePassedAsync(
-        User student,
-        ModuleEnrollment moduleEnrollment,
-        Assignment retrospective,
-        DateTime seedTime)
-    {
-        var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
-            s => s.StudentId == student.Id
-                 && s.AssignmentId == retrospective.Id
-                 && s.ModuleEnrollmentId == moduleEnrollment.Id
-                 && !s.IsDeleted);
-
-        const string content =
-            "Seeded Maker retrospective for Slice-2 FE result hydration (STD-010). "
-            + "Prototype iteration notes and next steps.";
-
-        if (existing != null)
-        {
-            existing.Status = SubmissionStatus.Graded;
-            existing.AssignedGrade = Math.Max(retrospective.PassScore, 88m);
-            existing.ContentText = content;
-            existing.StartedAt ??= seedTime.AddDays(-1).AddMinutes(-30);
-            existing.SubmittedAt ??= seedTime.AddDays(-1);
-            existing.GradedAt ??= seedTime.AddHours(-12);
-            existing.UpdatedAt = seedTime;
-            existing.UpdatedBy = Guid.Empty;
-            await _unitOfWork.Submissions.Update(existing);
-            await _unitOfWork.SaveChangesAsync();
-            return;
-        }
-
-        await _unitOfWork.Submissions.AddAsync(new Submission
-        {
-            Id = Guid.NewGuid(),
-            Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-            AssignmentId = retrospective.Id,
-            StudentId = student.Id,
-            ModuleEnrollmentId = moduleEnrollment.Id,
-            AttemptNumber = 1,
-            Status = SubmissionStatus.Graded,
-            AssignedGrade = 88m,
-            ContentText = content,
-            StartedAt = seedTime.AddDays(-1).AddMinutes(-30),
-            SubmittedAt = seedTime.AddDays(-1),
-            GradedAt = seedTime.AddHours(-12),
-            CreatedAt = seedTime.AddDays(-1),
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
-        });
-        await _unitOfWork.SaveChangesAsync();
-    }
-
-    private async Task EnsureMakerSeedResearchFilePassedAsync(
-        User student,
-        ModuleEnrollment moduleEnrollment,
-        Assignment assignment,
-        ResearchMilestone milestone,
-        DateTime seedTime)
-    {
-        var existing = await _unitOfWork.Submissions.FirstOrDefaultAsync(
-            s => s.StudentId == student.Id
-                 && s.AssignmentId == assignment.Id
-                 && s.ModuleEnrollmentId == moduleEnrollment.Id
-                 && !s.IsDeleted);
-
-        var fileUrl = existing?.FileUrl;
-        if (string.IsNullOrWhiteSpace(fileUrl)
-            || !fileUrl.Contains("Seed/Submission/", StringComparison.OrdinalIgnoreCase))
-        {
-            fileUrl = await UploadSeedSubmissionPdfAsync(
-                "ASG-DEMO-MAKER-MS01-std010-prototype.pdf",
-                "OboxSTEAM Maker MS01 Seed Deliverable",
-                existing?.FileUrl);
-            if (string.IsNullOrWhiteSpace(fileUrl))
-            {
-                _loggerService.LogWarning(
-                    "Maker STD-010 research file upload failed with no fallback FileUrl.");
-            }
-        }
-
-        if (existing != null)
-        {
-            existing.Status = SubmissionStatus.Graded;
-            existing.AssignedGrade = Math.Max(assignment.PassScore, 85m);
-            existing.ResearchMilestoneId = milestone.Id;
-            existing.FileUrl = fileUrl;
-            existing.ContentText ??= "Seeded Maker milestone-1 upload for FE research result hydration.";
-            existing.MentorFeedback ??= "Solid first prototype photos. Seeded Graded for FE testing.";
-            existing.SubmittedAt ??= seedTime.AddDays(-1);
-            existing.GradedAt ??= seedTime.AddHours(-6);
-            existing.UpdatedAt = seedTime;
-            existing.UpdatedBy = Guid.Empty;
-            await _unitOfWork.Submissions.Update(existing);
-            await _unitOfWork.SaveChangesAsync();
-            return;
-        }
-
-        await _unitOfWork.Submissions.AddAsync(new Submission
-        {
-            Id = Guid.NewGuid(),
-            Code = ResearchSubmissionValidator.GenerateSubmissionCode(),
-            AssignmentId = assignment.Id,
-            StudentId = student.Id,
-            ModuleEnrollmentId = moduleEnrollment.Id,
-            ResearchMilestoneId = milestone.Id,
-            AttemptNumber = 1,
-            Status = SubmissionStatus.Graded,
-            AssignedGrade = 85m,
-            ContentText = "Seeded Maker milestone-1 upload for FE research result hydration.",
-            FileUrl = fileUrl,
-            MentorFeedback = "Solid first prototype photos. Seeded Graded for FE testing.",
-            SubmittedAt = seedTime.AddDays(-1),
-            GradedAt = seedTime.AddHours(-6),
-            CreatedAt = seedTime.AddDays(-1),
-            CreatedBy = Guid.Empty,
-            IsDeleted = false,
-        });
-        await _unitOfWork.SaveChangesAsync();
-    }
-
-    private async Task PruneDemoStudentEnrollmentsAsync(
-        Program program,
-        Class classEntity)
-    {
-        if (!DemoStudentCodesByProgram.TryGetValue(program.Code, out var allowedCodes)
-            || allowedCodes.Length == 0)
-        {
-            return;
-        }
-
         var allowed = allowedCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var enrollments = await _unitOfWork.ProgramEnrollments.GetAllAsync(
             pe => pe.ProgramId == program.Id && !pe.IsDeleted,
@@ -2025,9 +1158,7 @@ public partial class SeedService
             }
 
             var classEnrollments = await _unitOfWork.ClassEnrollments.GetAllAsync(
-                ce => ce.StudentId == enrollment.StudentId
-                      && ce.ClassId == classEntity.Id
-                      && !ce.IsDeleted);
+                ce => ce.ProgramEnrollmentId == enrollment.Id && !ce.IsDeleted);
             foreach (var classEnrollment in classEnrollments)
             {
                 await _unitOfWork.ClassEnrollments.SoftRemove(classEnrollment);
@@ -2045,7 +1176,7 @@ public partial class SeedService
             await _unitOfWork.ProgramEnrollments.SoftRemove(enrollment);
 
             _loggerService.LogInformation(
-                "Pruned demo enrollment for student {StudentId} on {ProgramCode} (over student load limit).",
+                "Pruned demo enrollment for student {StudentId} on {ProgramCode} (not on the demo roster).",
                 enrollment.StudentId,
                 program.Code);
         }
@@ -2055,17 +1186,13 @@ public partial class SeedService
 
     private async Task EnsureDemoStudentEnrollmentsAsync(
         Program program,
-        Module theoryModule,
-        Module experientialModule,
-        Module researchModule,
-        Course theoryCourse,
-        Course experientialCourse,
-        Course researchCourse,
+        IReadOnlyCollection<string> studentCodes,
+        IReadOnlyList<Module> modules,
+        IReadOnlyList<Course> courses,
         Class classEntity,
         DateTime seedTime)
     {
-        if (!DemoStudentCodesByProgram.TryGetValue(program.Code, out var studentCodes)
-            || studentCodes.Length == 0)
+        if (studentCodes.Count == 0)
         {
             _loggerService.LogWarning(
                 "No demo student roster for {ProgramCode}. Skipping enrollments.",
@@ -2073,8 +1200,10 @@ public partial class SeedService
             return;
         }
 
-        var modules = new[] { theoryModule, experientialModule, researchModule };
-        var courses = new[] { theoryCourse, experientialCourse, researchCourse };
+        // InProgress cohorts enrolled before class start; Open cohorts bought a few days ago.
+        var enrolledAt = classEntity.StartDate < seedTime
+            ? classEntity.StartDate.AddDays(-3)
+            : seedTime.AddDays(-5);
 
         foreach (var studentCode in studentCodes)
         {
@@ -2097,9 +1226,9 @@ public partial class SeedService
                     ProgramId = program.Id,
                     Status = EnrollmentStatus.Active,
                     ProgressPercent = 0m,
-                    EnrolledAt = seedTime.AddDays(-5),
-                    StartedAt = seedTime.AddDays(-4),
-                    CreatedAt = seedTime,
+                    EnrolledAt = enrolledAt,
+                    StartedAt = enrolledAt.AddDays(1),
+                    CreatedAt = enrolledAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false,
                 };
@@ -2124,9 +1253,9 @@ public partial class SeedService
                     ProgramEnrollmentId = programEnrollment.Id,
                     Status = EnrollmentStatus.Active,
                     ProgressPercent = 0m,
-                    EnrolledAt = seedTime.AddDays(-4),
-                    StartedAt = seedTime.AddDays(-3),
-                    CreatedAt = seedTime,
+                    EnrolledAt = enrolledAt,
+                    StartedAt = enrolledAt.AddDays(1),
+                    CreatedAt = enrolledAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false,
                 });
@@ -2149,9 +1278,9 @@ public partial class SeedService
                     StudentId = student.Id,
                     CourseId = course.Id,
                     Status = EnrollmentStatus.Active,
-                    JoinedAt = seedTime.AddDays(-4),
-                    StartedAt = seedTime.AddDays(-3),
-                    CreatedAt = seedTime,
+                    JoinedAt = enrolledAt,
+                    StartedAt = enrolledAt.AddDays(1),
+                    CreatedAt = enrolledAt,
                     CreatedBy = Guid.Empty,
                     IsDeleted = false,
                 });
@@ -2173,8 +1302,8 @@ public partial class SeedService
                 StudentId = student.Id,
                 ProgramEnrollmentId = programEnrollment.Id,
                 Status = ClassEnrollmentStatus.Active,
-                EnrolledAt = seedTime.AddDays(-3),
-                CreatedAt = seedTime,
+                EnrolledAt = enrolledAt,
+                CreatedAt = enrolledAt,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false,
             });

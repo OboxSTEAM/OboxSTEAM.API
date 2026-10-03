@@ -21,6 +21,7 @@ public sealed class SeedMentorLoadTests
         "MNT-007",
         "MNT-008",
         "MNT-009",
+        SeedService.CapstoneDemoMentorCode,
     };
 
     private const int RaisedMaxConcurrentClasses = 5;
@@ -42,19 +43,21 @@ public sealed class SeedMentorLoadTests
                     pair.Value <= limit,
                     $"{pair.Key} concurrent load {pair.Value} exceeds the cap of {limit}.");
             });
-        // Maker Open (MNT-006) + current fail/rebuy cohort.
-        Assert.Equal(2, usage.GetValueOrDefault("MNT-006"));
+        // Current fail/rebuy cohort.
+        Assert.Equal(1, usage.GetValueOrDefault("MNT-006"));
         // Three Open rebuy classes (eligible / blocked / fresh).
         Assert.Equal(3, usage.GetValueOrDefault("MNT-007"));
-        // Art/Math expansion + Scratch demo + board pending.
-        Assert.Equal(5, usage.GetValueOrDefault("MNT-001"));
-        Assert.Equal(4, usage.GetValueOrDefault("MNT-002"));
-        Assert.Equal(3, usage.GetValueOrDefault("MNT-003"));
-        Assert.Equal(4, usage.GetValueOrDefault("MNT-004"));
+        // Art/Math expansion + board pending; capstone AI Robotics (MNT-005).
+        Assert.Equal(4, usage.GetValueOrDefault("MNT-001"));
+        Assert.Equal(3, usage.GetValueOrDefault("MNT-002"));
+        Assert.Equal(2, usage.GetValueOrDefault("MNT-003"));
+        Assert.Equal(3, usage.GetValueOrDefault("MNT-004"));
         Assert.Equal(3, usage.GetValueOrDefault("MNT-005"));
         // Spare assign-board mentors (MNT-008/009) carry no seed concurrent load.
         Assert.Equal(0, usage.GetValueOrDefault("MNT-008"));
         Assert.Equal(0, usage.GetValueOrDefault("MNT-009"));
+        // Capstone demo mentor holds only the Smart City class, leaving room for the live board request.
+        Assert.Equal(1, usage.GetValueOrDefault(SeedService.CapstoneDemoMentorCode));
     }
 
     [Fact]
@@ -158,6 +161,17 @@ public sealed class SeedMentorLoadTests
                 $"{pendingCode} has PendingPayment stacked beyond the in-progress cap.");
             Assert.Equal(1, usage.GetValueOrDefault(pendingCode));
         }
+    }
+
+    [Fact]
+    public void SeedAvatarPlan_GivesEveryAccountADistinctPortrait()
+    {
+        var plan = SeedService.SeedUserAvatarPlan;
+
+        Assert.Equal(plan.Length, plan.Select(p => p.UserCode).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Equal(plan.Length, plan.Select(p => p.AvatarUrl).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Contains(plan, p => p.UserCode == SeedService.CapstoneDemoMentorCode);
+        Assert.DoesNotContain(plan, p => p.UserCode.StartsWith("STD-CAP-", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

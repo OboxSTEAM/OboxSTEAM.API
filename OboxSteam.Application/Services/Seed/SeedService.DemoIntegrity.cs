@@ -215,12 +215,7 @@ public partial class SeedService
             failures.Add("Missing STD-001 portfolio fixture");
         }
 
-        var makerClass = await _unitOfWork.Classes.FirstOrDefaultAsync(
-            c => c.Code == "CLS-DEMO-MAKER-2026A" && !c.IsDeleted);
-        if (makerClass == null)
-        {
-            failures.Add("Missing Maker demo class CLS-DEMO-MAKER-2026A");
-        }
+        await CollectCapstoneDemoFailuresAsync(failures);
     }
 
     private async Task CollectActiveEnrollmentPaymentFailuresAsync(List<string> failures)

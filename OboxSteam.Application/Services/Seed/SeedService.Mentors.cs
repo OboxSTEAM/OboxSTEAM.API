@@ -126,6 +126,23 @@ public partial class SeedService
                 CreatedAt = _seedNow,
                 CreatedBy = Guid.Empty,
                 IsDeleted = false
+            },
+            // Capstone demo mentor: only the Smart City class, so the live board request has free capacity.
+            new()
+            {
+                Id = Guid.NewGuid(),
+                Code = CapstoneDemoMentorCode,
+                Email = "mentor10@oboxsteam.com",
+                PasswordHash = new PasswordHasher().HashPassword("Mentor@123")!,
+                FullName = "Daniel Mentor",
+                Phone = "0123456765",
+                Role = RoleType.Mentor,
+                Status = AccountStatus.Active,
+                IsEmailVerified = true,
+                MaxConcurrentClasses = 5,
+                CreatedAt = _seedNow,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false
             }
         };
 
@@ -253,6 +270,14 @@ public partial class SeedService
                 "Second spare mentor with open concurrent capacity for class assignment flows.",
                 "No seed class load — available for manager assignment to waiting cohorts.",
                 "https://www.linkedin.com/in/taylor-mentor-oboxsteam"
+            ),
+            (
+                CapstoneDemoMentorCode,
+                "Smart City & IoT Mentor",
+                "OboxSTEAM Connected Devices Studio",
+                "Guides students from IoT fundamentals to smart city prototypes with sensors, microcontrollers, and live labs.",
+                "Led smart traffic and environmental sensing projects with student teams; 6+ years in embedded systems.",
+                "https://www.linkedin.com/in/daniel-mentor-oboxsteam"
             ),
         };
 
@@ -445,7 +470,7 @@ public partial class SeedService
         };
 
         var skills = await _unitOfWork.Skills.GetAllAsync(s => !s.IsDeleted);
-        foreach (var spareMentorCode in new[] { "MNT-007", "MNT-008", "MNT-009" })
+        foreach (var spareMentorCode in new[] { "MNT-007", "MNT-008", "MNT-009", CapstoneDemoMentorCode })
         {
             foreach (var skill in skills.OrderBy(s => s.Code, StringComparer.OrdinalIgnoreCase))
             {
@@ -455,9 +480,12 @@ public partial class SeedService
                     SkillProficiencyLevel.Advanced,
                     6,
                     $"Can mentor {skill.Name} across STEAM cohorts.",
-                    spareMentorCode == "MNT-007"
-                        ? "Fail/rebuy mentor — full catalog coverage."
-                        : "Spare assign-board mentor — full catalog coverage for class requests.",
+                    spareMentorCode switch
+                    {
+                        "MNT-007" => "Fail/rebuy mentor — full catalog coverage.",
+                        CapstoneDemoMentorCode => "Capstone demo mentor — full catalog coverage for class requests.",
+                        _ => "Spare assign-board mentor — full catalog coverage for class requests.",
+                    },
                     true));
             }
         }

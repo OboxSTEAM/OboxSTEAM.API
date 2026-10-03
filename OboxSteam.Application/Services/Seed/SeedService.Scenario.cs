@@ -531,8 +531,7 @@ public partial class SeedService
 
         foreach (var definition in GetDemoProgramDefinitions())
         {
-            Add(definition.InProgressMentorCode);
-            Add(definition.OpenMentorCode);
+            Add(definition.MentorCode);
         }
 
         Add(FailRebuyMentorCode);
