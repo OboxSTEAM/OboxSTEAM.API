@@ -4,7 +4,8 @@
   Exclude SeedService, MediaService, PersonalVideoService and their dedicated
   DTOs / interfaces / helpers (not unit-tested). Shared types used by tested
   services (e.g. IFaceRecognitionService for AccountService) are kept.
-  Infrastructure / API / AWS adapters are not in the test project graph.
+  API / AWS adapters are not in the test project graph. Infrastructure is referenced
+  only for real-DbContext tests and is excluded from coverage.
   Run via: scripts/run-coverage.ps1
 -->
 <RunSettings>
@@ -15,6 +16,7 @@
           <Format>cobertura</Format>
 
           <Exclude>
+            [OboxSteam.Infrastructure]*,
             [*]OboxSteam.Application.Services.SeedService,
             [*]OboxSteam.Application.Services.MediaService,
             [*]OboxSteam.Application.Services.PersonalVideoService,

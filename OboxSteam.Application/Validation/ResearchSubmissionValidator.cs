@@ -515,7 +515,9 @@ public static class ResearchSubmissionValidator
 
     /// <summary>
     /// Links existing pipeline <see cref="MediaAsset"/> rows as evidence. Does not create media from URLs.
-    /// Soft-removes prior evidence links and soft-deletes media that drop out of the new set.
+    /// Diffs against current links: kept links are untouched, dropped links (and their media) are
+    /// soft-deleted, and new media IDs are linked. A soft-deleted link for the same media is restored
+    /// instead of re-inserted, because the composite key (SubmissionId, MediaId) still occupies the row.
     /// </summary>
     public static async Task ReplaceEvidenceMediaAsync(
         IUnitOfWork unitOfWork,
@@ -524,24 +526,26 @@ public static class ResearchSubmissionValidator
         Guid studentId,
         DateTime now)
     {
-        var existingEvidences = await unitOfWork.SubmissionEvidences.GetAllAsync(
-            se => se.SubmissionId == submission.Id && !se.IsDeleted);
+        var allEvidences = await unitOfWork.SubmissionEvidences.GetAllIncludingDeletedAsync(
+            se => se.SubmissionId == submission.Id);
+        var activeEvidences = allEvidences.Where(se => !se.IsDeleted).ToList();
+        var deletedEvidencesByMediaId = allEvidences
+            .Where(se => se.IsDeleted)
+            .ToDictionary(se => se.MediaId);
 
         var keepIds = evidenceMediaAssetIds?
             .Where(id => id != Guid.Empty)
             .Distinct()
             .ToHashSet() ?? [];
+        var linkedIds = activeEvidences.Select(se => se.MediaId).ToHashSet();
 
-        foreach (var evidence in existingEvidences)
+        foreach (var evidence in activeEvidences.Where(se => !keepIds.Contains(se.MediaId)))
         {
             await unitOfWork.SubmissionEvidences.SoftRemove(evidence);
 
-            if (!keepIds.Contains(evidence.MediaId))
-            {
-                var droppedMedia = await unitOfWork.MediaAssets.GetByIdAsync(evidence.MediaId);
-                if (droppedMedia != null && !droppedMedia.IsDeleted)
-                    await unitOfWork.MediaAssets.SoftRemove(droppedMedia);
-            }
+            var droppedMedia = await unitOfWork.MediaAssets.GetByIdAsync(evidence.MediaId);
+            if (droppedMedia != null && !droppedMedia.IsDeleted)
+                await unitOfWork.MediaAssets.SoftRemove(droppedMedia);
         }
 
         if (keepIds.Count == 0)
@@ -569,6 +573,18 @@ public static class ResearchSubmissionValidator
             {
                 throw ErrorHelper.Conflict(
                     $"Media asset '{mediaId}' is already linked to another submission.");
+            }
+
+            if (linkedIds.Contains(mediaId))
+                continue;
+
+            if (deletedEvidencesByMediaId.TryGetValue(mediaId, out var deletedEvidence))
+            {
+                deletedEvidence.IsDeleted = false;
+                deletedEvidence.DeletedAt = null;
+                deletedEvidence.DeletedBy = null;
+                await unitOfWork.SubmissionEvidences.Update(deletedEvidence);
+                continue;
             }
 
             var evidence = new SubmissionEvidence
