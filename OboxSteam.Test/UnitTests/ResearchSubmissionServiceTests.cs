@@ -1046,6 +1046,73 @@ public sealed class ResearchSubmissionServiceTests
         Assert.NotNull(result);
         Assert.Equal([mediaId], result!.EvidenceMediaAssetIds);
         Assert.Single(result.EvidenceUrls);
+        var evidence = Assert.Single(result.Evidences);
+        Assert.Equal(mediaId, evidence.MediaAssetId);
+        Assert.Equal("https://presigned.example.com/media/evidence.jpg", evidence.FileUrl);
+    }
+
+    [Fact]
+    public async Task GetSubmission_PairsEvidenceIdAndUrl_WhenVideoHasNoUrlYet()
+    {
+        SeedResearchCurriculum();
+        SeedAssignment();
+        SeedMilestone();
+        SeedStudentEnrollmentChain();
+        SeedSubmission(status: SubmissionStatus.TurnedIn, attemptNumber: 1);
+        var photoAId = Guid.Parse("f1f1f1f1-f1f1-f1f1-f1f1-f1f1f1f1f1f1");
+        var videoId = Guid.Parse("f2f2f2f2-f2f2-f2f2-f2f2-f2f2f2f2f2f2");
+        var photoBId = Guid.Parse("f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3");
+        _db.MediaAssets.Seed(
+            new MediaAsset
+            {
+                Id = photoAId,
+                UploaderId = _studentId,
+                ClassId = _classId,
+                FileType = "image",
+                FileUrl = "https://cdn.example.com/media/a.jpg",
+                VideoStatus = VideoProcessingStatus.None,
+            },
+            new MediaAsset
+            {
+                Id = videoId,
+                UploaderId = _studentId,
+                ClassId = _classId,
+                FileType = "video",
+                FileUrl = null,
+                VideoStatus = VideoProcessingStatus.Transcoding,
+            },
+            new MediaAsset
+            {
+                Id = photoBId,
+                UploaderId = _studentId,
+                ClassId = _classId,
+                FileType = "image",
+                FileUrl = "https://cdn.example.com/media/b.jpg",
+                VideoStatus = VideoProcessingStatus.None,
+            });
+        foreach (var mediaId in new[] { photoAId, videoId, photoBId })
+        {
+            _db.SubmissionEvidences.Seed(new SubmissionEvidence
+            {
+                SubmissionId = _submissionId,
+                MediaId = mediaId,
+                CreatedBy = _studentId,
+            });
+        }
+        var sut = CreateSut();
+
+        var result = await sut.GetSubmission(_submissionId);
+
+        Assert.NotNull(result);
+        Assert.Equal([photoAId, videoId, photoBId], result!.EvidenceMediaAssetIds);
+        Assert.Equal(2, result.EvidenceUrls.Count);
+        Assert.Equal(3, result.Evidences.Count);
+        var byId = result.Evidences.ToDictionary(e => e.MediaAssetId);
+        Assert.Equal("https://presigned.example.com/media/a.jpg", byId[photoAId].FileUrl);
+        Assert.Null(byId[videoId].FileUrl);
+        Assert.Equal("video", byId[videoId].FileType);
+        Assert.Equal(VideoProcessingStatus.Transcoding, byId[videoId].VideoStatus);
+        Assert.Equal("https://presigned.example.com/media/b.jpg", byId[photoBId].FileUrl);
     }
 
     [Fact]

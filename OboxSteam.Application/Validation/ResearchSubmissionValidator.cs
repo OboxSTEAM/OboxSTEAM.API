@@ -468,7 +468,7 @@ public static class ResearchSubmissionValidator
         return milestones.Select(rm => rm.Id).ToList();
     }
 
-    public static async Task<(List<Guid> MediaAssetIds, List<string> FileUrls)> LoadEvidenceAsync(
+    public static async Task<List<ResearchSubmissionEvidenceDto>> LoadEvidenceItemsAsync(
         IUnitOfWork unitOfWork,
         Guid submissionId)
     {
@@ -476,8 +476,7 @@ public static class ResearchSubmissionValidator
             se => se.SubmissionId == submissionId && !se.IsDeleted,
             se => se.Media);
 
-        var mediaAssetIds = new List<Guid>();
-        var fileUrls = new List<string>();
+        var items = new List<ResearchSubmissionEvidenceDto>();
 
         foreach (var evidence in evidences)
         {
@@ -489,10 +488,28 @@ public static class ResearchSubmissionValidator
                     continue;
             }
 
-            mediaAssetIds.Add(evidence.MediaId);
-            if (!string.IsNullOrWhiteSpace(media.FileUrl))
-                fileUrls.Add(media.FileUrl);
+            items.Add(new ResearchSubmissionEvidenceDto
+            {
+                MediaAssetId = evidence.MediaId,
+                FileUrl = string.IsNullOrWhiteSpace(media.FileUrl) ? null : media.FileUrl,
+                FileType = media.FileType,
+                VideoStatus = media.VideoStatus
+            });
         }
+
+        return items;
+    }
+
+    public static async Task<(List<Guid> MediaAssetIds, List<string> FileUrls)> LoadEvidenceAsync(
+        IUnitOfWork unitOfWork,
+        Guid submissionId)
+    {
+        var items = await LoadEvidenceItemsAsync(unitOfWork, submissionId);
+        var mediaAssetIds = items.Select(i => i.MediaAssetId).ToList();
+        var fileUrls = items
+            .Where(i => i.FileUrl != null)
+            .Select(i => i.FileUrl!)
+            .ToList();
 
         return (mediaAssetIds, fileUrls);
     }

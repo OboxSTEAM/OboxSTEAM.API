@@ -23,6 +23,13 @@ public class ResearchSubmissionResponseDto
     /// <c>EvidenceMediaAssetIds</c> when the student keeps existing evidence.
     /// </summary>
     public List<Guid> EvidenceMediaAssetIds { get; set; } = [];
+
+    /// <summary>
+    /// Linked evidence with id and URL paired per item. Prefer this over pairing
+    /// <see cref="EvidenceUrls"/> with <see cref="EvidenceMediaAssetIds"/> by index,
+    /// because <see cref="EvidenceUrls"/> omits media that has no URL yet.
+    /// </summary>
+    public List<ResearchSubmissionEvidenceDto> Evidences { get; set; } = [];
     public decimal? AssignedGrade { get; set; }
     public decimal PassScore { get; set; }
     public int MaxPoints { get; set; }

@@ -666,18 +666,19 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         Assignment assignment,
         bool? passed = null)
     {
-        var (evidenceMediaIds, evidenceUrls) = await ResearchSubmissionValidator.LoadEvidenceAsync(
+        var evidences = await ResearchSubmissionValidator.LoadEvidenceItemsAsync(
             _unitOfWork,
             submission.Id);
-        var resolvedEvidenceUrls = new List<string>(evidenceUrls.Count);
-        foreach (var evidenceUrl in evidenceUrls)
+        foreach (var evidence in evidences)
         {
-            var resolved = await ResolvePresignedFileUrlAsync(evidenceUrl);
-            if (!string.IsNullOrWhiteSpace(resolved))
-            {
-                resolvedEvidenceUrls.Add(resolved);
-            }
+            var resolved = await ResolvePresignedFileUrlAsync(evidence.FileUrl);
+            evidence.FileUrl = string.IsNullOrWhiteSpace(resolved) ? null : resolved;
         }
+
+        var resolvedEvidenceUrls = evidences
+            .Where(e => e.FileUrl != null)
+            .Select(e => e.FileUrl!)
+            .ToList();
 
         return new ResearchSubmissionResponseDto
         {
@@ -692,7 +693,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             ContentText = submission.ContentText,
             FileUrl = await ResolvePresignedFileUrlAsync(submission.FileUrl),
             EvidenceUrls = resolvedEvidenceUrls,
-            EvidenceMediaAssetIds = evidenceMediaIds,
+            EvidenceMediaAssetIds = evidences.Select(e => e.MediaAssetId).ToList(),
+            Evidences = evidences,
             AssignedGrade = submission.AssignedGrade,
             PassScore = assignment.PassScore,
             MaxPoints = assignment.MaxPoints,
