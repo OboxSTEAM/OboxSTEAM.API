@@ -117,6 +117,8 @@ public partial class SeedService : ISeedService
         // Safety-net before windows so leftover-fail cannot AcademicFail mid-seed.
         await SeedTaughtModuleAssessmentSafetyNetAsync();
         await EnsureAssignmentWorkWindowsAsync();
+        // Demo flow classes: no time-locked quiz or milestone.
+        await OpenCapstoneAssignmentWindowsAsync();
         await SeedPassedSubmissionsForElapsedRequiredWindowsAsync();
         await AlignInProgressCurriculumToClassTimetableAsync();
         await SeedCertTestProgressAsync();

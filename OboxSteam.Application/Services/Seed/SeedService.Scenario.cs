@@ -532,6 +532,10 @@ public partial class SeedService
         foreach (var definition in GetDemoProgramDefinitions())
         {
             Add(definition.MentorCode);
+            foreach (var openClass in definition.AdditionalOpenClasses)
+            {
+                Add(openClass.MentorCode);
+            }
         }
 
         Add(FailRebuyMentorCode);

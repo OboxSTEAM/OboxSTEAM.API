@@ -487,12 +487,18 @@ public partial class SeedService
 
         foreach (var demo in GetDemoProgramDefinitions())
         {
-            if (!classByCode.TryGetValue(demo.ClassCode, out var classEntity))
+            if (classByCode.TryGetValue(demo.ClassCode, out var classEntity))
             {
-                continue;
+                updated += await RealignClassSessionWallClocksAsync(classEntity, DemoSatSunMorning);
             }
 
-            updated += await RealignClassSessionWallClocksAsync(classEntity, DemoSatSunMorning);
+            foreach (var openClass in demo.AdditionalOpenClasses)
+            {
+                if (classByCode.TryGetValue(openClass.ClassCode, out var openClassEntity))
+                {
+                    updated += await RealignClassSessionWallClocksAsync(openClassEntity, openClass.WeeklySlots);
+                }
+            }
         }
 
         if (updated == 0)

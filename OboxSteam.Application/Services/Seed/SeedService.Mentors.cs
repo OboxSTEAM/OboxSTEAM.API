@@ -260,7 +260,7 @@ public partial class SeedService
                 "Assign-Board Ready Mentor",
                 "OboxSTEAM Talent Pool",
                 "Spare mentor with open concurrent capacity for ReadyForMentor / assign-board demos.",
-                "No seed class load — available for manager assignment to waiting cohorts.",
+                "One Open weekend cohort (Smart City IoT Lab C) — weekday evenings free for waiting cohorts.",
                 "https://www.linkedin.com/in/jordan-mentor-oboxsteam"
             ),
             (
@@ -268,7 +268,7 @@ public partial class SeedService
                 "Assign-Board Ready Mentor",
                 "OboxSTEAM Talent Pool",
                 "Second spare mentor with open concurrent capacity for class assignment flows.",
-                "No seed class load — available for manager assignment to waiting cohorts.",
+                "One Open afternoon cohort (AI Robotics Explorer C) — weekday evenings free for waiting cohorts.",
                 "https://www.linkedin.com/in/taylor-mentor-oboxsteam"
             ),
             (

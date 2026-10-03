@@ -47,15 +47,15 @@ public sealed class SeedMentorLoadTests
         Assert.Equal(1, usage.GetValueOrDefault("MNT-006"));
         // Three Open rebuy classes (eligible / blocked / fresh).
         Assert.Equal(3, usage.GetValueOrDefault("MNT-007"));
-        // Art/Math expansion + board pending; capstone AI Robotics (MNT-005).
+        // Art/Math expansion + board pending; capstone AI Robotics (MNT-005), Smart City Cohort B (MNT-002).
         Assert.Equal(4, usage.GetValueOrDefault("MNT-001"));
-        Assert.Equal(3, usage.GetValueOrDefault("MNT-002"));
+        Assert.Equal(4, usage.GetValueOrDefault("MNT-002"));
         Assert.Equal(2, usage.GetValueOrDefault("MNT-003"));
         Assert.Equal(3, usage.GetValueOrDefault("MNT-004"));
         Assert.Equal(3, usage.GetValueOrDefault("MNT-005"));
-        // Spare assign-board mentors (MNT-008/009) carry no seed concurrent load.
-        Assert.Equal(0, usage.GetValueOrDefault("MNT-008"));
-        Assert.Equal(0, usage.GetValueOrDefault("MNT-009"));
+        // Spare assign-board mentors each hold one Open capstone cohort, keeping room for the board.
+        Assert.Equal(1, usage.GetValueOrDefault("MNT-008"));
+        Assert.Equal(1, usage.GetValueOrDefault("MNT-009"));
         // Capstone demo mentor holds only the Smart City class, leaving room for the live board request.
         Assert.Equal(1, usage.GetValueOrDefault(SeedService.CapstoneDemoMentorCode));
     }
@@ -172,6 +172,25 @@ public sealed class SeedMentorLoadTests
         Assert.Equal(plan.Length, plan.Select(p => p.AvatarUrl).Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.Contains(plan, p => p.UserCode == SeedService.CapstoneDemoMentorCode);
         Assert.DoesNotContain(plan, p => p.UserCode.StartsWith("STD-CAP-", StringComparison.OrdinalIgnoreCase));
+        Assert.All(
+            SeedService.CapstoneOpenClassStudentAccounts,
+            account => Assert.Contains(plan, p => p.UserCode == account.Code));
+    }
+
+    [Fact]
+    public void SeedRoster_CapstoneOpenCohortStudents_HoldOneProgramAndOneClass()
+    {
+        var programUsage = SeedService.CountSeedInProgressProgramEnrollments();
+        var classUsage = SeedService.CountSeedActiveClassEnrollments();
+
+        Assert.Equal(18, SeedService.CapstoneOpenClassStudentAccounts.Length);
+        Assert.All(
+            SeedService.CapstoneOpenClassStudentAccounts,
+            account =>
+            {
+                Assert.Equal(1, programUsage.GetValueOrDefault(account.Code));
+                Assert.Equal(1, classUsage.GetValueOrDefault(account.Code));
+            });
     }
 
     [Fact]

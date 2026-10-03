@@ -15,7 +15,7 @@ public partial class SeedService
     internal static IReadOnlyDictionary<string, string[]> GetDemoStudentCodesByProgram()
         => GetDemoProgramDefinitions().ToDictionary(
             d => d.ProgramCode,
-            d => d.StudentCodes,
+            d => d.AllStudentCodes,
             StringComparer.OrdinalIgnoreCase);
 
     private async Task SeedDemoShowcaseProgramsAsync()
@@ -135,6 +135,17 @@ public partial class SeedService
 
     private sealed record DemoMilestoneDefinition(string Title, string Description, string AssignmentTitle);
 
+    /// <summary>Extra Open cohort shown on the program page (tuyển sinh), partly filled with paid students.</summary>
+    private sealed record DemoOpenClassDefinition(
+        string ClassCode,
+        string ClassName,
+        int StartDaysOffset,
+        int EndDaysOffset,
+        string ScheduleSummary,
+        string MentorCode,
+        SeedTimeline.WeekdaySlot[] WeeklySlots,
+        string[] StudentCodes);
+
     private sealed record DemoProgramDefinition(
         string ProgramCode,
         string Slug,
@@ -176,8 +187,15 @@ public partial class SeedService
         DemoMilestoneDefinition DesignMilestone,
         DemoMilestoneDefinition PrototypeMilestone,
         DemoMilestoneDefinition CapstoneMilestone,
-        (string Text, int Difficulty, string[] Options)[] BankQuestions)
+        (string Text, int Difficulty, string[] Options)[] BankQuestions,
+        DemoOpenClassDefinition[] AdditionalOpenClasses)
     {
+        public string[] AllStudentCodes
+            => StudentCodes
+                .Concat(AdditionalOpenClasses.SelectMany(c => c.StudentCodes))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
         public string ModuleCode(int order) => $"MOD-CAP-{Slug}-{order:D2}";
 
         public string ActivityCode(int moduleOrder, int activityOrder)
@@ -244,7 +262,19 @@ public partial class SeedService
                 "Capstone: Robot Final Report",
                 "Upload your final report and showcase slides explaining how your robot works and what you learned.",
                 "Upload Robot Final Report"),
-            BankQuestions: AiRoboticsBankQuestions),
+            BankQuestions: AiRoboticsBankQuestions,
+            AdditionalOpenClasses:
+            [
+                new(
+                    "CLS-CAP-AIROBOT-2026C",
+                    "AI Robotics Explorer Cohort C",
+                    StartDaysOffset: 21,
+                    EndDaysOffset: 49,
+                    "Monday & Wednesday 14:00-16:00",
+                    "MNT-009",
+                    CapstoneMonWedAfternoon,
+                    ["STD-053", "STD-054", "STD-055", "STD-056", "STD-057", "STD-058"]),
+            ]),
         new(
             ProgramCode: CapstoneLiveProgramCode,
             Slug: "SMARTCITY",
@@ -302,7 +332,46 @@ public partial class SeedService
                 "Capstone: Smart City Final Report",
                 "Upload your final report and showcase slides explaining how your prototype helps the city.",
                 "Upload Smart City Final Report"),
-            BankQuestions: SmartCityBankQuestions),
+            BankQuestions: SmartCityBankQuestions,
+            AdditionalOpenClasses:
+            [
+                new(
+                    "CLS-CAP-SMARTCITY-2026B",
+                    "Smart City IoT Lab Cohort B",
+                    StartDaysOffset: 21,
+                    EndDaysOffset: 49,
+                    "Tuesday & Thursday 18:00-20:00",
+                    "MNT-002",
+                    CapstoneTueThuEvening,
+                    ["STD-041", "STD-042", "STD-043", "STD-044", "STD-045", "STD-046", "STD-047"]),
+                new(
+                    "CLS-CAP-SMARTCITY-2026C",
+                    "Smart City IoT Lab Cohort C",
+                    StartDaysOffset: 28,
+                    EndDaysOffset: 56,
+                    "Saturday & Sunday 14:00-16:00",
+                    "MNT-008",
+                    CapstoneSatSunAfternoon,
+                    ["STD-048", "STD-049", "STD-050", "STD-051", "STD-052"]),
+            ]),
+    ];
+
+    private static readonly SeedTimeline.WeekdaySlot[] CapstoneTueThuEvening =
+    [
+        new(DayOfWeek.Tuesday, 18, 0, 120),
+        new(DayOfWeek.Thursday, 18, 0, 120),
+    ];
+
+    private static readonly SeedTimeline.WeekdaySlot[] CapstoneSatSunAfternoon =
+    [
+        new(DayOfWeek.Saturday, 14, 0, 120),
+        new(DayOfWeek.Sunday, 14, 0, 120),
+    ];
+
+    private static readonly SeedTimeline.WeekdaySlot[] CapstoneMonWedAfternoon =
+    [
+        new(DayOfWeek.Monday, 14, 0, 120),
+        new(DayOfWeek.Wednesday, 14, 0, 120),
     ];
 
     // First option is the correct answer; options are shuffled at draw time. Difficulty 1-2 only (easy pool).
@@ -522,23 +591,59 @@ public partial class SeedService
             startDate: seedTime.AddDays(definition.ClassStartDaysOffset),
             endDate: seedTime.AddDays(definition.ClassEndDaysOffset));
 
-        await EnsureDemoClassSessionsAsync(
-            classEntity,
-            [
-                (experientialModule.Id, experientialLive, SessionKind.LiveOnline),
-                (experientialModule.Id, experientialOffline, SessionKind.Offline),
-                (researchModule.Id, researchOffline, SessionKind.Offline),
-            ],
-            seedTime);
+        IReadOnlyList<(Guid ModuleId, Activity Activity, SessionKind Kind)> sessionDefs =
+        [
+            (experientialModule.Id, experientialLive, SessionKind.LiveOnline),
+            (experientialModule.Id, experientialOffline, SessionKind.Offline),
+            (researchModule.Id, researchOffline, SessionKind.Offline),
+        ];
+        Module[] modules = [theoryModule, experientialModule, researchModule];
+        Course[] courses = [theoryCourse, experientialCourse, researchCourse];
 
-        await PruneDemoStudentEnrollmentsAsync(program, definition.StudentCodes);
+        await EnsureDemoClassSessionsAsync(classEntity, sessionDefs, DemoSatSunMorning, seedTime);
+
+        await PruneDemoStudentEnrollmentsAsync(program, definition.AllStudentCodes);
         await EnsureDemoStudentEnrollmentsAsync(
             program,
             definition.StudentCodes,
-            [theoryModule, experientialModule, researchModule],
-            [theoryCourse, experientialCourse, researchCourse],
+            modules,
+            courses,
             classEntity,
             seedTime);
+
+        foreach (var openClass in definition.AdditionalOpenClasses)
+        {
+            var openClassMentor = await _unitOfWork.Users.FirstOrDefaultAsync(
+                u => u.Code == openClass.MentorCode && u.Role == RoleType.Mentor && !u.IsDeleted);
+            if (openClassMentor == null)
+            {
+                _loggerService.LogWarning(
+                    "Skipping open class {ClassCode}: mentor {MentorCode} not found.",
+                    openClass.ClassCode,
+                    openClass.MentorCode);
+                continue;
+            }
+
+            var openClassEntity = await EnsureDemoClassAsync(
+                program.Id,
+                openClassMentor.Id,
+                openClass.ClassCode,
+                openClass.ClassName,
+                openClass.ScheduleSummary,
+                seedTime,
+                ClassStatus.Open,
+                startDate: seedTime.AddDays(openClass.StartDaysOffset),
+                endDate: seedTime.AddDays(openClass.EndDaysOffset));
+
+            await EnsureDemoClassSessionsAsync(openClassEntity, sessionDefs, openClass.WeeklySlots, seedTime);
+            await EnsureDemoStudentEnrollmentsAsync(
+                program,
+                openClass.StudentCodes,
+                modules,
+                courses,
+                openClassEntity,
+                seedTime);
+        }
     }
 
     private async Task<Program> EnsureDemoProgramAsync(DemoProgramDefinition definition, DateTime seedTime)
@@ -1059,12 +1164,13 @@ public partial class SeedService
     }
 
     /// <summary>
-    /// One session per LiveOnline/Offline activity on the Saturday/Sunday morning grid.
+    /// One session per LiveOnline/Offline activity on the class's weekly grid.
     /// The InProgress capstone class is re-pinned to the seed clock by <c>ApplyCapstoneLiveSessionsAsync</c>.
     /// </summary>
     private async Task EnsureDemoClassSessionsAsync(
         Class classEntity,
         IReadOnlyList<(Guid ModuleId, Activity Activity, SessionKind Kind)> sessionDefs,
+        SeedTimeline.WeekdaySlot[] weeklySlots,
         DateTime seedTime)
     {
         var sessionsToAdd = new List<ClassSession>();
@@ -1080,7 +1186,7 @@ public partial class SeedService
             var slot = SeedTimeline.TryResolveSlotSequence(
                 classEntity.StartDate,
                 classEntity.EndDate,
-                DemoSatSunMorning,
+                weeklySlots,
                 sessionIndex);
             if (slot == null)
             {

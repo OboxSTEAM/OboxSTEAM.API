@@ -164,6 +164,133 @@ public partial class SeedService
         return SeedTimeline.ToUtc(localDate, new TimeOnly(18, 0), vietnam);
     }
 
+    private static readonly string[] CapstoneUnlockedWindowClassCodes = [CapstoneBuyClassCode, CapstoneLiveClassCode];
+
+    /// <summary>
+    /// Opens every assignment window on the two flow classes from seed time (or class start, if earlier)
+    /// until the end of the class end day, so no quiz or milestone is time-locked during the demo.
+    /// Module prerequisites and self-paced-before-assignment locks still apply. Must run after
+    /// <c>EnsureAssignmentWorkWindowsAsync</c>, which places windows from the live timetable.
+    /// </summary>
+    private async Task OpenCapstoneAssignmentWindowsAsync()
+    {
+        var seedTime = _seedNow;
+        var opened = 0;
+
+        foreach (var classCode in CapstoneUnlockedWindowClassCodes)
+        {
+            var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
+                c => c.Code == classCode && !c.IsDeleted);
+            if (classEntity == null)
+            {
+                _loggerService.LogWarning("Capstone window unlock skipped: class {ClassCode} not found.", classCode);
+                continue;
+            }
+
+            var moduleIds = (await _unitOfWork.Modules.GetAllAsync(
+                    m => m.ProgramId == classEntity.ProgramId && !m.IsDeleted))
+                .Select(m => m.Id)
+                .ToList();
+            var assignments = await _unitOfWork.Assignments.GetAllAsync(
+                a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted);
+            var windows = await _unitOfWork.ClassSessions.GetAllAsync(
+                cs => cs.ClassId == classEntity.Id
+                      && cs.SessionKind == SessionKind.AssignmentWindow
+                      && cs.AssignmentId != null
+                      && !cs.IsDeleted);
+
+            var windowStart = classEntity.StartDate < seedTime ? classEntity.StartDate : seedTime.AddHours(-1);
+            var windowEnd = AssignmentWindowPlacement.EndOfClassDay(classEntity.EndDate);
+            var status = SeedTimeline.ResolveSessionStatus(windowStart, windowEnd, seedTime);
+
+            for (var index = 0; index < assignments.Count; index++)
+            {
+                var assignment = assignments[index];
+                var window = windows
+                    .Where(cs => cs.AssignmentId == assignment.Id)
+                    .OrderBy(cs => cs.StartTime)
+                    .FirstOrDefault();
+                if (window == null)
+                {
+                    await _unitOfWork.ClassSessions.AddAsync(
+                        CreateSeedAssignmentWindow(classEntity, assignment, windowStart, windowEnd, venueOrdinal: 100 + index));
+                    opened++;
+                    continue;
+                }
+
+                window.StartTime = windowStart;
+                window.EndTime = windowEnd;
+                window.Status = status;
+                window.UpdatedAt = seedTime;
+                window.UpdatedBy = Guid.Empty;
+                await _unitOfWork.ClassSessions.Update(window);
+                opened++;
+            }
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Capstone assignment windows opened until class end: {Count} window(s) on {ClassCodes}.",
+            opened,
+            string.Join(", ", CapstoneUnlockedWindowClassCodes));
+    }
+
+    private async Task CollectCapstoneWindowFailuresAsync(List<string> failures)
+    {
+        var seedTime = _seedNow;
+        foreach (var classCode in CapstoneUnlockedWindowClassCodes)
+        {
+            var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
+                c => c.Code == classCode && !c.IsDeleted);
+            if (classEntity == null)
+            {
+                continue;
+            }
+
+            var moduleIds = (await _unitOfWork.Modules.GetAllAsync(
+                    m => m.ProgramId == classEntity.ProgramId && !m.IsDeleted))
+                .Select(m => m.Id)
+                .ToList();
+            var assignments = await _unitOfWork.Assignments.GetAllAsync(
+                a => moduleIds.Contains(a.ModuleId) && !a.IsDeleted);
+            var openAssignmentIds = (await _unitOfWork.ClassSessions.GetAllAsync(
+                    cs => cs.ClassId == classEntity.Id
+                          && cs.SessionKind == SessionKind.AssignmentWindow
+                          && cs.AssignmentId != null
+                          && cs.Status != ClassSessionStatus.Cancelled
+                          && cs.StartTime <= seedTime
+                          && cs.EndTime > seedTime
+                          && !cs.IsDeleted))
+                .Select(cs => cs.AssignmentId!.Value)
+                .ToHashSet();
+
+            var locked = assignments.Count(a => !openAssignmentIds.Contains(a.Id));
+            if (locked > 0)
+            {
+                failures.Add($"{classCode} has {locked} assignment(s) without an open window at seed time");
+            }
+        }
+
+        foreach (var openClass in GetDemoProgramDefinitions().SelectMany(d => d.AdditionalOpenClasses))
+        {
+            var classEntity = await _unitOfWork.Classes.FirstOrDefaultAsync(
+                c => c.Code == openClass.ClassCode && !c.IsDeleted);
+            if (classEntity == null || classEntity.Status != ClassStatus.Open)
+            {
+                failures.Add($"Capstone open cohort {openClass.ClassCode} missing or not Open");
+                continue;
+            }
+
+            var seats = await _unitOfWork.ClassEnrollments.GetAllAsync(
+                ce => ce.ClassId == classEntity.Id && ce.Status == ClassEnrollmentStatus.Active && !ce.IsDeleted);
+            if (seats.Count != openClass.StudentCodes.Length)
+            {
+                failures.Add(
+                    $"Capstone open cohort {openClass.ClassCode} has {seats.Count} Active seat(s), expected {openClass.StudentCodes.Length}");
+            }
+        }
+    }
+
     private async Task ApplyDemoSessionClockAsync(
         ClassSession session,
         SessionKind kind,
@@ -608,6 +735,8 @@ public partial class SeedService
 
     private async Task CollectCapstoneDemoFailuresAsync(List<string> failures)
     {
+        await CollectCapstoneWindowFailuresAsync(failures);
+
         var buyClass = await _unitOfWork.Classes.FirstOrDefaultAsync(
             c => c.Code == CapstoneBuyClassCode && !c.IsDeleted);
         if (buyClass == null || buyClass.Status != ClassStatus.Open)

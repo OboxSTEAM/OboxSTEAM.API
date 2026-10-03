@@ -84,6 +84,26 @@ public partial class SeedService
         ("STD-RV10", MalePortrait(38)),
         ("STD-RV11", FemalePortrait(63)),
         ("STD-RV12", MalePortrait(42)),
+
+        // Open-cohort filler students on the capstone programs.
+        ("STD-041", MalePortrait(23)),
+        ("STD-042", FemalePortrait(10)),
+        ("STD-043", MalePortrait(28)),
+        ("STD-044", FemalePortrait(11)),
+        ("STD-045", MalePortrait(33)),
+        ("STD-046", FemalePortrait(15)),
+        ("STD-047", MalePortrait(52)),
+        ("STD-048", FemalePortrait(23)),
+        ("STD-049", MalePortrait(64)),
+        ("STD-050", FemalePortrait(28)),
+        ("STD-051", MalePortrait(74)),
+        ("STD-052", FemalePortrait(37)),
+        ("STD-053", MalePortrait(76)),
+        ("STD-054", FemalePortrait(45)),
+        ("STD-055", MalePortrait(77)),
+        ("STD-056", FemalePortrait(46)),
+        ("STD-057", MalePortrait(97)),
+        ("STD-058", FemalePortrait(54)),
     ];
 
     /// <summary>
