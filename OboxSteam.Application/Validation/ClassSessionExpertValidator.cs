@@ -120,6 +120,15 @@ public static class ClassSessionExpertValidator
         }
     }
 
+    public static void ValidateSessionNotInFutureForFeedback(ClassSession session, DateTime utcNow)
+    {
+        if (session.StartTime > utcNow)
+        {
+            throw ErrorHelper.Conflict(
+                "Feedback cannot be submitted before the session starts.");
+        }
+    }
+
     public static void ValidateFeedbackPayload(string? comment, int rating)
     {
         if (string.IsNullOrWhiteSpace(comment))

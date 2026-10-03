@@ -40,7 +40,7 @@ Multiple Invited or Accepted experts per session; the same expert cannot
 hold two active invites on one session. Manager may withdraw while
 `Invited`. Changing session `StartTime` / `EndTime` clears Invited and
 Accepted links (Declined stays) and the manager may invite again. Private mentor feedback is stored on each row after
-the session is Completed (`PUT /api/class-session-experts/{id}/feedback`;
+the session is Completed and its start is not in the future (`PUT /api/class-session-experts/{id}/feedback`;
 students must not see it).
 
 ## Module

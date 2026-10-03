@@ -156,6 +156,14 @@ public sealed class ClassSessionExpertServiceTests
         return invitation;
     }
 
+    private void MarkSessionCompletedInThePast()
+    {
+        var session = _db.ClassSessions.Items[0];
+        session.Status = ClassSessionStatus.Completed;
+        session.StartTime = _now.AddHours(-3);
+        session.EndTime = _now.AddHours(-1);
+    }
+
     [Fact]
     public async Task Invite_CreatesInvitedRow_AndNotifiesExpert()
     {
@@ -326,7 +334,7 @@ public sealed class ClassSessionExpertServiceTests
     {
         SeedUsersAndClass();
         SeedInvitation(ClassSessionExpertStatus.Accepted);
-        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        MarkSessionCompletedInThePast();
         var sut = CreateSut(_expertUserId);
 
         var result = await sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
@@ -358,7 +366,7 @@ public sealed class ClassSessionExpertServiceTests
         invitation.MentorFeedback = "First note";
         invitation.MentorFeedbackRating = 3;
         invitation.MentorFeedbackAt = _now.AddHours(-2);
-        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        MarkSessionCompletedInThePast();
         var sut = CreateSut(_expertUserId);
 
         var result = await sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
@@ -410,6 +418,24 @@ public sealed class ClassSessionExpertServiceTests
     }
 
     [Fact]
+    public async Task SubmitFeedback_Throws_WhenSessionStartIsInTheFuture()
+    {
+        SeedUsersAndClass();
+        SeedInvitation(ClassSessionExpertStatus.Accepted);
+        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        var sut = CreateSut(_expertUserId);
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() =>
+            sut.SubmitFeedbackAsync(_invitationId, new SubmitClassSessionExpertFeedbackDto
+            {
+                Comment = "Session has not started",
+                Rating = 4,
+            }));
+
+        Assert.Contains("before the session starts", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SubmitFeedback_Throws_WhenSessionNotCompleted()
     {
         SeedUsersAndClass();
@@ -445,7 +471,7 @@ public sealed class ClassSessionExpertServiceTests
     {
         SeedUsersAndClass();
         SeedInvitation(ClassSessionExpertStatus.Accepted);
-        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        MarkSessionCompletedInThePast();
         var sut = CreateSut(_expertUserId);
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
@@ -461,7 +487,7 @@ public sealed class ClassSessionExpertServiceTests
     {
         SeedUsersAndClass();
         SeedInvitation(ClassSessionExpertStatus.Accepted);
-        _db.ClassSessions.Items[0].Status = ClassSessionStatus.Completed;
+        MarkSessionCompletedInThePast();
         var sut = CreateSut(_expertUserId);
 
         await Assert.ThrowsAsync<BadRequestException>(() =>

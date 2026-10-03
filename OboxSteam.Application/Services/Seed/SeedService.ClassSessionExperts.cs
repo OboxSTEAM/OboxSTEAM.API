@@ -7,7 +7,7 @@ namespace OboxSteam.Application.Services;
 /// <summary>
 /// EXP co-teach fixtures:
 /// <list type="bullet">
-/// <item>Maker Lab Adventures (CLS-DEMO-MAKER-2026A) — Slice-2 QR/check-in + feedback Offline.</item>
+/// <item>Maker Lab Adventures (CLS-DEMO-MAKER-2026A) — Slice-2 QR/check-in Offline, plus the research Offline left on the calendar.</item>
 /// <item>Active Art/Math cohorts — Accepted Offline co-teach so catalog programs show expert presence.</item>
 /// </list>
 /// Idempotent for re-seed.
@@ -96,8 +96,8 @@ public partial class SeedService
             ? null
             : offlineSessions.FirstOrDefault(s => s.ActivityId == joinableOfflineActivity.Id);
 
-        // Feedback fixture: prefer a non-joinable Offline (research lab). Never force
-        // Completed on the Slice-2 joinable Offline — that breaks QR / check-in tests.
+        // Research Offline stays on the calendar. Never force Completed, and never
+        // touch the Slice-2 joinable Offline — that breaks QR / check-in tests.
         var feedbackOffline = offlineSessions.FirstOrDefault(
             s => joinableOffline == null || s.Id != joinableOffline.Id);
         if (feedbackOffline == null)
@@ -105,14 +105,21 @@ public partial class SeedService
             feedbackOffline = offlineSessions[0];
         }
 
-        if (feedbackOffline.Status != ClassSessionStatus.Completed
-            && (joinableOffline == null || feedbackOffline.Id != joinableOffline.Id))
+        if (joinableOffline == null || feedbackOffline.Id != joinableOffline.Id)
         {
-            feedbackOffline.Status = ClassSessionStatus.Completed;
-            await _unitOfWork.ClassSessions.Update(feedbackOffline);
-            _loggerService.LogInformation(
-                "Forced Maker research Offline {SessionId} to Completed so EXP-001 can test co-teach feedback.",
-                feedbackOffline.Id);
+            var resolved = SeedTimeline.ResolveSessionStatus(
+                feedbackOffline.StartTime,
+                feedbackOffline.EndTime,
+                _seedNow);
+            if (feedbackOffline.Status != resolved)
+            {
+                feedbackOffline.Status = resolved;
+                await _unitOfWork.ClassSessions.Update(feedbackOffline);
+                _loggerService.LogInformation(
+                    "Aligned Maker research Offline {SessionId} to {Status} from the session clock.",
+                    feedbackOffline.Id,
+                    resolved);
+            }
         }
 
         var seeded = 0;

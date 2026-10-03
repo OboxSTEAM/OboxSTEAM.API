@@ -325,6 +325,7 @@ public sealed class ClassSessionExpertService : IClassSessionExpertService
 
         var (session, classEntity, loadedExpert) = await LoadGraphAsync(invitation);
         ClassSessionExpertValidator.ValidateSessionCompletedForFeedback(session);
+        ClassSessionExpertValidator.ValidateSessionNotInFutureForFeedback(session, DateTime.UtcNow);
         ClassSessionExpertValidator.ValidateFeedbackPayload(request.Comment, request.Rating);
 
         invitation.MentorFeedback = request.Comment.Trim();

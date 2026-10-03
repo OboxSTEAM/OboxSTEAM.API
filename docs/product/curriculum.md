@@ -516,9 +516,11 @@ Co-teach API (`/api/class-session-experts`):
   session.
 - `POST /{id}/withdraw` — Manager/Admin, **Invited only**. Accepted cannot be
   withdrawn.
-- `PUT /{id}/feedback` — owning Accepted expert, session **Completed**. Upserts
-  one class-level overview (`MentorFeedback` + rating 1–5). Declined experts and
-  `Cancelled` sessions cannot submit. Feedback is private: Expert (own row),
+- `PUT /{id}/feedback` — owning Accepted expert, session **Completed**, and
+  `StartTime` is not in the future. Upserts one class-level overview
+  (`MentorFeedback` + rating 1–5). Declined experts and `Cancelled` sessions
+  cannot submit. A Completed row whose start is still ahead is rejected.
+  Feedback is private: Expert (own row),
   Manager/Admin, and the class Mentor may read it. Students never receive
   feedback fields.
 

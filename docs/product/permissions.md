@@ -107,7 +107,7 @@ Create, update, delete for:
   Manager/Admin `POST /{id}/withdraw` (Invited only). Removing the expert from
   `ProgramBoard` also unlinks their Invited and Accepted co-teach rows on that
   program. Owning Expert
-  `PUT /{id}/feedback` after the session is Completed (Accepted only).
+  `PUT /{id}/feedback` after the session is Completed and its start is not in the future (Accepted only).
   Mentor, Manager, and Admin read `coTeachFeedback` / `coTeachFeedbacks` on
   `GET /api/classes/{classId}/sessions/with-students/{sessionId}`. Students
   receive public `coTeach` / `coTeaches` cards only — never feedback text or
