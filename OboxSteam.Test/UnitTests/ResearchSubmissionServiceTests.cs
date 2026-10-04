@@ -6,6 +6,7 @@ using OboxSteam.Application.DTOs.ResearchSubmissionDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Services;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -41,6 +42,7 @@ public sealed class ResearchSubmissionServiceTests
     private readonly Mock<ICertificateService> _certificateService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
     private readonly Mock<ICurrentTime> _currentTime = new();
+    private readonly FakeSyncEventPublisher _syncEvents = new();
 
     private ResearchSubmissionService CreateSut(Guid? currentUserId = null)
     {
@@ -83,7 +85,8 @@ public sealed class ResearchSubmissionServiceTests
             _certificateService.Object,
             _notificationPublisher.Object,
             NullLogger<ResearchSubmissionService>.Instance,
-            lifecycle);
+            lifecycle,
+            _syncEvents);
     }
 
     private static Mock<IFormFile> CreateFormFile(string fileName = "work.pdf", long length = 1024)
@@ -454,6 +457,15 @@ public sealed class ResearchSubmissionServiceTests
         _notificationPublisher.Verify(
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.Once);
+        var sync = Assert.Single(_syncEvents.Events);
+        Assert.Equal(SyncScopes.SubmissionTurnedIn, sync.Scope);
+        Assert.Equal(NotificationAudienceKind.ClassMentor, sync.Audience.Kind);
+        Assert.Equal(_classId, sync.Audience.ClassId);
+        Assert.Equal("Submission", sync.EntityType);
+        Assert.Equal(result.Id, sync.EntityId);
+        var payload = Assert.IsType<SubmissionTurnedInPayload>(sync.Payload);
+        Assert.Equal(_studentId, payload.StudentId);
+        Assert.Equal(SubmissionStatus.TurnedIn.ToString(), payload.Status);
     }
 
     [Fact]

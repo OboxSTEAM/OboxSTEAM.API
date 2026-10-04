@@ -3,6 +3,8 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.AssignmentSubmissionDTO;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -33,6 +35,7 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
     private readonly ICertificateService _certificateService;
     private readonly ILogger<AssignmentSubmissionService> _logger;
     private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
+    private readonly ISyncEventPublisher _syncEventPublisher;
 
     public AssignmentSubmissionService(
         IClaimsService claimsService,
@@ -40,7 +43,8 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         IBlobService blobService,
         ICertificateService certificateService,
         ILogger<AssignmentSubmissionService> logger,
-        ProgramPurchaseLifecycle programPurchaseLifecycle)
+        ProgramPurchaseLifecycle programPurchaseLifecycle,
+        ISyncEventPublisher syncEventPublisher)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
@@ -48,6 +52,7 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         _certificateService = certificateService;
         _logger = logger;
         _programPurchaseLifecycle = programPurchaseLifecycle;
+        _syncEventPublisher = syncEventPublisher;
     }
 
     public async Task<AssignmentSubmissionResponseDto> SubmitAssignment(SubmitAssignmentRequestDto request)
@@ -161,6 +166,30 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
         }
 
         await _unitOfWork.SaveChangesAsync();
+
+        var assignmentModule = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+        if (assignmentModule != null)
+        {
+            var classId = await ResolveActiveClassIdAsync(
+                student.Id,
+                assignmentModule.ProgramId,
+                enrollment.ProgramEnrollmentId);
+            if (classId.HasValue)
+            {
+                await _syncEventPublisher.PublishAsync(
+                    SyncScopes.SubmissionTurnedIn,
+                    NotificationAudience.ForClassMentor(classId.Value),
+                    "Submission",
+                    submission.Id,
+                    new SubmissionTurnedInPayload
+                    {
+                        AssignmentId = assignment.Id,
+                        StudentId = student.Id,
+                        ClassId = classId.Value,
+                        Status = SubmissionStatus.TurnedIn.ToString(),
+                    });
+            }
+        }
 
         _logger.LogInformation(
             "SubmitAssignment turned in. SubmissionId={SubmissionId}, AssignmentId={AssignmentId}, StudentId={StudentId}",
@@ -442,5 +471,30 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
             CreatedAt = submission.CreatedAt,
             UpdatedAt = submission.UpdatedAt
         };
+    }
+
+    private async Task<Guid?> ResolveActiveClassIdAsync(
+        Guid studentId,
+        Guid programId,
+        Guid? programEnrollmentId)
+    {
+        if (programEnrollmentId.HasValue)
+        {
+            var linked = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+                ce => ce.ProgramEnrollmentId == programEnrollmentId.Value
+                      && ce.Status == ClassEnrollmentStatus.Active
+                      && !ce.IsDeleted);
+            return linked?.ClassId;
+        }
+
+        var classes = await _unitOfWork.Classes.GetAllAsync(
+            c => c.ProgramId == programId && !c.IsDeleted);
+        var classIds = classes.Select(c => c.Id).ToList();
+        var enrollment = await _unitOfWork.ClassEnrollments.FirstOrDefaultAsync(
+            ce => ce.StudentId == studentId
+                  && classIds.Contains(ce.ClassId)
+                  && ce.Status == ClassEnrollmentStatus.Active
+                  && !ce.IsDeleted);
+        return enrollment?.ClassId;
     }
 }

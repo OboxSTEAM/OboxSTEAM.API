@@ -4,6 +4,7 @@ using OboxSteam.Application.DTOs.ClassSessionDTO;
 using OboxSteam.Application.DTOs.SessionAttendanceDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -20,6 +21,7 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
     private readonly ICurrentTime _currentTime;
     private readonly ILogger<SessionAttendanceService> _logger;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly ISyncEventPublisher _syncEventPublisher;
     private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
     public SessionAttendanceService(
@@ -28,7 +30,8 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         ICurrentTime currentTime,
         ILogger<SessionAttendanceService> logger,
         INotificationPublisher notificationPublisher,
-        ProgramPurchaseLifecycle programPurchaseLifecycle)
+        ProgramPurchaseLifecycle programPurchaseLifecycle,
+        ISyncEventPublisher syncEventPublisher)
     {
         _unitOfWork = unitOfWork;
         _claimsService = claimsService;
@@ -36,6 +39,7 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
         _logger = logger;
         _notificationPublisher = notificationPublisher;
         _programPurchaseLifecycle = programPurchaseLifecycle;
+        _syncEventPublisher = syncEventPublisher;
     }
 
     public async Task<Pagination<SessionAttendanceResponseDto>> GetSessionAttendancesByClassSessionIdAsync(
@@ -236,6 +240,17 @@ public sealed class SessionAttendanceService : ISessionAttendanceService
                     actorName: currentUser.FullName,
                     className: classEntity?.Name));
         }
+
+        await _syncEventPublisher.PublishAsync(
+            SyncScopes.AttendanceChanged,
+            NotificationAudience.ForUser(studentId),
+            "ClassSession",
+            sessionId,
+            new AttendanceChangedPayload
+            {
+                StudentId = studentId,
+                Status = attendance.Status.ToString(),
+            });
 
         if (request.Status == AttendanceStatus.Absent)
         {

@@ -4,6 +4,7 @@ using OboxSteam.Application.Commons;
 using OboxSteam.Application.DTOs.ResearchSubmissionDTO;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -22,6 +23,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
     private readonly IMediaService _mediaService;
     private readonly ICertificateService _certificateService;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly ISyncEventPublisher _syncEventPublisher;
     private readonly ILogger<ResearchSubmissionService> _logger;
     private readonly ProgramPurchaseLifecycle _programPurchaseLifecycle;
 
@@ -33,7 +35,8 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         ICertificateService certificateService,
         INotificationPublisher notificationPublisher,
         ILogger<ResearchSubmissionService> logger,
-        ProgramPurchaseLifecycle programPurchaseLifecycle)
+        ProgramPurchaseLifecycle programPurchaseLifecycle,
+        ISyncEventPublisher syncEventPublisher)
     {
         _claimsService = claimsService;
         _unitOfWork = unitOfWork;
@@ -43,6 +46,7 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
         _notificationPublisher = notificationPublisher;
         _logger = logger;
         _programPurchaseLifecycle = programPurchaseLifecycle;
+        _syncEventPublisher = syncEventPublisher;
     }
 
     public async Task<ResearchSubmissionResponseDto?> GetSubmission(Guid submissionId)
@@ -290,6 +294,22 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
             assignment.Title,
             studentName: student.FullName,
             actorName: student.FullName));
+
+        if (classId.HasValue)
+        {
+            await _syncEventPublisher.PublishAsync(
+                SyncScopes.SubmissionTurnedIn,
+                NotificationAudience.ForClassMentor(classId.Value),
+                "Submission",
+                submission.Id,
+                new SubmissionTurnedInPayload
+                {
+                    AssignmentId = assignment.Id,
+                    StudentId = student.Id,
+                    ClassId = classId.Value,
+                    Status = SubmissionStatus.TurnedIn.ToString(),
+                });
+        }
 
         _logger.LogInformation(
             "SubmitResearchWork completed. SubmissionId={SubmissionId}, AttemptNumber={AttemptNumber}, StudentId={StudentId}",

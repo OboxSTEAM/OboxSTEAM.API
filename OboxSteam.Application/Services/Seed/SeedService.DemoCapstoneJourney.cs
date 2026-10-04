@@ -8,8 +8,8 @@ namespace OboxSteam.Application.Services;
 
 /// <summary>
 /// Capstone Flow 2 state on <c>CLS-CAP-SMARTCITY-2026A</c>: Module 1 (Theory) complete for the roster,
-/// the Module 2 LiveOnline + Offline pair pinned to the seed clock (Jitsi join and QR check-in work
-/// right after <c>seed/all</c>), and the Research Offline showcase upcoming.
+/// and the Module 2 LiveOnline + Offline pair pinned to the seed clock (Jitsi join and QR check-in work
+/// right after <c>seed/all</c>). Module 3 has no offline showcase.
 /// </summary>
 public partial class SeedService
 {
@@ -26,24 +26,20 @@ public partial class SeedService
         ClassSession LiveOnline,
         Activity LiveOnlineActivity,
         ClassSession Offline,
-        Activity OfflineActivity,
-        ClassSession ResearchOffline,
-        Activity ResearchOfflineActivity);
+        Activity OfflineActivity);
 
     private async Task<CapstoneLiveSessions?> LoadCapstoneLiveSessionsAsync(Class classEntity)
     {
         var definition = GetCapstoneLiveDefinition();
         var liveCode = definition.ActivityCode(2, 1);
         var offlineCode = definition.ActivityCode(2, 2);
-        var researchOfflineCode = definition.ActivityCode(3, 2);
-        var codes = new[] { liveCode, offlineCode, researchOfflineCode };
+        var codes = new[] { liveCode, offlineCode };
 
         var activities = (await _unitOfWork.Activities.GetAllAsync(
                 a => codes.Contains(a.Code) && !a.IsDeleted))
             .ToDictionary(a => a.Code, StringComparer.OrdinalIgnoreCase);
         if (!activities.TryGetValue(liveCode, out var liveActivity)
-            || !activities.TryGetValue(offlineCode, out var offlineActivity)
-            || !activities.TryGetValue(researchOfflineCode, out var researchOfflineActivity))
+            || !activities.TryGetValue(offlineCode, out var offlineActivity))
         {
             return null;
         }
@@ -58,8 +54,7 @@ public partial class SeedService
 
         var live = sessions.FirstOrDefault(cs => cs.ActivityId == liveActivity.Id);
         var offline = sessions.FirstOrDefault(cs => cs.ActivityId == offlineActivity.Id);
-        var researchOffline = sessions.FirstOrDefault(cs => cs.ActivityId == researchOfflineActivity.Id);
-        if (live == null || offline == null || researchOffline == null)
+        if (live == null || offline == null)
         {
             return null;
         }
@@ -68,9 +63,7 @@ public partial class SeedService
             live,
             liveActivity,
             offline,
-            offlineActivity,
-            researchOffline,
-            researchOfflineActivity);
+            offlineActivity);
     }
 
     /// <summary>
@@ -130,38 +123,12 @@ public partial class SeedService
         sessions.Offline.RequiresMentorCheckIn = true;
         await _unitOfWork.ClassSessions.Update(sessions.Offline);
 
-        // Weekday evening keeps the showcase clear of the AI Robotics weekend sessions.
-        var researchStart = ResolveCapstoneResearchShowcaseStart(seedTime);
-        await ApplyDemoSessionClockAsync(
-            sessions.ResearchOffline,
-            SessionKind.Offline,
-            researchStart,
-            researchStart.AddMinutes(sessions.ResearchOfflineActivity.DurationMinutes ?? 180),
-            classEntity.Code,
-            ordinal: 2,
-            seedTime);
-
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation(
-            "Capstone live pair pinned on {ClassCode}: LiveOnline {LiveStart:u}, Offline {OfflineStart:u}, Research Offline {ResearchStart:u}.",
+            "Capstone live pair pinned on {ClassCode}: LiveOnline {LiveStart:u}, Offline {OfflineStart:u}.",
             CapstoneLiveClassCode,
             liveStart,
-            offlineStart,
-            researchStart);
-    }
-
-    private static DateTime ResolveCapstoneResearchShowcaseStart(DateTime seedTime)
-    {
-        var vietnam = SeedTimeline.ResolveVietnamTimeZone();
-        var localDate = DateOnly
-            .FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(SeedTimeline.AsUtc(seedTime), vietnam))
-            .AddDays(7);
-        while (localDate.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
-        {
-            localDate = localDate.AddDays(1);
-        }
-
-        return SeedTimeline.ToUtc(localDate, new TimeOnly(18, 0), vietnam);
+            offlineStart);
     }
 
     private static readonly string[] CapstoneUnlockedWindowClassCodes = [CapstoneBuyClassCode, CapstoneLiveClassCode];

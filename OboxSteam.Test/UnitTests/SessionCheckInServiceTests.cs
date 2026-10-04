@@ -51,7 +51,8 @@ public sealed class SessionCheckInServiceTests
             _currentTime.Object,
             NullLogger<SessionAttendanceService>.Instance,
             _notificationPublisher.Object,
-            lifecycle);
+            lifecycle,
+            new FakeSyncEventPublisher());
     }
 
     private void SeedUser(Guid id, RoleType role, string code)

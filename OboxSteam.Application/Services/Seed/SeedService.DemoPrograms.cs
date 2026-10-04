@@ -179,7 +179,7 @@ public partial class SeedService
         string ExperientialOfflineName,
         string ResearchBriefName,
         string ResearchBriefFile,
-        string ResearchOfflineName,
+        string? ResearchOfflineName,
         string QuizBankName,
         string QuizTitle,
         string RetrospectiveTitle,
@@ -315,7 +315,7 @@ public partial class SeedService
             ExperientialOfflineName: "Smart Traffic Light Lab",
             ResearchBriefName: "Smart City Research Project Guide",
             ResearchBriefFile: "smart-iot-2.pdf",
-            ResearchOfflineName: "Smart City Project Showcase",
+            ResearchOfflineName: null,
             QuizBankName: "Smart City Foundations Question Bank",
             QuizTitle: "Smart City Foundations Quiz",
             RetrospectiveTitle: "Smart Traffic Light Lab Retrospective",
@@ -452,12 +452,23 @@ public partial class SeedService
             definition.ExperientialCourseName,
             "Live coaching followed by an on-site lab co-taught by board experts.",
             seedTime);
+        var researchCourseDescription = definition.ResearchOfflineName == null
+            ? "Research brief and Design / Prototype / Capstone milestones."
+            : "Research brief, project showcase and Design / Prototype / Capstone milestones.";
         var researchCourse = await EnsureDemoCourseAsync(
             researchModule.Id,
             $"CRS-CAP-{slug}-03",
             definition.ResearchCourseName,
-            "Research brief, project showcase and Design / Prototype / Capstone milestones.",
+            researchCourseDescription,
             seedTime);
+        if (researchCourse.Description != researchCourseDescription)
+        {
+            researchCourse.Description = researchCourseDescription;
+            researchCourse.UpdatedAt = seedTime;
+            researchCourse.UpdatedBy = Guid.Empty;
+            await _unitOfWork.Courses.Update(researchCourse);
+            await _unitOfWork.SaveChangesAsync();
+        }
 
         var theoryReading1 = await EnsureDemoActivityAsync(
             theoryCourse.Id,
@@ -516,17 +527,25 @@ public partial class SeedService
             requireQrCheckin: false,
             requireMediaEvidence: false,
             seedTime);
-        var researchOffline = await EnsureDemoActivityAsync(
-            researchCourse.Id,
-            definition.ActivityCode(3, 2),
-            definition.ResearchOfflineName,
-            ActivityType.Offline,
-            2,
-            "On-site showcase where teams present their final projects.",
-            180,
-            requireQrCheckin: true,
-            requireMediaEvidence: true,
-            seedTime);
+        Activity? researchOffline = null;
+        if (definition.ResearchOfflineName is { } researchOfflineName)
+        {
+            researchOffline = await EnsureDemoActivityAsync(
+                researchCourse.Id,
+                definition.ActivityCode(3, 2),
+                researchOfflineName,
+                ActivityType.Offline,
+                2,
+                "On-site showcase where teams present their final projects.",
+                180,
+                requireQrCheckin: true,
+                requireMediaEvidence: true,
+                seedTime);
+        }
+        else
+        {
+            await PruneDemoActivityByCodeAsync(definition.ActivityCode(3, 2));
+        }
 
         await EnsureDemoMaterialAsync(
             theoryReading1.Id,
@@ -577,7 +596,7 @@ public partial class SeedService
             researchModule.Id,
             definition,
             researchBrief.Id,
-            researchOffline.Id,
+            researchOffline?.Id,
             seedTime);
 
         var classEntity = await EnsureDemoClassAsync(
@@ -591,12 +610,15 @@ public partial class SeedService
             startDate: seedTime.AddDays(definition.ClassStartDaysOffset),
             endDate: seedTime.AddDays(definition.ClassEndDaysOffset));
 
-        IReadOnlyList<(Guid ModuleId, Activity Activity, SessionKind Kind)> sessionDefs =
-        [
+        var sessionDefs = new List<(Guid ModuleId, Activity Activity, SessionKind Kind)>
+        {
             (experientialModule.Id, experientialLive, SessionKind.LiveOnline),
             (experientialModule.Id, experientialOffline, SessionKind.Offline),
-            (researchModule.Id, researchOffline, SessionKind.Offline),
-        ];
+        };
+        if (researchOffline != null)
+        {
+            sessionDefs.Add((researchModule.Id, researchOffline, SessionKind.Offline));
+        }
         Module[] modules = [theoryModule, experientialModule, researchModule];
         Course[] courses = [theoryCourse, experientialCourse, researchCourse];
 
@@ -1014,7 +1036,7 @@ public partial class SeedService
         Guid researchModuleId,
         DemoProgramDefinition definition,
         Guid researchBriefId,
-        Guid researchOfflineId,
+        Guid? researchOfflineId,
         DateTime seedTime)
     {
         var milestone1Code = $"RML-CAP-{definition.Slug}-01";
@@ -1246,6 +1268,66 @@ public partial class SeedService
         }
 
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Drops a previously seeded demo activity so re-seed does not leave it blocking
+    /// certificate issuance (every remaining activity must be Done).
+    /// </summary>
+    private async Task PruneDemoActivityByCodeAsync(string activityCode)
+    {
+        var activity = await _unitOfWork.Activities.FirstOrDefaultAsync(
+            a => a.Code == activityCode && !a.IsDeleted);
+        if (activity == null)
+        {
+            return;
+        }
+
+        var sessions = await _unitOfWork.ClassSessions.GetAllAsync(
+            cs => cs.ActivityId == activity.Id && !cs.IsDeleted);
+        foreach (var session in sessions)
+        {
+            var attendances = await _unitOfWork.SessionAttendances.GetAllAsync(
+                sa => sa.ClassSessionId == session.Id && !sa.IsDeleted);
+            foreach (var attendance in attendances)
+            {
+                await _unitOfWork.SessionAttendances.SoftRemove(attendance);
+            }
+
+            var experts = await _unitOfWork.ClassSessionExperts.GetAllAsync(
+                e => e.ClassSessionId == session.Id && !e.IsDeleted);
+            foreach (var expert in experts)
+            {
+                await _unitOfWork.ClassSessionExperts.SoftRemove(expert);
+            }
+
+            await _unitOfWork.ClassSessions.SoftRemove(session);
+        }
+
+        var links = await _unitOfWork.ResearchMilestoneActivities.GetAllAsync(
+            link => link.ActivityId == activity.Id && !link.IsDeleted);
+        foreach (var link in links)
+        {
+            await _unitOfWork.ResearchMilestoneActivities.SoftRemove(link);
+        }
+
+        var materials = await _unitOfWork.Materials.GetAllAsync(
+            m => m.ActivityId == activity.Id && !m.IsDeleted);
+        foreach (var material in materials)
+        {
+            await _unitOfWork.Materials.SoftRemove(material);
+        }
+
+        var progresses = await _unitOfWork.ActivityProgresses.GetAllAsync(
+            ap => ap.ActivityId == activity.Id && !ap.IsDeleted);
+        foreach (var progress in progresses)
+        {
+            await _unitOfWork.ActivityProgresses.SoftRemove(progress);
+        }
+
+        await _unitOfWork.Activities.SoftRemove(activity);
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation("Pruned demo activity {ActivityCode}.", activityCode);
     }
 
     private async Task PruneDemoStudentEnrollmentsAsync(Program program, IReadOnlyCollection<string> allowedCodes)

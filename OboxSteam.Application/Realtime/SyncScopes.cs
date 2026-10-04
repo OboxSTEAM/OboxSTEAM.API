@@ -17,4 +17,10 @@ public static class SyncScopes
 
     /// <summary>The program approval was requested, granted, revoked, or the program was published.</summary>
     public const string AdvisoryApprovalChanged = "advisory.approvalChanged";
+
+    /// <summary>A mentor or staff member recorded a student's session attendance.</summary>
+    public const string AttendanceChanged = "attendance.changed";
+
+    /// <summary>A student turned in assignment or research work for mentor review.</summary>
+    public const string SubmissionTurnedIn = "submission.turnedIn";
 }

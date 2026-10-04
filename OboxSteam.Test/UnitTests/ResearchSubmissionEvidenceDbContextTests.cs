@@ -10,6 +10,7 @@ using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Infrastructure;
+using OboxSteam.Test.Helpers;
 using OboxSteam.Infrastructure.Persistence;
 
 namespace OboxSteam.Test.UnitTests;
@@ -81,7 +82,8 @@ public sealed class ResearchSubmissionEvidenceDbContextTests
             _certificateService.Object,
             _notificationPublisher.Object,
             NullLogger<ResearchSubmissionService>.Instance,
-            lifecycle);
+            lifecycle,
+            new FakeSyncEventPublisher());
     }
 
     private static IFormFile CreateImageFile()

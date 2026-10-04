@@ -199,6 +199,8 @@ Groups: every connection joins `user:{userId}` and `role:{role}`.
 | `advisory.discussionChanged` | `advisory:{id}` | `{ latestSequence, messageId }` | Post, edit, remove, and every system message; `messageId` is set on edit/remove, null when messages were appended |
 | `advisory.pinChanged` | `advisory:{id}` | `{ messageId }` | Pin, unpin, pin actions, removing a pinned message; one per pin auto-resolved by approval |
 | `advisory.approvalChanged` | `advisory:{id}` | `{ status, curriculumVersion }` | Approval request, approve, revoke (manual, curriculum edit, advisor change), publish |
+| `attendance.changed` | the marked student via `ForUser` | `{ studentId, status }` | Staff records session attendance. `entityType` is `ClassSession`, `entityId` is the session. `status` is the `AttendanceStatus` name |
+| `submission.turnedIn` | class mentor via `ForClassMentor` | `{ assignmentId, studentId, classId, status }` | Student turns in a FileUpload assignment or research milestone. `entityType` is `Submission`, `entityId` is the submission. Skipped when the student has no active class. `status` is `TurnedIn` |
 
 Advisory events are all `entityType = "Program"`, `entityId = programId`.
 They are collected per program during the transaction (repeated discussion,

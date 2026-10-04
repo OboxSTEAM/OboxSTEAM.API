@@ -5,6 +5,8 @@ using OboxSteam.Application.DTOs.AssignmentSubmissionDTO;
 using OboxSteam.Application.DTOs.CertificateDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Services;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -34,6 +36,7 @@ public sealed class AssignmentSubmissionServiceTests
     private readonly Mock<ICertificateService> _certificateService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
     private readonly Mock<ICurrentTime> _currentTime = new();
+    private readonly FakeSyncEventPublisher _syncEvents = new();
 
     private AssignmentSubmissionService CreateSut(Guid? currentUserId = null)
     {
@@ -68,7 +71,8 @@ public sealed class AssignmentSubmissionServiceTests
             _blobService.Object,
             _certificateService.Object,
             NullLogger<AssignmentSubmissionService>.Instance,
-            lifecycle);
+            lifecycle,
+            _syncEvents);
     }
 
     private void SeedStudent()
@@ -281,6 +285,17 @@ public sealed class AssignmentSubmissionServiceTests
         Assert.Null(result.Passed);
         Assert.Single(_db.Submissions.Items);
         Assert.Equal(1, _db.SaveChangesCallCount);
+        var sync = Assert.Single(_syncEvents.Events);
+        Assert.Equal(SyncScopes.SubmissionTurnedIn, sync.Scope);
+        Assert.Equal(NotificationAudienceKind.ClassMentor, sync.Audience.Kind);
+        Assert.Equal(_classId, sync.Audience.ClassId);
+        Assert.Equal("Submission", sync.EntityType);
+        Assert.Equal(result.Id, sync.EntityId);
+        var payload = Assert.IsType<SubmissionTurnedInPayload>(sync.Payload);
+        Assert.Equal(_assignmentId, payload.AssignmentId);
+        Assert.Equal(_studentId, payload.StudentId);
+        Assert.Equal(_classId, payload.ClassId);
+        Assert.Equal(SubmissionStatus.TurnedIn.ToString(), payload.Status);
     }
 
     [Fact]

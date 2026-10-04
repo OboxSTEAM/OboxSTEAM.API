@@ -4,6 +4,7 @@ using OboxSteam.Application.DTOs.SessionAttendanceDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Services;
 using OboxSteam.Domain.Entities;
 using OboxSteam.Domain.Enums;
@@ -32,6 +33,7 @@ public sealed class SessionAttendanceServiceTests
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<ICurrentTime> _currentTime = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly FakeSyncEventPublisher _syncEvents = new();
 
     private SessionAttendanceService CreateSut(Guid? currentUserId = null)
     {
@@ -53,7 +55,8 @@ public sealed class SessionAttendanceServiceTests
             _currentTime.Object,
             NullLogger<SessionAttendanceService>.Instance,
             _notificationPublisher.Object,
-            lifecycle);
+            lifecycle,
+            _syncEvents);
     }
 
     private void SeedUser(Guid id, RoleType role, string code)
@@ -437,6 +440,15 @@ public sealed class SessionAttendanceServiceTests
         _notificationPublisher.Verify(
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.Once);
+        var sync = Assert.Single(_syncEvents.Events);
+        Assert.Equal(SyncScopes.AttendanceChanged, sync.Scope);
+        Assert.Equal(NotificationAudienceKind.User, sync.Audience.Kind);
+        Assert.Equal(_studentId, sync.Audience.UserId);
+        Assert.Equal("ClassSession", sync.EntityType);
+        Assert.Equal(_sessionId, sync.EntityId);
+        var payload = Assert.IsType<AttendanceChangedPayload>(sync.Payload);
+        Assert.Equal(_studentId, payload.StudentId);
+        Assert.Equal(AttendanceStatus.Present.ToString(), payload.Status);
     }
 
     [Fact]
@@ -463,6 +475,9 @@ public sealed class SessionAttendanceServiceTests
         _notificationPublisher.Verify(
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.Never);
+        var sync = Assert.Single(_syncEvents.Events);
+        Assert.Equal(SyncScopes.AttendanceChanged, sync.Scope);
+        Assert.Equal(_studentId, sync.Audience.UserId);
     }
 
     [Fact]
