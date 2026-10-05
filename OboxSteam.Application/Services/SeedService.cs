@@ -94,6 +94,7 @@ public partial class SeedService : ISeedService
         await SeedResearchSubmissionsAsync();
         await SeedExtendedResearchDataAsync();
         await EnsureCapstoneStudentUsersAsync();
+        await EnsureCapstoneDriverParentAsync();
         await SeedDemoShowcaseProgramsAsync();
         await SeedReviewDraftProgramsAsync();
         await SeedExpertAdvisoryDemoAsync();

@@ -452,15 +452,36 @@ public sealed class ResearchSubmissionService : IResearchSubmissionService
                 programEnrollmentId));
         }
 
+        bool? passed = submission.Status == SubmissionStatus.Graded && submission.AssignedGrade.HasValue
+            ? submission.AssignedGrade.Value >= assignment.PassScore
+            : null;
+
+        if (module != null)
+        {
+            await _syncEventPublisher.PublishAsync(
+                SyncScopes.SubmissionGraded,
+                NotificationAudience.ForStudentAndParents(submission.StudentId),
+                "Submission",
+                submission.Id,
+                new SubmissionGradedPayload
+                {
+                    StudentId = submission.StudentId,
+                    AssignmentId = assignment.Id,
+                    ProgramId = module.ProgramId,
+                    ProgramEnrollmentId = programEnrollmentId,
+                    ResearchMilestoneId = submission.ResearchMilestoneId,
+                    Status = submission.Status.ToString(),
+                    AssignedGrade = submission.AssignedGrade,
+                    MaxPoints = assignment.MaxPoints,
+                    Passed = passed,
+                });
+        }
+
         _logger.LogInformation(
             "GradeSubmission completed. SubmissionId={SubmissionId}, Status={Status}, GradedBy={GradedBy}",
             submission.Id,
             submission.Status,
             grader.Id);
-
-        bool? passed = submission.Status == SubmissionStatus.Graded && submission.AssignedGrade.HasValue
-            ? submission.AssignedGrade.Value >= assignment.PassScore
-            : null;
 
         return await MapSubmissionToResponseDtoAsync(submission, assignment, passed);
     }

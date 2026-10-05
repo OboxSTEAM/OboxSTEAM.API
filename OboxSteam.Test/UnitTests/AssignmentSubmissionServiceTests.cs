@@ -601,6 +601,67 @@ public sealed class AssignmentSubmissionServiceTests
     }
 
     [Fact]
+    public async Task GradeAssignment_PublishesSubmissionGraded_ToStudentAndParents()
+    {
+        SeedStudent();
+        SeedManager();
+        SeedModule();
+        SeedProgramEnrollment();
+        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
+        SeedFileUploadAssignment(maxPoints: 10, passScore: 5m);
+        SeedTurnedInSubmission();
+        var sut = CreateSut(currentUserId: _managerId);
+
+        await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
+        {
+            AssignedGrade = 8,
+        });
+
+        var sync = Assert.Single(_syncEvents.Events);
+        Assert.Equal(SyncScopes.SubmissionGraded, sync.Scope);
+        Assert.Equal(NotificationAudienceKind.StudentAndParents, sync.Audience.Kind);
+        Assert.Equal(_studentId, sync.Audience.StudentId);
+        Assert.Equal("Submission", sync.EntityType);
+        Assert.Equal(_submissionId, sync.EntityId);
+        var payload = Assert.IsType<SubmissionGradedPayload>(sync.Payload);
+        Assert.Equal(_studentId, payload.StudentId);
+        Assert.Equal(_assignmentId, payload.AssignmentId);
+        Assert.Equal(_programId, payload.ProgramId);
+        Assert.Equal(_programEnrollmentId, payload.ProgramEnrollmentId);
+        Assert.Null(payload.ResearchMilestoneId);
+        Assert.Equal(nameof(SubmissionStatus.Graded), payload.Status);
+        Assert.Equal(8m, payload.AssignedGrade);
+        Assert.Equal(10, payload.MaxPoints);
+        Assert.True(payload.Passed);
+    }
+
+    [Fact]
+    public async Task GradeAssignment_ReturnForRevision_PublishesSubmissionGraded_WithNullPassed()
+    {
+        SeedStudent();
+        SeedManager();
+        SeedModule();
+        SeedProgramEnrollment();
+        SeedActiveEnrollment(programEnrollmentId: _programEnrollmentId);
+        SeedFileUploadAssignment(maxPoints: 10, passScore: 5m);
+        SeedTurnedInSubmission();
+        var sut = CreateSut(currentUserId: _managerId);
+
+        await sut.GradeAssignment(_submissionId, new GradeAssignmentSubmissionRequestDto
+        {
+            AssignedGrade = 3,
+            ReturnForRevision = true,
+        });
+
+        var sync = Assert.Single(_syncEvents.Events);
+        Assert.Equal(SyncScopes.SubmissionGraded, sync.Scope);
+        var payload = Assert.IsType<SubmissionGradedPayload>(sync.Payload);
+        Assert.Equal(nameof(SubmissionStatus.ReturnedForRevision), payload.Status);
+        Assert.Equal(3m, payload.AssignedGrade);
+        Assert.Null(payload.Passed);
+    }
+
+    [Fact]
     public async Task GradeAssignment_SkipsProgress_WhenModuleEnrollmentIdNull()
     {
         SeedStudent();

@@ -17,6 +17,15 @@ public partial class SeedService
     /// </summary>
     internal const string CapstoneDemoMentorCode = "MNT-010";
 
+    /// <summary>
+    /// Father of <see cref="CapstoneDriverStudentCode"/> (password Parent@123). Seeded with a verified link,
+    /// so every notification for the student also reaches him.
+    /// </summary>
+    internal const string CapstoneDriverParentCode = "PRT-CAP-01";
+
+    private static readonly (string Code, string Email, string FullName, string Phone) CapstoneDriverParentAccount =
+        (CapstoneDriverParentCode, "parent.vietanh@oboxsteam.com", "Đỗ Hữu Thắng", "0901000005");
+
     private static readonly (string Code, string Email, string FullName, string Phone)[] CapstoneStudentAccounts =
     [
         (CapstoneDriverStudentCode, "vietanh@oboxsteam.com", "Đỗ Hữu Việt Anh", "0901000001"),
@@ -92,5 +101,63 @@ public partial class SeedService
         await _unitOfWork.Users.AddRangeAsync(usersToAdd);
         await _unitOfWork.SaveChangesAsync();
         _loggerService.LogInformation("Seeded {Count} capstone demo student(s).", usersToAdd.Count);
+    }
+
+    private async Task EnsureCapstoneDriverParentAsync()
+    {
+        var student = await _unitOfWork.Users.FirstOrDefaultAsync(
+            u => u.Code == CapstoneDriverStudentCode && !u.IsDeleted);
+        if (student == null)
+        {
+            _loggerService.LogWarning(
+                "Capstone student {Code} not found. Skipping capstone parent seeding.",
+                CapstoneDriverStudentCode);
+            return;
+        }
+
+        var account = CapstoneDriverParentAccount;
+        var parent = await _unitOfWork.Users.FirstOrDefaultAsync(
+            u => u.Code == account.Code || u.Email == account.Email);
+        if (parent == null)
+        {
+            parent = new User
+            {
+                Id = Guid.NewGuid(),
+                Code = account.Code,
+                Email = account.Email,
+                PasswordHash = new PasswordHasher().HashPassword("Parent@123")!,
+                FullName = account.FullName,
+                Phone = account.Phone,
+                Role = RoleType.Parent,
+                Status = AccountStatus.Active,
+                IsEmailVerified = true,
+                CreatedAt = _seedNow,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            };
+            await _unitOfWork.Users.AddAsync(parent);
+        }
+
+        var linkExists = await _unitOfWork.ParentStudents.FirstOrDefaultAsync(
+            ps => ps.ParentId == parent.Id && ps.StudentId == student.Id);
+        if (linkExists == null)
+        {
+            await _unitOfWork.ParentStudents.AddAsync(new ParentStudent
+            {
+                Id = Guid.NewGuid(),
+                ParentId = parent.Id,
+                StudentId = student.Id,
+                IsVerified = true,
+                CreatedAt = _seedNow,
+                CreatedBy = Guid.Empty,
+                IsDeleted = false,
+            });
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        _loggerService.LogInformation(
+            "Ensured capstone parent {ParentCode} linked to {StudentCode}.",
+            account.Code,
+            CapstoneDriverStudentCode);
     }
 }

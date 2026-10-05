@@ -5,6 +5,7 @@ using OboxSteam.Application.DTOs.CertificateDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Services;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -31,6 +32,7 @@ public sealed class ActivityProgressServiceTests
     private readonly Mock<IClaimsService> _claimsService = new();
     private readonly Mock<ICertificateService> _certificateService = new();
     private readonly Mock<INotificationPublisher> _notificationPublisher = new();
+    private readonly FakeSyncEventPublisher _syncEvents = new();
 
     private ActivityProgressService CreateSut(Guid? currentUserId = null)
     {
@@ -52,6 +54,7 @@ public sealed class ActivityProgressServiceTests
             _claimsService.Object,
             _certificateService.Object,
             _notificationPublisher.Object,
+            _syncEvents,
             NullLogger<ActivityProgressService>.Instance);
     }
 
@@ -848,6 +851,44 @@ public sealed class ActivityProgressServiceTests
         var absentResult = Assert.Single(result.Results, r => r.StudentId == _otherStudentId);
         Assert.Equal(MentorCompleteOutcome.Skipped, absentResult.Outcome);
         Assert.Contains("Present, Late, or Excused", absentResult.Reason);
+    }
+
+    [Fact]
+    public async Task MentorCompleteBulk_PublishesActivityProgressChangedForCompletedStudentsOnly()
+    {
+        SeedMentor();
+        SeedManager();
+        SeedSessionActivityGraph(ActivityType.Offline);
+
+        var presentEnrollmentId = Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1");
+        var absentEnrollmentId = Guid.Parse("c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2");
+        var presentPeId = Guid.Parse("d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1");
+        var absentPeId = Guid.Parse("d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2");
+
+        SeedRosterStudent(_studentId, presentPeId, presentEnrollmentId, AttendanceStatus.Present);
+        SeedRosterStudent(_otherStudentId, absentPeId, absentEnrollmentId, AttendanceStatus.Absent);
+
+        var sut = CreateSut(_managerId);
+
+        await sut.MentorCompleteClassSessionAsync(new MentorCompleteBulkRequestDto
+        {
+            ClassSessionId = _sessionId,
+            ActivityId = _activityId,
+        });
+
+        var published = Assert.Single(_syncEvents.Events);
+        Assert.Equal(SyncScopes.ActivityProgressChanged, published.Scope);
+        Assert.Equal(NotificationAudienceKind.StudentAndParents, published.Audience.Kind);
+        Assert.Equal(_studentId, published.Audience.StudentId);
+        Assert.Equal("Activity", published.EntityType);
+        Assert.Equal(_activityId, published.EntityId);
+
+        var payload = Assert.IsType<ActivityProgressChangedPayload>(published.Payload);
+        Assert.Equal(_studentId, payload.StudentId);
+        Assert.Equal(_programId, payload.ProgramId);
+        Assert.Equal(presentPeId, payload.ProgramEnrollmentId);
+        Assert.Equal(_activityId, payload.ActivityId);
+        Assert.Equal(nameof(ActivityStatus.Done), payload.Status);
     }
 
     [Fact]

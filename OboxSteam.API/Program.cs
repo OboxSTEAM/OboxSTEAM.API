@@ -100,6 +100,10 @@ builder.Services.AddSession(options =>
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
+})
+.AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 var app = builder.Build();
 

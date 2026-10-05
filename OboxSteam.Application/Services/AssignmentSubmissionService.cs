@@ -285,6 +285,8 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
                 submission.ModuleEnrollmentId);
         }
 
+        await PublishSubmissionGradedAsync(submission, assignment);
+
         _logger.LogInformation(
             "GradeAssignment completed. SubmissionId={SubmissionId}, Status={Status}, GradedBy={GradedBy}",
             submission.Id,
@@ -292,6 +294,45 @@ public sealed class AssignmentSubmissionService : IAssignmentSubmissionService
             grader.Id);
 
         return MapToDto(submission, assignment);
+    }
+
+    private async Task PublishSubmissionGradedAsync(Submission submission, Assignment assignment)
+    {
+        var module = await _unitOfWork.Modules.GetByIdAsync(assignment.ModuleId);
+        if (module == null)
+        {
+            return;
+        }
+
+        Guid? programEnrollmentId = null;
+        if (submission.ModuleEnrollmentId.HasValue)
+        {
+            var moduleEnrollment = await _unitOfWork.ModuleEnrollments.GetByIdAsync(
+                submission.ModuleEnrollmentId.Value);
+            programEnrollmentId = moduleEnrollment?.ProgramEnrollmentId;
+        }
+
+        bool? passed = submission.Status == SubmissionStatus.Graded && submission.AssignedGrade.HasValue
+            ? submission.AssignedGrade.Value >= assignment.PassScore
+            : null;
+
+        await _syncEventPublisher.PublishAsync(
+            SyncScopes.SubmissionGraded,
+            NotificationAudience.ForStudentAndParents(submission.StudentId),
+            "Submission",
+            submission.Id,
+            new SubmissionGradedPayload
+            {
+                StudentId = submission.StudentId,
+                AssignmentId = assignment.Id,
+                ProgramId = module.ProgramId,
+                ProgramEnrollmentId = programEnrollmentId,
+                ResearchMilestoneId = submission.ResearchMilestoneId,
+                Status = submission.Status.ToString(),
+                AssignedGrade = submission.AssignedGrade,
+                MaxPoints = assignment.MaxPoints,
+                Passed = passed,
+            });
     }
 
     public async Task<AssignmentSubmissionResponseDto?> GetAssignmentSubmission(Guid submissionId)

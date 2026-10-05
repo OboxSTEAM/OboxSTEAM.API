@@ -23,4 +23,10 @@ public static class SyncScopes
 
     /// <summary>A student turned in assignment or research work for mentor review.</summary>
     public const string SubmissionTurnedIn = "submission.turnedIn";
+
+    /// <summary>A student's activity was completed (self, mentor bulk, or force complete).</summary>
+    public const string ActivityProgressChanged = "activityProgress.changed";
+
+    /// <summary>A mentor or manager graded or returned a FileUpload or research submission.</summary>
+    public const string SubmissionGraded = "submission.graded";
 }

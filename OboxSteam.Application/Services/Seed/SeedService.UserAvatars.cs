@@ -19,6 +19,7 @@ public partial class SeedService
     [
         ("MNG-001", MalePortrait(13)),
         ("PRT-001", FemalePortrait(14)),
+        (CapstoneDriverParentCode, MalePortrait(92)),
 
         ("MNT-001", MalePortrait(31)),
         ("MNT-002", FemalePortrait(44)),

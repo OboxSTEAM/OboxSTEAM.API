@@ -4,6 +4,7 @@ using OboxSteam.Application.DTOs.ActivityProgressDTO;
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
+using OboxSteam.Application.Realtime;
 using OboxSteam.Application.Utils;
 using OboxSteam.Application.Validation;
 using OboxSteam.Domain.Entities;
@@ -18,6 +19,7 @@ public sealed class ActivityProgressService : IActivityProgressService
         private readonly IClaimsService _claimsService;
         private readonly ICertificateService _certificateService;
         private readonly INotificationPublisher _notificationPublisher;
+        private readonly ISyncEventPublisher _syncEventPublisher;
         private readonly ILogger<ActivityProgressService> _logger;
 
         public ActivityProgressService(
@@ -25,12 +27,14 @@ public sealed class ActivityProgressService : IActivityProgressService
             IClaimsService claimsService,
             ICertificateService certificateService,
             INotificationPublisher notificationPublisher,
+            ISyncEventPublisher syncEventPublisher,
             ILogger<ActivityProgressService> logger)
         {
             _unitOfWork = unitOfWork;
             _claimsService = claimsService;
             _certificateService = certificateService;
             _notificationPublisher = notificationPublisher;
+            _syncEventPublisher = syncEventPublisher;
             _logger = logger;
         }
 
@@ -850,7 +854,8 @@ public sealed class ActivityProgressService : IActivityProgressService
 
     /// <summary>
     /// Publishes <see cref="NotificationCatalog.ActivityCompleted"/> for the just-completed
-    /// activity, plus <see cref="NotificationCatalog.ModuleCompleted"/> and any
+    /// activity and the <see cref="SyncScopes.ActivityProgressChanged"/> sync hint,
+    /// plus <see cref="NotificationCatalog.ModuleCompleted"/> and any
     /// <see cref="NotificationCatalog.ModuleUnlocked"/> notifications when the recalculated
     /// module progress (already persisted by the caller) transitioned the enrollment to Completed.
     /// </summary>
@@ -883,6 +888,24 @@ public sealed class ActivityProgressService : IActivityProgressService
             programEnrollmentId,
             nextActivityId,
             activity.CourseId));
+
+        if (programId.HasValue)
+        {
+            await _syncEventPublisher.PublishAsync(
+                SyncScopes.ActivityProgressChanged,
+                NotificationAudience.ForStudentAndParents(studentId),
+                "Activity",
+                activity.Id,
+                new ActivityProgressChangedPayload
+                {
+                    StudentId = studentId,
+                    ProgramId = programId.Value,
+                    ProgramEnrollmentId = programEnrollmentId,
+                    ActivityId = activity.Id,
+                    NextActivityId = nextActivityId,
+                    Status = ActivityStatus.Done.ToString(),
+                });
+        }
 
         var justCompletedModule = moduleEnrollment.Status == EnrollmentStatus.Completed
             && previousModuleStatus != EnrollmentStatus.Completed;

@@ -905,6 +905,23 @@ public sealed class ResearchSubmissionServiceTests
             n => n.PublishAsync(It.IsAny<NotificationCommand>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _certificateService.Verify(c => c.EnsureProgramCertificateInternalAsync(_programEnrollmentId), Times.Once);
+
+        var sync = Assert.Single(_syncEvents.Events);
+        Assert.Equal(SyncScopes.SubmissionGraded, sync.Scope);
+        Assert.Equal(NotificationAudienceKind.StudentAndParents, sync.Audience.Kind);
+        Assert.Equal(_studentId, sync.Audience.StudentId);
+        Assert.Equal("Submission", sync.EntityType);
+        Assert.Equal(_submissionId, sync.EntityId);
+        var payload = Assert.IsType<SubmissionGradedPayload>(sync.Payload);
+        Assert.Equal(_studentId, payload.StudentId);
+        Assert.Equal(_assignmentId, payload.AssignmentId);
+        Assert.Equal(_programId, payload.ProgramId);
+        Assert.Equal(_programEnrollmentId, payload.ProgramEnrollmentId);
+        Assert.Equal(_milestoneId, payload.ResearchMilestoneId);
+        Assert.Equal(nameof(SubmissionStatus.Graded), payload.Status);
+        Assert.Equal(85m, payload.AssignedGrade);
+        Assert.Equal(100, payload.MaxPoints);
+        Assert.True(payload.Passed);
     }
 
     [Fact]
@@ -927,6 +944,14 @@ public sealed class ResearchSubmissionServiceTests
 
         Assert.Equal(SubmissionStatus.ReturnedForRevision, result.Status);
         Assert.Null(result.Passed);
+
+        var sync = Assert.Single(_syncEvents.Events);
+        Assert.Equal(SyncScopes.SubmissionGraded, sync.Scope);
+        var payload = Assert.IsType<SubmissionGradedPayload>(sync.Payload);
+        Assert.Equal(nameof(SubmissionStatus.ReturnedForRevision), payload.Status);
+        Assert.Equal(_milestoneId, payload.ResearchMilestoneId);
+        Assert.Equal(50m, payload.AssignedGrade);
+        Assert.Null(payload.Passed);
     }
 
     [Fact]
