@@ -4,7 +4,9 @@ Date: 2026-09-09
 
 ## Status
 
-Active
+Active — Milestone A in code; Milestone B shipped then superseded by
+`advisory-chat-overhaul`; Milestones D, E, F not started (code audit
+2026-10-09).
 
 ## Outcome
 
@@ -86,9 +88,13 @@ milestone until the current milestone has a successful commit.
 ## Progress
 
 - [x] Milestone A — advisor assignment and shared framework versions; migration,
-  tests, build, and commit.
+  tests, build, and commit. Code: `Program.AdvisorExpertId`,
+  `ProgramFrameworkVersion`, `20260909150417_AddProgramAdvisorAndFrameworkVersions`,
+  `ProgramFrameworkController` version publish route.
 - [x] Milestone B — advisory backend and review lifecycle; migration, tests,
-  build (commit pending explicit user request).
+  build (commit pending explicit user request). Superseded: threads,
+  submissions, drafts, and rubric were removed by `advisory-chat-overhaul`
+  (`20261001112208_DropLegacyAdvisoryHistory`; routes return 410).
 - [ ] Milestone D — bundle catalog and enrollment foundation; migration, tests,
   build, and commit.
 - [ ] Milestone E — commerce and fulfillment; migration, tests, build, and commit.
@@ -174,3 +180,8 @@ Milestone B evidence (2026-09-09):
 ## Result
 
 Milestones A–B implemented on the backend; D–F and completion audit remain.
+
+Code audit 2026-10-09: remaining work is all of Milestones D, E, and F. No
+bundle, voucher, pricing-quote, or roadmap entity, service, controller, DbSet,
+or migration exists (no `Bundle` / `Voucher` / `Roadmap` types in any project;
+`OboxSteamDbContext` has no bundle or voucher configuration).

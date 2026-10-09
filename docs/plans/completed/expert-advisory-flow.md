@@ -4,7 +4,7 @@ Date: 2026-09-12
 
 ## Status
 
-Active
+Completed — superseded by `advisory-chat-overhaul` (code audit 2026-10-09)
 
 ## Outcome
 
@@ -92,3 +92,14 @@ Remaining release follow-ups are real PostgreSQL transaction-race/integration
 coverage, a background worker that consumes notification intents, and optional
 P4 items (compact collaboration summary, If-Match/ETag, SignalR). Frontend,
 mobile, and other out-of-scope clients were not changed.
+
+Code audit 2026-10-09: this plan shipped (migrations
+`AddExpertAdvisoryWorkspace`, `AddAdvisoryWorkflowTimeline`,
+`FixExpertAdvisoryWorkspaceIndexes`, `AddCurriculumReviewClientOperationId`)
+and was then superseded by `advisory-chat-overhaul`. `ProgramAdvisoryService`,
+`CurriculumReviewService`, threads, review rounds, and notification intents
+were deleted (`20261001112208_DropLegacyAdvisoryHistory`); the
+`advisory-threads`, `advisory/timeline`, `advisory-anchor-fields`, and
+`review-submissions` routes in `ProgramController` now return 410
+`ENDPOINT_REMOVED`. The follow-ups above no longer apply: the intent table is
+dropped and realtime moved to SignalR (`advisory:{programId}` group).

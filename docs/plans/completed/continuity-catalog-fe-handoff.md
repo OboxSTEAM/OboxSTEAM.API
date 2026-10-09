@@ -2,6 +2,11 @@
 
 Date: 2026-09-05 (updated pricing + cancel)
 
+## Status
+
+Completed (backend contract verified in code 2026-10-09; FE wiring is out of
+scope for this repository)
+
 ## Wire
 
 - Shared catalog DTO: `RebuyClassCatalogDto` (`context`, `checkoutAmount`, `isEligible`, `creditHint`, `classes[].moduleSessions` on Active).
@@ -25,3 +30,18 @@ Date: 2026-09-05 (updated pricing + cancel)
 
 - Continuity fee is fixed **50%**, window **1 month** (was RetakeFee field + 3 months).
 - Prefer `/cancel` over request `/withdraw` (program quit remains `POST /api/program-enrollments/{id}/withdraw` → Dropped).
+
+## Result
+
+The backend contract described here exists: `RebuyClassCatalogDto` (`Context`,
+`CheckoutAmount`, `WithinRebuyWindow`, per-class `IsEligible`, `CreditHint`,
+`ModuleSessions`) is built by `RebuyClassCatalogService`; routes
+`GET /api/module-enrollments/{id}/continuity-classes`,
+`GET /api/programs/{id}/rebuy-classes` (409 while Active/Deferred),
+`POST /api/programs/{id}/select-class`, and `class-redelivery-requests`
+`candidates` / `select-class` / `cancel` / `withdraw` (alias) are registered;
+`ProgramPurchaseLifecycle` fixes `ContinuityFeePercent = 50` and
+`RebuyWindowMonths = 1`; create writes only `AwaitingClassSelection` (legacy
+statuses remain as enum values, never written). Proof:
+`RebuyClassCatalogServiceTests`, `ClassRedeliveryRequestServiceTests`. The FE
+removals listed above belong to `OboxSTEAM.FE` and were not audited here.

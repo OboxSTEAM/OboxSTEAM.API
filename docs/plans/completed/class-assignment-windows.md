@@ -4,7 +4,7 @@ Date: 2026-08-31
 
 ## Status
 
-Complete (follow-up 2026-08-31)
+Completed (follow-up 2026-08-31; code audit 2026-10-09)
 
 ## Outcome
 
@@ -52,11 +52,17 @@ Out of scope:
 ## Progress
 
 - [x] Decision and product docs
-- [x] Schema, unique index, backfill migration
-- [x] Window policy, overlap, generate uniqueness
-- [x] Mentor PUT
-- [x] Attempt / curriculum / parent / recovery rewire
-- [x] Tests
+- [x] Schema, unique index, backfill migration — `20260830191832_AssignmentWindowPerClass`;
+  filtered unique `(ClassId, AssignmentId)` index in `OboxSteamDbContext`
+- [x] Window policy, overlap, generate uniqueness — `AssignmentWindowPolicy`,
+  `AssignmentWindowPlacement`, overlap skip in `ClassSessionService`
+- [x] Mentor PUT — `ClassSessionService` update path (`ValidateAssignmentWindowTimes`)
+- [x] Attempt / curriculum / parent / recovery rewire — `QuizAttemptService`,
+  `AssignmentSubmissionService`, `RetrospectiveAttemptService`,
+  `ResearchSubmissionService`, `EnrollmentCurriculumService`,
+  `ParentProgressionService`, `AssessmentRecoveryRequestService`
+- [x] Tests — `AssignmentWindowPlacementTests`, `ClassSessionServiceTests`,
+  `ValidatorAndUtilsTests`, `QuizAttemptServiceTests`
 - [x] Follow-up: in-progress continues after close; research milestone curriculum lock;
   curriculum/parent calendar status; PE-scoped class resolve; AssignmentWindow
   `RequiresAttendance` forced false
@@ -85,3 +91,7 @@ Implemented. Proof: `dotnet test OboxSteam.Test/OboxSteam.Test.csproj` — 1702 
 Migration `20260830191832_AssignmentWindowPerClass` backfills Standard-class AssignmentWindow rows from catalog dates, then drops `Assignments.DueDate` / `AvailableFrom` / `AvailableUntil` and recovery personal dates, then creates the filtered unique index.
 
 Follow-up: in-progress drafts continue after `EndTime`; research milestone mutations use `CurriculumEditGuard`; curriculum/parent nav uses the class window; resolve uses the program-enrollment class seat; AssignmentWindow `RequiresAttendance` is always false. Navigation used Grep/Read because CodeGraph MCP is unavailable.
+
+Code audit 2026-10-09: the migration, unique index, `AssignmentWindowPolicy`
+call sites in every attempt service, and the tests listed in Progress all
+exist; `Assignment` no longer has `DueDate` / `AvailableFrom` / `AvailableUntil`.

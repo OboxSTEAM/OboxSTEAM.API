@@ -6,16 +6,17 @@ Current product contract for the OboxSTEAM backend API.
 
 | File | Scope |
 | --- | --- |
-| `overview.md` | Platform summary, roles, hierarchy |
-| `api-conventions.md` | Response envelope, auth, CORS, errors |
+| `README.md` | This index and the update rule |
+| `overview.md` | Platform summary, roles, surfaces, hierarchy, deployment |
+| `api-conventions.md` | Response envelope, JSON, dates, auth, errors, CORS |
 | `permissions.md` | Role-based access patterns |
 | `curriculum.md` | Program → module → course → activity model |
 | `enrollment.md` | Enrollments, progress, gating, re-delivery |
 | `assessment.md` | Assignments, quizzes, question banks |
 | `notifications.md` | Notification audiences and publishers |
-| `student-skills.md` | Student skill snapshots and evidence |
-| `mentor-skills.md` | Mentor skill profiles and evidence |
-| `integrations.md` | PostgreSQL, AWS, email, webhooks |
+| `student-skills.md` | Skill catalog, program skills, achieved and snapshot student skills |
+| `mentor-skills.md` | Mentor skill profiles, evidence, class skill matching |
+| `integrations.md` | PostgreSQL, AWS, Bedrock, email, Stripe, JaaS, SignalR, webhooks, telemetry, env |
 
 ## Update Rule
 

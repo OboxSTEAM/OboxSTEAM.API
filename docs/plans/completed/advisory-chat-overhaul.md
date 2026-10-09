@@ -4,7 +4,7 @@ Date: 2026-09-30
 
 ## Status
 
-Active
+Completed (code audit 2026-10-09)
 
 ## Outcome
 
@@ -305,3 +305,20 @@ Tasks 1–8 implemented. Builds (local SDK and .NET 8 SDK) and
 apply the migrations on a dev DB, run `DELETE /api/seed/clear` then
 `POST /api/seed`, and confirm `VerifySeedDemoIntegrityAsync` passes and the
 four ADV chats look as described in Decisions.
+
+Code audit 2026-10-09: all eight tasks exist in code. Migrations
+`AddAdvisoryChatModel`, `AddCurriculumChangeLog`, `DropRubricAddFrameworkRules`,
+`MigrateAdvisoryThreadsToDiscussion`, `ApprovalLifecycleRemovePendingReview`,
+`DropLegacyAdvisoryHistory`; `ProgramApprovalService`,
+`ProgramAdvisoryDiscussionService`, `CurriculumChangeRecorder` +
+`CurriculumChangeInterceptor`, `AdvisoryPresenceTracker`,
+`DiscussionAttachmentPurgeService`, `JoinAdvisorySync` in `NotificationHub`;
+`ProgramController` exposes approval/publish/advisory-discussion routes and
+returns 410 `ENDPOINT_REMOVED` on the old ones; `CurriculumReviewService`,
+`ProgramAdvisoryService` and `ProgramStatus.PendingReview` are gone; seed in
+`SeedService.AdvisoryChatDemo.cs`. Tests: `ProgramApprovalServiceTests`,
+`AdvisoryDiscussionServiceTests`, `CurriculumChangeRecorderTests`,
+`CurriculumChangeConsolidatorTests`, `CurriculumChangeServiceTests`,
+`AdvisoryPresenceTrackerTests`, `ProgramFrameworkValidatorTests`. Residual
+risk (operational, not code): the dev-DB migration apply and seed
+clear/reseed check above was not recorded as run.

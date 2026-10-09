@@ -8,8 +8,10 @@ Program
   ├── ProgramBoard (expert associations)
   ├── ProgramApproval[] (advisor approvals of a curriculum version)
   ├── Module[]
-  │     ├── Course[] (each has a Mentor)
+  │     ├── Course[]
   │     │     └── Activity[]
+  │     │           └── Material? (SelfPaced only)
+  │     ├── ResearchMilestone[] (Research modules; linked activities)
   │     ├── Assignment[] (module- or course-scoped)
   ├── Class[] (cohorts)
   │     └── ClassSession[]
@@ -34,19 +36,24 @@ one Standard class in **Open** with remaining seats (aligned with
 `GET .../open-classes` and checkout). Active programs that are still waiting on
 class setup / mentor / open enrollment do not appear in that list.
 
-Create via API is always **Draft** (omitted or explicit). `PUT` cannot set
-`Approved`; only the approval endpoints move a program in or out of it. `Active` ↔ `Inactive` is allowed only when the
-program is already in one of those two catalog states. Enrollment, class
-creation, opening enrollment, and starting a class still require **Active**.
+Create via API is always **Draft** (omitted or `Draft`; any other `status` → 400).
+Create accepts an optional `advisorExpertId` (same rules as `PUT .../advisor`;
+the expert is added to `ProgramBoard`). `PUT` cannot change status except
+`Active` ↔ `Inactive` when the program is already in one of those two catalog
+states (otherwise 400); only the approval and publish endpoints move a program
+into or out of `Draft`/`Approved`. Enrollment, class creation, opening
+enrollment, and starting a class still require **Active**.
 
 Lifecycle endpoints (Manager/Admin unless noted). Chat, change log, workspace,
 and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
 
 - `PUT /api/programs/{id}/advisor` — assign the one responsible active Expert
-  with a linked login (`Draft` or `Approved`, else 409 `INVALID_STATUS`).
-  Assignment adds the expert to `ProgramBoard` and posts an `AdvisorChanged`
-  system message; on an `Approved` program the approval is revoked
-  (`AdvisorChanged`) and the program returns to `Draft`.
+  with an active linked login (`Draft` or `Approved`, else 409
+  `INVALID_STATUS`; missing or invalid expert → 400). Assignment adds the
+  expert to `ProgramBoard` (role "Responsible advisor") when missing. Only
+  when the advisor actually changes: posts an `AdvisorChanged` system message
+  and, on an `Approved` program, revokes the approval (`AdvisorChanged`) and
+  returns the program to `Draft`.
 - `POST /api/programs/{id}/approval/request` — `Draft` only; the program must
   have a framework (409 `FRAMEWORK_REQUIRED`); requires an
   advisor with an active linked login (`ADVISOR_REQUIRED`,
@@ -61,15 +68,18 @@ and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
   with a curriculum snapshot, resolves `Addressed` pins, moves to `Approved`,
   posts `Approved`, and notifies managers (`CurriculumReviewApproved`).
 - `POST /api/programs/{id}/approval/revoke` — Manager/Admin or the advisor,
-  `Approved` only; optional `{ reason }`. Revokes the active approval
-  (`ManagerReopened` / `ExpertRevoked`), returns to `Draft`, posts
-  `ApprovalRevoked`. A manager reopen notifies the advisor; an advisor revoke
-  notifies managers (`CurriculumApprovalRevoked`).
-- `POST /api/programs/{id}/publish` — with a framework: `Approved` → `Active`;
-  the active approval must cover the current curriculum version
-  (`CURRICULUM_VERSION_STALE`). Without a framework there is no approval step:
-  `Draft` or `Approved` → `Active` directly (other statuses 409
-  `INVALID_STATUS`). Notifies managers (`CurriculumReviewPublished`).
+  `Approved` only; optional `{ reason }` (≤ 2000, stored as
+  `revokeComment`). Revokes the active approval (`ManagerReopened` /
+  `ExpertRevoked`), returns to `Draft`, posts `ApprovalRevoked`. A manager
+  reopen notifies the advisor (when the advisor has a login and is not the
+  caller); an advisor revoke notifies managers. Both use notification type
+  `CurriculumApprovalRevoked`.
+- `POST /api/programs/{id}/publish` — with a framework: `Approved` → `Active`
+  (else 409 `INVALID_STATUS`); the active approval must cover the current
+  curriculum version (`CURRICULUM_VERSION_STALE`). Without a framework there is
+  no approval step: `Draft` or `Approved` → `Active` directly (other statuses
+  409 `INVALID_STATUS`). Posts `Published` and notifies managers
+  (`CurriculumReviewPublished`).
 - `POST /api/programs/{id}/framework-version` — Manager/Admin. Body
   `{ frameworkVersionId }`. Upgrades the pinned framework version; see
   [Framework version upgrade](#framework-version-upgrade).
@@ -85,8 +95,9 @@ and error codes: see [Advisory Chat and Approval](#advisory-chat-and-approval).
   profile; all for Manager/Admin). Query `page`, `pageSize`, `status`,
   `unreadOnly`. Each item: `programId`, `code`, `name`, `status`,
   `frameworkVersionNumber`, `isAdvisor`, `latestActivityAt` (latest chat
-  message create/edit, else program update/create), `unreadCount` (chat
-  read cursor, same rule as the workspace), `openPinCount`, `approvalState`
+  message create/edit, including removed messages, else program
+  update/create), `unreadCount` (messages after the read cursor, excluding the
+  caller's own, same rule as the workspace), `openPinCount`, `approvalState`
   (`None` = never approved, `Approved` = active approval, `Revoked` = all
   approvals revoked). `unreadOnly` keeps items with `unreadCount > 0`.
   Ordered by `latestActivityAt` desc, then name.
@@ -144,8 +155,8 @@ approves. Realtime events and notifications: `docs/product/notifications.md`.
 
 `Program.CurriculumVersion` (int64, starts at 0) increments once per
 `SaveChanges` that mutates curriculum. It is returned on program DTOs and the
-workspace. Curriculum = program content fields (`name`, `code`, `description`,
-`level`, `category`, `estimatedDuration`, `thumbnailUrl`, skill
+workspace. Curriculum = program content fields (`name`, `code`, `seriesName`,
+`description`, `level`, `category`, `estimatedDuration`, `thumbnailUrl`, skill
 links), modules, courses, activities, assignments, research milestones,
 milestone-activity links, materials. Not curriculum (no bump, allowed on Active
 programs): `price`, `retakeFee`, `status`, framework, advisor, board, ratings.
@@ -206,15 +217,17 @@ the net item count. A Manager/Admin chat message closes that manager's session.
 
 ### Approval
 
-`ProgramApproval`: `curriculumVersion` (approved), `fromVersion` (previous
-approval's version or 0), `frameworkVersionId`, `frameworkCheckJson`,
+`ProgramApproval`: `curriculumVersion` (approved), `fromVersion` (the most
+recent previous approval's version, revoked or not, capped at the current
+version; 0 when none), `frameworkVersionId`, `frameworkCheckJson`,
 `curriculumSnapshotJson` (built by `CurriculumSnapshotBuilder`),
-`approvedByExpertId`, `approvedAt`, `comment`
-(≤ 2000), `revokedAt`, `revokedByUserId`, `revokeReason` (`ManagerReopened`,
-`CurriculumEdited`, `ExpertRevoked`, `AdvisorChanged`). At most one
-non-revoked approval per program.
+`approvedByExpertId`, `approvedAt`, `comment` (≤ 2000, else 400),
+`revokedAt`, `revokedByUserId`, `revokeReason` (`ManagerReopened`,
+`CurriculumEdited`, `ExpertRevoked`, `AdvisorChanged`, `FrameworkUpgraded`),
+`revokeComment` (≤ 2000). At most one non-revoked approval per program.
 
-Approve checks, in order: caller is the advisor (403); status `Draft`
+Approve checks, in order: caller is the advisor (403); program has a framework
+(409 `FRAMEWORK_REQUIRED`); status `Draft`
 (409 `INVALID_STATUS`); `curriculumVersion` matches (409
 `CURRICULUM_VERSION_STALE`); no `Open` pins (409 `APPROVAL_BLOCKED`, message
 includes the count); framework check passes (409 `FRAMEWORK_CHECK_FAILED`,
@@ -226,7 +239,8 @@ Auto-revoke: any curriculum save while an approval is active, while the program
 is `Approved`, or while a program with a framework is `Active`/`Inactive`
 revokes the approval (`CurriculumEdited`) in the same save, posts
 `ApprovalRevoked` before the session message, and notifies the advisor
-(`CurriculumApprovalRevoked`). `Approved` returns to `Draft`; a program with a
+(`CurriculumApprovalRevoked`, only when the advisor has a login and is not the
+editor). `Approved` returns to `Draft`; a program with a
 framework also returns from `Active`/`Inactive` to `Draft`, because every
 published version must be approved again. Programs without a framework keep
 `Active`/`Inactive`. Edits are only possible when `CurriculumEditGuard` passes,
@@ -245,14 +259,16 @@ is published, and is newer than the pinned version (400
 version, revoke the active approval (`FrameworkUpgraded`) and return to `Draft`
 when the program is not `Draft` or has an active approval (posts
 `ApprovalRevoked`), post `FrameworkUpgraded`, and notify the advisor
-(`ProgramFrameworkUpgraded`). `curriculumVersion` is not bumped. The workspace
+(`ProgramFrameworkUpgraded`, only when the advisor has a login and is not the
+caller). `curriculumVersion` is not bumped. The workspace
 `frameworkCheckPassed` reflects the new rules. Returns the workspace DTO.
 
 Publishing a new framework version (`POST
 /api/program-frameworks/{id}/versions/{versionId}/publish`) notifies managers
-once per non-deleted program of that framework pinned to an older version
-(`FrameworkVersionPublished`, payload `programId`, `fromVersion`,
-`toVersion`). Pinned programs never change by themselves.
+once per non-deleted program of that framework that is pinned to an older
+version or has no pinned version (`FrameworkVersionPublished`, payload
+`programId`, `fromVersion` (null when unpinned), `toVersion`). Pinned programs
+never change by themselves.
 
 Workspace `GET /api/programs/{id}/advisory` returns `programId`, `status`,
 `curriculumVersion`, `curriculumLocked` (a live cohort blocks curriculum edits),
@@ -319,7 +335,7 @@ text, no references, attachments, or pin; excluded from filters and counts.
 | --- | --- | --- | --- | --- |
 | GET | `/messages` | participant | `before?`, `after?`, `pageSize` (1–100, default 30), `targetType?`, `targetId?` | `{ messages[], before, after, hasMoreBefore, hasMoreAfter }` |
 | GET | `/messages/{messageId}` | participant | | Message DTO |
-| POST | `/messages` | participant | `{ text, attachmentIds[], clientMessageId }` | Message DTO; idempotent on author + `clientMessageId` |
+| POST | `/messages` | participant | `{ text, attachmentIds[], clientMessageId }` | Message DTO; `clientMessageId` required (≤ 100); idempotent on author + `clientMessageId` |
 | PATCH | `/messages/{messageId}` | author | `{ text }` | Message DTO; mentions re-parsed |
 | DELETE | `/messages/{messageId}` | author | | Removal (tombstone; pin removed) |
 | POST | `/messages/{messageId}/pin` | advisor | | Pin `Open` (idempotent) |
@@ -413,7 +429,8 @@ API: `/api/modules`.
 
 ## Course
 
-A mentor-owned slice of a module containing activities. SelfPaced activities may
+An ordered slice of a module (`CourseOrder`) containing activities. A course
+has no mentor; the mentor is assigned per class. SelfPaced activities may
 have one optional learning material (video, PDF, etc.).
 
 API: `/api/courses`.
@@ -428,12 +445,22 @@ Individual learning tasks within a course.
 | LiveOnline | Scheduled online session |
 | Offline | Physical session; may offer QR check-in |
 
-Flags: `RequireQrCheckin`, `RequireMediaEvidence`. Template times on `Activity`
-are defaults; cohort-specific times live on `ClassSession`.
+Allowed types per module: `Theory` modules take SelfPaced and LiveOnline;
+`Experiential` and `Research` take all three. `DurationMinutes` is required
+(> 0) for LiveOnline and Offline and not allowed for SelfPaced; changing it
+moves `EndTime` (= `StartTime` + duration) on linked non-cancelled sessions.
+`Activity` has no start/end times; cohort-specific times live on
+`ClassSession`.
+
+Flags: `RequireQrCheckin` (Offline only, else 400; switching an activity to
+SelfPaced clears it and the duration), `RequireMediaEvidence`.
 `RequireQrCheckin` enables student QR/code check-in; it does not require that
 path for attendance or mentor-complete. `POST /api/activity-progresses/mentor-complete-bulk`
-completes students with `Present`, `Late`, or `Excused` from either student
-QR/code check-in or a mentor/manager roster mark.
+(Mentor/Manager) completes a LiveOnline or Offline activity for students of a
+linked session whose attendance is `Present`, `Late`, or `Excused` (from either
+student QR/code check-in, meeting join, or a mentor/manager roster mark);
+other students are skipped. When `RequireMediaEvidence` is set, the session
+must have at least one image evidence upload, else the request fails with 400.
 
 API: `/api/activities`.
 
@@ -446,25 +473,53 @@ mentor, `MinHoursBeforeAssignmentJoin` (generate first-session buffer),
 Lifecycle (`ClassStatus`): **Draft → ReadyForMentor → Open → InProgress → Completed**.
 `Cancelled` is stored but has no public cancel endpoint.
 
-1. `POST /api/classes` always creates **Draft**. The program must be **Active**. `StartDate` must be at least 14 days out. Mentor is optional. Reassigning `ProgramId` on `PUT` also requires the target program to be **Active**.
-2. Generate the timetable (`POST /api/class-sessions/generate`, or add sessions manually). Coverage is one active session per LiveOnline/Offline activity plus each assignment.
-3. When coverage is complete, the class becomes **ReadyForMentor** (automatically after generate/create, or `POST /api/classes/{id}/ready-for-mentor`). Mentors request assignment from the board (`GET /api/class-mentor-requests/board`). Students cannot enroll.
-4. After a mentor is assigned, `POST /api/classes/{id}/open` moves **ReadyForMentor → Open**. The program must still be **Active**. Students may enroll only in this status.
-5. `POST /api/classes/{id}/start` (or auto-start when full and `StartDate` has arrived) moves **Open → InProgress**. The program must still be **Active**. Auto-start skips the class when the program is not Active. Enrollment closes.
+1. `POST /api/classes` (Admin/Manager) always creates **Draft**. The program must be **Active**. `StartDate` must be at least 14 days after today (UTC date). `MaxCapacity` ≥ 1, `MinHoursBeforeAssignmentJoin` ≥ 0 (default 48), duplicate code → 409. Mentor is optional. Reassigning `ProgramId` on `PUT` also requires the target program to be **Active**. `PUT` cannot change `Status` (400); a `StartDate` change while Draft/ReadyForMentor/Open must keep the 14-day lead; the date range must still contain every active session; `MaxCapacity` cannot drop below current enrollment.
+2. Generate the timetable (`POST /api/classes/{classId}/sessions/generate`, Admin/Manager, or add sessions manually). Coverage is one active session per LiveOnline/Offline activity plus each assignment.
+3. When coverage is complete and `StartDate` is still in the future, the class becomes **ReadyForMentor** automatically after session create/generate/update/delete, or via `POST /api/classes/{id}/ready-for-mentor` (requires complete coverage). Mentors request assignment from the board (`GET /api/class-mentor-requests/board`; the older `GET /api/classes/mentor-board` lists ReadyForMentor classes without a mentor). Students cannot enroll.
+4. After a mentor is assigned, `POST /api/classes/{id}/open` moves **ReadyForMentor → Open** (mentor and complete coverage required). The program must still be **Active**. Students may enroll only in this status.
+5. `POST /api/classes/{id}/start` (or auto-start) moves **Open → InProgress**. The program must still be **Active**, and the mentor and coverage checks of `open` are repeated. Auto-start runs when the class is Open, active enrollments reach `MaxCapacity`, and `StartDate` has arrived; it is triggered after enrollment and by the hosted `OpenClassAutoStartService` (adaptive delay), and skips the class when the program is not Active or coverage is stale. Enrollment closes.
 6. `POST /api/classes/{id}/complete` moves **InProgress → Completed**.
 
-If sessions are deleted or cancelled so coverage no longer matches the curriculum, **ReadyForMentor** returns to **Draft**.
+Any other transition returns 400. If sessions are deleted or cancelled so coverage no longer matches the curriculum, **ReadyForMentor** returns to **Draft**.
+
+`DELETE /api/classes/{id}` — Manager only; Draft, ReadyForMentor, or Open
+(else 400); an Open class with active students → 409. Soft-deletes the class
+sessions and their active co-teach rows, notifying the roster and those experts
+(`ClassSessionCancelled`).
+
+Generate preconditions: the class is not Completed (400); an Open or
+InProgress class has no enrolled students (409); no active sessions exist yet
+(409); every LiveOnline/Offline activity has `DurationMinutes`. Lives and
+offlines take the weekly `DaysOfWeek` slots at `SessionStartTime` from
+`StartDate` and must fit before `EndDate`; the first session must be at least
+`MinHoursBeforeAssignmentJoin` hours away. Mentor calendar overlap is checked
+only when a mentor is assigned.
 
 `ClassSession` schedules concrete session instances. `SessionKind` mirrors the
 curriculum item: **LiveOnline**, **Offline**, or **AssignmentWindow**. LiveOnline
 join links live on `MeetingUrl` (separate from free-text `Location`).
 `SessionAttendance` records attendance status per student.
 
+Session routes (`/api/classes/{classId}/sessions`): `GET` list (filters
+`sortBy`, `moduleId`, `sessionKind`, `status`, `from`, `to`, `assignmentId`),
+`GET {id}`, `GET with-students/{sessionId}` (Student/Mentor/Manager/Admin;
+students see only their own attendance row), `POST` and `DELETE {id}`
+(Admin/Manager), `POST generate` (Admin/Manager), `PUT {id}`
+(Admin/Manager; the class Mentor may change only `StartTime`, `EndTime`, and
+`Description` of AssignmentWindow sessions). A session targets exactly one of
+`ActivityId` or `AssignmentId`, one active session per curriculum item per
+class (duplicate → 409); SelfPaced activities cannot be scheduled. For
+activity sessions `EndTime` is derived (`StartTime` + `DurationMinutes`) and
+cannot be set by the client. A time change resets `ReminderSentAt` when the
+start moves and checks mentor overlap (not for AssignmentWindow).
+
 Session lifecycle (`ClassSessionStatus`): **Scheduled → InProgress → Completed**,
-or **Cancelled**. Admin/Manager may move a session manually via
-`PUT /api/classes/{classId}/sessions/{id}`. A hosted job
-(`SessionLifecyclePublisher`, every ~5 minutes) applies the clock to LiveOnline
-and Offline sessions:
+or **Cancelled** from Scheduled or InProgress (setting the same status is a
+no-op; other transitions 400). Admin/Manager may move a session manually via
+`PUT /api/classes/{classId}/sessions/{id}`. The hosted
+`SessionLifecycleService` runs `SessionLifecyclePublisher` every 5 minutes
+(completing elapsed sessions first, then starting due ones) and applies the
+clock to LiveOnline and Offline sessions:
 
 - `Scheduled` with `StartTime <= now < EndTime` becomes `InProgress` and
   publishes `ClassSessionStarted`. Pending co-teach invitations stay `Invited`.
@@ -476,13 +531,37 @@ and Offline sessions:
 AssignmentWindow rows are not moved by the job. Completed sessions reject
 QR/code check-in and join.
 
-Student QR/code check-in for Offline sessions:
+Student QR/code check-in (used for Offline sessions; the code itself does not
+check `SessionKind`). Token generation and check-in require the session to be
+Scheduled or InProgress; check-in also requires an Active class enrollment and
+an Active module enrollment, and records `Present`.
 
 | Endpoint | Who | Notes |
 | --- | --- | --- |
-| `POST /api/class-sessions/{id}/checkin-token` | Mentor / Manager / Admin | Rotate QR UUID + 6-digit code (~60s TTL). Live 6-digit codes are unique across non-expired tokens. |
-| `POST /api/class-sessions/{id}/checkin` | Student | Web / session-scoped. Body: exactly one of `{ "token" }` or `{ "code" }`. |
-| `POST /api/class-sessions/checkin-by-token` | Student | Mobile scan-first. Same body; resolves live token/code → session (no `sessionId` in path). Code must match exactly one non-expired live token (0 or >1 → fail closed). |
+| `POST /api/class-sessions/{id}/checkin-token` | Assigned class Mentor / Manager / Admin | Rotate QR UUID + 6-digit code (60s TTL). Live 6-digit codes are unique across non-expired tokens. |
+| `POST /api/class-sessions/{id}/checkin` | Student | Web / session-scoped. Body `{ "token" }` or `{ "code" }`; the exactly-one rule is not enforced here, and a supplied credential that matches the session's live token is accepted. |
+| `POST /api/class-sessions/checkin-by-token` | Student | Mobile scan-first. Body: exactly one of `{ "token" }` or `{ "code" }`; resolves live token/code → session (no `sessionId` in path). Code must match exactly one non-expired live token (0 or >1 → fail closed). |
+
+Online meetings (JaaS) for **LiveOnline** sessions only:
+
+- `POST /api/class-sessions/{id}/join` — Student/Mentor/Manager/Admin. Open
+  from 15 minutes before `StartTime` until `EndTime`; Cancelled and Completed
+  sessions are rejected (400). Students need an Active class enrollment and an
+  Active module enrollment (400 otherwise); attendance is
+  `Present` when joining by `StartTime` + 10 minutes, else `Late`. Re-joining
+  is idempotent and reopens the participation segment. Admin/Manager and the
+  class mentor join as moderators; other non-students get 403. Returns
+  `{ jwt, roomName (session id), appId, domain, isModerator, attendanceStatus }`.
+- `POST /api/class-sessions/{id}/leave` — closes the student's segment
+  (`LeftAt`, `ParticipationMinutes`); leaving before joining → 400.
+  Non-students leave without changes.
+
+Session evidence photos (`/api/class-sessions/{id}/evidence`): `POST`
+(Mentor/Manager/Admin, same permission as attendance updates) uploads a
+`.jpg`/`.jpeg`/`.png` image ≤ 10 MB to `session-evidence/{sessionId}/` as a
+`MediaAsset`; `GET` (Student/Mentor/Manager/Admin, roster-view access) lists
+them; `DELETE {mediaId}` (Mentor/Manager/Admin) removes the S3 object and
+soft-deletes the row. These satisfy `RequireMediaEvidence` for mentor-complete.
 
 `ClassSessionExpert` stores a co-teach invitation (`Invited` / `Accepted` /
 `Declined`) and private mentor feedback after the session is completed.
@@ -509,8 +588,12 @@ rows on the program's sessions (`ClassSessionExpertInvitationWithdrawn`).
 Co-teach API (`/api/class-session-experts`):
 
 - `POST /` — Manager/Admin invites a `ProgramBoard` expert to a **Scheduled
-  Offline** session.
+  Offline** session (non-Offline or expert without a login or not on the
+  board → 400; not Scheduled → 409; duplicate active invite → 409). A
+  calendar overlap does not block the invite; it is returned as
+  `scheduleConflictWarning`.
 - `GET /mine` — Expert lists own invitations.
+- `GET /{id}` — Manager/Admin, or the owning Expert.
 - `GET /` — Manager/Admin list (`classId` / `sessionId` / `expertId` / `status`).
   A Student who is actively enrolled may call the same route with `classId`
   (required; missing → 400). Not enrolled → 403. The student list is always
@@ -518,15 +601,16 @@ Co-teach API (`/api/class-session-experts`):
   `mentorFeedback`, `mentorFeedbackRating`, `mentorFeedbackAt`, and
   `scheduleConflictWarning`. `expertAvatarUrl` is `Expert.AvatarUrl`.
   Student `pageSize` cannot exceed 100.
-- `POST /{id}/accept` and `POST /{id}/decline` — owning Expert; accept is
-  blocked (`409`) on calendar overlap with another Accepted Offline/LiveOnline
-  session.
-- `POST /{id}/withdraw` — Manager/Admin, **Invited only**. Accepted cannot be
-  withdrawn.
-- `PUT /{id}/feedback` — owning Accepted expert, session **Completed**, and
-  `StartTime` is not in the future. Upserts one class-level overview
-  (`MentorFeedback` + rating 1–5). Declined experts and `Cancelled` sessions
-  cannot submit. A Completed row whose start is still ahead is rejected.
+- `POST /{id}/accept` and `POST /{id}/decline` — owning Expert, `Invited`
+  only (400). Accept also requires the session to still be Scheduled (409) and
+  is blocked (`409`) on calendar overlap with another Accepted
+  Offline/LiveOnline session.
+- `POST /{id}/withdraw` — Manager/Admin, **Invited only** (409). Accepted
+  cannot be withdrawn.
+- `PUT /{id}/feedback` — owning Accepted expert (else 400), session
+  **Completed** (409; `Cancelled` → 409), and `StartTime` is not in the future
+  (409). Upserts one class-level overview (`MentorFeedback` comment required +
+  rating 1–5). Declined experts cannot submit.
   Feedback is private: Expert (own row),
   Manager/Admin, and the class Mentor may read it. Students never receive
   feedback fields.
@@ -604,40 +688,73 @@ mentor —
   one row per active enrollment with the latest class-scoped attempt (or nulls
   if never started), counts, and class nav `status` matching curriculum-progress.
 
-Class APIs are exposed through program and enrollment flows; entities exist in
-domain and migrations.
+Class API: `/api/classes` — `GET` list, `GET {id}`,
+`GET with-students/{classId}` (Student/Mentor/Admin/Manager),
+`GET with-sessions/{classId}`, `POST` / `PUT {id}` and the lifecycle actions
+(`ready-for-mentor`, `open`, `start`, `complete`; Admin/Manager),
+`DELETE {id}` (Manager), and the Mentor routes `mentor-board`,
+`{classId}/curriculum-progress`, and the two `student-progress` routes above.
 
 ## Materials
 
 Learning assets for **SelfPaced** activities only (video, PDF, doc, etc.). At most
 one material per activity. LiveOnline and Offline activities do not have materials.
 
-Types via `MaterialType` enum. API: `/api/materials`.
+Types via `MaterialType` enum. API: `/api/materials`:
 
-Material files are not public while a program is `Draft` or `Approved`.
+- `POST /upload?activityId&title` (multipart `file`) — the activity must be
+  SelfPaced with no material yet (409); `CurriculumEditGuard` applies. Allowed:
+  PDF and DOC/DOCX ≤ 50 MB, video `.mp4`/`.mov`/`.avi`/`.mkv` ≤ 3 GB, image
+  `.jpg`/`.jpeg`/`.png`/`.gif`/`.webp` ≤ 10 MB; stored under
+  `materials/pdf|doc|video|image/`.
+- `POST /from-discussion-attachment` — see
+  [Advisory Chat and Approval](#advisory-chat-and-approval).
+- `GET /` (filtered list), `GET /activity/{activityId}` (anonymous allowed),
+  `PUT /{materialId}` (title only), `DELETE /{materialId}` (removes the S3
+  file, then hard-deletes the row). `PUT` and `DELETE` also apply
+  `CurriculumEditGuard`.
+
+Material files are not public while a program is not `Active`.
 Managers and Admins can receive an authorized preview; Experts only for
 programs where they are the advisor or a board member (else 403);
-students use enrollment-scoped access. Once a program is `Active`, the activity
-material endpoint may be called without enrollment and returns a time-limited
-preview URL. The S3 `materials/*` prefix is excluded from the bucket's anonymous
-read policy.
+students use enrollment-scoped access (`programEnrollmentId` required, else
+400). Once a program is `Active`, the activity material endpoint may be called
+without enrollment and returns a time-limited preview URL; anonymous callers
+get 403 otherwise. The S3 `materials/*` prefix is excluded from the bucket's
+anonymous read policy.
 
 ## Experts
 
 Experts associated with programs via `ProgramBoard` and the `Expert` entity.
 `RoleType.Expert` is a dedicated login role. Manager/Admin provision it with
-`POST /api/experts` (email required; temporary password auto-generated and
+`POST /api/experts` (email required and unique, else 409; the user is created
+Active with a verified email; temporary password auto-generated and
 emailed — create rolls back if email fails); the expert signs in through
 `POST /api/auth/login` immediately. Public register does not allow Expert.
 Password reset uses forgot-password OTP. `PUT /api/experts/{id}` does not
-change credentials; `DELETE` locks the linked user.
+change credentials. `DELETE /api/experts/{id}` is blocked (409) while the
+expert is the responsible advisor of any program; otherwise it locks the
+linked user and withdraws the expert's co-teach invitations.
 Profile credentials: `Specialization` tags, `ExpertDegree`, and
-`ExpertPublication`. Manager/Admin CRUD:
+`ExpertPublication`. Manager/Admin routes:
 
-- `POST|PUT|DELETE /api/experts/{id}/degrees`
-- `POST|PUT|DELETE /api/experts/{id}/publications`
+- `POST /api/experts/{id}/avatar`
+- `POST|PUT|DELETE /api/experts/{expertId}/programs/{programId}` — board
+  membership. Removing a membership (or a `PUT /api/experts/{id}` whose program
+  list drops a program) is blocked (409) for that program's advisor.
+- `POST /api/experts/{expertId}/degrees`, `PUT|DELETE
+  /api/experts/{expertId}/degrees/{degreeId}`
+- `POST /api/experts/{expertId}/publications`, `PUT|DELETE
+  /api/experts/{expertId}/publications/{publicationId}`
 
-Public reads: `GET /api/experts/{id}` and `GET /api/experts/{id}/profile`.
+Expert self-service (`/api/experts/me`, Expert role): `GET` / `PUT me` (cannot
+change code, email, user link, or board), `POST me/avatar` (jpg, jpeg, png,
+gif ≤ 5 MB; also updates the user avatar), `POST me/degrees`,
+`PUT|DELETE me/degrees/{degreeId}`, `POST me/publications`,
+`PUT|DELETE me/publications/{publicationId}`.
+
+Public reads: `GET /api/experts`, `GET /api/experts/{id}`, and
+`GET /api/experts/{id}/profile`.
 
 ### Program framework and curriculum review
 
@@ -658,17 +775,26 @@ existing program; managers are notified and explicitly adopt it with
 [Framework version upgrade](#framework-version-upgrade)). Framework `Category` is guidance only and never an eligibility
 gate.
 
-Published versions and referenced history are immutable. Draft updates are
+Published versions and referenced history are immutable (editing one → 409). Draft updates are
 partial: `null` leaves a rule unchanged and `clear<Field>` turns a numeric rule
-off.
+(or `requireCapstoneResearchMilestone`) off.
 
-API: `/api/program-frameworks` — Expert CRUD on own blueprints; Manager/Admin
-may list and read all but cannot write another expert's blueprint.
-Create/archive/version publishing stay Expert-author-only. Category query is a
-hint only. Authoring occurs on one draft version. The old rubric and criteria
-routes return 410 `ENDPOINT_REMOVED`. Archive prevents new assignment while retaining existing
-pins and history. Version routes live under
-`/api/program-frameworks/{id}/versions`.
+API: `/api/program-frameworks` (Expert/Manager/Admin). Experts list and read
+only their own frameworks (another expert's id → 404); Manager/Admin may list
+and read all. Every write is limited to the authoring Expert (Manager/Admin →
+403): `POST` (create with draft version 1), `PUT {id}` (name, category, and the
+draft version's fields; 409 when there is no draft), `DELETE {id}` (same as
+archive), `POST {id}/archive`, `POST {id}/versions/draft`, and
+`POST {id}/versions/{versionId}/publish`. Reads: `GET`, `GET {id}`,
+`GET {id}/versions`, `GET {id}/versions/{versionId}`. Category query is a
+hint only. Authoring occurs on one draft version: a new draft copies the
+latest published version and requires that no draft exists and at least one
+version is published (409 otherwise). Archived frameworks cannot create or
+publish versions (409). The old rubric and criteria routes return 410
+`ENDPOINT_REMOVED`. Archive prevents new assignment while retaining existing
+pins and history: program create rejects an archived framework or an
+unpublished version (409), and `frameworkId` alone pins the latest published
+version.
 
 Rule fields and `FrameworkRuleEvaluator` check codes (checks are emitted only
 for rules that are on):
@@ -692,8 +818,10 @@ for rules that are on):
 | `requireCapstoneResearchMilestone` | `RequireCapstoneResearchMilestone` |
 
 Each check is `{ code, label, expected, actual, passed,
-affectedCurriculumLinks[] }` (failing components; empty for program-level
-checks). `TotalHours` compares minutes (`hours × 60`); null or ≤ 0 durations
+affectedCurriculumLinks[] }` (the failing components for most checks;
+`MinModules` lists all modules, `MinOfflineSessions` / `MinLiveSessions` the
+matching activities, and `RequireCapstoneResearchMilestone` the capstone
+milestones; empty for program-level checks). `TotalHours` compares minutes (`hours × 60`); null or ≤ 0 durations
 count as 0. `ActivityDurationSet` applies only to LiveOnline and Offline
 activities (null or ≤ 0 fails); SelfPaced activities have no duration and are
 exempt. Ratios are `count / all activities
@@ -721,15 +849,23 @@ Per-student highlight reels for a **class**, processed asynchronously via AWS
 MediaConvert. Model: `HighlightVideoStack` (up to 3 per student/class) with
 `HighlightVideoItem` outputs (up to 4 per stack). Source clips come from
 `MediaAsset` videos for that class (`ClassId` required; optional
-`ClassSessionId`). Only videos with a **verified** face `MediaTag` for the
-student are used. Mentor late tags (no face timeline) are treated as scene-only
-participation / project credit: full video when no strength is set, or
-activity clips from the media label timeline when `StrengthDescription` is
-set. Optional `StrengthDescription` otherwise filters via Bedrock + label
-timeline (face windows when a face timeline exists).
+`ClassSessionId`) whose tagging is complete. Only videos with a **verified**
+`MediaTag` for the student are used (face or mentor tag), ordered by session
+start. Videos without face segments (including mentor late tags) are treated
+as scene-only participation / project credit: full video when no strength is
+set, or activity clips from the media label timeline when
+`StrengthDescription` is set. When the student is the only face, the whole
+video is used; with several people, the student's face segments are used with
+2-second buffers. Optional `StrengthDescription` (≤ 2000) otherwise filters via
+Bedrock + label timeline.
 
-API: `/api/highlight-video/stacks` (`classId` query/body; optional `studentId`).
-Trim / add-segment / delete under `/api/highlight-video/stacks/{stackId}/...`.
+API: `/api/highlight-video` (Student/Mentor/Manager/Admin; students only see
+their own stacks, mentors only their own classes): `POST stacks` (202),
+`GET stacks?classId&studentId`, `GET stacks/{stackId}`,
+`POST stacks/{stackId}/regenerate`, `GET stacks/{stackId}/source-media`,
+`DELETE stacks/{stackId}`, and per item under
+`stacks/{stackId}/items/{itemId}`: `GET progress`, `POST cancel`,
+`POST retry`, `POST trim`, `POST add-segment`, `DELETE`.
 AWS completion: `/api/webhooks/aws`.
 Completed reels are attached to a portfolio Gallery section via
 `POST /api/portfolios/me/media/from-highlight-reel` (copies into portfolio-owned
