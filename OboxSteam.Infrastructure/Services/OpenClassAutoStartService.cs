@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Infrastructure.Observability;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -38,29 +39,33 @@ public class OpenClassAutoStartService : BackgroundService
 
             try
             {
-                using var scope = _serviceProvider.CreateScope();
-                var classService = scope.ServiceProvider.GetRequiredService<IClassService>();
-
-                // Inspect Open classes once per wake; decide run vs sleep (no fixed 30-minute poll).
-                var schedule = await classService.ResolveOpenClassAutoStartScheduleAsync();
-
-                if (schedule.ShouldRunAutoStart)
+                await TelemetrySources.RunBackgroundJobAsync("open-class-auto-start", async activity =>
                 {
-                    var startedCount = await classService.AutoStartEligibleOpenClassesAsync();
+                    using var scope = _serviceProvider.CreateScope();
+                    var classService = scope.ServiceProvider.GetRequiredService<IClassService>();
 
-                    if (startedCount > 0)
+                    // Inspect Open classes once per wake; decide run vs sleep (no fixed 30-minute poll).
+                    var schedule = await classService.ResolveOpenClassAutoStartScheduleAsync();
+
+                    if (schedule.ShouldRunAutoStart)
                     {
-                        _logger.LogInformation(
-                            "OpenClassAutoStartService auto-started {Count} class(es) to InProgress.",
-                            startedCount);
-                    }
-                }
+                        var startedCount = await classService.AutoStartEligibleOpenClassesAsync();
+                        activity?.SetTag("job.classes_started", startedCount);
 
-                nextDelay = schedule.NextDelay;
-                _logger.LogInformation(
-                    "OpenClassAutoStartService next check in {Delay} ({Reason}).",
-                    nextDelay,
-                    schedule.Reason);
+                        if (startedCount > 0)
+                        {
+                            _logger.LogInformation(
+                                "OpenClassAutoStartService auto-started {Count} class(es) to InProgress.",
+                                startedCount);
+                        }
+                    }
+
+                    nextDelay = schedule.NextDelay;
+                    _logger.LogInformation(
+                        "OpenClassAutoStartService next check in {Delay} ({Reason}).",
+                        nextDelay,
+                        schedule.Reason);
+                });
             }
             catch (OperationCanceledException)
             {

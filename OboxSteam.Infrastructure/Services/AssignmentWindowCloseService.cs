@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Services;
+using OboxSteam.Infrastructure.Observability;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -34,32 +35,38 @@ public sealed class AssignmentWindowCloseService : BackgroundService
         {
             try
             {
-                using var scope = _serviceProvider.CreateScope();
                 if (SeedExecutionGuard.IsSeeding)
                 {
                     await Task.Delay(RunInterval, stoppingToken);
                     continue;
                 }
 
-                // Grade timed-out quiz attempts first so a saved passing draft counts before
-                // the elapsed-window close decides AcademicFail.
-                var quizAttempts = scope.ServiceProvider.GetRequiredService<IQuizAttemptService>();
-                var graded = await quizAttempts.FinalizeExpiredAttemptsAsync(stoppingToken);
-                if (graded > 0)
+                await TelemetrySources.RunBackgroundJobAsync("assignment-window-close", async activity =>
                 {
-                    _logger.LogInformation(
-                        "AssignmentWindowCloseService graded {Count} expired quiz attempt(s).",
-                        graded);
-                }
+                    using var scope = _serviceProvider.CreateScope();
 
-                var lifecycle = scope.ServiceProvider.GetRequiredService<ProgramPurchaseLifecycle>();
-                var closed = await lifecycle.CloseElapsedRequiredWindowsAsync(stoppingToken);
-                if (closed > 0)
-                {
-                    _logger.LogInformation(
-                        "AssignmentWindowCloseService closed {Count} purchase(s).",
-                        closed);
-                }
+                    // Grade timed-out quiz attempts first so a saved passing draft counts before
+                    // the elapsed-window close decides AcademicFail.
+                    var quizAttempts = scope.ServiceProvider.GetRequiredService<IQuizAttemptService>();
+                    var graded = await quizAttempts.FinalizeExpiredAttemptsAsync(stoppingToken);
+                    activity?.SetTag("job.quiz_attempts_graded", graded);
+                    if (graded > 0)
+                    {
+                        _logger.LogInformation(
+                            "AssignmentWindowCloseService graded {Count} expired quiz attempt(s).",
+                            graded);
+                    }
+
+                    var lifecycle = scope.ServiceProvider.GetRequiredService<ProgramPurchaseLifecycle>();
+                    var closed = await lifecycle.CloseElapsedRequiredWindowsAsync(stoppingToken);
+                    activity?.SetTag("job.purchases_closed", closed);
+                    if (closed > 0)
+                    {
+                        _logger.LogInformation(
+                            "AssignmentWindowCloseService closed {Count} purchase(s).",
+                            closed);
+                    }
+                });
 
                 await Task.Delay(RunInterval, stoppingToken);
             }

@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Infrastructure.Observability;
+using System.Diagnostics;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -28,7 +30,9 @@ public sealed class ClassSeatHoldCleanupService : BackgroundService
         {
             try
             {
-                await ReleaseExpiredHoldsAsync(stoppingToken);
+                await TelemetrySources.RunBackgroundJobAsync(
+                    "class-seat-hold-cleanup",
+                    activity => ReleaseExpiredHoldsAsync(activity, stoppingToken));
                 await Task.Delay(RunInterval, stoppingToken);
             }
             catch (OperationCanceledException)
@@ -45,11 +49,12 @@ public sealed class ClassSeatHoldCleanupService : BackgroundService
         _logger.LogInformation("ClassSeatHoldCleanupService stopped.");
     }
 
-    private async Task ReleaseExpiredHoldsAsync(CancellationToken stoppingToken)
+    private async Task ReleaseExpiredHoldsAsync(Activity? activity, CancellationToken stoppingToken)
     {
         using var scope = _serviceProvider.CreateScope();
         var seatHoldService = scope.ServiceProvider.GetRequiredService<IClassSeatHoldService>();
         var affected = await seatHoldService.ReleaseExpiredHoldsAsync(stoppingToken);
+        activity?.SetTag("job.classes_affected", affected.Count);
 
         foreach (var (classId, programId) in affected)
         {

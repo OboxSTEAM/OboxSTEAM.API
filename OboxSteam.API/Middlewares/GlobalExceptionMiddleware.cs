@@ -1,5 +1,7 @@
 using OboxSteam.Application.Exceptions;
 using OboxSteam.Application.Utils;
+using OboxSteam.Infrastructure.Observability;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -26,7 +28,16 @@ public class GlobalExceptionMiddleware
         catch (Exception ex)
         {
             LogException(ex);
-            await HandleExceptionAsync(context, ex);
+            var statusCode = ResolveStatusCode(ex);
+
+            // The exception never reaches the ASP.NET Core instrumentation, so record it on the
+            // request span explicitly; 4xx business errors are expected and must not become Issues.
+            if (statusCode >= StatusCodes.Status500InternalServerError)
+            {
+                TelemetrySources.RecordException(Activity.Current, ex);
+            }
+
+            await HandleExceptionAsync(context, ex, statusCode);
         }
     }
 
@@ -46,21 +57,20 @@ public class GlobalExceptionMiddleware
             _logger.LogError(ex, "An unhandled server error occurred.");
     }
 
-    private static Task HandleExceptionAsync(HttpContext context, Exception exception)
+    // AppException subclasses carry their own status code
+    // Fall back to BCL exception types for backward compatibility
+    private static int ResolveStatusCode(Exception exception) => exception switch
+    {
+        AppException appEx => appEx.StatusCode,
+        KeyNotFoundException => StatusCodes.Status404NotFound,
+        ArgumentException => StatusCodes.Status400BadRequest,
+        UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
+        _ => StatusCodes.Status500InternalServerError
+    };
+
+    private static Task HandleExceptionAsync(HttpContext context, Exception exception, int statusCode)
     {
         context.Response.ContentType = "application/json";
-
-        // AppException subclasses carry their own status code
-        // Fall back to BCL exception types for backward compatibility
-        var statusCode = exception switch
-        {
-            AppException appEx => appEx.StatusCode,
-            KeyNotFoundException => StatusCodes.Status404NotFound,
-            ArgumentException => StatusCodes.Status400BadRequest,
-            UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
-            _ => StatusCodes.Status500InternalServerError
-        };
-
         context.Response.StatusCode = statusCode;
 
         var errorCode = exception is AppException appException && !string.IsNullOrWhiteSpace(appException.ErrorCode)

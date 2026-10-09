@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Infrastructure.Observability;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -29,9 +30,13 @@ public sealed class DiscussionAttachmentPurgeService : BackgroundService
         {
             try
             {
-                using var scope = _serviceProvider.CreateScope();
-                var attachments = scope.ServiceProvider.GetRequiredService<IProgramAdvisoryAttachmentService>();
-                await attachments.PurgeUnsentAsync(stoppingToken);
+                await TelemetrySources.RunBackgroundJobAsync("discussion-attachment-purge", async _ =>
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var attachments = scope.ServiceProvider.GetRequiredService<IProgramAdvisoryAttachmentService>();
+                    await attachments.PurgeUnsentAsync(stoppingToken);
+                });
+
                 await Task.Delay(RunInterval, stoppingToken);
             }
             catch (OperationCanceledException)

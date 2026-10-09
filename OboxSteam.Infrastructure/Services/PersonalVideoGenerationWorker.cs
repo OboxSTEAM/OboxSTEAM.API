@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Infrastructure.Observability;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -44,9 +45,13 @@ public class PersonalVideoGenerationWorker : BackgroundService
 
             try
             {
-                using var scope = _serviceProvider.CreateScope();
-                var service = scope.ServiceProvider.GetRequiredService<IPersonalVideoService>();
-                await service.ProcessGenerationAsync(job);
+                await TelemetrySources.RunBackgroundJobAsync("personal-video-generation", async activity =>
+                {
+                    activity?.SetTag("personal_video.item_id", job.ItemId.ToString());
+                    using var scope = _serviceProvider.CreateScope();
+                    var service = scope.ServiceProvider.GetRequiredService<IPersonalVideoService>();
+                    await service.ProcessGenerationAsync(job);
+                });
             }
             catch (Exception ex)
             {

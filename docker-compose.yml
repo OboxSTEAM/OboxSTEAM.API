@@ -41,6 +41,11 @@ services:
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      # Traceway (OpenTelemetry). Export is off unless both endpoint and token are set.
+      - OTEL_SERVICE_NAME=oboxsteam-api
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - TRACEWAY_BACKEND_TOKEN=${TRACEWAY_BACKEND_TOKEN:-}
+      - IMAGE_TAG=${IMAGE_TAG:-latest}
     ports:
       - "${API_PORT}:5000"
     networks:

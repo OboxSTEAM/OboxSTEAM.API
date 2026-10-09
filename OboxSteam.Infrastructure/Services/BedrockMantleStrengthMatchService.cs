@@ -2,7 +2,9 @@ using Microsoft.Extensions.Logging;
 using OpenAI;
 using OpenAI.Chat;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Infrastructure.Observability;
 using System.ClientModel;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -108,23 +110,7 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             "BedrockMantleStrengthMatchService: sending prompt ({Chars} chars, ~{EstTokens} est. tokens)",
             prompt.Length, prompt.Length / 4);
 
-        ChatCompletion completion;
-        try
-        {
-            completion = await _chatClient.CompleteChatAsync(
-                [new UserChatMessage(prompt)],
-                new ChatCompletionOptions
-                {
-                    Temperature = 0f,
-                    MaxOutputTokenCount = 4096
-                },
-                ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "BedrockMantleStrengthMatchService: CompleteChatAsync failed");
-            throw;
-        }
+        var completion = await CompleteChatWithTelemetryAsync(prompt, ct);
 
         var rawText = completion.Content.FirstOrDefault()?.Text ?? string.Empty;
 
@@ -179,6 +165,47 @@ public class BedrockMantleStrengthMatchService : IStrengthMatchService
             matched.Count, MinMatchScore, output.Reasoning);
 
         return new StrengthMatchResult(matched, output.Reasoning ?? string.Empty);
+    }
+
+    /// <summary>
+    /// One model call = one CLIENT span carrying <c>gen_ai.*</c> metadata, which Traceway shows as an
+    /// AI Trace. Prompt and completion text are deliberately not attached.
+    /// </summary>
+    private async Task<ChatCompletion> CompleteChatWithTelemetryAsync(string prompt, CancellationToken ct)
+    {
+        using var activity = TelemetrySources.Ai.StartActivity("strength-match", ActivityKind.Client);
+        activity?.SetTag("gen_ai.system", "aws.bedrock");
+        activity?.SetTag("gen_ai.operation.name", "chat");
+        activity?.SetTag("trace.name", "strength-match");
+
+        try
+        {
+            ChatCompletion completion = await _chatClient.CompleteChatAsync(
+                [new UserChatMessage(prompt)],
+                new ChatCompletionOptions
+                {
+                    Temperature = 0f,
+                    MaxOutputTokenCount = 4096
+                },
+                ct);
+
+            activity?.SetTag("gen_ai.response.model", completion.Model);
+            activity?.SetTag("gen_ai.response.finish_reason", completion.FinishReason.ToString());
+            if (completion.Usage is { } usage)
+            {
+                activity?.SetTag("gen_ai.usage.input_tokens", usage.InputTokenCount);
+                activity?.SetTag("gen_ai.usage.output_tokens", usage.OutputTokenCount);
+                activity?.SetTag("gen_ai.usage.total_tokens", usage.TotalTokenCount);
+            }
+
+            return completion;
+        }
+        catch (Exception ex)
+        {
+            TelemetrySources.RecordException(activity, ex);
+            _logger.LogError(ex, "BedrockMantleStrengthMatchService: CompleteChatAsync failed");
+            throw;
+        }
     }
 
     /// <summary>

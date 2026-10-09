@@ -148,6 +148,23 @@ with stack traces for 5xx. Structured request logging per
 `docs/ARCHITECTURE.md` observability template is partially met via middleware
 logging; a full canonical JSON request log line is not yet implemented.
 
+Telemetry export (Traceway Cloud, OpenTelemetry over OTLP/HTTP) is wired in
+`OboxSteam.API/Architecture/ObservabilityExtensions.cs` and is active only when
+both `OTEL_EXPORTER_OTLP_ENDPOINT` and `TRACEWAY_BACKEND_TOKEN` are set
+(production VPS). Local runs and tests export nothing.
+
+| Signal | Source |
+| --- | --- |
+| Endpoints | ASP.NET Core request spans (Swagger, `/hubs`, static files filtered); `user.id` and `user.role` tags only |
+| Child spans | Npgsql SQL, HttpClient, AWS SDK |
+| Issues | 5xx exceptions recorded by `GlobalExceptionMiddleware`; 4xx business errors are not Issues |
+| Tasks | One CONSUMER span per hosted-service run via `TelemetrySources.RunBackgroundJobAsync` (stable kebab-case names) |
+| AI Traces | Bedrock strength-match call: model, tokens, finish reason; no prompt or completion text |
+| Logs | `ILogger` records; `TelemetryLogRedactionProcessor` masks emails and drops `Desc`/`Body`/`Raw` values in the exported copy only; EF Core command logs below Warning are not exported |
+| Metrics | ASP.NET Core, HttpClient, .NET runtime; host metrics from the Traceway agent on the VPS |
+
+Plan and rollout: `docs/plans/active/traceway-observability.md`.
+
 Audit product records (submissions, attendance, enrollment changes) live in
 PostgreSQL entities; distinguish them from operational application logs.
 

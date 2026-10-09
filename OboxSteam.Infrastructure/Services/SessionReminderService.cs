@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Infrastructure.Observability;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -32,13 +33,17 @@ public sealed class SessionReminderService : BackgroundService
         {
             try
             {
-                using var scope = _serviceProvider.CreateScope();
-                var publisher = scope.ServiceProvider.GetRequiredService<ISessionReminderPublisher>();
-                var sent = await publisher.PublishDueRemindersAsync(stoppingToken);
-                if (sent > 0)
+                await TelemetrySources.RunBackgroundJobAsync("session-reminder", async activity =>
                 {
-                    _logger.LogInformation("SessionReminderService published {Count} reminder(s).", sent);
-                }
+                    using var scope = _serviceProvider.CreateScope();
+                    var publisher = scope.ServiceProvider.GetRequiredService<ISessionReminderPublisher>();
+                    var sent = await publisher.PublishDueRemindersAsync(stoppingToken);
+                    activity?.SetTag("job.reminders_sent", sent);
+                    if (sent > 0)
+                    {
+                        _logger.LogInformation("SessionReminderService published {Count} reminder(s).", sent);
+                    }
+                });
 
                 await Task.Delay(RunInterval, stoppingToken);
             }

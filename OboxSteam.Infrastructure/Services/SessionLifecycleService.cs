@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OboxSteam.Application.Commons;
 using OboxSteam.Application.Interfaces;
+using OboxSteam.Infrastructure.Observability;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -39,17 +40,22 @@ public sealed class SessionLifecycleService : BackgroundService
                     continue;
                 }
 
-                using var scope = _serviceProvider.CreateScope();
-                var publisher = scope.ServiceProvider.GetRequiredService<ISessionLifecyclePublisher>();
-                var completed = await publisher.CompleteElapsedSessionsAsync(stoppingToken);
-                var started = await publisher.StartDueSessionsAsync(stoppingToken);
-                if (completed > 0 || started > 0)
+                await TelemetrySources.RunBackgroundJobAsync("session-lifecycle", async activity =>
                 {
-                    _logger.LogInformation(
-                        "SessionLifecycleService started {Started} and completed {Completed} session(s).",
-                        started,
-                        completed);
-                }
+                    using var scope = _serviceProvider.CreateScope();
+                    var publisher = scope.ServiceProvider.GetRequiredService<ISessionLifecyclePublisher>();
+                    var completed = await publisher.CompleteElapsedSessionsAsync(stoppingToken);
+                    var started = await publisher.StartDueSessionsAsync(stoppingToken);
+                    activity?.SetTag("job.sessions_started", started);
+                    activity?.SetTag("job.sessions_completed", completed);
+                    if (completed > 0 || started > 0)
+                    {
+                        _logger.LogInformation(
+                            "SessionLifecycleService started {Started} and completed {Completed} session(s).",
+                            started,
+                            completed);
+                    }
+                });
 
                 await Task.Delay(RunInterval, stoppingToken);
             }

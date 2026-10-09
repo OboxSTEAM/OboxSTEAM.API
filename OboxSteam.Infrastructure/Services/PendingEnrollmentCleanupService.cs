@@ -5,6 +5,7 @@ using OboxSteam.Application.Interfaces;
 using OboxSteam.Application.Notifications;
 using OboxSteam.Domain.Enums;
 using OboxSteam.Domain.Interfaces;
+using OboxSteam.Infrastructure.Observability;
 
 namespace OboxSteam.Infrastructure.Services;
 
@@ -28,7 +29,9 @@ public class PendingEnrollmentCleanupService : BackgroundService
         {
             try
             {
-                await CleanupExpiredEnrollmentsAsync(stoppingToken);
+                await TelemetrySources.RunBackgroundJobAsync(
+                    "pending-enrollment-cleanup",
+                    _ => CleanupExpiredEnrollmentsAsync(stoppingToken));
                 await Task.Delay(RunInterval, stoppingToken);
             }
             catch (OperationCanceledException)
