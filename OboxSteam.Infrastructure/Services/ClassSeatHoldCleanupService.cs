@@ -30,7 +30,7 @@ public sealed class ClassSeatHoldCleanupService : BackgroundService
         {
             try
             {
-                await TelemetrySources.RunBackgroundJobAsync(
+                await TelemetrySources.RunPollingJobAsync(
                     "class-seat-hold-cleanup",
                     activity => ReleaseExpiredHoldsAsync(activity, stoppingToken));
                 await Task.Delay(RunInterval, stoppingToken);
@@ -49,7 +49,7 @@ public sealed class ClassSeatHoldCleanupService : BackgroundService
         _logger.LogInformation("ClassSeatHoldCleanupService stopped.");
     }
 
-    private async Task ReleaseExpiredHoldsAsync(Activity? activity, CancellationToken stoppingToken)
+    private async Task<bool> ReleaseExpiredHoldsAsync(Activity? activity, CancellationToken stoppingToken)
     {
         using var scope = _serviceProvider.CreateScope();
         var seatHoldService = scope.ServiceProvider.GetRequiredService<IClassSeatHoldService>();
@@ -60,5 +60,7 @@ public sealed class ClassSeatHoldCleanupService : BackgroundService
         {
             await seatHoldService.PublishSeatsChangedAsync(programId, classId, stoppingToken);
         }
+
+        return affected.Count > 0;
     }
 }

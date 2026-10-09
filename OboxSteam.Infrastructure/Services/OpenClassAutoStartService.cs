@@ -39,17 +39,18 @@ public class OpenClassAutoStartService : BackgroundService
 
             try
             {
-                await TelemetrySources.RunBackgroundJobAsync("open-class-auto-start", async activity =>
+                await TelemetrySources.RunPollingJobAsync("open-class-auto-start", async activity =>
                 {
                     using var scope = _serviceProvider.CreateScope();
                     var classService = scope.ServiceProvider.GetRequiredService<IClassService>();
 
                     // Inspect Open classes once per wake; decide run vs sleep (no fixed 30-minute poll).
                     var schedule = await classService.ResolveOpenClassAutoStartScheduleAsync();
+                    var startedCount = 0;
 
                     if (schedule.ShouldRunAutoStart)
                     {
-                        var startedCount = await classService.AutoStartEligibleOpenClassesAsync();
+                        startedCount = await classService.AutoStartEligibleOpenClassesAsync();
                         activity?.SetTag("job.classes_started", startedCount);
 
                         if (startedCount > 0)
@@ -65,6 +66,8 @@ public class OpenClassAutoStartService : BackgroundService
                         "OpenClassAutoStartService next check in {Delay} ({Reason}).",
                         nextDelay,
                         schedule.Reason);
+
+                    return startedCount > 0;
                 });
             }
             catch (OperationCanceledException)

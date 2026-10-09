@@ -29,7 +29,7 @@ public class PendingEnrollmentCleanupService : BackgroundService
         {
             try
             {
-                await TelemetrySources.RunBackgroundJobAsync(
+                await TelemetrySources.RunPollingJobAsync(
                     "pending-enrollment-cleanup",
                     _ => CleanupExpiredEnrollmentsAsync(stoppingToken));
                 await Task.Delay(RunInterval, stoppingToken);
@@ -48,7 +48,7 @@ public class PendingEnrollmentCleanupService : BackgroundService
         _logger.LogInformation("PendingEnrollmentCleanupService stopped.");
     }
 
-    private async Task CleanupExpiredEnrollmentsAsync(CancellationToken stoppingToken)
+    private async Task<bool> CleanupExpiredEnrollmentsAsync(CancellationToken stoppingToken)
     {
         using var scope = _serviceProvider.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
@@ -100,5 +100,7 @@ public class PendingEnrollmentCleanupService : BackgroundService
         {
             _logger.LogInformation("No expired pending enrollments found.");
         }
+
+        return changesMade;
     }
 }

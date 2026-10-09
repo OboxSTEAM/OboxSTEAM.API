@@ -41,7 +41,7 @@ public sealed class AssignmentWindowCloseService : BackgroundService
                     continue;
                 }
 
-                await TelemetrySources.RunBackgroundJobAsync("assignment-window-close", async activity =>
+                await TelemetrySources.RunPollingJobAsync("assignment-window-close", async activity =>
                 {
                     using var scope = _serviceProvider.CreateScope();
 
@@ -66,6 +66,8 @@ public sealed class AssignmentWindowCloseService : BackgroundService
                             "AssignmentWindowCloseService closed {Count} purchase(s).",
                             closed);
                     }
+
+                    return graded > 0 || closed > 0;
                 });
 
                 await Task.Delay(RunInterval, stoppingToken);

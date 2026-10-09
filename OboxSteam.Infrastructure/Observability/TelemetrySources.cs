@@ -39,6 +39,44 @@ public static class TelemetrySources
     }
 
     /// <summary>
+    /// Runs one tick of a polling job inside a CONSUMER span that is exported only when
+    /// <paramref name="work"/> returns <c>true</c> or throws. Idle ticks send nothing, which keeps
+    /// minute-level pollers within the Traceway ingest quota. Recording stays off while the work
+    /// runs, so child spans (database, HTTP) are never captured for polling jobs.
+    /// </summary>
+    public static async Task RunPollingJobAsync(string taskName, Func<Activity?, Task<bool>> work)
+    {
+        using var activity = BackgroundJobs.StartActivity(taskName, ActivityKind.Consumer);
+        var sampled = activity?.Recorded ?? false;
+        if (activity is not null)
+        {
+            activity.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
+        }
+
+        try
+        {
+            if (await work(activity) && sampled)
+            {
+                activity!.ActivityTraceFlags |= ActivityTraceFlags.Recorded;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (sampled)
+            {
+                activity!.ActivityTraceFlags |= ActivityTraceFlags.Recorded;
+            }
+
+            RecordException(activity, ex);
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Adds the OpenTelemetry <c>exception</c> event (which Traceway turns into an Issue)
     /// and marks the span as failed.
     /// </summary>

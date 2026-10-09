@@ -40,7 +40,7 @@ public sealed class SessionLifecycleService : BackgroundService
                     continue;
                 }
 
-                await TelemetrySources.RunBackgroundJobAsync("session-lifecycle", async activity =>
+                await TelemetrySources.RunPollingJobAsync("session-lifecycle", async activity =>
                 {
                     using var scope = _serviceProvider.CreateScope();
                     var publisher = scope.ServiceProvider.GetRequiredService<ISessionLifecyclePublisher>();
@@ -55,6 +55,8 @@ public sealed class SessionLifecycleService : BackgroundService
                             started,
                             completed);
                     }
+
+                    return completed > 0 || started > 0;
                 });
 
                 await Task.Delay(RunInterval, stoppingToken);

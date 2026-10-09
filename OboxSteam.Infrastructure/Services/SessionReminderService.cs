@@ -33,7 +33,7 @@ public sealed class SessionReminderService : BackgroundService
         {
             try
             {
-                await TelemetrySources.RunBackgroundJobAsync("session-reminder", async activity =>
+                await TelemetrySources.RunPollingJobAsync("session-reminder", async activity =>
                 {
                     using var scope = _serviceProvider.CreateScope();
                     var publisher = scope.ServiceProvider.GetRequiredService<ISessionReminderPublisher>();
@@ -43,6 +43,8 @@ public sealed class SessionReminderService : BackgroundService
                     {
                         _logger.LogInformation("SessionReminderService published {Count} reminder(s).", sent);
                     }
+
+                    return sent > 0;
                 });
 
                 await Task.Delay(RunInterval, stoppingToken);

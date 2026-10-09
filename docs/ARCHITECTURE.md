@@ -158,12 +158,12 @@ both `OTEL_EXPORTER_OTLP_ENDPOINT` and `TRACEWAY_BACKEND_TOKEN` are set
 | Endpoints | ASP.NET Core request spans (Swagger, `/hubs`, static files filtered); `user.id` and `user.role` tags only |
 | Child spans | Npgsql SQL, HttpClient, AWS SDK |
 | Issues | 5xx exceptions recorded by `GlobalExceptionMiddleware`; 4xx business errors are not Issues |
-| Tasks | One CONSUMER span per hosted-service run via `TelemetrySources.RunBackgroundJobAsync` (stable kebab-case names) |
+| Tasks | CONSUMER spans with stable kebab-case names. Polling jobs use `TelemetrySources.RunPollingJobAsync`: only ticks that did work or failed are exported, without child spans. The queue-driven `personal-video-generation` worker uses `RunBackgroundJobAsync` and exports every job with child spans |
 | AI Traces | Bedrock strength-match call: model, tokens, finish reason; no prompt or completion text |
 | Logs | `ILogger` records; `TelemetryLogRedactionProcessor` masks emails and drops `Desc`/`Body`/`Raw` values in the exported copy only; EF Core command logs below Warning are not exported |
-| Metrics | ASP.NET Core, HttpClient, .NET runtime; host metrics from the Traceway agent on the VPS |
+| Metrics | .NET runtime only (endpoint latency comes from request spans); host metrics from the Traceway agent on the VPS |
 
-Plan and rollout: `docs/plans/active/traceway-observability.md`.
+Plan and rollout: `docs/plans/completed/traceway-observability.md`.
 
 Audit product records (submissions, attendance, enrollment changes) live in
 PostgreSQL entities; distinguish them from operational application logs.

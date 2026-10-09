@@ -77,6 +77,62 @@ public sealed class TelemetrySourcesTests : IDisposable
     }
 
     [Fact]
+    public async Task RunPollingJob_IdleTick_IsNotRecorded()
+    {
+        var taskName = $"test-poll-{Guid.NewGuid():N}";
+
+        await TelemetrySources.RunPollingJobAsync(taskName, _ => Task.FromResult(false));
+
+        var span = Assert.Single(StoppedSpans(taskName));
+        Assert.Equal(ActivityKind.Consumer, span.Kind);
+        Assert.False(span.Recorded);
+    }
+
+    [Fact]
+    public async Task RunPollingJob_TickThatDidWork_IsRecorded()
+    {
+        var taskName = $"test-poll-{Guid.NewGuid():N}";
+
+        await TelemetrySources.RunPollingJobAsync(taskName, activity =>
+        {
+            Assert.False(activity!.Recorded);
+            activity.SetTag("job.items", 2);
+            return Task.FromResult(true);
+        });
+
+        var span = Assert.Single(StoppedSpans(taskName));
+        Assert.True(span.Recorded);
+        Assert.Equal(2, span.GetTagItem("job.items"));
+    }
+
+    [Fact]
+    public async Task RunPollingJob_Failure_IsRecordedWithExceptionAndRethrows()
+    {
+        var taskName = $"test-poll-{Guid.NewGuid():N}";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            TelemetrySources.RunPollingJobAsync(taskName, _ => throw new InvalidOperationException("boom")));
+
+        var span = Assert.Single(StoppedSpans(taskName));
+        Assert.True(span.Recorded);
+        Assert.Equal(ActivityStatusCode.Error, span.Status);
+        Assert.Equal("exception", Assert.Single(span.Events).Name);
+    }
+
+    [Fact]
+    public async Task RunPollingJob_Cancellation_IsNotRecorded()
+    {
+        var taskName = $"test-poll-{Guid.NewGuid():N}";
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            TelemetrySources.RunPollingJobAsync(taskName, _ => throw new OperationCanceledException()));
+
+        var span = Assert.Single(StoppedSpans(taskName));
+        Assert.False(span.Recorded);
+        Assert.Empty(span.Events);
+    }
+
+    [Fact]
     public void RecordException_WithoutActivity_DoesNothing()
     {
         var exception = Record.Exception(() => TelemetrySources.RecordException(null, new InvalidOperationException()));

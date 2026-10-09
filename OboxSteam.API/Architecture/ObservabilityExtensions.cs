@@ -58,8 +58,6 @@ public static class ObservabilityExtensions
                 .AddSource(NPGSQL_SOURCE, TelemetrySources.BACKGROUND_JOBS_SOURCE, TelemetrySources.AI_SOURCE)
                 .AddOtlpExporter(options => ConfigureExporter(options, $"{endpoint}/v1/traces", token)))
             .WithMetrics(metrics => metrics
-                .AddAspNetCoreInstrumentation()
-                .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
                 .AddOtlpExporter(options => ConfigureExporter(options, $"{endpoint}/v1/metrics", token)))
             .WithLogging(

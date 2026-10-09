@@ -30,11 +30,13 @@ public sealed class DiscussionAttachmentPurgeService : BackgroundService
         {
             try
             {
-                await TelemetrySources.RunBackgroundJobAsync("discussion-attachment-purge", async _ =>
+                await TelemetrySources.RunPollingJobAsync("discussion-attachment-purge", async activity =>
                 {
                     using var scope = _serviceProvider.CreateScope();
                     var attachments = scope.ServiceProvider.GetRequiredService<IProgramAdvisoryAttachmentService>();
-                    await attachments.PurgeUnsentAsync(stoppingToken);
+                    var purged = await attachments.PurgeUnsentAsync(stoppingToken);
+                    activity?.SetTag("job.attachments_purged", purged);
+                    return purged > 0;
                 });
 
                 await Task.Delay(RunInterval, stoppingToken);
